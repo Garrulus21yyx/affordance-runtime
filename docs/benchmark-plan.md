@@ -29,44 +29,116 @@ runtime's real value: stale affordance rejection, capability gates, verifier
 receipts, recovery from modals or selector drift, trace replay, benchmark
 scoring, and harness evolution.
 
-## MVP Benchmark Matrix
+## MVP Scenario Matrix
 
-| Suite | Purpose | Example task | Perturbations | Oracle |
+| Scenario | Purpose | Spec | Perturbations | Oracle |
 | --- | --- | --- | --- | --- |
-| Local SaaS Ops | Resume-friendly end-to-end demo | Extract pricing limits with screenshots and URLs | async loading, lazy content | structured evidence required |
-| Reversible Settings | Controlled write path | Toggle notification setting and verify persistence | modal, selector drift, stale affordance | API/DOM receipt plus postcondition |
-| External Side Effect | Approval and receipt handling | Export report after approval | navigation delay, download race | approval log plus file receipt |
-| MiniWoB++ | Atomic action sanity | click/type/select/form tasks | randomized layout | task oracle |
-| WebArena-style Mock | Long-horizon web workflow | shopping/email/forum/admin tasks | distractors, multi-tab state | programmatic verifier |
-| Visual Grounding | SoM and screenshot fallback | choose item by visual appearance or vibe | similar labels, layout shifts | mark-level target match |
-| Device/WoT | Non-web affordance generalization | thermostat/projector/lights | stale device state, rate limit | state source receipt |
+| Local SaaS Pricing | read-only evidence extraction | `docs/scenarios/pricing-extraction.md` | async loading, layout shift, modal banner | fixture canonical pricing JSON |
+| Reversible Settings | controlled write path | `docs/scenarios/settings-update.md` | selector drift, stale target, confirmation modal | fixture DB/API persisted value |
+| Approval-Gated Export | approval and receipt handling | `docs/scenarios/approval-gated-report-export.md` | delayed download, stale approval target, duplicate export button | approval log plus file/hash receipt |
+| MiniWoB++ | atomic action sanity | future | randomized layout | task oracle |
+| WebArena-style Mock | long-horizon web workflow | future | distractors, multi-tab state | programmatic verifier |
+| Visual Grounding | SoM and screenshot fallback | future | similar labels, layout shifts | mark-level target match |
+| Device/WoT | non-web affordance proof | future | stale device state, rate limit | state source receipt |
+
+Visual tasks should avoid vague labels such as `vibe` unless the oracle can be
+programmed. Prefer concrete targets such as color, icon, badge, relative
+position, or fixture mark id.
+
+## Baselines
+
+Every benchmark report should include at least:
+
+| Baseline | Meaning | Purpose |
+| --- | --- | --- |
+| Direct Playwright | scripted stable selectors, no runtime harness | shows task difficulty floor |
+| Primitive Browser Agent | planner calls click/type/wait primitives directly | shows value of contracts, preflight, and verification |
+| Full Affordance Runtime | all enabled runtime layers | target system |
+
+The baseline is not expected to be safer than the runtime. It exists to answer
+what the runtime abstractions add beyond ordinary browser automation.
+
+## Ablations
+
+Core abstractions should be tested by disabling them:
+
+| Ablation | Disabled Layer | Expected Signal |
+| --- | --- | --- |
+| no lease/preflight | snapshot and target validity checks | more stale executions under drift |
+| no structural verifier | independent postcondition evidence | more false success judgments |
+| no capability gate | task policy and approval enforcement | unsafe or unauthorized side effects |
+| no recovery | bounded recovery strategies | lower completion under modal/drift |
+| DOM-only | visual fallback disabled | exposes where visual grounding is needed |
+
+## Metric Schema
+
+Each metric must declare:
+
+```text
+name
+definition
+numerator
+denominator
+direction
+unit
+ground_truth_source
+aggregation
+acceptance_threshold
+```
 
 ## Runtime-Specific Metrics
 
 These are the metrics that differentiate the project from a normal browser-use
 wrapper:
 
-- `task_success_rate`: completed tasks / total tasks.
-- `constraint_retention_rate`: runs that preserved all task constraints / total
-  tasks.
-- `stale_action_block_rate`: stale affordance actions rejected by preflight /
-  attempted primitive actions.
-- `effect_receipt_coverage`: primitive actions with structural receipts /
-  attempted primitive actions.
-- `verifier_false_accept_rate`: incorrect success judgments / attempted
-  primitive actions.
-- `unsafe_side_effect_rate`: unsafe side effects / attempted primitive actions.
-- `recovery_success_rate`: successful recoveries / recovery attempts.
-- `semantic_replay_success_rate`: tasks that replay semantically in resettable
-  environments / total tasks.
-- `regression_delta`: new accepted score minus previous accepted baseline.
-- `cost_per_success`: total runtime cost / successful tasks.
+| Metric | Definition | Direction | Ground Truth |
+| --- | --- | --- | --- |
+| `task_success_rate` | successful tasks / total tasks | higher better | scenario oracle |
+| `constraint_violation_rate` | explicit constraint violations / evaluated constraints | lower better | policy log + oracle |
+| `stale_detection_recall` | blocked injected-stale actions / injected-stale actions | higher better | perturbation label |
+| `false_stale_block_rate` | valid actions incorrectly blocked / valid actions | lower better | perturbation label |
+| `effect_receipt_coverage` | effectful actions with structural receipts / effectful actions | higher better | receipt schema |
+| `verifier_false_accept_rate` | failed ground-truth outcomes judged successful / failed outcomes | lower better | independent oracle |
+| `unsafe_side_effect_rate` | unsafe side effects / side-effect opportunities | lower better | audit log |
+| `recovery_success_rate` | successful recoveries / recovery attempts | higher better | trace + oracle |
+| `semantic_replay_success_rate` | semantically replayed tasks / replayable tasks | higher better | resettable fixture |
+| `cost_per_success` | total cost / successful tasks | lower better | run accounting |
 
-The initial implementation lives in `src/affordance_runtime/benchmarks`.
+Do not use total primitive actions as the denominator for every metric. Stale,
+verification, and side-effect metrics need their own opportunity sets.
+
+## Ground Truth Sources
+
+| Scenario | Ground Truth |
+| --- | --- |
+| pricing extraction | fixture server canonical JSON plus evidence refs |
+| settings update | server-side persisted value and history |
+| report export | approval event log, file receipt, file hash, audit record |
+| stale action | injected perturbation label |
+| modal recovery | fixture state machine |
+| visual grounding | fixture mark id or deterministic visual target |
+
+The acting model is never the sole grader. Model judgment may appear as weak
+verification evidence, not as final benchmark truth.
+
+## Experimental Protocol
+
+Each report should record:
+
+- suite version and fixture commit
+- runtime version and contract schema version
+- model/provider/version when a model is used
+- temperature and decoding configuration
+- seeds and number of repetitions
+- timeout, retry, and recovery budgets
+- cache policy
+- whether failures are retried
+- mean and standard deviation where repeated runs are used
+- links to traces and artifacts
 
 ## Replay Levels
 
-1. Offline evidence replay: inspect trace DAG, screenshots, receipts, DOM
+1. Offline evidence replay: inspect trace events, screenshots, receipts, DOM
    hashes, and verifier outputs without reopening the environment.
 2. Semantic replay: rerun the same task in a resettable local environment and
    compare postconditions rather than exact coordinates.
@@ -75,13 +147,13 @@ The initial implementation lives in `src/affordance_runtime/benchmarks`.
 
 ## Acceptance Gate
 
-An evolution artifact can be accepted only when it passes:
+A runtime release or evolution artifact can be accepted only when it passes:
 
 - the original failed trace or fixture,
 - the task family regression suite,
 - safety and approval checks,
 - trace schema validation,
-- a small global smoke suite.
+- the small global smoke suite.
 
 Failed or partially supported artifacts stay quarantined in the evolution
 registry with negative examples and rollback notes.
