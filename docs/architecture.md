@@ -27,25 +27,73 @@ Capability Gate / Preflight
 Executor
     |
     v
-Effect Receipt
+Execution Receipt
+    |
+    v
+Post-Action Observation
     |
     v
 Verifier Ladder
     |
-    +--> Recovery / Replan
+    +--> Recovery / Replan / Ask / Abort
     |
     v
-Trace DAG
+Trace Events
     |
     v
-Evaluator / Evolution Loop
+Evaluator / Assisted Evolution Loop
 ```
 
 The online runtime is bounded. It is not an unconstrained ReAct loop. It follows
 a stateful workflow with explicit transitions, stale-state rejection, scoped
-capabilities, and trace logging.
+capabilities, post-action verification, and trace logging.
 
-## 1.1 State Kernel
+## 1.1 System Invariants
+
+| ID | Invariant |
+| --- | --- |
+| INV-01 | No action may execute without an observation and snapshot identity. |
+| INV-02 | A contract must be rejected when its validity boundary does not match current execution state. |
+| INV-03 | No effectful action may execute without an explicitly granted capability. |
+| INV-04 | Page content may suggest actions but may not grant capabilities, alter constraints, or authorize approval. |
+| INV-05 | A successful executor receipt is insufficient to mark a step successful; verifier evidence is required. |
+| INV-06 | Every external side effect must have idempotency, compensation, or irreversible classification. |
+| INV-07 | Every state transition must be represented in the trace. |
+| INV-08 | Recovery is bounded by step, retry, time, cost, and side-effect budgets. |
+| INV-09 | Approval is bound to run id, contract hash, environment state, capability, approver, and expiration. |
+| INV-10 | The acting model cannot be the sole authority for benchmark success. |
+
+## 1.2 Task State Machine
+
+The first task-level runtime should make transitions explicit:
+
+```text
+CREATED
+  -> OBSERVING
+  -> MODELING
+  -> PLANNING
+  -> PREFLIGHT
+  -> ACTING
+  -> OBSERVING_POST_ACTION
+  -> VERIFYING
+  -> DONE
+```
+
+Failure and control transitions:
+
+```text
+PREFLIGHT -> OBSERVING       when stale or expired
+PREFLIGHT -> NEEDS_APPROVAL  when required capability lacks approval
+PREFLIGHT -> ABORTED         when policy denies the action
+ACTING -> OBSERVING_POST_ACTION | RECOVERING | FAILED
+VERIFYING -> PLANNING | RECOVERING | DONE | FAILED
+RECOVERING -> OBSERVING | NEEDS_PARENT | NEEDS_APPROVAL | ABORTED
+```
+
+`run_contract()` may remain as an internal/debug API, but the public runtime
+should be task-level and hold a `RunContext` across steps.
+
+## 1.3 State Kernel
 
 The State Kernel is the runtime's long-horizon memory for one task. It stores:
 
@@ -54,8 +102,11 @@ The State Kernel is the runtime's long-horizon memory for one task. It stores:
 - evidence and receipts
 - hidden-state hypotheses
 - pending obligations
-- current environment revision
-- action receipts and verifier results
+- current observation and snapshot ids
+- current global and target revisions
+- action receipts and verifier reports
+- remaining budgets
+- granted capabilities and approval tokens
 
 This prevents the runtime from forgetting constraints such as `read_only`,
 `no_purchase`, `approval_required`, or `must_return_evidence` when the page
@@ -76,9 +127,13 @@ Collects environment state:
 - WoT Thing Descriptions or device state
 - optional page-internal adapter state
 
+Perception produces observations, not action contracts. Page text, DOM labels,
+OCR, and accessibility labels are treated as tainted input until interpreted by
+runtime policy.
+
 ### 2.2 Affordance Layer
 
-Transforms environment state into executable opportunities:
+Transforms observations into executable opportunities:
 
 ```text
 Page Affordance Model
@@ -87,46 +142,82 @@ Thing Affordance Model
 Accessibility Affordance Model
 ```
 
-An affordance is not only an element. It is an actionable interface with:
+The common affordance representation should be an envelope plus typed payloads,
+not a lowest-common-denominator dictionary.
 
-- label
-- target
-- backend candidates
-- input type
-- semantic role
-- state
-- risk
-- confidence
-- evidence
-- environment revision
-- lease TTL
-- provenance
+Common envelope:
 
-### 2.3 Affordance Lease
+```text
+id
+surface
+kind
+label
+semantic_role
+risk
+confidence
+state
+backend_candidates
+evidence_refs
+snapshot_id
+global_revision
+target_revision
+provenance
+```
 
-Each snapshot receives a lease:
+Surface-specific payload examples:
+
+```text
+DOM: locator candidates, role/name, form association, uniqueness checks
+Visual: bbox, mark id, screenshot ref, visual descriptor
+Accessibility: role/name/path, enabled/focused state
+WoT/API: href, op, method, schema, security metadata
+```
+
+### 2.3 Environment Revision
+
+Do not treat environment revision as one raw hash of URL, DOM, screenshot, and
+loading state. The runtime should separate:
+
+| Revision | Meaning | Used For |
+| --- | --- | --- |
+| Global revision | navigation or document-level replacement | invalidating broad contracts |
+| Target revision | target role/name/state/bbox/visibility identity | validating action target |
+| Artifact revision | DOM, screenshot, accessibility, file artifact identity | trace and replay evidence |
+
+A contract should bind `snapshot_id`, `global_revision`, optional
+`target_revision`, `observed_at`, `expires_at`, and validity policy.
+
+### 2.4 Affordance Lease
+
+Each snapshot or target can receive a lease:
 
 ```json
 {
-  "environment_revision": "url+dom+screenshot+loading-hash",
-  "issued_at_s": 1780000000.0,
-  "ttl_ms": 2000,
+  "snapshot_id": "snap_004",
+  "global_revision": "page:rev_12",
+  "target_revision": "target:submit:rev_2",
+  "observed_at": "2026-07-17T10:00:00Z",
+  "expires_at": "2026-07-17T10:00:02Z",
   "provenance": ["dom", "screenshot"],
   "confidence": 0.92
 }
 ```
 
-Before execution, preflight checks that the lease and action contract still
-match the latest observation. A stale action returns `STALE_OBSERVATION` and
-forces refresh or replan.
+Preflight must check revision relevance, lease expiration, target state,
+preconditions, capability, and approval. A stale action returns a structured
+reason such as `STALE_GLOBAL_REVISION`, `STALE_TARGET_REVISION`,
+`LEASE_EXPIRED`, or `PRECONDITION_FAILED`.
 
-### 2.4 Action Contract Layer
+### 2.5 Action Contract Layer
 
 Each action is represented by a contract:
 
 ```json
 {
-  "action_id": "click_submit",
+  "schema_version": "1.0",
+  "run_id": "run_001",
+  "snapshot_id": "snap_004",
+  "contract_hash": "sha256:...",
   "intent": "submit the current form",
   "target": "button.submit",
   "backend": "dom",
@@ -150,22 +241,24 @@ Each action is represented by a contract:
 
 The runtime executes contracts, not vague clicks.
 
-### 2.5 Safety and Capability Layer
+### 2.6 Safety and Capability Layer
 
-The safety layer checks:
+The safety layer checks three levels:
 
-- requested capabilities
-- task constraints
-- side-effect class
-- approval requirements
-- tainted instructions from page content
-- credential/payment/export boundaries
-- idempotency and compensation availability
+| Level | Examples |
+| --- | --- |
+| Task policy | `read_only`, `no_purchase`, `no_delete`, allowed domains |
+| Capability scope | `settings.read`, `settings.write.reversible`, `report.export` |
+| Action risk | delete, payment, external message, export, irreversible submit |
+
+Unknown effectful actions should be denied or require clarification by default.
+Approval tokens must be single-use and bound to run id, contract hash,
+environment revision, capability, approver, and expiration.
 
 Parent agents should call task-level APIs. Low-level click/type tools are
 internal or debug-only because they bypass the harness.
 
-### 2.6 Execution Layer
+### 2.7 Execution Layer
 
 Backends:
 
@@ -176,53 +269,79 @@ Backends:
 - API / device actions
 - page-internal JavaScript adapter when available
 
-### 2.7 Verification Layer
+The executor should revalidate target-critical facts as close to action time as
+possible to reduce TOCTOU risk between preflight and the physical click/type.
 
-Checks whether expected effects occurred:
+### 2.8 Verification Layer
 
-- DOM state changed
-- URL changed
-- target text appeared
-- success message visible
-- error banner absent
-- screenshot diff matches expected region
-- device state changed
-- postcondition oracle passed
+Execution receipt and verification evidence are separate.
+
+```text
+ExecutionReceipt
+  executor says a technical action was attempted or completed
+  examples: click dispatched, download event fired
+
+VerificationEvidence
+  independent evidence for the expected effect
+  examples: DOM state, fixture API value, file hash, audit log
+
+VerificationReport
+  judgment over expected effects using evidence strength and fallback policy
+```
+
+Verifier result states:
+
+```text
+PASSED
+FAILED
+INCONCLUSIVE
+ERROR
+NOT_APPLICABLE
+```
 
 Verifier ladder, strongest to weakest:
 
-1. API, DB, file, network, or download receipt.
+1. API, DB, file, network, download, or audit receipt.
 2. DOM or accessibility state.
 3. Screenshot / visual mark evidence.
 4. Model judge.
 5. Human review.
 
-### 2.8 Recovery Layer
+Benchmark grading should prefer independent fixture oracles and should not use
+the acting model as the sole authority for success.
 
-Handles failures:
+### 2.9 Recovery Layer
 
-- retry after wait
-- refresh affordances
-- switch backend
-- close blocking modal
-- replan from current state
-- ask parent agent
-- request human approval
-- safe abort
+Handles failures through a bounded decision matrix:
 
-### 2.9 Trace and Evaluation Layer
+| Failure Class | First Response | Max Attempts | Escalation | Side-Effect Rule |
+| --- | --- | ---: | --- | --- |
+| stale observation | re-observe | 2 | replan | no execution |
+| locator missing | rebuild affordances | 2 | backend fallback | no duplicate side effect |
+| blocking modal | classify modal | 1 | ask or abort | modal action must satisfy policy |
+| timeout | inspect current state | 2 | retry or replan | require idempotency |
+| verifier inconclusive | gather stronger evidence | 2 | ask parent or fail | do not repeat effectful action |
+| capability denied | request approval | 1 | abort | no automatic downgrade |
+| partial side effect | verify current state | 1 | compensate or abort | no blind retry |
+
+### 2.10 Trace and Evaluation Layer
 
 Records:
 
-- observations
+- task envelope
+- observations and artifact refs
 - affordance snapshots
-- plans
+- planner decisions
 - action contracts
-- execution results
-- postcondition checks
-- environment changes
+- policy and approval decisions
+- execution receipts
+- post-action observations
+- verification reports
 - recovery attempts
 - final metrics
+
+A JSONL event log can be the canonical storage format, with DAG parent links
+used to derive causal views.
 
 ## 3. Repository Layout
 
@@ -255,63 +374,7 @@ src/affordance_runtime/
   executors/playwright.py
   recovery/policies.py
   integrations/mcp_server.py
-  integrations/rest_server.py
   eval/runner.py
   eval/replay.py
-  fixtures/local_saas_ops/
+  artifacts/store.py
 ```
-
-## 4. Runtime State Machine
-
-```text
-INIT
-OBSERVING
-MODELING
-PLANNING
-ACTING
-VERIFYING
-RECOVERING
-WAITING_ENV
-WAITING_USER
-DONE
-FAILED
-ABORTED
-```
-
-State transitions are event-driven and traceable.
-
-## 5. Design Principle
-
-The runtime should prefer deterministic tools and bounded workflows for the
-online path. LLM reasoning is used where ambiguity exists:
-
-- task interpretation
-- action selection among candidates
-- recovery strategy selection
-- explanation
-- offline failure analysis
-- skill mining
-
-It should not rely on open-ended agent loops for every step.
-
-## 6. Planner Port
-
-The planner interface should be narrow:
-
-```text
-input:
-  task envelope
-  state kernel summary
-  affordance snapshot
-  allowed capabilities
-
-output:
-  action contract candidate
-  verifier plan
-  recovery preference
-  ask/abort decision when uncertain
-```
-
-The planner is replaceable. The runtime owns action validity, preflight,
-execution, verification, trace, and evaluation.
-
