@@ -84,14 +84,22 @@ Affordance Runtime:
   return trace, screenshots, evidence, and failure/recovery summary
 ```
 
-The runtime should also support controlled benchmark environments:
+The benchmark story should be led by realistic Web/SaaS workflows, not the
+smart-room demo. The runtime should prove generalization through controlled web
+environments first, then keep non-web adapters as secondary evidence:
 
-- MiniWoB++ for atomic web actions
-- WebArena-style mock environments for realistic multi-step tasks
-- VisualWebArena-style tasks for visual grounding
-- local smart-room / WoT demo for non-web affordances
 - custom SaaS workflows for form filling, invoice download, pricing extraction,
-  and admin-panel operations
+  reversible admin settings, report export, and support-case creation
+- WebArena-style mock environments for realistic multi-step tasks, state drift,
+  modals, multi-tab state, and failure injection
+- MiniWoB++ for atomic web actions such as click, type, select, and form fill
+- VisualWebArena-style and Set-of-Mark fixtures for visual fallback and
+  mark-level grounding checks
+- local smart-room / WoT demo only as a non-web adapter proof, not the project
+  main story
+
+OSWorld, desktop-native apps, and mobile apps are future expansion targets after
+the web harness, verifier ladder, trace replay, and evolution loop are stable.
 
 ## Positioning
 
@@ -153,4 +161,3 @@ The initial skeleton is in `src/affordance_runtime`:
 - `adapters/som.py`: migrated Set-of-Marks grounding.
 - `adapters/wot.py`: migrated Thing Description parsing.
 - `benchmarks/`: benchmark tasks, suites, and runtime-specific metrics.
-
