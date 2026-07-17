@@ -5,6 +5,30 @@ a browser task solver. The benchmark asks whether the runtime can bind actions
 to current environment state, avoid unsafe side effects, verify effects, recover
 from drift, and turn failures into regression-gated harness improvements.
 
+## Scenario Priority
+
+The benchmark plan should make the project's generalization story concrete
+without letting the old smart-room demo define the project. The flagship path is
+realistic Web GUI work; device/WoT is retained only as a non-web adapter proof.
+
+| Module | Keep? | Role |
+| --- | --- | --- |
+| Web GUI Runtime | Must keep and lead | Main project surface and first runnable gold path |
+| MiniWoB++ | Keep | Atomic action benchmark for click/type/select/form sanity |
+| WebArena-style mock env | Keep | Controlled multi-step workflows plus failure injection |
+| SaaS/pricing/invoice demo | Must add | Flagship realistic demo for harness/eval/evolve value |
+| Visual/SoM fixtures | Keep | Visual fallback and mark-level grounding checks |
+| WoT smart-room | Downgrade and keep | Non-web adapter proof; not the project main story |
+| OSWorld/mobile | Do not do in MVP | Future expansion after the web harness is stable |
+
+The main demo should therefore look like a realistic web workflow, not an IoT
+room-control demo. Good flagship tasks include pricing extraction with evidence,
+invoice or receipt download, reversible admin setting updates, support portal
+case creation, and report export with explicit approval. These tasks expose the
+runtime's real value: stale affordance rejection, capability gates, verifier
+receipts, recovery from modals or selector drift, trace replay, benchmark
+scoring, and harness evolution.
+
 ## MVP Benchmark Matrix
 
 | Suite | Purpose | Example task | Perturbations | Oracle |
@@ -61,4 +85,3 @@ An evolution artifact can be accepted only when it passes:
 
 Failed or partially supported artifacts stay quarantined in the evolution
 registry with negative examples and rollback notes.
-
