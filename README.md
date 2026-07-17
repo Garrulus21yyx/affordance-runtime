@@ -1,18 +1,23 @@
 # Affordance Runtime
 
-Affordance Runtime is a harness-first GUI agent runtime for reliable action
-execution across web pages, visual interfaces, and device-like environments.
+Affordance Runtime is a planner-neutral GUI agent execution runtime. It binds
+every GUI action to versioned environment state, scoped capabilities, expected
+effects, verifier evidence, trace, benchmark scoring, and regression-gated
+harness evolution.
 
 It is not another in-page web copilot or a thin browser automation wrapper. Its
 core is:
 
-- a unified affordance model for DOM, visual, accessibility, and device surfaces
-- an event-driven runtime that observes, plans, acts, verifies, and recovers
-- action contracts with preconditions, expected effects, risk levels, and
-  fallbacks
-- full-fidelity traces for debugging, replay, evaluation, and skill mining
-- a harness evolution loop that turns failures into reusable skills, policy
-  patches, postconditions, and regression cases
+- a unified affordance model for DOM, visual, accessibility, API, and device
+  surfaces
+- a state kernel that preserves goals, constraints, evidence, hidden-state
+  hypotheses, and pending obligations across long tasks
+- action contracts with environment revision, preconditions, expected effects,
+  verifier plans, risk levels, capabilities, idempotency, and compensation
+- preflight gates that reject stale observations before an action is executed
+- full-fidelity trace DAGs for debugging, replay, evaluation, and skill mining
+- a harness evolution registry that quarantines proposed skills, policies,
+  postconditions, and benchmark fixtures until regression replay passes
 - integration surfaces for standalone use and subagent use by Codex, Claude,
   OpenHands, LangGraph, AutoGen, or any agent framework that can call tools
 
@@ -23,14 +28,16 @@ core is:
 - [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)
 - [Harness Evolution](docs/harness-evolution.md)
 - [Trace and Evaluation](docs/trace-and-evaluation.md)
+- [Benchmark Plan](docs/benchmark-plan.md)
 - [Integrations](docs/integrations.md)
 - [Open Source Landscape](docs/open-source-landscape.md)
+- [Migration From A Modular Action System](docs/migration-from-modular-action-system.md)
 
 ## One Sentence
 
-Affordance Runtime turns GUI environments into typed, verifiable action spaces
-so agents can execute, observe, recover, replay, evaluate, and evolve from
-their own interaction traces.
+Affordance Runtime turns GUI environments into versioned, typed, verifiable
+action spaces so agents can execute, observe, recover, replay, evaluate, and
+evolve from their own interaction traces.
 
 ## What This Project Demonstrates
 
@@ -41,8 +48,10 @@ browser agent demo:
   Playwright state, and WoT-style device descriptions
 - unified affordance layer: Page Affordance Model, Visual Affordance Model,
   Thing Affordance Model, and a shared action contract
-- bounded orchestration: observe -> model -> plan -> act -> verify -> recover
-  -> learn
+- bounded orchestration: task envelope -> state kernel -> budgeted observation
+  -> versioned affordance snapshot -> planner port -> action contract ->
+  capability gate -> preflight -> execute -> effect receipt -> verifier ladder
+  -> recovery or report
 - live environment feedback: DOM mutation, screenshot diff, URL navigation,
   modal detection, device state changes, and hazard detection
 - trace-first execution: every observation, decision, action, verification, and
@@ -104,14 +113,16 @@ Web GUI Runtime
   screenshot / SoM adapter
   Playwright executor
   Page Affordance Model
-  action contracts
-  postcondition checker
-  event bus
-  trace logger
+  State Kernel
+  Affordance Lease
+  ActionContractV2
+  Capability Gate
+  Verifier Ladder
+  Trace DAG
   recovery policy
   evaluation runner
   MCP server
-  3 benchmark demos
+  3 local benchmark demos
 ```
 
 Do not start with every desktop, mobile, and device surface. The architecture
@@ -122,8 +133,24 @@ runtime on web GUI tasks.
 
 Designed and implemented a harness-first GUI Agent Runtime that abstracts DOM,
 visual screenshots, accessibility state, and device descriptions into a unified
-Affordance Model. The system supports action routing, postcondition
-verification, live environment feedback, failure recovery, full trace replay,
-benchmark evaluation, and Hermes-style harness evolution from failed
-interaction traces.
+Affordance Model. The system supports versioned action contracts, stale-state
+preflight rejection, capability gating, verifier ladders, live environment
+feedback, failure recovery, causal trace DAGs, benchmark evaluation, and
+Hermes-style harness evolution from failed interaction traces.
+
+## Code Skeleton
+
+The initial skeleton is in `src/affordance_runtime`:
+
+- `contracts.py`: affordances, leases, action contracts, receipts, risk.
+- `state_kernel.py`: long-horizon task state and evidence obligations.
+- `runtime.py`: bounded contract execution loop.
+- `verification.py`: preflight checks and verifier ladder.
+- `safety.py`: scoped capability and approval gate.
+- `trace.py`: causal trace DAG.
+- `evolution.py`: regression-gated evolution registry.
+- `adapters/dom.py`: migrated DOM transduction.
+- `adapters/som.py`: migrated Set-of-Marks grounding.
+- `adapters/wot.py`: migrated Thing Description parsing.
+- `benchmarks/`: benchmark tasks, suites, and runtime-specific metrics.
 

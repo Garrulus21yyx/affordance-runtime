@@ -3,40 +3,63 @@
 ## 1. High-Level System
 
 ```text
-Task Request
+Task Envelope
     |
     v
-Coordinator
+State Kernel
     |
     v
-Environment Observer
+Budgeted Observer
     |
     v
-Affordance Builder
+Versioned Affordance Snapshot
     |
     v
-Planner
+Planner Port
     |
     v
-Action Router
+Action Contract
+    |
+    v
+Capability Gate / Preflight
     |
     v
 Executor
     |
     v
-Verifier
+Effect Receipt
+    |
+    v
+Verifier Ladder
     |
     +--> Recovery / Replan
     |
     v
-Trace Logger
+Trace DAG
     |
     v
 Evaluator / Evolution Loop
 ```
 
 The online runtime is bounded. It is not an unconstrained ReAct loop. It follows
-a stateful workflow with explicit transitions and trace logging.
+a stateful workflow with explicit transitions, stale-state rejection, scoped
+capabilities, and trace logging.
+
+## 1.1 State Kernel
+
+The State Kernel is the runtime's long-horizon memory for one task. It stores:
+
+- goal and constraints
+- active subgoals
+- evidence and receipts
+- hidden-state hypotheses
+- pending obligations
+- current environment revision
+- action receipts and verifier results
+
+This prevents the runtime from forgetting constraints such as `read_only`,
+`no_purchase`, `approval_required`, or `must_return_evidence` when the page
+changes halfway through a task.
 
 ## 2. Core Layers
 
@@ -75,8 +98,29 @@ An affordance is not only an element. It is an actionable interface with:
 - risk
 - confidence
 - evidence
+- environment revision
+- lease TTL
+- provenance
 
-### 2.3 Action Contract Layer
+### 2.3 Affordance Lease
+
+Each snapshot receives a lease:
+
+```json
+{
+  "environment_revision": "url+dom+screenshot+loading-hash",
+  "issued_at_s": 1780000000.0,
+  "ttl_ms": 2000,
+  "provenance": ["dom", "screenshot"],
+  "confidence": 0.92
+}
+```
+
+Before execution, preflight checks that the lease and action contract still
+match the latest observation. A stale action returns `STALE_OBSERVATION` and
+forces refresh or replan.
+
+### 2.4 Action Contract Layer
 
 Each action is represented by a contract:
 
@@ -96,6 +140,9 @@ Each action is represented by a contract:
     "no_error_banner"
   ],
   "risk": "medium",
+  "required_capabilities": ["settings.write"],
+  "idempotency_key": "task_1:submit_form:v1",
+  "compensation": "restore_previous_setting",
   "timeout_ms": 5000,
   "fallbacks": ["visual_click", "keyboard_enter"]
 }
@@ -103,7 +150,22 @@ Each action is represented by a contract:
 
 The runtime executes contracts, not vague clicks.
 
-### 2.4 Execution Layer
+### 2.5 Safety and Capability Layer
+
+The safety layer checks:
+
+- requested capabilities
+- task constraints
+- side-effect class
+- approval requirements
+- tainted instructions from page content
+- credential/payment/export boundaries
+- idempotency and compensation availability
+
+Parent agents should call task-level APIs. Low-level click/type tools are
+internal or debug-only because they bypass the harness.
+
+### 2.6 Execution Layer
 
 Backends:
 
@@ -114,7 +176,7 @@ Backends:
 - API / device actions
 - page-internal JavaScript adapter when available
 
-### 2.5 Verification Layer
+### 2.7 Verification Layer
 
 Checks whether expected effects occurred:
 
@@ -127,7 +189,15 @@ Checks whether expected effects occurred:
 - device state changed
 - postcondition oracle passed
 
-### 2.6 Recovery Layer
+Verifier ladder, strongest to weakest:
+
+1. API, DB, file, network, or download receipt.
+2. DOM or accessibility state.
+3. Screenshot / visual mark evidence.
+4. Model judge.
+5. Human review.
+
+### 2.8 Recovery Layer
 
 Handles failures:
 
@@ -140,7 +210,7 @@ Handles failures:
 - request human approval
 - safe abort
 
-### 2.7 Trace and Evaluation Layer
+### 2.9 Trace and Evaluation Layer
 
 Records:
 
@@ -154,65 +224,41 @@ Records:
 - recovery attempts
 - final metrics
 
-## 3. Suggested Repository Layout
+## 3. Repository Layout
 
 ```text
-affordance_runtime/
-  app/
-    main.py
-    api/
-      tasks.py
-      runs.py
-      traces.py
-      skills.py
-      evals.py
-  runtime/
-    coordinator.py
-    state.py
-    planner.py
-    action_router.py
-    executor.py
-    verifier.py
-    recovery.py
-  perception/
-    dom_adapter.py
-    accessibility_adapter.py
-    visual_adapter.py
-    wot_adapter.py
-    page_agent_adapter.py
-  affordance/
-    model.py
-    builder.py
-    registry.py
-    contracts.py
-  events/
-    bus.py
-    watcher.py
-    classifiers.py
-  trace/
-    logger.py
-    schema.py
-    replay.py
-    viewer.py
-  eval/
-    task_runner.py
-    oracle.py
+src/affordance_runtime/
+  contracts.py
+  state_kernel.py
+  runtime.py
+  safety.py
+  verification.py
+  trace.py
+  evolution.py
+  adapters/
+    dom.py
+    som.py
+    wot.py
+  benchmarks/
+    spec.py
+    suites.py
     metrics.py
-    failure_classifier.py
-    reports.py
-  evolution/
-    analyzer.py
-    proposal.py
-    skill_miner.py
-    policy_patch.py
-    regression_gate.py
-  integrations/
-    mcp_server.py
-    rest_server.py
-    langgraph_node.py
-    codex_tool.py
-    claude_tool.py
-    openhands_adapter.py
+tests/
+docs/
+```
+
+Planned expansion after the skeleton:
+
+```text
+src/affordance_runtime/
+  observers/playwright.py
+  executors/playwright.py
+  recovery/policies.py
+  integrations/mcp_server.py
+  integrations/rest_server.py
+  eval/runner.py
+  eval/replay.py
+  fixtures/local_saas_ops/
 ```
 
 ## 4. Runtime State Machine
@@ -247,4 +293,25 @@ online path. LLM reasoning is used where ambiguity exists:
 - skill mining
 
 It should not rely on open-ended agent loops for every step.
+
+## 6. Planner Port
+
+The planner interface should be narrow:
+
+```text
+input:
+  task envelope
+  state kernel summary
+  affordance snapshot
+  allowed capabilities
+
+output:
+  action contract candidate
+  verifier plan
+  recovery preference
+  ask/abort decision when uncertain
+```
+
+The planner is replaceable. The runtime owns action validity, preflight,
+execution, verification, trace, and evaluation.
 

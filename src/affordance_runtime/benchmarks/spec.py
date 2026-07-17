@@ -1,0 +1,37 @@
+"""Benchmark task contracts."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class BenchmarkTask:
+    suite: str
+    task_id: str
+    start_url: str
+    goal: str
+    max_steps: int = 20
+    tags: list[str] = field(default_factory=list)
+    oracle: dict[str, Any] = field(default_factory=dict)
+    perturbations: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BenchmarkRun:
+    task_id: str
+    success: bool
+    steps: int
+    latency_ms: float
+    stale_actions_blocked: int = 0
+    effect_receipts: int = 0
+    verifier_false_accepts: int = 0
+    unsafe_side_effects: int = 0
+    recovery_attempts: int = 0
+    recovery_successes: int = 0
+    semantic_replay_success: bool = False
+    regression_delta: float = 0.0
+    cost: float = 0.0
+    failure_reason: str = ""
+

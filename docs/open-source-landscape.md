@@ -10,6 +10,9 @@
 | Skyvern | visual browser workflow platform | vision-based page reading, no-code workflows, real business workflows | Affordance Runtime is a lower-level runtime and subagent interface |
 | OpenHands / Open Operator | coding and computer-use agent platform | parent-agent integration, cloud execution, browser/GUI operator role | Affordance Runtime can be called as a GUI subagent |
 | Agent S / Agent S2 | computer-use agent framework | desktop GUI planning, perception, fine-grained control | Affordance Runtime starts from web and affordance contracts, then expands |
+| BrowserAct | browser skill/action substrate | indexed state/action, session ownership, confirmation gates | Affordance Runtime adds lease-bound contracts, verifier ladder, and trace DAG |
+| WebArena-Verified | audited benchmark methodology | deterministic structural scoring, network-trace evaluation | Affordance Runtime should prefer structural oracles over LLM judges |
+| WASP | web prompt-injection benchmark | tainted page content and security boundaries | Affordance Runtime needs capability gates and untrusted-content handling |
 
 ## 2. PageAgent Comparison
 
@@ -80,11 +83,43 @@ for studying generalization and instruction-to-action mapping.
 Real desktop computer-use benchmark. Useful as a future expansion target beyond
 web GUI.
 
+OSWorld-style long-horizon tasks motivate the State Kernel: constraints,
+pending obligations, and hidden state must survive many observation/action
+cycles.
+
 ### LivingScreen
 
 Benchmark for dynamic, living-screen GUI agents where observation is itself a
 cost-bearing action. Useful for designing observation policy and measuring
 over-observation / under-observation.
+
+LivingScreen-style dynamics motivate budgeted observation and Affordance Lease
+TTL. The runtime should know when to refresh and when an observation is current
+enough to act.
+
+### Dynamic GUI Benchmarks
+
+DynamicGUIBench-style tasks show that a single screenshot after each action is
+not enough for dynamic interfaces. This motivates event streams, environment
+revisions, and hidden-state hypotheses in the State Kernel.
+
+### WebArena-Verified
+
+Audited task definitions and structural scoring are a better benchmark target
+than pure model-judge grading. Affordance Runtime should produce receipts and
+oracles that can be checked without trusting the acting model.
+
+### WASP / Prompt Injection
+
+Web pages can contain hostile or misleading instructions. The runtime should
+treat page text as tainted observation data, not as trusted system policy.
+Capability gates and approval policies should dominate page content.
+
+### WeaveBench-Style Trajectory Judging
+
+Outcome-only grading can overestimate success. The benchmark should inspect
+actions, files, screenshots, logs, receipts, and verifier outputs across the
+trajectory.
 
 ### GUI Agent Autonomy Levels
 

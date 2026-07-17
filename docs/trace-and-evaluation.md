@@ -13,15 +13,20 @@ The trace is not only a log. It is the substrate for:
 - policy evolution
 - parent-agent reporting
 
-## 2. Trace Record
+## 2. Trace DAG
 
-Each step should record:
+The trace is a causal DAG, not a flat JSON log. Each observation, affordance
+snapshot, contract, capability decision, execution receipt, verifier result,
+recovery attempt, and evolution proposal is a node with parent links.
+
+Each step should still be serializable as a record:
 
 ```json
 {
   "run_id": "run_001",
   "step": 4,
   "state": "ACTING",
+  "parents": ["contract_0003"],
   "observation": {
     "url": "https://example.com/pricing",
     "dom_hash": "abc123",
@@ -34,10 +39,13 @@ Each step should record:
     "target": "button.enterprise-details",
     "reason": "visible, enabled, matches text and role"
   },
-  "execution": {
+  "execution_receipt": {
     "backend": "playwright_dom",
     "status": "success",
-    "latency_ms": 134
+    "latency_ms": 134,
+    "started_revision": "rev_12",
+    "ended_revision": "rev_13",
+    "receipt": "download:report_001.csv"
   },
   "verification": {
     "postcondition": "enterprise_details_visible",
@@ -57,6 +65,9 @@ Evaluate five layers:
 3. Action execution: did it perform the selected action?
 4. Verification: did it judge success correctly?
 5. Recovery: did it adapt when the environment changed?
+6. Safety: did it block unapproved or tainted side effects?
+7. Replay: can the failure or success be reproduced semantically?
+8. Evolution: did proposed harness changes pass regression gates?
 
 ## 4. Metrics
 
@@ -88,6 +99,9 @@ retry_count
 replan_count
 regression_pass_rate
 replay_success_rate
+stale_action_block_rate
+effect_receipt_coverage
+verifier_false_accept_rate
 ```
 
 ### Safety
@@ -97,6 +111,8 @@ high_risk_action_blocked
 approval_required_count
 unsafe_action_attempts
 safe_abort_count
+unsafe_side_effect_rate
+approval_gate_pass_rate
 ```
 
 ### Traceability
@@ -106,6 +122,17 @@ evidence_coverage
 decision_reason_coverage
 postcondition_coverage
 failure_classification_coverage
+trace_dag_parent_coverage
+```
+
+### Harness Evolution
+
+```text
+evolution_accept_rate
+quarantine_rate
+rollback_rate
+regression_delta
+negative_example_coverage
 ```
 
 ## 5. Benchmark Suites
@@ -159,6 +186,13 @@ Use for resume-friendly demonstrations:
 - settings update
 - report export
 
+The MVP benchmark plan starts with three local SaaS tasks because they make the
+runtime's differentiators visible:
+
+- read-only extraction with evidence chain
+- reversible settings update with modal, selector drift, and async button state
+- approval-gated report export with a download receipt
+
 ## 6. Reports
 
 Each evaluation run should output:
@@ -183,4 +217,16 @@ The Markdown report should summarize:
 - failure taxonomy
 - selected trace links
 - proposed evolution artifacts
+
+## 7. Trace Acceptance Requirements
+
+Every completed run should make these questions answerable:
+
+1. Which environment revision was the action based on?
+2. Which affordance and lease produced the action contract?
+3. Which capability gate allowed or blocked it?
+4. What structural receipt or verifier evidence proved the effect?
+5. What changed in the State Kernel after the action?
+6. If recovery happened, what failed and which policy was selected?
+7. Can the trace be replayed offline or semantically?
 

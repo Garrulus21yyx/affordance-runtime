@@ -11,7 +11,7 @@ The evolution loop is harness-level, not mystical self-improvement:
 Failed Trace
   -> Failure Analyzer
   -> Evolution Proposal
-  -> Patch Candidate
+  -> Quarantined Patch Candidate
   -> Replay Failed Task
   -> Replay Regression Suite
   -> Accept / Reject
@@ -44,6 +44,23 @@ Benchmark Fixture
 
 The runtime should not let failed traces directly mutate arbitrary production
 code without review.
+
+## 2.1 Evolution Registry
+
+Every proposed artifact must be tracked with:
+
+- artifact id and version
+- artifact type
+- applicability conditions
+- source traces
+- negative examples
+- TTL / expiration rule
+- regression results
+- rollback notes
+- status: proposed, quarantined, accepted, rejected, rolled_back
+
+This keeps "self-evolution" concrete and auditable. The harness can suggest
+changes, but acceptance is a versioned registry decision.
 
 ## 3. Failure Taxonomy
 
@@ -122,6 +139,10 @@ No evolution artifact is accepted unless it passes:
 - a small global smoke suite
 - safety checks
 - trace determinism checks where possible
+
+The gate should report `regression_delta`, not only pass/fail. A patch that
+fixes one modal case but hurts visual grounding or side-effect safety stays
+quarantined.
 
 ## 7. Human Review
 

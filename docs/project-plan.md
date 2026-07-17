@@ -48,14 +48,24 @@ Reliable GUI agency requires a typed action substrate.
 The central abstraction is:
 
 ```text
-Environment Surface
-  -> Affordances
-  -> Action Contracts
-  -> Executions
-  -> Postconditions
-  -> Trace
+Task Envelope
+  -> State Kernel
+  -> Budgeted Observation
+  -> Versioned Affordance Snapshot
+  -> Planner Port
+  -> Action Contract
+  -> Capability / Safety Gate
+  -> Preflight Revalidation
+  -> Execute
+  -> Effect Receipt
+  -> Verifier Ladder
+  -> State Kernel Update
+  -> Recover / Ask / Abort
+  -> Trace DAG
   -> Evaluation
-  -> Evolution
+  -> Evolution Proposal
+  -> Replay + Regression Gate
+  -> Versioned Harness Artifact
 ```
 
 The agent should not only decide what to do. It must know:
@@ -65,8 +75,14 @@ The agent should not only decide what to do. It must know:
 - what must be true before acting
 - what should change after acting
 - how to detect environmental drift
+- when an affordance snapshot is stale
+- which capabilities and approvals are required
 - when to recover, replan, ask the parent agent, or abort
 - how to learn from the trace after the run
+
+The project is therefore a planner-neutral execution control plane. It can be
+used by a local planner, Codex, Claude, LangGraph, AutoGen, OpenHands, browser
+agents, or a benchmark harness.
 
 ## 4. Modes
 
@@ -139,17 +155,20 @@ The first version should focus on Web GUI Runtime:
 - screenshot / Set-of-Marks adapter
 - Playwright executor
 - Page Affordance Model
-- action contracts
-- postcondition checker
-- event bus
-- trace logger
+- State Kernel
+- Affordance Lease
+- ActionContractV2
+- Capability Gate
+- Verifier Ladder
+- event bus / runtime state transitions
+- Trace DAG
 - recovery policy
 - evaluation runner
 - MCP server
 - three demos:
-  - MiniWoB++ atomic tasks
-  - WebArena-style mock task
-  - SaaS pricing or invoice extraction task
+  - read-only evidence extraction
+  - reversible settings update
+  - approval-gated report export
 
 Out of scope for the first version:
 
@@ -164,16 +183,67 @@ Out of scope for the first version:
 The MVP is successful if it can:
 
 1. Build a stable affordance model from a page.
-2. Execute a multi-step task through action contracts.
-3. Detect environmental changes during execution.
-4. Verify each step with postconditions.
-5. Recover from at least two common failures.
-6. Produce a replayable trace.
-7. Run a small benchmark suite and aggregate metrics.
-8. Convert at least one failed trace into a reusable skill or policy patch.
-9. Expose an MCP or REST interface for parent agents.
+2. Bind each affordance to an environment revision and lease.
+3. Reject stale actions before execution.
+4. Execute a multi-step task through action contracts.
+5. Detect environmental changes during execution.
+6. Verify each step with structural receipts when possible.
+7. Recover from at least two common failures.
+8. Produce a causal trace DAG.
+9. Run a small benchmark suite and aggregate runtime-specific metrics.
+10. Convert at least one failed trace into a quarantined skill or policy patch.
+11. Expose a task-level MCP or REST interface for parent agents.
 
-## 7. Resume Positioning
+## 7. Milestones
+
+### M0: Repo Skeleton
+
+- Package layout under `src/affordance_runtime`.
+- Migrated DOM, SoM, and WoT adapters from A Modular Action System.
+- Core dataclasses for leases, contracts, receipts, state kernel, trace DAG,
+  verifier ladder, capability gate, evolution registry, and benchmark metrics.
+- Unit tests for contract stale-state checks, DOM extraction, WoT parsing,
+  runtime verification, and benchmark metrics.
+
+### M1: Web Gold Path
+
+- Playwright observer and executor.
+- Environment revision hashing from URL, DOM hash, screenshot hash, and visible
+  loading state.
+- Action contract generation from page affordances.
+- Structural verifier ladder for DOM text, URL, download receipt, file receipt,
+  network receipt, and screenshot reference.
+- Trace writer that stores `trace.json`, screenshots, DOM snapshots, and
+  receipts.
+
+### M2: Local Benchmark Harness
+
+- Local SaaS fixture app with pricing, settings, reports, modals, async states,
+  selector drift, stale snapshots, and download/export receipts.
+- Benchmark runner for read-only extraction, reversible write, approval-gated
+  side effect, visual grounding, and recovery tasks.
+- Metrics report in JSON, Markdown, and CSV.
+
+### M3: Subagent Interface
+
+- MCP task API: submit a bounded task, poll run status, fetch result, fetch
+  evidence, fetch trace.
+- REST API with the same task-level semantics.
+- Thin adapters for Codex/Claude/OpenHands/LangGraph/AutoGen.
+- Keep low-level `click/type` tools internal or debug-only so callers cannot
+  bypass leases, capability gates, and verifier plans.
+
+### M4: Harness Evolution
+
+- Failure classifier over trace DAGs.
+- Evolution proposal generator for skills, policy patches, verifier patches,
+  and benchmark fixtures.
+- Quarantine registry with applicability, TTL, negative examples, regression
+  results, rollback notes, and accepted version.
+- Regression gate that replays the original failure, task-family suite, and
+  safety smoke suite before accepting an artifact.
+
+## 8. Resume Positioning
 
 Affordance Runtime should be presented as:
 
@@ -189,4 +259,19 @@ The engineering focus is:
 - trace and evaluation
 - skill mining and harness evolution
 - integration with existing agent frameworks
+
+## 9. Demo Story
+
+The strongest internship demo is not "it clicks websites." It is:
+
+1. Parent agent gives a bounded task.
+2. Runtime observes the page and creates a versioned affordance snapshot.
+3. Planner selects an action contract.
+4. Capability gate blocks risky unapproved actions.
+5. Preflight rejects stale snapshots when the page changes.
+6. Executor acts through DOM or visual fallback.
+7. Verifier ladder checks a structural receipt.
+8. Trace DAG shows why the action happened.
+9. Benchmark runner scores success, safety, recovery, and replay.
+10. A failed trace becomes a quarantined harness improvement.
 

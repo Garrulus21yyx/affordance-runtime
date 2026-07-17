@@ -34,14 +34,18 @@ Tools:
 
 ```text
 gui_run_task
-gui_observe
-gui_click
-gui_type
-gui_extract
+gui_get_run
+gui_get_evidence
 gui_get_trace
 gui_replay_trace
 gui_run_eval
 ```
+
+Production MCP should expose task-level APIs. Low-level primitives such as
+`gui_observe`, `gui_click`, and `gui_type` can exist as internal/debug tools,
+but they should not be the primary external contract because they bypass the
+State Kernel, Affordance Lease, Capability Gate, Action Contract, and Verifier
+Ladder.
 
 ### 2.4 LangGraph Node
 
