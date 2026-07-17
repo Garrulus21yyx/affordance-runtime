@@ -17,9 +17,28 @@ Failed Trace
   -> Accept / Reject
 ```
 
-## 2. What Can Evolve
+The first implementation should be assisted evolution: the system may propose
+changes, but acceptance is gated by regression evidence and review. Do not allow
+failed traces to directly mutate production runtime behavior.
 
-Only bounded artifacts should be eligible for automatic or assisted evolution:
+## 2. Prerequisite Gate
+
+Harness evolution work may begin only after:
+
+1. The core benchmark suite has a stable version.
+2. The trace schema is stable enough for replay and diagnosis.
+3. At least N classified failures exist.
+4. Regression runs are deterministic enough for comparison.
+5. At least one manually designed patch has completed the full gate.
+6. Safety checks and approval checks are part of the regression suite.
+
+Before these conditions are true, evolution should be treated as manual failure
+analysis plus regression fixture generation.
+
+## 3. What Can Evolve
+
+Only bounded artifacts should be eligible for automatic proposal or assisted
+acceptance:
 
 ```text
 Prompt Policy
@@ -45,24 +64,29 @@ Benchmark Fixture
 The runtime should not let failed traces directly mutate arbitrary production
 code without review.
 
-## 2.1 Evolution Registry
+## 3.1 Evolution Registry
 
 Every proposed artifact must be tracked with:
 
 - artifact id and version
 - artifact type
+- source runtime version
+- source trace ids
+- target suite versions
 - applicability conditions
-- source traces
 - negative examples
 - TTL / expiration rule
-- regression results
-- rollback notes
+- baseline results
+- candidate results
+- mandatory safety results
+- rollback artifact/version
+- reviewer decision
 - status: proposed, quarantined, accepted, rejected, rolled_back
 
-This keeps "self-evolution" concrete and auditable. The harness can suggest
+This keeps self-evolution concrete and auditable. The harness can suggest
 changes, but acceptance is a versioned registry decision.
 
-## 3. Failure Taxonomy
+## 4. Failure Taxonomy
 
 ```text
 Perception Error
@@ -87,7 +111,7 @@ Safety Error
   The runtime attempted a high-risk action without approval.
 ```
 
-## 4. Skill Mining
+## 5. Skill Mining
 
 A reusable skill is generated from repeated failure or repeated successful
 recovery:
@@ -111,7 +135,7 @@ evidence:
 
 Skills should be versioned and tested against regression fixtures.
 
-## 5. Evolution Proposal Schema
+## 6. Evolution Proposal Schema
 
 ```json
 {
@@ -125,12 +149,13 @@ Skills should be versioned and tested against regression fixtures.
   "validation_plan": [
     "replay run_017",
     "run form_submission_regression",
-    "run cookie_modal_regression"
+    "run cookie_modal_regression",
+    "run safety_smoke"
   ]
 }
 ```
 
-## 6. Regression Gate
+## 7. Regression Gate
 
 No evolution artifact is accepted unless it passes:
 
@@ -138,13 +163,37 @@ No evolution artifact is accepted unless it passes:
 - the relevant task family
 - a small global smoke suite
 - safety checks
+- approval checks
+- trace schema validation
 - trace determinism checks where possible
 
-The gate should report `regression_delta`, not only pass/fail. A patch that
-fixes one modal case but hurts visual grounding or side-effect safety stays
-quarantined.
+The gate must use direction-aware metric rules. A single `min_score >= 1.0`
+style rule is invalid because some metrics are higher-is-better and others are
+lower-is-better.
 
-## 7. Human Review
+Example rule shape:
+
+```json
+{
+  "metric": "unsafe_side_effect_rate",
+  "direction": "max",
+  "threshold": 0.0
+}
+```
+
+```json
+{
+  "metric": "task_success_rate",
+  "direction": "min",
+  "threshold": 0.9,
+  "allowed_regression": 0.02
+}
+```
+
+A patch that fixes one modal case but hurts visual grounding or side-effect
+safety stays quarantined.
+
+## 8. Human Review
 
 The harness can propose improvements automatically, but it should support human
 review for:
@@ -154,13 +203,17 @@ review for:
 - irreversible action rules
 - credential or payment related workflows
 - broad selector or grounding changes
+- any artifact that changes approval behavior
 
-## 8. Resume Framing
+## 9. Resume Framing
 
-This is the Hermes-style part of the project:
+Before v0.4 evidence exists, describe this as a planned or prototyped assisted
+harness evolution loop.
+
+After the prerequisite gate and a real before/after regression report exist, it
+can be described as:
 
 > failed GUI interaction traces are analyzed, classified, and converted into
 > reusable skills, postcondition improvements, policy patches, and regression
 > fixtures, then validated through replay before being admitted into the
 > runtime.
-
