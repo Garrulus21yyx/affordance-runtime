@@ -9,6 +9,7 @@ from affordance_runtime.benchmarks.browsergym import (
     BROWSERGYM_VERSION,
     BrowserGymAction,
     BrowserGymPolicyRequest,
+    _accessibility_tree_text,
     browsergym_profile,
     run_browsergym_episode,
     write_browsergym_report,
@@ -66,6 +67,7 @@ class OneClickPolicy:
     def propose(self, request: BrowserGymPolicyRequest) -> BrowserGymAction | None:
         assert request.goal == "Click the target"
         assert request.affordances[0]["locator"]["selector"] == "[bid='target']"
+        assert request.affordances[0]["locator"]["bid"] == "target"
         return BrowserGymAction("click", {"bid": "target"})
 
     def close(self) -> None:
@@ -84,6 +86,31 @@ def test_typed_browsergym_action_rejects_code_and_unknown_arguments() -> None:
         BrowserGymAction("page.evaluate", {"code": "danger"}).render()
     with pytest.raises(ValueError, match="unsupported arguments"):
         BrowserGymAction("click", {"bid": "target", "code": "danger"}).render()
+    with pytest.raises(ValueError, match="expected string"):
+        BrowserGymAction("press", {"bid": "target", "key_comb": ["ArrowDown"]}).render()
+    with pytest.raises(ValueError, match="expected number"):
+        BrowserGymAction("scroll", {"delta_x": "0", "delta_y": 10}).render()
+
+
+def test_accessibility_tree_fallback_preserves_role_name_and_bid() -> None:
+    text = _accessibility_tree_text(
+        {
+            "axtree_object": {
+                "nodes": [
+                    {
+                        "nodeId": "1",
+                        "ignored": False,
+                        "role": {"value": "checkbox"},
+                        "name": {"value": "Third choice"},
+                        "browsergym_id": "23",
+                    }
+                ]
+            }
+        }
+    )
+    assert "checkbox" in text
+    assert "Third choice" in text
+    assert "23" in text
 
 
 def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_path: Path) -> None:
@@ -102,6 +129,7 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     assert result.official_reward == 1.0
     assert result.action_families == ["click"]
     assert result.unsupported_actions == []
+    assert result.policy_stopped is False
     assert environment.closed and policy.closed
     events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
     assert events == [
@@ -156,3 +184,30 @@ def test_browsergym_episode_reports_unsupported_policy_action(tmp_path: Path) ->
     )
     assert result.runtime_status == "failed"
     assert result.unsupported_actions == ["page.evaluate"]
+
+
+class StoppedPolicy(OneClickPolicy):
+    def propose(self, request: BrowserGymPolicyRequest) -> None:
+        del request
+        return None
+
+
+def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path: Path) -> None:
+    result = run_browsergym_episode(
+        FakeBrowserGymEnvironment(),
+        StoppedPolicy(),
+        task_id="click-button",
+        seed=4,
+        artifact_root=tmp_path / "artifacts",
+    )
+    report = write_browsergym_report(
+        tmp_path / "report",
+        profile="pr",
+        registered_tasks=("click-button",),
+        selected_tasks=("click-button",),
+        seeds=(4,),
+        episodes=(result,),
+    )
+    assert result.policy_stopped is True
+    assert report["runtime_failure_count"] == 1
+    assert report["acceptance_errors"] == ["policy stopped: click-button:seed-4"]

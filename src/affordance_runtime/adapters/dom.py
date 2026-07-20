@@ -214,7 +214,11 @@ class DomAdapter:
                     role="input" if action in {"type", "select"} else "button",
                     label=_label_for(node),
                     action=action,
-                    locator={"selector": selector, "strategy": "css"},
+                    locator={
+                        "selector": selector,
+                        "strategy": "css",
+                        **({"bid": attr["bid"]} if attr.get("bid") else {}),
+                    },
                     lease=lease,
                     backend_candidates=["dom"],
                     confidence=0.0 if disabled else confidence,

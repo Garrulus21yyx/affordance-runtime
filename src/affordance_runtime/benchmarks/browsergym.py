@@ -95,6 +95,20 @@ _POSITIONAL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "report_infeasible": ("reason",),
 }
 
+_STRING_ARGUMENTS = {
+    "bid",
+    "from_bid",
+    "to_bid",
+    "button",
+    "value",
+    "key_comb",
+    "key",
+    "text",
+    "url",
+    "reason",
+}
+_NUMBER_ARGUMENTS = {"delta_x", "delta_y", "x", "y"}
+
 
 @dataclass(frozen=True)
 class BrowserGymAction:
@@ -112,6 +126,22 @@ class BrowserGymAction:
         missing = [name for name in positional if name not in self.arguments]
         if missing:
             raise ValueError(f"missing arguments for {self.name}: {', '.join(missing)}")
+        for name, value in self.arguments.items():
+            if name in _STRING_ARGUMENTS and not isinstance(value, str):
+                raise ValueError(f"invalid argument type for {self.name}.{name}: expected string")
+            if name in _NUMBER_ARGUMENTS and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                raise ValueError(f"invalid argument type for {self.name}.{name}: expected number")
+            if name == "index" and (isinstance(value, bool) or not isinstance(value, int)):
+                raise ValueError(f"invalid argument type for {self.name}.{name}: expected integer")
+            if name == "modifiers" and (
+                not isinstance(value, list) or any(not isinstance(item, str) for item in value)
+            ):
+                raise ValueError(f"invalid argument type for {self.name}.{name}: expected string list")
+            if name == "options" and not (
+                isinstance(value, str)
+                or (isinstance(value, list) and all(isinstance(item, str) for item in value))
+            ):
+                raise ValueError(f"invalid argument type for {self.name}.{name}: expected string or string list")
         rendered = [repr(self.arguments[name]) for name in positional]
         rendered.extend(
             f"{name}={self.arguments[name]!r}"
@@ -129,6 +159,7 @@ class BrowserGymPolicyRequest:
     step: int
     affordances: list[dict[str, Any]]
     previous_actions: list[dict[str, Any]]
+    accessibility_tree: str = ""
 
 
 class BrowserGymPolicy(Protocol):
@@ -167,12 +198,17 @@ class BrowserGymObserver:
     episode: BrowserGymEpisodeState
     screenshot_dir: Path
     sequence: int = 0
+    lease_ttl_ms: int = 120_000
 
     def capture(self) -> BrowserSnapshot:
         self.sequence += 1
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot = self.screenshot_dir / f"observation-{self.sequence:04d}.png"
-        snapshot = self.session.capture(page_id=self.episode.task_id, screenshot_path=str(screenshot))
+        snapshot = self.session.capture(
+            page_id=self.episode.task_id,
+            ttl_ms=self.lease_ttl_ms,
+            screenshot_path=str(screenshot),
+        )
         metadata = {
             **snapshot.observation.metadata,
             "browsergym": {
@@ -223,6 +259,7 @@ class BrowserGymPlanner:
                 for item in snapshot.affordance_model.affordances
             ],
             previous_actions=[asdict(action) for action in self.episode.actions],
+            accessibility_tree=_accessibility_tree_text(self.episode.observation),
         )
         action = self.policy.propose(request)
         if action is None:
@@ -315,6 +352,7 @@ class BrowserGymEpisodeResult:
     action_families: list[str]
     unsupported_actions: list[str]
     runtime_error: str
+    policy_stopped: bool
     trace_path: str
 
 
@@ -369,6 +407,7 @@ def run_browsergym_episode(
             sorted({action.name for action in episode.actions}),
             sorted(set(unsupported)),
             result_error or (result.error_code.value if result.error_code else ""),
+            bool(result.result.get("policy_stopped", False)),
             trace_path,
         )
     except Exception as exc:
@@ -387,6 +426,7 @@ def run_browsergym_episode(
             sorted({action.name for action in episode.actions}),
             unsupported,
             result_error,
+            False,
             "",
         )
     finally:
@@ -469,6 +509,11 @@ def write_browsergym_report(
         for episode in episodes
         if episode.runtime_status != RuntimeStep.DONE.value
     )
+    errors.extend(
+        f"policy stopped: {episode.task_id}:seed-{episode.seed}"
+        for episode in episodes
+        if episode.policy_stopped
+    )
     statistics = {
         task: _task_statistics([episode for episode in episodes if episode.task_id == task])
         for task in selected
@@ -495,7 +540,10 @@ def write_browsergym_report(
         "task_statistics": statistics,
         "action_family_coverage": sorted({name for episode in episodes for name in episode.action_families}),
         "unsupported_actions": sorted({name for episode in episodes for name in episode.unsupported_actions}),
-        "runtime_failure_count": sum(episode.runtime_status != RuntimeStep.DONE.value for episode in episodes),
+        "runtime_failure_count": sum(
+            episode.runtime_status != RuntimeStep.DONE.value or episode.policy_stopped
+            for episode in episodes
+        ),
         "episodes": [asdict(episode) for episode in episodes],
         "acceptance_errors": errors,
     }
@@ -617,7 +665,11 @@ def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> A
     bid = str(action.arguments.get("bid") or action.arguments.get("from_bid") or "")
     selector = f"[bid='{bid.replace(chr(39), chr(92) + chr(39))}']" if bid else ""
     match = next(
-        (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == selector),
+        (
+            item
+            for item in snapshot.affordance_model.affordances
+            if item.locator.get("bid") == bid or item.locator.get("selector") == selector
+        ),
         None,
     )
     if match is not None:
@@ -649,6 +701,35 @@ def _goal_text(goal: Any) -> str:
     if isinstance(goal, list):
         return "\n".join(str(item.get("text") or "") for item in goal if isinstance(item, dict)).strip()
     return str(goal)
+
+
+def _accessibility_tree_text(observation: dict[str, Any]) -> str:
+    tree = observation.get("axtree_object")
+    if not isinstance(tree, dict):
+        return ""
+    try:
+        from browsergym.utils.obs import flatten_axtree_to_str  # type: ignore[import-not-found]
+
+        return str(
+            flatten_axtree_to_str(
+                tree,
+                extra_properties=observation.get("extra_element_properties"),
+                with_visible=True,
+                with_clickable=True,
+                filter_visible_only=True,
+            )
+        )
+    except (ImportError, KeyError, TypeError, ValueError):
+        lines: list[str] = []
+        for node in tree.get("nodes", []):
+            if not isinstance(node, dict) or node.get("ignored"):
+                continue
+            role = str((node.get("role") or {}).get("value") or "")
+            name = str((node.get("name") or {}).get("value") or "")
+            bid = str(node.get("browsergym_id") or "")
+            if role or name or bid:
+                lines.append(f"[{bid}] {role} {name}".strip())
+        return "\n".join(lines)
 
 
 def _json_safe(value: Any) -> Any:

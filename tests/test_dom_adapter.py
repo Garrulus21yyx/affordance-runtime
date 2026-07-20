@@ -17,3 +17,15 @@ def test_dom_adapter_extracts_interactables_with_leases() -> None:
     assert [item.label for item in model.affordances] == ["Save", "Email"]
     assert all(item.lease.environment_revision == "rev-1" for item in model.affordances)
 
+
+def test_dom_adapter_preserves_browsergym_bid_alongside_stable_selector() -> None:
+    model = DomAdapter().transduce(
+        '<input id="field" bid="browsergym-field" aria-label="Name">',
+        environment_revision="rev-1",
+    )
+
+    assert model.affordances[0].locator == {
+        "selector": "#field",
+        "strategy": "css",
+        "bid": "browsergym-field",
+    }
