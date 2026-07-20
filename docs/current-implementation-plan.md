@@ -1,11 +1,10 @@
 # Current Implementation Plan
 
-Implementation status: M0-M2 and M5 are complete for the controlled local profile.
-M3 and M4 have working prototypes but retain evidence gates: evolution does not
-yet apply an executable artifact before fresh replay, and the task API has not
-yet been called by a real external parent agent. See
-[Implementation Status and Forward Gates](implementation-status.md). M6-M9
-below are the authoritative next steps; M5 is retained as completed evidence,
+Implementation status: M0-M3 and M5-M6 are complete for the controlled local
+profile. M4 has a working prototype but retains one evidence gate: the task API
+has not yet been called by a real external parent agent. See
+[Implementation Status and Forward Gates](implementation-status.md). M7-M9
+below are the authoritative next steps; M5-M6 are retained as completed evidence,
 and production-scale options remain non-blocking.
 
 ## 1. Authority
@@ -429,13 +428,14 @@ The three local scenarios and 3 x 7 matrix run successfully. The current seed
 argument does not yet generate distinct variants. SoM and WoT prove common
 contract reuse in controlled tests, not live-environment generalization.
 
-### M3: Assisted Evolution Prototype - in progress
+### M3: Assisted Evolution Prototype - done through M6
 
 Implemented: classification, proposal types, direction-aware gates,
 replay-category accounting, and before/after reporting.
 
-Remaining: apply an executable proposal to a fresh candidate runtime and persist
-the registry decision. M6 closes this gate.
+M6 applied a SHA-bound executable verifier proposal to a fresh candidate,
+generated new replay traces, persisted the registry decision, and proved
+rollback.
 
 ### M4: Local Integration Boundary - in progress
 
@@ -459,7 +459,7 @@ Evidence: `./scripts/reproduce_local.sh` passed from a clean clone at commit
 `evidence/m5-4528f25.md`. The recorded seed semantics remain
 `label_only_v1`, so randomized/generalization claims stay gated on M8.
 
-### M6: Executable Harness Evolution - required
+### M6: Executable Harness Evolution - done
 
 - add an executable payload for at least one verifier or policy patch
 - load it into a fresh candidate runtime
@@ -468,6 +468,12 @@ Evidence: `./scripts/reproduce_local.sh` passed from a clean clone at commit
 
 Exit: one failed trace produces an applied artifact that fixes the failure with
 zero safety regression.
+
+Evidence: a clean clone at `4cccc96a0dc14ebdd5c11f03896ff307835ad69c`
+loaded `verifier_patch-reversible_settings_update@1.0.0` into a fresh
+no-verifier runtime, produced six new Chromium traces across all mandatory
+categories, persisted acceptance, and proved runtime plus registry rollback.
+See `evidence/m6-4cccc96.md`.
 
 ### M7: Real Parent-Agent Integration - required for subagent claims
 

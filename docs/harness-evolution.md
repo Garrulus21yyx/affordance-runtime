@@ -205,12 +205,16 @@ review for:
 - broad selector or grounding changes
 - any artifact that changes approval behavior
 
-## 9. Resume Framing
+## 9. Current Implemented Boundary
 
-The v0.3 prerequisite gate and a real before/after regression report now exist.
-The implemented capability can be described as:
+M6 implements one deliberately narrow executable path: a verification failure
+can produce a SHA-bound `verifier_patch` that enables a whitelisted structural
+verification feature for a declared task. The patch is loaded into a fresh
+candidate runtime before new original, task-family, global-smoke, and
+safety-smoke Chromium runs. Acceptance and rollback are persisted, and a
+rolled-back artifact cannot be loaded again.
 
-> failed GUI interaction traces are analyzed, classified, and converted into
-> reusable skills, postcondition improvements, policy patches, and regression
-> fixtures, then validated through replay before being admitted into the
-> runtime.
+Other artifact types remain typed proposals only. Reusable skill, policy,
+affordance-rule, and benchmark-fixture payload loaders require their own narrow
+schemas, replay evidence, and review gates before they can be described as
+executable evolution.

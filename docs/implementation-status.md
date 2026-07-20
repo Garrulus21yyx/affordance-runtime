@@ -19,10 +19,10 @@ Status values:
 | M0 Design Freeze | done | contracts, state machine, approvals, trace schema, scenarios, gates | none |
 | M1 Web Gold Path | done | real Chromium pricing, pre/post observation, verification, artifacts, CLI, baseline | none |
 | M2 Local Reliability | done | three scenarios, fixed perturbations, approval/download oracle, 3 x 7 matrix | distinct seeds/public generalization move to M8 |
-| M3 Assisted Evolution | in_progress | classifier, typed proposal, replay-category report, direction-aware decision | executable payload, fresh candidate replay, persistence, rollback |
+| M3 Assisted Evolution | done | classifier, typed executable proposal, fresh replay, direction-aware decision, persistence, rollback | none |
 | M4 Integration Boundary | in_progress | in-process task service and bounded adapter | real external MCP/parent-agent call |
 | M5 Evidence Freeze | done | CI, package build, environment manifest, versioned reports, clean-clone reproduction at `4528f25` | none |
-| M6 Executable Evolution | pending | schemas/report prototype exist | apply artifact to fresh runtime and prove replay/rollback |
+| M6 Executable Evolution | done | SHA-bound verifier payload, fresh candidate, six new Chromium replays, persisted acceptance and rollback proof at `4cccc96` | none |
 | M7 External Integration | pending | local adapter contract exists | real parent completes read-only and approval-gated tasks |
 | M8 Generalization Eval | pending | one official MiniWoB++ compatibility smoke passed | repeated curated suite, distinct seeds, unseen layouts, real visual path |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
@@ -76,11 +76,11 @@ Status values:
 | --- | --- | --- |
 | Failure taxonomy classifier | done | typed seven-class classifier maps benchmark/trace evidence and is tested |
 | Typed declarative proposals | done | typed artifact types, proposal schema, applicability, source trace, negative examples, and validation plan |
-| Quarantine/version/rollback registry | in_progress | in-memory transitions are tested; durable registry and loaded-artifact rollback are absent |
+| Quarantine/version/rollback registry | done | atomic JSON registry store, accepted-only loading, version history, runtime unload, persisted rollback proof |
 | Direction-aware regression gate | done | higher/lower-is-better thresholds, allowed regression, missing-metric quarantine tests |
 | Replay-category accounting | done | decision requires original, family, global-smoke, and safety-smoke evidence |
-| Executable artifact applied before fresh replay | pending | current command compares existing Full Runtime with a broken ablation |
-| One real failure before/after report | in_progress | useful diagnosis/report exists, but no proposed payload is loaded into a candidate |
+| Executable artifact applied before fresh replay | done | SHA-bound verifier payload is loaded into a fresh no-verifier candidate before six real Chromium runs |
+| One real failure before/after report | done | no-verifier settings false accept is fixed; original/family/global/safety replay passes with no unsafe regression |
 
 ## M4: Optional Integrations
 
@@ -98,7 +98,7 @@ Status values:
 | Milestone | Required evidence |
 | --- | --- |
 | M5 | done: CI, package build, environment identity, clean-checkout command, and versioned benchmark/evolution summaries at `4528f25` |
-| M6 | executable payload, fresh candidate runtime, mandatory replay, persisted decision, rollback |
+| M6 | done: executable payload, fresh candidate runtime, mandatory replay, persisted decision, and rollback at `4cccc96` |
 | M7 | real parent-agent submission/approval/cancel/result/evidence/trace with no primitive GUI bypass |
 | M8 | distinct seeds, unseen layouts, repeated pinned MiniWoB++ subset, real visual grounding |
 | M9 | only after a failing restart/waiting case; simple durable state/events and uncertain-effect inspection |
@@ -167,3 +167,4 @@ Clean-checkout M5 gate:
 | 2026-07-20 | Audit | Added task-constraint policy, effect idempotency/compensation enforcement, post-approval state revalidation, async task adapter, and release thresholds | safety, coordinator, integration, benchmark validation, docs, tests | 49 tests; Ruff/mypy; 21-run local gate passed; evolution report and local async API passed |
 | 2026-07-20 | M8 compatibility | Ran official Farama MiniWoB++ click-button through BrowserSession, DOM Affordance, ActionContract, and DomExecutor | temporary official checkout only | done=true, raw reward=1.0; suite adapter pending |
 | 2026-07-20 | M5 | Added CI, package build dependency, focused Chromium smoke, environment manifest, versioned report output, and one-command clean-checkout reproduction | workflow, environment module, benchmark writer, scripts, evidence summary | clean clone at `4528f25`: 49 tests, Ruff, mypy, build, smoke, 21-run matrix, and evolution gate passed |
+| 2026-07-20 | M6 | Added SHA-bound executable verifier payloads, fresh candidate runtime replay, atomic registry persistence, accepted-only loading, versioned reports, and two-layer rollback proof | evolution modules, explicit benchmark runtime profiles, evidence gate, tests | clean clone at `4cccc96`: 51 tests plus 21 benchmark and 6 fresh replay runs; accepted registry and rolled-back proof verified |
