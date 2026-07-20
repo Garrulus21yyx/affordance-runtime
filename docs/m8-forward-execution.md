@@ -22,7 +22,7 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | M8.1 Coordinator-level DOM/visual/WoT conformance | completed | real node-wot 0.9.2 shared oracle; three Coordinator traces; visual pixel detection and four screenshots |
 | M8.1 clean-checkout container reproduction | completed | clean `40fd93b`; 63 stable runs agree; versioned evidence summary |
 | M8.2A task intake and GeneralistLMPlanner | completed | typed compiler/revision, semantic contracts, Mistral SaaS gates, common surface planner, and official BrowserGym smoke at `7edaa97`/`508486b` |
-| M8.2 BrowserGym full-path adapter and expanded MiniWoB ladder | in progress | Generalist PR matrix now runs through the full path (14/18 official success); nightly/release suites and public ladder remain |
+| M8.2 BrowserGym full-path adapter and expanded MiniWoB ladder | in progress | Generalist PR matrix now runs through the full path (15/18 official success); nightly/release suites and public ladder remain |
 | M8.2 public suites in planned order | pending | ScreenSpot, WorkArena L1, WebArena-Verified, WASP gates |
 | M8.3 incident/signature/loop detection | completed | repeated/no-progress/A-B/stale/verifier/fallback/duplicate-effect detection at `07e406f` |
 | M8.3 executable recovery artifacts | completed | quarantined policy, four fresh replays, acceptance persistence, rollback and uncertainty safety proof |
@@ -42,3 +42,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-21 | M8.2B PR checkpoint | GeneralistLMPlanner ran the 18-episode official MiniWoB PR matrix with complete episode coverage; slider adjustment is an explicit remaining semantic gap | `evidence/m8.2b-pr-generalist-0a7ff46.md` |
 | 2026-07-21 | ScreenSpot harness | Added strict offline ScreenSpot point-in-box scoring with complete-coverage diagnostics; no official assets or score are claimed | `benchmarks/screenspot.py`, `benchmark-plan.md` |
 | 2026-07-21 | WorkArena preflight | Added credential-safe isolated deployment gate for official L1 registration and instance-source readiness; no oracle or WorkArena score is claimed | `benchmarks/workarena.py`, `benchmark-plan.md` |
+| 2026-07-21 | Native select checkpoint | Bound native option activations to their owning select and increased the official Generalist PR result to 15/18; slider adjustment remains an explicit gap | `evidence/m8.2b-pr-native-select-0b2c542.md` |
