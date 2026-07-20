@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from threading import RLock
 from time import time
 from typing import Any, Callable
 
+from affordance_runtime.task_intake import TaskSpec
+
 
 class ServiceRunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_CLARIFICATION = "waiting_clarification"
     SUCCESS = "success"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -29,6 +32,27 @@ class TaskRequest:
     target: str
     constraints: dict[str, Any] = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
+    task_spec: TaskSpec | None = None
+
+    def __post_init__(self) -> None:
+        task_spec = TaskSpec.model_validate(self.task_spec) if isinstance(self.task_spec, dict) else self.task_spec
+        object.__setattr__(self, "task_spec", task_spec)
+        if task_spec is None:
+            return
+        if task_spec.task_id != self.run_id:
+            raise ValueError("TaskRequest run_id does not match TaskSpec task_id")
+        if self.goal and self.goal != task_spec.objective:
+            raise ValueError("TaskRequest goal does not match TaskSpec objective")
+        requested_capabilities = list(task_spec.requested_capabilities)
+        if self.capabilities and self.capabilities != requested_capabilities:
+            raise ValueError("TaskRequest capabilities do not match TaskSpec requested_capabilities")
+        object.__setattr__(self, "capabilities", requested_capabilities)
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        if self.task_spec is not None:
+            value["task_spec"] = self.task_spec.model_dump(mode="json")
+        return value
 
 
 @dataclass(frozen=True)
@@ -67,7 +91,7 @@ class RunView:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "request": asdict(self.request),
+            "request": self.request.to_dict(),
             "status": self.status.value,
             "execution": asdict(self.execution) if self.execution else None,
             "approval": asdict(self.approval) if self.approval else None,
@@ -106,7 +130,32 @@ class TaskRuntimeService:
                 "done": ServiceRunStatus.SUCCESS,
                 "success": ServiceRunStatus.SUCCESS,
                 "waiting_approval": ServiceRunStatus.WAITING_APPROVAL,
+                "waiting_clarification": ServiceRunStatus.WAITING_CLARIFICATION,
             }.get(execution.status, ServiceRunStatus.FAILED)
+            view.updated_at_s = time()
+            return view
+
+    def revise_task(self, run_id: str, task_spec: TaskSpec) -> RunView:
+        with self._lock:
+            view = self._get(run_id)
+            if view.status != ServiceRunStatus.WAITING_CLARIFICATION:
+                raise ValueError(f"task cannot be revised in status {view.status.value}")
+            previous = view.request.task_spec
+            if previous is None:
+                raise ValueError("legacy task request has no revisable TaskSpec")
+            if task_spec.task_id != previous.task_id:
+                raise ValueError("TaskSpec revision cannot change task_id")
+            if task_spec.revision <= previous.revision:
+                raise ValueError("TaskSpec revision must increase")
+            view.request = replace(
+                view.request,
+                goal=task_spec.objective,
+                target=task_spec.targets[0] if task_spec.targets else view.request.target,
+                task_spec=task_spec,
+            )
+            view.execution = None
+            view.approval = None
+            view.status = ServiceRunStatus.QUEUED
             view.updated_at_s = time()
             return view
 
@@ -206,6 +255,7 @@ class TaskToolAdapter:
             "gui_execute_task",
             "gui_get_run",
             "gui_approve_task",
+            "gui_revise_task",
             "gui_cancel_task",
             "gui_get_result",
             "gui_get_evidence",
@@ -226,6 +276,11 @@ class TaskToolAdapter:
                 str(arguments["run_id"]),
                 capability=str(arguments["capability"]),
                 approver=str(arguments["approver"]),
+            ).to_dict()
+        if tool == "gui_revise_task":
+            return self.service.revise_task(
+                str(arguments["run_id"]),
+                TaskSpec.model_validate(arguments["task_spec"]),
             ).to_dict()
         if tool == "gui_cancel_task":
             return self.service.cancel(str(arguments["run_id"])).to_dict()

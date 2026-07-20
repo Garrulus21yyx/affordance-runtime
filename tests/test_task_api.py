@@ -2,6 +2,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
     ServiceRunStatus,
@@ -10,6 +12,7 @@ from affordance_runtime.integrations.task_api import (
     TaskRuntimeService,
     TaskToolAdapter,
 )
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
 def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> None:
@@ -85,3 +88,54 @@ def test_task_adapter_async_execution_keeps_event_loop_interface() -> None:
     value = asyncio.run(adapter.call_async("gui_execute_task", {"run_id": "async-run"}))
 
     assert value["status"] == "success"
+
+
+def _task_spec(revision: int, *, objective: str = "Update settings") -> TaskSpec:
+    return TaskSpec(
+        task_id="clarify-run",
+        revision=revision,
+        objective=objective,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("settings",),
+        success_criteria=("settings updated",),
+        requested_capabilities=("settings.write",),
+        source_request_ref="request-clarify",
+    )
+
+
+def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision() -> None:
+    service = TaskRuntimeService(
+        lambda request, approval: TaskExecution(
+            "waiting_clarification" if request.task_spec and request.task_spec.revision == 1 else "done"
+        )
+    )
+    adapter = TaskToolAdapter(service)
+    submitted = adapter.call(
+        "gui_submit_task",
+        {
+            "run_id": "clarify-run",
+            "scenario": "settings",
+            "goal": "Update settings",
+            "target": "settings",
+            "capabilities": ["settings.write"],
+            "task_spec": _task_spec(1).model_dump(mode="json"),
+        },
+    )
+    assert submitted["request"]["task_spec"]["revision"] == 1
+    assert adapter.call("gui_execute_task", {"run_id": "clarify-run"})["status"] == "waiting_clarification"
+
+    with pytest.raises(ValueError, match="must increase"):
+        adapter.call(
+            "gui_revise_task",
+            {"run_id": "clarify-run", "task_spec": _task_spec(1).model_dump(mode="json")},
+        )
+    revised = adapter.call(
+        "gui_revise_task",
+        {
+            "run_id": "clarify-run",
+            "task_spec": _task_spec(2, objective="Update the personal settings profile").model_dump(mode="json"),
+        },
+    )
+    assert revised["status"] == "queued"
+    assert revised["request"]["task_spec"]["revision"] == 2
+    assert adapter.call("gui_execute_task", {"run_id": "clarify-run"})["status"] == "success"
