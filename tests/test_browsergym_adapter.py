@@ -11,9 +11,12 @@ from affordance_runtime.benchmarks.browsergym import (
     BROWSERGYM_MINIWOB_COMMIT,
     BROWSERGYM_VERSION,
     BrowserGymAction,
+    BrowserGymEpisodeResult,
     BrowserGymPolicyRequest,
     GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
+    _load_browsergym_checkpoints,
+    _write_browsergym_checkpoint,
     browsergym_profile,
     run_browsergym_episode,
     run_browsergym_generalist_episode,
@@ -339,3 +342,25 @@ def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path:
     assert result.policy_stopped is True
     assert report["runtime_failure_count"] == 1
     assert report["acceptance_errors"] == ["policy stopped: click-button:seed-4"]
+
+
+def test_browsergym_generalist_episode_checkpoints_are_atomic_and_resume_only_expected(tmp_path: Path) -> None:
+    episode = BrowserGymEpisodeResult(
+        task_id="click-button", seed=4, runtime_status="done", official_success=True,
+        official_reward=1.0, terminated=True, truncated=False, action_count=1,
+        action_families=["click"], unsupported_actions=[], runtime_error="", policy_stopped=False,
+        trace_path="artifact/events.jsonl",
+    )
+    _write_browsergym_checkpoint(tmp_path, episode)
+    ignored = BrowserGymEpisodeResult(
+        task_id="other", seed=0, runtime_status="done", official_success=True,
+        official_reward=1.0, terminated=True, truncated=False, action_count=1,
+        action_families=["click"], unsupported_actions=[], runtime_error="", policy_stopped=False,
+        trace_path="artifact/ignored.jsonl",
+    )
+    _write_browsergym_checkpoint(tmp_path, ignored)
+
+    checkpoints = _load_browsergym_checkpoints(tmp_path, {("click-button", 4)})
+
+    assert checkpoints == {("click-button", 4): episode}
+    assert not list(tmp_path.glob("*.tmp"))

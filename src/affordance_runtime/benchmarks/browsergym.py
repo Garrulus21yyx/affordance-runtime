@@ -862,6 +862,7 @@ def run_browsergym_miniwob_generalist_suite(
     profile: str,
     model: ModelPort,
     headless: bool = True,
+    resume: bool = False,
 ) -> dict[str, Any]:
     """Run the standard MiniWoB matrix through the common GeneralistLMPlanner.
 
@@ -886,26 +887,37 @@ def run_browsergym_miniwob_generalist_suite(
     selected, seeds = browsergym_profile(registered, profile)
     missing_tasks = sorted(set(selected) - set(registered))
     episodes: list[BrowserGymEpisodeResult] = []
+    expected = {(task_id, seed) for task_id in selected if task_id not in missing_tasks for seed in seeds}
+    checkpoint_dir = output_dir / "episodes"
+    reused = _load_browsergym_checkpoints(checkpoint_dir, expected) if resume else {}
+    episodes.extend(reused.values())
+    newly_completed = 0
+    interrupted = False
     try:
         base_url = f"http://{server.server_name}:{server.server_port}/miniwob/"
         for task_id in selected:
             if task_id in missing_tasks:
                 continue
             for seed in seeds:
+                if (task_id, seed) in reused:
+                    continue
                 environment = gym.make(
                     f"browsergym/miniwob.{task_id}",
                     task_kwargs={"base_url": base_url},
                     headless=headless,
                 )
-                episodes.append(
-                    run_browsergym_generalist_episode(
-                        environment,
-                        model,
-                        task_id=task_id,
-                        seed=seed,
-                        artifact_root=output_dir / "artifacts",
-                    )
+                episode = run_browsergym_generalist_episode(
+                    environment,
+                    model,
+                    task_id=task_id,
+                    seed=seed,
+                    artifact_root=output_dir / "artifacts",
                 )
+                episodes.append(episode)
+                _write_browsergym_checkpoint(checkpoint_dir, episode)
+                newly_completed += 1
+    except KeyboardInterrupt:
+        interrupted = True
     finally:
         server.shutdown()
         server.server_close()
@@ -924,16 +936,52 @@ def run_browsergym_miniwob_generalist_suite(
             "model_provider": model.provider,
             "model_name": model.model,
             "model_endpoint_class": model.endpoint_class,
+            "checkpoint_reused_episode_count": len(reused),
+            "checkpoint_new_episode_count": newly_completed,
+            "run_complete": not interrupted and len({(item.task_id, item.seed) for item in episodes}) == len(expected),
         }
     )
     report["acceptance_errors"] = [
         *(f"registered task missing: {task}" for task in missing_tasks),
+        *( ["run interrupted; resume with --resume"] if interrupted else [] ),
         *report["acceptance_errors"],
     ]
     (output_dir / "browsergym-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
     )
     return report
+
+
+def _checkpoint_filename(task_id: str, seed: int) -> str:
+    safe_task = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in task_id)
+    return f"{safe_task}-seed-{seed}.json"
+
+
+def _write_browsergym_checkpoint(directory: Path, episode: BrowserGymEpisodeResult) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / _checkpoint_filename(episode.task_id, episode.seed)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(asdict(episode), indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _load_browsergym_checkpoints(
+    directory: Path, expected: set[tuple[str, int]]
+) -> dict[tuple[str, int], BrowserGymEpisodeResult]:
+    if not directory.exists():
+        return {}
+    results: dict[tuple[str, int], BrowserGymEpisodeResult] = {}
+    for path in directory.glob("*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"invalid BrowserGym checkpoint: {path}")
+        episode = BrowserGymEpisodeResult(**payload)
+        key = (episode.task_id, episode.seed)
+        if key in expected:
+            if key in results:
+                raise ValueError(f"duplicate BrowserGym checkpoint: {key[0]}:seed-{key[1]}")
+            results[key] = episode
+    return results
 
 
 def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> Affordance:

@@ -59,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     browsergym_generalist.add_argument("--output", type=Path, default=Path("browsergym-generalist-results"))
     browsergym_generalist.add_argument("--profile", choices=("pr", "nightly", "release"), default="pr")
     browsergym_generalist.add_argument("--headed", action="store_true")
+    browsergym_generalist.add_argument("--resume", action="store_true", help="reuse complete per-episode checkpoints in --output")
 
     screenspot = subcommands.add_parser(
         "benchmark-screenspot",
@@ -157,6 +158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             profile=args.profile,
             model=model_port_from_environment(),
             headless=not args.headed,
+            resume=args.resume,
         )
         print(json.dumps(browsergym_report, indent=2, sort_keys=True))
         return 0 if not browsergym_report["acceptance_errors"] else 1
