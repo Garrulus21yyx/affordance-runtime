@@ -11,6 +11,6 @@ build/
 artifacts/
 eval_outputs/
 traces/
+/evidence/
 .env
 .env.*
-

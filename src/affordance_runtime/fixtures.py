@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
+LOCAL_SAAS_FIXTURE_VERSION = "1.0.0"
 PRICING_DATA: dict[str, dict[str, Any]] = {
     "pro": {"users": 25, "projects": 100, "support": "business-hours"},
     "enterprise": {"users": "unlimited", "projects": "unlimited", "support": "24/7"},

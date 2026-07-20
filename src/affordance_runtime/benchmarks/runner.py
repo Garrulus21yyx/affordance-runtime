@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
@@ -31,6 +32,8 @@ class BenchmarkReport:
     runs: list[BenchmarkRun]
     metrics_by_variant: dict[str, MetricReport] = field(default_factory=dict)
     acceptance_errors: list[str] = field(default_factory=list)
+    environment: dict[str, object] = field(default_factory=dict)
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @classmethod
     def build(cls, suite_version: str, runs: list[BenchmarkRun]) -> "BenchmarkReport":
@@ -106,6 +109,8 @@ class BenchmarkReportWriter:
                         variant: metric.values for variant, metric in report.metrics_by_variant.items()
                     },
                     "acceptance_errors": report.acceptance_errors,
+                    "environment": report.environment,
+                    "generated_at": report.generated_at,
                     "runs": [asdict(run) for run in report.runs],
                 },
                 indent=2,
@@ -118,7 +123,23 @@ class BenchmarkReportWriter:
             writer = csv.DictWriter(handle, fieldnames=list(asdict(report.runs[0]).keys()) if report.runs else ["task_id"])
             writer.writeheader()
             writer.writerows(asdict(run) for run in report.runs)
-        return {"json": json_path, "markdown": markdown_path, "csv": csv_path}
+        manifest_path = self.output_dir / "environment.json"
+        manifest_path.write_text(json.dumps(report.environment, indent=2, sort_keys=True), encoding="utf-8")
+        commit = str(report.environment.get("runtime_commit") or "working-tree")[:12]
+        version_dir = self.output_dir / "versions"
+        version_dir.mkdir(parents=True, exist_ok=True)
+        versioned_json = version_dir / f"benchmark-{report.suite_version}-{commit}.json"
+        versioned_markdown = version_dir / f"benchmark-{report.suite_version}-{commit}.md"
+        versioned_json.write_text(json_path.read_text(encoding="utf-8"), encoding="utf-8")
+        versioned_markdown.write_text(markdown_path.read_text(encoding="utf-8"), encoding="utf-8")
+        return {
+            "json": json_path,
+            "markdown": markdown_path,
+            "csv": csv_path,
+            "manifest": manifest_path,
+            "versioned_json": versioned_json,
+            "versioned_markdown": versioned_markdown,
+        }
 
     @staticmethod
     def _markdown(report: BenchmarkReport) -> str:
@@ -128,6 +149,18 @@ class BenchmarkReportWriter:
         for variant, values in sorted(report.metrics_by_variant.items()):
             lines.append("| " + variant + " | " + " | ".join(f"{values.values.get(metric, 0.0):.4f}" for metric in metrics) + " |")
         lines.extend(["", f"Runs: {len(report.runs)}", ""])
+        if report.environment:
+            lines.extend(
+                [
+                    "## Environment",
+                    "",
+                    f"- Runtime commit: `{report.environment.get('runtime_commit', 'unknown')}`",
+                    f"- Browser: `{report.environment.get('browser_version', 'unknown')}`",
+                    f"- Fixture: `{report.environment.get('fixture_version', 'unknown')}`",
+                    f"- Seed semantics: `{report.environment.get('seed_semantics', 'unknown')}`",
+                    "",
+                ]
+            )
         lines.extend(
             [
                 "## Release Acceptance",

@@ -16,8 +16,9 @@ from affordance_runtime.benchmarks.spec import BenchmarkRun, BenchmarkTask
 from affordance_runtime.benchmarks.suites import mvp_benchmark_tasks
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator, RuntimeFeatures
+from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
-from affordance_runtime.fixtures import EXPORT_SHA256, PRICING_DATA, create_fixture_server
+from affordance_runtime.fixtures import EXPORT_SHA256, LOCAL_SAAS_FIXTURE_VERSION, PRICING_DATA, create_fixture_server
 from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 
@@ -53,6 +54,7 @@ class LocalSaasRunCase:
     base_url: str
     artifact_root: Path
     headless: bool = True
+    observed_browser_version: str = ""
 
     def __call__(self, task: BenchmarkTask, variant: str, seed: int) -> BenchmarkRun:
         scenario = self._scenario(task.task_id)
@@ -131,6 +133,7 @@ class LocalSaasRunCase:
         target = f"{self.base_url}/{ {'pricing': 'pricing', 'settings': 'settings', 'export': 'reports'}[scenario] }"
         try:
             with BrowserSession.launch(target, headless=self.headless) as session:
+                self.observed_browser_version = self.observed_browser_version or session.browser_version
                 if scenario == "pricing":
                     session.click("#show-pro")
                     session.click("#show-enterprise")
@@ -175,6 +178,7 @@ class LocalSaasRunCase:
         }
         planner = planners[scenario]
         with BrowserSession.launch(target, headless=self.headless) as session:
+            self.observed_browser_version = self.observed_browser_version or session.browser_version
             router = ExecutorRouter()
             router.register(DomExecutor(session))
             observer: Any = DriftOnceObserver(session) if scenario == "settings" else session
@@ -220,12 +224,19 @@ def run_local_benchmark(
     thread.start()
     try:
         base_url = f"http://{server.server_name}:{server.server_port}"
+        run_case = LocalSaasRunCase(base_url, output_dir / "artifacts", headless=headless)
         runner = BenchmarkRunner(
             mvp_benchmark_tasks(),
-            LocalSaasRunCase(base_url, output_dir / "artifacts", headless=headless),
+            run_case,
             seeds=seeds,
         )
         report = runner.run()
+        report.environment = environment_manifest(
+            browser_version=run_case.observed_browser_version,
+            fixture_version=LOCAL_SAAS_FIXTURE_VERSION,
+            suite_version=report.suite_version,
+            seed_semantics="label_only_v1",
+        ).to_dict()
         paths = BenchmarkReportWriter(output_dir).write(report)
         return report, paths
     finally:

@@ -21,7 +21,7 @@ def test_benchmark_runner_builds_all_variants_and_report_formats(tmp_path) -> No
     paths = BenchmarkReportWriter(tmp_path).write(report)
 
     assert len(report.runs) == 4
-    assert set(paths) == {"json", "markdown", "csv"}
+    assert set(paths) == {"json", "markdown", "csv", "manifest", "versioned_json", "versioned_markdown"}
     assert json.loads(paths["json"].read_text())["suite_version"] == "local-saas-v1"
     assert "| full_runtime |" in paths["markdown"].read_text()
 

@@ -106,6 +106,13 @@ class BrowserSession:
     def url(self) -> str:
         return str(getattr(self._page, "url", "") or self._initial_url)
 
+    @property
+    def browser_version(self) -> str:
+        if self._owner is None:
+            return ""
+        browser = self._owner[1]
+        return str(getattr(browser, "version", ""))
+
     def capture(
         self,
         *,
