@@ -72,7 +72,15 @@ class _InteractiveParser(HTMLParser):
             return
 
         self._tag_counts[tag] = self._tag_counts.get(tag, 0) + 1
-        node = {"tag": tag, "attr": attr, "nth": self._tag_counts[tag], "text_parts": []}
+        parent = self._open[-1] if self._open else None
+        node: dict[str, Any] = {
+            "tag": tag,
+            "attr": attr,
+            "nth": self._tag_counts[tag],
+            "text_parts": [],
+            "parent_tag": parent["tag"] if parent else "",
+            "parent_attr": dict(parent["attr"]) if parent else {},
+        }
         self.nodes.append(node)
         self._open.append(node)
 
@@ -220,6 +228,16 @@ class DomAdapter:
                         "selector": selector,
                         "strategy": "css",
                         **({"bid": attr["bid"]} if attr.get("bid") else {}),
+                        **(
+                            {
+                                "select_owner_bid": node["parent_attr"]["bid"],
+                                "select_option": attr.get("value") or _label_for(node),
+                            }
+                            if node["tag"] == "option"
+                            and node["parent_tag"] == "select"
+                            and node["parent_attr"].get("bid")
+                            else {}
+                        ),
                     },
                     lease=lease,
                     backend_candidates=["dom"],

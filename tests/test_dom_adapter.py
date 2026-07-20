@@ -38,3 +38,15 @@ def test_dom_adapter_marks_download_links_as_download_actions() -> None:
     )
 
     assert model.affordances[0].action == "download"
+
+
+def test_dom_adapter_preserves_native_select_ownership_for_option_semantics() -> None:
+    model = DomAdapter().transduce(
+        '<select bid="select-bid"><option bid="option-bid" value="earth">Earth</option></select>',
+        environment_revision="rev-1",
+    )
+
+    option = model.affordances[1]
+    assert option.action == "click"
+    assert option.locator["select_owner_bid"] == "select-bid"
+    assert option.locator["select_option"] == "earth"

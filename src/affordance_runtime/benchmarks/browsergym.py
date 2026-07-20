@@ -348,7 +348,14 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
         if not bid:
             raise ValueError("Generalist BrowserGym binding requires an affordance bid")
         if proposal.action_kind == PlannerActionKind.ACTIVATE:
-            action = BrowserGymAction("click", {"bid": bid})
+            select_owner_bid = str(affordance.locator.get("select_owner_bid") or "")
+            select_option = str(affordance.locator.get("select_option") or "")
+            if select_owner_bid and select_option:
+                action = BrowserGymAction(
+                    "select_option", {"bid": select_owner_bid, "options": select_option}
+                )
+            else:
+                action = BrowserGymAction("click", {"bid": bid})
         elif proposal.action_kind == PlannerActionKind.TYPE_TEXT:
             action = BrowserGymAction("fill", {"bid": bid, "value": str(proposal.parameters["text"])})
         elif proposal.action_kind == PlannerActionKind.SELECT_OPTION:

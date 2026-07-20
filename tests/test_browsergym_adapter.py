@@ -6,19 +6,25 @@ from typing import Any, Sequence, TypeVar
 import pytest
 from pydantic import BaseModel
 
+from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.benchmarks.browsergym import (
     BROWSERGYM_MINIWOB_COMMIT,
     BROWSERGYM_VERSION,
     BrowserGymAction,
     BrowserGymPolicyRequest,
+    GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
     browsergym_profile,
     run_browsergym_episode,
     run_browsergym_generalist_episode,
     write_browsergym_report,
 )
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -224,6 +230,39 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert "PlannerContextBuilt" in events
     assert "PlannerProposalProduced" in events
     assert "ContractBuilt" in events
+
+
+def test_generalist_browsergym_adapter_binds_native_option_activation_as_select() -> None:
+    model = DomAdapter().transduce(
+        '<select bid="select-bid"><option bid="option-bid" value="earth">Earth</option></select>',
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1", snapshot_id="snap-1", page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Choose Earth")
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id="task-1", revision=1, objective="Choose Earth", operation_class=OperationClass.READ_ONLY,
+        targets=("select",), success_criteria=("Earth is selected",), source_request_ref="test",
+    )
+    proposal = PlannerProposal(
+        proposal_id="option", based_on_task_revision=1, based_on_state_version=state.version,
+        snapshot_id="snap-1", action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id="dom_option_1",
+    )
+
+    contract = GeneralistBrowserGymContractBuilder().build(
+        proposal, task, state, BrowserSnapshot(observation, model)
+    )
+
+    assert contract.action == "select_option"
+    assert contract.parameters["action"] == {
+        "name": "select_option", "arguments": {"bid": "select-bid", "options": "earth"}
+    }
 
 
 def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(tmp_path: Path) -> None:
