@@ -40,10 +40,18 @@ class BrowserSnapshot:
 class BrowserSession:
     """One browser context owned by one runtime run."""
 
-    def __init__(self, page: PageDriver, *, initial_url: str = "", owner: Any = None) -> None:
+    def __init__(
+        self,
+        page: PageDriver,
+        *,
+        initial_url: str = "",
+        owner: Any = None,
+        lease_ttl_ms: int = 2_000,
+    ) -> None:
         self._page = page
         self._initial_url = initial_url
         self._owner = owner
+        self._lease_ttl_ms = lease_ttl_ms
         self._dom = DomAdapter()
 
     @classmethod
@@ -54,6 +62,7 @@ class BrowserSession:
         headless: bool = True,
         action_timeout_ms: int = 8_000,
         navigation_attempts: int = 3,
+        lease_ttl_ms: int = 2_000,
     ) -> "BrowserSession":
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
@@ -80,7 +89,12 @@ class BrowserSession:
             browser.close()
             playwright.stop()
             raise last_error
-        return cls(cast(PageDriver, page), initial_url=url, owner=(playwright, browser, context))
+        return cls(
+            cast(PageDriver, page),
+            initial_url=url,
+            owner=(playwright, browser, context),
+            lease_ttl_ms=lease_ttl_ms,
+        )
 
     def open(self, url: str) -> None:
         self._page.goto(url)
@@ -119,7 +133,7 @@ class BrowserSession:
         self,
         *,
         page_id: str = "page",
-        ttl_ms: int = 2_000,
+        ttl_ms: int | None = None,
         screenshot_path: str | None = None,
     ) -> BrowserSnapshot:
         """Capture one coherent HTML observation and derive its affordances."""
@@ -133,12 +147,13 @@ class BrowserSession:
         if screenshot_path is not None:
             screenshot_bytes = self._page.screenshot(path=screenshot_path)
             screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
+        effective_ttl_ms = self._lease_ttl_ms if ttl_ms is None else ttl_ms
         model = self._dom.transduce(
             html,
             environment_revision=environment_revision,
             page_id=page_id,
             url=url,
-            ttl_ms=ttl_ms,
+            ttl_ms=effective_ttl_ms,
             snapshot_id=snapshot_id,
         )
         observation = Observation(

@@ -105,7 +105,7 @@ def run(scenario_name: str, artifact_root: Path) -> dict[str, Any]:
         scenario = _scenario(scenario_name, base_url)
         target = f"{base_url}{scenario.path}"
         model = model_port_from_environment()
-        with BrowserSession.launch(target, headless=True) as session:
+        with BrowserSession.launch(target, headless=True, lease_ttl_ms=120_000) as session:
             router = ExecutorRouter()
             router.register(DomExecutor(session))
             pipeline = GeneralistTaskPipeline(

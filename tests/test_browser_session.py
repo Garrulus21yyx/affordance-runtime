@@ -35,6 +35,12 @@ def test_browser_session_captures_observation_and_affordances() -> None:
     assert snapshot.affordance_model.affordances[0].label == "Save"
 
 
+def test_browser_session_uses_configured_default_affordance_lease() -> None:
+    snapshot = BrowserSession(FakePage(), lease_ttl_ms=120_000).capture(page_id="settings")
+
+    assert snapshot.affordance_model.affordances[0].lease.ttl_ms == 120_000
+
+
 def test_browser_session_reset_uses_initial_url() -> None:
     page = FakePage()
     session = BrowserSession(page, initial_url="http://fixture/start")
