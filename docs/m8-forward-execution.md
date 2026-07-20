@@ -49,3 +49,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-21 | WebArena-Verified evaluator bridge | Added shell-free delegation to upstream deterministic `eval-tasks` and fail-closed result coverage; real agent traces remain required | `benchmarks/webarena_verified.py` |
 | 2026-07-21 | WASP configuration check | Selected a digest-bound 12-case official security subset without copying malicious instructions; upstream isolated execution remains required | `evidence/m8.2b-wasp-manifest.md` |
 | 2026-07-21 | Generalist v6 regression | Re-ran the official PR matrix after marking page-derived context untrusted; result remained 15/18 with slider gap explicit | `evidence/m8.2b-pr-generalist-v6.md` |
+| 2026-07-21 | Resumable matrix check | Added atomic per-episode checkpointing and verified a zero-new/18-reused PR resume, preserving official diagnostics | `evidence/m8.2b-browsergym-checkpoint-5837984.md` |
