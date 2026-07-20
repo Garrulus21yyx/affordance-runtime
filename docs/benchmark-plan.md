@@ -226,6 +226,22 @@ not be silently excluded.
 | 5 | [VisualWebArena](https://github.com/web-arena-x/visualwebarena) | after multimodal routing is stable |
 | Future | OSWorld | after the Web harness is mature |
 
+### ScreenSpot Offline Harness
+
+`affordance-runtime benchmark-screenspot` is the first public-ladder adapter.
+It consumes the unmodified ScreenSpot annotation JSON and an explicit prediction
+artifact rather than embedding a benchmark solver. The annotation fields are
+`img_filename`, `instruction`, and pixel `bbox=[x, y, width, height]`; a
+prediction is a `sample_id` plus `point_xy` (or `x`/`y`), with an explicit
+`normalized` flag when coordinates are in `[0, 1]` image units.
+
+The report scores only whether the predicted point is inside the ground-truth
+box, verifies image dimensions, splits results by `data_type` and
+`data_source`, and fails closed on missing, duplicate, or unexpected
+predictions. It is a reproducible offline evaluation harness, not an official
+ScreenSpot score until the complete official assets and a versioned prediction
+artifact are supplied.
+
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and

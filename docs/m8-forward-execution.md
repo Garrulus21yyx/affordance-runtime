@@ -40,3 +40,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-20 | M8.3 clean evidence | Clean `07e406f`: 69 tests, static checks, build, 63/63 local runs, four mandatory fresh replays, persisted acceptance, and rollback | `evidence/m8.3-07e406f.md` |
 | 2026-07-21 | M8.2A evidence | Controlled Mistral compiler suite, local verified read/write/approval runs, cross-surface common planner tests, and official BrowserGym GeneralistLMPlanner smoke | `evidence/m8.2a-7edaa97.md` |
 | 2026-07-21 | M8.2B PR checkpoint | GeneralistLMPlanner ran the 18-episode official MiniWoB PR matrix with complete episode coverage; slider adjustment is an explicit remaining semantic gap | `evidence/m8.2b-pr-generalist-0a7ff46.md` |
+| 2026-07-21 | ScreenSpot harness | Added strict offline ScreenSpot point-in-box scoring with complete-coverage diagnostics; no official assets or score are claimed | `benchmarks/screenspot.py`, `benchmark-plan.md` |
