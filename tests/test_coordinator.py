@@ -1,11 +1,16 @@
 import asyncio
 from dataclasses import dataclass, replace
+from typing import Sequence, TypeVar
+
+from pydantic import BaseModel
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.intent_compiler import LLMIntentCompiler
+from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
     ContractBuilder,
     ContractRequirements,
@@ -14,7 +19,8 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
+from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.trace import TraceDag
 
 
@@ -266,6 +272,77 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     assert events.count("PlannerProposalProduced") == 2
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
     assert contract_event.payload["proposal_id"] == "proposal-save"
+
+
+T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class _PipelineIntentModel:
+    provider: str = "fixed"
+    model: str = "fixed"
+    endpoint_class: str = "test"
+    last_call: ModelCallRecord | None = None
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del messages, config
+        return output_schema.model_validate(
+            IntentDraft(
+                objective="Save settings",
+                requested_effects=(
+                    RequestedEffect(
+                        operation_class=OperationClass.REVERSIBLE_WRITE,
+                        target="settings",
+                        capability="settings.write",
+                        source_ref="pipeline-run",
+                    ),
+                ),
+                candidate_success_criteria=("settings are saved",),
+                candidate_evidence_requirements=("saved observation",),
+            ).model_dump()
+        )
+
+
+def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
+    pipeline = GeneralistTaskPipeline(
+        compiler=LLMIntentCompiler(_PipelineIntentModel()),
+        coordinator=RunCoordinator(
+            observer=FakeObserver(),
+            planner=AsyncSemanticSavePlanner(),
+            executor=FakeExecutor(),
+            contract_builder=ContractBuilder(
+                requirements={
+                    "dom_button_1": ContractRequirements(
+                        verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                        required_capabilities=("settings.write",),
+                        idempotency_key="semantic-save-v1",
+                        compensation="restore settings",
+                    )
+                }
+            ),
+        ),
+        granted_capabilities=("settings.write", "admin.unrequested"),
+    )
+
+    result = asyncio.run(
+        pipeline.run(UserRequest(request_id="pipeline-run", raw_text="Save my settings"))
+    )
+
+    assert result.status == "done"
+    assert result.coordinator is not None
+    assert [node.kind for node in result.trace.nodes][:4] == [
+        "UserRequestReceived",
+        "IntentDraftProduced",
+        "TaskSpecCreated",
+        "TaskCreated",
+    ]
+    assert "PlannerProposalProduced" in [node.kind for node in result.trace.nodes]
+    assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
 
 
 def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
