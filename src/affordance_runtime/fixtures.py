@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 LOCAL_SAAS_FIXTURE_VERSION = "2.0.0"
 PRICING_DATA: dict[str, dict[str, Any]] = {
@@ -135,6 +137,31 @@ def visual_html(seed: int = 0, profile: str = "train") -> str:
 </body></html>"""
 
 
+def conformance_html(*, visual: bool = False) -> str:
+    action = "/api/conformance-visual" if visual else "/api/conformance-dom"
+    style = (
+        "position:absolute;left:220px;top:160px;width:180px;height:52px;"
+        "background:rgb(212,20,232);border:0;color:black"
+        if visual
+        else ""
+    )
+    label = "GO" if visual else "Enable shared state"
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cross-Surface Conformance</title></head>
+<body><main><h1>Reversible shared state</h1>
+<button type="button" style="{style}" aria-label="{'' if visual else label}" onclick="enableSharedState()">{label}</button>
+<p id="conformance-status">disabled</p>
+</main><script>
+function enableSharedState() {{
+  const request = new XMLHttpRequest();
+  request.open('POST', '{action}', false);
+  request.send();
+  document.getElementById('conformance-status').textContent = request.status === 200 ? 'enabled' : 'failed';
+}}
+</script>
+</body></html>"""
+
+
 @dataclass
 class LocalSaasState:
     settings: dict[str, Any] = field(default_factory=lambda: {"notifications": "disabled"})
@@ -145,6 +172,7 @@ class LocalSaasState:
     seed: int = 0
     profile: str = "train"
     visual_clicked: bool = False
+    conformance_enabled: bool = False
 
     def reset(self, *, seed: int = 0, profile: str = "train") -> None:
         if profile not in {"train", "heldout"}:
@@ -157,6 +185,7 @@ class LocalSaasState:
         self.seed = seed
         self.profile = profile
         self.visual_clicked = False
+        self.conformance_enabled = False
 
     def configure_perturbations(self, names: list[str]) -> None:
         self.perturbations = set(names)
@@ -186,11 +215,23 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
             if path == "/visual":
                 self._send(200, visual_html(state.seed, state.profile).encode("utf-8"), "text/html; charset=utf-8")
                 return
+            if path == "/conformance":
+                self._send(200, conformance_html().encode("utf-8"), "text/html; charset=utf-8")
+                return
+            if path == "/conformance-visual":
+                self._send(200, conformance_html(visual=True).encode("utf-8"), "text/html; charset=utf-8")
+                return
             if path == "/api/pricing":
                 self._json(200, PRICING_DATA)
                 return
             if path == "/api/health":
-                self._json(200, {"ok": True})
+                self._json(200, {"ok": True, "fixture_version": LOCAL_SAAS_FIXTURE_VERSION})
+                return
+            if path == "/api/conformance":
+                try:
+                    self._json(200, _conformance_state(state))
+                except Exception as exc:
+                    self._json(503, {"error": f"{type(exc).__name__}: {exc}"})
                 return
             if path == "/api/state":
                 self._json(
@@ -266,6 +307,15 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
                 state.audit_log.append({"effect": "visual.activate", "seed": state.seed, "profile": state.profile})
                 self._json(200, {"activated": True})
                 return
+            if path in {"/api/conformance-dom", "/api/conformance-visual"}:
+                surface = "visual" if path.endswith("visual") else "dom"
+                try:
+                    _set_conformance_state(state, True, surface=surface)
+                except Exception as exc:
+                    self._json(503, {"error": f"{type(exc).__name__}: {exc}"})
+                    return
+                self._json(200, {"enabled": True, "surface": surface})
+                return
             self._json(404, {"error": "not_found"})
 
         def log_message(self, format: str, *args: Any) -> None:
@@ -282,6 +332,31 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
     return LocalSaasHandler
+
+
+def _conformance_state(state: LocalSaasState) -> dict[str, Any]:
+    control_url = os.environ.get("AFFORDANCE_WOT_CONTROL_URL", "").rstrip("/")
+    if not control_url:
+        return {"enabled": state.conformance_enabled, "oracle": "fixture-memory"}
+    with urlopen(f"{control_url}/state", timeout=3.0) as response:  # noqa: S310 - configured local proof service
+        payload = json.loads(response.read())
+    return {"enabled": bool(payload["state"]["enabled"]), "oracle": "node-wot-control"}
+
+
+def _set_conformance_state(state: LocalSaasState, enabled: bool, *, surface: str) -> None:
+    control_url = os.environ.get("AFFORDANCE_WOT_CONTROL_URL", "").rstrip("/")
+    if control_url:
+        request = Request(
+            f"{control_url}/set",
+            data=json.dumps({"enabled": enabled, "source": surface}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=3.0):  # noqa: S310 - configured local proof service
+            pass
+    else:
+        state.conformance_enabled = enabled
+    state.audit_log.append({"effect": "conformance.write", "enabled": enabled, "surface": surface})
 
 
 def create_fixture_server(host: str = "127.0.0.1", port: int = 3000) -> ThreadingHTTPServer:

@@ -28,6 +28,8 @@ class PageDriver(Protocol):
 
     def screenshot(self, **kwargs: Any) -> bytes: ...
 
+    def wait_for_load_state(self, state: str = "load", **kwargs: Any) -> Any: ...
+
 
 @dataclass(frozen=True)
 class BrowserSnapshot:
@@ -154,6 +156,11 @@ class BrowserSession:
 
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()
+
+    def wait_for_load_state(self, state: str = "domcontentloaded") -> None:
+        waiter = getattr(self._page, "wait_for_load_state", None)
+        if waiter is not None:
+            waiter(state)
 
     def click(self, selector: str) -> None:
         self._page.click(selector)

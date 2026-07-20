@@ -65,10 +65,12 @@ Implemented current profile:
 - deterministic distinct-layout seeds and held-out layouts with unseen controls and distractors
 - screenshot-pixel visual grounding through the shared visual contract executor without DOM coordinates
 - a pinned official MiniWoB++ curated adapter with reset, instruction, reward, diagnostics, and report aggregation
+- a digest-pinned, non-root Playwright Compose profile for fixture, tests, benchmark, and mounted evidence
+- an optional real node-wot conformance profile that reaches one independently observed state through DOM, screenshot/SoM, and WoT
 
 Verified evidence:
 
-- all 55 unit/integration tests pass with Ruff and mypy
+- all 58 unit/integration tests pass with Ruff and mypy
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -78,8 +80,9 @@ Verified evidence:
 - five screenshot-grounded visual runs detect five distinct boxes and succeed without DOM coordinates
 - 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
 
-Next evidence gate: M9 durable single-run recovery, only if restart/waiting tests
-justify it.
+Next evidence gates: finish M8.1 clean-checkout host/container agreement, then
+M8.2 public benchmark expansion and M8.3 recovery-cascade evolution. M9 remains
+conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -109,6 +112,13 @@ Scenario specs:
 - [Pricing Extraction](docs/scenarios/pricing-extraction.md)
 - [Reversible Settings Update](docs/scenarios/settings-update.md)
 - [Approval-Gated Report Export](docs/scenarios/approval-gated-report-export.md)
+
+Container reproduction:
+
+```bash
+./scripts/reproduce_container.sh
+AFFORDANCE_WOT_PROOF=1 ./scripts/reproduce_container.sh
+```
 
 ## One Sentence
 

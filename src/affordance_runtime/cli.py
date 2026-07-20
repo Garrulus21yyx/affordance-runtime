@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--output", type=Path, default=Path("benchmark-results"))
     benchmark.add_argument("--seeds", type=int, default=1)
     benchmark.add_argument("--headed", action="store_true")
+    benchmark.add_argument("--base-url", help="use an already-running resettable fixture service")
 
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
@@ -62,6 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output,
             seeds=tuple(range(args.seeds)),
             headless=not args.headed,
+            base_url=args.base_url,
         )
         print(
             json.dumps(

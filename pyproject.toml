@@ -17,7 +17,7 @@ affordance-runtime = "affordance_runtime.cli:main"
 
 [project.optional-dependencies]
 web = [
-  "playwright>=1.44",
+  "playwright==1.61.0",
 ]
 parent = [
   "langgraph>=1.2,<2",

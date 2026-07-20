@@ -244,12 +244,16 @@ def run_local_benchmark(
     *,
     seeds: tuple[int, ...] = (0,),
     headless: bool = True,
+    base_url: str | None = None,
 ) -> tuple[BenchmarkReport, dict[str, Path]]:
-    server = create_fixture_server(port=0)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
+    server = None
+    thread = None
+    if base_url is None:
+        server = create_fixture_server(port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
         base_url = f"http://{server.server_name}:{server.server_port}"
+    try:
         run_case = LocalSaasRunCase(base_url, output_dir / "artifacts", headless=headless)
         runner = BenchmarkRunner(
             mvp_benchmark_tasks(),
@@ -273,6 +277,7 @@ def run_local_benchmark(
         paths = BenchmarkReportWriter(output_dir).write(report)
         return report, paths
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+        if server is not None and thread is not None:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)

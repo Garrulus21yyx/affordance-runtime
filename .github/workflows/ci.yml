@@ -36,3 +36,15 @@ jobs:
       - run: python scripts/langgraph_parent_smoke.py --output evidence/parent
       - run: affordance-runtime benchmark --output evidence/benchmark --seeds 3
       - run: python scripts/generalization_smoke.py --benchmark evidence/benchmark/benchmark-report.json --output evidence/generalization
+
+  container-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose run --rm runtime-test
+      - run: docker compose run --rm benchmark
+      - run: docker compose --profile wot-proof build
+      - run: docker compose --profile wot-proof run --rm wot-conformance
+      - if: always()
+        run: docker compose --profile wot-proof down --volumes
