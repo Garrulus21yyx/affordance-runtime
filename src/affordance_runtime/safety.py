@@ -3,21 +3,85 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
+from urllib.parse import urlsplit
 
-from affordance_runtime.contracts import ActionContract, RiskLevel, RuntimeErrorCode
+from affordance_runtime.contracts import ActionContract, ApprovalToken, RiskLevel, RuntimeErrorCode
 
 
 @dataclass
 class CapabilityGate:
     granted_capabilities: set[str] = field(default_factory=set)
     approval_required_risks: set[RiskLevel] = field(default_factory=lambda: {RiskLevel.HIGH, RiskLevel.IRREVERSIBLE})
+    approval_required_capabilities: set[str] = field(default_factory=set)
+    approval_tokens: dict[str, ApprovalToken] = field(default_factory=dict)
+    # Compatibility-only debug approvals. Task-level coordination should use
+    # bound, expiring ApprovalTokens.
     approved_contract_ids: set[str] = field(default_factory=set)
 
     def check(self, contract: ActionContract) -> RuntimeErrorCode | None:
         missing = [capability for capability in contract.required_capabilities if capability not in self.granted_capabilities]
         if missing:
             return RuntimeErrorCode.CAPABILITY_DENIED
-        if contract.risk in self.approval_required_risks and contract.id not in self.approved_contract_ids:
-            return RuntimeErrorCode.UNSAFE_ACTION
+        requires_approval = contract.risk in self.approval_required_risks or bool(
+            set(contract.required_capabilities) & self.approval_required_capabilities
+        )
+        if requires_approval:
+            if contract.id in self.approved_contract_ids:
+                return None
+            if not any(token.matches(contract) for token in self.approval_tokens.values()):
+                return RuntimeErrorCode.APPROVAL_REQUIRED
         return None
 
+    def authorize(self, contract: ActionContract) -> RuntimeErrorCode | None:
+        """Check policy and atomically consume a matching approval token."""
+
+        error = self.check(contract)
+        if error is not None:
+            return error
+        requires_approval = contract.risk in self.approval_required_risks or bool(
+            set(contract.required_capabilities) & self.approval_required_capabilities
+        )
+        if requires_approval and contract.id not in self.approved_contract_ids:
+            token = next(item for item in self.approval_tokens.values() if item.matches(contract))
+            token.consume()
+        return None
+
+
+@dataclass(frozen=True)
+class TaskConstraintPolicy:
+    """Enforce task authority independently from planner/page suggestions."""
+
+    def check(self, contract: ActionContract, constraints: dict[str, Any]) -> RuntimeErrorCode | None:
+        effectful = bool(contract.required_capabilities) or contract.risk != RiskLevel.LOW or contract.action in {
+            "download",
+            "write_property",
+            "invoke",
+        }
+        if constraints.get("read_only") and effectful:
+            return RuntimeErrorCode.POLICY_DENIED
+        if effectful and not (contract.idempotency_key or contract.compensation or contract.risk == RiskLevel.IRREVERSIBLE):
+            return RuntimeErrorCode.UNSAFE_ACTION
+        text = " ".join(
+            [contract.intent, contract.action, *contract.required_capabilities]
+        ).lower()
+        forbidden = {
+            "no_purchase": ("purchase", "payment", "checkout", "pay"),
+            "no_delete": ("delete", "remove", "destroy"),
+            "no_external_message": ("message", "email.send", "send_email", "post_message"),
+        }
+        for constraint, terms in forbidden.items():
+            if constraints.get(constraint) and any(term in text for term in terms):
+                return RuntimeErrorCode.POLICY_DENIED
+        allowed_domains = constraints.get("allowed_domains")
+        if allowed_domains:
+            target_url = str(
+                contract.parameters.get("url")
+                or contract.locator.get("url")
+                or contract.locator.get("href")
+                or ""
+            )
+            hostname = urlsplit(target_url).hostname if target_url else None
+            if hostname and hostname not in set(str(item) for item in allowed_domains):
+                return RuntimeErrorCode.POLICY_DENIED
+        return None

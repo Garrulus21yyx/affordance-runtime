@@ -65,8 +65,10 @@ case and acceptance tests are defined.
 - the WoT write-surface fix: a read form is no longer silently reused as a
   write form.
 
-These components are usable independently, but the repository does not yet
-claim that they form the complete task-level observe-plan-act-verify loop.
+These migrated components are now connected by the task-level
+observe-plan-preflight-act-observe-verify-recover loop. The migration remains
+selective: the legacy demo-specific orchestration listed below is still not
+part of the mainline.
 
 ## Not Migrated Into The Mainline
 
@@ -97,4 +99,3 @@ a subagent by Codex, Claude, OpenHands, LangGraph, AutoGen, or browser agents.
   model-based checks.
 - `EvolutionRegistry`: quarantines and regression-gates proposed harness
   improvements.
-

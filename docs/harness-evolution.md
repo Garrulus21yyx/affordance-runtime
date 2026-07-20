@@ -207,11 +207,8 @@ review for:
 
 ## 9. Resume Framing
 
-Before v0.3 evidence exists, describe this as a planned or prototyped assisted
-harness evolution loop.
-
-After the prerequisite gate and a real before/after regression report exist, it
-can be described as:
+The v0.3 prerequisite gate and a real before/after regression report now exist.
+The implemented capability can be described as:
 
 > failed GUI interaction traces are analyzed, classified, and converted into
 > reusable skills, postcondition improvements, policy patches, and regression

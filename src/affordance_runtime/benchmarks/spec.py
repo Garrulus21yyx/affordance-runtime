@@ -34,4 +34,12 @@ class BenchmarkRun:
     regression_delta: float = 0.0
     cost: float = 0.0
     failure_reason: str = ""
-
+    variant: str = "full_runtime"
+    seed: int = 0
+    evaluated_constraints: int = 0
+    constraint_violations: int = 0
+    stale_action_opportunities: int = 0
+    effectful_actions: int = 0
+    failed_outcomes: int = 0
+    side_effect_opportunities: int = 0
+    trace_path: str = ""

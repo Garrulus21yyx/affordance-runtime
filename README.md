@@ -5,10 +5,12 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository is currently an executable skeleton plus implementation plan, not
-yet a complete Web GUI runtime. The immediate goal is to turn the skeleton into
-a reproducible Web/SaaS gold path with trace, verification, baseline, and
-benchmark evidence.
+The repository implements the M0-M2 controlled local profile: three
+reproducible Web/SaaS scenarios, trace and artifacts, independent verification,
+fixed perturbation controls, and baseline/ablation evaluation. M3 evolution and
+M4 integration have working prototypes, but executable artifact application and
+a real external parent-agent call remain open gates. Service-grade distributed
+options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
 for code and release scope, while the complete architecture blueprint preserves
@@ -33,7 +35,7 @@ core is:
 
 ## Current Status
 
-Implemented skeleton:
+Implemented current profile:
 
 - typed affordance, action, receipt, risk, trace, and benchmark models
 - migrated DOM, Set-of-Mark, and WoT adapter code
@@ -43,30 +45,49 @@ Implemented skeleton:
 - declarative precondition evaluation and JSONL trace persistence
 - single-contract execution path for debug and unit testing
 - initial capability, verifier, state, benchmark, and evolution modules
+- task-level `RunCoordinator` with validated state transitions and budgets
+- snapshot/page/target/TTL-bound contracts with canonical hashes
+- single-use approval tokens bound to run, contract, state, capability, and approver
+- immediate preflight re-observation and independent post-action observation
+- structural verification reports separated from executor receipts
+- filesystem artifacts for observations, screenshots, receipts, verification, and JSONL trace
+- resettable pricing fixture, deterministic planner, CLI gold path, and Direct Playwright baseline
+- reversible settings fixture with persisted API verification
+- approval-gated report export with a bound token and file-hash receipt
+- DOM, visual SoM, and WoT actions through the shared Coordinator path
+- opportunity-denominator benchmark metrics and JSON/Markdown/CSV report writers
+- deterministic target/modal/async/transient-error/download perturbations
+- executable Direct Playwright, primitive-agent, Full Runtime, and four-ablation matrix
+- failure classification, typed evolution proposals, mandatory replay categories, and before/after reports
+- task-level submit/execute/status/approve/cancel/result/evidence/trace service and parent-agent tool adapter
 
-Partial:
+Verified evidence:
 
-- long-task State Kernel lifecycle
-- Playwright observer/executor integration beyond the injectable browser session
-- lease/preflight semantics beyond revision equality and declarative conditions
-- task constraints and approval token binding
-- recovery integration into the task-level coordinator
-- post-action observation and verifier evidence collection
-- benchmark metric protocol
+- all 49 unit/integration tests pass with Ruff and mypy
+- Full Runtime passes all three fixed-seed scenarios with zero constraint violations, unsafe side effects, and verifier false accepts
+- real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
+- a no-verifier false accept produces a typed proposal and four-category comparison report; loading it into a fresh candidate runtime is pending
+- one official Farama MiniWoB++ `click-button` episode passed through BrowserSession, DOM Affordance, ActionContract, and DomExecutor with raw reward 1.0; a repeated suite adapter is pending
 
-Planned before claiming a complete runtime:
+Next evidence gates:
 
-- task-level run context and explicit state machine
-- post-action observation and structured verification reports
-- local SaaS fixture and benchmark runner
-- CLI gold path
-- baseline and ablation reports
-- assisted harness evolution after benchmark freeze
-- optional task-level MCP and framework integrations after the evolution loop
+- M5: CI, environment identity, clean-checkout reproduction, versioned reports
+- M6: executable evolution artifact loading, fresh replay, persistence, rollback
+- M7: one real MCP or parent-agent integration
+- M8: distinct seeds, unseen layouts, repeated MiniWoB++ subset, real visual path
+- M9: durable single-run recovery only if restart/waiting tests justify it
+
+Explicitly deferred beyond the current profile:
+
+- durable queues, browser worker pools, distributed checkpoints, and multi-tenant infrastructure
+- desktop/mobile coverage and unrestricted live-site credential workflows
+- automatic arbitrary source-code mutation
+- Picture-in-Picture UI until a measured observer/takeover need justifies it
 
 ## Documents
 
 - [Project Plan](docs/project-plan.md)
+- [Implementation Status and Forward Gates](docs/implementation-status.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)
 - [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
 - [Design Freeze and Implementation Gates](docs/design-freeze.md)
@@ -205,20 +226,22 @@ runtime on web GUI tasks.
 
 ## Resume Summary
 
-Designed and prototyped a planner-neutral GUI execution runtime skeleton that
-abstracts DOM, visual screenshots, accessibility state, and device descriptions
-into a unified affordance model. The planned system uses versioned action
-contracts, stale-state preflight rejection, capability gating, verifier ladders,
-live environment feedback, failure recovery, trace evaluation, and assisted
-harness evolution from failed interaction traces.
+Implemented a planner-neutral GUI execution runtime that abstracts DOM, visual
+screenshots, accessibility state, and device descriptions into a unified
+affordance model. The runtime uses versioned action contracts, stale-state
+preflight rejection, scoped approvals, verifier ladders, bounded recovery,
+artifact-backed trace evaluation, and regression-gated evolution from failed
+interaction traces.
 
-## Code Skeleton
+## Code Layout
 
-The initial skeleton is in `src/affordance_runtime`:
+The implementation is in `src/affordance_runtime`:
 
 - `contracts.py`: affordances, leases, action contracts, receipts, risk.
 - `state_kernel.py`: long-horizon task state and evidence obligations.
 - `runtime.py`: bounded contract execution loop.
+- `coordinator.py`: authoritative multi-step task state machine and budgets.
+- `artifacts.py`: run, observation, screenshot, receipt, download, verification, and trace persistence.
 - `browser_session.py`: package-safe browser lifecycle and coherent DOM capture.
 - `executors.py`: DOM, visual-pointer, and WoT contract executors.
 - `routing.py`: backend confidence tracking and cost-aware routing.
@@ -227,7 +250,11 @@ The initial skeleton is in `src/affordance_runtime`:
 - `safety.py`: scoped capability and approval gate.
 - `trace.py`: causal trace events and JSONL persistence.
 - `evolution.py`: regression-gated evolution registry.
+- `evolution_replay.py`: failure classification to proposal/replay/before-after decision.
+- `fixtures.py`: resettable pricing, settings, and approval-gated export application.
+- `planners.py`: deterministic scenario planners through `PlannerPort`.
+- `integrations/`: stable task service, bounded tool adapter, and local scenario runner.
 - `adapters/dom.py`: migrated DOM transduction.
 - `adapters/som.py`: migrated Set-of-Marks grounding.
 - `adapters/wot.py`: migrated Thing Description parsing.
-- `benchmarks/`: benchmark tasks, suites, and runtime-specific metrics.
+- `benchmarks/`: tasks, opportunity metrics, local run cases, ablations, and report writers.

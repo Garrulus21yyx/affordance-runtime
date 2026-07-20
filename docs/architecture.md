@@ -88,7 +88,7 @@ PREFLIGHT -> OBSERVING       when stale or expired
 PREFLIGHT -> WAITING_APPROVAL when required capability lacks approval
 PREFLIGHT -> ABORTED         when policy denies the action
 ACTING -> VERIFYING | RECOVERING | FAILED
-VERIFYING -> PLANNING | RECOVERING | DONE | FAILED
+VERIFYING -> OBSERVING | PLANNING | RECOVERING | DONE | FAILED
 RECOVERING -> OBSERVING | WAITING_APPROVAL | ABORTED | FAILED
 ```
 
@@ -361,10 +361,20 @@ src/affordance_runtime/
   contracts.py
   state_kernel.py
   runtime.py
+  coordinator.py
+  artifacts.py
+  browser_session.py
+  executors.py
+  routing.py
+  recovery.py
   safety.py
   verification.py
   trace.py
   evolution.py
+  evolution_replay.py
+  fixtures.py
+  planners.py
+  cli.py
   adapters/
     dom.py
     som.py
@@ -373,11 +383,16 @@ src/affordance_runtime/
     spec.py
     suites.py
     metrics.py
+    runner.py
+    local.py
+  integrations/
+    task_api.py
+    local.py
 tests/
 docs/
 ```
 
-Planned expansion after the skeleton:
+Possible production expansion, still deferred:
 
 ```text
 src/affordance_runtime/
@@ -385,7 +400,7 @@ src/affordance_runtime/
   executors/playwright.py
   recovery/policies.py
   integrations/mcp_server.py
-  eval/runner.py
-  eval/replay.py
-  artifacts/store.py
+  integrations/rest.py
+  workers/browser_worker.py
+  persistence/checkpoints.py
 ```

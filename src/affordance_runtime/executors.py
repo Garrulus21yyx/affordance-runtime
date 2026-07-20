@@ -111,6 +111,14 @@ class DomExecutor:
                     raise ValueError("navigate contract requires parameters.url or locator.url")
                 goto(url)
                 evidence = {"action": "navigate", "url": url}
+            elif action == "download":
+                download = getattr(self.page, "download", None)
+                if download is None:
+                    raise RuntimeError("DOM page does not support downloads")
+                destination_dir = str(contract.parameters.get("destination_dir") or "")
+                if not destination_dir:
+                    raise ValueError("download contract requires parameters.destination_dir")
+                evidence = {"action": "download", "selector": selector, **download(selector, destination_dir)}
             else:
                 raise ValueError(f"unsupported DOM action: {contract.action}")
             return _receipt(

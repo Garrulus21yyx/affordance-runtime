@@ -1,0 +1,186 @@
+"""Command-line interface for fixture serving, gold-path runs, and baselines."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any, Sequence
+
+from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks.local import run_local_benchmark
+from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator
+from affordance_runtime.evolution_replay import build_evolution_report
+from affordance_runtime.executors import DomExecutor, ExecutorRouter
+from affordance_runtime.fixtures import serve_fixture
+from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
+from affordance_runtime.runtime import TaskEnvelope
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="affordance-runtime")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    fixture = subcommands.add_parser("serve-fixture", help="serve the resettable local SaaS fixture")
+    fixture.add_argument("--host", default="127.0.0.1")
+    fixture.add_argument("--port", type=int, default=3000)
+
+    run = subcommands.add_parser("run", help="run a bounded GUI task")
+    run.add_argument("--scenario", choices=["pricing", "settings", "export"], default="pricing")
+    run.add_argument("--target")
+    run.add_argument("--artifacts", type=Path, default=Path("artifacts"))
+    run.add_argument("--headed", action="store_true")
+    run.add_argument("--approve", action="store_true", help="explicitly approve the export capability")
+
+    baseline = subcommands.add_parser("baseline", help="run the direct Playwright pricing baseline")
+    baseline.add_argument("--target", default="http://127.0.0.1:3000/pricing")
+    baseline.add_argument("--headed", action="store_true")
+
+    benchmark = subcommands.add_parser("benchmark", help="run the fixed-seed local SaaS baseline and ablation matrix")
+    benchmark.add_argument("--output", type=Path, default=Path("benchmark-results"))
+    benchmark.add_argument("--seeds", type=int, default=1)
+    benchmark.add_argument("--headed", action="store_true")
+
+    evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
+    evolve.add_argument("--benchmark-report", type=Path, required=True)
+    evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.command == "serve-fixture":
+        serve_fixture(args.host, args.port)
+        return 0
+    if args.command == "baseline":
+        result = run_pricing_baseline(args.target, headless=not args.headed)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if args.command == "benchmark":
+        benchmark_report, paths = run_local_benchmark(
+            args.output,
+            seeds=tuple(range(args.seeds)),
+            headless=not args.headed,
+        )
+        print(
+            json.dumps(
+                {
+                    "suite_version": benchmark_report.suite_version,
+                    "runs": len(benchmark_report.runs),
+                    "reports": {name: str(path) for name, path in paths.items()},
+                    "acceptance": "passed" if not benchmark_report.acceptance_errors else "failed",
+                    "acceptance_errors": benchmark_report.acceptance_errors,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0 if not benchmark_report.acceptance_errors else 1
+    if args.command == "evolve":
+        evolution_report = build_evolution_report(args.benchmark_report, args.output)
+        print(
+            json.dumps(
+                {
+                    "source_task": evolution_report.source_run.task_id,
+                    "source_variant": evolution_report.source_run.variant,
+                    "artifact": evolution_report.artifact.id,
+                    "decision": evolution_report.decision.value,
+                    "output": str(args.output),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0 if evolution_report.decision.value == "accepted" else 1
+    if args.command == "run":
+        result = run_scenario(
+            args.scenario,
+            args.target,
+            args.artifacts,
+            headless=not args.headed,
+            approve=args.approve,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return 0 if result["status"] == "done" else 1
+    return 2
+
+
+def run_scenario(
+    scenario: str,
+    target: str | None,
+    artifact_root: Path,
+    *,
+    headless: bool = True,
+    approve: bool = False,
+    run_id: str | None = None,
+    approval_approver: str = "cli-user",
+    constraints_override: dict[str, Any] | None = None,
+    capabilities_override: list[str] | None = None,
+) -> dict[str, object]:
+    paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
+    target = target or f"http://127.0.0.1:3000{paths[scenario]}"
+    planners: dict[str, PlannerPort] = {
+        "pricing": PricingPlanner(),
+        "settings": SettingsPlanner(),
+        "export": ExportPlanner(),
+    }
+    capabilities = {
+        "pricing": [],
+        "settings": ["settings.write.reversible"],
+        "export": ["report.export"],
+    }
+    approval_provider = (
+        ConfiguredApprovalProvider(approval_approver, {"report.export"}) if scenario == "export" and approve else None
+    )
+    with BrowserSession.launch(target, headless=headless) as session:
+        router = ExecutorRouter()
+        router.register(DomExecutor(session))
+        result = RunCoordinator(
+            observer=session,
+            planner=planners[scenario],
+            executor=router,
+            artifacts=ArtifactStore(artifact_root),
+            approval_provider=approval_provider,
+        ).run_sync(
+            TaskEnvelope(
+                task_id=run_id or f"{scenario}-gold-path",
+                goal={
+                    "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
+                    "settings": "Enable the reversible notifications setting and verify persisted state.",
+                    "export": "Export a report only after explicit approval and return the file receipt.",
+                }[scenario],
+                target=target,
+                constraints=constraints_override
+                if constraints_override is not None
+                else {
+                    "read_only": scenario == "pricing",
+                    "must_return_evidence": True,
+                    "approval_required": scenario == "export",
+                },
+                capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
+            )
+        )
+    return {
+        "run_id": result.run_id,
+        "status": result.status.value,
+        "result": result.result,
+        "error_code": result.error_code.value if result.error_code else None,
+        "artifacts": [item.path for item in result.artifacts],
+    }
+
+
+def run_pricing(target: str, artifact_root: Path, *, headless: bool = True) -> dict[str, object]:
+    return run_scenario("pricing", target, artifact_root, headless=headless)
+
+
+def run_pricing_baseline(target: str, *, headless: bool = True) -> dict[str, object]:
+    with BrowserSession.launch(target, headless=headless) as session:
+        session.click("#show-pro")
+        session.click("#show-enterprise")
+        snapshot = session.capture()
+    plans = extract_pricing(str(snapshot.observation.metadata.get("html") or ""))
+    return {
+        "status": "done" if plans and all(plan["visible"] for plan in plans.values()) else "failed",
+        "plans": {name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()},
+    }

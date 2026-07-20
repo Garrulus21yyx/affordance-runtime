@@ -1,0 +1,179 @@
+"""Deterministic reference planners used for diagnosis and benchmarks."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, replace
+from typing import Any
+from urllib.parse import urlsplit
+
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import ActionContract, RiskLevel, VerifierSpec
+from affordance_runtime.coordinator import PlannerDecision
+from affordance_runtime.fixtures import EXPORT_SHA256
+from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
+
+_ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
+_ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
+
+
+def extract_pricing(html: str) -> dict[str, dict[str, Any]]:
+    plans: dict[str, dict[str, Any]] = {}
+    for match in _ARTICLE_PATTERN.finditer(html):
+        attributes = dict(_ATTRIBUTE_PATTERN.findall(match.group(1)))
+        name = attributes.get("data-plan")
+        if not name:
+            continue
+        plans[name] = {
+            "users": _number_or_text(attributes.get("data-users", "")),
+            "projects": _number_or_text(attributes.get("data-projects", "")),
+            "support": attributes.get("data-support", ""),
+            "visible": attributes.get("data-visible") == "true",
+        }
+    return plans
+
+
+def _number_or_text(value: str) -> int | str:
+    return int(value) if value.isdigit() else value
+
+
+@dataclass
+class PricingPlanner:
+    """Reveal both pricing cards, then return structured limits with evidence."""
+
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope, state
+        html = str(snapshot.observation.metadata.get("html") or "")
+        plans = extract_pricing(html)
+        for plan_name in ("pro", "enterprise"):
+            if plan_name in plans and not plans[plan_name]["visible"]:
+                selector = f"#show-{plan_name}"
+                affordance = next(
+                    (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == selector),
+                    None,
+                )
+                if affordance is None:
+                    return PlannerDecision(done=False, reason=f"missing affordance: {selector}")
+                contract = ActionContract.from_affordance(
+                    affordance,
+                    intent=f"reveal {plan_name} limits",
+                    backend="dom",
+                    verifier_plan=[
+                        VerifierSpec(
+                            kind="dom_contains",
+                            target="html",
+                            expected=f'data-plan="{plan_name}" data-visible="true"',
+                        )
+                    ],
+                )
+                return PlannerDecision(contract=contract, reason=f"reveal hidden {plan_name} evidence")
+        if plans and all(plan.get("visible") for plan in plans.values()):
+            result = {name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()}
+            return PlannerDecision(
+                done=True,
+                result={"plans": result, "source_url": snapshot.observation.url},
+                reason="all pricing limits are structurally visible",
+            )
+        return PlannerDecision(done=False, reason="pricing data is not available")
+
+
+def _origin(url: str) -> str:
+    parsed = urlsplit(url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+@dataclass
+class SettingsPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope
+        last_selector = state.receipts[-1].evidence.get("selector") if state.receipts else None
+        if state.latest_verification and state.latest_verification.passed and last_selector != "#dismiss-modal":
+            return PlannerDecision(
+                done=True,
+                result={"notifications": "enabled", "verified_by": "fixture_api"},
+                reason="persisted settings oracle passed",
+            )
+        modal_affordance = next(
+            (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == "#dismiss-modal"),
+            None,
+        )
+        if modal_affordance is not None:
+            return PlannerDecision(
+                contract=ActionContract.from_affordance(
+                    modal_affordance,
+                    intent="dismiss registered low-risk blocking modal",
+                    backend="dom",
+                    verifier_plan=[VerifierSpec("dom_absent", "html", 'id="blocking-modal"')],
+                ),
+                reason="registered blocking modal policy",
+            )
+        affordance = next(
+            (item for item in snapshot.affordance_model.affordances if item.label == "Enable notifications"),
+            None,
+        )
+        if affordance is None:
+            return PlannerDecision(reason="settings control is unavailable")
+        contract = ActionContract.from_affordance(
+            affordance,
+            intent="enable reversible notifications setting",
+            backend="dom",
+            required_capabilities=["settings.write.reversible"],
+            verifier_plan=[
+                VerifierSpec(
+                    "http_json",
+                    f"{_origin(snapshot.observation.url)}/api/state",
+                    {"path": "settings.notifications", "value": "enabled"},
+                )
+            ],
+        )
+        return PlannerDecision(
+            contract=replace(
+                contract,
+                risk=RiskLevel.MEDIUM,
+                idempotency_key=f"{snapshot.observation.url}:notifications:enabled",
+                compensation="restore notifications=disabled",
+                contract_hash="",
+            ),
+            reason="apply reversible setting",
+        )
+
+
+@dataclass
+class ExportPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope
+        if state.latest_verification and state.latest_verification.passed and state.receipts:
+            receipt = state.receipts[-1]
+            return PlannerDecision(
+                done=True,
+                result={
+                    "download": receipt.evidence.get("path"),
+                    "sha256": receipt.evidence.get("sha256"),
+                    "verified_by": "file_hash",
+                },
+                reason="approved download receipt matches fixture hash",
+            )
+        affordance = next(
+            (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == "#export-report"),
+            None,
+        )
+        if affordance is None:
+            return PlannerDecision(reason="export control is unavailable")
+        contract = ActionContract.from_affordance(
+            affordance,
+            intent="export the report after explicit approval",
+            backend="dom",
+            required_capabilities=["report.export"],
+            verifier_plan=[VerifierSpec("evidence", "sha256", EXPORT_SHA256)],
+        )
+        return PlannerDecision(
+            contract=replace(
+                contract,
+                action="download",
+                risk=RiskLevel.HIGH,
+                idempotency_key=f"{snapshot.observation.url}:report-export",
+                contract_hash="",
+            ),
+            reason="download requires a bound approval token",
+        )

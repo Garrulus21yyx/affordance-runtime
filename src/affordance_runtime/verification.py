@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import ast
+import json
 import operator
 from dataclasses import dataclass, field
+from enum import StrEnum
+from time import time
 from typing import Any, Callable, Mapping, Protocol
+from urllib.request import urlopen
 
 from affordance_runtime.contracts import (
     ActionContract,
@@ -22,6 +26,35 @@ class Verifier(Protocol):
 
     def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
         ...
+
+
+class VerificationStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    INCONCLUSIVE = "inconclusive"
+    ERROR = "error"
+    NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True)
+class VerificationEvidence:
+    verifier_kind: str
+    target: str
+    passed: bool
+    source: str
+    observed: Any = None
+    expected: Any = None
+
+
+@dataclass(frozen=True)
+class VerificationReport:
+    status: VerificationStatus
+    evidence: list[VerificationEvidence] = field(default_factory=list)
+    reason: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.status == VerificationStatus.PASSED
 
 
 @dataclass
@@ -43,23 +76,113 @@ class ObservationMetadataVerifier:
 
 
 @dataclass
+class DomContainsVerifier:
+    kind: str = "dom_contains"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        del receipt
+        html = str(observation.metadata.get("html") or "")
+        expected = str(spec.expected)
+        return expected in html
+
+
+@dataclass
+class DomAbsentVerifier:
+    kind: str = "dom_absent"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        del receipt
+        return str(spec.expected) not in str(observation.metadata.get("html") or "")
+
+
+@dataclass
+class HttpJsonVerifier:
+    """Strong fixture/API verifier for persisted business effects."""
+
+    kind: str = "http_json"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        del receipt, observation
+        if not isinstance(spec.expected, Mapping):
+            return False
+        try:
+            with urlopen(spec.target, timeout=2.0) as response:  # noqa: S310 - URL is capability/policy constrained
+                value: Any = json.loads(response.read())
+            for part in str(spec.expected.get("path") or "").split("."):
+                if part:
+                    value = value[part]
+            return value == spec.expected.get("value")
+        except Exception:
+            return False
+
+
+@dataclass
 class VerifierLadder:
     """Prefer structural receipts before model or human judgment."""
 
-    verifiers: list[Verifier] = field(default_factory=lambda: [EvidenceVerifier(), ObservationMetadataVerifier()])
+    verifiers: list[Verifier] = field(
+        default_factory=lambda: [
+            EvidenceVerifier(),
+            HttpJsonVerifier(),
+            ObservationMetadataVerifier(),
+            DomContainsVerifier(),
+            DomAbsentVerifier(),
+        ]
+    )
 
     def verify(self, specs: list[VerifierSpec], receipt: ExecutionReceipt, observation: Observation) -> bool:
         if not specs:
             return receipt.success
+        return self.verify_report(specs, receipt, observation).passed
+
+    def verify_report(
+        self,
+        specs: list[VerifierSpec],
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerificationReport:
+        if not specs:
+            # A receipt-only result remains available for the debug API but is
+            # explicitly marked inconclusive for the task-level coordinator.
+            status = VerificationStatus.INCONCLUSIVE if receipt.success else VerificationStatus.FAILED
+            return VerificationReport(status, reason="no independent verifier was specified")
+        evidence: list[VerificationEvidence] = []
         for spec in specs:
             verifier = next((item for item in self.verifiers if item.kind == spec.kind), None)
             if verifier is None:
                 if spec.strict:
-                    return False
+                    return VerificationReport(
+                        VerificationStatus.ERROR,
+                        evidence,
+                        f"strict verifier is not registered: {spec.kind}",
+                    )
                 continue
-            if not verifier.verify(spec, receipt, observation):
-                return False
-        return True
+            passed = verifier.verify(spec, receipt, observation)
+            if spec.kind == "evidence":
+                observed = receipt.evidence.get(spec.target)
+            elif spec.kind == "dom_contains":
+                observed = str(spec.expected) in str(observation.metadata.get("html") or "")
+            elif spec.kind == "dom_absent":
+                observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
+            elif spec.kind == "http_json":
+                observed = passed
+            else:
+                observed = observation.metadata.get(spec.target)
+            evidence.append(
+                VerificationEvidence(
+                    verifier_kind=spec.kind,
+                    target=spec.target,
+                    passed=passed,
+                    source="execution_receipt" if spec.kind == "evidence" else "post_action_observation",
+                    observed=observed,
+                    expected=spec.expected,
+                )
+            )
+            if not passed:
+                return VerificationReport(VerificationStatus.FAILED, evidence, f"verifier failed: {spec.kind}:{spec.target}")
+        if not evidence:
+            return VerificationReport(VerificationStatus.NOT_APPLICABLE, reason="no applicable verifier")
+        return VerificationReport(VerificationStatus.PASSED, evidence)
 
 
 @dataclass(frozen=True)
@@ -81,9 +204,25 @@ _OPERATORS: dict[str, Callable[[Any, Any], bool]] = {
 }
 
 
-def preflight(contract: ActionContract, observation: Observation) -> RuntimeErrorCode | None:
-    if contract.environment_revision != observation.environment_revision:
+def preflight(
+    contract: ActionContract,
+    observation: Observation,
+    *,
+    require_snapshot_identity: bool = True,
+    require_environment_revision: bool = True,
+) -> RuntimeErrorCode | None:
+    if require_environment_revision and contract.environment_revision != observation.environment_revision:
         return RuntimeErrorCode.STALE_OBSERVATION
+    if contract.page_revision and contract.page_revision != observation.page_revision:
+        return RuntimeErrorCode.STALE_PAGE_REVISION
+    if require_snapshot_identity and contract.snapshot_id and contract.snapshot_id != observation.snapshot_id:
+        return RuntimeErrorCode.SNAPSHOT_MISMATCH
+    if contract.expires_at_s and time() > contract.expires_at_s:
+        return RuntimeErrorCode.LEASE_EXPIRED
+    if contract.target_fingerprint:
+        observed_fingerprint = observation.target_fingerprints.get(contract.affordance_id)
+        if observed_fingerprint != contract.target_fingerprint:
+            return RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
     facts = {
         **observation.metadata,
         "observation": {
@@ -176,4 +315,3 @@ def _resolve_path(facts: Mapping[str, Any], path: str) -> Any:
         else:
             raise KeyError(f"missing condition path: {path}")
     return value
-

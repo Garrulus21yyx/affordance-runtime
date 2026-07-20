@@ -6,6 +6,8 @@ Migrated and simplified from A-Modular-Action-System-Architecture's
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
@@ -98,6 +100,8 @@ class PageAffordanceModel:
     page_id: str
     url: str
     environment_revision: str
+    snapshot_id: str
+    page_revision: str
     affordances: list[Affordance]
     raw_node_count: int
     kept_node_count: int
@@ -153,24 +157,56 @@ class DomAdapter:
         page_id: str = "page",
         url: str = "",
         ttl_ms: int = 2_000,
+        snapshot_id: str = "",
+        page_revision: str = "",
     ) -> PageAffordanceModel:
         parser = _InteractiveParser()
         parser.feed(html or "")
         parser.close()
-        lease = AffordanceLease.issue(
-            environment_revision=environment_revision,
-            ttl_ms=ttl_ms,
-            provenance=["dom"],
-        )
+        semantic_nodes = [
+            {
+                "tag": node["tag"],
+                "role": node["attr"].get("role", ""),
+                "id": node["attr"].get("id", ""),
+                "name": node["attr"].get("name", ""),
+                "disabled": "disabled" in node["attr"] or node["attr"].get("aria-disabled") == "true",
+                "label": _label_for(node),
+            }
+            for node in parser.nodes
+        ]
+        effective_page_revision = page_revision or "page:sha256:" + hashlib.sha256(
+            json.dumps({"url": url, "nodes": semantic_nodes}, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         affordances: list[Affordance] = []
         for node in parser.nodes:
             attr = node["attr"]
             action = _action_for(node)
             selector, confidence = _selector_for(node)
             disabled = "disabled" in attr or attr.get("aria-disabled") == "true"
+            affordance_id = f"dom_{node['tag']}_{node['nth']}"
+            target_fingerprint = "sha256:" + hashlib.sha256(
+                json.dumps(
+                    {
+                        "id": affordance_id,
+                        "role": attr.get("role") or node["tag"],
+                        "label": _label_for(node),
+                        "selector": selector,
+                        "enabled": not disabled,
+                    },
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            lease = AffordanceLease.issue(
+                environment_revision=environment_revision,
+                ttl_ms=ttl_ms,
+                provenance=["dom"],
+                snapshot_id=snapshot_id,
+                page_revision=effective_page_revision,
+                target_fingerprint=target_fingerprint,
+            )
             affordances.append(
                 Affordance(
-                    id=f"dom_{node['tag']}_{node['nth']}",
+                    id=affordance_id,
                     surface=Surface.DOM,
                     role="input" if action in {"type", "select"} else "button",
                     label=_label_for(node),
@@ -188,6 +224,8 @@ class DomAdapter:
             page_id=page_id,
             url=url,
             environment_revision=environment_revision,
+            snapshot_id=snapshot_id,
+            page_revision=effective_page_revision,
             affordances=affordances,
             raw_node_count=parser.total_nodes,
             kept_node_count=len(affordances),

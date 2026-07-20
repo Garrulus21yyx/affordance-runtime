@@ -38,20 +38,20 @@ trace, recovery boundaries, and evaluation evidence.
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Domain models | Implemented skeleton | Affordances, contracts, receipts, risks, traces, metrics |
-| DOM / SoM / WoT adapters | Implemented skeleton | Migrated from the earlier modular action system |
-| Single-contract execution | Implemented skeleton | Useful as a debug API, not yet a task runtime |
-| State Kernel | Partial | Data structure exists; task-level lifecycle must bind it across steps |
-| Lease / preflight | Partial | Revision equality exists; TTL, snapshot identity, and target-level validity need implementation |
-| Capability gate | Partial | Capability/risk fields exist; task constraints and approval tokens need stronger semantics |
-| Post-action verification | Planned | Must compare pre-observation, receipt, and post-observation |
-| Playwright observer/executor | Planned | First gold path backend |
-| Recovery policy | Planned | Must be bounded by explicit budgets |
-| Trace persistence/replay | Planned | Current trace idea must become JSONL/artifact-backed evidence |
-| Benchmark runner | Planned | Needs baselines, ablations, oracles, and deterministic fixtures |
-| MCP/REST | Deferred | CLI first, MCP second; REST is optional until the task API is stable |
-| Harness evolution | Deferred | Begins only after trace schema and benchmark suite are stable |
-| WoT smart-room | Deferred proof | Non-web adapter proof, not the main project story |
+| Domain models | Implemented | Affordances, contracts, receipts, risks, traces, metrics, approvals, proposals |
+| DOM / SoM / WoT adapters | Implemented | Typed payloads reuse the shared Coordinator/Contract/Trace path |
+| Single-contract execution | Implemented | Retained as a debug API beside the task runtime |
+| State Kernel | Implemented | Multi-step lifecycle, constraints, budgets, observations, receipts, verification, transitions |
+| Lease / preflight | Implemented | TTL, snapshot identity, page revision, target fingerprint, immediate re-observation |
+| Capability gate | Implemented | Task capabilities and single-use run/hash/state/capability/approver-bound tokens |
+| Post-action verification | Implemented | Separate receipt and post-observation DOM/API/file evidence reports |
+| Playwright observer/executor | Implemented | Real Chromium pricing, settings, export, screenshots, and downloads |
+| Recovery policy | Implemented | Explicit budgets and deterministic stale/transient-error recovery |
+| Trace persistence/replay | Implemented | JSONL causal events and hashed artifact layout feed replay decisions |
+| Benchmark runner | Implemented | Independent oracles, perturbations, baselines, ablations, fixed seeds, three report formats |
+| Parent-agent task API | Implemented | Bounded local tool adapter; REST/MCP transports remain optional wrappers |
+| Harness evolution | Implemented | Real failure classification, proposal, quarantine/registry, replay, before/after decision |
+| WoT proof | Implemented | Local injected transport exercises shared contract, trace, and verification semantics |
 | OSWorld/mobile/desktop-native | Future | After the web harness is stable |
 
 ## 3. Testable Hypotheses

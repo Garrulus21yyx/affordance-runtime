@@ -10,6 +10,23 @@ evidence, trace id, and any required follow-up decision.
 
 ## 2. Interfaces
 
+Current implemented interface:
+
+```text
+TaskRuntimeService
+  submit / execute / get_run / approve / cancel
+  get_result / get_evidence / get_trace
+
+TaskToolAdapter
+  gui_submit_task / gui_execute_task / gui_get_run / gui_approve_task
+  gui_cancel_task / gui_get_result / gui_get_evidence / gui_get_trace
+```
+
+`LocalScenarioTaskRunner` connects this interface to the real Chromium runtime.
+Transport wrappers such as MCP or REST can map directly to these operations;
+they are optional because the stable task boundary no longer depends on a
+particular protocol.
+
 ### 2.1 CLI
 
 ```bash
@@ -19,7 +36,7 @@ affordance-runtime run \
   --read-only
 ```
 
-### 2.2 REST
+### 2.2 Optional REST Transport
 
 ```http
 POST /v1/tasks
@@ -28,7 +45,7 @@ GET /v1/traces/{trace_id}
 POST /v1/evals
 ```
 
-### 2.3 MCP Server
+### 2.3 Optional MCP Transport
 
 Tools:
 
@@ -138,4 +155,3 @@ The parent agent owns the broader goal. The runtime owns bounded GUI execution.
 
 This separation is important. Affordance Runtime should not pretend to be the
 entire agent stack when it is being used as an execution substrate.
-

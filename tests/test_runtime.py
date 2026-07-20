@@ -67,6 +67,7 @@ def test_runtime_uses_task_capabilities_without_mutating_shared_gate() -> None:
         environment_revision="rev-1",
         locator={"selector": "#save"},
         required_capabilities=["settings.write"],
+        idempotency_key="settings-save-1",
     )
     runtime = AffordanceRuntime(FakeExecutor())
 
@@ -100,4 +101,3 @@ def test_runtime_preserves_executor_error_code() -> None:
 
     assert result.status == RuntimeStep.FAILED
     assert result.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT
-

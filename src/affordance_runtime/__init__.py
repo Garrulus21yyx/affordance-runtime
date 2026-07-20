@@ -11,6 +11,7 @@ from affordance_runtime.contracts import (
     RiskLevel,
     Surface,
 )
+from affordance_runtime.coordinator import CoordinatorResult, PlannerDecision, RunBudget, RunCoordinator
 from affordance_runtime.routing import CostAwareRouter, RoutingDecision
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -22,11 +23,15 @@ __all__ = [
     "BrowserSession",
     "BrowserSnapshot",
     "Condition",
+    "CoordinatorResult",
     "CostAwareRouter",
     "ExecutionReceipt",
     "Observation",
+    "PlannerDecision",
     "RiskLevel",
     "RoutingDecision",
+    "RunBudget",
+    "RunCoordinator",
     "RuntimeStep",
     "StateKernel",
     "Surface",

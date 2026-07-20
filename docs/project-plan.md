@@ -140,37 +140,27 @@ The agent should not only decide what to do. The runtime must know:
 
 ## 4. Current Status
 
-The repository should be described as an executable skeleton until the Web gold
-path, task loop, and benchmark runner exist.
+The controlled local profile has a strong executable core, but completion claims
+are split by evidence level. See
+[Implementation Status and Forward Gates](implementation-status.md).
 
-Implemented skeleton:
+| Area | Status | Evidence boundary |
+| --- | --- | --- |
+| M0 Design Freeze | done | contracts, state machine, trace schema, scenarios, and gates are tested |
+| M1 Web Gold Path | done | real Chromium pricing path, artifacts, verification, and baseline |
+| M2 Local Reliability | done | three local scenarios and 3 x 7 comparison matrix pass |
+| M3 Assisted Evolution | in progress | proposal/report exists; executable artifact application and fresh replay do not |
+| M4 Integration Boundary | in progress | local task service/adapter exists; no external parent-agent call yet |
+| MiniWoB++ | compatibility smoke only | one official click-button episode passed through the contract path with raw reward 1.0 |
 
-- typed affordance, contract, receipt, trace, risk, and metric models
-- migrated DOM, Set-of-Mark, and WoT adapter code
-- single-contract execution path useful for debug and unit testing
-- initial capability gate, preflight, verifier, state, trace, and evolution
-  structures
+Next: M5 evidence freeze, M6 executable evolution, M7 real parent-agent
+integration, and M8 generalization evaluation. M9 durable single-run recovery is
+conditional on a measured restart or waiting failure.
 
-Partial:
-
-- State Kernel semantics across multiple contracts
-- Affordance lease semantics beyond revision equality
-- task constraints and approval token binding
-- metric aggregation without full benchmark protocol
-
-Planned before claiming a complete runtime:
-
-- Playwright observer and executor
-- task-level run context and explicit state machine
-- post-action observation and verification reports
-- artifact-backed trace writer
-- local SaaS fixture and benchmark runner
-- CLI gold path
-- bounded recovery policy
-- baseline and ablation reports
-- assisted harness evolution after benchmark freeze
-- optional task-level MCP and framework integrations after the core evolution
-  loop
+The current seed parameter does not create distinct local variants. SoM and WoT
+prove common contract reuse in controlled tests, not broad live generalization.
+Distributed service infrastructure, desktop/mobile expansion, arbitrary source
+mutation, and PiP remain future options.
 
 ## 5. Modes
 
@@ -379,61 +369,67 @@ Exit criteria:
 - DOM, visual, and WoT payloads preserve surface-specific data while reusing
   common contract, trace, and evaluation semantics
 
-### M3: Assisted Harness Evolution
+### M3: Assisted Harness Evolution - in progress
 
-Objective: turn failed traces into reviewed, regression-tested harness artifacts.
+Current evidence: typed classification/proposals, direction-aware gates,
+replay-category accounting, and a before/after report.
 
-Prerequisites:
+Remaining exit criteria:
 
-- stable trace schema
-- resettable benchmark environment
-- classified failures from M2
-- deterministic enough regression runs
-- one manually designed patch has passed the replay gate
+- proposal contains an executable declarative payload
+- a fresh candidate runtime loads that payload
+- original, family, global-smoke, and safety-smoke suites rerun
+- registry decision persists and rollback is demonstrated
 
-Deliverables:
+### M4: Local Integration Boundary - in progress
 
-- failure classifier
-- declarative skill, policy, verifier, affordance-rule, or fixture proposal
-- quarantine registry
-- regression replay gate
-- before/after report
+The in-process task service and bounded tool adapter are implemented. Completion
+requires one real external MCP/parent-agent client to submit, approve, cancel,
+and retrieve evidence/trace without primitive GUI tools.
 
-Exit criteria:
+### M5: Evidence Freeze - required next
 
-- at least one real failed trace becomes an accepted or quarantined artifact
-- the original failure and related task family are replayed
-- safety smoke tests have zero unsafe side effects
-- no artifact is activated without a versioned regression decision
+Deliver CI, package-build checks, an environment manifest, clean-checkout
+reproduction, and versioned benchmark/evolution summaries. Exit when the local
+gold path, 3 x 7 matrix, and evolution prototype reproduce from a documented
+revision.
 
-### M4: Optional Integrations
+### M6: Executable Harness Evolution - required
 
-Objective: expose the proven runtime loop through selected parent-agent or
-framework integrations without moving GUI execution authority outside the
-runtime.
+Materialize a verifier or policy artifact, apply it to a fresh candidate runtime,
+persist the decision, replay all mandatory categories, and prove rollback. This
+closes the M3 claim gap.
 
-Candidate deliverables, selected according to demonstrated need:
+### M7: Real Parent-Agent Integration - required for subagent claims
 
-- task-level MCP API: submit task, query status, approve, cancel, and fetch
-  result/evidence/trace
-- reference LLM planner behind `PlannerPort`
-- LangGraph outer workflow adapter
-- optional REST only if MCP does not meet an actual integration requirement
-- public benchmark adapters
-- optional Picture-in-Picture observer for live status, approval, pause, and
-  explicit human takeover after the runtime control APIs are stable
+Expose the bounded task API through MCP or an equivalent protocol and connect
+one real Codex, Claude, OpenHands, or LangGraph parent. Complete pricing and
+approval-gated export with evidence and trace retrieval. This closes M4.
 
-PiP is not browser-context isolation, does not own a second `RunState`, and
-does not plan or authorize actions.
+### M8: Generalization Evaluation - required for broad claims
 
-Exit criteria:
+Deliver distinct seeded variants, unseen layouts/hidden perturbations, a pinned
+official MiniWoB++ adapter, and a real visual grounding path.
 
-- a parent agent can submit a bounded task without access to public raw
-  click/type primitives
-- Runtime `RunState` remains authoritative rather than framework state
-- all returned results include evidence and trace references
-- if PiP is selected, it is view-only by default, does not steal focus or leak
-  input, and pause/takeover/close behavior is represented in the trace
+The MiniWoB++ work is a curated runtime-diagnostics subset:
+
+- official source is pinned and unmodified
+- adapter owns episode start/reset, instruction, termination, reward, and trace
+- repeated tasks cover click, type, select, dialog, sequence, and form families
+- reports contain official success/reward plus runtime diagnostics
+- results are never presented as a full MiniWoB++ leaderboard score
+
+Compatibility evidence already exists for one official `click-button` episode
+at Farama commit `eb59fed60fabe8951350275ba8650633b740013b`: the Playwright
+path produced a DOM affordance and ActionContract, completed the episode, and
+received raw reward `1.0`. This alone does not satisfy M8.
+
+### M9: Durable Single-Run Recovery - conditional
+
+Promote only after a restart, approval-wait, or uncertain-effect test proves
+in-memory state insufficient. Add a simple durable run/event store, idempotent
+commands, and post-restart effect inspection. Worker pools, distributed queues,
+and multi-tenancy remain in the complete blueprint.
 
 ## 10. Non-Goals
 
@@ -472,11 +468,12 @@ The plan is allowed to delete ideas when evidence is weak:
 
 ## 12. Presentation Boundary
 
-Use engineering evidence language in README and interviews:
+The required gold path, benchmark, trace artifacts, and reports now exist. Use
+engineering evidence language in README and interviews:
 
 ```text
-designed and prototyped a planner-neutral GUI execution runtime skeleton
+implemented and evaluated a planner-neutral GUI execution runtime
 ```
 
-Use stronger implementation claims only after the relevant gold path, benchmark,
-trace artifacts, and reports exist.
+Keep production-scale claims bounded to the modular-monolith profile; the
+complete blueprint remains a future architecture reference.

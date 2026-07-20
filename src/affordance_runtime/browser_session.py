@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import time
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
@@ -115,25 +117,31 @@ class BrowserSession:
 
         html = self._page.content()
         url = self.url
+        snapshot_id = f"snap_{uuid.uuid4().hex}"
         dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
         environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
         screenshot_ref = ""
         if screenshot_path is not None:
             screenshot_bytes = self._page.screenshot(path=screenshot_path)
             screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
-        observation = Observation(
-            environment_revision=environment_revision,
-            url=url,
-            dom_hash=dom_hash,
-            screenshot_ref=screenshot_ref,
-            metadata={"html": html},
-        )
         model = self._dom.transduce(
             html,
             environment_revision=environment_revision,
             page_id=page_id,
             url=url,
             ttl_ms=ttl_ms,
+            snapshot_id=snapshot_id,
+        )
+        observation = Observation(
+            environment_revision=environment_revision,
+            url=url,
+            dom_hash=dom_hash,
+            screenshot_ref=screenshot_ref,
+            metadata={"html": html},
+            snapshot_id=snapshot_id,
+            page_revision=model.page_revision,
+            target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+            artifact_refs=[screenshot_ref] if screenshot_ref else [],
         )
         return BrowserSnapshot(observation=observation, affordance_model=model)
 
@@ -161,6 +169,27 @@ class BrowserSession:
     def text_content(self, selector: str) -> str | None:
         getter = getattr(self._page, "text_content", None)
         return getter(selector) if getter else None
+
+    def evaluate(self, expression: str) -> Any:
+        evaluator = getattr(self._page, "evaluate", None)
+        if evaluator is None:
+            raise RuntimeError("page does not support JavaScript evaluation")
+        return evaluator(expression)
+
+    def download(self, selector: str, destination_dir: str) -> dict[str, str]:
+        expect_download = getattr(self._page, "expect_download", None)
+        if expect_download is None:
+            raise RuntimeError("page does not support download events")
+        destination = Path(destination_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        with expect_download() as download_info:
+            self._page.click(selector)
+        download = download_info.value
+        filename = str(getattr(download, "suggested_filename", "download.bin"))
+        path = destination / filename
+        download.save_as(str(path))
+        content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        return {"path": str(path), "sha256": content_hash, "filename": filename}
 
     def click_xy(self, x: int, y: int) -> None:
         mouse = getattr(self._page, "mouse", None)

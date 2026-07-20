@@ -1,5 +1,12 @@
 # Current Implementation Plan
 
+Implementation status: M0-M2 are complete for the controlled local profile.
+M3 and M4 have working prototypes but retain evidence gates: evolution does not
+yet apply an executable artifact before fresh replay, and the task API has not
+yet been called by a real external parent agent. See
+[Implementation Status and Forward Gates](implementation-status.md). M5-M9 below
+are the authoritative next steps; production-scale options remain non-blocking.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
@@ -153,7 +160,7 @@ Main path:
 
 ```text
 CREATED -> OBSERVING -> PLANNING -> PREFLIGHT
-        -> ACTING -> VERIFYING -> PLANNING | DONE
+        -> ACTING -> VERIFYING -> OBSERVING | PLANNING | DONE
 ```
 
 Control and failure paths:
@@ -369,6 +376,17 @@ regression_delta
 Latency, cost, action count, observation count, and fallback count remain
 supporting telemetry.
 
+MiniWoB++ is a secondary generalization suite, not a replacement for the local
+SaaS fixtures. The official Farama HTML tasks may be driven through Playwright,
+but release claims require a runtime adapter that owns episode start/reset,
+instruction extraction, termination/reward collection, artifact capture, and
+report aggregation. A one-episode compatibility smoke is not a benchmark result.
+
+The M8 subset will pin the official source; cover click, type, select, dialog,
+sequence, and form families; run repeated unmodified episodes; and report
+official success/reward beside runtime diagnostics. It must be labelled a
+curated runtime subset, never a full MiniWoB++ score.
+
 ### 9.3 Controlled Harness Evolution
 
 The evolution loop is required, but it operates on declarative artifacts rather
@@ -385,49 +403,98 @@ failed trace
   -> accept, quarantine, reject, or roll back
 ```
 
-At least one real failed trace must complete this loop before the project claims
-harness self-evolution.
+A failure classifier and a report comparing an existing full-runtime variant
+against a broken ablation are useful prototype evidence, but do not yet prove
+self-evolution. The claim requires a typed artifact with executable payload,
+loading it into a fresh candidate runtime, rerunning the suites, persisting the
+registry decision, and proving rollback.
 
 ## 10. Milestones
 
-### M0: Design Alignment
+### M0: Design Alignment - done
 
 Freeze one state machine, current wire contracts, trace schema, scenario specs,
-and declarative evolution artifact schema. Mark planned features honestly.
+and declarative evolution artifact schema.
 
-### M1: Web Runtime Core
+### M1: Web Runtime Core - done
 
 Deliver the pricing fixture, Playwright observer/executor, DOM affordances,
 scripted planner, contract/preflight, post-action verification, artifact-backed
 trace, CLI, and Direct Playwright baseline.
 
-### M2: Reliability and Cross-Surface Proof
+### M2: Reliability and Cross-Surface Proof - done for the local profile
 
-Deliver settings and export fixtures, stale/modal/selector/download
-perturbations, capability/approval, bounded recovery, benchmark runner, visual
-SoM proof, and local WoT proof. Visual and WoT demonstrate contract reuse; they
-do not become separate products.
+The three local scenarios and 3 x 7 matrix run successfully. The current seed
+argument does not yet generate distinct variants. SoM and WoT prove common
+contract reuse in controlled tests, not live-environment generalization.
 
-### M3: Harness Evolution
+### M3: Assisted Evolution Prototype - in progress
 
-Deliver failure classification, declarative proposals, registry, regression
-replay, and a before/after report for at least one real failure.
+Implemented: classification, proposal types, direction-aware gates,
+replay-category accounting, and before/after reporting.
 
-### M4: Optional Integrations and Observer UI
+Remaining: apply an executable proposal to a fresh candidate runtime and persist
+the registry decision. M6 closes this gate.
 
-Add a task-level MCP API, LLM reference planner, LangGraph outer adapter, public
-benchmark adapters, or an optional Picture-in-Picture observer according to
-demonstrated need. None blocks M3.
+### M4: Local Integration Boundary - in progress
 
-PiP is an observer and human-takeover UI, not browser session isolation and not
-a second execution runtime. It may show the live environment, current subgoal,
-pending action, approval state, and verification status. It is view-only by
-default; pause and takeover are explicit Coordinator commands.
+Implemented: in-process task service and bounded parent-agent-shaped tool
+adapter. Remaining: one real external parent agent must call it without access
+to primitive click/type operations. M7 closes this gate.
 
-PiP work may begin only after trace streaming, pause/cancel/resume, approval,
-and the Web gold path are stable. Its acceptance checks cover focus stealing,
-input leakage, stream latency, pause/takeover correctness, close/restore
-behavior, trace consistency, and resource overhead.
+### M5: Evidence Freeze - required next
+
+- commit the current implementation as a reviewable unit
+- add CI for tests, Ruff, mypy, package build, and focused Chromium smoke
+- record runtime commit, browser version, fixture version, and seed semantics
+- publish reproducible benchmark and evolution summaries
+- keep README and status claims aligned with generated evidence
+
+Exit: a clean checkout reproduces the local gold path, 3 x 7 matrix, and
+evolution prototype.
+
+### M6: Executable Harness Evolution - required
+
+- add an executable payload for at least one verifier or policy patch
+- load it into a fresh candidate runtime
+- replay original, task-family, global-smoke, and safety-smoke suites
+- persist artifact/registry versions and demonstrate rollback
+
+Exit: one failed trace produces an applied artifact that fixes the failure with
+zero safety regression.
+
+### M7: Real Parent-Agent Integration - required for subagent claims
+
+Expose the bounded API through MCP or an equivalent external protocol. One real
+Codex, Claude, OpenHands, or LangGraph parent must complete the pricing flow and
+the approval-gated export flow while Runtime remains authoritative.
+
+### M8: Generalization Evaluation - required for broad claims
+
+- make seeds produce distinct fixture variants
+- add unseen layouts or hidden perturbations
+- add a pinned official MiniWoB++ adapter and repeated curated subset
+- cover click, type, select, dialog, sequence, and form families
+- add a real visual grounding path, not only a static SoM contract proof
+- report official MiniWoB success/reward and runtime failure diagnostics
+
+Current MiniWoB++ evidence is compatibility-only: on 2026-07-20 the official
+Farama source at commit `eb59fed60fabe8951350275ba8650633b740013b` served the
+real `click-button` task; BrowserSession built a DOM affordance, DomExecutor
+executed an ActionContract, and the task returned `WOB_DONE_GLOBAL=true` and
+raw reward `1.0`. No suite adapter or repeated report exists yet.
+
+### M9: Durable Single-Run Recovery - conditional
+
+Promote only after restart, approval-wait, or uncertain-effect tests expose a
+real need. Use a simple durable store for run state, events, idempotent commands,
+and effect inspection. Do not add a worker pool or distributed queue.
+
+### PiP Decision Gate
+
+PiP remains optional. It is an observer/human-takeover UI, not browser isolation
+or a second runtime. Begin it only if M7 testing shows trace streaming and the
+normal run console are insufficient.
 
 ## 11. Explicitly Deferred
 

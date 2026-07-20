@@ -22,6 +22,10 @@ class TraceNode:
 class TraceDag:
     run_id: str
     nodes: list[TraceNode] = field(default_factory=list)
+    runtime_version: str = "0.1.0"
+    contract_schema_version: str = "1.0"
+    environment_version: str = ""
+    artifact_index: list[str] = field(default_factory=list)
 
     def add(self, kind: str, payload: dict[str, Any], *, parents: list[str] | None = None) -> TraceNode:
         parent_ids = parents or []
@@ -42,6 +46,10 @@ class TraceDag:
         return {
             "schema_version": "1.0",
             "run_id": self.run_id,
+            "runtime_version": self.runtime_version,
+            "contract_schema_version": self.contract_schema_version,
+            "environment_version": self.environment_version,
+            "artifact_index": self.artifact_index,
             "nodes": [
                 {
                     "id": node.id,
@@ -59,11 +67,16 @@ class TraceDag:
             {
                 "schema_version": "1.0",
                 "run_id": self.run_id,
+                "runtime_version": self.runtime_version,
+                "contract_schema_version": self.contract_schema_version,
+                "environment_version": self.environment_version,
                 "sequence": sequence,
                 "event_id": node.id,
                 "event_type": node.kind,
                 "parent_event_ids": node.parents,
                 "timestamp_s": node.timestamp_s,
+                "state": node.payload.get("state", ""),
+                "artifact_refs": node.payload.get("artifact_refs", []),
                 "payload": node.payload,
             }
             for sequence, node in enumerate(self.nodes)
@@ -84,4 +97,3 @@ class JsonlTraceWriter:
         if not self.path.exists():
             return []
         return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
-

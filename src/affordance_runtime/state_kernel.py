@@ -10,7 +10,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from affordance_runtime.contracts import ExecutionReceipt, Observation
+from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
+from affordance_runtime.verification import VerificationReport
+
+_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    "created": {"observing", "aborted"},
+    "observing": {"planning", "failed", "aborted"},
+    "planning": {"preflight", "done", "failed", "aborted"},
+    "preflight": {"acting", "observing", "waiting_approval", "aborted"},
+    "waiting_approval": {"preflight", "aborted"},
+    "acting": {"verifying", "recovering", "failed"},
+    "verifying": {"planning", "observing", "recovering", "done", "failed"},
+    "recovering": {"observing", "waiting_approval", "aborted", "failed"},
+    "done": set(),
+    "failed": set(),
+    "aborted": set(),
+}
 
 
 @dataclass
@@ -24,9 +39,22 @@ class StateKernel:
     pending_obligations: list[str] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     receipts: list[ExecutionReceipt] = field(default_factory=list)
+    phase: str = "created"
+    current_snapshot_id: str = ""
+    current_contract: ActionContract | None = None
+    latest_verification: VerificationReport | None = None
+    step_count: int = 0
+    observation_count: int = 0
+    replan_count: int = 0
+    recovery_count: int = 0
+    effectful_action_count: int = 0
+    transitions: list[tuple[str, str]] = field(default_factory=list)
+    final_result: dict[str, Any] = field(default_factory=dict)
 
     def remember_observation(self, observation: Observation) -> None:
         self.observations.append(observation)
+        self.observation_count += 1
+        self.current_snapshot_id = observation.snapshot_id
 
     def record_receipt(self, receipt: ExecutionReceipt) -> None:
         self.receipts.append(receipt)
@@ -47,3 +75,8 @@ class StateKernel:
     def constraint_summary(self) -> str:
         return "; ".join(f"{key}={value}" for key, value in sorted(self.constraints.items()))
 
+    def transition(self, next_phase: str) -> None:
+        if next_phase not in _ALLOWED_TRANSITIONS.get(self.phase, set()):
+            raise ValueError(f"invalid runtime transition: {self.phase} -> {next_phase}")
+        self.transitions.append((self.phase, next_phase))
+        self.phase = next_phase
