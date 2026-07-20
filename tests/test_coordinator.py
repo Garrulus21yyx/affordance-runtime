@@ -15,6 +15,7 @@ from affordance_runtime.planning import (
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.trace import TraceDag
 
 
 def _snapshot(sequence: int, *, saved: bool = False) -> BrowserSnapshot:
@@ -92,6 +93,21 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert event_types.index("ActionCompleted") < event_types.index("PostActionObservationCaptured")
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
+
+
+def test_coordinator_continues_an_upstream_compiler_trace() -> None:
+    trace = TraceDag("run-upstream")
+    compiler_node = trace.add("TaskSpecCreated", {"task_revision": 1})
+
+    result = RunCoordinator(
+        observer=FakeObserver(),
+        planner=SavePlanner(),
+        executor=FakeExecutor(),
+    ).run_sync(TaskEnvelope("run-upstream", "save settings"), trace)
+
+    assert result.trace is trace
+    task_node = next(node for node in trace.nodes if node.kind == "TaskCreated")
+    assert task_node.parents == [compiler_node.id]
 
 
 class DriftingObserver:

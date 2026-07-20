@@ -16,6 +16,7 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     UserRequest,
 )
+from affordance_runtime.trace import TraceDag
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -104,3 +105,36 @@ def test_llm_compiler_cannot_override_blocking_ambiguity() -> None:
 
     assert result.status == CompilationStatus.NEEDS_CLARIFICATION
     assert result.task_spec is None
+
+
+def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+        )
+    )
+    trace = TraceDag("request-read")
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="request-read", raw_text="Read pricing with private wording"),
+            trace=trace,
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert [node.kind for node in trace.nodes] == [
+        "UserRequestReceived",
+        "IntentDraftProduced",
+        "TaskSpecCreated",
+    ]
+    assert "private wording" not in str(trace.to_dict())
+    assert trace.nodes[-1].parents == [trace.nodes[-2].id]

@@ -131,19 +131,23 @@ class RunCoordinator:
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
     contract_builder: ContractBuilder | None = None
 
-    async def run(self, envelope: TaskEnvelope) -> CoordinatorResult:
+    async def run(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Async-compatible entry point for framework and service adapters."""
 
-        return await asyncio.to_thread(self.run_sync, envelope)
+        return await asyncio.to_thread(self.run_sync, envelope, upstream_trace)
 
-    def run_sync(self, envelope: TaskEnvelope) -> CoordinatorResult:
+    def run_sync(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Execute one task with serial state mutation and action semantics."""
 
         state = StateKernel(task_id=envelope.task_id, goal=envelope.goal, constraints=dict(envelope.constraints))
-        trace = TraceDag(run_id=envelope.task_id)
+        if upstream_trace is not None and upstream_trace.run_id != envelope.task_id:
+            raise ValueError("upstream trace run_id does not match task")
+        trace = upstream_trace or TraceDag(run_id=envelope.task_id)
+        upstream_parent = trace.nodes[-1] if trace.nodes else None
         parent: TraceNode | None = trace.add(
             "TaskCreated",
             {"state": RuntimeStep.CREATED.value, "goal": envelope.goal, "constraints": envelope.constraints},
+            parents=[upstream_parent.id] if upstream_parent else None,
         )
         latest_verification: VerificationReport | None = None
 

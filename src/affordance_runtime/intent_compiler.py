@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 
@@ -12,6 +13,7 @@ from affordance_runtime.task_intake import (
     IntentDraftValidator,
     UserRequest,
 )
+from affordance_runtime.trace import TraceDag, TraceNode
 
 INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v1"
 
@@ -42,16 +44,52 @@ class LLMIntentCompiler:
         *,
         revision: int = 1,
         task_id: str | None = None,
+        trace: TraceDag | None = None,
     ) -> CompilationResult:
-        draft = await self.model.generate_structured(
-            [
-                ModelMessage(role="system", content=_SYSTEM_PROMPT),
-                ModelMessage(role="user", content=json.dumps(_bounded_request(request), sort_keys=True)),
-            ],
-            IntentDraft,
-            self.config,
-        )
-        return self.validator.compile(request, draft, revision=revision, task_id=task_id)
+        parent = _record_request(trace, request)
+        try:
+            draft = await self.model.generate_structured(
+                [
+                    ModelMessage(role="system", content=_SYSTEM_PROMPT),
+                    ModelMessage(role="user", content=json.dumps(_bounded_request(request), sort_keys=True)),
+                ],
+                IntentDraft,
+                self.config,
+            )
+        except Exception as exc:
+            if trace is not None:
+                trace.add(
+                    "IntentCompilationFailed",
+                    {
+                        "phase": "model_drafting",
+                        "error_type": type(exc).__name__,
+                        "prompt_version": self.config.prompt_version,
+                        "fallback_failures": list(getattr(self.model, "failures", ())),
+                    },
+                    parents=[parent.id] if parent else None,
+                )
+            raise
+        if trace is not None:
+            parent = trace.add(
+                "IntentDraftProduced",
+                {
+                    "compiler": type(self).__name__,
+                    "prompt_version": self.config.prompt_version,
+                    "decoding_config": self.config.model_dump(mode="json"),
+                    "draft_schema": IntentDraft.__name__,
+                    "draft": draft.model_dump(mode="json"),
+                    "model_call": (
+                        self.model.last_call.model_dump(mode="json")
+                        if self.model.last_call is not None
+                        else None
+                    ),
+                    "fallback_failures": list(getattr(self.model, "failures", ())),
+                },
+                parents=[parent.id] if parent else None,
+            )
+        result = self.validator.compile(request, draft, revision=revision, task_id=task_id)
+        _record_compilation_result(trace, result, parent)
+        return result
 
 
 def _bounded_request(request: UserRequest) -> dict[str, object]:
@@ -69,3 +107,58 @@ def _bounded_request(request: UserRequest) -> dict[str, object]:
         "locale": request.locale,
         "time_context": request.time_context,
     }
+
+
+def _record_request(trace: TraceDag | None, request: UserRequest) -> TraceNode | None:
+    if trace is None:
+        return None
+    return trace.add(
+        "UserRequestReceived",
+        {
+            "request_id": request.request_id,
+            "raw_text_sha256": hashlib.sha256(request.raw_text.encode()).hexdigest(),
+            "raw_text_length": len(request.raw_text),
+            "conversation_refs": list(request.conversation_refs),
+            "attachment_refs": list(request.attachment_refs),
+            "target_refs": list(request.target_refs),
+            "channel": request.channel,
+            "locale": request.locale,
+            "redaction": {
+                "raw_text": "sha256_and_length_only",
+                "credentials": "not_exposed_to_trace",
+            },
+        },
+        parents=[trace.nodes[-1].id] if trace.nodes else None,
+    )
+
+
+def _record_compilation_result(
+    trace: TraceDag | None,
+    result: CompilationResult,
+    parent: TraceNode | None,
+) -> None:
+    if trace is None:
+        return
+    if result.task_spec is not None:
+        task_spec = result.task_spec
+        trace.add(
+            "TaskSpecCreated" if task_spec.revision == 1 else "TaskSpecRevised",
+            {
+                "status": result.status.value,
+                "task_revision": task_spec.revision,
+                "task_spec_identity": task_spec.identity,
+                "task_spec_schema_version": task_spec.schema_version,
+                "task_spec": task_spec.model_dump(mode="json"),
+            },
+            parents=[parent.id] if parent else None,
+        )
+        return
+    event = "ClarificationRequested" if result.status.value == "needs_clarification" else "IntentCompilationRejected"
+    trace.add(
+        event,
+        {
+            "status": result.status.value,
+            "issues": [issue.model_dump(mode="json") for issue in result.issues],
+        },
+        parents=[parent.id] if parent else None,
+    )
