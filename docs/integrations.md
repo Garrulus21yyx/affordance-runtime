@@ -23,9 +23,20 @@ TaskToolAdapter
 ```
 
 `LocalScenarioTaskRunner` connects this interface to the real Chromium runtime.
-Transport wrappers such as MCP or REST can map directly to these operations;
-they are optional because the stable task boundary no longer depends on a
-particular protocol.
+`ExternalTaskProtocol` exposes the same eight operations over newline-delimited
+JSON-RPC `affordance-task-rpc/1.0`. The server runs in a separate process and
+also owns the local fixture and browser sessions.
+
+Run the real external LangGraph proof with:
+
+```bash
+python scripts/langgraph_parent_smoke.py --output evidence/parent
+```
+
+The compiled graph completes pricing, retrieves result/evidence/trace, submits
+an export, observes `waiting_approval`, supplies a scoped approval, then
+retrieves the verified download evidence. `gui_click`, `gui_type`, and
+`gui_observe` are not present in external tool discovery.
 
 ### 2.1 CLI
 
@@ -45,7 +56,22 @@ GET /v1/traces/{trace_id}
 POST /v1/evals
 ```
 
-### 2.3 Optional MCP Transport
+### 2.3 External Task JSON-RPC and Optional MCP Mapping
+
+Implemented protocol methods:
+
+```text
+runtime/info
+tools/list
+tools/call
+shutdown
+```
+
+Each request and response uses JSON-RPC 2.0 on one line. This is the current
+equivalent external protocol required by M7. MCP can map the same stable tool
+schemas later without changing runtime authority.
+
+Optional MCP mapping:
 
 Tools:
 
@@ -64,15 +90,23 @@ but they should not be the primary external contract because they bypass the
 State Kernel, Affordance Lease, Capability Gate, Action Contract, and Verifier
 Ladder.
 
-### 2.4 LangGraph Node
+### 2.4 LangGraph Parent - implemented
 
-The runtime can be wrapped as a node:
+The M7 parent is a compiled LangGraph 1.2 graph whose nodes call the external
+task protocol:
 
 ```text
 Agent State
-  -> GUI Task Node
-  -> Result / Blocked / Needs Approval
+  -> discover task tools
+  -> submit / execute pricing
+  -> collect result / evidence / trace
+  -> submit / execute export
+  -> approve export
+  -> collect result / evidence / trace
 ```
+
+LangGraph never receives a browser session or primitive action executor. The
+runtime process remains the sole execution authority.
 
 ### 2.5 Codex / Claude Tool Adapter
 

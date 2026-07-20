@@ -9,8 +9,7 @@ The repository implements the M0-M2 controlled local profile and the M5
 reproducible evidence freeze: three reproducible Web/SaaS scenarios, trace and
 artifacts, independent verification,
 fixed perturbation controls, and baseline/ablation evaluation. M3/M6 executable
-evolution is complete. M4 integration has a working prototype, but a real
-external parent-agent call remains an open gate. Service-grade distributed
+evolution and M4/M7 external parent integration are complete. Service-grade distributed
 options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -62,19 +61,20 @@ Implemented current profile:
 - failure classification, SHA-bound executable evolution payloads, fresh candidate replay, persisted decisions, and rollback
 - task-level submit/execute/status/approve/cancel/result/evidence/trace service and parent-agent tool adapter
 - CI, package build, environment manifests, versioned reports, and one-command clean-checkout reproduction
+- newline-delimited external task JSON-RPC and a real compiled LangGraph parent running against a separate runtime process
 
 Verified evidence:
 
-- all 51 unit/integration tests pass with Ruff and mypy
+- all 52 unit/integration tests pass with Ruff and mypy
 - clean commit `4528f25` reproduces tests, Ruff, mypy, package build, focused Chromium smoke, the 21-run matrix, and evolution gate via `./scripts/reproduce_local.sh`
 - Full Runtime passes all three fixed-seed scenarios with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
 - a no-verifier false accept produces a SHA-bound verifier patch; a fresh candidate passes six new Chromium replays with zero safety regression, and persisted rollback is verified
+- a real LangGraph 1.2.9 parent completes pricing and approval-gated export over an external process boundary with no primitive GUI tools
 - one official Farama MiniWoB++ `click-button` episode passed through BrowserSession, DOM Affordance, ActionContract, and DomExecutor with raw reward 1.0; a repeated suite adapter is pending
 
 Next evidence gates:
 
-- M7: one real MCP or parent-agent integration
 - M8: distinct seeds, unseen layouts, repeated MiniWoB++ subset, real visual path
 - M9: durable single-run recovery only if restart/waiting tests justify it
 
@@ -254,7 +254,7 @@ The implementation is in `src/affordance_runtime`:
 - `evolution_replay.py`: failure classification to proposal/replay/before-after decision.
 - `fixtures.py`: resettable pricing, settings, and approval-gated export application.
 - `planners.py`: deterministic scenario planners through `PlannerPort`.
-- `integrations/`: stable task service, bounded tool adapter, and local scenario runner.
+- `integrations/`: stable task service, external task JSON-RPC, local scenario runner, and real LangGraph parent.
 - `adapters/dom.py`: migrated DOM transduction.
 - `adapters/som.py`: migrated Set-of-Marks grounding.
 - `adapters/wot.py`: migrated Thing Description parsing.

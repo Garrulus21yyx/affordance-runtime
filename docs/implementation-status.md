@@ -20,10 +20,10 @@ Status values:
 | M1 Web Gold Path | done | real Chromium pricing, pre/post observation, verification, artifacts, CLI, baseline | none |
 | M2 Local Reliability | done | three scenarios, fixed perturbations, approval/download oracle, 3 x 7 matrix | distinct seeds/public generalization move to M8 |
 | M3 Assisted Evolution | done | classifier, typed executable proposal, fresh replay, direction-aware decision, persistence, rollback | none |
-| M4 Integration Boundary | in_progress | in-process task service and bounded adapter | real external MCP/parent-agent call |
+| M4 Integration Boundary | done | in-process task service, bounded adapter, external JSON-RPC, real LangGraph parent | none |
 | M5 Evidence Freeze | done | CI, package build, environment manifest, versioned reports, clean-clone reproduction at `4528f25` | none |
 | M6 Executable Evolution | done | SHA-bound verifier payload, fresh candidate, six new Chromium replays, persisted acceptance and rollback proof at `4cccc96` | none |
-| M7 External Integration | pending | local adapter contract exists | real parent completes read-only and approval-gated tasks |
+| M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | pending | one official MiniWoB++ compatibility smoke passed | repeated curated suite, distinct seeds, unseen layouts, real visual path |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
@@ -89,7 +89,7 @@ Status values:
 | Stable task-level API | done | `TaskRuntimeService` supports submit, execute, status, scoped approval, cancel, result, evidence, and trace |
 | Parent agent cannot bypass runtime with public primitive actions | done | `TaskToolAdapter` exports only eight task-level operations; click/type/observe are absent |
 | Local working integration | done | `LocalScenarioTaskRunner` connects the task API to real Chromium scenarios |
-| Real external parent-agent integration | pending | no MCP/Codex/Claude/OpenHands/LangGraph caller has exercised it |
+| Real external parent-agent integration | done | compiled LangGraph calls separate runtime process over `affordance-task-rpc/1.0`; pricing and gated export pass |
 | Evidence and trace retrieval | done | adapter returns artifact paths and parsed JSONL events |
 | Optional PiP decision gate | done | deferred: no measured observer/takeover need justifies another UI surface |
 
@@ -99,7 +99,7 @@ Status values:
 | --- | --- |
 | M5 | done: CI, package build, environment identity, clean-checkout command, and versioned benchmark/evolution summaries at `4528f25` |
 | M6 | done: executable payload, fresh candidate runtime, mandatory replay, persisted decision, and rollback at `4cccc96` |
-| M7 | real parent-agent submission/approval/cancel/result/evidence/trace with no primitive GUI bypass |
+| M7 | done: real LangGraph submission/approval/result/evidence/trace over an external protocol with no primitive GUI bypass at `9a9796e` |
 | M8 | distinct seeds, unseen layouts, repeated pinned MiniWoB++ subset, real visual grounding |
 | M9 | only after a failing restart/waiting case; simple durable state/events and uncertain-effect inspection |
 
@@ -168,3 +168,4 @@ Clean-checkout M5 gate:
 | 2026-07-20 | M8 compatibility | Ran official Farama MiniWoB++ click-button through BrowserSession, DOM Affordance, ActionContract, and DomExecutor | temporary official checkout only | done=true, raw reward=1.0; suite adapter pending |
 | 2026-07-20 | M5 | Added CI, package build dependency, focused Chromium smoke, environment manifest, versioned report output, and one-command clean-checkout reproduction | workflow, environment module, benchmark writer, scripts, evidence summary | clean clone at `4528f25`: 49 tests, Ruff, mypy, build, smoke, 21-run matrix, and evolution gate passed |
 | 2026-07-20 | M6 | Added SHA-bound executable verifier payloads, fresh candidate runtime replay, atomic registry persistence, accepted-only loading, versioned reports, and two-layer rollback proof | evolution modules, explicit benchmark runtime profiles, evidence gate, tests | clean clone at `4cccc96`: 51 tests plus 21 benchmark and 6 fresh replay runs; accepted registry and rolled-back proof verified |
+| 2026-07-20 | M7 | Added external task JSON-RPC, a separate runtime server process, and a compiled LangGraph parent for pricing and approval-gated export | integration modules, parent smoke, CI/reproduction, tests, evidence | clean clone at `9a9796e`: 52 tests; pricing success; export waited then succeeded; evidence and trace retrieved; no primitive GUI tools exposed |

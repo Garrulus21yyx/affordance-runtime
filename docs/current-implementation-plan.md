@@ -1,10 +1,8 @@
 # Current Implementation Plan
 
-Implementation status: M0-M3 and M5-M6 are complete for the controlled local
-profile. M4 has a working prototype but retains one evidence gate: the task API
-has not yet been called by a real external parent agent. See
-[Implementation Status and Forward Gates](implementation-status.md). M7-M9
-below are the authoritative next steps; M5-M6 are retained as completed evidence,
+Implementation status: M0-M7 are complete for the controlled local profile.
+See [Implementation Status and Forward Gates](implementation-status.md). M8-M9
+below are the authoritative next steps; M5-M7 are retained as completed evidence,
 and production-scale options remain non-blocking.
 
 ## 1. Authority
@@ -437,11 +435,11 @@ M6 applied a SHA-bound executable verifier proposal to a fresh candidate,
 generated new replay traces, persisted the registry decision, and proved
 rollback.
 
-### M4: Local Integration Boundary - in progress
+### M4: Local Integration Boundary - done through M7
 
-Implemented: in-process task service and bounded parent-agent-shaped tool
-adapter. Remaining: one real external parent agent must call it without access
-to primitive click/type operations. M7 closes this gate.
+Implemented: in-process task service, bounded parent-agent-shaped tool adapter,
+external task JSON-RPC, and a real LangGraph parent in a separate process. The
+parent has no access to primitive click/type/observe operations.
 
 ### M5: Evidence Freeze - done
 
@@ -475,11 +473,17 @@ no-verifier runtime, produced six new Chromium traces across all mandatory
 categories, persisted acceptance, and proved runtime plus registry rollback.
 See `evidence/m6-4cccc96.md`.
 
-### M7: Real Parent-Agent Integration - required for subagent claims
+### M7: Real Parent-Agent Integration - done
 
 Expose the bounded API through MCP or an equivalent external protocol. One real
 Codex, Claude, OpenHands, or LangGraph parent must complete the pricing flow and
 the approval-gated export flow while Runtime remains authoritative.
+
+Evidence: a clean clone at `9a9796e66be882b03a9f8059e89dbb22c9e5b056`
+compiled LangGraph 1.2.9 and called a separate runtime process through
+`affordance-task-rpc/1.0`. Pricing succeeded; export stopped for scoped
+approval and then succeeded with file-hash evidence; only eight task-level
+tools were exposed. See `evidence/m7-9a9796e.md`.
 
 ### M8: Generalization Evaluation - required for broad claims
 
