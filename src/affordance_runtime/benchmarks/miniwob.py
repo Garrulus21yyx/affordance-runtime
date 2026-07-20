@@ -52,6 +52,7 @@ CURATED_TASKS = (
 
 
 def ensure_official_miniwob(checkout_root: Path) -> Path:
+    checkout_root = checkout_root.resolve()
     repository = checkout_root / "MiniWoB-plusplus"
     checkout_root.mkdir(parents=True, exist_ok=True)
     if not (repository / ".git").exists():

@@ -27,6 +27,7 @@ visual = [
 ]
 dev = [
   "build>=1.2",
+  "Pillow>=11,<13",
   "pytest>=8.0",
   "ruff>=0.4",
   "mypy>=1.10",
