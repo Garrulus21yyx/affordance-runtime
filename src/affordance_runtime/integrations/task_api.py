@@ -43,10 +43,9 @@ class TaskRequest:
             raise ValueError("TaskRequest run_id does not match TaskSpec task_id")
         if self.goal and self.goal != task_spec.objective:
             raise ValueError("TaskRequest goal does not match TaskSpec objective")
-        requested_capabilities = list(task_spec.requested_capabilities)
-        if self.capabilities and self.capabilities != requested_capabilities:
-            raise ValueError("TaskRequest capabilities do not match TaskSpec requested_capabilities")
-        object.__setattr__(self, "capabilities", requested_capabilities)
+        requested_capabilities = set(task_spec.requested_capabilities)
+        if not set(self.capabilities).issubset(requested_capabilities):
+            raise ValueError("TaskRequest grants exceed TaskSpec requested_capabilities")
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -151,6 +150,11 @@ class TaskRuntimeService:
                 view.request,
                 goal=task_spec.objective,
                 target=task_spec.targets[0] if task_spec.targets else view.request.target,
+                capabilities=[
+                    capability
+                    for capability in view.request.capabilities
+                    if capability in set(task_spec.requested_capabilities)
+                ],
                 task_spec=task_spec,
             )
             view.execution = None

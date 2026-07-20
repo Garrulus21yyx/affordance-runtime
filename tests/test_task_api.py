@@ -139,3 +139,25 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
     assert revised["status"] == "queued"
     assert revised["request"]["task_spec"]["revision"] == 2
     assert adapter.call("gui_execute_task", {"run_id": "clarify-run"})["status"] == "success"
+
+
+def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
+    request = TaskRequest(
+        run_id="clarify-run",
+        scenario="settings",
+        goal="Update settings",
+        target="settings",
+        task_spec=_task_spec(1),
+    )
+
+    assert request.capabilities == []
+
+    with pytest.raises(ValueError, match="grants exceed"):
+        TaskRequest(
+            run_id="clarify-run",
+            scenario="settings",
+            goal="Update settings",
+            target="settings",
+            capabilities=["admin.superuser"],
+            task_spec=_task_spec(1),
+        )
