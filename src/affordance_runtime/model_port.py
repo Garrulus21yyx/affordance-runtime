@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any, Protocol, Sequence, TypeVar
+from typing import Any, Mapping, Protocol, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -65,6 +66,42 @@ class ModelPort(Protocol):
         output_schema: type[T],
         config: ModelConfig,
     ) -> T: ...
+
+
+@dataclass
+class FallbackModelPort:
+    """Try provider-neutral model ports in order without leaking provider payloads."""
+
+    ports: tuple[ModelPort, ...]
+    provider: str = field(default="fallback", init=False)
+    model: str = field(default="ordered-profiles", init=False)
+    endpoint_class: str = field(default="mixed", init=False)
+    last_call: ModelCallRecord | None = field(default=None, init=False)
+    failures: tuple[str, ...] = field(default=(), init=False)
+
+    def __post_init__(self) -> None:
+        if not self.ports:
+            raise ValueError("FallbackModelPort requires at least one model port")
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        failures: list[str] = []
+        for port in self.ports:
+            try:
+                value = await port.generate_structured(messages, output_schema, config)
+            except StructuredModelError as exc:
+                failures.append(f"{port.provider}:{type(exc).__name__}")
+                continue
+            self.last_call = port.last_call
+            self.failures = tuple(failures)
+            return value
+        self.last_call = None
+        self.failures = tuple(failures)
+        raise StructuredModelError("all configured model profiles failed")
 
 
 @dataclass
@@ -204,6 +241,60 @@ class OllamaModelPort:
             total_tokens=prompt_tokens + completion_tokens,
         )
         return parsed
+
+
+def model_port_from_environment(environment: Mapping[str, str] | None = None) -> ModelPort:
+    """Build the selected model profile, optionally falling back to local.
+
+    The process environment is read only when no explicit mapping is supplied;
+    loading a dotenv file remains the caller's responsibility.
+    """
+
+    env = os.environ if environment is None else environment
+    active_profile = env.get("LLM_ACTIVE_PROFILE", "local").strip().lower()
+    if active_profile == "local":
+        return _local_model_port(env)
+    if active_profile != "mistral":
+        raise ValueError(f"unsupported LLM_ACTIVE_PROFILE: {active_profile}")
+
+    remote = OpenAICompatibleModelPort(
+        base_url=_required_env(env, "LLM_MISTRAL_BASE_URL"),
+        api_key=_required_env(env, "LLM_MISTRAL_API_KEY"),
+        model=_required_env(env, "LLM_MISTRAL_MODEL"),
+        provider="mistral",
+        endpoint_class="remote",
+    )
+    if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
+        return FallbackModelPort((remote, _local_model_port(env)))
+    return remote
+
+
+def _local_model_port(env: Mapping[str, str]) -> ModelPort:
+    provider = env.get("LLM_LOCAL_PROVIDER", "ollama").strip().lower().replace("-", "_")
+    base_url = env.get("LLM_LOCAL_BASE_URL", "http://127.0.0.1:11434").strip()
+    model = (env.get("LLM_LOCAL_MODEL_ID") or env.get("LLM_LOCAL_MODEL") or "qwen2.5:7b").strip()
+    if provider == "ollama":
+        return OllamaModelPort(model=model, base_url=base_url.removesuffix("/v1"))
+    if provider == "openai_compatible":
+        return OpenAICompatibleModelPort(
+            base_url=base_url,
+            api_key=env.get("LLM_LOCAL_API_KEY", ""),
+            model=model,
+            provider="ollama-openai-compatible",
+            endpoint_class="local",
+        )
+    raise ValueError(f"unsupported LLM_LOCAL_PROVIDER: {provider}")
+
+
+def _required_env(env: Mapping[str, str], name: str) -> str:
+    value = env.get(name, "").strip()
+    if not value:
+        raise ValueError(f"missing required model configuration: {name}")
+    return value
+
+
+def _env_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _post_json(
