@@ -258,6 +258,18 @@ The current default Web runtime intentionally does not satisfy this gate because
 it uses Playwright 1.61; WorkArena must run in a dedicated BrowserGym 1.44
 environment with authorized ServiceNow access.
 
+### WASP Security Baseline
+
+Before a WASP subset is attached, the general planner marks every page-derived
+label, DOM/accessibility/OCR string, and screenshot as an untrusted observation.
+Such content can ground an already-authorized affordance only; it cannot alter
+the `TaskSpec`, grant a capability, supply approval, or become planner policy.
+This is enforced by the `generalist-planner-v6` prompt boundary together with
+the existing deterministic proposal schema, contract capability gate, and
+approval binding. A future WASP run must exercise this baseline against the
+official malicious-page cases and report the result separately; this statement
+is not an official WASP score.
+
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and
