@@ -244,8 +244,10 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 if proposal.done:
+                    state.record_planner_proposal(proposal.model_dump(mode="json"))
                     decision = replace(decision, done=True, result=dict(proposal.result))
                 elif proposal.requires_clarification:
+                    state.record_planner_proposal(proposal.model_dump(mode="json"))
                     state.final_result = {
                         "clarification": proposal.subgoal or proposal.reason,
                         "proposal_id": proposal.proposal_id,
@@ -322,6 +324,7 @@ class RunCoordinator:
                         error_code,
                         latest_verification,
                     )
+                state.record_planner_proposal(decision.proposal.model_dump(mode="json"))
             if contract is None:
                 state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(

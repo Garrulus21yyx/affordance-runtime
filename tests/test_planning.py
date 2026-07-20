@@ -117,3 +117,24 @@ def test_proposal_schema_rejects_surface_and_authority_fields() -> None:
         _proposal(state, parameters={"text": "dark", "wait_for_seconds": 3})
     with pytest.raises(ValidationError, match="at least 1 character"):
         _proposal(state, snapshot_id="")
+
+
+def test_finish_and_ask_flags_are_deterministically_derived_from_action_kind() -> None:
+    _, state, _ = _fixture()
+    finish = _proposal(
+        state,
+        action_kind=PlannerActionKind.FINISH,
+        target_affordance_id="",
+        parameters={},
+        done=False,
+    )
+    ask = _proposal(
+        state,
+        action_kind=PlannerActionKind.ASK_USER,
+        target_affordance_id="",
+        parameters={},
+        requires_clarification=False,
+    )
+
+    assert finish.done is True
+    assert ask.requires_clarification is True

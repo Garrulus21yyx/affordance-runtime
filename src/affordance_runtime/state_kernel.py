@@ -54,6 +54,7 @@ class StateKernel:
     effectful_action_count: int = 0
     transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)
+    planner_history: list[dict[str, Any]] = field(default_factory=list)
     version: int = 0
 
     def remember_observation(self, observation: Observation) -> None:
@@ -79,6 +80,10 @@ class StateKernel:
         if remaining != self.pending_obligations:
             self.pending_obligations = remaining
             self.version += 1
+
+    def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
+        self.planner_history.append(proposal)
+        self.version += 1
 
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""

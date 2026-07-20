@@ -91,3 +91,46 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
         "profile.admin",
     ]
     assert decision.planner_context["prompt_version"] == GENERALIST_PLANNER_PROMPT_VERSION
+
+
+def test_generalist_context_exposes_passed_effect_without_surface_payload() -> None:
+    model = DomAdapter().transduce(
+        '<button id="save">Save</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Save theme")
+    state.transition("observing")
+    state.remember_observation(observation)
+    state.transition("planning")
+    state.record_planner_proposal(
+        {
+            "proposal_id": "previous",
+            "action_kind": "activate",
+            "target_affordance_id": "dom_button_1",
+            "expected_effects": ["theme saved"],
+        }
+    )
+    from affordance_runtime.verification import VerificationReport, VerificationStatus
+
+    state.latest_verification = VerificationReport(VerificationStatus.PASSED)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Save theme",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("theme",),
+        success_criteria=("theme saved",),
+        source_request_ref="request-1",
+    )
+
+    context = GeneralistLMPlanner(ProposalModel()).build_context(
+        TaskEnvelope(task_spec=task_spec),
+        state,
+        snapshot,
+    )
+
+    assert context.verified_effects == ("theme saved",)
+    assert context.recent_proposals[-1]["target_affordance_id"] == "dom_button_1"

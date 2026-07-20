@@ -21,7 +21,8 @@ _SYSTEM_PROMPT = """You are an environment-general GUI planner. Return exactly o
 You may choose only an affordance id from the supplied inventory. Never output a selector, bid, coordinate, backend, capability, approval, credential, cookie, or executable code.
 Use action_kind activate, type_text, select_option, navigate, scroll, wait, ask_user, or finish. Put only semantic values such as text or option in parameters.
 Copy based_on_task_revision, based_on_state_version, and snapshot_id exactly. Requested capabilities are context, not granted authority; only granted_capabilities describe current authority.
-Finish only when supplied verification/evidence proves the TaskSpec success criteria. Ask the user for blocking ambiguity. After a failed or inconclusive effect, replan or request clarification without assuming success.
+Finish only when supplied verification/evidence proves the TaskSpec success criteria. If latest verification passed and the most recent proposal's expected effects satisfy the success criteria, finish instead of repeating that action. Never repeat the same passed target/action unless the task explicitly requires repetition.
+Ask the user for blocking ambiguity. After a failed or inconclusive effect, replan or request clarification without assuming success.
 Choose one action, state its expected effect and evidence need, and stay within the remaining budgets."""
 
 
@@ -48,6 +49,8 @@ class PlannerContext(BaseModel):
     remaining_budgets: dict[str, int]
     pending_evidence_obligations: tuple[str, ...]
     latest_outcome: dict[str, Any]
+    recent_proposals: tuple[dict[str, Any], ...]
+    verified_effects: tuple[str, ...]
     recovery_summary: dict[str, Any]
     accepted_knowledge: tuple[str, ...]
     task_revision: int
@@ -127,6 +130,12 @@ class GeneralistLMPlanner:
             "verification_status": verification.status.value if verification else "",
             "verification_reason": verification.reason if verification else "",
         }
+        latest_proposal = state.planner_history[-1] if state.planner_history else {}
+        verified_effects = (
+            tuple(str(item) for item in latest_proposal.get("expected_effects", []))
+            if verification and verification.passed
+            else ()
+        )
         return PlannerContext(
             task_spec=task_spec.model_dump(mode="json"),
             active_subgoal=state.subgoals[-1] if state.subgoals else task_spec.objective,
@@ -155,6 +164,8 @@ class GeneralistLMPlanner:
             },
             pending_evidence_obligations=tuple(state.pending_obligations),
             latest_outcome=latest_outcome,
+            recent_proposals=tuple(state.planner_history[-5:]),
+            verified_effects=verified_effects,
             recovery_summary=dict(state.recovery_diagnostics),
             accepted_knowledge=self.accepted_knowledge,
             task_revision=task_spec.revision,

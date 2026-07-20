@@ -83,10 +83,14 @@ class PlannerProposal(BaseModel):
     def validate_semantic_boundary(self) -> "PlannerProposal":
         if self.action_kind in _TARGET_ACTIONS and not self.target_affordance_id:
             raise ValueError(f"{self.action_kind.value} requires target_affordance_id")
-        if self.done != (self.action_kind == PlannerActionKind.FINISH):
+        if self.done and self.action_kind != PlannerActionKind.FINISH:
             raise ValueError("done is valid only with action_kind=finish")
-        if self.requires_clarification != (self.action_kind == PlannerActionKind.ASK_USER):
+        if self.action_kind == PlannerActionKind.FINISH:
+            object.__setattr__(self, "done", True)
+        if self.requires_clarification and self.action_kind != PlannerActionKind.ASK_USER:
             raise ValueError("requires_clarification is valid only with action_kind=ask_user")
+        if self.action_kind == PlannerActionKind.ASK_USER:
+            object.__setattr__(self, "requires_clarification", True)
         forbidden = sorted(_FORBIDDEN_PARAMETER_KEYS.intersection(self.parameters))
         if forbidden:
             raise ValueError(f"surface or authority parameters are forbidden: {', '.join(forbidden)}")
