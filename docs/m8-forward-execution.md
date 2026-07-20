@@ -48,3 +48,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-21 | WebArena-Verified dataset check | Validated the 30-task manifest against all 812 official tasks and six-site balance; no environment run or score is claimed | `evidence/m8.2b-webarena-manifest-9cb727c.md` |
 | 2026-07-21 | WebArena-Verified evaluator bridge | Added shell-free delegation to upstream deterministic `eval-tasks` and fail-closed result coverage; real agent traces remain required | `benchmarks/webarena_verified.py` |
 | 2026-07-21 | WASP configuration check | Selected a digest-bound 12-case official security subset without copying malicious instructions; upstream isolated execution remains required | `evidence/m8.2b-wasp-manifest.md` |
+| 2026-07-21 | Generalist v6 regression | Re-ran the official PR matrix after marking page-derived context untrusted; result remained 15/18 with slider gap explicit | `evidence/m8.2b-pr-generalist-v6.md` |
