@@ -48,7 +48,7 @@ trace, recovery boundaries, and evaluation evidence.
 | Playwright observer/executor | Implemented | Real Chromium pricing, settings, export, screenshots, and downloads |
 | Recovery policy | Implemented | Explicit budgets and deterministic stale/transient-error recovery |
 | Trace persistence/replay | Implemented | JSONL causal events and hashed artifact layout feed replay decisions |
-| Benchmark runner | Implemented | Independent oracles, perturbations, baselines, ablations, fixed seeds, three report formats |
+| Benchmark runner | Implemented | Independent oracles, perturbations, baselines, ablations, distinct deterministic seeds, held-out/visual/official MiniWoB++ reports |
 | Parent-agent task API | Implemented | Bounded local tool adapter; REST/MCP transports remain optional wrappers |
 | Harness evolution | Implemented | Real failure classification, proposal, quarantine/registry, replay, before/after decision |
 | WoT proof | Implemented | Local injected transport exercises shared contract, trace, and verification semantics |

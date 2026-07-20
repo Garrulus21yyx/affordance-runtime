@@ -1,9 +1,9 @@
 # Current Implementation Plan
 
-Implementation status: M0-M7 are complete for the controlled local profile.
-See [Implementation Status and Forward Gates](implementation-status.md). M8-M9
-below are the authoritative next steps; M5-M7 are retained as completed evidence,
-and production-scale options remain non-blocking.
+Implementation status: M0-M8 are complete for the controlled web profile. See
+[Implementation Status and Forward Gates](implementation-status.md). M9 is a
+conditional next step only if restart/waiting evidence justifies it;
+production-scale options remain non-blocking.
 
 ## 1. Authority
 
@@ -375,15 +375,11 @@ Latency, cost, action count, observation count, and fallback count remain
 supporting telemetry.
 
 MiniWoB++ is a secondary generalization suite, not a replacement for the local
-SaaS fixtures. The official Farama HTML tasks may be driven through Playwright,
-but release claims require a runtime adapter that owns episode start/reset,
-instruction extraction, termination/reward collection, artifact capture, and
-report aggregation. A one-episode compatibility smoke is not a benchmark result.
-
-The M8 subset will pin the official source; cover click, type, select, dialog,
-sequence, and form families; run repeated unmodified episodes; and report
-official success/reward beside runtime diagnostics. It must be labelled a
-curated runtime subset, never a full MiniWoB++ score.
+SaaS fixtures. The M8 adapter pins the official Farama source, owns episode
+start/reset, instruction extraction, termination/reward collection, artifact
+capture, diagnostics, and report aggregation, and covers click, type, select,
+dialog, sequence, and form across three seeds. It is labelled a curated runtime
+subset, never a full MiniWoB++ score.
 
 ### 9.3 Controlled Harness Evolution
 
@@ -420,11 +416,11 @@ Deliver the pricing fixture, Playwright observer/executor, DOM affordances,
 scripted planner, contract/preflight, post-action verification, artifact-backed
 trace, CLI, and Direct Playwright baseline.
 
-### M2: Reliability and Cross-Surface Proof - done for the local profile
+### M2: Reliability and Cross-Surface Proof - done through M8
 
-The three local scenarios and 3 x 7 matrix run successfully. The current seed
-argument does not yet generate distinct variants. SoM and WoT prove common
-contract reuse in controlled tests, not live-environment generalization.
+The three local scenarios and 3 x 7 matrix run successfully across three
+distinct seeded layouts. SoM and WoT prove common contract reuse; M8 adds a
+real screenshot-pixel visual grounding path and held-out layout evidence.
 
 ### M3: Assisted Evolution Prototype - done through M6
 
@@ -454,8 +450,9 @@ evolution prototype.
 
 Evidence: `./scripts/reproduce_local.sh` passed from a clean clone at commit
 `4528f25baab0778a6eec4ce37a9fba82f2a7635e`; see
-`evidence/m5-4528f25.md`. The recorded seed semantics remain
-`label_only_v1`, so randomized/generalization claims stay gated on M8.
+`evidence/m5-4528f25.md`. That historical M5 report records
+`label_only_v1`; M8 supersedes current seed semantics with
+`deterministic_distinct_layout_v2`.
 
 ### M6: Executable Harness Evolution - done
 
@@ -485,7 +482,7 @@ compiled LangGraph 1.2.9 and called a separate runtime process through
 approval and then succeeded with file-hash evidence; only eight task-level
 tools were exposed. See `evidence/m7-9a9796e.md`.
 
-### M8: Generalization Evaluation - required for broad claims
+### M8: Generalization Evaluation - done
 
 - make seeds produce distinct fixture variants
 - add unseen layouts or hidden perturbations
@@ -494,11 +491,14 @@ tools were exposed. See `evidence/m7-9a9796e.md`.
 - add a real visual grounding path, not only a static SoM contract proof
 - report official MiniWoB success/reward and runtime failure diagnostics
 
-Current MiniWoB++ evidence is compatibility-only: on 2026-07-20 the official
-Farama source at commit `eb59fed60fabe8951350275ba8650633b740013b` served the
-real `click-button` task; BrowserSession built a DOM affordance, DomExecutor
-executed an ActionContract, and the task returned `WOB_DONE_GLOBAL=true` and
-raw reward `1.0`. No suite adapter or repeated report exists yet.
+Evidence: `./scripts/reproduce_local.sh` passed from a clean clone at
+`e463e160aea9c151667877d5aac40995196075a9`. It produced three distinct
+training layout fingerprints and 63 accepted matrix runs; six successful
+held-out scenario runs; five successful screenshot-grounded visual runs with
+five distinct boxes and no DOM coordinates; and 18/18 raw-reward-successful
+episodes over six task families from official Farama commit
+`eb59fed60fabe8951350275ba8650633b740013b`. See
+`evidence/m8-e463e16.md`.
 
 ### M9: Durable Single-Run Recovery - conditional
 

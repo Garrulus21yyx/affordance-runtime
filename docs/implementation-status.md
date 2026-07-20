@@ -18,13 +18,13 @@ Status values:
 | --- | --- | --- | --- |
 | M0 Design Freeze | done | contracts, state machine, approvals, trace schema, scenarios, gates | none |
 | M1 Web Gold Path | done | real Chromium pricing, pre/post observation, verification, artifacts, CLI, baseline | none |
-| M2 Local Reliability | done | three scenarios, fixed perturbations, approval/download oracle, 3 x 7 matrix | distinct seeds/public generalization move to M8 |
+| M2 Local Reliability | done | three scenarios, distinct deterministic perturbations, approval/download oracle, 3 x 7 matrix | none |
 | M3 Assisted Evolution | done | classifier, typed executable proposal, fresh replay, direction-aware decision, persistence, rollback | none |
 | M4 Integration Boundary | done | in-process task service, bounded adapter, external JSON-RPC, real LangGraph parent | none |
 | M5 Evidence Freeze | done | CI, package build, environment manifest, versioned reports, clean-clone reproduction at `4528f25` | none |
 | M6 Executable Evolution | done | SHA-bound verifier payload, fresh candidate, six new Chromium replays, persisted acceptance and rollback proof at `4cccc96` | none |
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
-| M8 Generalization Eval | pending | one official MiniWoB++ compatibility smoke passed | repeated curated suite, distinct seeds, unseen layouts, real visual path |
+| M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -100,24 +100,26 @@ Status values:
 | M5 | done: CI, package build, environment identity, clean-checkout command, and versioned benchmark/evolution summaries at `4528f25` |
 | M6 | done: executable payload, fresh candidate runtime, mandatory replay, persisted decision, and rollback at `4cccc96` |
 | M7 | done: real LangGraph submission/approval/result/evidence/trace over an external protocol with no primitive GUI bypass at `9a9796e` |
-| M8 | distinct seeds, unseen layouts, repeated pinned MiniWoB++ subset, real visual grounding |
+| M8 | done: distinct seeds, unseen layouts, repeated pinned MiniWoB++ subset, and real visual grounding at `e463e16` |
 | M9 | only after a failing restart/waiting case; simple durable state/events and uncertain-effect inspection |
 
-### MiniWoB++ Compatibility Evidence
+### M8 Generalization Evidence
 
-On 2026-07-20, official Farama commit
-`eb59fed60fabe8951350275ba8650633b740013b` was served from an isolated
-temporary directory on sl09. The real `click-button` page was converted by the
-DOM adapter into an Affordance, executed as an ActionContract through
-`DomExecutor`, and returned:
+The clean `e463e16` checkout upgraded the fixture to distinct seeded layouts
+and passed all M8 gates:
 
 ```text
-WOB_DONE_GLOBAL = true
-WOB_RAW_REWARD_GLOBAL = 1.0
+training matrix = 63/63 accepted, 3 distinct layout fingerprints
+held-out local scenarios = 6/6
+visual screenshot grounding = 5/5, 5 distinct boxes, no DOM coordinates
+official MiniWoB++ = 18/18 raw-reward success across 6 task families
 ```
 
-This proves one-task compatibility, not an integrated benchmark. Episode
-reset/reward adaptation, repeated tasks, reports, and thresholds remain M8 work.
+The official subset is pinned to Farama commit
+`eb59fed60fabe8951350275ba8650633b740013b` and owns episode reset, instruction
+extraction, termination/reward collection, runtime diagnostics, and report
+aggregation. It is a curated compatibility/generalization subset, not a claim
+of a full MiniWoB++ score.
 
 ## Verification Commands
 
@@ -141,13 +143,16 @@ affordance-runtime baseline --target http://127.0.0.1:3000/pricing
 M2 and M3 evidence commands:
 
 ```bash
-affordance-runtime benchmark --output benchmark-results --seeds 1
+affordance-runtime benchmark --output benchmark-results --seeds 3
 affordance-runtime evolve \
   --benchmark-report benchmark-results/benchmark-report.json \
   --output evolution-results
+python scripts/generalization_smoke.py \
+  --benchmark benchmark-results/benchmark-report.json \
+  --output generalization-results
 ```
 
-Clean-checkout M5 gate:
+Clean-checkout M0-M8 gate:
 
 ```bash
 ./scripts/reproduce_local.sh
@@ -165,7 +170,8 @@ Clean-checkout M5 gate:
 | 2026-07-20 | M3 | Added failure classification, typed proposals, versioned registry/rollback, mandatory replay categories, and before/after reports | evolution and replay modules, CLI, tests | real no-verifier false accept became accepted verifier patch after 1.0/0.0/0.0 regression gate |
 | 2026-07-20 | M4 | Added stable task service, bounded tool adapter, local scenario runner, scoped approval, cancellation, result/evidence/trace retrieval | integrations package and tests | real Chromium pricing task succeeded; export waited for approval then succeeded with file-hash receipt |
 | 2026-07-20 | Audit | Added task-constraint policy, effect idempotency/compensation enforcement, post-approval state revalidation, async task adapter, and release thresholds | safety, coordinator, integration, benchmark validation, docs, tests | 49 tests; Ruff/mypy; 21-run local gate passed; evolution report and local async API passed |
-| 2026-07-20 | M8 compatibility | Ran official Farama MiniWoB++ click-button through BrowserSession, DOM Affordance, ActionContract, and DomExecutor | temporary official checkout only | done=true, raw reward=1.0; suite adapter pending |
+| 2026-07-20 | M8 precursor | Ran official Farama MiniWoB++ click-button through BrowserSession, DOM Affordance, ActionContract, and DomExecutor | temporary official checkout only | historical compatibility proof later superseded by the integrated M8 suite |
 | 2026-07-20 | M5 | Added CI, package build dependency, focused Chromium smoke, environment manifest, versioned report output, and one-command clean-checkout reproduction | workflow, environment module, benchmark writer, scripts, evidence summary | clean clone at `4528f25`: 49 tests, Ruff, mypy, build, smoke, 21-run matrix, and evolution gate passed |
 | 2026-07-20 | M6 | Added SHA-bound executable verifier payloads, fresh candidate runtime replay, atomic registry persistence, accepted-only loading, versioned reports, and two-layer rollback proof | evolution modules, explicit benchmark runtime profiles, evidence gate, tests | clean clone at `4cccc96`: 51 tests plus 21 benchmark and 6 fresh replay runs; accepted registry and rolled-back proof verified |
 | 2026-07-20 | M7 | Added external task JSON-RPC, a separate runtime server process, and a compiled LangGraph parent for pricing and approval-gated export | integration modules, parent smoke, CI/reproduction, tests, evidence | clean clone at `9a9796e`: 52 tests; pricing success; export waited then succeeded; evidence and trace retrieved; no primitive GUI tools exposed |
+| 2026-07-20 | M8 | Added distinct seeded and held-out layouts, real screenshot grounding, and a pinned official MiniWoB++ curated adapter | fixture v2, benchmark/generalization modules, CI/reproduction, tests, evidence | clean clone at `e463e16`: 55 tests; 63 matrix runs, 6 held-out runs, 5 visual runs, and 18 official episodes all passed |

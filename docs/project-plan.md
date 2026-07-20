@@ -140,8 +140,8 @@ The agent should not only decide what to do. The runtime must know:
 
 ## 4. Current Status
 
-The controlled local profile has a strong executable core, but completion claims
-are split by evidence level. See
+The controlled web profile is complete through M8, with claims split by
+evidence level. See
 [Implementation Status and Forward Gates](implementation-status.md).
 
 | Area | Status | Evidence boundary |
@@ -149,18 +149,18 @@ are split by evidence level. See
 | M0 Design Freeze | done | contracts, state machine, trace schema, scenarios, and gates are tested |
 | M1 Web Gold Path | done | real Chromium pricing path, artifacts, verification, and baseline |
 | M2 Local Reliability | done | three local scenarios and 3 x 7 comparison matrix pass |
-| M3 Assisted Evolution | in progress | proposal/report exists; executable artifact application and fresh replay do not |
-| M4 Integration Boundary | in progress | local task service/adapter exists; no external parent-agent call yet |
-| MiniWoB++ | compatibility smoke only | one official click-button episode passed through the contract path with raw reward 1.0 |
+| M3/M6 Assisted Evolution | done | SHA-bound executable verifier artifact passes fresh mandatory replay and persisted rollback |
+| M4/M7 Integration Boundary | done | external task RPC and real LangGraph parent complete pricing and gated export |
+| M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
+| M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 
-Next: M5 evidence freeze, M6 executable evolution, M7 real parent-agent
-integration, and M8 generalization evaluation. M9 durable single-run recovery is
-conditional on a measured restart or waiting failure.
+M9 durable single-run recovery is conditional on a measured restart or waiting
+failure.
 
-The current seed parameter does not create distinct local variants. SoM and WoT
-prove common contract reuse in controlled tests, not broad live generalization.
-Distributed service infrastructure, desktop/mobile expansion, arbitrary source
-mutation, and PiP remain future options.
+Current seeds create deterministic distinct local variants, and M8 adds unseen
+layouts and screenshot grounding. SoM and WoT also prove common contract reuse
+in controlled tests. Distributed service infrastructure, desktop/mobile
+expansion, arbitrary source mutation, and PiP remain future options.
 
 ## 5. Modes
 
@@ -369,44 +369,44 @@ Exit criteria:
 - DOM, visual, and WoT payloads preserve surface-specific data while reusing
   common contract, trace, and evaluation semantics
 
-### M3: Assisted Harness Evolution - in progress
+### M3: Assisted Harness Evolution - done through M6
 
 Current evidence: typed classification/proposals, direction-aware gates,
 replay-category accounting, and a before/after report.
 
-Remaining exit criteria:
+Completed exit criteria:
 
 - proposal contains an executable declarative payload
 - a fresh candidate runtime loads that payload
 - original, family, global-smoke, and safety-smoke suites rerun
 - registry decision persists and rollback is demonstrated
 
-### M4: Local Integration Boundary - in progress
+### M4: Local Integration Boundary - done through M7
 
-The in-process task service and bounded tool adapter are implemented. Completion
-requires one real external MCP/parent-agent client to submit, approve, cancel,
-and retrieve evidence/trace without primitive GUI tools.
+The in-process task service, bounded tool adapter, external JSON-RPC, and real
+LangGraph parent are implemented. The parent submits, approves, and retrieves
+result/evidence/trace without primitive GUI tools.
 
-### M5: Evidence Freeze - required next
+### M5: Evidence Freeze - done
 
 Deliver CI, package-build checks, an environment manifest, clean-checkout
 reproduction, and versioned benchmark/evolution summaries. Exit when the local
 gold path, 3 x 7 matrix, and evolution prototype reproduce from a documented
 revision.
 
-### M6: Executable Harness Evolution - required
+### M6: Executable Harness Evolution - done
 
 Materialize a verifier or policy artifact, apply it to a fresh candidate runtime,
 persist the decision, replay all mandatory categories, and prove rollback. This
 closes the M3 claim gap.
 
-### M7: Real Parent-Agent Integration - required for subagent claims
+### M7: Real Parent-Agent Integration - done
 
 Expose the bounded task API through MCP or an equivalent protocol and connect
 one real Codex, Claude, OpenHands, or LangGraph parent. Complete pricing and
 approval-gated export with evidence and trace retrieval. This closes M4.
 
-### M8: Generalization Evaluation - required for broad claims
+### M8: Generalization Evaluation - done
 
 Deliver distinct seeded variants, unseen layouts/hidden perturbations, a pinned
 official MiniWoB++ adapter, and a real visual grounding path.
@@ -419,10 +419,11 @@ The MiniWoB++ work is a curated runtime-diagnostics subset:
 - reports contain official success/reward plus runtime diagnostics
 - results are never presented as a full MiniWoB++ leaderboard score
 
-Compatibility evidence already exists for one official `click-button` episode
-at Farama commit `eb59fed60fabe8951350275ba8650633b740013b`: the Playwright
-path produced a DOM affordance and ActionContract, completed the episode, and
-received raw reward `1.0`. This alone does not satisfy M8.
+At clean commit `e463e16`, the three-seed 63-run local matrix, six held-out
+scenario runs, five screenshot-grounded visual runs, and 18 official episodes
+across all six curated families passed. The official source is pinned at Farama
+commit `eb59fed60fabe8951350275ba8650633b740013b`; the result remains a curated
+runtime subset rather than a full-suite leaderboard claim.
 
 ### M9: Durable Single-Run Recovery - conditional
 

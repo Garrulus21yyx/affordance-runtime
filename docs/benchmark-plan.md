@@ -36,9 +36,9 @@ scoring, and harness evolution.
 | Local SaaS Pricing | read-only evidence extraction | `docs/scenarios/pricing-extraction.md` | async loading, layout shift, modal banner | fixture canonical pricing JSON |
 | Reversible Settings | controlled write path | `docs/scenarios/settings-update.md` | selector drift, stale target, confirmation modal | fixture DB/API persisted value |
 | Approval-Gated Export | approval and receipt handling | `docs/scenarios/approval-gated-report-export.md` | delayed download, stale approval target, duplicate export button | approval log plus file/hash receipt |
-| MiniWoB++ | atomic action sanity | future | randomized layout | task oracle |
+| MiniWoB++ | atomic action sanity | M8 pinned curated adapter | official seeded episodes | official done/raw reward |
 | WebArena-style Mock | long-horizon web workflow | future | distractors, multi-tab state | programmatic verifier |
-| Visual Grounding | SoM and screenshot fallback | future | similar labels, layout shifts | mark-level target match |
+| Visual Grounding | SoM and screenshot fallback | M8 screenshot-pixel path | distinct training/held-out positions | detected target box and visual receipt |
 | Device/WoT | non-web affordance proof | future | stale device state, rate limit | state source receipt |
 
 Visual tasks should avoid vague labels such as `vibe` unless the oracle can be
@@ -135,6 +135,20 @@ Each report should record:
 - whether failures are retried
 - mean and standard deviation where repeated runs are used
 - links to traces and artifacts
+
+## Current M8 Generalization Gate
+
+The `generalization-v1` gate complements the 63-run local matrix with:
+
+- six held-out local scenario runs using unseen control IDs and distractors;
+- five real PNG screenshot-grounding runs over distinct training and held-out
+  positions, with no DOM coordinates supplied to the visual executor;
+- 18 official MiniWoB++ episodes from pinned Farama commit
+  `eb59fed60fabe8951350275ba8650633b740013b`, covering click, type, select,
+  dialog, sequence, and form over seeds 0, 1, and 2.
+
+The official MiniWoB result is reported as a curated runtime subset. It is not
+presented as a full-suite MiniWoB++ score.
 
 ## Replay Levels
 

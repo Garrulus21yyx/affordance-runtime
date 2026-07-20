@@ -11,9 +11,16 @@ From a clean checkout:
 ```
 
 The script installs an isolated environment, runs tests and static checks,
-builds the package, executes a focused real-Chromium smoke, runs the 3 x 7 local
-matrix, generates the evolution report, and validates both release gates.
+builds the package, executes focused Chromium and external LangGraph smokes,
+runs the three-seed 3 x 7 local matrix, generates executable-evolution and M8
+generalization reports, and validates all evidence gates.
 
-Until M8, `seed_semantics=label_only_v1` is expected and must not be presented
-as randomized evidence. M8 replaces it with deterministic, distinct fixture
-variants and adds unseen layouts plus a pinned MiniWoB++ subset.
+Historical M5 evidence records `seed_semantics=label_only_v1` and must not be
+presented as randomized evidence. Current M8 evidence records
+`deterministic_distinct_layout_v2`, plus held-out layouts, screenshot grounding,
+and a repeated pinned official MiniWoB++ subset.
+
+Milestone summaries name the exact clean commit they reproduce. Generated run
+artifacts remain ignored because browser timing fields vary; the committed
+summary preserves the stable environment identity, acceptance results, counts,
+and thresholds.

@@ -5,12 +5,12 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements the M0-M2 controlled local profile and the M5
-reproducible evidence freeze: three reproducible Web/SaaS scenarios, trace and
-artifacts, independent verification,
-fixed perturbation controls, and baseline/ablation evaluation. M3/M6 executable
-evolution and M4/M7 external parent integration are complete. Service-grade distributed
-options remain explicitly deferred.
+The repository implements the complete M0-M8 controlled web profile: three
+reproducible Web/SaaS scenarios, trace and artifacts, independent verification,
+distinct seeded layouts, baseline/ablation evaluation, executable evolution,
+external parent integration, and held-out, visual, and official MiniWoB++
+generalization evidence. Service-grade distributed options remain explicitly
+deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
 for code and release scope, while the complete architecture blueprint preserves
@@ -62,21 +62,24 @@ Implemented current profile:
 - task-level submit/execute/status/approve/cancel/result/evidence/trace service and parent-agent tool adapter
 - CI, package build, environment manifests, versioned reports, and one-command clean-checkout reproduction
 - newline-delimited external task JSON-RPC and a real compiled LangGraph parent running against a separate runtime process
+- deterministic distinct-layout seeds and held-out layouts with unseen controls and distractors
+- screenshot-pixel visual grounding through the shared visual contract executor without DOM coordinates
+- a pinned official MiniWoB++ curated adapter with reset, instruction, reward, diagnostics, and report aggregation
 
 Verified evidence:
 
-- all 52 unit/integration tests pass with Ruff and mypy
-- clean commit `4528f25` reproduces tests, Ruff, mypy, package build, focused Chromium smoke, the 21-run matrix, and evolution gate via `./scripts/reproduce_local.sh`
-- Full Runtime passes all three fixed-seed scenarios with zero constraint violations, unsafe side effects, and verifier false accepts
+- all 55 unit/integration tests pass with Ruff and mypy
+- clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
+- Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
 - a no-verifier false accept produces a SHA-bound verifier patch; a fresh candidate passes six new Chromium replays with zero safety regression, and persisted rollback is verified
 - a real LangGraph 1.2.9 parent completes pricing and approval-gated export over an external process boundary with no primitive GUI tools
-- one official Farama MiniWoB++ `click-button` episode passed through BrowserSession, DOM Affordance, ActionContract, and DomExecutor with raw reward 1.0; a repeated suite adapter is pending
+- three distinct training layouts and six held-out scenario runs pass with Full Runtime task success 1.0 and unsafe side-effect rate 0.0
+- five screenshot-grounded visual runs detect five distinct boxes and succeed without DOM coordinates
+- 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
 
-Next evidence gates:
-
-- M8: distinct seeds, unseen layouts, repeated MiniWoB++ subset, real visual path
-- M9: durable single-run recovery only if restart/waiting tests justify it
+Next evidence gate: M9 durable single-run recovery, only if restart/waiting tests
+justify it.
 
 Explicitly deferred beyond the current profile:
 
@@ -258,4 +261,4 @@ The implementation is in `src/affordance_runtime`:
 - `adapters/dom.py`: migrated DOM transduction.
 - `adapters/som.py`: migrated Set-of-Marks grounding.
 - `adapters/wot.py`: migrated Thing Description parsing.
-- `benchmarks/`: tasks, opportunity metrics, local run cases, ablations, and report writers.
+- `benchmarks/`: local matrices, metrics, generalization aggregation, screenshot grounding, and pinned official MiniWoB++ execution.
