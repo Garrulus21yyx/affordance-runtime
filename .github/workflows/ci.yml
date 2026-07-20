@@ -30,7 +30,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install -e '.[dev,web,parent]'
+      - run: python -m pip install -e '.[dev,web,parent,visual]'
       - run: playwright install --with-deps chromium
       - run: python scripts/chromium_smoke.py
       - run: python scripts/langgraph_parent_smoke.py --output evidence/parent
+      - run: affordance-runtime benchmark --output evidence/benchmark --seeds 3
+      - run: python scripts/generalization_smoke.py --benchmark evidence/benchmark/benchmark-report.json --output evidence/generalization

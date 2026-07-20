@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-LOCAL_SAAS_FIXTURE_VERSION = "1.0.0"
+LOCAL_SAAS_FIXTURE_VERSION = "2.0.0"
 PRICING_DATA: dict[str, dict[str, Any]] = {
     "pro": {"users": 25, "projects": 100, "support": "business-hours"},
     "enterprise": {"users": "unlimited", "projects": "unlimited", "support": "24/7"},
@@ -19,35 +19,61 @@ EXPORT_CONTENT = b"report_id,total\nR-001,42\n"
 EXPORT_SHA256 = hashlib.sha256(EXPORT_CONTENT).hexdigest()
 
 
-def pricing_html() -> str:
-    return """<!doctype html>
+def _control_id(base: str, seed: int, profile: str) -> str:
+    return base if seed == 0 and profile == "train" else f"{base}-{profile}-{seed}"
+
+
+def _layout_fingerprint(seed: int, profile: str) -> str:
+    payload = json.dumps(
+        {
+            "seed": seed,
+            "profile": profile,
+            "direction": "column-reverse" if (seed + (profile == "heldout")) % 2 else "column",
+            "offset": (seed * 37 + (101 if profile == "heldout" else 0)) % 173,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def pricing_html(seed: int = 0, profile: str = "train") -> str:
+    pro_button = _control_id("show-pro", seed, profile)
+    enterprise_button = _control_id("show-enterprise", seed, profile)
+    direction = "column-reverse" if (seed + (profile == "heldout")) % 2 else "column"
+    distractor = '<button type="button">Contact sales</button>' if profile == "heldout" else ""
+    return f"""<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Fixture Pricing</title></head>
+  <head><meta charset="utf-8"><title>Fixture Pricing</title><style>#plans {{display:flex;flex-direction:{direction};gap:12px}}</style></head>
   <body>
     <main>
       <h1>Plans</h1>
+      {distractor}
+      <section id="plans">
       <article id="pro" data-plan="pro" data-visible="false" data-users="25" data-projects="100" data-support="business-hours">
-        <h2>Pro</h2><button id="show-pro" onclick="showPlan('pro')">Show Pro limits</button>
+        <h2>Pro</h2><button id="{pro_button}" onclick="showPlan('pro')">Show Pro limits</button>
         <dl hidden><dt>Users</dt><dd>25</dd><dt>Projects</dt><dd>100</dd><dt>Support</dt><dd>Business hours</dd></dl>
       </article>
       <article id="enterprise" data-plan="enterprise" data-visible="false" data-users="unlimited" data-projects="unlimited" data-support="24/7">
-        <h2>Enterprise</h2><button id="show-enterprise" onclick="showPlan('enterprise')">Show Enterprise limits</button>
+        <h2>Enterprise</h2><button id="{enterprise_button}" onclick="showPlan('enterprise')">Show Enterprise limits</button>
         <dl hidden><dt>Users</dt><dd>Unlimited</dd><dt>Projects</dt><dd>Unlimited</dd><dt>Support</dt><dd>24/7</dd></dl>
       </article>
+      </section>
     </main>
     <script>
-      function showPlan(id) {
+      function showPlan(id) {{
         const plan = document.getElementById(id);
         plan.dataset.visible = 'true';
         plan.querySelector('dl').hidden = false;
-      }
+      }}
     </script>
   </body>
 </html>"""
 
 
-def settings_html(current: str, perturbations: set[str]) -> str:
-    button_id = "enable-notifications-v2" if "selector_drift" in perturbations else "enable-notifications"
+def settings_html(current: str, perturbations: set[str], seed: int = 0, profile: str = "train") -> str:
+    button_id = _control_id("enable-notifications", seed, profile)
+    if "selector_drift" in perturbations:
+        button_id = f"{button_id}-drift"
     disabled = " disabled" if "async_button_state" in perturbations else ""
     modal = (
         '<div id="blocking-modal" role="dialog"><p>Confirm fixture notice</p>'
@@ -60,11 +86,14 @@ def settings_html(current: str, perturbations: set[str]) -> str:
         if "async_button_state" in perturbations
         else ""
     )
+    heldout_notice = '<button type="button" id="settings-help">Settings help</button>' if profile == "heldout" else ""
+    offset = (seed * 29 + (83 if profile == "heldout" else 0)) % 140
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Fixture Settings</title></head>
-<body data-setting="{current}"><main>
+<body data-setting="{current}"><main style="margin-left:{offset}px">
   <h1>Notification settings</h1>
   <p id="current-setting">Notifications: {current}</p>
+  {heldout_notice}
   {modal}
   <button id="{button_id}" onclick="saveSetting()"{disabled}>Enable notifications</button>
   <p id="save-status"></p>
@@ -81,13 +110,29 @@ async function saveSetting() {{
 </script></body></html>"""
 
 
-def reports_html() -> str:
-    return """<!doctype html>
+def reports_html(seed: int = 0, profile: str = "train") -> str:
+    export_id = _control_id("export-report", seed, profile)
+    distractor = '<a href="/api/health">Preview report</a>' if profile == "heldout" else ""
+    return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Fixture Reports</title></head>
 <body><main>
   <h1>Reports</h1>
-  <a id="export-report" href="/api/export" download="report.csv">Export report</a>
+  {distractor}
+  <a id="{export_id}" href="/api/export" download="report.csv">Export report</a>
 </main></body></html>"""
+
+
+def visual_html(seed: int = 0, profile: str = "train") -> str:
+    left = 80 + ((seed * 97 + (211 if profile == "heldout" else 0)) % 720)
+    top = 100 + ((seed * 53 + (137 if profile == "heldout" else 0)) % 360)
+    width = 84 + (seed % 3) * 11
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Visual Grounding Fixture</title></head>
+<body><main><h1>Visual target</h1><p>Activate the magenta rectangle.</p>
+<button aria-label="" style="position:absolute;left:{left}px;top:{top}px;width:{width}px;height:44px;background:rgb(212,20,232);border:0;color:black" onclick="activateVisual()">GO</button>
+<p id="visual-status">pending</p></main>
+<script>async function activateVisual() {{ await fetch('/api/visual', {{method:'POST'}}); document.getElementById('visual-status').textContent='activated'; }}</script>
+</body></html>"""
 
 
 @dataclass
@@ -97,13 +142,21 @@ class LocalSaasState:
     perturbations: set[str] = field(default_factory=set)
     download_delay_ms: int = 0
     settings_failures_remaining: int = 0
+    seed: int = 0
+    profile: str = "train"
+    visual_clicked: bool = False
 
-    def reset(self) -> None:
+    def reset(self, *, seed: int = 0, profile: str = "train") -> None:
+        if profile not in {"train", "heldout"}:
+            raise ValueError(f"unsupported fixture profile: {profile}")
         self.settings = {"notifications": "disabled"}
         self.audit_log.clear()
         self.perturbations.clear()
         self.download_delay_ms = 0
         self.settings_failures_remaining = 0
+        self.seed = seed
+        self.profile = profile
+        self.visual_clicked = False
 
     def configure_perturbations(self, names: list[str]) -> None:
         self.perturbations = set(names)
@@ -116,17 +169,22 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
             path = urlparse(self.path).path
             if path == "/pricing":
-                self._send(200, pricing_html().encode("utf-8"), "text/html; charset=utf-8")
+                self._send(200, pricing_html(state.seed, state.profile).encode("utf-8"), "text/html; charset=utf-8")
                 return
             if path == "/settings":
                 self._send(
                     200,
-                    settings_html(str(state.settings["notifications"]), state.perturbations).encode("utf-8"),
+                    settings_html(
+                        str(state.settings["notifications"]), state.perturbations, state.seed, state.profile
+                    ).encode("utf-8"),
                     "text/html; charset=utf-8",
                 )
                 return
             if path == "/reports":
-                self._send(200, reports_html().encode("utf-8"), "text/html; charset=utf-8")
+                self._send(200, reports_html(state.seed, state.profile).encode("utf-8"), "text/html; charset=utf-8")
+                return
+            if path == "/visual":
+                self._send(200, visual_html(state.seed, state.profile).encode("utf-8"), "text/html; charset=utf-8")
                 return
             if path == "/api/pricing":
                 self._json(200, PRICING_DATA)
@@ -135,7 +193,17 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
                 self._json(200, {"ok": True})
                 return
             if path == "/api/state":
-                self._json(200, {"settings": state.settings, "audit_log": state.audit_log})
+                self._json(
+                    200,
+                    {
+                        "settings": state.settings,
+                        "audit_log": state.audit_log,
+                        "seed": state.seed,
+                        "profile": state.profile,
+                        "layout_fingerprint": _layout_fingerprint(state.seed, state.profile),
+                        "visual_clicked": state.visual_clicked,
+                    },
+                )
                 return
             if path == "/api/export":
                 if state.download_delay_ms:
@@ -154,8 +222,22 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
             path = urlparse(self.path).path
             if path == "/api/reset":
-                state.reset()
-                self._json(200, {"ok": True})
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                try:
+                    state.reset(seed=int(payload.get("seed", 0)), profile=str(payload.get("profile", "train")))
+                except (TypeError, ValueError) as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "seed": state.seed,
+                        "profile": state.profile,
+                        "layout_fingerprint": _layout_fingerprint(state.seed, state.profile),
+                    },
+                )
                 return
             if path == "/api/perturbations":
                 length = int(self.headers.get("Content-Length", "0"))
@@ -178,6 +260,11 @@ def make_handler(state: LocalSaasState) -> type[BaseHTTPRequestHandler]:
                 state.settings["notifications"] = value
                 state.audit_log.append({"effect": "settings.write", "notifications": value})
                 self._json(200, {"notifications": value})
+                return
+            if path == "/api/visual":
+                state.visual_clicked = True
+                state.audit_log.append({"effect": "visual.activate", "seed": state.seed, "profile": state.profile})
+                self._json(200, {"activated": True})
                 return
             self._json(404, {"error": "not_found"})
 

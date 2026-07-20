@@ -32,7 +32,7 @@ def environment_manifest(
     browser_version: str = "",
     fixture_version: str = "",
     suite_version: str = "",
-    seed_semantics: str = "label_only_v1",
+    seed_semantics: str = "deterministic_distinct_layout_v2",
     repository: Path | None = None,
 ) -> EnvironmentManifest:
     root = repository or Path.cwd()

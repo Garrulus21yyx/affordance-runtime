@@ -48,13 +48,13 @@ class PricingPlanner:
         plans = extract_pricing(html)
         for plan_name in ("pro", "enterprise"):
             if plan_name in plans and not plans[plan_name]["visible"]:
-                selector = f"#show-{plan_name}"
+                label = f"Show {plan_name.title()} limits"
                 affordance = next(
-                    (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == selector),
+                    (item for item in snapshot.affordance_model.affordances if item.label == label),
                     None,
                 )
                 if affordance is None:
-                    return PlannerDecision(done=False, reason=f"missing affordance: {selector}")
+                    return PlannerDecision(done=False, reason=f"missing affordance: {label}")
                 contract = ActionContract.from_affordance(
                     affordance,
                     intent=f"reveal {plan_name} limits",
@@ -155,7 +155,7 @@ class ExportPlanner:
                 reason="approved download receipt matches fixture hash",
             )
         affordance = next(
-            (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == "#export-report"),
+            (item for item in snapshot.affordance_model.affordances if item.label == "Export report"),
             None,
         )
         if affordance is None:

@@ -43,3 +43,4 @@ class BenchmarkRun:
     failed_outcomes: int = 0
     side_effect_opportunities: int = 0
     trace_path: str = ""
+    fixture_variant: str = ""

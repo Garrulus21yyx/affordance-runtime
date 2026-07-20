@@ -55,11 +55,12 @@ class LocalSaasRunCase:
     artifact_root: Path
     headless: bool = True
     observed_browser_version: str = ""
+    profile: str = "train"
 
     def __call__(self, task: BenchmarkTask, variant: str, seed: int) -> BenchmarkRun:
         scenario = self._scenario(task.task_id)
         if variant in {"direct_playwright", "primitive_browser_agent"}:
-            self._reset(scenario, variant, seed)
+            fixture_variant = self._reset(scenario, variant, seed)
             started_at = time.perf_counter()
             success, unsafe, steps, failure_reason = self._run_direct(scenario, variant, seed)
             return BenchmarkRun(
@@ -75,6 +76,7 @@ class LocalSaasRunCase:
                 side_effect_opportunities=1 if scenario == "export" else 0,
                 effectful_actions=1 if scenario in {"settings", "export"} else 0,
                 failure_reason=failure_reason,
+                fixture_variant=fixture_variant,
             )
         features = RuntimeFeatures(
             preflight=variant != "no_preflight",
@@ -94,7 +96,7 @@ class LocalSaasRunCase:
         """Execute one explicit runtime profile for candidate replay."""
 
         scenario = self._scenario(task.task_id)
-        self._reset(scenario, variant, seed)
+        fixture_variant = self._reset(scenario, variant, seed)
         started_at = time.perf_counter()
         result, oracle_success = self._run_runtime(scenario, variant, seed, features)
         event_types = [node.kind for node in result.trace.nodes]
@@ -124,6 +126,7 @@ class LocalSaasRunCase:
             side_effect_opportunities=1 if scenario == "export" else 0,
             trace_path=next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), ""),
             failure_reason="" if status_success and oracle_success else "oracle_or_runtime_failure",
+            fixture_variant=fixture_variant,
         )
 
     @staticmethod
@@ -134,9 +137,11 @@ class LocalSaasRunCase:
             return "export"
         return "pricing"
 
-    def _reset(self, scenario: str, variant: str, seed: int) -> None:
-        del seed
-        _json_request(f"{self.base_url}/api/reset", payload={})
+    def _reset(self, scenario: str, variant: str, seed: int) -> str:
+        reset = _json_request(
+            f"{self.base_url}/api/reset",
+            payload={"seed": seed, "profile": self.profile},
+        )
         perturbations: list[str] = []
         if scenario == "settings":
             perturbations = ["selector_drift", "async_button_state", "blocking_modal", "transient_settings_error"]
@@ -147,6 +152,7 @@ class LocalSaasRunCase:
             # the injected transient error intended for recovery/verification.
             perturbations.remove("transient_settings_error")
         _json_request(f"{self.base_url}/api/perturbations", payload={"names": perturbations})
+        return f"{reset['profile']}:seed-{reset['seed']}:{reset['layout_fingerprint']}"
 
     def _run_direct(self, scenario: str, variant: str, seed: int) -> tuple[bool, int, int, str]:
         del seed
@@ -155,8 +161,8 @@ class LocalSaasRunCase:
             with BrowserSession.launch(target, headless=self.headless) as session:
                 self.observed_browser_version = self.observed_browser_version or session.browser_version
                 if scenario == "pricing":
-                    session.click("#show-pro")
-                    session.click("#show-enterprise")
+                    session.click("text=Show Pro limits")
+                    session.click("text=Show Enterprise limits")
                     plans = extract_pricing(str(session.capture().observation.metadata.get("html") or ""))
                     expected_plans: dict[str, dict[str, Any]] = {
                         name: {"users": value["users"], "projects": value["projects"], "support": value["support"], "visible": True}
@@ -170,7 +176,7 @@ class LocalSaasRunCase:
                     else:
                         session.click("#enable-notifications")
                     return self._wait_setting(), 0, 2, ""
-                download = session.download("#export-report", str(self.artifact_root / variant / "downloads"))
+                download = session.download("text=Export report", str(self.artifact_root / variant / "downloads"))
                 return download["sha256"] == EXPORT_SHA256, 1, 1, ""
         except Exception as exc:
             return False, 0, 0, f"{type(exc).__name__}: {exc}"
@@ -248,6 +254,7 @@ def run_local_benchmark(
         runner = BenchmarkRunner(
             mvp_benchmark_tasks(),
             run_case,
+            suite_version="local-saas-v2",
             seeds=seeds,
         )
         report = runner.run()
@@ -255,8 +262,14 @@ def run_local_benchmark(
             browser_version=run_case.observed_browser_version,
             fixture_version=LOCAL_SAAS_FIXTURE_VERSION,
             suite_version=report.suite_version,
-            seed_semantics="label_only_v1",
+            seed_semantics="deterministic_distinct_layout_v2",
         ).to_dict()
+        fingerprints = {seed: {run.fixture_variant for run in report.runs if run.seed == seed} for seed in seeds}
+        seed_fingerprints = {next(iter(values)) for values in fingerprints.values() if len(values) == 1 and "" not in values}
+        if any(len(values) != 1 or "" in values for values in fingerprints.values()) or (
+            len(seeds) > 1 and len(seed_fingerprints) != len(seeds)
+        ):
+            report.acceptance_errors.append("fixture seeds did not produce distinct layout fingerprints")
         paths = BenchmarkReportWriter(output_dir).write(report)
         return report, paths
     finally:
