@@ -242,6 +242,22 @@ predictions. It is a reproducible offline evaluation harness, not an official
 ScreenSpot score until the complete official assets and a versioned prediction
 artifact are supplied.
 
+### WorkArena L1 Deployment Gate
+
+`affordance-runtime benchmark-workarena-preflight` verifies the isolated
+`browsergym-workarena` / Playwright 1.44 environment, the official 33-task L1
+registration, and one permitted ServiceNow instance source. It reports only
+the source category (`explicit_instance`, `custom_instance_pool`, or
+`gated_instance_pool`), never an URL, username, password, token, or pool
+contents. It also records `oracle_used=false`: the WorkArena `cheat` helper is
+not a valid scored execution path.
+
+The preflight must pass before an L1 matrix can be run through the existing
+BrowserGym observation → proposal → contract → preflight → execution path.
+The current default Web runtime intentionally does not satisfy this gate because
+it uses Playwright 1.61; WorkArena must run in a dedicated BrowserGym 1.44
+environment with authorized ServiceNow access.
+
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and

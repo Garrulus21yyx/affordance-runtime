@@ -69,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     screenspot.add_argument("--predictions", type=Path, required=True)
     screenspot.add_argument("--output", type=Path, default=Path("screenspot-results"))
 
+    workarena = subcommands.add_parser(
+        "benchmark-workarena-preflight",
+        help="inspect isolated WorkArena L1 prerequisites without loading credentials",
+    )
+    workarena.add_argument("--output", type=Path, default=Path("workarena-results"))
+
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
     evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
@@ -136,6 +142,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "benchmark-workarena-preflight":
+        from affordance_runtime.benchmarks.workarena import write_workarena_preflight
+
+        report = write_workarena_preflight(args.output)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["ready"] else 1
     if args.command == "evolve":
         evolution_report = build_evolution_report(args.benchmark_report, args.output)
         print(
