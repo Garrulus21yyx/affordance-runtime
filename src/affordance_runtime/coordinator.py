@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from time import time
-from typing import Any, Protocol
+from typing import Any, Awaitable, Protocol
 from uuid import uuid4
 
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
+from affordance_runtime.model_port import ModelCallRecord
+from affordance_runtime.planning import ContractBuilder, PlannerProposal, ProposalRejected, ProposalRejectionCode
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
     FailureSignature,
@@ -36,13 +40,21 @@ class ObservationSource(Protocol):
 @dataclass(frozen=True)
 class PlannerDecision:
     contract: ActionContract | None = None
+    proposal: PlannerProposal | None = None
     done: bool = False
     result: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    planner_context: dict[str, Any] = field(default_factory=dict)
+    model_call: ModelCallRecord | None = None
 
 
 class PlannerPort(Protocol):
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision: ...
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision | Awaitable[PlannerDecision]: ...
 
 
 class ApprovalProvider(Protocol):
@@ -117,11 +129,12 @@ class RunCoordinator:
     artifacts: ArtifactStore | None = None
     budget: RunBudget = field(default_factory=RunBudget)
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
+    contract_builder: ContractBuilder | None = None
 
     async def run(self, envelope: TaskEnvelope) -> CoordinatorResult:
         """Async-compatible entry point for framework and service adapters."""
 
-        return self.run_sync(envelope)
+        return await asyncio.to_thread(self.run_sync, envelope)
 
     def run_sync(self, envelope: TaskEnvelope) -> CoordinatorResult:
         """Execute one task with serial state mutation and action semantics."""
@@ -168,12 +181,91 @@ class RunCoordinator:
             self._index_paths(trace, snapshot.observation.artifact_refs)
 
             state.transition(RuntimeStep.PLANNING.value)
-            decision = self.planner.propose(envelope, state, snapshot)
+            try:
+                decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
+            except Exception as exc:
+                planner_error = f"{type(exc).__name__}: {exc}"
+                state.transition(RuntimeStep.FAILED.value)
+                parent = trace.add(
+                    "PlannerProposalRejected",
+                    {
+                        "state": state.phase,
+                        "error_code": RuntimeErrorCode.PLANNER_FAILED.value,
+                        "reason": planner_error[:500],
+                    },
+                    parents=[parent.id],
+                )
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.FAILED,
+                    parent,
+                    RuntimeErrorCode.PLANNER_FAILED,
+                    latest_verification,
+                )
+            if decision.planner_context:
+                parent = trace.add(
+                    "PlannerContextBuilt",
+                    {"state": state.phase, **decision.planner_context},
+                    parents=[parent.id],
+                )
             parent = trace.add(
                 "PlanProposed",
-                {"state": state.phase, "done": decision.done, "reason": decision.reason},
+                {
+                    "state": state.phase,
+                    "done": decision.done,
+                    "reason": decision.reason,
+                    "boundary": "semantic_proposal" if decision.proposal else "legacy_contract",
+                },
                 parents=[parent.id],
             )
+            if decision.proposal is not None:
+                proposal = decision.proposal
+                parent = trace.add(
+                    "PlannerProposalProduced",
+                    {
+                        "state": state.phase,
+                        "proposal_id": proposal.proposal_id,
+                        "based_on_task_revision": proposal.based_on_task_revision,
+                        "based_on_state_version": proposal.based_on_state_version,
+                        "snapshot_id": proposal.snapshot_id,
+                        "action_kind": proposal.action_kind.value,
+                        "target_affordance_id": proposal.target_affordance_id,
+                        "uncertainty": proposal.uncertainty,
+                        "requires_clarification": proposal.requires_clarification,
+                        "proposal": proposal.model_dump(mode="json"),
+                        "model_call": (
+                            decision.model_call.model_dump(mode="json")
+                            if decision.model_call is not None
+                            else None
+                        ),
+                    },
+                    parents=[parent.id],
+                )
+                if proposal.done:
+                    decision = replace(decision, done=True, result=dict(proposal.result))
+                elif proposal.requires_clarification:
+                    state.final_result = {
+                        "clarification": proposal.subgoal or proposal.reason,
+                        "proposal_id": proposal.proposal_id,
+                        "task_revision": proposal.based_on_task_revision,
+                    }
+                    state.transition(RuntimeStep.WAITING_CLARIFICATION.value)
+                    parent = trace.add(
+                        "ClarificationRequested",
+                        {"state": state.phase, **state.final_result},
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.WAITING_CLARIFICATION,
+                        parent,
+                        None,
+                        latest_verification,
+                    )
             if decision.done:
                 state.final_result = dict(decision.result)
                 state.transition(RuntimeStep.DONE.value)
@@ -183,7 +275,54 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 return self._finish(envelope, state, trace, RuntimeStep.DONE, parent, None, latest_verification)
-            if decision.contract is None:
+            contract = decision.contract
+            if decision.proposal is not None and not decision.proposal.requires_clarification:
+                if self.contract_builder is None or envelope.task_spec is None:
+                    parent = trace.add(
+                        "PlannerProposalRejected",
+                        {
+                            "state": state.phase,
+                            "proposal_id": decision.proposal.proposal_id,
+                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "reason": "semantic proposal requires TaskSpec and ContractBuilder",
+                        },
+                        parents=[parent.id],
+                    )
+                    state.transition(RuntimeStep.FAILED.value)
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.FAILED,
+                        parent,
+                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        latest_verification,
+                    )
+                try:
+                    contract = self.contract_builder.build(decision.proposal, envelope.task_spec, state, snapshot)
+                except ProposalRejected as exc:
+                    error_code = _proposal_error_code(exc.code)
+                    parent = trace.add(
+                        "PlannerProposalRejected",
+                        {
+                            "state": state.phase,
+                            "proposal_id": decision.proposal.proposal_id,
+                            "error_code": error_code.value,
+                            "reason": exc.detail,
+                        },
+                        parents=[parent.id],
+                    )
+                    state.transition(RuntimeStep.ABORTED.value)
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.ABORTED,
+                        parent,
+                        error_code,
+                        latest_verification,
+                    )
+            if contract is None:
                 state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(
                     "TaskFailed",
@@ -200,7 +339,7 @@ class RunCoordinator:
                     latest_verification,
                 )
 
-            contract = self._bind_contract(decision.contract, envelope, snapshot)
+            contract = self._bind_contract(contract, envelope, snapshot)
             state.current_contract = contract
             state.transition(RuntimeStep.PREFLIGHT.value)
             parent = trace.add(
@@ -214,6 +353,7 @@ class RunCoordinator:
                     "page_revision": contract.page_revision,
                     "target_fingerprint": contract.target_fingerprint,
                     "backend": contract.backend,
+                    "proposal_id": decision.proposal.proposal_id if decision.proposal else "",
                 },
                 parents=[parent.id],
             )
@@ -674,7 +814,6 @@ class RunCoordinator:
         if state.effectful_action_count >= self.budget.max_effectful_actions:
             return RuntimeErrorCode.UNSAFE_ACTION
         return None
-
     def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
         return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
 
@@ -747,3 +886,25 @@ class RunCoordinator:
             verification=verification,
             artifacts=artifact_refs,
         )
+
+
+def _resolve_planner_decision(
+    value: PlannerDecision | Awaitable[PlannerDecision],
+) -> PlannerDecision:
+    if not inspect.isawaitable(value):
+        return value
+    return asyncio.run(_await_planner_decision(value))
+
+
+async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
+    return await value
+
+
+def _proposal_error_code(code: ProposalRejectionCode) -> RuntimeErrorCode:
+    if code == ProposalRejectionCode.STALE_TASK_REVISION:
+        return RuntimeErrorCode.STALE_TASK_REVISION
+    if code == ProposalRejectionCode.STALE_STATE_VERSION:
+        return RuntimeErrorCode.STALE_STATE_VERSION
+    if code == ProposalRejectionCode.STALE_SNAPSHOT:
+        return RuntimeErrorCode.SNAPSHOT_MISMATCH
+    return RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED

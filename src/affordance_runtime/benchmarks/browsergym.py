@@ -391,6 +391,16 @@ def run_browsergym_episode(
                 max_effectful_actions=max_steps + 1,
             ),
         ).run_sync(TaskEnvelope(run_id, goal))
+        planner_error = next(
+            (
+                str(node.payload.get("reason") or "")
+                for node in reversed(result.trace.nodes)
+                if node.kind == "PlannerProposalRejected"
+            ),
+            "",
+        )
+        if "unsupported BrowserGym action:" in planner_error:
+            unsupported.append(planner_error.rsplit(":", 1)[-1].strip())
         for receipt in result.state.receipts:
             if "unsupported BrowserGym action" in receipt.message:
                 unsupported.append(receipt.message.rsplit(":", 1)[-1].strip())
@@ -406,7 +416,7 @@ def run_browsergym_episode(
             len(episode.actions),
             sorted({action.name for action in episode.actions}),
             sorted(set(unsupported)),
-            result_error or (result.error_code.value if result.error_code else ""),
+            result_error or planner_error or (result.error_code.value if result.error_code else ""),
             bool(result.result.get("policy_stopped", False)),
             trace_path,
         )

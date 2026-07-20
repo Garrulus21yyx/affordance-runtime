@@ -6,8 +6,15 @@ from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+)
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
 def _snapshot(sequence: int, *, saved: bool = False) -> BrowserSnapshot:
@@ -163,3 +170,138 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
     assert result.state.recovery_diagnostics["cascade_depth"] == 2
     assert result.state.recovery_diagnostics["loop_aborts"] == 1
     assert "repeated_signature" in result.state.recovery_diagnostics["findings"]
+
+
+@dataclass
+class AsyncSemanticSavePlanner:
+    revision: int = 1
+
+    async def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope
+        if state.receipts:
+            return PlannerDecision(
+                proposal=PlannerProposal(
+                    proposal_id="proposal-finish",
+                    based_on_task_revision=self.revision,
+                    based_on_state_version=state.version,
+                    snapshot_id=snapshot.observation.snapshot_id,
+                    action_kind=PlannerActionKind.FINISH,
+                    done=True,
+                    result={"saved": True},
+                )
+            )
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id="proposal-save",
+                based_on_task_revision=self.revision,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                subgoal="Save settings",
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=snapshot.affordance_model.affordances[0].id,
+                expected_effects=("settings are saved",),
+                evidence_requirements=("saved observation",),
+            )
+        )
+
+
+def _semantic_task() -> TaskSpec:
+    return TaskSpec(
+        task_id="semantic-run",
+        revision=1,
+        objective="Save settings",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("settings",),
+        success_criteria=("settings are saved",),
+        evidence_requirements=("saved observation",),
+        requested_capabilities=("settings.write",),
+        source_request_ref="semantic-request",
+    )
+
+
+def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
+    task = _semantic_task()
+    result = asyncio.run(
+        RunCoordinator(
+            observer=FakeObserver(),
+            planner=AsyncSemanticSavePlanner(),
+            executor=FakeExecutor(),
+            contract_builder=ContractBuilder(
+                requirements={
+                    "dom_button_1": ContractRequirements(
+                        verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                        required_capabilities=("settings.write",),
+                        idempotency_key="semantic-save-v1",
+                        compensation="restore settings",
+                    )
+                }
+            ),
+        ).run(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    )
+
+    assert result.status == RuntimeStep.DONE
+    assert result.result == {"saved": True}
+    events = [node.kind for node in result.trace.nodes]
+    assert events.count("PlannerProposalProduced") == 2
+    contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
+    assert contract_event.payload["proposal_id"] == "proposal-save"
+
+
+def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
+    task = _semantic_task()
+    result = asyncio.run(
+        RunCoordinator(
+            observer=StableObserver(),
+            planner=AsyncSemanticSavePlanner(revision=2),
+            executor=FakeExecutor(),
+            contract_builder=ContractBuilder(),
+        ).run(TaskEnvelope(task_spec=task))
+    )
+
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.STALE_TASK_REVISION
+    assert "PlannerProposalRejected" in [node.kind for node in result.trace.nodes]
+    assert result.state.receipts == []
+
+
+class ClarifyingPlanner(AsyncSemanticSavePlanner):
+    async def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id="proposal-clarify",
+                based_on_task_revision=1,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                subgoal="Which settings profile should be changed?",
+                action_kind=PlannerActionKind.ASK_USER,
+                requires_clarification=True,
+                uncertainty=1.0,
+            )
+        )
+
+
+def test_semantic_planner_can_request_clarification_without_contract_or_effect() -> None:
+    result = asyncio.run(
+        RunCoordinator(
+            observer=StableObserver(),
+            planner=ClarifyingPlanner(),
+            executor=FakeExecutor(),
+            contract_builder=ContractBuilder(),
+        ).run(TaskEnvelope(task_spec=_semantic_task()))
+    )
+
+    assert result.status == RuntimeStep.WAITING_CLARIFICATION
+    assert result.state.receipts == []
+    assert result.result["clarification"] == "Which settings profile should be changed?"
+    assert "ClarificationRequested" in [node.kind for node in result.trace.nodes]

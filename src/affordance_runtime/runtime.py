@@ -20,6 +20,7 @@ class RuntimeStep(StrEnum):
     PLANNING = "planning"
     PREFLIGHT = "preflight"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_CLARIFICATION = "waiting_clarification"
     ACTING = "acting"
     VERIFYING = "verifying"
     RECOVERING = "recovering"

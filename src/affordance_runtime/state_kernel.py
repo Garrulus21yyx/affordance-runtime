@@ -17,7 +17,8 @@ from affordance_runtime.verification import VerificationReport
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "created": {"observing", "aborted"},
     "observing": {"planning", "failed", "aborted"},
-    "planning": {"preflight", "done", "failed", "aborted"},
+    "planning": {"preflight", "waiting_clarification", "done", "failed", "aborted"},
+    "waiting_clarification": {"observing", "aborted"},
     "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
     "waiting_approval": {"preflight", "aborted"},
     "acting": {"verifying", "recovering", "failed"},
@@ -53,24 +54,31 @@ class StateKernel:
     effectful_action_count: int = 0
     transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)
+    version: int = 0
 
     def remember_observation(self, observation: Observation) -> None:
         self.observations.append(observation)
         self.observation_count += 1
         self.current_snapshot_id = observation.snapshot_id
+        self.version += 1
 
     def record_receipt(self, receipt: ExecutionReceipt) -> None:
         self.receipts.append(receipt)
         for value in receipt.evidence.values():
             if isinstance(value, str) and value not in self.evidence:
                 self.evidence.append(value)
+        self.version += 1
 
     def add_obligation(self, obligation: str) -> None:
         if obligation not in self.pending_obligations:
             self.pending_obligations.append(obligation)
+            self.version += 1
 
     def satisfy_obligation(self, obligation: str) -> None:
-        self.pending_obligations = [item for item in self.pending_obligations if item != obligation]
+        remaining = [item for item in self.pending_obligations if item != obligation]
+        if remaining != self.pending_obligations:
+            self.pending_obligations = remaining
+            self.version += 1
 
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""
@@ -83,3 +91,4 @@ class StateKernel:
             raise ValueError(f"invalid runtime transition: {self.phase} -> {next_phase}")
         self.transitions.append((self.phase, next_phase))
         self.phase = next_phase
+        self.version += 1

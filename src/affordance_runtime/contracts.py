@@ -46,6 +46,10 @@ class RuntimeErrorCode(StrEnum):
     EXECUTION_FAILED = "execution_failed"
     VERIFICATION_FAILED = "verification_failed"
     UNSAFE_ACTION = "unsafe_action"
+    STALE_TASK_REVISION = "stale_task_revision"
+    STALE_STATE_VERSION = "stale_state_version"
+    PLANNER_PROPOSAL_REJECTED = "planner_proposal_rejected"
+    PLANNER_FAILED = "planner_failed"
 
 
 @dataclass(frozen=True)
