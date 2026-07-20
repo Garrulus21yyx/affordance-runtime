@@ -270,6 +270,13 @@ approval binding. A future WASP run must exercise this baseline against the
 official malicious-page cases and report the result separately; this statement
 is not an official WASP score.
 
+`affordance-runtime prepare-wasp-subset` prepares that run from the official
+WASP configuration. It uses a digest-bound, environment/exfiltration
+round-robin selection and exposes only opaque case indices plus evaluator-type
+metadata; malicious instructions and their parameters remain in the upstream
+source configuration. The resulting manifest is preparation evidence, never a
+security score.
+
 ### WebArena-Verified Subset Manifest
 
 `affordance-runtime prepare-webarena-verified-subset` accepts the official

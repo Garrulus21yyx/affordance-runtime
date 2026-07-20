@@ -93,6 +93,14 @@ def build_parser() -> argparse.ArgumentParser:
     webarena_evaluate.add_argument("--executable", default="webarena-verified")
     webarena_evaluate.add_argument("--output", type=Path, default=Path("webarena-verified-evaluation.json"))
 
+    wasp = subcommands.add_parser(
+        "prepare-wasp-subset",
+        help="write a digest-bound WASP security subset without copying malicious prompt content",
+    )
+    wasp.add_argument("--config", type=Path, required=True)
+    wasp.add_argument("--output", type=Path, default=Path("wasp-subset.json"))
+    wasp.add_argument("--count", type=int, default=12)
+
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
     evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
@@ -182,6 +190,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "prepare-wasp-subset":
+        from affordance_runtime.benchmarks.wasp import write_wasp_subset
+
+        manifest = write_wasp_subset(args.config, args.output, count=args.count)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
     if args.command == "evolve":
         evolution_report = build_evolution_report(args.benchmark_report, args.output)
         print(

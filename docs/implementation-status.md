@@ -27,7 +27,7 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym PR matrix: 18/18 coverage, 15/18 official success at `0b2c542`; ScreenSpot evaluator, WorkArena preflight, and WebArena-Verified stratified manifest added | official ScreenSpot assets/predictions, authorized WorkArena instance, WebArena environments/logs, nightly/release matrices, slider/keyboard semantic coverage, and WASP run |
+| M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym PR matrix: 18/18 coverage, 15/18 official success at `0b2c542`; ScreenSpot, WorkArena, WebArena-Verified, and WASP preparation gates added | official ScreenSpot assets/predictions, authorized WorkArena instance, WebArena environments/logs, nightly/release matrices, slider/keyboard semantic coverage, and WASP end-to-end run |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
