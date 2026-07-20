@@ -458,12 +458,10 @@ self-evolution. The claim requires a typed artifact with executable payload,
 loading it into a fresh candidate runtime, rerunning the suites, persisting the
 registry decision, and proving rollback.
 
-M6 proves that loop only for a structural `verifier_patch`. Current recovery
-handles one failure at a time under a fixed budget. It does not group attempts
-into an incident, detect repeated signatures or oscillation, separate root
-cause from symptoms, or execute a recovery skill/policy patch.
-
-M8.3 closes that gap:
+M6 first proved the loop for a structural `verifier_patch`. M8.3 extends it to
+bounded recovery: attempts are grouped into an incident, repeated signatures
+and oscillation are detected, root cause is separated from symptoms, and
+declarative recovery skill/policy payloads are executable.
 
 ```text
 trace events -> RecoveryIncident -> FailureSignature per attempt
@@ -594,13 +592,14 @@ benchmark matching the host report on every stable outcome/oracle field, and
 DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Public Benchmark Expansion - pending
+### M8.2: Public Benchmark Expansion - in progress
 
-- replace task-specific MiniWoB scoring with a BrowserGym adapter that routes
-  every supported action through the full coordinator path
+- use the implemented BrowserGym adapter to route every supported action
+  through the full coordinator path and keep the scored policy external
 - keep 18 episodes for PR smoke; add 30 task types x 10 seeds nightly
 - release-test every supported pinned MiniWoB task x 5 seeds
-- report coverage, unsupported actions, variance, reward, and runtime failures
+- retain the implemented coverage, unsupported-action, variance, official
+  reward, and runtime-failure report fields while scaling the matrices
 - add ScreenSpot, WorkArena L1, a 30-50 task WebArena-Verified subset, and a
   WASP security subset in that order
 - defer VisualWebArena and OSWorld until their prerequisite layers are stable
@@ -608,7 +607,7 @@ DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 Exit: no scored task-specific regex/selector solver remains, every episode
 traverses the full runtime path, and official/injected suites are separate.
 
-### M8.3: Recovery-Cascade Evolution - pending
+### M8.3: Recovery-Cascade Evolution - done
 
 - normalize a `FailureSignature` from phase, error, action/backend, target,
   verifier, and relevant state revision
@@ -624,6 +623,14 @@ traverses the full runtime path, and official/injected suites are separate.
 Exit: one real repeated recovery failure produces a quarantined artifact; the
 accepted candidate breaks the loop or reduces cascade depth, adds no unsafe
 effect or blind retry, persists its decision, and rolls back.
+
+Clean commit `07e406f` meets this exit. The baseline Coordinator records one
+incident and aborts the repeated/no-progress cascade at depth two. A
+digest-validated policy patch is first persisted as quarantined, then loaded
+into fresh original/family/global/safety candidates; it reduces the matched
+cascades to depth one, preserves the successful global path, explicitly
+observes uncertain effect before failing safe, persists acceptance, and is
+removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
 ### M9: Durable Single-Run Recovery - conditional
 

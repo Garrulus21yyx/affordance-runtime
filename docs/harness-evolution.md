@@ -111,21 +111,21 @@ Safety Error
   The runtime attempted a high-risk action without approval.
 ```
 
-## 5. Current Recovery-Evolution Boundary
+## 5. Implemented Recovery-Evolution Boundary
 
-Current code can bound recovery, select one response for the current error,
-trace that decision, classify a failed benchmark run broadly as `RECOVERY`,
-and create typed but non-executable skill/policy proposals.
+M8.3 bounds and traces recovery, groups causally related attempts into one
+incident, recognizes normalized recurring failures, detects no-progress and
+A-B oscillation, and preserves root cause separately from secondary symptoms.
+Typed policy and skill payloads can be loaded only after digest/status checks
+and are constrained to bounded safe actions.
 
-It cannot group attempts into one incident, recognize recurring normalized
-errors, detect no-progress or A-B oscillation, distinguish root cause from
-secondary symptoms, cluster incidents across runs, or apply a recovery
-skill/policy patch. M6's executable path is limited to a structural
-`verifier_patch`; automatic recovery-cascade evolution is not implemented.
+The implementation does not perform arbitrary source mutation or online
+learning. Cross-run proposal generation remains offline and regression-gated;
+only accepted artifacts can affect a fresh candidate runtime.
 
 ## 6. Recovery Incident and Cascade Model
 
-M8.3 adds:
+M8.3 implements:
 
 ```text
 FailureSignature
@@ -154,10 +154,12 @@ and `Skill` payloads. They match a signature/incident pattern, select a
 bounded observe/verify/reroute/ask/compensate/abort response, and declare
 idempotency, evidence, risk, applicability, and postconditions.
 
-A fresh candidate must replay the original incident, task family, global smoke,
+A fresh candidate replays the original incident, task family, global smoke,
 and safety smoke. Acceptance requires breaking the loop or reducing cascade
 depth, zero new unsafe effects, no blind retry after uncertain effect, a
-persisted decision, and demonstrated rollback.
+persisted decision, and demonstrated rollback. The clean `07e406f` evidence
+passes all four categories and explicitly records `RecoveryStateInspected` on
+the uncertain-effect path before failing safe.
 
 ## 8. Skill Mining
 

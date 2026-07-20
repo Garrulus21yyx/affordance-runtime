@@ -67,10 +67,11 @@ Implemented current profile:
 - a pinned official MiniWoB++ curated adapter with reset, instruction, reward, diagnostics, and report aggregation
 - a digest-pinned, non-root Playwright Compose profile for fixture, tests, benchmark, and mounted evidence
 - an optional real node-wot conformance profile that reaches one independently observed state through DOM, screenshot/SoM, and WoT
+- normalized recovery incidents with online cascade detection and offline, regression-gated policy/skill evolution
 
 Verified evidence:
 
-- all 58 unit/integration tests pass with Ruff and mypy
+- all 69 unit/integration tests pass with Ruff and mypy
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -79,9 +80,10 @@ Verified evidence:
 - three distinct training layouts and six held-out scenario runs pass with Full Runtime task success 1.0 and unsafe side-effect rate 0.0
 - five screenshot-grounded visual runs detect five distinct boxes and succeed without DOM coordinates
 - 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
+- a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
 
-Next evidence gates: M8.2 public benchmark expansion and M8.3 recovery-cascade
-evolution. M9 remains conditional on restart/waiting evidence.
+Next evidence gate: finish M8.2 external-planner MiniWoB matrices, then add the
+planned public suites. M9 remains conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 

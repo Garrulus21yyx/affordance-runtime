@@ -154,8 +154,8 @@ evidence level. See
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
-| M8.2 Public Benchmark Expansion | pending | BrowserGym MiniWoB scaling plus selected public suites |
-| M8.3 Recovery-Cascade Evolution | pending | repeated-error incidents, root-cause classification, executable recovery artifacts |
+| M8.2 Public Benchmark Expansion | in progress | BrowserGym full-path bridge exists; external-planner matrices and public suite ladder remain |
+| M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -452,34 +452,38 @@ Clean commit `40fd93b` satisfies the exit gate: 58 container tests and build,
 three verifier-backed traces against the same node-wot oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Public Benchmark Expansion - pending
+### M8.2: Public Benchmark Expansion - in progress
 
-Use BrowserGym as the preferred environment adapter. Keep the current 18
-MiniWoB++ episodes as PR smoke, add at least 30 task types x 10 seeds nightly,
-and run every supported pinned MiniWoB task x 5 seeds for release. No
-task-specific regex or hardcoded selector solver may be the scored path.
+The isolated BrowserGym 0.14.3 full-Coordinator bridge, typed action whitelist,
+external-policy boundary, and real one-task smoke are implemented. Keep the
+current 18 MiniWoB++ episodes as compatibility smoke, then add at least 30 task
+types x 10 seeds nightly and every supported pinned MiniWoB task x 5 seeds for
+release with a reproducible external planner. No task-specific regex or
+hardcoded selector solver may be the scored path.
 
 Then add ScreenSpot, WorkArena L1, a 30-50 task stratified
 WebArena-Verified subset followed by its hard subset, and a WASP security
 subset. VisualWebArena waits for stable multimodal routing; OSWorld remains a
 future boundary. Official and fault-injected reports stay separate.
 
-### M8.3: Recovery-Cascade Evolution - pending
+### M8.3: Recovery-Cascade Evolution - done
 
-Current recovery is bounded but stateless across attempts beyond counters. M6
-can replay a verifier patch, but recovery skills and policy patches are not
-executable.
+Recovery is now stateful across attempts through normalized signatures and a
+single causal incident. Recovery skills and policy patches are executable only
+through narrow declarative, digest-validated payloads.
 
-Add a `RecoveryIncident` and normalized `FailureSignature`; detect repeated
+`RecoveryIncident` and normalized `FailureSignature` detect repeated
 failures, unchanged-state recovery, A-B oscillation, repeated stale contracts,
 repeated verifier failures, and exhausted fallback. Preserve root failure and
 the symptom chain separately. Generate a declarative `RecoveryPolicyPatch` or
 `Skill`, replay it in a fresh candidate against original, family, global, and
 safety suites, persist the decision, and prove rollback.
 
-Exit when one real repeated-error cascade is safely stopped online, classified
-offline, fixed by an accepted artifact, and shown not to introduce duplicate
-effects or safety regressions.
+Clean commit `07e406f` satisfies the exit: one real repeated-error cascade is
+safely stopped online, classified offline, reduced from depth two to one by an
+accepted policy artifact, and shown through fresh replays, persisted registries,
+uncertain-effect inspection, and rollback not to introduce duplicate effects,
+blind retries, or safety regressions. See `evidence/m8.3-07e406f.md`.
 
 ### M9: Durable Single-Run Recovery - conditional
 

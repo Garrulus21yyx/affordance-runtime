@@ -26,8 +26,8 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2 Public Benchmark Expansion | pending | 18-episode six-template MiniWoB smoke | BrowserGym full-path adapter and public suite ladder |
-| M8.3 Recovery-Cascade Evolution | pending | bounded single-error recovery and executable verifier patch only | incident/signature detection and executable recovery artifacts |
+| M8.2 Public Benchmark Expansion | in_progress | isolated BrowserGym 0.14.3 full-Coordinator bridge and real one-task reward proof at `5d6ec93` | external-planner PR/nightly/release matrices and public suite ladder |
+| M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -141,21 +141,27 @@ evidence, and traces. See `evidence/m8.1-40fd93b.md`.
 
 ### M8.2 Public Benchmark Expansion
 
-The 18 MiniWoB++ episodes are smoke evidence. The current solver uses
-task-family parsing/selectors and does not route the full episode through
-`RunCoordinator`. Replace that scored shortcut, reuse BrowserGym lifecycle
-semantics, and scale PR/nightly/release matrices before external suites.
+The isolated BrowserGym 0.14.3 adapter now routes every supported action through
+`RunCoordinator`, exposes a typed action whitelist and external JSON-lines
+policy boundary, discovers 125 registered MiniWoB tasks, and records official
+reward separately from runtime diagnostics. The real one-task proof is adapter
+smoke evidence, not a scored benchmark. A reproducible external planner is
+still required for the PR/nightly/release matrices before external suites.
 
-### M8.3 Recovery-Cascade Evolution
+### M8.3 Recovery-Cascade Evolution — done
 
-Current code chooses and traces one bounded response. It does not retain failure
-signatures, incident identity, progress fingerprints, oscillation, or a
-root/symptom chain. Evolution currently executes only a whitelisted structural
-`verifier_patch`; skill and policy proposals remain non-executable.
+Clean commit `07e406f` groups attempts under normalized failure signatures,
+preserves root failure and symptoms, and detects repeated signatures,
+no-progress, A-B oscillation, stale/verifier repetition, exhausted fallback,
+and duplicate-effect risk. The benchmark schema reports cascade depth,
+repetition, loop abort, effectiveness, and duplicate-effect diagnostics.
 
-Exit evidence is one repeated failure traced as one incident, safely stopped,
-root-caused, converted to a recovery artifact, replayed in a fresh candidate,
-persisted as accepted/quarantined, and successfully rolled back.
+Typed `RecoveryPolicyPatch` and `RecoverySkill` payloads are digest-validated,
+bounded, risk-scoped, accepted-only loaded, and unloadable. A real Coordinator
+cascade was stopped online at depth two; its quarantined policy reduced fresh
+original/family replays to depth one, passed global and uncertain-effect safety
+smoke with no blind retry, persisted acceptance, and proved rollback. See
+`evidence/m8.3-07e406f.md`.
 
 ## Verification Commands
 
