@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from affordance_runtime.benchmarks.spec import BenchmarkRun
+from affordance_runtime.coordinator import RuntimeFeatures
 
 
 class EvolutionStatus(StrEnum):
@@ -123,6 +127,90 @@ class EvolutionArtifact:
     rollback_artifact: str = ""
     reviewer: str = ""
     decision_reason: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
+    payload_digest: str = ""
+
+
+@dataclass(frozen=True)
+class RuntimePatchPayload:
+    """Narrow executable payload supported by the first candidate runtime."""
+
+    schema_version: str
+    patch_kind: str
+    task_ids: list[str]
+    feature_overrides: dict[str, bool]
+
+    def validate(self) -> None:
+        if self.schema_version != "1.0":
+            raise ValueError(f"unsupported payload schema: {self.schema_version}")
+        if self.patch_kind != "runtime_features":
+            raise ValueError(f"unsupported patch kind: {self.patch_kind}")
+        allowed = {"preflight", "structural_verification", "capability_gate", "recovery"}
+        unknown = sorted(set(self.feature_overrides) - allowed)
+        if unknown:
+            raise ValueError(f"unsupported runtime feature overrides: {', '.join(unknown)}")
+        if not self.task_ids or not self.feature_overrides:
+            raise ValueError("runtime patch must declare task_ids and feature_overrides")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def digest(self) -> str:
+        payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "RuntimePatchPayload":
+        raw_task_ids = value.get("task_ids", [])
+        raw_overrides = value.get("feature_overrides", {})
+        if not isinstance(raw_task_ids, list) or not all(isinstance(item, str) for item in raw_task_ids):
+            raise ValueError("runtime patch task_ids must be a list of strings")
+        if not isinstance(raw_overrides, dict) or not all(
+            isinstance(name, str) and isinstance(enabled, bool) for name, enabled in raw_overrides.items()
+        ):
+            raise ValueError("runtime patch feature_overrides must map strings to booleans")
+        payload = cls(
+            schema_version=str(value.get("schema_version", "")),
+            patch_kind=str(value.get("patch_kind", "")),
+            task_ids=raw_task_ids,
+            feature_overrides=raw_overrides,
+        )
+        payload.validate()
+        return payload
+
+
+@dataclass
+class CandidateRuntimeProfile:
+    """Fresh runtime profile that applies only validated declarative patches."""
+
+    base_features: RuntimeFeatures = field(
+        default_factory=lambda: RuntimeFeatures(structural_verification=False)
+    )
+    loaded: dict[str, RuntimePatchPayload] = field(default_factory=dict)
+
+    def load(self, artifact: EvolutionArtifact, *, allow_candidate: bool = False) -> None:
+        if artifact.status != EvolutionStatus.ACCEPTED and not allow_candidate:
+            raise ValueError("only accepted artifacts can be loaded outside candidate replay")
+        if artifact.artifact_type != EvolutionArtifactType.VERIFIER_PATCH.value:
+            raise ValueError(f"unsupported executable artifact type: {artifact.artifact_type}")
+        payload = RuntimePatchPayload.from_dict(artifact.payload)
+        if payload.feature_overrides != {"structural_verification": True}:
+            raise ValueError("verifier patch may only enable structural verification")
+        if not artifact.payload_digest or payload.digest() != artifact.payload_digest:
+            raise ValueError("artifact payload digest mismatch")
+        self.loaded[artifact.id] = payload
+
+    def features_for(self, task_id: str) -> RuntimeFeatures:
+        features = self.base_features
+        for payload in self.loaded.values():
+            if task_id in payload.task_ids:
+                features = replace(features, **payload.feature_overrides)
+        return features
+
+    def rollback(self, artifact_id: str) -> None:
+        if artifact_id not in self.loaded:
+            raise KeyError(artifact_id)
+        del self.loaded[artifact_id]
 
 
 @dataclass
@@ -174,3 +262,43 @@ class EvolutionRegistry:
                 details.append(f"failed metrics: {', '.join(sorted(failed))}")
             artifact.decision_reason = "; ".join(details)
         return artifact.status
+
+
+@dataclass(frozen=True)
+class EvolutionRegistryStore:
+    path: Path
+
+    def save(self, registry: EvolutionRegistry) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        value = {
+            "schema_version": "1.0",
+            "artifacts": {key: asdict(artifact) for key, artifact in registry.artifacts.items()},
+            "history": {
+                key: [asdict(artifact) for artifact in artifacts]
+                for key, artifacts in registry.history.items()
+            },
+        }
+        temporary = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        temporary.write_text(json.dumps(value, indent=2, sort_keys=True, default=str), encoding="utf-8")
+        temporary.replace(self.path)
+
+    def load(self) -> EvolutionRegistry:
+        if not self.path.exists():
+            return EvolutionRegistry()
+        value = json.loads(self.path.read_text(encoding="utf-8"))
+        return EvolutionRegistry(
+            artifacts={
+                key: self._artifact(artifact)
+                for key, artifact in value.get("artifacts", {}).items()
+            },
+            history={
+                key: [self._artifact(artifact) for artifact in artifacts]
+                for key, artifacts in value.get("history", {}).items()
+            },
+        )
+
+    @staticmethod
+    def _artifact(value: dict[str, Any]) -> EvolutionArtifact:
+        item = dict(value)
+        item["status"] = EvolutionStatus(item.get("status", EvolutionStatus.PROPOSED.value))
+        return EvolutionArtifact(**item)

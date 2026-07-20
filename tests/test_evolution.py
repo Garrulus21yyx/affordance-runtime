@@ -1,12 +1,20 @@
+import json
+
+import pytest
+
 from affordance_runtime.benchmarks.spec import BenchmarkRun
 from affordance_runtime.evolution import (
+    CandidateRuntimeProfile,
     EvolutionArtifact,
+    EvolutionArtifactType,
     EvolutionRegistry,
+    EvolutionRegistryStore,
     EvolutionStatus,
     FailureClass,
     FailureClassifier,
     MetricDirection,
     RegressionRule,
+    RuntimePatchPayload,
 )
 
 
@@ -103,3 +111,62 @@ def test_registry_preserves_previous_artifact_versions() -> None:
 
     assert registry.artifacts["patch"].version == "2.0.0"
     assert [item.version for item in registry.history["patch"]] == ["1.0.0"]
+
+
+def test_executable_payload_loads_into_fresh_runtime_and_rolls_back(tmp_path) -> None:
+    payload = RuntimePatchPayload(
+        "1.0",
+        "runtime_features",
+        ["reversible_settings_update"],
+        {"structural_verification": True},
+    )
+    artifact = EvolutionArtifact(
+        "verifier-settings",
+        EvolutionArtifactType.VERIFIER_PATCH.value,
+        "enable structural verification",
+        {},
+        ["failed.jsonl"],
+        status=EvolutionStatus.ACCEPTED,
+        payload=payload.to_dict(),
+        payload_digest=payload.digest(),
+    )
+    registry = EvolutionRegistry({artifact.id: artifact})
+    store = EvolutionRegistryStore(tmp_path / "registry.json")
+    store.save(registry)
+    persisted = store.load()
+    profile = CandidateRuntimeProfile()
+    profile.load(persisted.artifacts[artifact.id])
+
+    assert profile.features_for("reversible_settings_update").structural_verification
+    assert not profile.features_for("read_only_evidence_chain").structural_verification
+    profile.rollback(artifact.id)
+    assert not profile.features_for("reversible_settings_update").structural_verification
+    assert json.loads(store.path.read_text())["schema_version"] == "1.0"
+
+
+def test_candidate_runtime_rejects_tampered_or_rolled_back_payload() -> None:
+    payload = RuntimePatchPayload("1.0", "runtime_features", ["settings"], {"structural_verification": True})
+    artifact = EvolutionArtifact(
+        "verifier-settings",
+        EvolutionArtifactType.VERIFIER_PATCH.value,
+        "patch",
+        {},
+        ["failed.jsonl"],
+        status=EvolutionStatus.ACCEPTED,
+        payload=payload.to_dict(),
+        payload_digest="wrong",
+    )
+    with pytest.raises(ValueError, match="digest mismatch"):
+        CandidateRuntimeProfile().load(artifact)
+
+    artifact.payload_digest = payload.digest()
+    artifact.status = EvolutionStatus.ROLLED_BACK
+    with pytest.raises(ValueError, match="only accepted"):
+        CandidateRuntimeProfile().load(artifact)
+
+    unsafe_payload = RuntimePatchPayload("1.0", "runtime_features", ["settings"], {"capability_gate": False})
+    artifact.status = EvolutionStatus.ACCEPTED
+    artifact.payload = unsafe_payload.to_dict()
+    artifact.payload_digest = unsafe_payload.digest()
+    with pytest.raises(ValueError, match="may only enable structural verification"):
+        CandidateRuntimeProfile().load(artifact)

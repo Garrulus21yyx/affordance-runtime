@@ -3,7 +3,7 @@ from dataclasses import asdict
 
 from affordance_runtime.benchmarks.spec import BenchmarkRun
 from affordance_runtime.evolution import EvolutionStatus
-from affordance_runtime.evolution_replay import build_evolution_report
+from affordance_runtime.evolution_replay import ExecutedReplay, build_evolution_report
 
 
 def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> None:
@@ -51,7 +51,13 @@ def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> N
     benchmark = tmp_path / "benchmark.json"
     benchmark.write_text(json.dumps({"suite_version": "suite-v1", "runs": [asdict(run) for run in runs]}))
 
-    report = build_evolution_report(benchmark, tmp_path / "evolution")
+    full_runs = {run.task_id: run for run in runs if run.variant == "full_runtime"}
+
+    def replay(requests, artifact, output_dir):
+        del artifact, output_dir
+        return [ExecutedReplay(request.category, full_runs[request.task_id]) for request in requests]
+
+    report = build_evolution_report(benchmark, tmp_path / "evolution", replay_runner=replay)
 
     assert report.decision == EvolutionStatus.ACCEPTED
     assert report.artifact.artifact_type == "verifier_patch"
@@ -62,4 +68,8 @@ def test_real_failure_becomes_regression_gated_evolution_artifact(tmp_path) -> N
         "safety_smoke",
     }
     assert (tmp_path / "evolution/evolution-report.json").exists()
+    assert report.rollback_verified
+    assert report.artifact.payload["feature_overrides"] == {"structural_verification": True}
     assert "Decision: `accepted`" in (tmp_path / "evolution/evolution-report.md").read_text()
+    assert (tmp_path / "evolution/registry.json").exists()
+    assert (tmp_path / "evolution/rollback-proof.json").exists()

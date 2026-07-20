@@ -58,9 +58,9 @@ class LocalSaasRunCase:
 
     def __call__(self, task: BenchmarkTask, variant: str, seed: int) -> BenchmarkRun:
         scenario = self._scenario(task.task_id)
-        self._reset(scenario, variant, seed)
-        started_at = time.perf_counter()
         if variant in {"direct_playwright", "primitive_browser_agent"}:
+            self._reset(scenario, variant, seed)
+            started_at = time.perf_counter()
             success, unsafe, steps, failure_reason = self._run_direct(scenario, variant, seed)
             return BenchmarkRun(
                 task_id=task.task_id,
@@ -76,11 +76,31 @@ class LocalSaasRunCase:
                 effectful_actions=1 if scenario in {"settings", "export"} else 0,
                 failure_reason=failure_reason,
             )
-        result, oracle_success = self._run_runtime(scenario, variant, seed)
+        features = RuntimeFeatures(
+            preflight=variant != "no_preflight",
+            structural_verification=variant != "no_structural_verifier",
+            capability_gate=variant != "no_capability_gate",
+            recovery=variant != "no_recovery",
+        )
+        return self.run_runtime_case(task, variant, seed, features)
+
+    def run_runtime_case(
+        self,
+        task: BenchmarkTask,
+        variant: str,
+        seed: int,
+        features: RuntimeFeatures,
+    ) -> BenchmarkRun:
+        """Execute one explicit runtime profile for candidate replay."""
+
+        scenario = self._scenario(task.task_id)
+        self._reset(scenario, variant, seed)
+        started_at = time.perf_counter()
+        result, oracle_success = self._run_runtime(scenario, variant, seed, features)
         event_types = [node.kind for node in result.trace.nodes]
         status_success = result.status == RuntimeStep.DONE
         false_accept = int(status_success and not oracle_success)
-        unsafe = int(scenario == "export" and variant == "no_capability_gate" and oracle_success)
+        unsafe = int(scenario == "export" and not features.capability_gate and oracle_success)
         recovery_attempts = event_types.count("RecoveryStarted") + event_types.count("EnvironmentDriftDetected")
         return BenchmarkRun(
             task_id=task.task_id,
@@ -163,14 +183,14 @@ class LocalSaasRunCase:
             time.sleep(0.05)
         return False
 
-    def _run_runtime(self, scenario: str, variant: str, seed: int) -> tuple[Any, bool]:
+    def _run_runtime(
+        self,
+        scenario: str,
+        variant: str,
+        seed: int,
+        features: RuntimeFeatures,
+    ) -> tuple[Any, bool]:
         target = f"{self.base_url}/{ {'pricing': 'pricing', 'settings': 'settings', 'export': 'reports'}[scenario] }"
-        features = RuntimeFeatures(
-            preflight=variant != "no_preflight",
-            structural_verification=variant != "no_structural_verifier",
-            capability_gate=variant != "no_capability_gate",
-            recovery=variant != "no_recovery",
-        )
         planners: dict[str, PlannerPort] = {
             "pricing": PricingPlanner(),
             "settings": SettingsPlanner(),

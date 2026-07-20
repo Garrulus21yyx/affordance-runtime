@@ -31,6 +31,13 @@ def main() -> int:
         raise RuntimeError(f"environment manifest is missing fields: {missing}")
     if evolution.get("decision") != "accepted":
         raise RuntimeError(f"evolution gate did not accept candidate: {evolution.get('decision')}")
+    if not evolution.get("rollback_verified"):
+        raise RuntimeError("evolution gate did not verify persisted load and rollback")
+    replay = evolution.get("replay_evidence") or []
+    categories = {item.get("category") for item in replay if item.get("success")}
+    required_categories = {"original", "task_family", "global_smoke", "safety_smoke"}
+    if not required_categories <= categories:
+        raise RuntimeError(f"evolution gate is missing successful replay categories: {required_categories - categories}")
     print("evidence_gate=passed")
     return 0
 
