@@ -5,7 +5,7 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements the complete M0-M8 controlled web profile: three
+The repository implements the complete M0-M8.1 controlled web profile: three
 reproducible Web/SaaS scenarios, trace and artifacts, independent verification,
 distinct seeded layouts, baseline/ablation evaluation, executable evolution,
 external parent integration, and held-out, visual, and official MiniWoB++
@@ -80,9 +80,8 @@ Verified evidence:
 - five screenshot-grounded visual runs detect five distinct boxes and succeed without DOM coordinates
 - 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
 
-Next evidence gates: finish M8.1 clean-checkout host/container agreement, then
-M8.2 public benchmark expansion and M8.3 recovery-cascade evolution. M9 remains
-conditional on restart/waiting evidence.
+Next evidence gates: M8.2 public benchmark expansion and M8.3 recovery-cascade
+evolution. M9 remains conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 

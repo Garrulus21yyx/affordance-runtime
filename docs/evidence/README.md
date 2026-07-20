@@ -20,6 +20,10 @@ presented as randomized evidence. Current M8 evidence records
 `deterministic_distinct_layout_v2`, plus held-out layouts, screenshot grounding,
 and a repeated pinned official MiniWoB++ subset.
 
+M8.1 adds a digest-pinned non-root container profile, exact host/container
+outcome comparison, and an optional real node-wot cross-surface conformance
+gate. See `m8.1-40fd93b.md`.
+
 Milestone summaries name the exact clean commit they reproduce. Generated run
 artifacts remain ignored because browser timing fields vary; the committed
 summary preserves the stable environment identity, acceptance results, counts,

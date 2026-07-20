@@ -20,7 +20,7 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | Audit current Docker, fixture, cross-surface, benchmark, recovery, and CI state | completed | repository, predecessor fixture, host Docker, and current gates inspected |
 | M8.1 pinned non-root container profile | completed | digest-pinned Dockerfile; fixture health/reset; 58 tests, Ruff, mypy, build; 63-run benchmark |
 | M8.1 Coordinator-level DOM/visual/WoT conformance | completed | real node-wot 0.9.2 shared oracle; three Coordinator traces; visual pixel detection and four screenshots |
-| M8.1 clean-checkout container reproduction | pending | host/container agreement and evidence summary |
+| M8.1 clean-checkout container reproduction | completed | clean `40fd93b`; 63 stable runs agree; versioned evidence summary |
 | M8.2 BrowserGym full-path adapter and expanded MiniWoB ladder | pending | PR/nightly/release suites, coverage and unsupported-action reports |
 | M8.2 public suites in planned order | pending | ScreenSpot, WorkArena L1, WebArena-Verified, WASP gates |
 | M8.3 incident/signature/loop detection | pending | repeated/no-progress/A-B cascade evidence |
@@ -33,3 +33,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | --- | --- | --- | --- |
 | 2026-07-20 | Forward-plan initialization | M8.1 selected first per authoritative ordering | this file |
 | 2026-07-20 | M8.1 implementation | Default non-root profile and optional real WoT conformance passed from the working tree | Docker/Compose, conformance runner, tests, CI |
+| 2026-07-20 | M8.1 clean evidence | Host/container agreement and all three conformance surfaces passed at clean `40fd93b` | `evidence/m8.1-40fd93b.md` |

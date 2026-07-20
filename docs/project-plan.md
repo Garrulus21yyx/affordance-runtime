@@ -140,7 +140,7 @@ The agent should not only decide what to do. The runtime must know:
 
 ## 4. Current Status
 
-The controlled web profile is complete through M8, with claims split by
+The controlled web profile is complete through M8.1, with claims split by
 evidence level. See
 [Implementation Status and Forward Gates](implementation-status.md).
 
@@ -153,7 +153,7 @@ evidence level. See
 | M4/M7 Integration Boundary | done | external task RPC and real LangGraph parent complete pricing and gated export |
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
-| M8.1 Container Reproducibility | pending | pinned Playwright image and Compose test/benchmark profile |
+| M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2 Public Benchmark Expansion | pending | BrowserGym MiniWoB scaling plus selected public suites |
 | M8.3 Recovery-Cascade Evolution | pending | repeated-error incidents, root-cause classification, executable recovery artifacts |
 
@@ -428,7 +428,7 @@ across all six curated families passed. The official source is pinned at Farama
 commit `eb59fed60fabe8951350275ba8650633b740013b`; the result remains a curated
 runtime subset rather than a full-suite leaderboard claim.
 
-### M8.1: Container Reproducibility - pending
+### M8.1: Container Reproducibility - done
 
 Add a pinned Playwright/Chromium Dockerfile and a small Compose profile for the
 in-memory fixture, tests, and benchmark. Use a non-root runtime, health checks,
@@ -446,6 +446,11 @@ Exit when a clean checkout runs tests and the local benchmark through Compose,
 produces oracle-equivalent host/container reports, and records successful
 verifier-backed traces for all three surfaces. This proves shared harness
 semantics, not equal backend maturity.
+
+Clean commit `40fd93b` satisfies the exit gate: 58 container tests and build,
+63 accepted benchmark runs with exact stable host/container agreement, and
+three verifier-backed traces against the same node-wot oracle. See
+`evidence/m8.1-40fd93b.md`.
 
 ### M8.2: Public Benchmark Expansion - pending
 

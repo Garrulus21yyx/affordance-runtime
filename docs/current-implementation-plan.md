@@ -1,10 +1,10 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8 are complete for the controlled web profile. See
-[Implementation Status and Forward Gates](implementation-status.md). The next
-required increments are M8.1 container reproducibility, M8.2 public benchmark
-expansion, and M8.3 recovery-cascade evolution. M9 is conditional on measured
-restart/waiting evidence; production-scale options remain non-blocking.
+Implementation status: M0-M8.1 are complete for the controlled web profile.
+See [Implementation Status and Forward Gates](implementation-status.md). The
+next required increments are M8.2 public benchmark expansion and M8.3
+recovery-cascade evolution. M9 is conditional on measured restart/waiting
+evidence; production-scale options remain non-blocking.
 
 ## 1. Authority
 
@@ -314,9 +314,8 @@ run concurrently when they refer to the same observation epoch. State mutation,
 approval consumption, effectful execution, compensation, and trace sequencing
 remain serial.
 
-Docker is planned for reproducibility and isolation; it is not implemented at
-M8. The repository currently has no Dockerfile or Compose configuration. M8.1
-adds a deliberately small profile:
+Docker is used for reproducibility and isolation. M8.1 added a deliberately
+small profile:
 
 ```text
 docker compose
@@ -575,7 +574,7 @@ episodes over six task families from official Farama commit
 `eb59fed60fabe8951350275ba8650633b740013b`. See
 `evidence/m8-e463e16.md`.
 
-### M8.1: Reproducible Container Profile - pending
+### M8.1: Reproducible Container Profile - done
 
 - add a pinned Playwright/Chromium Dockerfile, `.dockerignore`, and Compose
 - provide fixture, test, and benchmark services with mounted artifacts
@@ -589,6 +588,11 @@ Exit: a clean checkout reproduces tests and the local benchmark in containers,
 with host/container agreement on outcomes and oracle decisions. The optional
 cross-surface run reaches the same oracle state through all three surfaces and
 emits contract-compatible, verifier-backed traces for each backend.
+
+Clean commit `40fd93b` passed this exit gate with 58 container tests, a 63-run
+benchmark matching the host report on every stable outcome/oracle field, and
+DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
+`evidence/m8.1-40fd93b.md`.
 
 ### M8.2: Public Benchmark Expansion - pending
 

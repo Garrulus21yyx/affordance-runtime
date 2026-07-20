@@ -25,7 +25,7 @@ Status values:
 | M6 Executable Evolution | done | SHA-bound verifier payload, fresh candidate, six new Chromium replays, persisted acceptance and rollback proof at `4cccc96` | none |
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
-| M8.1 Container Reproducibility | pending | Docker/Compose exist on SL09; repository has no Docker assets | pinned non-root image and Compose test/benchmark profile |
+| M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2 Public Benchmark Expansion | pending | 18-episode six-template MiniWoB smoke | BrowserGym full-path adapter and public suite ladder |
 | M8.3 Recovery-Cascade Evolution | pending | bounded single-error recovery and executable verifier patch only | incident/signature detection and executable recovery artifacts |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
@@ -126,17 +126,18 @@ of a full MiniWoB++ score.
 
 ## M8.1-M8.3 Forward Work
 
-### M8.1 Container Reproducibility
+### M8.1 Container Reproducibility — done
 
-The repository currently runs on the SL09 host and has no Dockerfile,
-`.dockerignore`, or Compose file. Add the in-memory fixture, test runner,
-benchmark runner, health checks, and mounted artifacts. An optional
-`wot-proof` profile selectively migrates the old node-wot fixture and a
-minimal dashboard; it is not part of the default Web profile.
+The profile contains the in-memory fixture, test runner, benchmark runner,
+health checks, and mounted artifacts. The optional `wot-proof` profile
+selectively migrates the old node-wot fixture and a minimal dashboard; it is
+not part of the default Web profile.
 
-M8.1 also requires one reversible state change through DOM, real screenshot/SoM,
-and WoT. All three paths must use the same Coordinator-level contract, policy,
-verification, trace, evaluator, and oracle rather than direct executor calls.
+Clean commit `40fd93b` provides the digest-pinned non-root fixture, test, and
+benchmark services. Its 63 stable host/container outcomes agree exactly. The
+optional real node-wot profile reaches the same independent oracle through DOM,
+real screenshot/SoM, and WoT while retaining Coordinator contracts, verifier
+evidence, and traces. See `evidence/m8.1-40fd93b.md`.
 
 ### M8.2 Public Benchmark Expansion
 
