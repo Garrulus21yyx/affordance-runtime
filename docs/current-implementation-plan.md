@@ -1,9 +1,9 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8.1 are complete for the controlled web profile.
-See [Implementation Status and Forward Gates](implementation-status.md). The
-next required increments are M8.2 public benchmark expansion and M8.3
-recovery-cascade evolution. M9 is conditional on measured restart/waiting
+Implementation status: M0-M8.1 and M8.3 are complete for the controlled web
+profile. See [Implementation Status and Forward Gates](implementation-status.md).
+The next required increments are M8.2A general task intake/planning and M8.2B
+public benchmark expansion. M9 is conditional on measured restart/waiting
 evidence; production-scale options remain non-blocking.
 
 ## 1. Authority
@@ -39,10 +39,13 @@ harness improvements derived from failures.
 The complete product loop is:
 
 ```text
-TaskSpec
+UserRequest or parent TaskSpec
+  -> Intent Compiler
+  -> immutable TaskSpec
   -> Observe
   -> Affordance Snapshot
-  -> Planner Proposal
+  -> Generalist Planner Proposal
+  -> Grounder / ContractBuilder
   -> Action Contract
   -> Policy + Preflight
   -> Route + Execute
@@ -82,8 +85,10 @@ The following capabilities are required to prove the project thesis:
 
 | Capability | Current implementation target |
 | --- | --- |
+| Task intake | sourced user request, ambiguity-aware compiler, immutable versioned `TaskSpec` |
 | Unified Affordance Model | common envelope plus typed DOM, visual, accessibility, and WoT payloads |
-| Planner boundary | `PlannerPort` with scripted, reference LLM, and parent-agent-compatible implementations over time |
+| Planner boundary | environment-general `PlannerPort` returning semantic proposals, with scripted, LM, parent-agent, and benchmark adapters |
+| Contract building | deterministic proposal-to-`ActionContract` binding; no LM output executes directly |
 | Coordinator | one authoritative state writer and action scheduler per run |
 | Action Contract | the only object that may enter an executor |
 | State validity | snapshot identity, page revision, target fingerprint, and expiration |
@@ -101,7 +106,7 @@ Each required capability begins with one useful implementation:
 
 | Area | First implementation |
 | --- | --- |
-| Planner | scripted planner for deterministic benchmark diagnosis |
+| Planner | scripted diagnosis planner plus one provider-neutral `GeneralistLMPlanner`; framework adapters stay optional |
 | Browser backend | Playwright |
 | DOM observation | Playwright DOM and accessibility state |
 | Visual adapter | Set-of-Marks fixture-level grounding |
@@ -202,6 +207,31 @@ Memory has three practical layers:
 Raw DOM, screenshots, downloads, and complete histories are stored as artifacts,
 not accumulated in `RunState`. No vector database is required for the current
 runtime.
+
+### 5.4 Task Intake and Generalist Planner
+
+The full current specification is
+[Task Intake and Generalist Planner](task-intake-and-planner.md).
+
+The existing `TaskEnvelope(goal: str)` and scripted planners remain
+compatibility scaffolding. M8.2A introduces:
+
+```text
+UserRequest
+  -> LLMIntentCompiler
+  -> IntentDraft
+  -> deterministic ambiguity/policy validation
+  -> immutable TaskSpec revision
+  -> GeneralistLMPlanner
+  -> PlannerProposal
+  -> deterministic ContractBuilder
+  -> ActionContract
+```
+
+The compiler may request clarification but cannot grant capability. The planner
+may propose a semantic action but cannot bind authority, select an unchecked
+surface payload, or execute it. BrowserGym and AgentLab are benchmark adapters
+to this boundary, not the product definition.
 
 ## 6. Affordance and Contract Model
 
@@ -592,7 +622,31 @@ benchmark matching the host report on every stable outcome/oracle field, and
 DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Public Benchmark Expansion - in progress
+### M8.2: Generalist Planning and Public Benchmark Expansion - in progress
+
+#### M8.2A: Task Intake and Generalist Planner - pending
+
+Implement the schemas and gates in
+[Task Intake and Generalist Planner](task-intake-and-planner.md):
+
+- compile raw requests into sourced, ambiguity-aware, versioned `TaskSpec`;
+- keep requested capability distinct from granted authority;
+- return semantic `PlannerProposal` rather than a ready contract;
+- bind proposals through a deterministic `ContractBuilder`;
+- add provider-neutral `ModelPort`, `LLMIntentCompiler`, and
+  `GeneralistLMPlanner`;
+- retain scripted, parent-agent, and AgentLab benchmark adapters;
+- trace prompt/model/schema versions and proposal-to-contract lineage;
+- evaluate intent compilation, canonical-task planning, and end-to-end behavior
+  separately.
+
+Exit: raw natural language completes read-only, reversible-write,
+approval-gated, and cross-surface tasks through the full Coordinator; blocking
+ambiguity stops safely; clarification revisions invalidate stale proposals; no
+LM output grants authority or bypasses contracts; compiler and planner failures
+are attributable separately from runtime failures.
+
+#### M8.2B: Public Benchmark Expansion - in progress
 
 - use the implemented BrowserGym adapter to route every supported action
   through the full coordinator path and keep the scored policy external

@@ -82,8 +82,8 @@ Verified evidence:
 - 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
 - a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
 
-Next evidence gate: finish M8.2 external-planner MiniWoB matrices, then add the
-planned public suites. M9 remains conditional on restart/waiting evidence.
+Next evidence gate: complete M8.2A real-user intent compilation and generalist
+planning, then finish M8.2B MiniWoB matrices and planned public suites. M9 remains conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -100,6 +100,7 @@ Explicitly deferred beyond the current profile:
 - [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
 - [Design Freeze and Implementation Gates](docs/design-freeze.md)
 - [Architecture](docs/architecture.md)
+- [Task Intake and Generalist Planner](docs/task-intake-and-planner.md)
 - [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)
 - [Harness Evolution](docs/harness-evolution.md)
 - [Trace and Evaluation](docs/trace-and-evaluation.md)

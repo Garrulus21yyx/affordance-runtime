@@ -282,6 +282,10 @@ set, stable list semantics, and immutability after approval.
 
 ## 7. Context and Intent Architecture
 
+The promoted lightweight implementation specification is
+[Task Intake and Generalist Planner](task-intake-and-planner.md). This chapter
+preserves the broader production destination.
+
 ### 7.1 Intent Compilation
 
 Standalone mode may add:

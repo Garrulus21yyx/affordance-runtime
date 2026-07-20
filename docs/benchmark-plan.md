@@ -5,6 +5,21 @@ a browser task solver. The benchmark asks whether the runtime can bind actions
 to current environment state, avoid unsafe side effects, verify effects, recover
 from drift, and turn failures into regression-gated harness improvements.
 
+## Evaluation Layers
+
+The generalist path is evaluated in three separable layers:
+
+| Layer | Input -> output | Primary diagnosis |
+| --- | --- | --- |
+| Intent compilation | raw request -> canonical `TaskSpec` | goal, constraint, ambiguity, provenance, and authority errors |
+| Planner/runtime | canonical `TaskSpec` + environment -> verified result | planning, grounding, execution, verification, and recovery errors |
+| End to end | raw request -> verified result | actual standalone user experience |
+
+BrowserGym normally starts at the second layer so official task failures are not
+silently attributed to intent compilation. A separate paraphrase suite evaluates
+the compiler. Full schemas, metrics, and safety gates are in
+[Task Intake and Generalist Planner](task-intake-and-planner.md).
+
 ## Scenario Priority
 
 The benchmark plan should make the project's generalization story concrete

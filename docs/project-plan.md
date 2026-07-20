@@ -154,7 +154,8 @@ evidence level. See
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
-| M8.2 Public Benchmark Expansion | in progress | BrowserGym full-path bridge exists; external-planner matrices and public suite ladder remain |
+| M8.2A Task Intake and Generalist Planner | pending | typed compiler/planner specification; implementation remains |
+| M8.2B Public Benchmark Expansion | in progress | BrowserGym full-path bridge exists; generalist-planner matrices and public suite ladder remain |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
@@ -452,7 +453,29 @@ Clean commit `40fd93b` satisfies the exit gate: 58 container tests and build,
 three verifier-backed traces against the same node-wot oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Public Benchmark Expansion - in progress
+### M8.2: Generalist Planning and Public Benchmark Expansion - in progress
+
+#### M8.2A: Task Intake and Generalist Planner - pending
+
+Implement the authoritative
+[Task Intake and Generalist Planner](task-intake-and-planner.md) specification.
+Replace raw `goal: str` authority with a sourced, ambiguity-aware, immutable
+`TaskSpec`; add `LLMIntentCompiler`, provider-neutral `ModelPort`, and
+`GeneralistLMPlanner`; change planner output from executable contract to
+semantic `PlannerProposal`; and bind it through deterministic
+`ContractBuilder`.
+
+The reference path is environment-general and must complete real local Web and
+DOM/visual/WoT tasks. Parent agents may submit a validated `TaskSpec`.
+AgentLab remains a BrowserGym planner/baseline adapter rather than the product
+planner.
+
+Exit when natural language reaches verified results for read-only,
+reversible-write, approval-gated, and cross-surface cases; blocking ambiguity
+and policy conflict stop safely; TaskSpec revisions invalidate stale proposals;
+and all model/proposal/contract lineage is traceable.
+
+#### M8.2B: Public Benchmark Expansion - in progress
 
 The isolated BrowserGym 0.14.3 full-Coordinator bridge, typed action whitelist,
 external-policy boundary, and real one-task smoke are implemented. Keep the

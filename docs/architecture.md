@@ -7,7 +7,10 @@ scaling options are preserved separately in the
 ## 1. High-Level System
 
 ```text
-Task Envelope
+User Request or Parent TaskSpec
+    |
+    v
+Intent Compiler / TaskSpec Validator
     |
     v
 State Kernel
@@ -20,6 +23,12 @@ Versioned Affordance Snapshot
     |
     v
 Planner Port
+    |
+    v
+Planner Proposal
+    |
+    v
+Grounder / ContractBuilder
     |
     v
 Action Contract
@@ -51,6 +60,12 @@ Evaluator / Assisted Evolution Loop
 The online runtime is bounded. It is not an unconstrained ReAct loop. It follows
 a stateful workflow with explicit transitions, stale-state rejection, scoped
 capabilities, post-action verification, and trace logging.
+
+The executable task-intake and planner target is defined in
+[Task Intake and Generalist Planner](task-intake-and-planner.md). BrowserGym is
+one benchmark adapter to that environment-general boundary. The current
+`TaskEnvelope(goal: str)` and contract-producing scripted planners are
+migration scaffolding, not the final intent/planner contract.
 
 ## 1.1 System Invariants
 

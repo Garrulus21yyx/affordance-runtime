@@ -26,7 +26,8 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2 Public Benchmark Expansion | in_progress | isolated BrowserGym 0.14.3 full-Coordinator bridge and real one-task reward proof at `5d6ec93` | external-planner PR/nightly/release matrices and public suite ladder |
+| M8.2A Task Intake and Generalist Planner | pending | current `TaskEnvelope(goal: str)` and scripted planners only | implement typed compiler, TaskSpec, semantic proposals, ContractBuilder, and real-user gates |
+| M8.2B Public Benchmark Expansion | in_progress | isolated BrowserGym 0.14.3 full-Coordinator bridge and real one-task reward proof at `5d6ec93` | generalist-planner PR/nightly/release matrices and public suite ladder |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
@@ -139,7 +140,21 @@ optional real node-wot profile reaches the same independent oracle through DOM,
 real screenshot/SoM, and WoT while retaining Coordinator contracts, verifier
 evidence, and traces. See `evidence/m8.1-40fd93b.md`.
 
-### M8.2 Public Benchmark Expansion
+### M8.2A Task Intake and Generalist Planner
+
+The current runtime begins from `TaskEnvelope(goal: str)`, and
+`PlannerDecision` may already contain an `ActionContract`. It does not yet
+provide a sourced intent draft, ambiguity-aware immutable `TaskSpec`,
+provider-neutral generalist LM planner, or deterministic proposal-to-contract
+boundary.
+
+The implementation gate is defined in
+[Task Intake and Generalist Planner](task-intake-and-planner.md). Completion
+requires real-user request compilation, clarification and TaskSpec revision,
+semantic `PlannerProposal`, deterministic `ContractBuilder`, full trace
+lineage, and verified read/write/approval/cross-surface tasks.
+
+### M8.2B Public Benchmark Expansion
 
 The isolated BrowserGym 0.14.3 adapter now routes every supported action through
 `RunCoordinator`, exposes a typed action whitelist and external JSON-lines
