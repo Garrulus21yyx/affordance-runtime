@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification import VerifierLadder, preflight
 
@@ -32,11 +33,26 @@ class RuntimeStep(StrEnum):
 
 @dataclass(frozen=True)
 class TaskEnvelope:
-    task_id: str
-    goal: str
+    task_id: str = ""
+    goal: str = ""
     target: str = ""
     constraints: dict[str, Any] = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
+    task_spec: TaskSpec | None = None
+
+    def __post_init__(self) -> None:
+        if self.task_spec is None:
+            if not self.task_id or not self.goal:
+                raise ValueError("legacy TaskEnvelope requires task_id and goal")
+            return
+        if self.task_id and self.task_id != self.task_spec.task_id:
+            raise ValueError("TaskEnvelope task_id does not match TaskSpec")
+        if self.goal and self.goal != self.task_spec.objective:
+            raise ValueError("TaskEnvelope goal does not match TaskSpec objective")
+        object.__setattr__(self, "task_id", self.task_spec.task_id)
+        object.__setattr__(self, "goal", self.task_spec.objective)
+        if not self.target and self.task_spec.targets:
+            object.__setattr__(self, "target", self.task_spec.targets[0])
 
 
 class Executor(Protocol):
