@@ -1,5 +1,9 @@
 # Affordance Runtime Architecture
 
+This document describes the current implementation architecture. Production
+scaling options are preserved separately in the
+[Complete Architecture Blueprint](complete-architecture-blueprint.md).
+
 ## 1. High-Level System
 
 ```text
@@ -70,11 +74,9 @@ The first task-level runtime should make transitions explicit:
 ```text
 CREATED
   -> OBSERVING
-  -> MODELING
   -> PLANNING
   -> PREFLIGHT
   -> ACTING
-  -> OBSERVING_POST_ACTION
   -> VERIFYING
   -> DONE
 ```
@@ -83,19 +85,24 @@ Failure and control transitions:
 
 ```text
 PREFLIGHT -> OBSERVING       when stale or expired
-PREFLIGHT -> NEEDS_APPROVAL  when required capability lacks approval
+PREFLIGHT -> WAITING_APPROVAL when required capability lacks approval
 PREFLIGHT -> ABORTED         when policy denies the action
-ACTING -> OBSERVING_POST_ACTION | RECOVERING | FAILED
+ACTING -> VERIFYING | RECOVERING | FAILED
 VERIFYING -> PLANNING | RECOVERING | DONE | FAILED
-RECOVERING -> OBSERVING | NEEDS_PARENT | NEEDS_APPROVAL | ABORTED
+RECOVERING -> OBSERVING | WAITING_APPROVAL | ABORTED | FAILED
 ```
+
+Affordance modeling occurs within `OBSERVING`. Post-action observation occurs
+at the start of `VERIFYING`. They remain traced activities without requiring
+additional top-level states in the current runtime.
 
 `run_contract()` may remain as an internal/debug API, but the public runtime
 should be task-level and hold a `RunContext` across steps.
 
-## 1.3 State Kernel
+## 1.3 Run State / State Kernel
 
-The State Kernel is the runtime's long-horizon memory for one task. It stores:
+The current State Kernel is the runtime's bounded `RunState` for one task. It
+stores:
 
 - goal and constraints
 - active subgoals
@@ -103,7 +110,7 @@ The State Kernel is the runtime's long-horizon memory for one task. It stores:
 - hidden-state hypotheses
 - pending obligations
 - current observation and snapshot ids
-- current global and target revisions
+- current page revision and target fingerprint
 - action receipts and verifier reports
 - remaining budgets
 - granted capabilities and approval tokens
@@ -159,8 +166,8 @@ state
 backend_candidates
 evidence_refs
 snapshot_id
-global_revision
-target_revision
+page_revision
+target_fingerprint
 provenance
 ```
 
@@ -175,17 +182,19 @@ WoT/API: href, op, method, schema, security metadata
 
 ### 2.3 Environment Revision
 
-Do not treat environment revision as one raw hash of URL, DOM, screenshot, and
-loading state. The runtime should separate:
+Do not treat environment validity as one raw hash of URL, DOM, screenshot, and
+loading state. The first implementation uses:
 
-| Revision | Meaning | Used For |
+| Value | Meaning | Used For |
 | --- | --- | --- |
-| Global revision | navigation or document-level replacement | invalidating broad contracts |
-| Target revision | target role/name/state/bbox/visibility identity | validating action target |
-| Artifact revision | DOM, screenshot, accessibility, file artifact identity | trace and replay evidence |
+| Page revision | navigation, document replacement, blocking modal, and action-space-relevant state | invalidating page-bound contracts |
+| Target fingerprint | target role/name/state/bbox/visibility identity | validating the selected target |
+| Artifact hash | content identity for DOM, screenshot, accessibility, or file artifacts | trace and replay evidence, not runtime state |
 
-A contract should bind `snapshot_id`, `global_revision`, optional
-`target_revision`, `observed_at`, `expires_at`, and validity policy.
+A contract should bind `snapshot_id`, `page_revision`,
+`target_fingerprint`, `observed_at`, `expires_at`, and validity policy. The
+complete blueprint preserves more revision dimensions if benchmark evidence
+later requires them.
 
 ### 2.4 Affordance Lease
 
@@ -194,8 +203,8 @@ Each snapshot or target can receive a lease:
 ```json
 {
   "snapshot_id": "snap_004",
-  "global_revision": "page:rev_12",
-  "target_revision": "target:submit:rev_2",
+  "page_revision": "page:rev_12",
+  "target_fingerprint": "sha256:...",
   "observed_at": "2026-07-17T10:00:00Z",
   "expires_at": "2026-07-17T10:00:02Z",
   "provenance": ["dom", "screenshot"],
@@ -203,9 +212,9 @@ Each snapshot or target can receive a lease:
 }
 ```
 
-Preflight must check revision relevance, lease expiration, target state,
+Preflight must check page revision, lease expiration, target fingerprint,
 preconditions, capability, and approval. A stale action returns a structured
-reason such as `STALE_GLOBAL_REVISION`, `STALE_TARGET_REVISION`,
+reason such as `STALE_PAGE_REVISION`, `TARGET_FINGERPRINT_MISMATCH`,
 `LEASE_EXPIRED`, or `PRECONDITION_FAILED`.
 
 ### 2.5 Action Contract Layer
@@ -217,6 +226,8 @@ Each action is represented by a contract:
   "schema_version": "1.0",
   "run_id": "run_001",
   "snapshot_id": "snap_004",
+  "page_revision": "page:rev_12",
+  "target_fingerprint": "sha256:...",
   "contract_hash": "sha256:...",
   "intent": "submit the current form",
   "target": "button.submit",

@@ -29,6 +29,37 @@ The project should not be positioned as a direct replacement for PageAgent,
 browser-use, Stagehand, Skyvern, OpenHands, or OSWorld. Those systems are useful
 reference points, baselines, or integration targets.
 
+### 1.1 Plan Authority and Two Horizons
+
+The project uses two compatible planning horizons:
+
+- [Current Implementation Plan](current-implementation-plan.md): the
+  authoritative plan for current code, milestones, and release claims.
+- [Complete Architecture Blueprint](complete-architecture-blueprint.md): a
+  non-blocking reference for a future durable, multi-run, service-grade system.
+
+They are not competing designs. The complete blueprint preserves production
+reasoning; the current plan deliberately implements a smaller topology while
+retaining the complete domain loop.
+
+```text
+Current implementation:
+  complete vertical harness loop
+  limited horizontal infrastructure
+
+Complete blueprint:
+  future operational scaling options
+  no current release obligation
+```
+
+If the documents differ, the current implementation plan wins. A blueprint
+feature becomes current work only when:
+
+1. a benchmark, integration, or operational failure requires it
+2. the current simpler design has been measured and shown insufficient
+3. the feature has explicit ownership, persistence, and safety semantics
+4. this project plan is updated with entry criteria and exit evidence
+
 Affordance Runtime defines the lower execution layer:
 
 ```text
@@ -137,8 +168,9 @@ Planned before claiming a complete runtime:
 - CLI gold path
 - bounded recovery policy
 - baseline and ablation reports
-- task-level MCP interface
 - assisted harness evolution after benchmark freeze
+- optional task-level MCP and framework integrations after the core evolution
+  loop
 
 ## 5. Modes
 
@@ -214,9 +246,9 @@ secondary non-web adapter proof, not the main story.
 | Release | Purpose | Required | Deferred |
 | --- | --- | --- | --- |
 | v0.1 Core | one read-only Web gold path | DOM observation, Playwright execution, Action Contract, preflight, post-action verification, trace writer, CLI | SoM, event bus, MCP, WoT, evolution |
-| v0.2 Reliability | prove runtime differentiators | stale injection, selector drift, modal recovery, approval gate, benchmark report | REST, many framework adapters, desktop/mobile |
-| v0.3 Integration | bounded parent-agent use | task-level MCP, run/evidence/trace fetch | public low-level click/type tools |
-| v0.4 Assisted Evolution | learn from failed traces | proposal generation, quarantine registry, regression replay | automatic production mutation |
+| v0.2 Reliability and surface proof | prove runtime differentiators and contract reuse | stale injection, selector drift, modal recovery, approval gate, benchmark report, bounded SoM and WoT proofs | REST, many framework adapters, desktop/mobile |
+| v0.3 Assisted Evolution | learn from failed traces | classification, declarative proposal, quarantine registry, regression replay | automatic production mutation |
+| v0.4 Optional Integration | bounded parent-agent use | task-level MCP, run/evidence/trace fetch, optional LLM or LangGraph adapter | public low-level click/type tools |
 
 ## 7. Scenario Specs
 
@@ -252,9 +284,17 @@ The v0.2 Reliability release succeeds only if it can additionally:
 3. Enforce capability and approval policy.
 4. Produce a benchmark report with defined denominators and independent oracles.
 5. Show ablations for no lease, no verifier, no capability gate, and no recovery.
+6. Show that visual and WoT affordances can enter the same contract, trace, and
+   evaluation path without becoming separate product lines.
 
-The project should not claim complete harness evolution until v0.4 evidence
-exists.
+The v0.3 Assisted Evolution release succeeds only if one real failed trace is
+classified, converted into a declarative skill, policy, verifier, affordance,
+or fixture proposal, replayed against the original and related scenarios, and
+accepted or quarantined with a reproducible report.
+
+The project should not claim complete harness evolution until this v0.3
+evidence exists. MCP, LangGraph, and additional framework adapters do not block
+that claim.
 
 ## 9. Milestones
 
@@ -314,7 +354,7 @@ Explicitly deferred:
 - WoT
 - evolution
 
-### M2: Runtime Reliability
+### M2: Runtime Reliability and Cross-Surface Proof
 
 Objective: prove the runtime adds value beyond direct browser automation.
 
@@ -324,6 +364,9 @@ Deliverables:
 - stale target, selector drift, modal, and delayed receipt perturbations
 - capability and approval gate
 - bounded recovery policies
+- bounded visual SoM adapter proof using the shared affordance and contract path
+- bounded local WoT fixture proof using the shared policy, trace, and evaluation
+  path
 - JSON/Markdown/CSV benchmark reports
 - ablation runs
 
@@ -333,26 +376,10 @@ Exit criteria:
 - independent oracle checks are used for grading
 - unsafe side effects remain zero
 - ablation shows which runtime layers matter
+- DOM, visual, and WoT payloads preserve surface-specific data while reusing
+  common contract, trace, and evaluation semantics
 
-### M3: Subagent Interface
-
-Objective: expose the runtime as a bounded task-level tool.
-
-Deliverables:
-
-- MCP task API: submit bounded task, get status, fetch result, fetch evidence,
-  fetch trace
-- optional REST only if the MCP contract has stabilized
-- parent-agent event statuses: success, failed, blocked, needs_approval,
-  needs_user_login, needs_parent_context, unsafe_action_blocked
-
-Exit criteria:
-
-- a parent agent can submit a bounded task without access to raw click/type
-  primitives
-- all returned results include evidence and trace references
-
-### M4: Assisted Harness Evolution
+### M3: Assisted Harness Evolution
 
 Objective: turn failed traces into reviewed, regression-tested harness artifacts.
 
@@ -360,23 +387,46 @@ Prerequisites:
 
 - stable trace schema
 - resettable benchmark environment
-- at least N classified failures
+- classified failures from M2
 - deterministic enough regression runs
-- one manually designed patch has passed the gate
+- one manually designed patch has passed the replay gate
 
 Deliverables:
 
 - failure classifier
-- proposal generator
+- declarative skill, policy, verifier, affordance-rule, or fixture proposal
 - quarantine registry
-- regression gate
+- regression replay gate
 - before/after report
 
 Exit criteria:
 
-- at least one failed trace becomes a quarantined or accepted fixture, skill,
-  policy patch, or verifier patch
-- no artifact is accepted without replay and safety checks
+- at least one real failed trace becomes an accepted or quarantined artifact
+- the original failure and related task family are replayed
+- safety smoke tests have zero unsafe side effects
+- no artifact is activated without a versioned regression decision
+
+### M4: Optional Integrations
+
+Objective: expose the proven runtime loop through selected parent-agent or
+framework integrations without moving GUI execution authority outside the
+runtime.
+
+Candidate deliverables, selected according to demonstrated need:
+
+- task-level MCP API: submit task, query status, approve, cancel, and fetch
+  result/evidence/trace
+- reference LLM planner behind `PlannerPort`
+- LangGraph outer workflow adapter
+- optional REST only if MCP does not meet an actual integration requirement
+- public benchmark adapters
+
+Exit criteria:
+
+- a parent agent can submit a bounded task without access to public raw
+  click/type primitives
+- Runtime `RunState` remains authoritative rather than framework state
+- all returned results include evidence and trace references
 
 ## 10. Non-Goals
 
@@ -390,6 +440,9 @@ Out of scope for the first web releases:
 - autonomous RL training
 - production self-modification
 - public low-level click/type tools that bypass contracts
+- durable queues, worker pools, worker leases, and distributed checkpoints
+- multiple planners or agents controlling the same browser session
+- multi-tenant infrastructure, Kubernetes, Kafka, or a distributed event bus
 
 ## 11. Decision Gates
 
@@ -405,6 +458,8 @@ The plan is allowed to delete ideas when evidence is weak:
   envelope but split typed payloads.
 - If evolution proposals cannot be evaluated reproducibly, keep only manual
   failure analysis and regression fixture generation.
+- If a production-blueprint feature has no measured current bottleneck, keep it
+  in `complete-architecture-blueprint.md` rather than implementing it.
 
 ## 12. Presentation Boundary
 

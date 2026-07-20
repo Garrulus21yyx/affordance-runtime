@@ -10,6 +10,10 @@ yet a complete Web GUI runtime. The immediate goal is to turn the skeleton into
 a reproducible Web/SaaS gold path with trace, verification, baseline, and
 benchmark evidence.
 
+Planning follows two horizons: the current implementation plan is authoritative
+for code and release scope, while the complete architecture blueprint preserves
+future service-grade options without making them current requirements.
+
 It is not another in-page web copilot or a thin browser automation wrapper. Its
 core is:
 
@@ -53,12 +57,14 @@ Planned before claiming a complete runtime:
 - CLI gold path
 - bounded recovery policy
 - baseline and ablation reports
-- task-level MCP interface
 - assisted harness evolution after benchmark freeze
+- optional task-level MCP and framework integrations after the evolution loop
 
 ## Documents
 
 - [Project Plan](docs/project-plan.md)
+- [Current Implementation Plan](docs/current-implementation-plan.md)
+- [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
 - [Design Freeze and Implementation Gates](docs/design-freeze.md)
 - [Architecture](docs/architecture.md)
 - [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)

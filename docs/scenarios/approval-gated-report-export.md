@@ -51,8 +51,8 @@ Approval must be single-use and bound to:
 ```text
 run_id
 contract_hash
-environment_revision
-target_revision
+page_revision
+target_fingerprint
 capability: report.export
 approver
 expiration

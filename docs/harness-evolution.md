@@ -207,7 +207,7 @@ review for:
 
 ## 9. Resume Framing
 
-Before v0.4 evidence exists, describe this as a planned or prototyped assisted
+Before v0.3 evidence exists, describe this as a planned or prototyped assisted
 harness evolution loop.
 
 After the prerequisite gate and a real before/after regression report exist, it

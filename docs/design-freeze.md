@@ -4,6 +4,11 @@ This document converts the project plan from an architecture proposal into an
 implementation contract. Before expanding code, the runtime should be judged by
 frozen semantics, testable hypotheses, scenario specs, and milestone gates.
 
+The [Current Implementation Plan](current-implementation-plan.md) is the
+authoritative implementation profile. The
+[Complete Architecture Blueprint](complete-architecture-blueprint.md) preserves
+future production options but does not add current design-freeze requirements.
+
 ## 1. Project Identity
 
 Primary product:
@@ -137,16 +142,18 @@ view. A lease is not a hash. A receipt is not a verifier.
 ## 6. Revision Model
 
 Do not begin with one global hash that mixes URL, DOM, screenshot, and loading
-state. The first implementation should separate:
+state. The current implementation uses a compact validity boundary:
 
-| Revision | Meaning | Invalidates |
+| Value | Meaning | Invalidates or Identifies |
 | --- | --- | --- |
-| Global revision | navigation or document-level replacement | most contracts |
-| Target revision | action target identity, enabled state, bbox, role/name, visibility | target-bound contracts |
-| Artifact revision | DOM, screenshot, accessibility, or file artifact identity | evidence links and replay |
+| Page revision | navigation, document replacement, blocking modal, and action-space-relevant page state | page-bound contracts |
+| Target fingerprint | action target identity, enabled state, bbox, role/name, and visibility | target-bound contracts |
+| Artifact hash | DOM, screenshot, accessibility, or file content identity | evidence links and replay, not runtime validity |
 
-A contract should bind `snapshot_id`, `global_revision`, optional
-`target_revision`, validity policy, `observed_at`, and `expires_at`.
+A contract should bind `snapshot_id`, `page_revision`,
+`target_fingerprint`, validity policy, `observed_at`, and `expires_at`. The
+complete blueprint may split page validity into more dimensions only after a
+benchmark demonstrates the need.
 
 Changes that usually invalidate a contract:
 
@@ -193,9 +200,9 @@ max effectful actions
 | Release | Purpose | Includes | Explicitly Deferred |
 | --- | --- | --- | --- |
 | v0.1 Core | one read-only Web gold path | DOM observer, Playwright executor, contracts, preflight, post-action verifier, trace writer, CLI | SoM, MCP, event bus, WoT, evolution |
-| v0.2 Reliability | prove differentiators | stale injection, modal recovery, selector drift, approval gate, benchmark report | REST, many agent adapters, desktop/mobile |
-| v0.3 Integration | parent-agent handoff | task-level MCP, result/evidence/trace fetch | low-level public click/type tools |
-| v0.4 Experimental | controlled learning loop | assisted evolution proposal, quarantine registry, regression replay | fully automatic production mutation |
+| v0.2 Reliability and surface proof | prove differentiators and common contract reuse | stale injection, modal recovery, selector drift, approval gate, benchmark report, bounded SoM/WoT proofs | REST, many agent adapters, desktop/mobile |
+| v0.3 Assisted Evolution | controlled learning loop | failure classification, declarative proposal, quarantine registry, regression replay | fully automatic production mutation |
+| v0.4 Optional Integration | parent-agent handoff | task-level MCP, result/evidence/trace fetch, optional LLM/LangGraph adapter | low-level public click/type tools |
 
 ## 9. Scope-Cut Rules
 
@@ -207,6 +214,7 @@ max effectful actions
 | CUT-04 | Unified affordance model hides surface-specific data in opaque dicts | keep common envelope, split typed payloads |
 | CUT-05 | Evolution proposals cannot be evaluated reproducibly | keep manual failure analysis plus regression fixture generation |
 | CUT-06 | MCP delays gold path | ship CLI first and expose MCP after task schema stabilizes |
+| CUT-07 | A production feature has no measured current bottleneck | keep it in the complete blueprint |
 
 ## 10. Milestone Template
 

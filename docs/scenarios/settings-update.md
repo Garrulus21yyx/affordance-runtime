@@ -79,7 +79,7 @@ when requested.
 | stale affordance before save | tests lease/preflight |
 | selector drift for save button | tests locator robustness |
 | blocking confirmation modal | tests modal classification |
-| async disabled/enabled save button | tests target revision validity |
+| async disabled/enabled save button | tests target fingerprint validity |
 | transient error banner | tests recovery vs blind retry |
 
 ## Ground Truth Oracle
@@ -102,7 +102,7 @@ max_effectful_actions: 2
 
 - task envelope with granted capability
 - pre-action observation and setting value
-- action contract bound to snapshot and target revision
+- action contract bound to snapshot, page revision, and target fingerprint
 - capability gate decision
 - execution receipt
 - post-action observation
