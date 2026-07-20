@@ -1,11 +1,12 @@
 # Current Implementation Plan
 
-Implementation status: M0-M2 are complete for the controlled local profile.
+Implementation status: M0-M2 and M5 are complete for the controlled local profile.
 M3 and M4 have working prototypes but retain evidence gates: evolution does not
 yet apply an executable artifact before fresh replay, and the task API has not
 yet been called by a real external parent agent. See
-[Implementation Status and Forward Gates](implementation-status.md). M5-M9 below
-are the authoritative next steps; production-scale options remain non-blocking.
+[Implementation Status and Forward Gates](implementation-status.md). M6-M9
+below are the authoritative next steps; M5 is retained as completed evidence,
+and production-scale options remain non-blocking.
 
 ## 1. Authority
 
@@ -442,7 +443,7 @@ Implemented: in-process task service and bounded parent-agent-shaped tool
 adapter. Remaining: one real external parent agent must call it without access
 to primitive click/type operations. M7 closes this gate.
 
-### M5: Evidence Freeze - required next
+### M5: Evidence Freeze - done
 
 - commit the current implementation as a reviewable unit
 - add CI for tests, Ruff, mypy, package build, and focused Chromium smoke
@@ -452,6 +453,11 @@ to primitive click/type operations. M7 closes this gate.
 
 Exit: a clean checkout reproduces the local gold path, 3 x 7 matrix, and
 evolution prototype.
+
+Evidence: `./scripts/reproduce_local.sh` passed from a clean clone at commit
+`4528f25baab0778a6eec4ce37a9fba82f2a7635e`; see
+`evidence/m5-4528f25.md`. The recorded seed semantics remain
+`label_only_v1`, so randomized/generalization claims stay gated on M8.
 
 ### M6: Executable Harness Evolution - required
 

@@ -21,7 +21,7 @@ Status values:
 | M2 Local Reliability | done | three scenarios, fixed perturbations, approval/download oracle, 3 x 7 matrix | distinct seeds/public generalization move to M8 |
 | M3 Assisted Evolution | in_progress | classifier, typed proposal, replay-category report, direction-aware decision | executable payload, fresh candidate replay, persistence, rollback |
 | M4 Integration Boundary | in_progress | in-process task service and bounded adapter | real external MCP/parent-agent call |
-| M5 Evidence Freeze | pending | local verification exists | CI, environment manifest, clean-checkout reproduction, versioned reports |
+| M5 Evidence Freeze | done | CI, package build, environment manifest, versioned reports, clean-clone reproduction at `4528f25` | none |
 | M6 Executable Evolution | pending | schemas/report prototype exist | apply artifact to fresh runtime and prove replay/rollback |
 | M7 External Integration | pending | local adapter contract exists | real parent completes read-only and approval-gated tasks |
 | M8 Generalization Eval | pending | one official MiniWoB++ compatibility smoke passed | repeated curated suite, distinct seeds, unseen layouts, real visual path |
@@ -97,7 +97,7 @@ Status values:
 
 | Milestone | Required evidence |
 | --- | --- |
-| M5 | CI, package build, environment identity, clean-checkout commands, versioned benchmark/evolution summaries |
+| M5 | done: CI, package build, environment identity, clean-checkout command, and versioned benchmark/evolution summaries at `4528f25` |
 | M6 | executable payload, fresh candidate runtime, mandatory replay, persisted decision, rollback |
 | M7 | real parent-agent submission/approval/cancel/result/evidence/trace with no primitive GUI bypass |
 | M8 | distinct seeds, unseen layouts, repeated pinned MiniWoB++ subset, real visual grounding |
@@ -125,8 +125,9 @@ Run these from the repository root:
 
 ```bash
 .venv/bin/pytest -q
-.venv/bin/ruff check src tests
+.venv/bin/ruff check src tests scripts
 .venv/bin/mypy src
+.venv/bin/python -m build
 ```
 
 M1 end-to-end commands:
@@ -146,6 +147,12 @@ affordance-runtime evolve \
   --output evolution-results
 ```
 
+Clean-checkout M5 gate:
+
+```bash
+./scripts/reproduce_local.sh
+```
+
 ## Change Ledger
 
 | Date | Milestone | Change | Files | Verification |
@@ -159,3 +166,4 @@ affordance-runtime evolve \
 | 2026-07-20 | M4 | Added stable task service, bounded tool adapter, local scenario runner, scoped approval, cancellation, result/evidence/trace retrieval | integrations package and tests | real Chromium pricing task succeeded; export waited for approval then succeeded with file-hash receipt |
 | 2026-07-20 | Audit | Added task-constraint policy, effect idempotency/compensation enforcement, post-approval state revalidation, async task adapter, and release thresholds | safety, coordinator, integration, benchmark validation, docs, tests | 49 tests; Ruff/mypy; 21-run local gate passed; evolution report and local async API passed |
 | 2026-07-20 | M8 compatibility | Ran official Farama MiniWoB++ click-button through BrowserSession, DOM Affordance, ActionContract, and DomExecutor | temporary official checkout only | done=true, raw reward=1.0; suite adapter pending |
+| 2026-07-20 | M5 | Added CI, package build dependency, focused Chromium smoke, environment manifest, versioned report output, and one-command clean-checkout reproduction | workflow, environment module, benchmark writer, scripts, evidence summary | clean clone at `4528f25`: 49 tests, Ruff, mypy, build, smoke, 21-run matrix, and evolution gate passed |

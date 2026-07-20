@@ -5,8 +5,9 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements the M0-M2 controlled local profile: three
-reproducible Web/SaaS scenarios, trace and artifacts, independent verification,
+The repository implements the M0-M2 controlled local profile and the M5
+reproducible evidence freeze: three reproducible Web/SaaS scenarios, trace and
+artifacts, independent verification,
 fixed perturbation controls, and baseline/ablation evaluation. M3 evolution and
 M4 integration have working prototypes, but executable artifact application and
 a real external parent-agent call remain open gates. Service-grade distributed
@@ -60,10 +61,12 @@ Implemented current profile:
 - executable Direct Playwright, primitive-agent, Full Runtime, and four-ablation matrix
 - failure classification, typed evolution proposals, mandatory replay categories, and before/after reports
 - task-level submit/execute/status/approve/cancel/result/evidence/trace service and parent-agent tool adapter
+- CI, package build, environment manifests, versioned reports, and one-command clean-checkout reproduction
 
 Verified evidence:
 
 - all 49 unit/integration tests pass with Ruff and mypy
+- clean commit `4528f25` reproduces tests, Ruff, mypy, package build, focused Chromium smoke, the 21-run matrix, and evolution gate via `./scripts/reproduce_local.sh`
 - Full Runtime passes all three fixed-seed scenarios with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
 - a no-verifier false accept produces a typed proposal and four-category comparison report; loading it into a fresh candidate runtime is pending
@@ -71,7 +74,6 @@ Verified evidence:
 
 Next evidence gates:
 
-- M5: CI, environment identity, clean-checkout reproduction, versioned reports
 - M6: executable evolution artifact loading, fresh replay, persistence, rollback
 - M7: one real MCP or parent-agent integration
 - M8: distinct seeds, unseen layouts, repeated MiniWoB++ subset, real visual path
