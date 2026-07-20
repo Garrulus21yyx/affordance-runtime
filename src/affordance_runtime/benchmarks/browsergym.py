@@ -849,6 +849,86 @@ def run_browsergym_miniwob_suite(
     return report
 
 
+def run_browsergym_miniwob_generalist_suite(
+    output_dir: Path,
+    *,
+    profile: str,
+    model: ModelPort,
+    headless: bool = True,
+) -> dict[str, Any]:
+    """Run the standard MiniWoB matrix through the common GeneralistLMPlanner.
+
+    This is intentionally separate from the external-policy suite: official
+    score, unsupported action coverage, and runtime diagnostics remain in the
+    same report schema, while no task-specific JSON-lines policy is involved.
+    """
+
+    try:
+        import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
+        import gymnasium as gym  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError(
+            "BrowserGym is not installed; use an isolated affordance-runtime[browsergym] environment"
+        ) from exc
+
+    html_root = ensure_browsergym_miniwob(output_dir / "source")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _quiet_handler(html_root))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    registered = registered_miniwob_tasks()
+    selected, seeds = browsergym_profile(registered, profile)
+    missing_tasks = sorted(set(selected) - set(registered))
+    episodes: list[BrowserGymEpisodeResult] = []
+    try:
+        base_url = f"http://{server.server_name}:{server.server_port}/miniwob/"
+        for task_id in selected:
+            if task_id in missing_tasks:
+                continue
+            for seed in seeds:
+                environment = gym.make(
+                    f"browsergym/miniwob.{task_id}",
+                    task_kwargs={"base_url": base_url},
+                    headless=headless,
+                )
+                episodes.append(
+                    run_browsergym_generalist_episode(
+                        environment,
+                        model,
+                        task_id=task_id,
+                        seed=seed,
+                        artifact_root=output_dir / "artifacts",
+                    )
+                )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+    report = write_browsergym_report(
+        output_dir,
+        profile=profile,
+        registered_tasks=registered,
+        selected_tasks=selected,
+        seeds=seeds,
+        episodes=episodes,
+    )
+    report.update(
+        {
+            "planner_boundary": "GeneralistLMPlanner",
+            "model_provider": model.provider,
+            "model_name": model.model,
+            "model_endpoint_class": model.endpoint_class,
+        }
+    )
+    report["acceptance_errors"] = [
+        *(f"registered task missing: {task}" for task in missing_tasks),
+        *report["acceptance_errors"],
+    ]
+    (output_dir / "browsergym-report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return report
+
+
 def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> Affordance:
     bid = str(action.arguments.get("bid") or action.arguments.get("from_bid") or "")
     selector = f"[bid='{bid.replace(chr(39), chr(92) + chr(39))}']" if bid else ""
