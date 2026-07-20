@@ -270,6 +270,20 @@ approval binding. A future WASP run must exercise this baseline against the
 official malicious-page cases and report the result separately; this statement
 is not an official WASP score.
 
+### WebArena-Verified Subset Manifest
+
+`affordance-runtime prepare-webarena-verified-subset` accepts the official
+WebArena-Verified dataset JSON and emits a deterministic 30--50 task manifest.
+It round-robins task IDs over their primary sites and stores the input dataset
+SHA-256, task revision, template ID, selected IDs, and resulting site
+distribution. The manifest deliberately has `official_score_claimed=false`.
+
+Once an isolated WebArena environment and agent logs are available, those exact
+task IDs must be evaluated by upstream `webarena-verified eval-tasks`, which
+uses its deterministic response and network-trace evaluators. Affordance
+Runtime must retain the upstream results rather than replacing them with a
+local score approximation.
+
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and

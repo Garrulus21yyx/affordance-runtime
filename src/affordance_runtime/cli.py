@@ -75,6 +75,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     workarena.add_argument("--output", type=Path, default=Path("workarena-results"))
 
+    webarena_verified = subcommands.add_parser(
+        "prepare-webarena-verified-subset",
+        help="write a reproducible 30--50 task WebArena-Verified manifest for official offline scoring",
+    )
+    webarena_verified.add_argument("--dataset", type=Path, required=True)
+    webarena_verified.add_argument("--output", type=Path, default=Path("webarena-verified-subset.json"))
+    webarena_verified.add_argument("--count", type=int, default=30)
+
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
     evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
@@ -148,6 +156,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = write_workarena_preflight(args.output)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["ready"] else 1
+    if args.command == "prepare-webarena-verified-subset":
+        from affordance_runtime.benchmarks.webarena_verified import write_webarena_verified_subset
+
+        manifest = write_webarena_verified_subset(args.dataset, args.output, count=args.count)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
     if args.command == "evolve":
         evolution_report = build_evolution_report(args.benchmark_report, args.output)
         print(
