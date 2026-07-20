@@ -165,7 +165,9 @@ class OpenAICompatibleModelPort:
                 )
             parsed = output_schema.model_validate_json(str(content))
         except (KeyError, IndexError, TypeError, ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredModelError(f"structured response failed {output_schema.__name__} validation") from exc
+            raise StructuredModelError(
+                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
+            ) from exc
         usage = response.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
@@ -230,7 +232,9 @@ class OllamaModelPort:
         try:
             parsed = output_schema.model_validate_json(str(response["message"]["content"]))
         except (KeyError, TypeError, ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredModelError(f"structured response failed {output_schema.__name__} validation") from exc
+            raise StructuredModelError(
+                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
+            ) from exc
         prompt_tokens = int(response.get("prompt_eval_count") or 0)
         completion_tokens = int(response.get("eval_count") or 0)
         self.last_call = ModelCallRecord(
@@ -314,6 +318,20 @@ def _safe_failure_detail(error: StructuredModelError) -> str:
         "structured response failed ",
     )
     return detail[:200] if detail.startswith(safe_prefixes) else type(error).__name__
+
+
+def _schema_failure_summary(error: Exception) -> str:
+    """Expose schema failure shape without retaining response field values."""
+
+    if isinstance(error, ValidationError):
+        parts = []
+        for item in error.errors()[:4]:
+            location = ".".join(str(part) for part in item.get("loc", ()))
+            parts.append(f"{location}:{item.get('type', 'validation_error')}")
+        return ",".join(parts) or "validation_error"
+    if isinstance(error, json.JSONDecodeError):
+        return "invalid_json"
+    return type(error).__name__
 
 
 def _post_json(

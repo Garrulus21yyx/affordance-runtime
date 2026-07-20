@@ -113,6 +113,34 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_call.total_tokens == 11
 
 
+def test_structured_schema_failure_has_no_response_value() -> None:
+    server, thread, _ = _serve(
+        {
+            "choices": [{"message": {"content": '{"value": 7}'}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret-value",
+            model="remote-test",
+        )
+        try:
+            asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+        except StructuredModelError as exc:
+            detail = str(exc)
+        else:
+            raise AssertionError("invalid structured output should fail")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert "value:string_type" in detail
+    assert '"value": 7' not in detail
+
+
 def test_environment_factory_selects_remote_with_local_fallback_without_exposing_keys() -> None:
     port = model_port_from_environment(
         {

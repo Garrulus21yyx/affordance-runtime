@@ -15,13 +15,15 @@ from affordance_runtime.planning import PlannerProposal
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
-GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-v1"
+GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-v4"
 
 _SYSTEM_PROMPT = """You are an environment-general GUI planner. Return exactly one semantic PlannerProposal under the strict schema.
 You may choose only an affordance id from the supplied inventory. Never output a selector, bid, coordinate, backend, capability, approval, credential, cookie, or executable code.
 Use action_kind activate, type_text, select_option, navigate, scroll, wait, ask_user, or finish. Put only semantic values such as text or option in parameters.
-Copy based_on_task_revision, based_on_state_version, and snapshot_id exactly. Requested capabilities are context, not granted authority; only granted_capabilities describe current authority.
-Finish only when supplied verification/evidence proves the TaskSpec success criteria. If latest verification passed and the most recent proposal's expected effects satisfy the success criteria, finish instead of repeating that action. Never repeat the same passed target/action unless the task explicitly requires repetition.
+For activate, parameters must be {}; type_text permits only {"text": ...}; select_option permits only {"option": ...}. For finish and ask_user, target_affordance_id must be "" and parameters must be {}. Put any summary, evidence, or user-visible completion data in result, never parameters.
+Copy based_on_task_revision, based_on_state_version, and snapshot_id exactly. Requested capabilities are context, not granted authority; only granted_capabilities describe current authority. approval_handling is a runtime rule, not approval evidence or a token.
+Finish only when supplied verification/evidence proves the TaskSpec success criteria. A passed independent state, API, receipt, or structural verifier proves its stated expected effect; if it satisfies the success criteria, finish rather than refreshing, navigating, or repeating the action. Never repeat the same passed target/action unless the task explicitly requires repetition.
+Never ask the user to grant or confirm approval. If a requested external effect has a valid affordance, propose the bounded semantic action; the Coordinator alone requests, binds, and consumes any approval token.
 Ask the user for blocking ambiguity. After a failed or inconclusive effect, replan or request clarification without assuming success.
 Choose one action, state its expected effect and evidence need, and stay within the remaining budgets."""
 
@@ -46,6 +48,7 @@ class PlannerContext(BaseModel):
     affordances: tuple[AffordanceSummary, ...]
     selected_artifact_refs: tuple[str, ...]
     granted_capabilities: tuple[str, ...]
+    approval_handling: str
     remaining_budgets: dict[str, int]
     pending_evidence_obligations: tuple[str, ...]
     latest_outcome: dict[str, Any]
@@ -146,6 +149,15 @@ def build_planner_context(
         "error_code": receipt.error_code.value if receipt and receipt.error_code else "",
         "verification_status": verification.status.value if verification else "",
         "verification_reason": verification.reason if verification else "",
+        "verification_evidence": [
+            {
+                "verifier_kind": item.verifier_kind,
+                "target": item.target,
+                "passed": item.passed,
+                "expected": item.expected,
+            }
+            for item in (verification.evidence[-3:] if verification else [])
+        ],
     }
     latest_proposal = state.planner_history[-1] if state.planner_history else {}
     verified_effects = (
@@ -170,6 +182,7 @@ def build_planner_context(
         ),
         selected_artifact_refs=tuple(snapshot.observation.artifact_refs),
         granted_capabilities=tuple(sorted(set(envelope.capabilities))),
+        approval_handling="coordinator_managed",
         remaining_budgets={
             "steps": max(0, limits.max_steps - state.step_count),
             "observations": max(0, limits.max_observations - state.observation_count),

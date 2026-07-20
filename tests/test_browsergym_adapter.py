@@ -1,8 +1,10 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence, TypeVar
 
 import pytest
+from pydantic import BaseModel
 
 from affordance_runtime.benchmarks.browsergym import (
     BROWSERGYM_MINIWOB_COMMIT,
@@ -12,8 +14,13 @@ from affordance_runtime.benchmarks.browsergym import (
     _accessibility_tree_text,
     browsergym_profile,
     run_browsergym_episode,
+    run_browsergym_generalist_episode,
     write_browsergym_report,
 )
+from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class FakeBrowserGymPage:
@@ -72,6 +79,46 @@ class OneClickPolicy:
 
     def close(self) -> None:
         self.closed = True
+
+
+@dataclass
+class GeneralistClickModel:
+    provider: str = "fixed"
+    model: str = "fixed-generalist"
+    endpoint_class: str = "test"
+    last_call: ModelCallRecord | None = None
+    calls: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del config
+        context = json.loads(messages[-1].content)
+        if self.calls == 0:
+            payload = PlannerProposal(
+                proposal_id="generalist-click",
+                based_on_task_revision=context["task_revision"],
+                based_on_state_version=context["state_version"],
+                snapshot_id=context["snapshot_id"],
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=context["affordances"][0]["id"],
+                expected_effects=("target clicked",),
+            ).model_dump(mode="json")
+        else:
+            payload = PlannerProposal(
+                proposal_id="generalist-finish",
+                based_on_task_revision=context["task_revision"],
+                based_on_state_version=context["state_version"],
+                snapshot_id=context["snapshot_id"],
+                action_kind=PlannerActionKind.FINISH,
+                done=True,
+                result={"official_success": True, "official_reward": 1.0},
+            ).model_dump(mode="json")
+        self.calls += 1
+        return output_schema.model_validate(payload)
 
 
 class UnsupportedPolicy(OneClickPolicy):
@@ -155,6 +202,28 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "PlannerProposalProduced",
         "TaskCompleted",
     ]
+
+
+def test_generalist_planner_port_runs_browsergym_without_external_action_policy(tmp_path: Path) -> None:
+    environment = FakeBrowserGymEnvironment()
+    model = GeneralistClickModel()
+
+    result = run_browsergym_generalist_episode(
+        environment,
+        model,
+        task_id="click-button",
+        seed=4,
+        artifact_root=tmp_path,
+    )
+
+    assert result.runtime_status == "done"
+    assert result.official_success is True
+    assert result.action_families == ["click"]
+    assert model.calls == 2
+    events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
+    assert "PlannerContextBuilt" in events
+    assert "PlannerProposalProduced" in events
+    assert "ContractBuilt" in events
 
 
 def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(tmp_path: Path) -> None:

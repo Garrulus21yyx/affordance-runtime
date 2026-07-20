@@ -29,3 +29,12 @@ def test_dom_adapter_preserves_browsergym_bid_alongside_stable_selector() -> Non
         "strategy": "css",
         "bid": "browsergym-field",
     }
+
+
+def test_dom_adapter_marks_download_links_as_download_actions() -> None:
+    model = DomAdapter().transduce(
+        '<a id="export" href="/report.csv" download="report.csv">Export report</a>',
+        environment_revision="rev-1",
+    )
+
+    assert model.affordances[0].action == "download"

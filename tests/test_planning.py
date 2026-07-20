@@ -115,6 +115,8 @@ def test_proposal_schema_rejects_surface_and_authority_fields() -> None:
         _proposal(state, parameters={"text": "dark", "capability": "settings.write"})
     with pytest.raises(ValidationError, match="unsupported semantic parameters"):
         _proposal(state, parameters={"text": "dark", "wait_for_seconds": 3})
+    with pytest.raises(ValidationError, match="navigate requires a semantic destination"):
+        _proposal(state, action_kind=PlannerActionKind.NAVIGATE, target_affordance_id="", parameters={})
     with pytest.raises(ValidationError, match="at least 1 character"):
         _proposal(state, snapshot_id="")
 

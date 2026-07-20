@@ -26,6 +26,8 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.generalist_planner import GeneralistLMPlanner
+from affordance_runtime.model_port import ModelPort
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -300,6 +302,10 @@ class BrowserGymPlanner:
         )
 
 
+class AgentLabPlannerAdapter(BrowserGymPlanner):
+    """Named AgentLab/BrowserGym action adapter at the semantic planner boundary."""
+
+
 @dataclass
 class BrowserGymContractBuilder(ContractBuilder):
     bindings: dict[str, BrowserGymAction] = field(default_factory=dict)
@@ -315,6 +321,42 @@ class BrowserGymContractBuilder(ContractBuilder):
         action = self.bindings.get(proposal.proposal_id)
         if action is None:
             raise ValueError(f"BrowserGym action binding is missing: {proposal.proposal_id}")
+        return replace(
+            contract,
+            action=action.name,
+            backend=BROWSERGYM_BACKEND,
+            parameters={"action": asdict(action)},
+            verifier_plan=[VerifierSpec("evidence", "last_action_error", "")],
+            contract_hash="",
+        )
+
+
+@dataclass
+class GeneralistBrowserGymContractBuilder(ContractBuilder):
+    """Bind the common semantic vocabulary to typed BrowserGym actions."""
+
+    def build(
+        self,
+        proposal: PlannerProposal,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> ActionContract:
+        contract = super().build(proposal, task_spec, state, snapshot)
+        affordance = next(item for item in snapshot.affordance_model.affordances if item.id == proposal.target_affordance_id)
+        bid = str(affordance.locator.get("bid") or "")
+        if not bid:
+            raise ValueError("Generalist BrowserGym binding requires an affordance bid")
+        if proposal.action_kind == PlannerActionKind.ACTIVATE:
+            action = BrowserGymAction("click", {"bid": bid})
+        elif proposal.action_kind == PlannerActionKind.TYPE_TEXT:
+            action = BrowserGymAction("fill", {"bid": bid, "value": str(proposal.parameters["text"])})
+        elif proposal.action_kind == PlannerActionKind.SELECT_OPTION:
+            option = proposal.parameters["option"]
+            action = BrowserGymAction("select_option", {"bid": bid, "options": option})
+        else:
+            raise ValueError(f"unsupported generalist BrowserGym semantic action: {proposal.action_kind.value}")
+        action.render()
         return replace(
             contract,
             action=action.name,
@@ -460,8 +502,8 @@ def run_browsergym_episode(
             task_id,
             seed,
             result.status.value,
-            bool(result.result.get("official_success", False)),
-            float(result.result.get("official_reward", episode.reward)),
+            episode.terminated and episode.reward > 0,
+            episode.reward,
             episode.terminated,
             episode.truncated,
             len(episode.actions),
@@ -492,6 +534,91 @@ def run_browsergym_episode(
         )
     finally:
         policy.close()
+        environment.close()
+
+
+def run_browsergym_generalist_episode(
+    environment: BrowserGymEnvironment,
+    model: ModelPort,
+    *,
+    task_id: str,
+    seed: int,
+    artifact_root: Path,
+    max_steps: int = 50,
+) -> BrowserGymEpisodeResult:
+    """Run the same GeneralistLMPlanner port through BrowserGym's typed executor."""
+
+    try:
+        obs, info = environment.reset(seed=seed)
+        goal = _goal_text(obs.get("goal", ""))
+        episode = BrowserGymEpisodeState(task_id, seed, goal, obs, info)
+        session = BrowserSession(environment.unwrapped.page)
+        run_id = f"browsergym-generalist-{task_id}-seed-{seed}"
+        task_spec = TaskSpec(
+            task_id=run_id,
+            revision=1,
+            objective=goal,
+            operation_class=OperationClass.READ_ONLY,
+            targets=(task_id,),
+            success_criteria=("official BrowserGym environment terminates with positive reward",),
+            evidence_requirements=("official reward and termination",),
+            source_request_ref=f"browsergym:{task_id}:seed:{seed}",
+        )
+        result = RunCoordinator(
+            observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
+            planner=GeneralistLMPlanner(model),
+            executor=BrowserGymExecutor(environment, episode),
+            artifacts=ArtifactStore(artifact_root / "runs"),
+            budget=RunBudget(
+                max_steps=max_steps,
+                max_observations=max_steps * 3 + 3,
+                max_replans=max_steps + 1,
+                max_recoveries=3,
+                max_effectful_actions=max_steps + 1,
+            ),
+            contract_builder=GeneralistBrowserGymContractBuilder(),
+        ).run_sync(TaskEnvelope(task_spec=task_spec))
+        planner_error = next(
+            (
+                str(node.payload.get("reason") or "")
+                for node in reversed(result.trace.nodes)
+                if node.kind == "PlannerProposalRejected"
+            ),
+            "",
+        )
+        trace_path = next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), "")
+        return BrowserGymEpisodeResult(
+            task_id,
+            seed,
+            result.status.value,
+            episode.terminated and episode.reward > 0,
+            episode.reward,
+            episode.terminated,
+            episode.truncated,
+            len(episode.actions),
+            sorted({action.name for action in episode.actions}),
+            [],
+            planner_error or (result.error_code.value if result.error_code else ""),
+            False,
+            trace_path,
+        )
+    except Exception as exc:
+        return BrowserGymEpisodeResult(
+            task_id,
+            seed,
+            RuntimeStep.FAILED.value,
+            False,
+            0.0,
+            False,
+            False,
+            0,
+            [],
+            [],
+            f"{type(exc).__name__}: {exc}",
+            False,
+            "",
+        )
+    finally:
         environment.close()
 
 

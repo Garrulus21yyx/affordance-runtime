@@ -145,6 +145,8 @@ def _action_for(node: dict[str, Any]) -> str:
     role = attr.get("role", "")
     if role in _ARIA_ACTION_MAP:
         return _ARIA_ACTION_MAP[role]
+    if tag == "a" and "download" in attr:
+        return "download"
     if tag == "input":
         return _INPUT_TYPE_ACTION.get(attr.get("type", "text").lower(), "type")
     return _TAG_ACTION.get(tag, "click")

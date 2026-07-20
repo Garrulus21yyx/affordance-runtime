@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, Condition, RiskLevel, VerifierSpec
@@ -82,21 +83,38 @@ class PlannerProposal(BaseModel):
     @model_validator(mode="after")
     def validate_semantic_boundary(self) -> "PlannerProposal":
         if self.action_kind in _TARGET_ACTIONS and not self.target_affordance_id:
-            raise ValueError(f"{self.action_kind.value} requires target_affordance_id")
+            raise PydanticCustomError(
+                "proposal_target_required",
+                "target action requires target_affordance_id",
+            )
+        if self.action_kind == PlannerActionKind.NAVIGATE and not self.parameters.get("destination"):
+            raise PydanticCustomError(
+                "proposal_navigation_destination_required",
+                "navigate requires a semantic destination",
+            )
         if self.done and self.action_kind != PlannerActionKind.FINISH:
-            raise ValueError("done is valid only with action_kind=finish")
+            raise PydanticCustomError("proposal_done_kind", "done requires action_kind=finish")
         if self.action_kind == PlannerActionKind.FINISH:
             object.__setattr__(self, "done", True)
         if self.requires_clarification and self.action_kind != PlannerActionKind.ASK_USER:
-            raise ValueError("requires_clarification is valid only with action_kind=ask_user")
+            raise PydanticCustomError(
+                "proposal_clarification_kind",
+                "requires_clarification requires action_kind=ask_user",
+            )
         if self.action_kind == PlannerActionKind.ASK_USER:
             object.__setattr__(self, "requires_clarification", True)
         forbidden = sorted(_FORBIDDEN_PARAMETER_KEYS.intersection(self.parameters))
         if forbidden:
-            raise ValueError(f"surface or authority parameters are forbidden: {', '.join(forbidden)}")
+            raise PydanticCustomError(
+                "proposal_forbidden_parameters",
+                "surface or authority parameters are forbidden",
+            )
         unknown = sorted(set(self.parameters) - _ACTION_PARAMETERS[self.action_kind])
         if unknown:
-            raise ValueError(f"unsupported semantic parameters for {self.action_kind.value}: {', '.join(unknown)}")
+            raise PydanticCustomError(
+                "proposal_unsupported_parameters",
+                "unsupported semantic parameters",
+            )
         return self
 
 
