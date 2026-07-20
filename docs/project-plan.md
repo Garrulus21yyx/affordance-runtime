@@ -153,8 +153,11 @@ evidence level. See
 | M4/M7 Integration Boundary | done | external task RPC and real LangGraph parent complete pricing and gated export |
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
+| M8.1 Container Reproducibility | pending | pinned Playwright image and Compose test/benchmark profile |
+| M8.2 Public Benchmark Expansion | pending | BrowserGym MiniWoB scaling plus selected public suites |
+| M8.3 Recovery-Cascade Evolution | pending | repeated-error incidents, root-cause classification, executable recovery artifacts |
 
-M9 durable single-run recovery is conditional on a measured restart or waiting
+M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
 
 Current seeds create deterministic distinct local variants, and M8 adds unseen
@@ -424,6 +427,45 @@ scenario runs, five screenshot-grounded visual runs, and 18 official episodes
 across all six curated families passed. The official source is pinned at Farama
 commit `eb59fed60fabe8951350275ba8650633b740013b`; the result remains a curated
 runtime subset rather than a full-suite leaderboard claim.
+
+### M8.1: Container Reproducibility - pending
+
+Add a pinned Playwright/Chromium Dockerfile and a small Compose profile for the
+in-memory fixture, tests, and benchmark. Use a non-root runtime, health checks,
+deterministic reset, and mounted artifacts. Do not add a scheduler, worker pool,
+message broker, or fictional fixture database.
+
+Exit when a clean checkout runs tests and the local benchmark through Compose
+and produces oracle-equivalent host/container reports.
+
+### M8.2: Public Benchmark Expansion - pending
+
+Use BrowserGym as the preferred environment adapter. Keep the current 18
+MiniWoB++ episodes as PR smoke, add at least 30 task types x 10 seeds nightly,
+and run every supported pinned MiniWoB task x 5 seeds for release. No
+task-specific regex or hardcoded selector solver may be the scored path.
+
+Then add ScreenSpot, WorkArena L1, a 30-50 task stratified
+WebArena-Verified subset followed by its hard subset, and a WASP security
+subset. VisualWebArena waits for stable multimodal routing; OSWorld remains a
+future boundary. Official and fault-injected reports stay separate.
+
+### M8.3: Recovery-Cascade Evolution - pending
+
+Current recovery is bounded but stateless across attempts beyond counters. M6
+can replay a verifier patch, but recovery skills and policy patches are not
+executable.
+
+Add a `RecoveryIncident` and normalized `FailureSignature`; detect repeated
+failures, unchanged-state recovery, A-B oscillation, repeated stale contracts,
+repeated verifier failures, and exhausted fallback. Preserve root failure and
+the symptom chain separately. Generate a declarative `RecoveryPolicyPatch` or
+`Skill`, replay it in a fresh candidate against original, family, global, and
+safety suites, persist the decision, and prove rollback.
+
+Exit when one real repeated-error cascade is safely stopped online, classified
+offline, fixed by an accepted artifact, and shown not to introduce duplicate
+effects or safety regressions.
 
 ### M9: Durable Single-Run Recovery - conditional
 

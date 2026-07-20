@@ -111,10 +111,58 @@ Safety Error
   The runtime attempted a high-risk action without approval.
 ```
 
-## 5. Skill Mining
+## 5. Current Recovery-Evolution Boundary
 
-A reusable skill is generated from repeated failure or repeated successful
-recovery:
+Current code can bound recovery, select one response for the current error,
+trace that decision, classify a failed benchmark run broadly as `RECOVERY`,
+and create typed but non-executable skill/policy proposals.
+
+It cannot group attempts into one incident, recognize recurring normalized
+errors, detect no-progress or A-B oscillation, distinguish root cause from
+secondary symptoms, cluster incidents across runs, or apply a recovery
+skill/policy patch. M6's executable path is limited to a structural
+`verifier_patch`; automatic recovery-cascade evolution is not implemented.
+
+## 6. Recovery Incident and Cascade Model
+
+M8.3 adds:
+
+```text
+FailureSignature
+  phase, normalized error, action/backend, target fingerprint,
+  verifier kind, relevant state revision
+
+RecoveryIncident
+  source event/contract/snapshot, ordered attempts,
+  signatures, recovery actions/outcomes,
+  root failure, symptom chain, terminal outcome
+```
+
+Detect repeated signatures, unchanged progress after recovery, A-B
+action/state oscillation, rebuilding the same stale contract, repeated failed
+postconditions, and fallback exhaustion. Online detection only stops or
+escalates within the existing budget; policy learning stays offline.
+
+Required diagnostics are `cascade_depth`, `repeated_failure_rate`,
+`recovery_loop_abort_rate`, `recovery_action_effectiveness`, and
+`duplicate_effect_risk_count`.
+
+## 7. Recovery Evolution
+
+The first executable artifacts are narrow declarative `RecoveryPolicyPatch`
+and `Skill` payloads. They match a signature/incident pattern, select a
+bounded observe/verify/reroute/ask/compensate/abort response, and declare
+idempotency, evidence, risk, applicability, and postconditions.
+
+A fresh candidate must replay the original incident, task family, global smoke,
+and safety smoke. Acceptance requires breaking the loop or reducing cascade
+depth, zero new unsafe effects, no blind retry after uncertain effect, a
+persisted decision, and demonstrated rollback.
+
+## 8. Skill Mining
+
+A reusable skill may be proposed from repeated failure or repeated successful
+recovery only after incident grouping and signatures are implemented:
 
 ```yaml
 skill_id: close_cookie_banner
@@ -135,7 +183,7 @@ evidence:
 
 Skills should be versioned and tested against regression fixtures.
 
-## 6. Evolution Proposal Schema
+## 9. Evolution Proposal Schema
 
 ```json
 {
@@ -155,7 +203,7 @@ Skills should be versioned and tested against regression fixtures.
 }
 ```
 
-## 7. Regression Gate
+## 10. Regression Gate
 
 No evolution artifact is accepted unless it passes:
 
@@ -193,7 +241,7 @@ Example rule shape:
 A patch that fixes one modal case but hurts visual grounding or side-effect
 safety stays quarantined.
 
-## 8. Human Review
+## 11. Human Review
 
 The harness can propose improvements automatically, but it should support human
 review for:
@@ -205,7 +253,7 @@ review for:
 - broad selector or grounding changes
 - any artifact that changes approval behavior
 
-## 9. Current Implemented Boundary
+## 12. Current Implemented Boundary
 
 M6 implements one deliberately narrow executable path: a verification failure
 can produce a SHA-bound `verifier_patch` that enables a whitelisted structural

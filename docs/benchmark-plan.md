@@ -150,6 +150,48 @@ The `generalization-v1` gate complements the 63-run local matrix with:
 The official MiniWoB result is reported as a curated runtime subset. It is not
 presented as a full-suite MiniWoB++ score.
 
+## Public Benchmark Ladder
+
+The 18-episode M8 result is a compatibility smoke test. It is not sufficient as
+external generalization evidence because the current adapter covers six task
+templates and its solver contains task-specific parsing and selectors.
+
+| Gate | Coverage | Purpose |
+| --- | --- | --- |
+| PR smoke | current 6 task types x 3 seeds | fast adapter/browser regression |
+| Nightly | at least 30 task types x 10 seeds | task-family variance and unsupported actions |
+| Release | every task supported by pinned BrowserGym x 5 seeds | broad reproducible coverage |
+
+The scored path must not use per-task regexes or hardcoded selectors. Every
+episode must traverse:
+
+```text
+observe -> affordance -> proposal -> contract -> preflight
+        -> execute -> post-state/reward -> trace
+```
+
+Report supported/unsupported tasks, action-family coverage, seed variance,
+official reward/success, runtime errors, and artifacts. Unsupported cases must
+not be silently excluded.
+
+| Order | Suite | Planned use |
+| --- | --- | --- |
+| 1 | [ScreenSpot](https://github.com/njucckevin/SeeClick) | full offline screenshot grounding |
+| 2 | [WorkArena](https://github.com/ServiceNow/WorkArena) | L1 tasks, then stratified WorkArena++ |
+| 3 | [WebArena-Verified](https://github.com/ServiceNow/webarena-verified) | 30-50 task subset, then hard subset |
+| 4 | [WASP](https://github.com/facebookresearch/wasp) | browser-agent security subset |
+| 5 | [VisualWebArena](https://github.com/web-arena-x/visualwebarena) | after multimodal routing is stable |
+| Future | OSWorld | after the Web harness is mature |
+
+[BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
+for suites it exposes. Reuse official reset, registration, action, and grading
+semantics; keep contracts, policy, verification, recovery, trace, and
+diagnostics inside Affordance Runtime.
+
+Official unmodified results and harness fault-injection results are separate
+tracks. A high official score must not hide safety or verification failures,
+and injected tasks must not be presented as leaderboard scores.
+
 ## Replay Levels
 
 1. Offline evidence replay: inspect trace events, screenshots, receipts, DOM

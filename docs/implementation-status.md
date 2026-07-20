@@ -25,6 +25,9 @@ Status values:
 | M6 Executable Evolution | done | SHA-bound verifier payload, fresh candidate, six new Chromium replays, persisted acceptance and rollback proof at `4cccc96` | none |
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
+| M8.1 Container Reproducibility | pending | Docker/Compose exist on SL09; repository has no Docker assets | pinned non-root image and Compose test/benchmark profile |
+| M8.2 Public Benchmark Expansion | pending | 18-episode six-template MiniWoB smoke | BrowserGym full-path adapter and public suite ladder |
+| M8.3 Recovery-Cascade Evolution | pending | bounded single-error recovery and executable verifier patch only | incident/signature detection and executable recovery artifacts |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -120,6 +123,32 @@ The official subset is pinned to Farama commit
 extraction, termination/reward collection, runtime diagnostics, and report
 aggregation. It is a curated compatibility/generalization subset, not a claim
 of a full MiniWoB++ score.
+
+## M8.1-M8.3 Forward Work
+
+### M8.1 Container Reproducibility
+
+The repository currently runs on the SL09 host and has no Dockerfile,
+`.dockerignore`, or Compose file. Add only the in-memory fixture, test runner,
+benchmark runner, health checks, and mounted artifacts.
+
+### M8.2 Public Benchmark Expansion
+
+The 18 MiniWoB++ episodes are smoke evidence. The current solver uses
+task-family parsing/selectors and does not route the full episode through
+`RunCoordinator`. Replace that scored shortcut, reuse BrowserGym lifecycle
+semantics, and scale PR/nightly/release matrices before external suites.
+
+### M8.3 Recovery-Cascade Evolution
+
+Current code chooses and traces one bounded response. It does not retain failure
+signatures, incident identity, progress fingerprints, oscillation, or a
+root/symptom chain. Evolution currently executes only a whitelisted structural
+`verifier_patch`; skill and policy proposals remain non-executable.
+
+Exit evidence is one repeated failure traced as one incident, safely stopped,
+root-caused, converted to a recovery artifact, replayed in a fresh candidate,
+persisted as accepted/quarantined, and successfully rolled back.
 
 ## Verification Commands
 

@@ -1,9 +1,10 @@
 # Current Implementation Plan
 
 Implementation status: M0-M8 are complete for the controlled web profile. See
-[Implementation Status and Forward Gates](implementation-status.md). M9 is a
-conditional next step only if restart/waiting evidence justifies it;
-production-scale options remain non-blocking.
+[Implementation Status and Forward Gates](implementation-status.md). The next
+required increments are M8.1 container reproducibility, M8.2 public benchmark
+expansion, and M8.3 recovery-cascade evolution. M9 is conditional on measured
+restart/waiting evidence; production-scale options remain non-blocking.
 
 ## 1. Authority
 
@@ -313,18 +314,28 @@ run concurrently when they refer to the same observation epoch. State mutation,
 approval consumption, effectful execution, compensation, and trace sequencing
 remain serial.
 
-Docker is used for reproducibility and isolation:
+Docker is planned for reproducibility and isolation; it is not implemented at
+M8. The repository currently has no Dockerfile or Compose configuration. M8.1
+adds a deliberately small profile:
 
 ```text
 docker compose
   fixture-web
-  fixture-db
-  artifact-volume
-  optional runtime container
+  runtime-test
+  benchmark
+  shared artifact volume
 ```
 
-It is not used to create scheduler, coordinator, browser-worker, event-broker,
-or memory microservices in the current plan.
+The fixture keeps canonical state in its in-memory server, so the plan does not
+invent a fixture database. The profile pins Playwright/Chromium, runs as a
+non-root user, exposes a health check, and writes the same reports/artifacts as
+host execution. Official benchmark stacks may join through optional profiles
+or an external network.
+
+Docker is not used to create scheduler, coordinator, browser-worker,
+event-broker, or memory microservices. M8.1 exits when a clean checkout passes
+`docker compose build`, `docker compose run --rm runtime-test`, and
+`docker compose run --rm benchmark`.
 
 ## 9. Trace, Benchmark, and Evolution
 
@@ -381,6 +392,28 @@ capture, diagnostics, and report aggregation, and covers click, type, select,
 dialog, sequence, and form across three seeds. It is labelled a curated runtime
 subset, never a full MiniWoB++ score.
 
+The public benchmark ladder after M8 is:
+
+```text
+PR smoke: current 6 MiniWoB++ task families x 3 seeds
+Nightly: at least 30 MiniWoB++ task types x 10 seeds
+Release: every task supported by the pinned BrowserGym adapter x 5 seeds
+
+External:
+  ScreenSpot full offline grounding
+  WorkArena L1
+  WebArena-Verified stratified subset, then hard subset
+  WASP security subset
+  VisualWebArena after multimodal action routing is stable
+  OSWorld only as a future cross-application boundary
+```
+
+BrowserGym is the preferred environment adapter where it already owns reset,
+task registration, and benchmark semantics. Affordance Runtime still owns
+affordance conversion, contracts, policy/preflight, verification, recovery,
+trace, and diagnostics. Unsupported families are reported rather than silently
+omitted. Official scores and harness fault-injection scores are separate.
+
 ### 9.3 Controlled Harness Evolution
 
 The evolution loop is required, but it operates on declarative artifacts rather
@@ -402,6 +435,25 @@ against a broken ablation are useful prototype evidence, but do not yet prove
 self-evolution. The claim requires a typed artifact with executable payload,
 loading it into a fresh candidate runtime, rerunning the suites, persisting the
 registry decision, and proving rollback.
+
+M6 proves that loop only for a structural `verifier_patch`. Current recovery
+handles one failure at a time under a fixed budget. It does not group attempts
+into an incident, detect repeated signatures or oscillation, separate root
+cause from symptoms, or execute a recovery skill/policy patch.
+
+M8.3 closes that gap:
+
+```text
+trace events -> RecoveryIncident -> FailureSignature per attempt
+  -> repeat / no-progress / A-B oscillation detector
+  -> root failure plus symptom chain
+  -> declarative RecoveryPolicyPatch or Skill
+  -> fresh original/family/global/safety replay
+  -> accept, quarantine, reject, or roll back
+```
+
+Online behavior only detects and safely aborts a repeated cascade within the
+existing recovery budget. Learning remains offline and regression-gated.
 
 ## 10. Milestones
 
@@ -499,6 +551,47 @@ five distinct boxes and no DOM coordinates; and 18/18 raw-reward-successful
 episodes over six task families from official Farama commit
 `eb59fed60fabe8951350275ba8650633b740013b`. See
 `evidence/m8-e463e16.md`.
+
+### M8.1: Reproducible Container Profile - pending
+
+- add a pinned Playwright/Chromium Dockerfile, `.dockerignore`, and Compose
+- provide fixture, test, and benchmark services with mounted artifacts
+- run non-root, add fixture health/reset, and record environment identity
+- keep public benchmark stacks as optional profiles or networks
+
+Exit: a clean checkout reproduces tests and the local benchmark in containers,
+with host/container agreement on outcomes and oracle decisions.
+
+### M8.2: Public Benchmark Expansion - pending
+
+- replace task-specific MiniWoB scoring with a BrowserGym adapter that routes
+  every supported action through the full coordinator path
+- keep 18 episodes for PR smoke; add 30 task types x 10 seeds nightly
+- release-test every supported pinned MiniWoB task x 5 seeds
+- report coverage, unsupported actions, variance, reward, and runtime failures
+- add ScreenSpot, WorkArena L1, a 30-50 task WebArena-Verified subset, and a
+  WASP security subset in that order
+- defer VisualWebArena and OSWorld until their prerequisite layers are stable
+
+Exit: no scored task-specific regex/selector solver remains, every episode
+traverses the full runtime path, and official/injected suites are separate.
+
+### M8.3: Recovery-Cascade Evolution - pending
+
+- normalize a `FailureSignature` from phase, error, action/backend, target,
+  verifier, and relevant state revision
+- group causally related attempts into a `RecoveryIncident`
+- detect repeated signatures, no-progress recovery, A-B oscillation, repeated
+  stale contracts/verifier failures, and fallback exhaustion
+- preserve root failure separately from secondary recovery symptoms
+- report cascade depth, repeated-failure rate, loop aborts, duplicate-effect
+  risk, and recovery-action effectiveness
+- implement narrow executable `RecoveryPolicyPatch` and `Skill` schemas
+- replay original, family, global smoke, and safety smoke in a fresh runtime
+
+Exit: one real repeated recovery failure produces a quarantined artifact; the
+accepted candidate breaks the loop or reduces cascade depth, adds no unsafe
+effect or blind retry, persists its decision, and rolls back.
 
 ### M9: Durable Single-Run Recovery - conditional
 
