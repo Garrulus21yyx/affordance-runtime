@@ -37,7 +37,7 @@ _INPUT_TYPE_ACTION = {
     "submit": "click",
     "button": "click",
 }
-_SELECTOR_CONFIDENCE = {"id": 1.0, "testid": 0.97, "name": 0.85, "class": 0.7, "positional": 0.55}
+_SELECTOR_CONFIDENCE = {"id": 1.0, "bid": 0.99, "testid": 0.97, "name": 0.85, "class": 0.7, "positional": 0.55}
 
 
 class _InteractiveParser(HTMLParser):
@@ -115,6 +115,8 @@ def _selector_for(node: dict[str, Any]) -> tuple[str, float]:
     attr, tag = node["attr"], node["tag"]
     if attr.get("id"):
         return f"#{attr['id']}", _SELECTOR_CONFIDENCE["id"]
+    if attr.get("bid"):
+        return f"[bid='{_escape_attr(attr['bid'])}']", _SELECTOR_CONFIDENCE["bid"]
     if attr.get("data-testid"):
         return f"[data-testid='{_escape_attr(attr['data-testid'])}']", _SELECTOR_CONFIDENCE["testid"]
     if attr.get("name"):
@@ -168,6 +170,7 @@ class DomAdapter:
                 "tag": node["tag"],
                 "role": node["attr"].get("role", ""),
                 "id": node["attr"].get("id", ""),
+                "bid": node["attr"].get("bid", ""),
                 "name": node["attr"].get("name", ""),
                 "disabled": "disabled" in node["attr"] or node["attr"].get("aria-disabled") == "true",
                 "label": _label_for(node),

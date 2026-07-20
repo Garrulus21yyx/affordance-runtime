@@ -43,6 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--headed", action="store_true")
     benchmark.add_argument("--base-url", help="use an already-running resettable fixture service")
 
+    browsergym = subcommands.add_parser(
+        "benchmark-browsergym",
+        help="run the isolated BrowserGym MiniWoB full-Coordinator track with an external policy",
+    )
+    browsergym.add_argument("--output", type=Path, default=Path("browsergym-results"))
+    browsergym.add_argument("--profile", choices=("pr", "nightly", "release"), default="pr")
+    browsergym.add_argument("--policy-command", required=True, help="JSON-lines planner process; no shell is used")
+    browsergym.add_argument("--headed", action="store_true")
+
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
     evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
@@ -79,6 +88,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0 if not benchmark_report.acceptance_errors else 1
+    if args.command == "benchmark-browsergym":
+        from affordance_runtime.benchmarks.browsergym import run_browsergym_miniwob_suite
+
+        browsergym_report = run_browsergym_miniwob_suite(
+            args.output,
+            profile=args.profile,
+            policy_command=args.policy_command,
+            headless=not args.headed,
+        )
+        print(json.dumps(browsergym_report, indent=2, sort_keys=True))
+        return 0 if not browsergym_report["acceptance_errors"] else 1
     if args.command == "evolve":
         evolution_report = build_evolution_report(args.benchmark_report, args.output)
         print(

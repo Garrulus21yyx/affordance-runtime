@@ -34,3 +34,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-20 | Forward-plan initialization | M8.1 selected first per authoritative ordering | this file |
 | 2026-07-20 | M8.1 implementation | Default non-root profile and optional real WoT conformance passed from the working tree | Docker/Compose, conformance runner, tests, CI |
 | 2026-07-20 | M8.1 clean evidence | Host/container agreement and all three conformance surfaces passed at clean `40fd93b` | `evidence/m8.1-40fd93b.md` |
+| 2026-07-20 | M8.2 bridge slice | Added isolated BrowserGym 0.14.3 adapter, typed action whitelist, external-policy boundary, profile coverage reporting, and real one-task bridge smoke | BrowserGym benchmark module, CLI, tests, CI |

@@ -25,6 +25,9 @@ parent = [
 visual = [
   "Pillow>=11,<13",
 ]
+browsergym = [
+  "browsergym-miniwob==0.14.3",
+]
 dev = [
   "build>=1.2",
   "Pillow>=11,<13",

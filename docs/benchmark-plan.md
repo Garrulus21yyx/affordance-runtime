@@ -216,6 +216,14 @@ for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and
 diagnostics inside Affordance Runtime.
 
+The pinned `browsergym-miniwob==0.14.3` package requires Playwright 1.44 while
+the default runtime profile uses Playwright 1.61. Run it in an isolated Python
+3.11/3.12 environment via the `browsergym` extra. The bridge accepts only a
+typed action whitelist and an external JSON-lines policy process; arbitrary
+BrowserGym Python action code is not a valid Action Contract. The one-task CI
+bridge smoke validates integration only and is never reported as an official
+benchmark score.
+
 Official unmodified results and harness fault-injection results are separate
 tracks. A high official score must not hide safety or verification failures,
 and injected tasks must not be presented as leaderboard scores.
