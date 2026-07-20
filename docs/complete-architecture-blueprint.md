@@ -437,6 +437,50 @@ The two streams correlate through run, event, worker, and session ids but remain
 semantically separate. Operational telemetry is not business verification
 evidence.
 
+### 11.1 Optional Picture-in-Picture Observer
+
+Picture-in-Picture is an optional observer and human-takeover surface. It is not
+the Playwright browser context, session isolation, a Planner, or another owner
+of authoritative runtime state.
+
+```text
+RunCoordinator / Trace Stream
+        |
+        v
+PiP Projection
+  live environment frame
+  current subgoal and action
+  approval and verification state
+        |
+        +-- pause request ------> Coordinator command
+        +-- takeover request ---> Coordinator command
+```
+
+The PiP projection is view-only by default. It receives screenshots or a bounded
+video stream plus trace-derived status. Input remains routed to the target
+session only after an explicit, traced takeover transition; closing PiP does not
+terminate the run.
+
+Entry conditions:
+
+- the Web gold path and post-action trace are stable;
+- trace streaming has a bounded update contract;
+- pause, cancel, resume, approval, and takeover semantics are defined;
+- a standalone-agent or high-risk human-supervision scenario demonstrates need.
+
+Evaluation covers:
+
+- zero unintended focus stealing and input leakage;
+- pause/takeover correctness and action-lane ownership;
+- close/restore behavior without terminating or duplicating a run;
+- frame/status latency and trace consistency;
+- CPU, memory, and bandwidth overhead;
+- accessibility and a non-PiP fallback.
+
+If the normal run console and trace stream provide equivalent ergonomics, PiP
+remains deferred. Browser context isolation continues to be called session
+isolation and is evaluated independently.
+
 ## 12. Framework Boundary
 
 LangGraph, AutoGen, or another agent framework may orchestrate coarse-grained

@@ -413,10 +413,21 @@ do not become separate products.
 Deliver failure classification, declarative proposals, registry, regression
 replay, and a before/after report for at least one real failure.
 
-### M4: Optional Integrations
+### M4: Optional Integrations and Observer UI
 
-Add a task-level MCP API, LLM reference planner, LangGraph outer adapter, or
-public benchmark adapters according to demonstrated need. None blocks M3.
+Add a task-level MCP API, LLM reference planner, LangGraph outer adapter, public
+benchmark adapters, or an optional Picture-in-Picture observer according to
+demonstrated need. None blocks M3.
+
+PiP is an observer and human-takeover UI, not browser session isolation and not
+a second execution runtime. It may show the live environment, current subgoal,
+pending action, approval state, and verification status. It is view-only by
+default; pause and takeover are explicit Coordinator commands.
+
+PiP work may begin only after trace streaming, pause/cancel/resume, approval,
+and the Web gold path are stable. Its acceptance checks cover focus stealing,
+input leakage, stream latency, pause/takeover correctness, close/restore
+behavior, trace consistency, and resource overhead.
 
 ## 11. Explicitly Deferred
 
@@ -431,6 +442,8 @@ public benchmark adapters according to demonstrated need. None blocks M3.
 - unrestricted cross-run vector memory
 - automatic arbitrary source-code mutation
 - continuous watcher until it beats post-action observation
+- Picture-in-Picture implementation before the M4 entry conditions and a
+  demonstrated standalone or human-takeover use case
 
 These remain available in the complete blueprint. They become current work only
 after a measured bottleneck, a scenario requirement, and an explicit project

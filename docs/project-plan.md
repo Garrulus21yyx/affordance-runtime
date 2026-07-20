@@ -420,6 +420,11 @@ Candidate deliverables, selected according to demonstrated need:
 - LangGraph outer workflow adapter
 - optional REST only if MCP does not meet an actual integration requirement
 - public benchmark adapters
+- optional Picture-in-Picture observer for live status, approval, pause, and
+  explicit human takeover after the runtime control APIs are stable
+
+PiP is not browser-context isolation, does not own a second `RunState`, and
+does not plan or authorize actions.
 
 Exit criteria:
 
@@ -427,6 +432,8 @@ Exit criteria:
   click/type primitives
 - Runtime `RunState` remains authoritative rather than framework state
 - all returned results include evidence and trace references
+- if PiP is selected, it is view-only by default, does not steal focus or leak
+  input, and pause/takeover/close behavior is represented in the trace
 
 ## 10. Non-Goals
 
@@ -460,6 +467,8 @@ The plan is allowed to delete ideas when evidence is weak:
   failure analysis and regression fixture generation.
 - If a production-blueprint feature has no measured current bottleneck, keep it
   in `complete-architecture-blueprint.md` rather than implementing it.
+- If trace streaming and the normal run console provide sufficient observation
+  and takeover ergonomics, defer PiP instead of maintaining a second UI surface.
 
 ## 12. Presentation Boundary
 
