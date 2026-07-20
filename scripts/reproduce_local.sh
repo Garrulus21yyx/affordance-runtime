@@ -17,6 +17,8 @@ python3 -m venv .venv
 .venv/bin/python scripts/generalization_smoke.py \
   --benchmark evidence/benchmark/benchmark-report.json \
   --output evidence/generalization
+.venv/bin/python scripts/recovery_cascade_evolution.py \
+  --output evidence/recovery-cascade
 .venv/bin/python scripts/check_evidence.py \
   --benchmark evidence/benchmark/benchmark-report.json \
   --evolution evidence/evolution/evolution-report.json \

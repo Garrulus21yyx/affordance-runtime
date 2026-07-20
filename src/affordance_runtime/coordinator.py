@@ -11,7 +11,17 @@ from uuid import uuid4
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
-from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryContext
+from affordance_runtime.recovery import (
+    BoundedRecoveryPolicy,
+    FailureSignature,
+    RecoveryAction,
+    RecoveryAttempt,
+    RecoveryAttemptOutcome,
+    RecoveryCascadeDetector,
+    RecoveryContext,
+    RecoveryDecision,
+    RecoveryIncident,
+)
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
@@ -102,6 +112,7 @@ class RunCoordinator:
     gate: CapabilityGate = field(default_factory=CapabilityGate)
     task_policy: TaskConstraintPolicy = field(default_factory=TaskConstraintPolicy)
     recovery: BoundedRecoveryPolicy = field(default_factory=BoundedRecoveryPolicy)
+    cascade_detector: RecoveryCascadeDetector = field(default_factory=RecoveryCascadeDetector)
     approval_provider: ApprovalProvider | None = None
     artifacts: ArtifactStore | None = None
     budget: RunBudget = field(default_factory=RunBudget)
@@ -312,14 +323,33 @@ class RunCoordinator:
                     RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
                     RuntimeErrorCode.LEASE_EXPIRED,
                 } and state.recovery_count < self.budget.max_recoveries:
-                    state.recovery_count += 1
-                    state.transition(RuntimeStep.OBSERVING.value)
                     parent = trace.add(
                         "EnvironmentDriftDetected",
                         {"state": state.phase, "error_code": error.value},
                         parents=[parent.id],
                     )
-                    continue
+                    recovery_result = self._recover(state, contract, None, error)
+                    parent = trace.add(
+                        "RecoveryStarted",
+                        {
+                            "state": state.phase,
+                            "action": recovery_result.value,
+                            "incident": state.recovery_diagnostics,
+                        },
+                        parents=[parent.id],
+                    )
+                    if recovery_result == RecoveryAction.REOBSERVE:
+                        continue
+                    state.transition(RuntimeStep.ABORTED.value)
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.ABORTED,
+                        parent,
+                        error,
+                        latest_verification,
+                    )
                 state.transition(RuntimeStep.ABORTED.value)
                 parent = trace.add(
                     "PreflightBlocked",
@@ -381,11 +411,56 @@ class RunCoordinator:
                 recovery_result = self._recover(state, contract, receipt, receipt.error_code)
                 parent = trace.add(
                     "RecoveryStarted",
-                    {"state": state.phase, "action": recovery_result.value},
+                    {
+                        "state": state.phase,
+                        "action": recovery_result.value,
+                        "incident": state.recovery_diagnostics,
+                    },
                     parents=[parent.id],
                 )
                 if recovery_result in {RecoveryAction.REOBSERVE, RecoveryAction.RETRY, RecoveryAction.REROUTE}:
                     continue
+                if recovery_result == RecoveryAction.VERIFY_STATE:
+                    inspection = self._capture(envelope.task_id, state.observation_count + 1)
+                    state.remember_observation(inspection.observation)
+                    inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
+                    self._index(trace, inspection_ref)
+                    self._index_paths(trace, inspection.observation.artifact_refs)
+                    latest_verification = self.verifier.verify_report(
+                        contract.verifier_plan,
+                        receipt,
+                        inspection.observation,
+                    )
+                    state.latest_verification = latest_verification
+                    parent = trace.add(
+                        "RecoveryStateInspected",
+                        {
+                            "state": state.phase,
+                            "verification": latest_verification.status.value,
+                            "snapshot_id": inspection.observation.snapshot_id,
+                            "artifact_refs": ([inspection_ref.path] if inspection_ref else [])
+                            + inspection.observation.artifact_refs,
+                        },
+                        parents=[parent.id],
+                    )
+                    if latest_verification.passed:
+                        incident = state.recovery_incident
+                        if incident is not None:
+                            incident.complete_pending(
+                                inspection.observation.environment_revision,
+                                RecoveryAttemptOutcome.SUCCEEDED,
+                            )
+                            incident.terminal_outcome = "effect_confirmed"
+                            state.recovery_diagnostics = incident.diagnostics()
+                        continue
+                    incident = state.recovery_incident
+                    if incident is not None:
+                        incident.complete_pending(
+                            inspection.observation.environment_revision,
+                            RecoveryAttemptOutcome.FAILED,
+                        )
+                        incident.terminal_outcome = "effect_unconfirmed"
+                        state.recovery_diagnostics = incident.diagnostics()
                 state.transition(RuntimeStep.FAILED.value)
                 return self._finish(
                     envelope,
@@ -438,6 +513,18 @@ class RunCoordinator:
                 parents=[parent.id],
             )
             if latest_verification.passed:
+                if state.recovery_incident is not None and state.recovery_incident.terminal_outcome == "open":
+                    state.recovery_incident.complete_pending(
+                        post_snapshot.observation.environment_revision,
+                        RecoveryAttemptOutcome.SUCCEEDED,
+                    )
+                    state.recovery_incident.terminal_outcome = "recovered"
+                    state.recovery_diagnostics = state.recovery_incident.diagnostics()
+                    parent = trace.add(
+                        "RecoveryIncidentResolved",
+                        {"state": state.phase, "incident": state.recovery_diagnostics},
+                        parents=[parent.id],
+                    )
                 state.replan_count += 1
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue
@@ -456,7 +543,12 @@ class RunCoordinator:
             recovery_result = self._recover(state, contract, receipt, RuntimeErrorCode.VERIFICATION_FAILED)
             parent = trace.add(
                 "RecoveryStarted",
-                {"state": state.phase, "action": recovery_result.value, "verification": latest_verification.status.value},
+                {
+                    "state": state.phase,
+                    "action": recovery_result.value,
+                    "verification": latest_verification.status.value,
+                    "incident": state.recovery_diagnostics,
+                },
                 parents=[parent.id],
             )
             if recovery_result in {RecoveryAction.REOBSERVE, RecoveryAction.VERIFY_STATE}:
@@ -498,18 +590,73 @@ class RunCoordinator:
         receipt: ExecutionReceipt | None,
         error: RuntimeErrorCode | None,
     ) -> RecoveryAction:
+        failure_phase = state.phase
         state.transition(RuntimeStep.RECOVERING.value)
-        decision = self.recovery.decide(
+        effect_may_have_occurred = bool(receipt and receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT)
+        signature = FailureSignature.from_failure(
             contract,
             receipt,
-            RecoveryContext(
-                attempt=state.recovery_count,
-                recovery_count=state.recovery_count,
-                tried_backends=[item.backend for item in state.receipts],
-                effect_may_have_occurred=bool(receipt and receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT),
-            ),
+            phase=failure_phase,
             error_code=error,
+            state_revision=state.current_revision(),
         )
+        incident = state.recovery_incident
+        if incident is None or incident.terminal_outcome != "open":
+            incident = RecoveryIncident(
+                incident_id=f"recovery-{state.task_id}-{state.recovery_count + 1}",
+                source_contract_id=contract.id,
+                source_snapshot_id=contract.snapshot_id,
+                root_failure=signature,
+            )
+            state.recovery_incident = incident
+        else:
+            incident.complete_pending(state.current_revision(), RecoveryAttemptOutcome.FAILED)
+            incident.symptom_chain.append(signature)
+
+        tried_backends = [item.backend for item in state.receipts]
+        fallbacks_remaining = any(item not in set(tried_backends) for item in contract.fallback_backends)
+        assessment = self.cascade_detector.assess(
+            incident,
+            signature,
+            fallbacks_remaining=fallbacks_remaining,
+            effect_may_have_occurred=effect_may_have_occurred,
+            idempotency_key=contract.idempotency_key,
+        )
+        incident.findings.extend(item for item in assessment.findings if item not in incident.findings)
+        context = RecoveryContext(
+            attempt=state.recovery_count,
+            recovery_count=state.recovery_count,
+            tried_backends=tried_backends,
+            effect_may_have_occurred=effect_may_have_occurred,
+            failure_signature=signature,
+            task_id=state.task_id,
+        )
+        decision = (
+            RecoveryDecision(RecoveryAction.ABORT, "recovery cascade detector stopped a repeated or unsafe loop")
+            if assessment.should_abort
+            else self.recovery.decide(contract, receipt, context, error_code=error)
+        )
+        outcome = (
+            RecoveryAttemptOutcome.LOOP_ABORTED
+            if assessment.should_abort
+            else RecoveryAttemptOutcome.PENDING
+        )
+        incident.attempts.append(
+            RecoveryAttempt(
+                index=len(incident.attempts) + 1,
+                signature=signature,
+                recovery_action=decision.action,
+                state_before=state.current_revision(),
+                outcome=outcome,
+                effect_may_have_occurred=effect_may_have_occurred,
+                idempotency_key=contract.idempotency_key,
+            )
+        )
+        if assessment.should_abort:
+            incident.terminal_outcome = RecoveryAttemptOutcome.LOOP_ABORTED.value
+        elif decision.action == RecoveryAction.ABORT:
+            incident.terminal_outcome = "aborted"
+        state.recovery_diagnostics = incident.diagnostics()
         state.recovery_count += 1
         if decision.action in {RecoveryAction.REOBSERVE, RecoveryAction.RETRY, RecoveryAction.REROUTE, RecoveryAction.VERIFY_STATE}:
             state.transition(RuntimeStep.OBSERVING.value)

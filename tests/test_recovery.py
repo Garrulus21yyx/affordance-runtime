@@ -1,5 +1,15 @@
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
-from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryContext
+from affordance_runtime.recovery import (
+    BoundedRecoveryPolicy,
+    FailureSignature,
+    RecoveryAction,
+    RecoveryAttempt,
+    RecoveryAttemptOutcome,
+    RecoveryCascadeDetector,
+    RecoveryContext,
+    RecoveryIncident,
+    RecoveryLoopKind,
+)
 
 
 def _contract(**overrides: object) -> ActionContract:
@@ -61,3 +71,56 @@ def test_recovery_uses_declared_fallback_after_retry_budget() -> None:
     )
     assert decision.action == RecoveryAction.REROUTE
     assert decision.backend == "visual"
+
+
+def _signature(name: str, revision: str = "rev-1") -> FailureSignature:
+    return FailureSignature("acting", name, "execution_failed", "click", "dom", "target", "", revision)
+
+
+def test_cascade_detector_stops_repeated_no_progress_signature() -> None:
+    signature = _signature("timeout")
+    incident = RecoveryIncident("incident-1", "contract", "snapshot", signature)
+    incident.attempts.append(
+        RecoveryAttempt(
+            1,
+            signature,
+            RecoveryAction.RETRY,
+            "rev-1",
+            "rev-1",
+            RecoveryAttemptOutcome.FAILED,
+            idempotency_key="save:1",
+        )
+    )
+
+    assessment = RecoveryCascadeDetector().assess(
+        incident,
+        signature,
+        fallbacks_remaining=False,
+        effect_may_have_occurred=False,
+        idempotency_key="save:1",
+    )
+
+    assert assessment.should_abort
+    assert RecoveryLoopKind.REPEATED_SIGNATURE in assessment.findings
+    assert RecoveryLoopKind.NO_PROGRESS in assessment.findings
+
+
+def test_cascade_detector_recognizes_a_b_oscillation() -> None:
+    first = _signature("a", "rev-a")
+    second = _signature("b", "rev-b")
+    incident = RecoveryIncident("incident-2", "contract", "snapshot", first)
+    incident.attempts = [
+        RecoveryAttempt(1, first, RecoveryAction.REROUTE, "rev-a", "rev-b", RecoveryAttemptOutcome.FAILED),
+        RecoveryAttempt(2, second, RecoveryAction.REROUTE, "rev-b", "rev-a", RecoveryAttemptOutcome.FAILED),
+    ]
+
+    assessment = RecoveryCascadeDetector().assess(
+        incident,
+        first,
+        fallbacks_remaining=True,
+        effect_may_have_occurred=False,
+        idempotency_key="",
+    )
+
+    assert assessment.should_abort
+    assert RecoveryLoopKind.AB_OSCILLATION in assessment.findings

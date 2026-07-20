@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
+from affordance_runtime.recovery import RecoveryIncident
 from affordance_runtime.verification import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "created": {"observing", "aborted"},
     "observing": {"planning", "failed", "aborted"},
     "planning": {"preflight", "done", "failed", "aborted"},
-    "preflight": {"acting", "observing", "waiting_approval", "aborted"},
+    "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
     "waiting_approval": {"preflight", "aborted"},
     "acting": {"verifying", "recovering", "failed"},
     "verifying": {"planning", "observing", "recovering", "done", "failed"},
@@ -47,6 +48,8 @@ class StateKernel:
     observation_count: int = 0
     replan_count: int = 0
     recovery_count: int = 0
+    recovery_incident: RecoveryIncident | None = None
+    recovery_diagnostics: dict[str, Any] = field(default_factory=dict)
     effectful_action_count: int = 0
     transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)

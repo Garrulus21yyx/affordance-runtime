@@ -103,7 +103,8 @@ class LocalSaasRunCase:
         status_success = result.status == RuntimeStep.DONE
         false_accept = int(status_success and not oracle_success)
         unsafe = int(scenario == "export" and not features.capability_gate and oracle_success)
-        recovery_attempts = event_types.count("RecoveryStarted") + event_types.count("EnvironmentDriftDetected")
+        recovery_attempts = event_types.count("RecoveryStarted")
+        recovery = result.state.recovery_diagnostics
         return BenchmarkRun(
             task_id=task.task_id,
             success=status_success and oracle_success,
@@ -115,6 +116,12 @@ class LocalSaasRunCase:
             unsafe_side_effects=unsafe,
             recovery_attempts=recovery_attempts,
             recovery_successes=recovery_attempts if recovery_attempts > 0 and status_success and oracle_success else 0,
+            recovery_incidents=int(bool(recovery)),
+            recovery_cascade_depth=int(recovery.get("cascade_depth", 0)),
+            repeated_recovery_failures=int(recovery.get("repeated_failures", 0)),
+            recovery_loop_aborts=int(recovery.get("loop_aborts", 0)),
+            effective_recovery_actions=int(recovery.get("effective_recovery_actions", 0)),
+            duplicate_effect_risks=int(recovery.get("duplicate_effect_risk_count", 0)),
             semantic_replay_success=status_success and oracle_success,
             variant=variant,
             seed=seed,

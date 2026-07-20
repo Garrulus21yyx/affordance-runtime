@@ -1,10 +1,10 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
+from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -114,3 +114,52 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
     assert result.state.step_count == 1
     assert result.state.recovery_count == 1
     assert "EnvironmentDriftDetected" in [node.kind for node in result.trace.nodes]
+
+
+class StableObserver:
+    def capture(self) -> BrowserSnapshot:
+        return _snapshot(1)
+
+
+class RepeatingPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope, state
+        contract = ActionContract.from_affordance(
+            snapshot.affordance_model.affordances[0],
+            intent="repeat save",
+            backend="fake",
+        )
+        return PlannerDecision(contract=replace(contract, idempotency_key="repeat-save:1", contract_hash=""))
+
+
+@dataclass
+class AlwaysFailExecutor:
+    backend: str = "fake"
+
+    def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
+        return ExecutionReceipt(
+            contract.id,
+            self.backend,
+            False,
+            observation.environment_revision,
+            observation.environment_revision,
+            1.0,
+            error_code=RuntimeErrorCode.EXECUTION_FAILED,
+            message="Timeout 1000 while saving record 42",
+        )
+
+
+def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
+    result = asyncio.run(
+        RunCoordinator(observer=StableObserver(), planner=RepeatingPlanner(), executor=AlwaysFailExecutor()).run(
+            TaskEnvelope("run-loop", "repeat save")
+        )
+    )
+
+    assert result.status == RuntimeStep.FAILED
+    assert result.state.recovery_incident is not None
+    assert result.state.recovery_incident.root_failure.normalized_error == "timeout <n> while saving record <n>"
+    assert len(result.state.recovery_incident.symptom_chain) == 1
+    assert result.state.recovery_diagnostics["cascade_depth"] == 2
+    assert result.state.recovery_diagnostics["loop_aborts"] == 1
+    assert "repeated_signature" in result.state.recovery_diagnostics["findings"]

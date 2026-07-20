@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from affordance_runtime.benchmarks.spec import BenchmarkRun
+from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 from affordance_runtime.coordinator import RuntimeFeatures
+from affordance_runtime.recovery import (
+    BoundedRecoveryPolicy,
+    FailureSignature,
+    RecoveryAction,
+    RecoveryContext,
+    RecoveryDecision,
+)
 
 
 class EvolutionStatus(StrEnum):
@@ -179,6 +187,151 @@ class RuntimePatchPayload:
         return payload
 
 
+_SIGNATURE_FIELDS = {
+    "phase",
+    "normalized_error",
+    "error_code",
+    "action",
+    "backend",
+    "target_fingerprint",
+    "verifier_kind",
+}
+_SAFE_RECOVERY_RESPONSES = {
+    RecoveryAction.REOBSERVE,
+    RecoveryAction.VERIFY_STATE,
+    RecoveryAction.REROUTE,
+    RecoveryAction.REQUEST_APPROVAL,
+    RecoveryAction.COMPENSATE,
+    RecoveryAction.ABORT,
+}
+_RISK_ORDER = {
+    RiskLevel.LOW: 0,
+    RiskLevel.MEDIUM: 1,
+    RiskLevel.HIGH: 2,
+    RiskLevel.IRREVERSIBLE: 3,
+}
+
+
+@dataclass(frozen=True)
+class RecoveryPolicyPatchPayload:
+    schema_version: str
+    patch_kind: str
+    task_ids: list[str]
+    signature_match: dict[str, str]
+    response: str
+    max_applications: int
+    required_evidence: list[str]
+    postconditions: list[str]
+    max_risk: str = RiskLevel.LOW.value
+
+    def validate(self) -> None:
+        if self.schema_version != "1.0" or self.patch_kind != "recovery_policy":
+            raise ValueError("unsupported recovery policy payload schema or kind")
+        unknown = sorted(set(self.signature_match) - _SIGNATURE_FIELDS)
+        if unknown:
+            raise ValueError(f"unsupported signature fields: {', '.join(unknown)}")
+        try:
+            response = RecoveryAction(self.response)
+            RiskLevel(self.max_risk)
+        except ValueError as exc:
+            raise ValueError(f"invalid recovery policy enum: {exc}") from exc
+        if response not in _SAFE_RECOVERY_RESPONSES:
+            raise ValueError("recovery policy cannot introduce blind retry")
+        if not self.task_ids or not self.signature_match:
+            raise ValueError("recovery policy must declare task_ids and a signature match")
+        if self.max_applications < 1 or self.max_applications > 3:
+            raise ValueError("recovery policy max_applications must be within 1..3")
+        if not self.required_evidence or not self.postconditions:
+            raise ValueError("recovery policy must require evidence and postconditions")
+
+    def matches(self, task_id: str, signature: FailureSignature, risk: RiskLevel) -> bool:
+        if task_id not in self.task_ids or _RISK_ORDER[risk] > _RISK_ORDER[RiskLevel(self.max_risk)]:
+            return False
+        return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def digest(self) -> str:
+        return _payload_digest(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "RecoveryPolicyPatchPayload":
+        payload = cls(
+            schema_version=str(value.get("schema_version", "")),
+            patch_kind=str(value.get("patch_kind", "")),
+            task_ids=_string_list(value.get("task_ids"), "task_ids"),
+            signature_match=_string_map(value.get("signature_match"), "signature_match"),
+            response=str(value.get("response", "")),
+            max_applications=int(value.get("max_applications", 0)),
+            required_evidence=_string_list(value.get("required_evidence"), "required_evidence"),
+            postconditions=_string_list(value.get("postconditions"), "postconditions"),
+            max_risk=str(value.get("max_risk", RiskLevel.LOW.value)),
+        )
+        payload.validate()
+        return payload
+
+
+@dataclass(frozen=True)
+class RecoverySkillPayload:
+    schema_version: str
+    patch_kind: str
+    task_ids: list[str]
+    signature_match: dict[str, str]
+    steps: list[str]
+    max_applications: int
+    required_evidence: list[str]
+    postconditions: list[str]
+    max_risk: str = RiskLevel.LOW.value
+
+    def validate(self) -> None:
+        if self.schema_version != "1.0" or self.patch_kind != "recovery_skill":
+            raise ValueError("unsupported recovery skill payload schema or kind")
+        unknown = sorted(set(self.signature_match) - _SIGNATURE_FIELDS)
+        if unknown:
+            raise ValueError(f"unsupported signature fields: {', '.join(unknown)}")
+        try:
+            actions = [RecoveryAction(item) for item in self.steps]
+            RiskLevel(self.max_risk)
+        except ValueError as exc:
+            raise ValueError(f"invalid recovery skill enum: {exc}") from exc
+        if not actions or any(action not in _SAFE_RECOVERY_RESPONSES for action in actions):
+            raise ValueError("recovery skill contains an unsafe or empty step sequence")
+        if not self.task_ids or not self.signature_match:
+            raise ValueError("recovery skill must declare task_ids and a signature match")
+        if self.max_applications < 1 or self.max_applications > 3:
+            raise ValueError("recovery skill max_applications must be within 1..3")
+        if not self.required_evidence or not self.postconditions:
+            raise ValueError("recovery skill must require evidence and postconditions")
+
+    def matches(self, task_id: str, signature: FailureSignature, risk: RiskLevel) -> bool:
+        if task_id not in self.task_ids or _RISK_ORDER[risk] > _RISK_ORDER[RiskLevel(self.max_risk)]:
+            return False
+        return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def digest(self) -> str:
+        return _payload_digest(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "RecoverySkillPayload":
+        payload = cls(
+            schema_version=str(value.get("schema_version", "")),
+            patch_kind=str(value.get("patch_kind", "")),
+            task_ids=_string_list(value.get("task_ids"), "task_ids"),
+            signature_match=_string_map(value.get("signature_match"), "signature_match"),
+            steps=_string_list(value.get("steps"), "steps"),
+            max_applications=int(value.get("max_applications", 0)),
+            required_evidence=_string_list(value.get("required_evidence"), "required_evidence"),
+            postconditions=_string_list(value.get("postconditions"), "postconditions"),
+            max_risk=str(value.get("max_risk", RiskLevel.LOW.value)),
+        )
+        payload.validate()
+        return payload
+
+
 @dataclass
 class CandidateRuntimeProfile:
     """Fresh runtime profile that applies only validated declarative patches."""
@@ -186,16 +339,25 @@ class CandidateRuntimeProfile:
     base_features: RuntimeFeatures = field(
         default_factory=lambda: RuntimeFeatures(structural_verification=False)
     )
-    loaded: dict[str, RuntimePatchPayload] = field(default_factory=dict)
+    loaded: dict[str, RuntimePatchPayload | RecoveryPolicyPatchPayload | RecoverySkillPayload] = field(
+        default_factory=dict
+    )
+    recovery_applications: dict[str, int] = field(default_factory=dict)
 
     def load(self, artifact: EvolutionArtifact, *, allow_candidate: bool = False) -> None:
         if artifact.status != EvolutionStatus.ACCEPTED and not allow_candidate:
             raise ValueError("only accepted artifacts can be loaded outside candidate replay")
-        if artifact.artifact_type != EvolutionArtifactType.VERIFIER_PATCH.value:
+        if artifact.artifact_type == EvolutionArtifactType.VERIFIER_PATCH.value:
+            runtime_payload = RuntimePatchPayload.from_dict(artifact.payload)
+            if runtime_payload.feature_overrides != {"structural_verification": True}:
+                raise ValueError("verifier patch may only enable structural verification")
+            payload: RuntimePatchPayload | RecoveryPolicyPatchPayload | RecoverySkillPayload = runtime_payload
+        elif artifact.artifact_type == EvolutionArtifactType.POLICY_PATCH.value:
+            payload = RecoveryPolicyPatchPayload.from_dict(artifact.payload)
+        elif artifact.artifact_type == EvolutionArtifactType.SKILL.value:
+            payload = RecoverySkillPayload.from_dict(artifact.payload)
+        else:
             raise ValueError(f"unsupported executable artifact type: {artifact.artifact_type}")
-        payload = RuntimePatchPayload.from_dict(artifact.payload)
-        if payload.feature_overrides != {"structural_verification": True}:
-            raise ValueError("verifier patch may only enable structural verification")
         if not artifact.payload_digest or payload.digest() != artifact.payload_digest:
             raise ValueError("artifact payload digest mismatch")
         self.loaded[artifact.id] = payload
@@ -203,14 +365,65 @@ class CandidateRuntimeProfile:
     def features_for(self, task_id: str) -> RuntimeFeatures:
         features = self.base_features
         for payload in self.loaded.values():
-            if task_id in payload.task_ids:
+            if isinstance(payload, RuntimePatchPayload) and task_id in payload.task_ids:
                 features = replace(features, **payload.feature_overrides)
         return features
+
+    def recovery_policy(self) -> BoundedRecoveryPolicy:
+        return BoundedRecoveryPolicy(decision_override=self._recovery_override)
+
+    def _recovery_override(
+        self,
+        contract: ActionContract,
+        receipt: ExecutionReceipt | None,
+        context: RecoveryContext,
+        error_code: RuntimeErrorCode | None,
+    ) -> RecoveryDecision | None:
+        del receipt, error_code
+        signature = context.failure_signature
+        if signature is None:
+            return None
+        # Uncertain effects are always inspected before any learned response.
+        if context.effect_may_have_occurred:
+            return RecoveryDecision(RecoveryAction.VERIFY_STATE, "candidate preserves inspect-before-recovery")
+        for artifact_id, payload in self.loaded.items():
+            if isinstance(payload, RuntimePatchPayload) or not payload.matches(
+                context.task_id, signature, contract.risk
+            ):
+                continue
+            applied = self.recovery_applications.get(artifact_id, 0)
+            if applied >= payload.max_applications:
+                continue
+            self.recovery_applications[artifact_id] = applied + 1
+            if isinstance(payload, RecoveryPolicyPatchPayload):
+                action = RecoveryAction(payload.response)
+            else:
+                action = RecoveryAction(payload.steps[min(applied, len(payload.steps) - 1)])
+            return RecoveryDecision(action, f"declarative recovery artifact {artifact_id}")
+        return None
 
     def rollback(self, artifact_id: str) -> None:
         if artifact_id not in self.loaded:
             raise KeyError(artifact_id)
         del self.loaded[artifact_id]
+        self.recovery_applications.pop(artifact_id, None)
+
+
+def _payload_digest(value: dict[str, Any]) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _string_list(value: Any, name: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must be a list of strings")
+    return value
+
+
+def _string_map(value: Any, name: str) -> dict[str, str]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in value.items()):
+        raise ValueError(f"{name} must map strings to strings")
+    return value
 
 
 @dataclass
