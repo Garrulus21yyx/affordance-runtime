@@ -2,13 +2,14 @@
 set -euo pipefail
 
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev,web]'
+.venv/bin/pip install -e '.[dev,web,parent]'
 .venv/bin/playwright install chromium
 .venv/bin/pytest -q
 .venv/bin/ruff check src tests
 .venv/bin/mypy src
 .venv/bin/python -m build
 .venv/bin/python scripts/chromium_smoke.py
+.venv/bin/python scripts/langgraph_parent_smoke.py --output evidence/parent
 .venv/bin/affordance-runtime benchmark --output evidence/benchmark --seeds 1
 .venv/bin/affordance-runtime evolve \
   --benchmark-report evidence/benchmark/benchmark-report.json \
