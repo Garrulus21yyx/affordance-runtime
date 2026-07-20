@@ -26,7 +26,7 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Generalist Planner | pending | current `TaskEnvelope(goal: str)` and scripted planners only | implement typed compiler, TaskSpec, semantic proposals, ContractBuilder, and real-user gates |
+| M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
 | M8.2B Public Benchmark Expansion | in_progress | isolated BrowserGym 0.14.3 full-Coordinator bridge and real one-task reward proof at `5d6ec93` | generalist-planner PR/nightly/release matrices and public suite ladder |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
@@ -142,17 +142,18 @@ evidence, and traces. See `evidence/m8.1-40fd93b.md`.
 
 ### M8.2A Task Intake and Generalist Planner
 
-The current runtime begins from `TaskEnvelope(goal: str)`, and
-`PlannerDecision` may already contain an `ActionContract`. It does not yet
-provide a sourced intent draft, ambiguity-aware immutable `TaskSpec`,
-provider-neutral generalist LM planner, or deterministic proposal-to-contract
-boundary.
+Done. `UserRequest` compiles through a sourced `IntentDraft` and deterministic
+policy gate into immutable versioned `TaskSpec`; `GeneralistLMPlanner` emits a
+semantic `PlannerProposal`, and `ContractBuilder` is the sole executable
+binding boundary. Provider-neutral local/remote profiles, fallback-safe model
+manifests, compiler/planner/runtime failure attribution, clarification
+revisions, and full trace lineage are implemented.
 
-The implementation gate is defined in
-[Task Intake and Generalist Planner](task-intake-and-planner.md). Completion
-requires real-user request compilation, clarification and TaskSpec revision,
-semantic `PlannerProposal`, deterministic `ContractBuilder`, full trace
-lineage, and verified read/write/approval/cross-surface tasks.
+At `7edaa97`, Mistral completed controlled intent compilation plus verified
+pricing read-only, settings reversible-write, and approval-gated report export
+paths. The same planner class is tested across DOM/SoM/WoT affordances and
+passed an official BrowserGym `click-button` smoke through typed action binding.
+See `evidence/m8.2a-7edaa97.md`.
 
 ### M8.2B Public Benchmark Expansion
 

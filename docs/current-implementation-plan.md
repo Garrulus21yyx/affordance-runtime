@@ -2,8 +2,7 @@
 
 Implementation status: M0-M8.1 and M8.3 are complete for the controlled web
 profile. See [Implementation Status and Forward Gates](implementation-status.md).
-The next required increments are M8.2A general task intake/planning and M8.2B
-public benchmark expansion. M9 is conditional on measured restart/waiting
+The next required increment is M8.2B public benchmark expansion. M9 is conditional on measured restart/waiting
 evidence; production-scale options remain non-blocking.
 
 ## 1. Authority
@@ -213,8 +212,8 @@ runtime.
 The full current specification is
 [Task Intake and Generalist Planner](task-intake-and-planner.md).
 
-The existing `TaskEnvelope(goal: str)` and scripted planners remain
-compatibility scaffolding. M8.2A introduces:
+The legacy `TaskEnvelope(goal: str)` and scripted planners remain compatibility
+scaffolding. M8.2A completed the following boundary:
 
 ```text
 UserRequest
@@ -624,7 +623,7 @@ DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 
 ### M8.2: Generalist Planning and Public Benchmark Expansion - in progress
 
-#### M8.2A: Task Intake and Generalist Planner - pending
+#### M8.2A: Task Intake and Generalist Planner - done
 
 Implement the schemas and gates in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -645,6 +644,11 @@ approval-gated, and cross-surface tasks through the full Coordinator; blocking
 ambiguity stops safely; clarification revisions invalidate stale proposals; no
 LM output grants authority or bypasses contracts; compiler and planner failures
 are attributable separately from runtime failures.
+
+Evidence: `docs/evidence/m8.2a-7edaa97.md` records the controlled 30-request
+Mistral compiler suite, verified local SaaS read/write/approval paths, common
+DOM/SoM/WoT GeneralistLMPlanner tests, and an official BrowserGym smoke through
+the same planner boundary.
 
 #### M8.2B: Public Benchmark Expansion - in progress
 
