@@ -86,6 +86,28 @@ Those pieces are still useful as reference demos, but the new repository should
 stay focused on a planner-neutral GUI runtime that can be used standalone or as
 a subagent by Codex, Claude, OpenHands, LangGraph, AutoGen, or browser agents.
 
+## Planned Selective Docker Reuse
+
+M8.1 reuses the old environment proof without restoring the old deployment
+architecture. The audited node-wot fixture and a minimal dashboard may return
+under an optional `wot-proof` Compose profile. The old root Python image, fixed
+container names, host-first benchmark flow, presentation scripts, and incorrect
+PiP terminology are not migrated.
+
+The acceptance test exposes one reversible state through DOM, real
+screenshot/SoM, and WoT. Every path must use the new TaskSpec, Action Contract,
+Coordinator, capability gate, postcondition verifier, trace schema, evaluator,
+and independent oracle. This turns the old "three backends connect" demo into a
+cross-surface harness conformance test.
+
+The maturity claim remains explicit:
+
+| Surface | Required evidence |
+| --- | --- |
+| DOM | primary real Chromium task loop and public Web benchmark path |
+| Visual | real-pixel grounding and controlled cross-surface task |
+| WoT | optional containerized adapter/conformance proof |
+
 ## New Design Added During Migration
 
 - `StateKernel`: preserves goal, constraints, hidden-state hypotheses,

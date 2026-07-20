@@ -129,8 +129,14 @@ of a full MiniWoB++ score.
 ### M8.1 Container Reproducibility
 
 The repository currently runs on the SL09 host and has no Dockerfile,
-`.dockerignore`, or Compose file. Add only the in-memory fixture, test runner,
-benchmark runner, health checks, and mounted artifacts.
+`.dockerignore`, or Compose file. Add the in-memory fixture, test runner,
+benchmark runner, health checks, and mounted artifacts. An optional
+`wot-proof` profile selectively migrates the old node-wot fixture and a
+minimal dashboard; it is not part of the default Web profile.
+
+M8.1 also requires one reversible state change through DOM, real screenshot/SoM,
+and WoT. All three paths must use the same Coordinator-level contract, policy,
+verification, trace, evaluator, and oracle rather than direct executor calls.
 
 ### M8.2 Public Benchmark Expansion
 

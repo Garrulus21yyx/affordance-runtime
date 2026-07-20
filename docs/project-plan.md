@@ -435,8 +435,17 @@ in-memory fixture, tests, and benchmark. Use a non-root runtime, health checks,
 deterministic reset, and mounted artifacts. Do not add a scheduler, worker pool,
 message broker, or fictional fixture database.
 
-Exit when a clean checkout runs tests and the local benchmark through Compose
-and produces oracle-equivalent host/container reports.
+Add an optional `wot-proof` profile by selectively migrating the audited
+node-wot fixture and only the dashboard surface needed for conformance. A single
+reversible task must run through DOM, real screenshot/SoM, and WoT while sharing
+TaskSpec, capability policy, Action Contract envelope, Coordinator, verifier,
+trace schema, evaluator, and an independent state oracle. Direct executor
+shortcuts do not count.
+
+Exit when a clean checkout runs tests and the local benchmark through Compose,
+produces oracle-equivalent host/container reports, and records successful
+verifier-backed traces for all three surfaces. This proves shared harness
+semantics, not equal backend maturity.
 
 ### M8.2: Public Benchmark Expansion - pending
 

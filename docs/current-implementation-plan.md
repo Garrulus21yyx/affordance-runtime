@@ -337,6 +337,29 @@ event-broker, or memory microservices. M8.1 exits when a clean checkout passes
 `docker compose build`, `docker compose run --rm runtime-test`, and
 `docker compose run --rm benchmark`.
 
+An optional `wot-proof` profile selectively migrates the old repository's
+mature node-wot fixture and the minimum dashboard surface needed for a
+cross-surface test. It is not the default product demo and does not copy the old
+root Dockerfile or Compose topology wholesale.
+
+The conformance task exposes one reversible state through three surfaces:
+
+```text
+DOM dashboard control
+real screenshot / SoM control
+WoT Thing Description operation
+             |
+             v
+same TaskSpec, capability, expected effect, and independent state oracle
+             |
+             v
+same ActionContract envelope, Coordinator, verifier, trace, and evaluator
+```
+
+DOM remains the primary real-browser path; visual remains a controlled
+screenshot-grounding path; WoT remains a non-Web adapter proof. The gate proves
+shared harness semantics, not equal product maturity across all three.
+
 ## 9. Trace, Benchmark, and Evolution
 
 ### 9.1 Trace
@@ -558,9 +581,14 @@ episodes over six task families from official Farama commit
 - provide fixture, test, and benchmark services with mounted artifacts
 - run non-root, add fixture health/reset, and record environment identity
 - keep public benchmark stacks as optional profiles or networks
+- add an optional `wot-proof` profile from the audited node-wot fixture
+- run one reversible cross-surface task through DOM, real screenshot/SoM, and
+  WoT without bypassing the Coordinator
 
 Exit: a clean checkout reproduces tests and the local benchmark in containers,
-with host/container agreement on outcomes and oracle decisions.
+with host/container agreement on outcomes and oracle decisions. The optional
+cross-surface run reaches the same oracle state through all three surfaces and
+emits contract-compatible, verifier-backed traces for each backend.
 
 ### M8.2: Public Benchmark Expansion - pending
 

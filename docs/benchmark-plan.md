@@ -39,11 +39,39 @@ scoring, and harness evolution.
 | MiniWoB++ | atomic action sanity | M8 pinned curated adapter | official seeded episodes | official done/raw reward |
 | WebArena-style Mock | long-horizon web workflow | future | distractors, multi-tab state | programmatic verifier |
 | Visual Grounding | SoM and screenshot fallback | M8 screenshot-pixel path | distinct training/held-out positions | detected target box and visual receipt |
-| Device/WoT | non-web affordance proof | future | stale device state, rate limit | state source receipt |
+| Device/WoT | non-web affordance proof | M8.1 optional `wot-proof` profile | stale device state, rate limit | state source receipt |
 
 Visual tasks should avoid vague labels such as `vibe` unless the oracle can be
 programmed. Prefer concrete targets such as color, icon, badge, relative
 position, or fixture mark id.
+
+## Cross-Surface Conformance Gate
+
+The project must preserve the old action system's useful proof that different
+environment surfaces can enter one runtime, while evaluating the stronger
+harness semantics added here.
+
+The optional `wot-proof` fixture exposes one reversible device state through:
+
+1. a DOM dashboard control;
+2. a control grounded from real screenshot pixels through SoM;
+3. a WoT Thing Description operation.
+
+All three runs use the same semantic goal, capability, expected effect, and
+independent device-state oracle. Each run must pass through the shared
+Coordinator and emit:
+
+- a common Action Contract envelope with a typed surface payload;
+- policy/preflight evidence;
+- an execution receipt;
+- independent postcondition verification;
+- the common trace schema and evaluator metrics.
+
+The test fails if a surface calls its executor directly, if visual grounding
+receives DOM coordinates, or if WoT reuses a read form as a write operation.
+Reports show backend-specific latency/failures separately. Passing this gate
+demonstrates cross-surface harness compatibility; it does not claim that the
+controlled visual and WoT paths have the same deployment maturity as DOM.
 
 ## Baselines
 
