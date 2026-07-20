@@ -80,6 +80,12 @@ class UnsupportedPolicy(OneClickPolicy):
         return BrowserGymAction("page.evaluate", {"code": "danger"})
 
 
+class UnsupportedSemanticPolicy(OneClickPolicy):
+    def propose(self, request: BrowserGymPolicyRequest) -> BrowserGymAction:
+        del request
+        return BrowserGymAction("press", {"bid": "target", "key_comb": "Enter"})
+
+
 def test_typed_browsergym_action_rejects_code_and_unknown_arguments() -> None:
     assert BrowserGymAction("fill", {"bid": "field", "value": "hello"}).render() == "fill('field', 'hello')"
     with pytest.raises(ValueError, match="unsupported BrowserGym action"):
@@ -136,6 +142,7 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "TaskCreated",
         "ObservationCaptured",
         "PlanProposed",
+        "PlannerProposalProduced",
         "ContractBuilt",
         "PreflightObservationCaptured",
         "PreflightPassed",
@@ -145,6 +152,7 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "PostconditionPassed",
         "ObservationCaptured",
         "PlanProposed",
+        "PlannerProposalProduced",
         "TaskCompleted",
     ]
 
@@ -184,6 +192,18 @@ def test_browsergym_episode_reports_unsupported_policy_action(tmp_path: Path) ->
     )
     assert result.runtime_status == "failed"
     assert result.unsupported_actions == ["page.evaluate"]
+
+
+def test_browsergym_episode_reports_action_outside_semantic_vocabulary(tmp_path: Path) -> None:
+    result = run_browsergym_episode(
+        FakeBrowserGymEnvironment(),
+        UnsupportedSemanticPolicy(),
+        task_id="click-button",
+        seed=4,
+        artifact_root=tmp_path,
+    )
+    assert result.runtime_status == "failed"
+    assert result.unsupported_actions == ["press"]
 
 
 class StoppedPolicy(OneClickPolicy):

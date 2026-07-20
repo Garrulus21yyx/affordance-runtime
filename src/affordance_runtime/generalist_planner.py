@@ -118,57 +118,74 @@ class GeneralistLMPlanner:
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerContext:
-        task_spec = envelope.task_spec
-        if task_spec is None:
-            raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
-        receipt = state.receipts[-1] if state.receipts else None
-        verification = state.latest_verification
-        latest_outcome = {
-            "receipt_success": receipt.success if receipt else None,
-            "receipt_backend": receipt.backend if receipt else "",
-            "error_code": receipt.error_code.value if receipt and receipt.error_code else "",
-            "verification_status": verification.status.value if verification else "",
-            "verification_reason": verification.reason if verification else "",
-        }
-        latest_proposal = state.planner_history[-1] if state.planner_history else {}
-        verified_effects = (
-            tuple(str(item) for item in latest_proposal.get("expected_effects", []))
-            if verification and verification.passed
-            else ()
-        )
-        return PlannerContext(
-            task_spec=task_spec.model_dump(mode="json"),
-            active_subgoal=state.subgoals[-1] if state.subgoals else task_spec.objective,
-            affordances=tuple(
-                AffordanceSummary(
-                    id=item.id,
-                    surface=item.surface.value,
-                    role=item.role,
-                    label=item.label,
-                    action=item.action,
-                    confidence=item.confidence,
-                    state=dict(item.state),
-                )
-                for item in snapshot.affordance_model.affordances
-            ),
-            selected_artifact_refs=tuple(snapshot.observation.artifact_refs),
-            granted_capabilities=tuple(sorted(set(envelope.capabilities))),
-            remaining_budgets={
-                "steps": max(0, self.limits.max_steps - state.step_count),
-                "observations": max(0, self.limits.max_observations - state.observation_count),
-                "recoveries": max(0, self.limits.max_recoveries - state.recovery_count),
-                "effectful_actions": max(
-                    0,
-                    self.limits.max_effectful_actions - state.effectful_action_count,
-                ),
-            },
-            pending_evidence_obligations=tuple(state.pending_obligations),
-            latest_outcome=latest_outcome,
-            recent_proposals=tuple(state.planner_history[-5:]),
-            verified_effects=verified_effects,
-            recovery_summary=dict(state.recovery_diagnostics),
+        return build_planner_context(
+            envelope,
+            state,
+            snapshot,
+            limits=self.limits,
             accepted_knowledge=self.accepted_knowledge,
-            task_revision=task_spec.revision,
-            state_version=state.version,
-            snapshot_id=snapshot.observation.snapshot_id,
         )
+
+
+def build_planner_context(
+    envelope: TaskEnvelope,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+    *,
+    limits: PlannerLimits = PlannerLimits(),
+    accepted_knowledge: tuple[str, ...] = (),
+) -> PlannerContext:
+    task_spec = envelope.task_spec
+    if task_spec is None:
+        raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
+    receipt = state.receipts[-1] if state.receipts else None
+    verification = state.latest_verification
+    latest_outcome = {
+        "receipt_success": receipt.success if receipt else None,
+        "receipt_backend": receipt.backend if receipt else "",
+        "error_code": receipt.error_code.value if receipt and receipt.error_code else "",
+        "verification_status": verification.status.value if verification else "",
+        "verification_reason": verification.reason if verification else "",
+    }
+    latest_proposal = state.planner_history[-1] if state.planner_history else {}
+    verified_effects = (
+        tuple(str(item) for item in latest_proposal.get("expected_effects", []))
+        if verification and verification.passed
+        else ()
+    )
+    return PlannerContext(
+        task_spec=task_spec.model_dump(mode="json"),
+        active_subgoal=state.subgoals[-1] if state.subgoals else task_spec.objective,
+        affordances=tuple(
+            AffordanceSummary(
+                id=item.id,
+                surface=item.surface.value,
+                role=item.role,
+                label=item.label,
+                action=item.action,
+                confidence=item.confidence,
+                state=dict(item.state),
+            )
+            for item in snapshot.affordance_model.affordances
+        ),
+        selected_artifact_refs=tuple(snapshot.observation.artifact_refs),
+        granted_capabilities=tuple(sorted(set(envelope.capabilities))),
+        remaining_budgets={
+            "steps": max(0, limits.max_steps - state.step_count),
+            "observations": max(0, limits.max_observations - state.observation_count),
+            "recoveries": max(0, limits.max_recoveries - state.recovery_count),
+            "effectful_actions": max(
+                0,
+                limits.max_effectful_actions - state.effectful_action_count,
+            ),
+        },
+        pending_evidence_obligations=tuple(state.pending_obligations),
+        latest_outcome=latest_outcome,
+        recent_proposals=tuple(state.planner_history[-5:]),
+        verified_effects=verified_effects,
+        recovery_summary=dict(state.recovery_diagnostics),
+        accepted_knowledge=accepted_knowledge,
+        task_revision=task_spec.revision,
+        state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+    )

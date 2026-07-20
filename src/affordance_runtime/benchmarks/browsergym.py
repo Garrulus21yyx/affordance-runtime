@@ -26,8 +26,10 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 BROWSERGYM_VERSION = "0.14.3"
 BROWSERGYM_MINIWOB_COMMIT = "7fd85d71a4b60325c6585396ec4f48377d049838"
@@ -229,18 +231,26 @@ class BrowserGymObserver:
 class BrowserGymPlanner:
     policy: BrowserGymPolicy
     episode: BrowserGymEpisodeState
+    bindings: dict[str, BrowserGymAction]
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
         if self.episode.terminated or self.episode.truncated:
             return PlannerDecision(
-                done=True,
-                result={
-                    "official_success": self.episode.terminated and self.episode.reward > 0,
-                    "official_reward": self.episode.reward,
-                    "terminated": self.episode.terminated,
-                    "truncated": self.episode.truncated,
-                },
+                proposal=PlannerProposal(
+                    proposal_id=f"browsergym-{self.episode.task_id}-{self.episode.seed}-finish",
+                    based_on_task_revision=1,
+                    based_on_state_version=state.version,
+                    snapshot_id=snapshot.observation.snapshot_id,
+                    action_kind=PlannerActionKind.FINISH,
+                    done=True,
+                    result={
+                        "official_success": self.episode.terminated and self.episode.reward > 0,
+                        "official_reward": self.episode.reward,
+                        "terminated": self.episode.terminated,
+                        "truncated": self.episode.truncated,
+                    },
+                )
             )
         request = BrowserGymPolicyRequest(
             task_id=self.episode.task_id,
@@ -264,26 +274,55 @@ class BrowserGymPlanner:
         action = self.policy.propose(request)
         if action is None:
             return PlannerDecision(
-                done=True,
-                result={
-                    "official_success": False,
-                    "official_reward": self.episode.reward,
-                    "terminated": False,
-                    "truncated": False,
-                    "policy_stopped": True,
-                },
+                proposal=PlannerProposal(
+                    proposal_id=f"browsergym-{self.episode.task_id}-{self.episode.seed}-stopped",
+                    based_on_task_revision=1,
+                    based_on_state_version=state.version,
+                    snapshot_id=snapshot.observation.snapshot_id,
+                    action_kind=PlannerActionKind.FINISH,
+                    done=True,
+                    result={
+                        "official_success": False,
+                        "official_reward": self.episode.reward,
+                        "terminated": False,
+                        "truncated": False,
+                        "policy_stopped": True,
+                    },
+                ),
                 reason="policy stopped before official termination",
             )
         action.render()  # validate before constructing a contract
-        affordance = _action_affordance(action, snapshot)
-        contract = ActionContract.from_affordance(
-            affordance,
-            intent=self.episode.goal,
+        proposal = _browsergym_proposal(action, self.episode, state, snapshot)
+        self.bindings[proposal.proposal_id] = action
+        return PlannerDecision(
+            proposal=proposal,
+            reason="benchmark action translated to semantic proposal",
+        )
+
+
+@dataclass
+class BrowserGymContractBuilder(ContractBuilder):
+    bindings: dict[str, BrowserGymAction] = field(default_factory=dict)
+
+    def build(
+        self,
+        proposal: PlannerProposal,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> ActionContract:
+        contract = super().build(proposal, task_spec, state, snapshot)
+        action = self.bindings.get(proposal.proposal_id)
+        if action is None:
+            raise ValueError(f"BrowserGym action binding is missing: {proposal.proposal_id}")
+        return replace(
+            contract,
+            action=action.name,
             backend=BROWSERGYM_BACKEND,
             parameters={"action": asdict(action)},
             verifier_plan=[VerifierSpec("evidence", "last_action_error", "")],
+            contract_hash="",
         )
-        return PlannerDecision(contract=replace(contract, action=action.name, contract_hash=""))
 
 
 @dataclass
@@ -377,10 +416,21 @@ def run_browsergym_episode(
     run_id = f"browsergym-{task_id}-seed-{seed}"
     result_error = ""
     unsupported: list[str] = []
+    bindings: dict[str, BrowserGymAction] = {}
+    task_spec = TaskSpec(
+        task_id=run_id,
+        revision=1,
+        objective=goal,
+        operation_class=OperationClass.READ_ONLY,
+        targets=(task_id,),
+        success_criteria=("official BrowserGym environment terminates with positive reward",),
+        evidence_requirements=("official reward and termination",),
+        source_request_ref=f"browsergym:{task_id}:seed:{seed}",
+    )
     try:
         result = RunCoordinator(
             observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
-            planner=BrowserGymPlanner(policy, episode),
+            planner=BrowserGymPlanner(policy, episode, bindings),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
             budget=RunBudget(
@@ -390,7 +440,8 @@ def run_browsergym_episode(
                 max_recoveries=3,
                 max_effectful_actions=max_steps + 1,
             ),
-        ).run_sync(TaskEnvelope(run_id, goal))
+            contract_builder=BrowserGymContractBuilder(bindings=bindings),
+        ).run_sync(TaskEnvelope(task_spec=task_spec))
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -399,7 +450,7 @@ def run_browsergym_episode(
             ),
             "",
         )
-        if "unsupported BrowserGym action:" in planner_error:
+        if "unsupported BrowserGym action:" in planner_error or "unsupported BrowserGym semantic action:" in planner_error:
             unsupported.append(planner_error.rsplit(":", 1)[-1].strip())
         for receipt in result.state.receipts:
             if "unsupported BrowserGym action" in receipt.message:
@@ -702,6 +753,42 @@ def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> A
         lease=lease,
         backend_candidates=[BROWSERGYM_BACKEND],
         risk=RiskLevel.LOW,
+    )
+
+
+def _browsergym_proposal(
+    action: BrowserGymAction,
+    episode: BrowserGymEpisodeState,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> PlannerProposal:
+    affordance = _action_affordance(action, snapshot)
+    semantic_kind = {
+        "click": PlannerActionKind.ACTIVATE,
+        "dblclick": PlannerActionKind.ACTIVATE,
+        "fill": PlannerActionKind.TYPE_TEXT,
+        "select_option": PlannerActionKind.SELECT_OPTION,
+    }.get(action.name)
+    if semantic_kind is None:
+        raise ValueError(f"unsupported BrowserGym semantic action: {action.name}")
+    parameters: dict[str, Any] = {}
+    if semantic_kind == PlannerActionKind.TYPE_TEXT:
+        parameters["text"] = str(action.arguments["value"])
+    elif semantic_kind == PlannerActionKind.SELECT_OPTION:
+        value = action.arguments["options"]
+        parameters["option"] = value if isinstance(value, list) else str(value)
+    index = len(episode.actions) + 1
+    return PlannerProposal(
+        proposal_id=f"browsergym-{episode.task_id}-{episode.seed}-step-{index}",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+        subgoal=episode.goal,
+        action_kind=semantic_kind,
+        target_affordance_id=affordance.id,
+        parameters=parameters,
+        expected_effects=("BrowserGym action has no action error",),
+        evidence_requirements=("last_action_error receipt field is empty",),
     )
 
 
