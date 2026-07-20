@@ -72,6 +72,25 @@ def test_blocking_or_high_risk_ambiguity_stops_before_task_spec() -> None:
     assert result.issues[0].code == "blocking_ambiguity"
 
 
+def test_blocking_ambiguity_takes_precedence_over_missing_derived_success_criterion() -> None:
+    draft = _draft(
+        candidate_success_criteria=(),
+        ambiguities=(
+            IntentAmbiguity(
+                field="recipient",
+                reason="recipient is missing",
+                blocking=True,
+                risk=AmbiguityRisk.HIGH,
+            ),
+        ),
+    )
+
+    result = IntentDraftValidator().compile(_request(), draft)
+
+    assert result.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert result.task_spec is None
+
+
 def test_policy_intersection_rejects_denied_capability_and_forbidden_effect() -> None:
     draft = _draft(candidate_forbidden_effects=("theme",))
     validator = IntentDraftValidator(

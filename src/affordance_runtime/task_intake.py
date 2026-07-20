@@ -162,7 +162,7 @@ class IntentDraftValidator:
             unsupported.append(CompilationIssue(code="missing_effect", field="requested_effects"))
         if not draft.candidate_success_criteria:
             unsupported.append(CompilationIssue(code="missing_success_criteria", field="candidate_success_criteria"))
-        if unsupported:
+        if any(issue.code in {"missing_objective", "missing_effect"} for issue in unsupported):
             return CompilationResult(
                 status=CompilationStatus.UNSUPPORTED,
                 request_id=request.request_id,
@@ -180,6 +180,14 @@ class IntentDraftValidator:
                     CompilationIssue(code="blocking_ambiguity", field=item.field, detail=item.reason)
                     for item in blocking
                 ),
+            )
+
+        if unsupported:
+            return CompilationResult(
+                status=CompilationStatus.UNSUPPORTED,
+                request_id=request.request_id,
+                draft=draft,
+                issues=tuple(unsupported),
             )
 
         conflicts: list[CompilationIssue] = []
