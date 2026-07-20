@@ -78,6 +78,7 @@ class FallbackModelPort:
     endpoint_class: str = field(default="mixed", init=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     failures: tuple[str, ...] = field(default=(), init=False)
+    failure_details: tuple[str, ...] = field(default=(), init=False)
 
     def __post_init__(self) -> None:
         if not self.ports:
@@ -90,17 +91,21 @@ class FallbackModelPort:
         config: ModelConfig,
     ) -> T:
         failures: list[str] = []
+        failure_details: list[str] = []
         for port in self.ports:
             try:
                 value = await port.generate_structured(messages, output_schema, config)
             except StructuredModelError as exc:
                 failures.append(f"{port.provider}:{type(exc).__name__}")
+                failure_details.append(f"{port.provider}:{_safe_failure_detail(exc)}")
                 continue
             self.last_call = port.last_call
             self.failures = tuple(failures)
+            self.failure_details = tuple(failure_details)
             return value
         self.last_call = None
         self.failures = tuple(failures)
+        self.failure_details = tuple(failure_details)
         raise StructuredModelError("all configured model profiles failed")
 
 
@@ -295,6 +300,20 @@ def _required_env(env: Mapping[str, str], name: str) -> str:
 
 def _env_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_failure_detail(error: StructuredModelError) -> str:
+    """Retain only known transport/schema classes; never relay provider text."""
+
+    detail = str(error)
+    safe_prefixes = (
+        "model endpoint returned HTTP ",
+        "model endpoint unavailable",
+        "model endpoint returned invalid JSON",
+        "model endpoint returned a non-object response",
+        "structured response failed ",
+    )
+    return detail[:200] if detail.startswith(safe_prefixes) else type(error).__name__
 
 
 def _post_json(

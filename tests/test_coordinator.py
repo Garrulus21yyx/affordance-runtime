@@ -8,7 +8,7 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.coordinator import PlannerDecision, RunCoordinator, _resolve_planner_decision
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
@@ -343,6 +343,16 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
     ]
     assert "PlannerProposalProduced" in [node.kind for node in result.trace.nodes]
     assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
+
+
+def test_async_planner_resolution_works_inside_an_existing_event_loop() -> None:
+    async def decide() -> PlannerDecision:
+        return PlannerDecision(done=True, result={"ok": True})
+
+    async def outer() -> PlannerDecision:
+        return _resolve_planner_decision(decide())
+
+    assert asyncio.run(outer()).result == {"ok": True}
 
 
 def test_coordinator_rejects_stale_task_revision_before_execution() -> None:

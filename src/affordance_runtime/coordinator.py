@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Protocol
 from uuid import uuid4
 
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
+from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
 from affordance_runtime.model_port import ModelCallRecord
@@ -189,6 +190,7 @@ class RunCoordinator:
                 decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
             except Exception as exc:
                 planner_error = f"{type(exc).__name__}: {exc}"
+                model = getattr(self.planner, "model", None)
                 state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(
                     "PlannerProposalRejected",
@@ -196,6 +198,7 @@ class RunCoordinator:
                         "state": state.phase,
                         "error_code": RuntimeErrorCode.PLANNER_FAILED.value,
                         "reason": planner_error[:500],
+                        "fallback_failures": list(getattr(model, "failure_details", ())),
                     },
                     parents=[parent.id],
                 )
@@ -900,7 +903,7 @@ def _resolve_planner_decision(
 ) -> PlannerDecision:
     if not inspect.isawaitable(value):
         return value
-    return asyncio.run(_await_planner_decision(value))
+    return resolve_awaitable(_await_planner_decision(value))
 
 
 async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:

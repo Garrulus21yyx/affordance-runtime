@@ -171,3 +171,4 @@ def test_fallback_model_port_uses_next_profile_and_sanitizes_failure() -> None:
 
     assert result.value == "fallback"
     assert port.failures == ("failed:StructuredModelError",)
+    assert port.failure_details == ("failed:StructuredModelError",)
