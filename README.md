@@ -37,25 +37,29 @@ Implemented skeleton:
 
 - typed affordance, action, receipt, risk, trace, and benchmark models
 - migrated DOM, Set-of-Mark, and WoT adapter code
+- package-safe browser session wrapper with injectable Playwright-compatible driver
+- DOM, visual-pointer, and WoT contract executors with explicit backend dispatch
+- confidence/cost-aware backend selection and bounded recovery decisions
+- declarative precondition evaluation and JSONL trace persistence
 - single-contract execution path for debug and unit testing
-- initial capability, preflight, verifier, state, trace, and evolution modules
+- initial capability, verifier, state, benchmark, and evolution modules
 
 Partial:
 
 - long-task State Kernel lifecycle
-- lease/preflight semantics beyond revision equality
+- Playwright observer/executor integration beyond the injectable browser session
+- lease/preflight semantics beyond revision equality and declarative conditions
 - task constraints and approval token binding
+- recovery integration into the task-level coordinator
+- post-action observation and verifier evidence collection
 - benchmark metric protocol
 
 Planned before claiming a complete runtime:
 
-- Playwright observer and executor
 - task-level run context and explicit state machine
-- post-action observation and verification reports
-- artifact-backed trace writer
+- post-action observation and structured verification reports
 - local SaaS fixture and benchmark runner
 - CLI gold path
-- bounded recovery policy
 - baseline and ablation reports
 - assisted harness evolution after benchmark freeze
 - optional task-level MCP and framework integrations after the evolution loop
@@ -215,9 +219,13 @@ The initial skeleton is in `src/affordance_runtime`:
 - `contracts.py`: affordances, leases, action contracts, receipts, risk.
 - `state_kernel.py`: long-horizon task state and evidence obligations.
 - `runtime.py`: bounded contract execution loop.
-- `verification.py`: preflight checks and verifier ladder.
+- `browser_session.py`: package-safe browser lifecycle and coherent DOM capture.
+- `executors.py`: DOM, visual-pointer, and WoT contract executors.
+- `routing.py`: backend confidence tracking and cost-aware routing.
+- `recovery.py`: bounded, side-effect-aware recovery decisions.
+- `verification.py`: declarative preflight checks and verifier ladder.
 - `safety.py`: scoped capability and approval gate.
-- `trace.py`: causal trace events.
+- `trace.py`: causal trace events and JSONL persistence.
 - `evolution.py`: regression-gated evolution registry.
 - `adapters/dom.py`: migrated DOM transduction.
 - `adapters/som.py`: migrated Set-of-Marks grounding.

@@ -64,7 +64,12 @@ class AffordanceRuntime:
         observation_node = trace.add("observation", {"environment_revision": observation.environment_revision, "url": observation.url})
         contract_node = trace.add("contract", {"id": contract.id, "backend": contract.backend}, parents=[observation_node.id])
 
-        error = self.gate.check(contract) or preflight(contract, observation)
+        effective_gate = CapabilityGate(
+            granted_capabilities=self.gate.granted_capabilities | set(envelope.capabilities),
+            approval_required_risks=set(self.gate.approval_required_risks),
+            approved_contract_ids=set(self.gate.approved_contract_ids),
+        )
+        error = effective_gate.check(contract) or preflight(contract, observation)
         if error is not None:
             trace.add("blocked", {"error_code": error.value}, parents=[contract_node.id])
             return RuntimeResult(envelope.task_id, RuntimeStep.ABORTED, None, trace, error)
@@ -72,10 +77,22 @@ class AffordanceRuntime:
         receipt = self.executor.execute(contract, observation)
         state.record_receipt(receipt)
         receipt_node = trace.add("receipt", {"success": receipt.success, "backend": receipt.backend}, parents=[contract_node.id])
+        if receipt.contract_id != contract.id:
+            trace.add("verification", {"passed": False, "reason": "receipt contract mismatch"}, parents=[receipt_node.id])
+            return RuntimeResult(envelope.task_id, RuntimeStep.FAILED, receipt, trace, RuntimeErrorCode.EXECUTION_FAILED)
+        if not receipt.success:
+            trace.add("verification", {"passed": False, "reason": "execution failed"}, parents=[receipt_node.id])
+            return RuntimeResult(
+                envelope.task_id,
+                RuntimeStep.FAILED,
+                receipt,
+                trace,
+                receipt.error_code or RuntimeErrorCode.EXECUTION_FAILED,
+            )
         verified = self.verifier.verify(contract.verifier_plan, receipt, observation)
         trace.add("verification", {"passed": verified}, parents=[receipt_node.id])
 
-        if receipt.success and verified:
+        if verified:
             return RuntimeResult(envelope.task_id, RuntimeStep.DONE, receipt, trace)
         return RuntimeResult(envelope.task_id, RuntimeStep.FAILED, receipt, trace, RuntimeErrorCode.VERIFICATION_FAILED)
 

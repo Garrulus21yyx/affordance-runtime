@@ -61,6 +61,7 @@ class SomAdapter:
                         "screenshot_ref": screenshot_ref,
                     },
                     lease=lease,
+                    backend_candidates=["visual"],
                     confidence=confidence,
                     state={"ocr": region.get("ocr", "")},
                     risk=RiskLevel.LOW,

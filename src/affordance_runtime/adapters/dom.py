@@ -177,6 +177,7 @@ class DomAdapter:
                     action=action,
                     locator={"selector": selector, "strategy": "css"},
                     lease=lease,
+                    backend_candidates=["dom"],
                     confidence=0.0 if disabled else confidence,
                     state={"enabled": not disabled, "visible": True},
                     risk=RiskLevel.LOW,

@@ -17,10 +17,56 @@ surface area.
 | Page Affordance Model | `adapters.dom.PageAffordanceModel` |
 | Set-of-Marks parser | `adapters.som.SomAdapter` |
 | WoT TD parser | `adapters.wot.WotAdapter` |
-| Preconditions/postconditions | `verification.preflight` and `VerifierLadder` |
+| Browser session lifecycle | `browser_session.BrowserSession` with an injectable page driver; this is not PiP |
+| DOM/visual/WoT executors | `executors.DomExecutor`, `VisualExecutor`, and `WotExecutor` |
+| Confidence/cost router | `routing.BackendConfidenceTracker` and `CostAwareRouter` |
+| Preconditions/postconditions | safe declarative conditions, `verification.preflight`, and `VerifierLadder` |
+| Recovery policy | `recovery.BoundedRecoveryPolicy` with inspect-before-retry semantics |
 | Runtime state machine | `runtime.AffordanceRuntime` plus `StateKernel` |
-| Trace logger | causal `trace.TraceDag` |
+| Trace logger | validated `trace.TraceDag` plus `JsonlTraceWriter` |
 | Metrics aggregator | `benchmarks.metrics.aggregate` |
+
+The migration adapts algorithms and tests to the new contracts. It does not
+copy the old modules unchanged. Backends now execute an `ActionContract`,
+return an `ExecutionReceipt`, and use package-relative public imports under
+`affordance_runtime`.
+
+## Picture-in-Picture Clarification
+
+The old repository did not implement Picture-in-Picture. Its
+`BrowserSession` created a fresh Playwright browser context and described that
+cookie/storage isolation as a "PiP analogue." Session isolation and
+Picture-in-Picture are different capabilities.
+
+This migration keeps only the useful session mechanics:
+
+- injectable page driver;
+- browser/context ownership and cleanup;
+- coherent DOM capture and screenshot access;
+- DOM and coordinate action protocols.
+
+It does not migrate the PiP label or claim PiP support. A real PiP capability
+would need an independently visible surface or window, content-source updates,
+focus and input routing, close/restore lifecycle behavior, and dedicated
+evaluation. That feature is outside the current Web gold path until its use
+case and acceptance tests are defined.
+
+## Mature Code Migrated in This Pass
+
+- coherent browser-page capture and lifecycle cleanup;
+- deterministic DOM action execution with structured receipts;
+- visual pointer execution from bounding boxes or centers;
+- WoT form execution, minimum-interval gating, and explicit HTTP transport;
+- backend confidence decay/recovery and cost-aware selection;
+- bounded recovery for stale state, uncertain effects, retries, fallback,
+  compensation, approval, and abort;
+- safe AST-based condition evaluation instead of `eval`;
+- parent-validated JSONL trace persistence;
+- the WoT write-surface fix: a read form is no longer silently reused as a
+  write form.
+
+These components are usable independently, but the repository does not yet
+claim that they form the complete task-level observe-plan-act-verify loop.
 
 ## Not Migrated Into The Mainline
 
@@ -29,6 +75,10 @@ surface area.
 - MiniWoB/WebArena local clones.
 - Legacy branch/team workflow notes.
 - Course-specific artifacts and screenshots.
+- The old `pipeline.py` orchestration and `src.*` import graph.
+- Smart-room-specific skill tuples and demo-only action vocabulary.
+- Mandatory OpenAI, Anthropic, Playwright, and HTTP client dependencies.
+- The old "PiP isolation" label and its incorrect browser-context analogy.
 
 Those pieces are still useful as reference demos, but the new repository should
 stay focused on a planner-neutral GUI runtime that can be used standalone or as

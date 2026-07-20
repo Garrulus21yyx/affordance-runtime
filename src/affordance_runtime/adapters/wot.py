@@ -40,11 +40,18 @@ def _declared_ops(form: dict[str, Any]) -> list[str]:
     return [declared] if isinstance(declared, str) else list(declared or [])
 
 
-def _first_form(forms: list[dict[str, Any]], ops: tuple[str, ...]) -> dict[str, Any] | None:
+def _first_form(
+    forms: list[dict[str, Any]],
+    ops: tuple[str, ...],
+    *,
+    allow_implicit: bool = False,
+) -> dict[str, Any] | None:
     for form in forms:
         if any(op in _declared_ops(form) for op in ops):
             return form
-    return forms[0] if forms else None
+    if allow_implicit:
+        return next((form for form in forms if not _declared_ops(form)), None)
+    return None
 
 
 def _resolve_href(base: str, href: str) -> str:
@@ -68,7 +75,7 @@ class WotAdapter:
 
         for prop_name, prop in (td.get("properties") or {}).items():
             forms = list(prop.get("forms") or [])
-            read_form = _first_form(forms, ("readproperty", "observeproperty"))
+            read_form = _first_form(forms, ("readproperty", "observeproperty"), allow_implicit=True)
             if read_form is not None:
                 state_sources.append(
                     {
@@ -84,7 +91,7 @@ class WotAdapter:
                     affordances.append(self._affordance(thing_id, prop_name, "writeproperty", write_form, base, lease, "property"))
 
         for action_name, action in (td.get("actions") or {}).items():
-            form = _first_form(list(action.get("forms") or []), ("invokeaction",))
+            form = _first_form(list(action.get("forms") or []), ("invokeaction",), allow_implicit=True)
             if form is not None:
                 affordances.append(self._affordance(thing_id, action_name, "invokeaction", form, base, lease, "action"))
 
@@ -117,6 +124,7 @@ class WotAdapter:
             action=_OP_ACTION.get(op, "invoke"),
             locator={"thing_id": thing_id, "href": href, "method": str(form.get("htv:methodName") or _DEFAULT_METHOD[op]).upper()},
             lease=lease,
+            backend_candidates=["wot"],
             confidence=1.0,
             state={"content_type": form.get("contentType", "application/json")},
             risk=RiskLevel.MEDIUM if op == "invokeaction" else RiskLevel.LOW,

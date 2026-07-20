@@ -20,3 +20,19 @@ def test_wot_adapter_parses_runtime_td_affordances() -> None:
     assert len(model.state_sources) == 1
     assert {item.action for item in model.affordances} == {"write_property", "invoke"}
 
+
+def test_wot_adapter_does_not_infer_write_from_read_only_form() -> None:
+    td = {
+        "id": "sensor",
+        "properties": {
+            "temperature": {
+                "forms": [{"href": "http://fixture/temperature", "op": "readproperty"}],
+            }
+        },
+    }
+
+    model = WotAdapter().parse(td, environment_revision="rev-1")
+
+    assert len(model.state_sources) == 1
+    assert model.affordances == []
+

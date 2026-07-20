@@ -32,6 +32,8 @@ class RuntimeErrorCode(StrEnum):
     STALE_OBSERVATION = "stale_observation"
     PRECONDITION_FAILED = "precondition_failed"
     CAPABILITY_DENIED = "capability_denied"
+    BACKEND_UNAVAILABLE = "backend_unavailable"
+    EXECUTION_TIMEOUT = "execution_timeout"
     EXECUTION_FAILED = "execution_failed"
     VERIFICATION_FAILED = "verification_failed"
     UNSAFE_ACTION = "unsafe_action"
@@ -96,6 +98,7 @@ class Affordance:
     action: str
     locator: dict[str, Any]
     lease: AffordanceLease
+    backend_candidates: list[str] = field(default_factory=list)
     confidence: float = 1.0
     state: dict[str, Any] = field(default_factory=dict)
     risk: RiskLevel = RiskLevel.LOW
@@ -122,6 +125,7 @@ class ActionContract:
     backend: str
     environment_revision: str
     locator: dict[str, Any]
+    parameters: dict[str, Any] = field(default_factory=dict)
     preconditions: list[Condition] = field(default_factory=list)
     expected_effects: list[Condition] = field(default_factory=list)
     verifier_plan: list[VerifierSpec] = field(default_factory=list)
@@ -142,6 +146,7 @@ class ActionContract:
         expected_effects: list[Condition] | None = None,
         verifier_plan: list[VerifierSpec] | None = None,
         required_capabilities: list[str] | None = None,
+        parameters: dict[str, Any] | None = None,
     ) -> "ActionContract":
         return cls(
             id=f"contract_{affordance.id}",
@@ -151,6 +156,7 @@ class ActionContract:
             backend=backend,
             environment_revision=affordance.lease.environment_revision,
             locator=dict(affordance.locator),
+            parameters=parameters or {},
             expected_effects=expected_effects or [],
             verifier_plan=verifier_plan or [],
             required_capabilities=required_capabilities or [],
