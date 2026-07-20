@@ -284,6 +284,11 @@ uses its deterministic response and network-trace evaluators. Affordance
 Runtime must retain the upstream results rather than replacing them with a
 local score approximation.
 
+`affordance-runtime evaluate-webarena-verified` supplies that boundary. It
+passes the digest-bound manifest IDs to upstream without a shell, retains every
+upstream `eval_result.json`, computes only a transparent aggregate of upstream
+scores, and fails if any requested task lacks an official result.
+
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading
 semantics; keep contracts, policy, verification, recovery, trace, and

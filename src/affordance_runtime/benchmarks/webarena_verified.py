@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -104,3 +105,74 @@ def write_webarena_verified_subset(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
+
+
+def evaluate_webarena_verified_manifest(
+    manifest_path: Path,
+    agent_logs_dir: Path,
+    *,
+    config_path: Path | None = None,
+    executable: str = "webarena-verified",
+    runner: Any = subprocess.run,
+) -> dict[str, Any]:
+    """Delegate scoring to upstream's deterministic evaluator without a shell."""
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "webarena-verified-subset-v1":
+        raise ValueError("invalid WebArena-Verified subset manifest")
+    task_ids = manifest.get("task_ids")
+    if not isinstance(task_ids, list) or any(isinstance(value, bool) or not isinstance(value, int) for value in task_ids):
+        raise ValueError("WebArena-Verified manifest task_ids must be an integer array")
+    command = [
+        executable,
+        "eval-tasks",
+        "--task-ids",
+        ",".join(str(task_id) for task_id in task_ids),
+        "--output-dir",
+        str(agent_logs_dir),
+    ]
+    if config_path is not None:
+        command.extend(["--config", str(config_path)])
+    try:
+        completed = runner(command, check=False, capture_output=True, text=True)
+    except OSError as exc:
+        return _evaluation_report(manifest, command, task_ids, {}, f"official evaluator unavailable: {type(exc).__name__}")
+    if completed.returncode != 0:
+        return _evaluation_report(manifest, command, task_ids, {}, f"official evaluator failed: exit_{completed.returncode}")
+    results: dict[int, dict[str, Any]] = {}
+    for task_id in task_ids:
+        path = agent_logs_dir / str(task_id) / "eval_result.json"
+        if not path.exists():
+            continue
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(value, dict):
+            results[task_id] = value
+    return _evaluation_report(manifest, command, task_ids, results, "")
+
+
+def _evaluation_report(
+    manifest: dict[str, Any],
+    command: list[str],
+    task_ids: list[int],
+    results: dict[int, dict[str, Any]],
+    evaluator_error: str,
+) -> dict[str, Any]:
+    missing = [task_id for task_id in task_ids if task_id not in results]
+    scores = [float(result["score"]) for result in results.values() if isinstance(result.get("score"), (int, float))]
+    report = {
+        "schema_version": "webarena-verified-evaluation-v1",
+        "official_evaluator": "webarena-verified eval-tasks",
+        "source_dataset_sha256": manifest.get("source_dataset_sha256", ""),
+        "manifest_task_ids": task_ids,
+        "evaluated_task_count": len(results),
+        "missing_result_ids": missing,
+        "mean_official_score": sum(scores) / len(scores) if scores else 0.0,
+        "upstream_results": {str(task_id): results[task_id] for task_id in sorted(results)},
+        "command": command,
+        "acceptance_errors": [],
+    }
+    if evaluator_error:
+        report["acceptance_errors"].append(evaluator_error)
+    if missing:
+        report["acceptance_errors"].append(f"missing official results: {len(missing)}")
+    return report

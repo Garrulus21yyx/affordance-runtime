@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from affordance_runtime.benchmarks.webarena_verified import (
+    evaluate_webarena_verified_manifest,
     load_webarena_verified_tasks,
     select_stratified_webarena_subset,
     write_webarena_verified_subset,
@@ -60,3 +61,62 @@ def test_webarena_dataset_rejects_duplicate_task_ids(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate WebArena-Verified task id"):
         load_webarena_verified_tasks(path)
+
+
+def test_webarena_evaluation_delegates_to_upstream_and_preserves_results(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "webarena-verified-subset-v1",
+                "source_dataset_sha256": "sha256:source",
+                "task_ids": [1, 2],
+            }
+        ),
+        encoding="utf-8",
+    )
+    logs = tmp_path / "logs"
+    for task_id, score in ((1, 1.0), (2, 0.0)):
+        task_dir = logs / str(task_id)
+        task_dir.mkdir(parents=True)
+        (task_dir / "eval_result.json").write_text(
+            json.dumps({"task_id": task_id, "score": score, "status": "success"}), encoding="utf-8"
+        )
+    commands: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+
+    def runner(command: list[str], **kwargs: object) -> Completed:
+        commands.append(command)
+        assert kwargs == {"check": False, "capture_output": True, "text": True}
+        return Completed()
+
+    report = evaluate_webarena_verified_manifest(
+        manifest, logs, config_path=tmp_path / "config.json", runner=runner
+    )
+
+    assert commands == [
+        [
+            "webarena-verified", "eval-tasks", "--task-ids", "1,2", "--output-dir", str(logs),
+            "--config", str(tmp_path / "config.json"),
+        ]
+    ]
+    assert report["mean_official_score"] == 0.5
+    assert report["upstream_results"]["1"]["score"] == 1.0
+    assert report["acceptance_errors"] == []
+
+
+def test_webarena_evaluation_fails_closed_when_upstream_results_are_missing(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"schema_version": "webarena-verified-subset-v1", "task_ids": [1]}))
+
+    class Completed:
+        returncode = 0
+
+    report = evaluate_webarena_verified_manifest(
+        manifest, tmp_path / "logs", runner=lambda *_args, **_kwargs: Completed()
+    )
+
+    assert report["missing_result_ids"] == [1]
+    assert report["acceptance_errors"] == ["missing official results: 1"]
