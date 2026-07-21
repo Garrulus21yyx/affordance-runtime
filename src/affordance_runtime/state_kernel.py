@@ -12,6 +12,7 @@ from typing import Any
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.recovery import RecoveryIncident
+from affordance_runtime.task_planning import PlanProgress, TaskPlan
 from affordance_runtime.verification import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -36,6 +37,8 @@ class StateKernel:
     goal: str
     constraints: dict[str, Any] = field(default_factory=dict)
     subgoals: list[str] = field(default_factory=list)
+    task_plan: TaskPlan | None = None
+    plan_progress: PlanProgress | None = None
     evidence: list[str] = field(default_factory=list)
     hidden_state_hypotheses: list[str] = field(default_factory=list)
     pending_obligations: list[str] = field(default_factory=list)
@@ -83,6 +86,33 @@ class StateKernel:
 
     def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
         self.planner_history.append(proposal)
+        self.version += 1
+
+    def install_task_plan(self, plan: TaskPlan) -> None:
+        """Attach a validated immutable plan without advancing any subgoal."""
+
+        if plan.task_id != self.task_id:
+            raise ValueError("TaskPlan task_id does not match run state")
+        self.task_plan = plan
+        self.plan_progress = PlanProgress()
+        self.subgoals = [item.objective for item in plan.subgoals]
+        self.version += 1
+
+    def active_subgoal(self) -> str:
+        if self.task_plan is None or self.plan_progress is None:
+            return self.subgoals[-1] if self.subgoals else ""
+        identifier = self.plan_progress.activate_next(self.task_plan)
+        return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
+
+    def complete_subgoal(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
+        if self.task_plan is None or self.plan_progress is None:
+            raise ValueError("cannot complete a subgoal without a TaskPlan")
+        if subgoal_id not in {item.subgoal_id for item in self.task_plan.subgoals}:
+            raise ValueError("unknown TaskPlan subgoal")
+        self.plan_progress.complete(subgoal_id, evidence)
+        for item in evidence:
+            if item not in self.evidence:
+                self.evidence.append(item)
         self.version += 1
 
     def current_revision(self) -> str:

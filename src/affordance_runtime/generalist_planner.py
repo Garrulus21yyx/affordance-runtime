@@ -171,7 +171,7 @@ def build_planner_context(
     )
     return PlannerContext(
         task_spec=task_spec.model_dump(mode="json"),
-        active_subgoal=state.subgoals[-1] if state.subgoals else task_spec.objective,
+            active_subgoal=state.active_subgoal() or task_spec.objective,
         affordances=tuple(
             AffordanceSummary(
                 id=item.id,

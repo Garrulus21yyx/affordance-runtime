@@ -732,10 +732,16 @@ cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - planned
+### M8.4: Adaptive Shallow Task Planning - in progress
 
 Implement the bounded design in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
+
+The first implementation slice now provides immutable `TaskPlan`/
+`SubgoalSpec`, separate `PlanProgress`, `TaskPlanValidator`, a flat-path
+`PlanningRouter`/`RuleTaskPlanner`, and StateKernel storage. Coordinator-owned
+verifier advancement, bounded repair, task-level replanning, and ablations
+remain required before this milestone can exit.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
   deterministic `RuleTaskPlanner`;

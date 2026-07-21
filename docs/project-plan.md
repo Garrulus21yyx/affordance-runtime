@@ -157,7 +157,7 @@ evidence level. See
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
 | M8.2B Public Benchmark Expansion | in progress | generalist PR matrix reaches 18/18 coverage and 15/18 official success; public suite runners and larger matrices remain |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
-| M8.4 Adaptive Shallow Task Planning | planned | rule-first/LM-fallback task decomposition, mandatory validation, serial verifier-backed subgoal progress, and flat/always/adaptive ablation |
+| M8.4 Adaptive Shallow Task Planning | in progress | immutable task-plan/validation and flat-router foundation is implemented; rule/LM task decomposition, Coordinator verifier-backed progress, and flat/always/adaptive ablation remain |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -528,7 +528,7 @@ accepted policy artifact, and shown through fresh replays, persisted registries,
 uncertain-effect inspection, and rollback not to introduce duplicate effects,
 blind retries, or safety regressions. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - planned
+### M8.4: Adaptive Shallow Task Planning - in progress
 
 Add an optional task-level layer above the implemented action planner. A
 deterministic router keeps simple tasks flat, uses accepted rule/skill templates
