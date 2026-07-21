@@ -700,6 +700,7 @@ Recommended execution order:
 generalist PR rerun and form semantics
   -> resumable 30 x 10 MiniWoB nightly
   -> ScreenSpot assets and visual grounding
+  -> M8.4 adaptive shallow-planning controlled gate
   -> one real WebArena-Verified task, then the 30-task subset
   -> WASP security subset
   -> WorkArena when authorized access is available
@@ -729,6 +730,35 @@ into fresh original/family/global/safety candidates; it reduces the matched
 cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
+
+### M8.4: Adaptive Shallow Task Planning - planned
+
+Implement the bounded design in
+[Task Intake and Generalist Planner](task-intake-and-planner.md):
+
+- route simple tasks to one synthetic subgoal and exact accepted templates to a
+  deterministic `RuleTaskPlanner`;
+- use `LLMTaskPlanner` only for open-world, multi-stage, cross-application, or
+  data-dependent tasks;
+- validate rule, LM, parent, and evolution plans through one deterministic
+  `TaskPlanValidator`;
+- represent 3-8 outcome-oriented subgoals with optional `depends_on`, while
+  executing one ready subgoal at a time;
+- keep the existing `GeneralistLMPlanner` as the one-action planner inside each
+  subgoal;
+- let verifier evidence, never planner self-report, advance plan progress;
+- reserve task-level replanning for disproved assumptions, exhausted subgoal
+  budgets, TaskSpec revision, missing mandatory stages, or repeated-error
+  incidents;
+- compare Flat, Always-plan, and Adaptive profiles.
+
+Exit: simple tasks retain the flat path; at least one controlled long-horizon
+family improves without regressing short-task safety; traces distinguish task
+planning, action planning, local recovery, and task-level replanning.
+
+This milestone does not add recursive hierarchy, parallel effectful subgoals, a
+generic DAG scheduler, one agent per node, continuous watching, or a runtime
+framework dependency.
 
 ### M9: Durable Single-Run Recovery - conditional
 

@@ -29,6 +29,7 @@ Status values:
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
 | M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym v8 PR matrix: 18/18 coverage, 15/18 official success with no 429/timeout; `press_key` executed on the remaining form tasks, whose behavioral gap remains explicit. ScreenSpot, WorkArena, WebArena-Verified, and WASP preparation gates added | documentation/dependency/module consolidation, official ScreenSpot assets/predictions, authorized WorkArena instance, provisioned WebArena environments/logs, current-planner/nightly/release matrices, slider behavioral coverage, and WASP end-to-end run |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
+| M8.4 Adaptive Shallow Task Planning | planned | current planner remains one-action-at-a-time; authoritative design is frozen in `task-intake-and-planner.md` | implement router, rule/LM task planners, TaskPlanValidator, verifier-backed progress, and ablation after M8.2B consolidation |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -186,6 +187,15 @@ cascade was stopped online at depth two; its quarantined policy reduced fresh
 original/family replays to depth one, passed global and uncertain-effect safety
 smoke with no blind retry, persisted acceptance, and proved rollback. See
 `evidence/m8.3-07e406f.md`.
+
+### M8.4 Adaptive Shallow Task Planning - planned
+
+The current `GeneralistLMPlanner` is action-level; `StateKernel.subgoals`
+does not yet provide a first-class task plan, dependency validation, or
+verifier-backed subgoal lifecycle. The planned M8.4 layer adds adaptive
+rule/LM task planning, mandatory validation, serial outcome-oriented progress,
+and Flat/Always-plan/Adaptive ablation without adding a DAG scheduler or a
+second execution runtime.
 
 ## Verification Commands
 

@@ -20,9 +20,9 @@ natural-language understanding and planning
   != success verification
 ```
 
-The current `TaskEnvelope(goal: str)` and scripted planners are executable
-runtime scaffolding. They do not yet constitute general user-intent
-understanding.
+The raw-request pipeline, typed `TaskSpec`, and action-level
+`GeneralistLMPlanner` are implemented. `TaskEnvelope(goal: str)` remains a
+compatibility path, not the long-term authority boundary.
 
 ## 2. End-to-End Chain
 
@@ -32,6 +32,10 @@ UserRequest or Parent Task
   -> IntentDraft
   -> deterministic validation and policy intersection
   -> immutable TaskSpec revision
+  -> initial observation
+  -> adaptive task-planning router
+  -> optional shallow TaskPlan
+  -> active outcome-oriented subgoal
   -> GeneralistLMPlanner
   -> PlannerProposal
   -> Grounder / ContractBuilder
@@ -325,6 +329,156 @@ AgentLab or BrowserGym action strings must be intercepted and translated into
 `PlannerProposal`. They may not call `env.step()` or an executor outside the
 Coordinator.
 
+### 6.4 Adaptive Shallow Task Planning - planned
+
+The implemented `GeneralistLMPlanner` remains the action-level planner: it
+selects one semantic action from the latest affordance snapshot. A planned,
+optional task-level layer decomposes a complex `TaskSpec` into a small number
+of verifiable outcomes before action selection.
+
+The design is adaptive rather than always hierarchical:
+
+```text
+simple task
+  -> one synthetic subgoal
+  -> existing action-level loop
+
+complex or long-horizon task
+  -> shallow TaskPlan
+  -> serial subgoal execution
+  -> existing action-level loop per subgoal
+```
+
+The supported hierarchy is exactly two levels:
+
+```text
+TaskSpec
+  -> outcome-oriented SubgoalSpec
+    -> observe / plan one action / act / verify
+```
+
+Do not add nested phases, per-subgoal agents, or a generic workflow engine.
+
+#### Planning router
+
+A deterministic `PlanningRouter` selects the path:
+
+- blocking user-intent ambiguity returns clarification before any planner;
+- a single target with one directly verifiable success condition uses a
+  synthetic single-subgoal plan;
+- an exact accepted skill or task template uses `RuleTaskPlanner`;
+- open-world, multi-stage, cross-application, or data-dependent work uses
+  `LLMTaskPlanner`;
+- a rule skeleton may lock mandatory outcomes and constraints while the LM
+  fills only explicitly open slots.
+
+User-intent ambiguity is not an LM-planning problem. Recipients, destructive
+scope, amounts, credentials, payment, or external communication channels are
+never guessed. Environmental ambiguity, such as an unknown application path,
+may be explored by the LM within read, action, and recovery budgets.
+
+#### TaskPlan contract
+
+`TaskPlan` is immutable and versioned:
+
+```text
+plan_id
+task_id
+task_revision
+plan_version
+based_on_state_version
+generated_by: rule | llm | parent | skill
+subgoals[]
+assumptions[]
+```
+
+Each `SubgoalSpec` contains:
+
+```text
+subgoal_id
+objective
+depends_on[]
+success_criteria[]
+evidence_requirements[]
+operation_class
+max_actions
+max_recoveries
+```
+
+Subgoals describe desired environment states, not UI scripts. They may not
+contain selectors, coordinates, backend handles, executable code, approval
+tokens, or granted capabilities.
+
+`depends_on` permits a bounded partial order and future-proofs the schema. The
+current runtime selects one ready subgoal at a time and executes serially. It
+does not implement parallel nodes, fan-out/fan-in, a DAG scheduler, or multiple
+agents controlling one session. Initial plans are limited to 3-8 subgoals;
+simple tasks use one.
+
+Mutable progress is separate from the immutable plan:
+
+```text
+active_subgoal_id
+completed_subgoal_ids
+failed_subgoal_ids
+evidence_by_subgoal
+task_replan_count
+```
+
+#### Mandatory validation
+
+Every plan candidate passes the same deterministic `TaskPlanValidator`,
+whether produced by rules, an LM, a parent agent, or an accepted evolution
+artifact. Validation includes:
+
+- matching task and state revisions;
+- unique IDs, valid dependencies, and cycle rejection;
+- bounded subgoal and budget counts;
+- at least one terminal outcome;
+- verifiable completion and evidence requirements for every subgoal;
+- preservation of TaskSpec constraints and forbidden effects;
+- no capability grant, approval, selector, coordinate, or executable action;
+- operation classes compatible with task policy.
+
+The validator returns `ACCEPT`, `REPAIRABLE`, or `REJECT`. An LM candidate
+may receive one bounded repair attempt with structured validation errors. An
+invalid rule plan is an engineering/configuration failure and is not silently
+hidden by an LM fallback.
+
+`TaskPlanValidator` does not replace proposal validation, contract building,
+preflight, or post-action verification. Each model-controlled boundary retains
+its own typed, deterministic gate.
+
+#### Loop and replanning ownership
+
+`RunCoordinator`, not `TaskPlanner`, owns the dynamic environment loop. For
+the active subgoal it repeatedly:
+
+```text
+observe
+  -> action-level PlannerProposal
+  -> validate and build ActionContract
+  -> preflight
+  -> execute
+  -> post-action observe
+  -> verify action effect and subgoal criteria
+```
+
+Only verifier evidence advances a subgoal. Planner self-report does not.
+Selector drift, stale leases, temporary disabled state, ordinary modals, and
+single-action failures stay inside local observation, action replanning, or
+bounded recovery.
+
+Task-level replanning occurs only when a subgoal remains unreachable after its
+local budget, a plan assumption is disproved, a newly discovered mandatory
+stage is missing, TaskSpec is revised, constraints change, or a repeated-error
+incident shows that the plan structure is invalid. Replanning preserves
+verified completed outcomes and creates a new plan version.
+
+Post-action observation remains mandatory. Navigation, modal, and download
+hooks may provide targeted feedback; a continuous watcher remains deferred
+until benchmark evidence shows an advantage.
+
 ## 7. Multimodal and Cross-Surface Planning
 
 The planner consumes one common affordance envelope with typed payloads.
@@ -491,6 +645,30 @@ AgentLabPlannerAdapter -> Affordance Runtime
 
 This isolates the value of contracts, policy, verification, recovery, and trace.
 
+### 11.4 Adaptive Planning Ablation
+
+Evaluate task-level planning separately from action-level planning:
+
+```text
+Flat: one synthetic subgoal for every task
+Always-plan: LLM TaskPlan for every task
+Adaptive: deterministic router + rule/LLM TaskPlanner
+```
+
+Compare:
+
+- verified task and subgoal success;
+- model calls, tokens, latency, and action count;
+- task-plan validation and repair rate;
+- local action replan versus task-level replan rate;
+- plan invalidation and repeated-error rate;
+- policy violations and verifier false accepts.
+
+MiniWoB-style short tasks should demonstrate that adaptive routing preserves
+the flat path. A controlled multi-stage local task and available
+WebArena/WorkArena long-horizon tasks should test whether shallow planning
+improves completion without excessive inference or stale-plan overhead.
+
 ## 12. Implementation Milestone: M8.2A
 
 ### Deliverables
@@ -527,7 +705,44 @@ M8.2A is complete when:
 - prompt/model/schema versions and proposal-to-contract lineage are traceable;
 - compiler and planner failures are reported separately from runtime failures.
 
-## 13. Scope Control
+## 13. Implementation Milestone: M8.4
+
+### Adaptive Shallow Task Planning - planned
+
+Entry:
+
+- the M8.2B consolidation gate and current action-planner PR profile are
+  reproducible;
+- the TaskPlan, SubgoalSpec, validation-report, and progress schemas are frozen;
+- at least one controlled multi-stage scenario has independent subgoal oracles.
+
+Deliverables:
+
+1. Add `TaskPlannerPort`, `PlanningRouter`, `RuleTaskPlanner`, and
+   `LLMTaskPlanner`.
+2. Add immutable `TaskPlan`/`SubgoalSpec` and separate mutable
+   `PlanProgress`.
+3. Add deterministic `TaskPlanValidator` with one bounded LM repair path.
+4. Let the Coordinator select one ready subgoal while preserving its existing
+   single-writer and single-action semantics.
+5. Advance subgoals only from verifier-backed evidence.
+6. Add explicit local-action and task-level replan reasons to trace.
+7. Run Flat, Always-plan, and Adaptive ablations.
+
+Exit:
+
+- simple tasks bypass LM task planning and retain their existing runtime path;
+- complex tasks execute 3-8 outcome subgoals through the same action planner,
+  contracts, preflight, verification, recovery, and trace;
+- invalid rule, LM, parent, and evolution plans fail the same validation gate;
+- no plan can grant authority or contain an executable GUI target;
+- no effectful subgoals execute in parallel;
+- adaptive planning improves at least one controlled long-horizon task family
+  without regressing the short-task safety suite;
+- a full trace distinguishes task planning, action planning, local recovery,
+  and task-level replanning.
+
+## 14. Scope Control
 
 Not required for M8.2A:
 
@@ -539,6 +754,15 @@ Not required for M8.2A:
 - arbitrary code-generation actions;
 - desktop/mobile execution;
 - a mandatory LangGraph dependency.
+
+Not required for M8.4:
+
+- a generic DAG scheduler or graph database;
+- parallel subgoal execution;
+- recursive planning hierarchies;
+- one agent per subgoal;
+- continuous environment watching;
+- a workflow-framework dependency in runtime core.
 
 The target is a complete real-user planning loop with one mature, replaceable
 LM planner, not a new general-purpose agent framework.

@@ -157,6 +157,7 @@ evidence level. See
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
 | M8.2B Public Benchmark Expansion | in progress | generalist PR matrix reaches 18/18 coverage and 15/18 official success; public suite runners and larger matrices remain |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
+| M8.4 Adaptive Shallow Task Planning | planned | rule-first/LM-fallback task decomposition, mandatory validation, serial verifier-backed subgoal progress, and flat/always/adaptive ablation |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -526,6 +527,26 @@ safely stopped online, classified offline, reduced from depth two to one by an
 accepted policy artifact, and shown through fresh replays, persisted registries,
 uncertain-effect inspection, and rollback not to introduce duplicate effects,
 blind retries, or safety regressions. See `evidence/m8.3-07e406f.md`.
+
+### M8.4: Adaptive Shallow Task Planning - planned
+
+Add an optional task-level layer above the implemented action planner. A
+deterministic router keeps simple tasks flat, uses accepted rule/skill templates
+for exact cases, and calls an LM task planner only for open-world or multi-stage
+work.
+
+Every source produces the same immutable, versioned `TaskPlan` with 3-8
+outcome-oriented `SubgoalSpec` items and optional `depends_on`. A
+deterministic validator rejects cycles, stale revisions, unbounded plans,
+unverifiable outcomes, constraint loss, authority grants, selectors,
+coordinates, and executable actions. The Coordinator executes one ready
+subgoal at a time through the existing observe/propose/contract/preflight/act/
+post-observe/verify loop; only verifier evidence advances progress.
+
+Evaluate Flat, Always-plan, and Adaptive profiles on short tasks and a
+controlled long-horizon family before using the layer for WebArena/WorkArena.
+Do not add a generic DAG scheduler, recursive hierarchy, parallel effectful
+nodes, per-node agents, or continuous watching.
 
 ### M9: Durable Single-Run Recovery - conditional
 
