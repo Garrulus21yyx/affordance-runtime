@@ -115,6 +115,34 @@ class StateKernel:
                 self.evidence.append(item)
         self.version += 1
 
+    def record_subgoal_action(self) -> None:
+        if self.task_plan is None or self.plan_progress is None:
+            return
+        subgoal_id = self.plan_progress.active_subgoal_id or self.plan_progress.activate_next(self.task_plan)
+        if subgoal_id:
+            self.plan_progress.record_action(subgoal_id)
+            self.version += 1
+
+    def replace_task_plan(self, plan: TaskPlan) -> None:
+        """Replace only unfinished structure while preserving verified outcomes."""
+
+        if self.task_plan is None or self.plan_progress is None:
+            raise ValueError("cannot replace a missing TaskPlan")
+        if plan.task_id != self.task_id:
+            raise ValueError("TaskPlan task_id does not match run state")
+        new_ids = {item.subgoal_id for item in plan.subgoals}
+        completed = set(self.plan_progress.completed_subgoal_ids)
+        if not completed.issubset(new_ids):
+            raise ValueError("replanned TaskPlan must preserve verified subgoals")
+        self.task_plan = plan
+        self.plan_progress = PlanProgress(
+            completed_subgoal_ids=list(self.plan_progress.completed_subgoal_ids),
+            evidence_by_subgoal={key: list(value) for key, value in self.plan_progress.evidence_by_subgoal.items()},
+            task_replan_count=self.plan_progress.task_replan_count + 1,
+        )
+        self.subgoals = [item.objective for item in plan.subgoals]
+        self.version += 1
+
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""
 

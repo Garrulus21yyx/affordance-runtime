@@ -744,8 +744,10 @@ creates/validates a plan after its initial observation, advances one serial
 subgoal only from passed verifier evidence, and rejects planner completion
 before all subgoals are verified. `LLMTaskPlanner` generates an outcome-only
 candidate and receives one bounded deterministic-validation repair attempt.
-Task-level replanning and ablations remain required before this milestone can
-exit.
+Task-level replanning occurs after a local subgoal action budget is exhausted,
+preserves verified subgoals/evidence, and is traced separately from local
+recovery. Controlled long-horizon evaluation and ablations remain required
+before this milestone can exit.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
   deterministic `RuleTaskPlanner`;

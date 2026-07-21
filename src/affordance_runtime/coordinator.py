@@ -195,6 +195,51 @@ class RunCoordinator:
             self._index(trace, observation_ref)
             self._index_paths(trace, snapshot.observation.artifact_refs)
 
+            if (
+                self.task_planner is not None
+                and envelope.task_spec is not None
+                and state.task_plan is not None
+                and state.plan_progress is not None
+                and state.plan_progress.action_budget_exhausted(state.task_plan)
+            ):
+                previous_plan = state.task_plan
+                try:
+                    task_plan = _resolve_task_plan(
+                        self.task_planner.plan(envelope.task_spec, state_version=state.version)
+                    )
+                    report = self.task_plan_validator.validate(task_plan, envelope.task_spec, state_version=state.version)
+                    if report.status != TaskPlanValidationStatus.ACCEPT:
+                        raise ValueError(f"task replan validation: {report.status.value}")
+                    state.replace_task_plan(task_plan)
+                except Exception as exc:
+                    state.transition(RuntimeStep.FAILED.value)
+                    parent = trace.add(
+                        "TaskReplanRejected",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "reason": f"{type(exc).__name__}: {exc}"[:500],
+                        },
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope, state, trace, RuntimeStep.FAILED, parent,
+                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED, latest_verification,
+                    )
+                parent = trace.add(
+                    "TaskReplanned",
+                    {
+                        "state": state.phase,
+                        "reason": "subgoal_action_budget_exhausted",
+                        "previous_plan_id": previous_plan.plan_id,
+                        "plan_id": task_plan.plan_id,
+                        "plan_version": task_plan.plan_version,
+                        "preserved_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                        "active_subgoal": state.active_subgoal(),
+                    },
+                    parents=[parent.id],
+                )
+
             if self.task_planner is not None and state.task_plan is None:
                 if envelope.task_spec is None:
                     state.transition(RuntimeStep.FAILED.value)
@@ -632,6 +677,7 @@ class RunCoordinator:
             receipt = self.executor.execute(contract, execution_observation)
             state.record_receipt(receipt)
             state.step_count += 1
+            state.record_subgoal_action()
             if contract.required_capabilities:
                 state.effectful_action_count += 1
             receipt_ref = self._write_receipt(envelope.task_id, state.step_count, receipt)

@@ -71,6 +71,7 @@ class PlanProgress:
     completed_subgoal_ids: list[str] = field(default_factory=list)
     failed_subgoal_ids: list[str] = field(default_factory=list)
     evidence_by_subgoal: dict[str, list[str]] = field(default_factory=dict)
+    action_count_by_subgoal: dict[str, int] = field(default_factory=dict)
     task_replan_count: int = 0
 
     def ready_subgoal_ids(self, plan: TaskPlan) -> tuple[str, ...]:
@@ -95,6 +96,14 @@ class PlanProgress:
         self.evidence_by_subgoal[subgoal_id] = list(dict.fromkeys(evidence))
         if self.active_subgoal_id == subgoal_id:
             self.active_subgoal_id = ""
+
+    def record_action(self, subgoal_id: str) -> None:
+        self.action_count_by_subgoal[subgoal_id] = self.action_count_by_subgoal.get(subgoal_id, 0) + 1
+
+    def action_budget_exhausted(self, plan: TaskPlan) -> bool:
+        active_id = self.active_subgoal_id
+        subgoal = next((item for item in plan.subgoals if item.subgoal_id == active_id), None)
+        return subgoal is not None and self.action_count_by_subgoal.get(active_id, 0) >= subgoal.max_actions
 
 
 class TaskPlanValidationIssue(StrictModel):

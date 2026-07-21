@@ -17,6 +17,7 @@ from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposal,
 )
+from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryDecision
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
@@ -166,6 +167,21 @@ class TwoStageObserver:
         return self.snapshots.pop(0)
 
 
+class ReplanObserver:
+    def __init__(self) -> None:
+        self.snapshots = [
+            _snapshot(1),
+            _snapshot(1),
+            _snapshot(2),
+            _snapshot(2),
+            _snapshot(2),
+            _snapshot(3, saved=True),
+        ]
+
+    def capture(self) -> BrowserSnapshot:
+        return self.snapshots.pop(0)
+
+
 class TwoStageTaskPlanner:
     def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
         return TaskPlan(
@@ -248,6 +264,53 @@ def test_task_plan_rejects_planner_finish_without_verifier_backed_progress() -> 
     assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
     assert result.state.plan_progress is not None
     assert result.state.plan_progress.completed_subgoal_ids == []
+
+
+class ReplanningTaskPlanner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+        self.calls += 1
+        return TaskPlan(
+            plan_id=f"plan-replanned-{self.calls}",
+            task_id=task_spec.task_id,
+            task_revision=task_spec.revision,
+            plan_version=self.calls,
+            based_on_state_version=state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="write",
+                    objective="Write settings",
+                    success_criteria=("settings are saved",),
+                    evidence_requirements=("saved observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    max_actions=1 if self.calls == 1 else 2,
+                ),
+            ),
+        )
+
+
+def test_coordinator_replans_only_after_active_subgoal_action_budget_is_exhausted() -> None:
+    planner = ReplanningTaskPlanner()
+    result = RunCoordinator(
+        observer=ReplanObserver(),
+        planner=SubgoalAwarePlanner(),
+        executor=FakeExecutor(),
+        task_planner=planner,
+        recovery=BoundedRecoveryPolicy(
+            decision_override=lambda contract, receipt, context, error: RecoveryDecision(
+                RecoveryAction.REOBSERVE, "test local recovery"
+            )
+        ),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.DONE
+    assert planner.calls == 2
+    assert result.state.plan_progress is not None
+    assert result.state.plan_progress.task_replan_count == 1
+    assert "TaskReplanned" in [node.kind for node in result.trace.nodes]
 
 
 class RepeatingPlanner:
