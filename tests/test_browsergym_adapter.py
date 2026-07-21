@@ -15,6 +15,7 @@ from affordance_runtime.benchmarks.browsergym import (
     BrowserGymPolicyRequest,
     GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
+    _browsergym_model_timeout_s,
     _close_quietly,
     _load_browsergym_checkpoints,
     _prepare_browsergym_checkpoint_metadata,
@@ -329,6 +330,8 @@ def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(
     assert report["runtime_error_counts"] == {}
     assert report["official_track"] is True
     assert report["fault_injection"] is False
+    assert _browsergym_model_timeout_s(120) == 24.0
+    assert _browsergym_model_timeout_s(600) == 30.0
 
 
 def test_browsergym_episode_reports_unsupported_policy_action(tmp_path: Path) -> None:

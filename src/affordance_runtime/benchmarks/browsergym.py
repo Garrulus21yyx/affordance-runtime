@@ -30,7 +30,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
 from affordance_runtime.generalist_planner import GENERALIST_PLANNER_PROMPT_VERSION, GeneralistLMPlanner
-from affordance_runtime.model_port import ModelPort
+from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -557,6 +557,7 @@ def run_browsergym_generalist_episode(
     seed: int,
     artifact_root: Path,
     max_steps: int = 50,
+    model_timeout_s: float = 30.0,
 ) -> BrowserGymEpisodeResult:
     """Run the same GeneralistLMPlanner port through BrowserGym's typed executor."""
 
@@ -578,7 +579,13 @@ def run_browsergym_generalist_episode(
         )
         result = RunCoordinator(
             observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
-            planner=GeneralistLMPlanner(model),
+            planner=GeneralistLMPlanner(
+                model,
+                config=ModelConfig(
+                    timeout_s=model_timeout_s,
+                    prompt_version=GENERALIST_PLANNER_PROMPT_VERSION,
+                ),
+            ),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
             budget=RunBudget(
@@ -643,6 +650,7 @@ def _generalist_episode_worker(
     base_url: str,
     headless: bool,
     artifact_root: str,
+    model_timeout_s: float,
 ) -> None:
     """Child-process owner for one BrowserGym/Playwright episode."""
 
@@ -660,6 +668,7 @@ def _generalist_episode_worker(
             task_id=task_id,
             seed=seed,
             artifact_root=Path(artifact_root),
+            model_timeout_s=model_timeout_s,
         )
     except BaseException as exc:
         result = BrowserGymEpisodeResult(
@@ -678,6 +687,7 @@ def run_browsergym_generalist_episode_isolated(
     headless: bool,
     artifact_root: Path,
     timeout_s: float,
+    model_timeout_s: float,
 ) -> BrowserGymEpisodeResult:
     """Run one episode in a killable process and preserve timeout diagnostics."""
 
@@ -692,6 +702,7 @@ def run_browsergym_generalist_episode_isolated(
             "base_url": base_url,
             "headless": headless,
             "artifact_root": str(artifact_root),
+            "model_timeout_s": model_timeout_s,
         },
     )
     worker.start()
@@ -1003,6 +1014,7 @@ def run_browsergym_miniwob_generalist_suite(
         "model_name": model.model,
         "model_endpoint_class": model.endpoint_class,
         "planner_prompt_version": GENERALIST_PLANNER_PROMPT_VERSION,
+        "model_timeout_s": _browsergym_model_timeout_s(episode_timeout_s),
         "browsergym_version": BROWSERGYM_VERSION,
         "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
     }
@@ -1027,6 +1039,7 @@ def run_browsergym_miniwob_generalist_suite(
                     headless=headless,
                     artifact_root=output_dir / "artifacts",
                     timeout_s=episode_timeout_s,
+                    model_timeout_s=_browsergym_model_timeout_s(episode_timeout_s),
                 )
                 episodes.append(episode)
                 _write_browsergym_checkpoint(checkpoint_dir, episode)
@@ -1069,13 +1082,19 @@ def run_browsergym_miniwob_generalist_suite(
     return report
 
 
+def _browsergym_model_timeout_s(episode_timeout_s: float) -> float:
+    """Reserve time for several planning turns inside a bounded episode."""
+
+    return min(30.0, max(5.0, episode_timeout_s / 5.0))
+
+
 def _checkpoint_filename(task_id: str, seed: int) -> str:
     safe_task = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in task_id)
     return f"{safe_task}-seed-{seed}.json"
 
 
 def _prepare_browsergym_checkpoint_metadata(
-    directory: Path, metadata: dict[str, str], *, resume: bool
+    directory: Path, metadata: dict[str, Any], *, resume: bool
 ) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "matrix-metadata.json"
