@@ -39,6 +39,7 @@ from affordance_runtime.task_intake import OperationClass, TaskSpec
 BROWSERGYM_VERSION = "0.14.3"
 BROWSERGYM_MINIWOB_COMMIT = "7fd85d71a4b60325c6585396ec4f48377d049838"
 BROWSERGYM_BACKEND = "browsergym"
+BROWSERGYM_TERMINAL_COMPLETION_POLICY = "official-terminal-v1"
 
 PR_SMOKE_TASKS = (
     "click-button",
@@ -240,23 +241,9 @@ class BrowserGymPlanner:
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
-        if self.episode.terminated or self.episode.truncated:
-            return PlannerDecision(
-                proposal=PlannerProposal(
-                    proposal_id=f"browsergym-{self.episode.task_id}-{self.episode.seed}-finish",
-                    based_on_task_revision=1,
-                    based_on_state_version=state.version,
-                    snapshot_id=snapshot.observation.snapshot_id,
-                    action_kind=PlannerActionKind.FINISH,
-                    done=True,
-                    result={
-                        "official_success": self.episode.terminated and self.episode.reward > 0,
-                        "official_reward": self.episode.reward,
-                        "terminated": self.episode.terminated,
-                        "truncated": self.episode.truncated,
-                    },
-                )
-            )
+        terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
+        if terminal is not None:
+            return terminal
         request = BrowserGymPolicyRequest(
             task_id=self.episode.task_id,
             seed=self.episode.seed,
@@ -303,6 +290,56 @@ class BrowserGymPlanner:
             proposal=proposal,
             reason="benchmark action translated to semantic proposal",
         )
+
+
+@dataclass
+class BrowserGymGeneralistPlanner:
+    """Use the official episode terminal state before requesting another model turn."""
+
+    model: ModelPort
+    episode: BrowserGymEpisodeState
+    config: ModelConfig
+    _planner: GeneralistLMPlanner = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._planner = GeneralistLMPlanner(self.model, config=self.config)
+
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision | Any:
+        terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
+        if terminal is not None:
+            return terminal
+        return self._planner.propose(envelope, state, snapshot)
+
+
+def _browsergym_terminal_decision(
+    episode: BrowserGymEpisodeState,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> PlannerDecision | None:
+    if not episode.terminated and not episode.truncated:
+        return None
+    return PlannerDecision(
+        proposal=PlannerProposal(
+            proposal_id=f"browsergym-{episode.task_id}-{episode.seed}-official-terminal",
+            based_on_task_revision=1,
+            based_on_state_version=state.version,
+            snapshot_id=snapshot.observation.snapshot_id,
+            action_kind=PlannerActionKind.FINISH,
+            done=True,
+            result={
+                "official_success": episode.terminated and episode.reward > 0,
+                "official_reward": episode.reward,
+                "terminated": episode.terminated,
+                "truncated": episode.truncated,
+                "completion_policy": BROWSERGYM_TERMINAL_COMPLETION_POLICY,
+            },
+        )
+    )
 
 
 class AgentLabPlannerAdapter(BrowserGymPlanner):
@@ -579,8 +616,9 @@ def run_browsergym_generalist_episode(
         )
         result = RunCoordinator(
             observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
-            planner=GeneralistLMPlanner(
+            planner=BrowserGymGeneralistPlanner(
                 model,
+                episode,
                 config=ModelConfig(
                     timeout_s=model_timeout_s,
                     prompt_version=GENERALIST_PLANNER_PROMPT_VERSION,
@@ -1015,6 +1053,7 @@ def run_browsergym_miniwob_generalist_suite(
         "model_endpoint_class": model.endpoint_class,
         "planner_prompt_version": GENERALIST_PLANNER_PROMPT_VERSION,
         "model_timeout_s": _browsergym_model_timeout_s(episode_timeout_s),
+        "terminal_completion_policy": BROWSERGYM_TERMINAL_COMPLETION_POLICY,
         "browsergym_version": BROWSERGYM_VERSION,
         "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
     }

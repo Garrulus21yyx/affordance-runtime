@@ -231,7 +231,7 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 2
+    assert model.calls == 1
     events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
     assert "PlannerContextBuilt" in events
     assert "PlannerProposalProduced" in events
