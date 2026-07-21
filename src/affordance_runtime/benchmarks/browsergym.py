@@ -7,6 +7,7 @@ import multiprocessing as mp
 import shlex
 import subprocess
 import threading
+from collections import Counter
 from dataclasses import asdict, dataclass, field, replace
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -808,6 +809,11 @@ def write_browsergym_report(
         task: _task_statistics([episode for episode in episodes if episode.task_id == task])
         for task in selected
     }
+    runtime_error_counts = Counter(
+        episode.runtime_error or episode.runtime_status
+        for episode in episodes
+        if episode.runtime_status != RuntimeStep.DONE.value or episode.policy_stopped
+    )
     report = {
         "schema_version": "browsergym-full-path-v1",
         "browsergym_version": BROWSERGYM_VERSION,
@@ -836,6 +842,7 @@ def write_browsergym_report(
             episode.runtime_status != RuntimeStep.DONE.value or episode.policy_stopped
             for episode in episodes
         ),
+        "runtime_error_counts": dict(sorted(runtime_error_counts.items())),
         "episodes": [asdict(episode) for episode in episodes],
         "acceptance_errors": errors,
     }

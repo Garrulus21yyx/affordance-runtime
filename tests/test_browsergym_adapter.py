@@ -293,6 +293,7 @@ def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(
     assert report["missing_episode_count"] == 30
     assert len(report["missing_episode_ids"]) == 30
     assert report["acceptance_errors"] == ["missing episodes: 30"]
+    assert report["runtime_error_counts"] == {}
     assert report["official_track"] is True
     assert report["fault_injection"] is False
 
@@ -345,6 +346,7 @@ def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path:
     )
     assert result.policy_stopped is True
     assert report["runtime_failure_count"] == 1
+    assert report["runtime_error_counts"] == {"done": 1}
     assert report["acceptance_errors"] == ["policy stopped: click-button:seed-4"]
 
 
