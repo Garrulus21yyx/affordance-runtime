@@ -660,9 +660,9 @@ Before scaling public suites, complete this bounded consolidation gate:
 - use the committed Web or BrowserGym reproducibility constraints when
   rebuilding evidence, so Pydantic, LangGraph, Pillow, and test tooling cannot
   silently change; the two Playwright profiles remain isolated;
-- split the 1,000+ line BrowserGym module by action schema, environment
-  adapter, episode execution, matrix/checkpoint, and MiniWoB task source
-  without changing runtime behavior;
+- retain the completed BrowserGym split across action schema, environment
+  adapter/episode execution, matrix/checkpoint, and MiniWoB task source;
+  public facade imports and runtime behavior remain stable;
 - replace the first-sorted-task nightly selection with a versioned,
   action-family-stratified manifest;
 - rerun the current generalist-planner PR profile before scaling: the latest
