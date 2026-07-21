@@ -23,7 +23,7 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | M8.1 clean-checkout container reproduction | completed | clean `40fd93b`; 63 stable runs agree; versioned evidence summary |
 | M8.2A task intake and GeneralistLMPlanner | completed | typed compiler/revision, semantic contracts, Mistral SaaS gates, common surface planner, and official BrowserGym smoke at `7edaa97`/`508486b` |
 | M8.2 BrowserGym full-path adapter and expanded MiniWoB ladder | in progress | Generalist PR matrix now runs through the full path (15/18 official success); nightly/release suites and public ladder remain |
-| M8.2 public suites in planned order | pending | ScreenSpot, WorkArena L1, WebArena-Verified, WASP gates |
+| M8.2 public suites in planned order | in progress | ScreenSpot offline scorer, WorkArena L1 preflight, WebArena-Verified digest-bound manifest/evaluator bridge, and WASP safe subset are implemented; official assets/environments/traces remain |
 | M8.3 incident/signature/loop detection | completed | repeated/no-progress/A-B/stale/verifier/fallback/duplicate-effect detection at `07e406f` |
 | M8.3 executable recovery artifacts | completed | quarantined policy, four fresh replays, acceptance persistence, rollback and uncertainty safety proof |
 | Final documentation and CI audit | pending | plans/status/evidence/README aligned; remote checks green |
@@ -51,3 +51,4 @@ This file tracks implementation of the authoritative M8.1-M8.3 increments in
 | 2026-07-21 | Generalist v6 regression | Re-ran the official PR matrix after marking page-derived context untrusted; result remained 15/18 with slider gap explicit | `evidence/m8.2b-pr-generalist-v6.md` |
 | 2026-07-21 | Resumable matrix check | Added atomic per-episode checkpointing and verified a zero-new/18-reused PR resume, preserving official diagnostics | `evidence/m8.2b-browsergym-checkpoint-5837984.md` |
 | 2026-07-21 | Killable episode isolation | Ran every real PR episode in its own bounded BrowserGym child process; full checkpoint coverage and 15/18 official success retained | `evidence/m8.2b-browsergym-isolation-99ab707.md` |
+| 2026-07-21 | Keyboard semantic boundary | Added affordance-bound `press_key` planning and typed BrowserGym `press` binding for focusable controls; a rate-limited remote v7 matrix is diagnostic only and local validation remains running | `47aca91`, BrowserGym/DOM/planning tests |
