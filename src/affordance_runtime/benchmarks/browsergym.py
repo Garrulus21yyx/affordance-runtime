@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import shlex
 import subprocess
 import threading
 from dataclasses import asdict, dataclass, field, replace
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from queue import Empty
 from time import perf_counter
 from typing import Any, Protocol, Sequence
 
@@ -629,6 +631,88 @@ def run_browsergym_generalist_episode(
         _close_quietly(environment)
 
 
+def _generalist_episode_worker(
+    result_queue: Any,
+    model: ModelPort,
+    *,
+    task_id: str,
+    seed: int,
+    base_url: str,
+    headless: bool,
+    artifact_root: str,
+) -> None:
+    """Child-process owner for one BrowserGym/Playwright episode."""
+
+    try:
+        import gymnasium as gym  # type: ignore[import-not-found]
+
+        environment = gym.make(
+            f"browsergym/miniwob.{task_id}",
+            task_kwargs={"base_url": base_url},
+            headless=headless,
+        )
+        result = run_browsergym_generalist_episode(
+            environment,
+            model,
+            task_id=task_id,
+            seed=seed,
+            artifact_root=Path(artifact_root),
+        )
+    except BaseException as exc:
+        result = BrowserGymEpisodeResult(
+            task_id, seed, RuntimeStep.FAILED.value, False, 0.0, False, False,
+            0, [], [], f"worker_error:{type(exc).__name__}", False, "",
+        )
+    result_queue.put(asdict(result))
+
+
+def run_browsergym_generalist_episode_isolated(
+    model: ModelPort,
+    *,
+    task_id: str,
+    seed: int,
+    base_url: str,
+    headless: bool,
+    artifact_root: Path,
+    timeout_s: float,
+) -> BrowserGymEpisodeResult:
+    """Run one episode in a killable process and preserve timeout diagnostics."""
+
+    context = mp.get_context("fork")
+    result_queue = context.Queue()
+    worker = context.Process(
+        target=_generalist_episode_worker,
+        args=(result_queue, model),
+        kwargs={
+            "task_id": task_id,
+            "seed": seed,
+            "base_url": base_url,
+            "headless": headless,
+            "artifact_root": str(artifact_root),
+        },
+    )
+    worker.start()
+    worker.join(timeout_s)
+    if worker.is_alive():
+        worker.terminate()
+        worker.join(timeout=5)
+        result_queue.close()
+        return BrowserGymEpisodeResult(
+            task_id, seed, RuntimeStep.FAILED.value, False, 0.0, False, False,
+            0, [], [], "episode_timeout", False, "",
+        )
+    try:
+        payload = result_queue.get(timeout=1)
+    except Empty:
+        result_queue.close()
+        return BrowserGymEpisodeResult(
+            task_id, seed, RuntimeStep.FAILED.value, False, 0.0, False, False,
+            0, [], [], f"worker_exit:{worker.exitcode}", False, "",
+        )
+    result_queue.close()
+    return BrowserGymEpisodeResult(**payload)
+
+
 def _close_quietly(resource: Any) -> None:
     """Best-effort BrowserGym cleanup must not replace an episode diagnosis."""
 
@@ -872,6 +956,7 @@ def run_browsergym_miniwob_generalist_suite(
     model: ModelPort,
     headless: bool = True,
     resume: bool = False,
+    episode_timeout_s: float = 150.0,
 ) -> dict[str, Any]:
     """Run the standard MiniWoB matrix through the common GeneralistLMPlanner.
 
@@ -882,7 +967,7 @@ def run_browsergym_miniwob_generalist_suite(
 
     try:
         import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
-        import gymnasium as gym  # type: ignore[import-not-found]
+        import gymnasium  # type: ignore[import-not-found]  # noqa: F401
     except ImportError as exc:
         raise RuntimeError(
             "BrowserGym is not installed; use an isolated affordance-runtime[browsergym] environment"
@@ -921,17 +1006,14 @@ def run_browsergym_miniwob_generalist_suite(
             for seed in seeds:
                 if (task_id, seed) in reused:
                     continue
-                environment = gym.make(
-                    f"browsergym/miniwob.{task_id}",
-                    task_kwargs={"base_url": base_url},
-                    headless=headless,
-                )
-                episode = run_browsergym_generalist_episode(
-                    environment,
+                episode = run_browsergym_generalist_episode_isolated(
                     model,
                     task_id=task_id,
                     seed=seed,
+                    base_url=base_url,
+                    headless=headless,
                     artifact_root=output_dir / "artifacts",
+                    timeout_s=episode_timeout_s,
                 )
                 episodes.append(episode)
                 _write_browsergym_checkpoint(checkpoint_dir, episode)

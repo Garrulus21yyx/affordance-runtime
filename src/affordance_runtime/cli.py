@@ -60,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     browsergym_generalist.add_argument("--profile", choices=("pr", "nightly", "release"), default="pr")
     browsergym_generalist.add_argument("--headed", action="store_true")
     browsergym_generalist.add_argument("--resume", action="store_true", help="reuse complete per-episode checkpoints in --output")
+    browsergym_generalist.add_argument("--episode-timeout-s", type=float, default=150.0)
 
     screenspot = subcommands.add_parser(
         "benchmark-screenspot",
@@ -159,6 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model=model_port_from_environment(),
             headless=not args.headed,
             resume=args.resume,
+            episode_timeout_s=args.episode_timeout_s,
         )
         print(json.dumps(browsergym_report, indent=2, sort_keys=True))
         return 0 if not browsergym_report["acceptance_errors"] else 1
