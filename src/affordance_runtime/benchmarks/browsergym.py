@@ -26,7 +26,7 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
-from affordance_runtime.generalist_planner import GeneralistLMPlanner
+from affordance_runtime.generalist_planner import GENERALIST_PLANNER_PROMPT_VERSION, GeneralistLMPlanner
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
@@ -889,6 +889,17 @@ def run_browsergym_miniwob_generalist_suite(
     episodes: list[BrowserGymEpisodeResult] = []
     expected = {(task_id, seed) for task_id in selected if task_id not in missing_tasks for seed in seeds}
     checkpoint_dir = output_dir / "episodes"
+    checkpoint_metadata = {
+        "schema_version": "browsergym-generalist-checkpoint-v1",
+        "profile": profile,
+        "model_provider": model.provider,
+        "model_name": model.model,
+        "model_endpoint_class": model.endpoint_class,
+        "planner_prompt_version": GENERALIST_PLANNER_PROMPT_VERSION,
+        "browsergym_version": BROWSERGYM_VERSION,
+        "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
+    }
+    _prepare_browsergym_checkpoint_metadata(checkpoint_dir, checkpoint_metadata, resume=resume)
     reused = _load_browsergym_checkpoints(checkpoint_dir, expected) if resume else {}
     episodes.extend(reused.values())
     newly_completed = 0
@@ -922,6 +933,7 @@ def run_browsergym_miniwob_generalist_suite(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+    episodes.sort(key=lambda item: (item.task_id, item.seed))
     report = write_browsergym_report(
         output_dir,
         profile=profile,
@@ -938,6 +950,7 @@ def run_browsergym_miniwob_generalist_suite(
             "model_endpoint_class": model.endpoint_class,
             "checkpoint_reused_episode_count": len(reused),
             "checkpoint_new_episode_count": newly_completed,
+            "checkpoint_metadata": checkpoint_metadata,
             "run_complete": not interrupted and len({(item.task_id, item.seed) for item in episodes}) == len(expected),
         }
     )
@@ -955,6 +968,24 @@ def run_browsergym_miniwob_generalist_suite(
 def _checkpoint_filename(task_id: str, seed: int) -> str:
     safe_task = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in task_id)
     return f"{safe_task}-seed-{seed}.json"
+
+
+def _prepare_browsergym_checkpoint_metadata(
+    directory: Path, metadata: dict[str, str], *, resume: bool
+) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "matrix-metadata.json"
+    episode_files = list(directory.glob("*-seed-*.json"))
+    if path.exists():
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        if stored != metadata:
+            raise ValueError("BrowserGym checkpoint metadata does not match the requested matrix")
+        return
+    if resume and episode_files:
+        raise ValueError("BrowserGym checkpoints lack matrix metadata; cannot safely resume")
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)
 
 
 def _write_browsergym_checkpoint(directory: Path, episode: BrowserGymEpisodeResult) -> None:

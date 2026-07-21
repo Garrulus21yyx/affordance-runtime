@@ -16,6 +16,7 @@ from affordance_runtime.benchmarks.browsergym import (
     GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
     _load_browsergym_checkpoints,
+    _prepare_browsergym_checkpoint_metadata,
     _write_browsergym_checkpoint,
     browsergym_profile,
     run_browsergym_episode,
@@ -364,3 +365,12 @@ def test_browsergym_generalist_episode_checkpoints_are_atomic_and_resume_only_ex
 
     assert checkpoints == {("click-button", 4): episode}
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_browsergym_checkpoint_metadata_rejects_mismatched_resume(tmp_path: Path) -> None:
+    first = {"schema_version": "v1", "model": "first"}
+    _prepare_browsergym_checkpoint_metadata(tmp_path, first, resume=False)
+    _prepare_browsergym_checkpoint_metadata(tmp_path, first, resume=True)
+
+    with pytest.raises(ValueError, match="metadata does not match"):
+        _prepare_browsergym_checkpoint_metadata(tmp_path, {"schema_version": "v1", "model": "second"}, resume=True)
