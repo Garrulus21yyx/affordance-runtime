@@ -290,7 +290,9 @@ def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(
     assert report["browsergym_version"] == BROWSERGYM_VERSION
     assert report["miniwob_commit"] == BROWSERGYM_MINIWOB_COMMIT
     assert report["expected_episode_count"] == 30
-    assert len(report["acceptance_errors"]) == 30
+    assert report["missing_episode_count"] == 30
+    assert len(report["missing_episode_ids"]) == 30
+    assert report["acceptance_errors"] == ["missing episodes: 30"]
     assert report["official_track"] is True
     assert report["fault_injection"] is False
 

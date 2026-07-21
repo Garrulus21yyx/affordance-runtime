@@ -786,7 +786,9 @@ def write_browsergym_report(
     expected = {(task, seed) for task in selected for seed in seeds}
     observed = {(episode.task_id, episode.seed) for episode in episodes}
     missing = sorted(expected - observed)
-    errors = [f"missing episode: {task}:seed-{seed}" for task, seed in missing]
+    errors: list[str] = []
+    if missing:
+        errors.append(f"missing episodes: {len(missing)}")
     errors.extend(
         f"unsupported actions: {episode.task_id}:seed-{episode.seed}:{','.join(episode.unsupported_actions)}"
         for episode in episodes
@@ -818,6 +820,8 @@ def write_browsergym_report(
         "seed_count": len(tuple(seeds)),
         "expected_episode_count": len(expected),
         "observed_episode_count": len(episodes),
+        "missing_episode_count": len(missing),
+        "missing_episode_ids": [f"{task}:seed-{seed}" for task, seed in missing],
         "coverage_rate": len(observed & expected) / len(expected) if expected else 0.0,
         "official_success_rate": (
             sum(episode.official_success for episode in episodes) / len(episodes) if episodes else 0.0
