@@ -195,6 +195,11 @@ class TwoStageTaskPlanner:
         )
 
 
+class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
+    async def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+        return super().plan(task_spec, state_version=state_version)
+
+
 class SubgoalAwarePlanner:
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
@@ -213,7 +218,7 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
         observer=TwoStageObserver(),
         planner=SubgoalAwarePlanner(),
         executor=FakeExecutor(),
-        task_planner=TwoStageTaskPlanner(),
+        task_planner=AsyncTwoStageTaskPlanner(),
     ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
 
     assert result.status == RuntimeStep.DONE

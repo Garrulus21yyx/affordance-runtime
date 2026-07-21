@@ -7,13 +7,15 @@ contract boundaries.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+from typing import Awaitable, Protocol
 from uuid import uuid4
 
 from pydantic import Field
 
+from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
 from affordance_runtime.verification import VerificationReport
 
@@ -50,6 +52,13 @@ class TaskPlan(StrictModel):
     plan_version: int = Field(ge=1)
     based_on_state_version: int = Field(ge=0)
     generated_by: TaskPlanSource
+    subgoals: tuple[SubgoalSpec, ...] = Field(min_length=1, max_length=8)
+    assumptions: tuple[str, ...] = ()
+
+
+class TaskPlanCandidate(StrictModel):
+    """The model-controlled portion of a task plan, without authority fields."""
+
     subgoals: tuple[SubgoalSpec, ...] = Field(min_length=1, max_length=8)
     assumptions: tuple[str, ...] = ()
 
@@ -150,7 +159,7 @@ class TaskPlanValidator:
 
 
 class TaskPlannerPort(Protocol):
-    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan: ...
+    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan | Awaitable[TaskPlan]: ...
 
 
 class SubgoalVerifierPort(Protocol):
@@ -181,6 +190,67 @@ class RuleTaskPlanner:
         return synthetic_task_plan(task_spec, state_version=state_version, generated_by=TaskPlanSource.RULE)
 
 
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v1"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
+Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Each subgoal needs verifiable success criteria and independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
+Subgoals are desired environment states, never UI scripts. Do not output selectors, coordinates, backend handles, executable code, capabilities, approval tokens, or action instructions. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+
+
+@dataclass
+class LLMTaskPlanner:
+    """Model-backed task decomposition with exactly one repairable retry."""
+
+    model: ModelPort
+    validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
+    config: ModelConfig = field(
+        default_factory=lambda: ModelConfig(
+            temperature=0.0,
+            max_tokens=1_024,
+            prompt_version=TASK_PLANNER_PROMPT_VERSION,
+        )
+    )
+
+    async def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+        context = {
+            "task_spec": task_spec.model_dump(mode="json"),
+            "state_version": state_version,
+            "constraints": list(task_spec.constraints),
+            "forbidden_effects": list(task_spec.forbidden_effects),
+        }
+        messages = [
+            ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
+            ModelMessage(role="user", content=json.dumps(context, sort_keys=True)),
+        ]
+        candidate = await self.model.generate_structured(messages, TaskPlanCandidate, self.config)
+        plan = self._bind_candidate(candidate, task_spec, state_version=state_version)
+        report = self.validator.validate(plan, task_spec, state_version=state_version)
+        if report.status != TaskPlanValidationStatus.REPAIRABLE:
+            return plan
+        repair_context = {
+            "validation_errors": [item.model_dump(mode="json") for item in report.issues],
+            "instruction": "Repair only the reported plan fields; retain outcome-only semantics and constraints.",
+        }
+        repaired = await self.model.generate_structured(
+            [*messages, ModelMessage(role="assistant", content=candidate.model_dump_json()), ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True))],
+            TaskPlanCandidate,
+            self.config,
+        )
+        return self._bind_candidate(repaired, task_spec, state_version=state_version)
+
+    @staticmethod
+    def _bind_candidate(candidate: TaskPlanCandidate, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+        return TaskPlan(
+            plan_id=f"plan-{uuid4().hex}",
+            task_id=task_spec.task_id,
+            task_revision=task_spec.revision,
+            plan_version=1,
+            based_on_state_version=state_version,
+            generated_by=TaskPlanSource.LLM,
+            subgoals=candidate.subgoals,
+            assumptions=candidate.assumptions,
+        )
+
+
 @dataclass(frozen=True)
 class PlanningRouter:
     """Routes simple work to the flat path and delegates complex work explicitly."""
@@ -188,7 +258,7 @@ class PlanningRouter:
     rule_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
     complex_planner: TaskPlannerPort | None = None
 
-    def plan(self, task_spec: TaskSpec, *, state_version: int, complex_task: bool = False) -> TaskPlan:
+    def plan(self, task_spec: TaskSpec, *, state_version: int, complex_task: bool = False) -> TaskPlan | Awaitable[TaskPlan]:
         if not complex_task:
             return self.rule_planner.plan(task_spec, state_version=state_version)
         if self.complex_planner is None:

@@ -742,8 +742,10 @@ The first implementation slice now provides immutable `TaskPlan`/
 `PlanningRouter`/`RuleTaskPlanner`, and StateKernel storage. The Coordinator
 creates/validates a plan after its initial observation, advances one serial
 subgoal only from passed verifier evidence, and rejects planner completion
-before all subgoals are verified. Bounded LM repair, task-level replanning, and
-ablations remain required before this milestone can exit.
+before all subgoals are verified. `LLMTaskPlanner` generates an outcome-only
+candidate and receives one bounded deterministic-validation repair attempt.
+Task-level replanning and ablations remain required before this milestone can
+exit.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
   deterministic `RuleTaskPlanner`;

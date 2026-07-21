@@ -212,7 +212,9 @@ class RunCoordinator:
                         RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED, latest_verification,
                     )
                 try:
-                    task_plan = self.task_planner.plan(envelope.task_spec, state_version=state.version)
+                    task_plan = _resolve_task_plan(
+                        self.task_planner.plan(envelope.task_spec, state_version=state.version)
+                    )
                 except Exception as exc:
                     state.transition(RuntimeStep.FAILED.value)
                     parent = trace.add(
@@ -1047,6 +1049,12 @@ def _resolve_planner_decision(
 
 async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
     return await value
+
+
+def _resolve_task_plan(value: Any) -> Any:
+    if not inspect.isawaitable(value):
+        return value
+    return resolve_awaitable(value)
 
 
 def _task_plan_completed(state: StateKernel) -> bool:

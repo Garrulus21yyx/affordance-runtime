@@ -1,6 +1,7 @@
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
+    LLMTaskPlanner,
     PlanningRouter,
     PlanProgress,
     SubgoalSpec,
@@ -153,3 +154,45 @@ def test_subgoal_verifier_requires_independent_passed_evidence() -> None:
 
     assert verifier.verify(subgoal, report) == ("observation_metadata:saved",)
     assert verifier.verify(subgoal, VerificationReport(VerificationStatus.PASSED)) is None
+
+
+class RepairingTaskPlanModel:
+    provider = "fixed"
+    model = "fixed-task-planner"
+    endpoint_class = "test"
+    last_call = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
+        del config
+        self.calls += 1
+        if self.calls == 1:
+            assert len(messages) == 2
+            return output_schema.model_validate(
+                {"subgoals": [{"subgoal_id": "discover", "objective": "Discover current setting", "operation_class": "reversible_write"}]}
+            )
+        assert "validation_errors" in messages[-1].content
+        return output_schema.model_validate(
+            {
+                "subgoals": [
+                    {"subgoal_id": "discover", "objective": "Discover current setting", "success_criteria": ["setting is known"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
+                    {"subgoal_id": "write", "objective": "Write desired setting", "depends_on": ["discover"], "success_criteria": ["setting is dark"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
+                    {"subgoal_id": "confirm", "objective": "Confirm desired setting", "depends_on": ["write"], "success_criteria": ["setting remains dark"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
+                ]
+            }
+        )
+
+
+def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None:
+    import asyncio
+
+    model = RepairingTaskPlanModel()
+    plan = asyncio.run(LLMTaskPlanner(model).plan(_task(), state_version=4))
+
+    assert model.calls == 2
+    assert plan.generated_by == TaskPlanSource.LLM
+    assert plan.task_id == _task().task_id
+    assert len(plan.subgoals) == 3
+    assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT

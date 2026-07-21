@@ -157,7 +157,7 @@ evidence level. See
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
 | M8.2B Public Benchmark Expansion | in progress | generalist PR matrix reaches 18/18 coverage and 15/18 official success; public suite runners and larger matrices remain |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
-| M8.4 Adaptive Shallow Task Planning | in progress | immutable task-plan/validation, flat-router, and Coordinator serial verifier-backed progress are implemented; LLM task decomposition/repair, task-level replanning, and flat/always/adaptive ablation remain |
+| M8.4 Adaptive Shallow Task Planning | in progress | immutable task-plan/validation, flat/router plus LLM one-repair decomposition, and Coordinator serial verifier-backed progress are implemented; task-level replanning and flat/always/adaptive ablation remain |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
