@@ -33,6 +33,8 @@ class ModelConfig(BaseModel):
     timeout_s: float = Field(default=90.0, gt=0.0)
     rate_limit_retries: int = Field(default=1, ge=0, le=3)
     rate_limit_backoff_s: float = Field(default=1.0, ge=0.0, le=5.0)
+    transient_retries: int = Field(default=1, ge=0, le=3)
+    transient_backoff_s: float = Field(default=0.5, ge=0.0, le=5.0)
     prompt_version: str = "1.0"
 
 
@@ -52,6 +54,7 @@ class ModelCallRecord(BaseModel):
     estimated_cost_usd: float | None = None
     response_id: str = ""
     rate_limit_retry_count: int = 0
+    transient_retry_count: int = 0
 
 
 class StructuredModelError(RuntimeError):
@@ -154,13 +157,15 @@ class OpenAICompatibleModelPort:
         if config.seed is not None:
             body["seed"] = config.seed
         started = perf_counter()
-        response, rate_limit_retry_count = _post_json(
+        response, rate_limit_retry_count, transient_retry_count = _post_json(
             f"{self.base_url.rstrip('/')}/chat/completions",
             body,
             timeout_s=config.timeout_s,
             headers={"Authorization": f"Bearer {self.api_key}"},
             rate_limit_retries=config.rate_limit_retries,
             rate_limit_backoff_s=config.rate_limit_backoff_s,
+            transient_retries=config.transient_retries,
+            transient_backoff_s=config.transient_backoff_s,
         )
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         try:
@@ -190,6 +195,7 @@ class OpenAICompatibleModelPort:
             total_tokens=int(usage.get("total_tokens") or prompt_tokens + completion_tokens),
             response_id=str(response.get("id") or ""),
             rate_limit_retry_count=rate_limit_retry_count,
+            transient_retry_count=transient_retry_count,
         )
         return parsed
 
@@ -224,7 +230,7 @@ class OllamaModelPort:
         if config.seed is not None:
             options["seed"] = config.seed
         started = perf_counter()
-        response, rate_limit_retry_count = _post_json(
+        response, rate_limit_retry_count, transient_retry_count = _post_json(
             f"{self.base_url.rstrip('/')}/api/chat",
             {
                 "model": self.model,
@@ -236,6 +242,8 @@ class OllamaModelPort:
             timeout_s=config.timeout_s,
             rate_limit_retries=config.rate_limit_retries,
             rate_limit_backoff_s=config.rate_limit_backoff_s,
+            transient_retries=config.transient_retries,
+            transient_backoff_s=config.transient_backoff_s,
         )
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         try:
@@ -258,6 +266,7 @@ class OllamaModelPort:
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             rate_limit_retry_count=rate_limit_retry_count,
+            transient_retry_count=transient_retry_count,
         )
         return parsed
 
@@ -360,31 +369,42 @@ def _post_json(
     headers: dict[str, str] | None = None,
     rate_limit_retries: int = 1,
     rate_limit_backoff_s: float = 1.0,
-) -> tuple[dict[str, Any], int]:
+    transient_retries: int = 1,
+    transient_backoff_s: float = 0.5,
+) -> tuple[dict[str, Any], int, int]:
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
-    retries = 0
+    rate_retries = 0
+    transient_retries_used = 0
     while True:
         try:
             with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - configured model endpoint
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
-            if exc.code == 429 and retries < rate_limit_retries:
-                retries += 1
+            if exc.code == 429 and rate_retries < rate_limit_retries:
+                rate_retries += 1
                 time.sleep(_rate_limit_delay_s(exc, fallback_s=rate_limit_backoff_s))
+                continue
+            if exc.code in {500, 502, 503, 504} and transient_retries_used < transient_retries:
+                transient_retries_used += 1
+                time.sleep(transient_backoff_s)
                 continue
             raise StructuredModelError(f"model endpoint returned HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
+            if transient_retries_used < transient_retries:
+                transient_retries_used += 1
+                time.sleep(transient_backoff_s)
+                continue
             raise StructuredModelError("model endpoint unavailable") from exc
         except json.JSONDecodeError as exc:
             raise StructuredModelError("model endpoint returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise StructuredModelError("model endpoint returned a non-object response")
-        return payload, retries
+        return payload, rate_retries, transient_retries_used
 
 
 def _rate_limit_delay_s(error: urllib.error.HTTPError, *, fallback_s: float) -> float:

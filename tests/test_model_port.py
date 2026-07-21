@@ -158,6 +158,54 @@ def test_openai_compatible_adapter_retries_a_bounded_rate_limit_response() -> No
     assert requests == 2
     assert port.last_call is not None
     assert port.last_call.rate_limit_retry_count == 1
+    assert port.last_call.transient_retry_count == 0
+
+
+def test_openai_compatible_adapter_retries_a_bounded_transient_response() -> None:
+    requests = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal requests
+            requests += 1
+            length = int(self.headers["Content-Length"])
+            self.rfile.read(length)
+            if requests == 1:
+                self.send_response(503)
+                self.end_headers()
+                return
+            payload = json.dumps(
+                {"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="remote-test"
+        )
+        answer = asyncio.run(
+            port.generate_structured([], Answer, ModelConfig(transient_retries=1, transient_backoff_s=0))
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "retried"
+    assert requests == 2
+    assert port.last_call is not None
+    assert port.last_call.rate_limit_retry_count == 0
+    assert port.last_call.transient_retry_count == 1
 
 
 def test_structured_schema_failure_has_no_response_value() -> None:
