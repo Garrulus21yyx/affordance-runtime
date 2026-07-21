@@ -140,3 +140,34 @@ def test_finish_and_ask_flags_are_deterministically_derived_from_action_kind() -
 
     assert finish.done is True
     assert ask.requires_clarification is True
+
+
+def test_contract_builder_binds_semantic_key_press_without_surface_parameters() -> None:
+    model = DomAdapter().transduce(
+        '<span id="slider" tabindex="0" class="ui-slider-handle"></span>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Increase slider")
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id="task-1", revision=1, objective="Increase slider", operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("slider",), success_criteria=("slider increased",), source_request_ref="test",
+    )
+    proposal = PlannerProposal(
+        proposal_id="press", based_on_task_revision=1, based_on_state_version=state.version,
+        snapshot_id="snapshot-1", action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id="dom_span_1", parameters={"key": "ArrowRight"},
+    )
+
+    contract = ContractBuilder().build(proposal, task, state, BrowserSnapshot(observation, model))
+
+    assert contract.action == "press"
+    assert contract.parameters == {"key": "ArrowRight"}

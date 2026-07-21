@@ -264,7 +264,7 @@ Before a WASP subset is attached, the general planner marks every page-derived
 label, DOM/accessibility/OCR string, and screenshot as an untrusted observation.
 Such content can ground an already-authorized affordance only; it cannot alter
 the `TaskSpec`, grant a capability, supply approval, or become planner policy.
-This is enforced by the `generalist-planner-v6` prompt boundary together with
+This is enforced by the `generalist-planner-v7` prompt boundary together with
 the existing deterministic proposal schema, contract capability gate, and
 approval binding. A future WASP run must exercise this baseline against the
 official malicious-page cases and report the result separately; this statement

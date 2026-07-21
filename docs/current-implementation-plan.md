@@ -654,6 +654,8 @@ the same planner boundary.
 
 - use the implemented BrowserGym adapter to route every supported action
   through the full coordinator path and keep the scored policy external
+- cover focusable keyboard controls through the semantic `press_key` proposal
+  action; it may carry only a key value and is bound to a current affordance
 - keep 18 episodes for PR smoke; add 30 task types x 10 seeds nightly
 - release-test every supported pinned MiniWoB task x 5 seeds
 - retain the implemented coverage, unsupported-action, variance, official

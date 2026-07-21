@@ -68,7 +68,8 @@ class _InteractiveParser(HTMLParser):
         role = attr.get("role", "")
         if "hidden" in attr or attr.get("aria-hidden") == "true":
             return
-        if tag not in _INTERACTIVE_TAGS and role not in _ARIA_ACTION_MAP:
+        focusable = attr.get("tabindex", "") not in {"", "-1"}
+        if tag not in _INTERACTIVE_TAGS and role not in _ARIA_ACTION_MAP and not focusable:
             return
 
         self._tag_counts[tag] = self._tag_counts.get(tag, 0) + 1
@@ -145,6 +146,8 @@ def _label_for(node: dict[str, Any]) -> str:
     for key in ("name", "id"):
         if attr.get(key):
             return attr[key].strip()
+    if attr.get("class"):
+        return attr["class"].split()[0]
     return node["tag"]
 
 
@@ -157,6 +160,8 @@ def _action_for(node: dict[str, Any]) -> str:
         return "download"
     if tag == "input":
         return _INPUT_TYPE_ACTION.get(attr.get("type", "text").lower(), "type")
+    if attr.get("tabindex", "") not in {"", "-1"}:
+        return "press"
     return _TAG_ACTION.get(tag, "click")
 
 

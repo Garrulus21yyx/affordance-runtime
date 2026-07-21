@@ -50,3 +50,15 @@ def test_dom_adapter_preserves_native_select_ownership_for_option_semantics() ->
     assert option.action == "click"
     assert option.locator["select_owner_bid"] == "select-bid"
     assert option.locator["select_option"] == "earth"
+
+
+def test_dom_adapter_exposes_focusable_controls_as_keyboard_affordances() -> None:
+    model = DomAdapter().transduce(
+        '<span bid="slider" class="ui-slider-handle" tabindex="0"></span>',
+        environment_revision="rev-1",
+    )
+
+    affordance = model.affordances[0]
+    assert affordance.label == "ui-slider-handle"
+    assert affordance.action == "press"
+    assert affordance.locator["bid"] == "slider"

@@ -20,6 +20,7 @@ class PlannerActionKind(StrEnum):
     ACTIVATE = "activate"
     TYPE_TEXT = "type_text"
     SELECT_OPTION = "select_option"
+    PRESS_KEY = "press_key"
     NAVIGATE = "navigate"
     SCROLL = "scroll"
     WAIT = "wait"
@@ -31,6 +32,7 @@ _TARGET_ACTIONS = {
     PlannerActionKind.ACTIVATE,
     PlannerActionKind.TYPE_TEXT,
     PlannerActionKind.SELECT_OPTION,
+    PlannerActionKind.PRESS_KEY,
 }
 _FORBIDDEN_PARAMETER_KEYS = {
     "approval",
@@ -53,6 +55,7 @@ _ACTION_PARAMETERS = {
     PlannerActionKind.ACTIVATE: set(),
     PlannerActionKind.TYPE_TEXT: {"text"},
     PlannerActionKind.SELECT_OPTION: {"option"},
+    PlannerActionKind.PRESS_KEY: {"key"},
     PlannerActionKind.NAVIGATE: {"destination"},
     PlannerActionKind.SCROLL: {"direction", "amount"},
     PlannerActionKind.WAIT: {"duration_ms"},
@@ -242,6 +245,7 @@ def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:
         PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
         PlannerActionKind.TYPE_TEXT: {"fill", "type"},
         PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
+        PlannerActionKind.PRESS_KEY: {"press"},
         PlannerActionKind.NAVIGATE: {"navigate"},
         PlannerActionKind.SCROLL: {"scroll"},
         PlannerActionKind.WAIT: {"wait"},
@@ -260,6 +264,10 @@ def _contract_parameters(proposal: PlannerProposal) -> dict[str, Any]:
         if "option" not in values:
             raise ProposalRejected(ProposalRejectionCode.UNSUPPORTED_ACTION, "select_option requires option")
         return {"value": values["option"]}
+    if proposal.action_kind == PlannerActionKind.PRESS_KEY:
+        if "key" not in values:
+            raise ProposalRejected(ProposalRejectionCode.UNSUPPORTED_ACTION, "press_key requires key")
+        return {"key": values["key"]}
     return values
 
 

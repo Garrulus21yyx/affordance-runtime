@@ -141,7 +141,7 @@ class UnsupportedPolicy(OneClickPolicy):
 class UnsupportedSemanticPolicy(OneClickPolicy):
     def propose(self, request: BrowserGymPolicyRequest) -> BrowserGymAction:
         del request
-        return BrowserGymAction("press", {"bid": "target", "key_comb": "Enter"})
+        return BrowserGymAction("scroll", {"delta_x": 0, "delta_y": 10})
 
 
 def test_typed_browsergym_action_rejects_code_and_unknown_arguments() -> None:
@@ -270,6 +270,39 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
     }
 
 
+def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
+    model = DomAdapter().transduce(
+        '<span bid="slider" class="ui-slider-handle" tabindex="0"></span>',
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1", snapshot_id="snap-1", page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Increase slider")
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id="task-1", revision=1, objective="Increase slider", operation_class=OperationClass.READ_ONLY,
+        targets=("slider",), success_criteria=("slider increased",), source_request_ref="test",
+    )
+    proposal = PlannerProposal(
+        proposal_id="press", based_on_task_revision=1, based_on_state_version=state.version,
+        snapshot_id="snap-1", action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id="dom_span_1", parameters={"key": "ArrowRight"},
+    )
+
+    contract = GeneralistBrowserGymContractBuilder().build(
+        proposal, task, state, BrowserSnapshot(observation, model)
+    )
+
+    assert contract.action == "press"
+    assert contract.parameters["action"] == {
+        "name": "press", "arguments": {"bid": "slider", "key_comb": "ArrowRight"}
+    }
+
+
 def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(tmp_path: Path) -> None:
     tasks = tuple(f"task-{index:02d}" for index in range(35))
     nightly_tasks, nightly_seeds = browsergym_profile(tasks, "nightly")
@@ -319,7 +352,7 @@ def test_browsergym_episode_reports_action_outside_semantic_vocabulary(tmp_path:
         artifact_root=tmp_path,
     )
     assert result.runtime_status == "failed"
-    assert result.unsupported_actions == ["press"]
+    assert result.unsupported_actions == ["scroll"]
 
 
 class StoppedPolicy(OneClickPolicy):

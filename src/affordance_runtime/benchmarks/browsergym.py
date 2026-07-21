@@ -364,6 +364,8 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
         elif proposal.action_kind == PlannerActionKind.SELECT_OPTION:
             option = proposal.parameters["option"]
             action = BrowserGymAction("select_option", {"bid": bid, "options": option})
+        elif proposal.action_kind == PlannerActionKind.PRESS_KEY:
+            action = BrowserGymAction("press", {"bid": bid, "key_comb": str(proposal.parameters["key"])})
         else:
             raise ValueError(f"unsupported generalist BrowserGym semantic action: {proposal.action_kind.value}")
         action.render()
@@ -1163,6 +1165,7 @@ def _browsergym_proposal(
         "dblclick": PlannerActionKind.ACTIVATE,
         "fill": PlannerActionKind.TYPE_TEXT,
         "select_option": PlannerActionKind.SELECT_OPTION,
+        "press": PlannerActionKind.PRESS_KEY,
     }.get(action.name)
     if semantic_kind is None:
         raise ValueError(f"unsupported BrowserGym semantic action: {action.name}")
@@ -1172,6 +1175,8 @@ def _browsergym_proposal(
     elif semantic_kind == PlannerActionKind.SELECT_OPTION:
         value = action.arguments["options"]
         parameters["option"] = value if isinstance(value, list) else str(value)
+    elif semantic_kind == PlannerActionKind.PRESS_KEY:
+        parameters["key"] = str(action.arguments["key_comb"])
     index = len(episode.actions) + 1
     return PlannerProposal(
         proposal_id=f"browsergym-{episode.task_id}-{episode.seed}-step-{index}",
