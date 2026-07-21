@@ -209,6 +209,22 @@ def test_environment_factory_selects_remote_with_local_fallback_without_exposing
     assert "local-secret" not in repr(port)
 
 
+def test_environment_factory_selects_gemini_profile_without_exposing_key() -> None:
+    port = model_port_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "gemini",
+            "LLM_GEMINI_BASE_URL": "https://gemini.invalid/openai",
+            "LLM_GEMINI_API_KEY": "gemini-secret",
+            "LLM_GEMINI_MODEL": "gemini-test",
+        }
+    )
+
+    assert isinstance(port, OpenAICompatibleModelPort)
+    assert port.provider == "gemini"
+    assert port.model == "gemini-test"
+    assert "gemini-secret" not in repr(port)
+
+
 class _FailedPort:
     provider = "failed"
     model = "failed"

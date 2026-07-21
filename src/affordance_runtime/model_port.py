@@ -273,16 +273,24 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
     active_profile = env.get("LLM_ACTIVE_PROFILE", "local").strip().lower()
     if active_profile == "local":
         return _local_model_port(env)
-    if active_profile != "mistral":
+    if active_profile not in {"mistral", "gemini"}:
         raise ValueError(f"unsupported LLM_ACTIVE_PROFILE: {active_profile}")
-
-    remote = OpenAICompatibleModelPort(
-        base_url=_required_env(env, "LLM_MISTRAL_BASE_URL"),
-        api_key=_required_env(env, "LLM_MISTRAL_API_KEY"),
-        model=_required_env(env, "LLM_MISTRAL_MODEL"),
-        provider="mistral",
-        endpoint_class="remote",
-    )
+    if active_profile == "mistral":
+        remote = OpenAICompatibleModelPort(
+            base_url=_required_env(env, "LLM_MISTRAL_BASE_URL"),
+            api_key=_required_env(env, "LLM_MISTRAL_API_KEY"),
+            model=_required_env(env, "LLM_MISTRAL_MODEL"),
+            provider="mistral",
+            endpoint_class="remote",
+        )
+    else:
+        remote = OpenAICompatibleModelPort(
+            base_url=_required_env(env, "LLM_GEMINI_BASE_URL"),
+            api_key=_required_env(env, "LLM_GEMINI_API_KEY"),
+            model=_required_env(env, "LLM_GEMINI_MODEL"),
+            provider="gemini",
+            endpoint_class="remote",
+        )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         return FallbackModelPort((remote, _local_model_port(env)))
     return remote

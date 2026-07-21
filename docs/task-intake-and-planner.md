@@ -277,6 +277,13 @@ class ModelPort(Protocol):
 Provider adapters may use OpenAI, Anthropic, Gemini, OpenRouter, vLLM, or
 Ollama. Runtime core does not import a provider SDK.
 
+The shipped environment factory supports `local`, `mistral`, and `gemini`
+profiles.  Gemini uses an OpenAI-compatible endpoint and reads only
+`LLM_GEMINI_BASE_URL`, `LLM_GEMINI_MODEL`, and `LLM_GEMINI_API_KEY`; the
+profile is selected with `LLM_ACTIVE_PROFILE=gemini`.  Missing configuration
+fails closed before a request is sent.  Secrets are never added to traces,
+reports, or error details.
+
 The compiler and planner may use the same underlying model, but they are
 separate structured calls with separate prompts and traces.
 
