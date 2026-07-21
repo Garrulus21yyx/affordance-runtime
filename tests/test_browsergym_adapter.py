@@ -15,6 +15,7 @@ from affordance_runtime.benchmarks.browsergym import (
     BrowserGymPolicyRequest,
     GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
+    _close_quietly,
     _load_browsergym_checkpoints,
     _prepare_browsergym_checkpoint_metadata,
     _write_browsergym_checkpoint,
@@ -380,3 +381,11 @@ def test_browsergym_checkpoint_loader_ignores_matrix_metadata(tmp_path: Path) ->
     _prepare_browsergym_checkpoint_metadata(tmp_path, {"schema_version": "v1"}, resume=False)
 
     assert _load_browsergym_checkpoints(tmp_path, {("click-button", 0)}) == {}
+
+
+def test_browsergym_cleanup_does_not_replace_a_prior_failure() -> None:
+    class BrokenClose:
+        def close(self) -> None:
+            raise RuntimeError("already disposed")
+
+    _close_quietly(BrokenClose())

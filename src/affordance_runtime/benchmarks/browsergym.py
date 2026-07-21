@@ -456,8 +456,8 @@ def run_browsergym_episode(
     try:
         obs, info = environment.reset(seed=seed)
     except Exception:
-        policy.close()
-        environment.close()
+        _close_quietly(policy)
+        _close_quietly(environment)
         raise
     goal = _goal_text(obs.get("goal", ""))
     episode = BrowserGymEpisodeState(task_id, seed, goal, obs, info)
@@ -540,8 +540,8 @@ def run_browsergym_episode(
             "",
         )
     finally:
-        policy.close()
-        environment.close()
+        _close_quietly(policy)
+        _close_quietly(environment)
 
 
 def run_browsergym_generalist_episode(
@@ -626,7 +626,16 @@ def run_browsergym_generalist_episode(
             "",
         )
     finally:
-        environment.close()
+        _close_quietly(environment)
+
+
+def _close_quietly(resource: Any) -> None:
+    """Best-effort BrowserGym cleanup must not replace an episode diagnosis."""
+
+    try:
+        resource.close()
+    except Exception:
+        pass
 
 
 class JsonLinePolicy:
