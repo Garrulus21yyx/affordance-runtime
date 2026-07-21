@@ -657,8 +657,9 @@ Before scaling public suites, complete this bounded consolidation gate:
 
 - align README, implementation status, evidence wording, and executable
   verification commands with the current repository;
-- add a dependency lock or constraints file so rebuilding an evidence image
-  cannot silently change Pydantic, LangGraph, Pillow, or test tooling;
+- use the committed Web or BrowserGym reproducibility constraints when
+  rebuilding evidence, so Pydantic, LangGraph, Pillow, and test tooling cannot
+  silently change; the two Playwright profiles remain isolated;
 - split the 1,000+ line BrowserGym module by action schema, environment
   adapter, episode execution, matrix/checkpoint, and MiniWoB task source
   without changing runtime behavior;

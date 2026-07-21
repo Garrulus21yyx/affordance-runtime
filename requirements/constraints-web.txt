@@ -1,0 +1,3 @@
+# Current default Web runtime evidence profile.
+-c constraints-common.txt
+playwright==1.61.0
