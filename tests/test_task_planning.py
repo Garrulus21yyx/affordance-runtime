@@ -10,6 +10,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidator,
     synthetic_task_plan,
 )
+from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
 
 
 def _task() -> TaskSpec:
@@ -138,3 +139,17 @@ def test_state_kernel_keeps_plan_immutable_and_tracks_progress_separately() -> N
     assert state.plan_progress is not None
     assert state.plan_progress.completed_subgoal_ids == ["subgoal-1"]
     assert state.evidence == ["settings-api-receipt"]
+
+
+def test_subgoal_verifier_requires_independent_passed_evidence() -> None:
+    from affordance_runtime.task_planning import VerifierBackedSubgoalVerifier
+
+    subgoal = synthetic_task_plan(_task(), state_version=0).subgoals[0]
+    verifier = VerifierBackedSubgoalVerifier()
+    report = VerificationReport(
+        VerificationStatus.PASSED,
+        evidence=[VerificationEvidence("observation_metadata", "saved", True, "post_action_observation")],
+    )
+
+    assert verifier.verify(subgoal, report) == ("observation_metadata:saved",)
+    assert verifier.verify(subgoal, VerificationReport(VerificationStatus.PASSED)) is None

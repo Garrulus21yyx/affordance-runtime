@@ -15,6 +15,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
+from affordance_runtime.verification import VerificationReport
 
 
 class TaskPlanSource(StrEnum):
@@ -150,6 +151,26 @@ class TaskPlanValidator:
 
 class TaskPlannerPort(Protocol):
     def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan: ...
+
+
+class SubgoalVerifierPort(Protocol):
+    def verify(self, subgoal: SubgoalSpec, report: VerificationReport) -> tuple[str, ...] | None: ...
+
+
+@dataclass(frozen=True)
+class VerifierBackedSubgoalVerifier:
+    """Promote only independent, passed verification evidence into progress."""
+
+    def verify(self, subgoal: SubgoalSpec, report: VerificationReport) -> tuple[str, ...] | None:
+        del subgoal
+        if not report.passed:
+            return None
+        evidence = tuple(
+            f"{item.verifier_kind}:{item.target}"
+            for item in report.evidence
+            if item.passed
+        )
+        return evidence or None
 
 
 @dataclass(frozen=True)

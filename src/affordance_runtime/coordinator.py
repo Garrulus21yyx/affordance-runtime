@@ -30,6 +30,13 @@ from affordance_runtime.recovery import (
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_planning import (
+    SubgoalVerifierPort,
+    TaskPlannerPort,
+    TaskPlanValidationStatus,
+    TaskPlanValidator,
+    VerifierBackedSubgoalVerifier,
+)
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder, preflight
 
@@ -131,6 +138,9 @@ class RunCoordinator:
     budget: RunBudget = field(default_factory=RunBudget)
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
     contract_builder: ContractBuilder | None = None
+    task_planner: TaskPlannerPort | None = None
+    task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
+    subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
 
     async def run(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Async-compatible entry point for framework and service adapters."""
@@ -184,6 +194,79 @@ class RunCoordinator:
             )
             self._index(trace, observation_ref)
             self._index_paths(trace, snapshot.observation.artifact_refs)
+
+            if self.task_planner is not None and state.task_plan is None:
+                if envelope.task_spec is None:
+                    state.transition(RuntimeStep.FAILED.value)
+                    parent = trace.add(
+                        "TaskPlanRejected",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "reason": "task planning requires a validated TaskSpec",
+                        },
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope, state, trace, RuntimeStep.FAILED, parent,
+                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED, latest_verification,
+                    )
+                try:
+                    task_plan = self.task_planner.plan(envelope.task_spec, state_version=state.version)
+                except Exception as exc:
+                    state.transition(RuntimeStep.FAILED.value)
+                    parent = trace.add(
+                        "TaskPlanRejected",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PLANNER_FAILED.value,
+                            "reason": f"{type(exc).__name__}: {exc}"[:500],
+                        },
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope, state, trace, RuntimeStep.FAILED, parent,
+                        RuntimeErrorCode.PLANNER_FAILED, latest_verification,
+                    )
+                report = self.task_plan_validator.validate(task_plan, envelope.task_spec, state_version=state.version)
+                parent = trace.add(
+                    "TaskPlanProposed",
+                    {
+                        "state": state.phase,
+                        "plan_id": task_plan.plan_id,
+                        "plan_version": task_plan.plan_version,
+                        "generated_by": task_plan.generated_by.value,
+                        "subgoal_count": len(task_plan.subgoals),
+                        "validation": report.status.value,
+                        "issues": [item.model_dump(mode="json") for item in report.issues],
+                    },
+                    parents=[parent.id],
+                )
+                if report.status != TaskPlanValidationStatus.ACCEPT:
+                    state.transition(RuntimeStep.FAILED.value)
+                    parent = trace.add(
+                        "TaskPlanRejected",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "validation": report.status.value,
+                        },
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope, state, trace, RuntimeStep.FAILED, parent,
+                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED, latest_verification,
+                    )
+                state.install_task_plan(task_plan)
+                parent = trace.add(
+                    "TaskPlanAccepted",
+                    {
+                        "state": state.phase,
+                        "plan_id": task_plan.plan_id,
+                        "active_subgoal": state.active_subgoal(),
+                    },
+                    parents=[parent.id],
+                )
 
             state.transition(RuntimeStep.PLANNING.value)
             try:
@@ -276,6 +359,26 @@ class RunCoordinator:
                         latest_verification,
                     )
             if decision.done:
+                if state.task_plan is not None and not _task_plan_completed(state):
+                    state.transition(RuntimeStep.ABORTED.value)
+                    parent = trace.add(
+                        "PlannerProposalRejected",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "reason": "planner cannot finish before verifier-backed subgoal completion",
+                        },
+                        parents=[parent.id],
+                    )
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.ABORTED,
+                        parent,
+                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        latest_verification,
+                    )
                 state.final_result = dict(decision.result)
                 state.transition(RuntimeStep.DONE.value)
                 parent = trace.add(
@@ -675,6 +778,42 @@ class RunCoordinator:
                         {"state": state.phase, "incident": state.recovery_diagnostics},
                         parents=[parent.id],
                     )
+                if state.task_plan is not None and state.plan_progress is not None:
+                    active_id = state.plan_progress.active_subgoal_id
+                    subgoal = next((item for item in state.task_plan.subgoals if item.subgoal_id == active_id), None)
+                    evidence = self.subgoal_verifier.verify(subgoal, latest_verification) if subgoal is not None else None
+                    if evidence is not None and subgoal is not None:
+                        state.complete_subgoal(subgoal.subgoal_id, evidence)
+                        parent = trace.add(
+                            "SubgoalCompleted",
+                            {
+                                "state": state.phase,
+                                "plan_id": state.task_plan.plan_id,
+                                "subgoal_id": subgoal.subgoal_id,
+                                "evidence": list(evidence),
+                            },
+                            parents=[parent.id],
+                        )
+                        if _task_plan_completed(state):
+                            state.final_result = {
+                                "task_plan_id": state.task_plan.plan_id,
+                                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                            }
+                            state.transition(RuntimeStep.DONE.value)
+                            parent = trace.add(
+                                "TaskCompleted",
+                                {"state": state.phase, "result": state.final_result},
+                                parents=[parent.id],
+                            )
+                            return self._finish(
+                                envelope,
+                                state,
+                                trace,
+                                RuntimeStep.DONE,
+                                parent,
+                                None,
+                                latest_verification,
+                            )
                 state.replan_count += 1
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue
@@ -908,6 +1047,13 @@ def _resolve_planner_decision(
 
 async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
     return await value
+
+
+def _task_plan_completed(state: StateKernel) -> bool:
+    if state.task_plan is None or state.plan_progress is None:
+        return False
+    completed = set(state.plan_progress.completed_subgoal_ids)
+    return all(subgoal.subgoal_id in completed for subgoal in state.task_plan.subgoals)
 
 
 def _proposal_error_code(code: ProposalRejectionCode) -> RuntimeErrorCode:

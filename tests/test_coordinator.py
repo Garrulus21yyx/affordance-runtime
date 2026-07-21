@@ -21,6 +21,7 @@ from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
+from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
 from affordance_runtime.trace import TraceDag
 
 
@@ -148,6 +149,100 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
 class StableObserver:
     def capture(self) -> BrowserSnapshot:
         return _snapshot(1)
+
+
+class TwoStageObserver:
+    def __init__(self) -> None:
+        self.snapshots = [
+            _snapshot(1),
+            _snapshot(1),
+            _snapshot(2, saved=True),
+            _snapshot(2, saved=True),
+            _snapshot(2, saved=True),
+            _snapshot(3, saved=True),
+        ]
+
+    def capture(self) -> BrowserSnapshot:
+        return self.snapshots.pop(0)
+
+
+class TwoStageTaskPlanner:
+    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+        return TaskPlan(
+            plan_id="plan-two-stage",
+            task_id=task_spec.task_id,
+            task_revision=task_spec.revision,
+            plan_version=1,
+            based_on_state_version=state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="write",
+                    objective="Write settings",
+                    success_criteria=("settings are saved",),
+                    evidence_requirements=("saved observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                SubgoalSpec(
+                    subgoal_id="confirm",
+                    objective="Confirm settings",
+                    depends_on=("write",),
+                    success_criteria=("settings are saved",),
+                    evidence_requirements=("saved observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+            ),
+        )
+
+
+class SubgoalAwarePlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope
+        return PlannerDecision(
+            contract=ActionContract.from_affordance(
+                snapshot.affordance_model.affordances[0],
+                intent=state.active_subgoal(),
+                backend="fake",
+                verifier_plan=[VerifierSpec("observation_metadata", "saved", True)],
+            )
+        )
+
+
+def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() -> None:
+    result = RunCoordinator(
+        observer=TwoStageObserver(),
+        planner=SubgoalAwarePlanner(),
+        executor=FakeExecutor(),
+        task_planner=TwoStageTaskPlanner(),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.DONE
+    assert result.state.plan_progress is not None
+    assert result.state.plan_progress.completed_subgoal_ids == ["write", "confirm"]
+    assert result.result["task_plan_id"] == "plan-two-stage"
+    events = [node.kind for node in result.trace.nodes]
+    assert events.count("SubgoalCompleted") == 2
+    assert events.index("TaskPlanAccepted") < events.index("SubgoalCompleted")
+
+
+class EarlyFinishPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope, state, snapshot
+        return PlannerDecision(done=True, result={"unverified": True})
+
+
+def test_task_plan_rejects_planner_finish_without_verifier_backed_progress() -> None:
+    result = RunCoordinator(
+        observer=FakeObserver(),
+        planner=EarlyFinishPlanner(),
+        executor=FakeExecutor(),
+        task_planner=TwoStageTaskPlanner(),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
+    assert result.state.plan_progress is not None
+    assert result.state.plan_progress.completed_subgoal_ids == []
 
 
 class RepeatingPlanner:
