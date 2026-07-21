@@ -154,8 +154,8 @@ evidence level. See
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
-| M8.2A Task Intake and Generalist Planner | pending | typed compiler/planner specification; implementation remains |
-| M8.2B Public Benchmark Expansion | in progress | BrowserGym full-path bridge exists; generalist-planner matrices and public suite ladder remain |
+| M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
+| M8.2B Public Benchmark Expansion | in progress | generalist PR matrix reaches 18/18 coverage and 15/18 official success; public suite runners and larger matrices remain |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
@@ -455,11 +455,12 @@ three verifier-backed traces against the same node-wot oracle. See
 
 ### M8.2: Generalist Planning and Public Benchmark Expansion - in progress
 
-#### M8.2A: Task Intake and Generalist Planner - pending
+#### M8.2A: Task Intake and Generalist Planner - done
 
-Implement the authoritative
-[Task Intake and Generalist Planner](task-intake-and-planner.md) specification.
-Replace raw `goal: str` authority with a sourced, ambiguity-aware, immutable
+The authoritative
+[Task Intake and Generalist Planner](task-intake-and-planner.md) specification
+is implemented. Raw `goal: str` authority is replaced by a sourced,
+ambiguity-aware, immutable
 `TaskSpec`; add `LLMIntentCompiler`, provider-neutral `ModelPort`, and
 `GeneralistLMPlanner`; change planner output from executable contract to
 semantic `PlannerProposal`; and bind it through deterministic
@@ -476,6 +477,24 @@ and policy conflict stop safely; TaskSpec revisions invalidate stale proposals;
 and all model/proposal/contract lineage is traceable.
 
 #### M8.2B: Public Benchmark Expansion - in progress
+
+First complete a bounded consolidation pass:
+
+- reconcile README/status claims and verification commands with the current
+  test count and M8.2A completion;
+- lock result-bearing Python dependencies;
+- split BrowserGym benchmark responsibilities without changing runtime
+  semantics;
+- freeze a versioned, action-family-stratified nightly task manifest;
+- rerun the current generalist PR profile and retain the form/slider failure as
+  an explicit gap until it is solved semantically;
+- add a real multimodal grounding boundary before ScreenSpot predictions;
+- keep suite-specific reset, task, trace, and evaluator code outside
+  `RunCoordinator`.
+
+The core architecture remains a single-process modular monolith with one
+authoritative Coordinator and one Action Contract at a time. The consolidation
+pass must not introduce production-service infrastructure.
 
 The isolated BrowserGym 0.14.3 full-Coordinator bridge, typed action whitelist,
 external-policy boundary, and real one-task smoke are implemented. Keep the

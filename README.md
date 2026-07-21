@@ -5,9 +5,9 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements the complete M0-M8.1 controlled web profile: three
-reproducible Web/SaaS scenarios, trace and artifacts, independent verification,
-distinct seeded layouts, baseline/ablation evaluation, executable evolution,
+The repository implements M0-M8.1, M8.2A, and M8.3 of the controlled web
+profile: three reproducible Web/SaaS scenarios, trace and artifacts, independent
+verification, distinct seeded layouts, baseline/ablation evaluation, executable evolution,
 external parent integration, and held-out, visual, and official MiniWoB++
 generalization evidence. Service-grade distributed options remain explicitly
 deferred.
@@ -71,7 +71,7 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 69 unit/integration tests pass with Ruff and mypy
+- all 137 current unit/integration tests pass with Ruff and mypy
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -82,8 +82,9 @@ Verified evidence:
 - 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
 - a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
 
-Next evidence gate: complete M8.2A real-user intent compilation and generalist
-planning, then finish M8.2B MiniWoB matrices and planned public suites. M9 remains conditional on restart/waiting evidence.
+Next evidence gate: complete the bounded M8.2B consolidation pass, rerun the
+current generalist PR matrix, then scale MiniWoB and the planned public suites.
+M9 remains conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 

@@ -1,9 +1,10 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8.1 and M8.3 are complete for the controlled web
-profile. See [Implementation Status and Forward Gates](implementation-status.md).
-The next required increment is M8.2B public benchmark expansion. M9 is conditional on measured restart/waiting
-evidence; production-scale options remain non-blocking.
+Implementation status: M0-M8.1, M8.2A, and M8.3 are complete for the
+controlled web profile. See
+[Implementation Status and Forward Gates](implementation-status.md). The next
+required increment is M8.2B public benchmark expansion. M9 is conditional on
+measured restart/waiting evidence; production-scale options remain non-blocking.
 
 ## 1. Authority
 
@@ -652,6 +653,30 @@ the same planner boundary.
 
 #### M8.2B: Public Benchmark Expansion - in progress
 
+Before scaling public suites, complete this bounded consolidation gate:
+
+- align README, implementation status, evidence wording, and executable
+  verification commands with the current repository;
+- add a dependency lock or constraints file so rebuilding an evidence image
+  cannot silently change Pydantic, LangGraph, Pillow, or test tooling;
+- split the 1,000+ line BrowserGym module by action schema, environment
+  adapter, episode execution, matrix/checkpoint, and MiniWoB task source
+  without changing runtime behavior;
+- replace the first-sorted-task nightly selection with a versioned,
+  action-family-stratified manifest;
+- rerun the current generalist-planner PR profile before scaling: the latest
+  complete evidence is 18/18 episode coverage and 15/18 official success, with
+  the form/slider gap still explicit;
+- keep `RunCoordinator` free of benchmark-specific branches. External suites
+  provide task sources, environment adapters, artifacts, and official
+  evaluators;
+- add a screenshot-capable `VisualGrounderPort` before claiming an official
+  ScreenSpot prediction result.
+
+This gate is an internal cleanup, not a framework redesign. Do not add a
+scheduler, worker pool, second state machine, distributed event bus, or
+benchmark-specific Coordinator path.
+
 - use the implemented BrowserGym adapter to route every supported action
   through the full coordinator path and keep the scored policy external
 - cover focusable keyboard controls through the semantic `press_key` proposal
@@ -665,7 +690,20 @@ the same planner boundary.
 - defer VisualWebArena and OSWorld until their prerequisite layers are stable
 
 Exit: no scored task-specific regex/selector solver remains, every episode
-traverses the full runtime path, and official/injected suites are separate.
+traverses the full runtime path, official/injected suites are separate, the
+environment and model manifests are reproducible, and unsupported action
+families remain visible rather than being silently excluded.
+
+Recommended execution order:
+
+```text
+generalist PR rerun and form semantics
+  -> resumable 30 x 10 MiniWoB nightly
+  -> ScreenSpot assets and visual grounding
+  -> one real WebArena-Verified task, then the 30-task subset
+  -> WASP security subset
+  -> WorkArena when authorized access is available
+```
 
 ### M8.3: Recovery-Cascade Evolution - done
 

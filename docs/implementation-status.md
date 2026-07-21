@@ -27,7 +27,7 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym v8 PR matrix: 18/18 coverage, 15/18 official success with no 429/timeout; `press_key` executed on the remaining form tasks, whose behavioral gap remains explicit. ScreenSpot, WorkArena, WebArena-Verified, and WASP preparation gates added | official ScreenSpot assets/predictions, authorized WorkArena instance, WebArena environments/logs, v9/nightly/release matrices, slider behavioral coverage, and WASP end-to-end run |
+| M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym v8 PR matrix: 18/18 coverage, 15/18 official success with no 429/timeout; `press_key` executed on the remaining form tasks, whose behavioral gap remains explicit. ScreenSpot, WorkArena, WebArena-Verified, and WASP preparation gates added | documentation/dependency/module consolidation, official ScreenSpot assets/predictions, authorized WorkArena instance, provisioned WebArena environments/logs, current-planner/nightly/release matrices, slider behavioral coverage, and WASP end-to-end run |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
@@ -157,12 +157,20 @@ See `evidence/m8.2a-7edaa97.md`.
 
 ### M8.2B Public Benchmark Expansion
 
-The isolated BrowserGym 0.14.3 adapter now routes every supported action through
-`RunCoordinator`, exposes a typed action whitelist and external JSON-lines
-policy boundary, discovers 125 registered MiniWoB tasks, and records official
-reward separately from runtime diagnostics. The real one-task proof is adapter
-smoke evidence, not a scored benchmark. A reproducible external planner is
-still required for the PR/nightly/release matrices before external suites.
+The isolated BrowserGym 0.14.3 adapter routes every supported action through
+`RunCoordinator`, exposes a typed action whitelist, discovers 125 registered
+MiniWoB tasks, checkpoints resumable episodes, and records official reward
+separately from runtime diagnostics. The latest complete generalist PR matrix
+has 18/18 coverage and 15/18 official success; the three form/slider cases
+remain an explicit behavior gap.
+
+Before larger or external matrices, reconcile repository claims, lock
+dependencies, split the oversized BrowserGym benchmark module, freeze a
+versioned stratified nightly manifest, and add a real screenshot-capable visual
+grounder. WebArena-Verified is publicly provisioned rather than authorization
+gated; its missing requirement is a running official environment plus agent
+response/HAR artifacts. WorkArena remains the only suite in this ladder that
+requires gated instance access.
 
 ### M8.3 Recovery-Cascade Evolution — done
 
@@ -184,10 +192,14 @@ smoke with no blind retry, persisted acceptance, and proved rollback. See
 Run these from the repository root:
 
 ```bash
-.venv/bin/pytest -q
-.venv/bin/ruff check src tests scripts
-.venv/bin/mypy src
-.venv/bin/python -m build
+docker compose build runtime-test
+docker compose run --rm runtime-test
+
+# A separately provisioned development environment may run the same gate:
+python -m pytest -q
+python -m ruff check src tests scripts
+python -m mypy src
+python -m build
 ```
 
 M1 end-to-end commands:
