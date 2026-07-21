@@ -1002,7 +1002,7 @@ def _load_browsergym_checkpoints(
     if not directory.exists():
         return {}
     results: dict[tuple[str, int], BrowserGymEpisodeResult] = {}
-    for path in directory.glob("*.json"):
+    for path in directory.glob("*-seed-*.json"):
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError(f"invalid BrowserGym checkpoint: {path}")

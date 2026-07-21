@@ -374,3 +374,9 @@ def test_browsergym_checkpoint_metadata_rejects_mismatched_resume(tmp_path: Path
 
     with pytest.raises(ValueError, match="metadata does not match"):
         _prepare_browsergym_checkpoint_metadata(tmp_path, {"schema_version": "v1", "model": "second"}, resume=True)
+
+
+def test_browsergym_checkpoint_loader_ignores_matrix_metadata(tmp_path: Path) -> None:
+    _prepare_browsergym_checkpoint_metadata(tmp_path, {"schema_version": "v1"}, resume=False)
+
+    assert _load_browsergym_checkpoints(tmp_path, {("click-button", 0)}) == {}
