@@ -732,7 +732,7 @@ cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - in progress
+### M8.4: Adaptive Shallow Task Planning - done
 
 Implement the bounded design in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -746,8 +746,10 @@ before all subgoals are verified. `LLMTaskPlanner` generates an outcome-only
 candidate and receives one bounded deterministic-validation repair attempt.
 Task-level replanning occurs after a local subgoal action budget is exhausted,
 preserves verified subgoals/evidence, and is traced separately from local
-recovery. Controlled long-horizon evaluation and ablations remain required
-before this milestone can exit.
+recovery. The controlled Flat/Always-plan/Adaptive ablation passes: Adaptive
+preserves the short flat path and completes a three-stage oracle while the
+comparison profiles expose their expected limits. See
+`evidence/m8.4-task-planning-ablation.md`.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
   deterministic `RuleTaskPlanner`;

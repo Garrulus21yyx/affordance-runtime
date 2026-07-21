@@ -43,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--headed", action="store_true")
     benchmark.add_argument("--base-url", help="use an already-running resettable fixture service")
 
+    task_planning = subcommands.add_parser(
+        "benchmark-task-planning",
+        help="run the controlled Flat/Always-plan/Adaptive task-planning ablation",
+    )
+    task_planning.add_argument("--output", type=Path, default=Path("task-planning-results"))
+
     browsergym = subcommands.add_parser(
         "benchmark-browsergym",
         help="run the isolated BrowserGym MiniWoB full-Coordinator track with an external policy",
@@ -139,6 +145,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0 if not benchmark_report.acceptance_errors else 1
+    if args.command == "benchmark-task-planning":
+        from affordance_runtime.benchmarks.task_planning import run_task_planning_ablation
+
+        report = run_task_planning_ablation(args.output)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["acceptance_errors"] else 1
     if args.command == "benchmark-browsergym":
         from affordance_runtime.benchmarks.browsergym import run_browsergym_miniwob_suite
 
