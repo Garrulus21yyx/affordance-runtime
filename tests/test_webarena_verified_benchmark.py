@@ -119,4 +119,5 @@ def test_webarena_evaluation_fails_closed_when_upstream_results_are_missing(tmp_
     )
 
     assert report["missing_result_ids"] == [1]
+    assert report["mean_official_score"] is None
     assert report["acceptance_errors"] == ["missing official results: 1"]

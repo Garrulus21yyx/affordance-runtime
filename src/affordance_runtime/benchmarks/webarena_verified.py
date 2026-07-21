@@ -166,7 +166,10 @@ def _evaluation_report(
         "manifest_task_ids": task_ids,
         "evaluated_task_count": len(results),
         "missing_result_ids": missing,
-        "mean_official_score": sum(scores) / len(scores) if scores else 0.0,
+        # Absence of an upstream result is not an official zero.  Keeping this
+        # nullable makes fail-closed preflight reports impossible to misread as
+        # a scored run.
+        "mean_official_score": sum(scores) / len(scores) if scores else None,
         "upstream_results": {str(task_id): results[task_id] for task_id in sorted(results)},
         "command": command,
         "acceptance_errors": [],
