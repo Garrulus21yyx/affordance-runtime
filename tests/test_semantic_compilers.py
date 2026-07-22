@@ -152,6 +152,41 @@ def test_typed_incremental_control_compiles_one_verified_direction_without_backe
     assert compiled.parameters == {"key": "ArrowRight"}
 
 
+def test_typed_incremental_control_uses_bounded_page_step_for_large_distance() -> None:
+    model = DomAdapter().transduce(
+        '<div><span class="ui-slider-handle" tabindex="0"></span><div>13</div></div>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+    )
+    task = TaskSpec(
+        task_id="portable-incremental-control",
+        revision=1,
+        objective="Set the slider to 68, then continue.",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("slider",),
+        success_criteria=("slider value is 68",),
+        source_request_ref="test",
+    )
+    state = StateKernel(task.task_id, task.objective)
+    state.remember_observation(observation)
+    context = build_planner_context(
+        TaskEnvelope(task_spec=task),
+        state,
+        BrowserSnapshot(observation, model),
+    )
+
+    compiled = default_semantic_compiler_registry().compile(context)
+
+    assert compiled is not None
+    assert compiled.compiler_id == "typed-incremental-control-v1"
+    assert compiled.parameters == {"key": "PageUp"}
+
+
 def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability() -> None:
     envelope, enabled_state, snapshot = _drag_fixture("Drag Beta down by one position")
     enabled_model = DragProposalModel()

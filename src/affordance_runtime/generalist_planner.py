@@ -2637,13 +2637,17 @@ def _required_slider_direction(
     desired_text = _slider_target_value(objective)
     if not current_text or not desired_text:
         return ""
-    current_value = float(current_text)
-    desired_value = float(desired_text)
-    if abs(current_value - desired_value) > 20:
-        return "PageDown" if current_value > desired_value else "PageUp"
-    if current_value > desired_value:
+    return _incremental_control_key(float(current_text), float(desired_text))
+
+
+def _incremental_control_key(current: float, desired: float) -> str:
+    """Choose one bounded, observable step toward a numeric control value."""
+
+    if abs(current - desired) > 20:
+        return "PageDown" if current > desired else "PageUp"
+    if current > desired:
         return "ArrowLeft"
-    if current_value < desired_value:
+    if current < desired:
         return "ArrowRight"
     return ""
 
@@ -2927,7 +2931,7 @@ def _registry_incremental_control(context: Any) -> SemanticCompilation | None:
     return SemanticCompilation(
         PlannerActionKind.PRESS_KEY.value,
         sliders[0].id,
-        parameters={"key": "ArrowRight" if desired > current else "ArrowLeft"},
+        parameters={"key": _incremental_control_key(current, desired)},
     )
 
 

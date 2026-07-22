@@ -8,16 +8,17 @@ Runtime-first R1-R6 sequence is complete. The next required increment is R7
 clean-revision environment and public-evaluation reproduction. M9 remains conditional on
 measured restart/waiting evidence; production-scale options remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-22): clean commit `a0d8125` passed
-smoke 6/6 and PR 18/18, then completed the required seed-major 30-task breadth
-sweep at 23/30 without provider or circuit-break failure. The retained failures
-clustered at one shared Runtime boundary: task-level coherent-epoch perception
-requirements were incorrectly reused as hard evidence gates for unrelated
-later semantic targets. A generic target-scoped projection repair passes 470
-tests and dirty-tree 7/7 plus family 70/70 diagnostics, but those runs are not
-score eligible. Freeze the repair in a clean revision and restart smoke, PR,
-30-task diagnostic, and nightly gates. Do not add benchmark-family repairs or
-promote dirty-tree evidence.
+Current M8.2B diagnostic position (2026-07-22): clean `f8001d9` passed smoke
+6/6, PR 18/18, and the seed-major 30-task diagnostic 30/30. Its complete frozen
+nightly observed all 300 episodes and retained two `use-slider` budget failures,
+for 298/300 and mean reward 0.993333; the other 29 tasks were 10/10 and provider,
+retry, schema, artifact, and version-drift failures were zero. Unified trace
+analysis found a generic incremental-control granularity mismatch: the compiler
+used one arrow action per unit even though the shared constraint path already
+supported verified Page steps. The shared bounded-step repair passes 471 tests,
+dirty failure reproduction 7/7, and family 10/10, but these dirty runs are not
+score eligible. Freeze it in a new revision and restart the complete clean
+ladder; never resume the old nightly or add benchmark-family repairs.
 
 ## 1. Authority
 
