@@ -18,6 +18,7 @@ from time import perf_counter
 from typing import Any, Callable, Sequence, cast
 
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks import browsergym_observer as _browsergym_observer
 from affordance_runtime.benchmarks.browsergym_action_schema import (
     BROWSERGYM_ACTION_ARGUMENTS as _BROWSERGYM_ACTION_ARGUMENTS,
 )
@@ -61,7 +62,9 @@ from affordance_runtime.benchmarks.browsergym_miniwob_source import (
     ensure_browsergym_miniwob,
     registered_miniwob_tasks,
 )
+from affordance_runtime.benchmarks.browsergym_observer import BrowserGymObserver
 from affordance_runtime.benchmarks.browsergym_types import (
+    BROWSERGYM_BACKEND,
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
     BrowserGymEpisodeState,
@@ -89,12 +92,7 @@ from affordance_runtime.generalist_planner import (
     PlannerLimits,
     PlannerProposalCandidate,
 )
-from affordance_runtime.grounding import (
-    EvidenceKind,
-    GroundingCandidate,
-    GroundingSource,
-    PerceptionRequirements,
-)
+from affordance_runtime.grounding import EvidenceKind, GroundingSource
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.perception import (
     GenericPerceptionOrchestrator,
@@ -109,13 +107,7 @@ from affordance_runtime.planning import (
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.unified_grounding import (
-    CandidateDescriptor,
-    SemanticEntityResolver,
-    candidate_fingerprints,
-    candidate_from_affordance,
-    source_affordance_for_candidate,
-)
+from affordance_runtime.unified_grounding import source_affordance_for_candidate
 from affordance_runtime.visual_contracts import VisualContractBinder
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -132,8 +124,11 @@ PR_SMOKE_TASKS = _PR_SMOKE_TASKS
 cluster_browsergym_failure_envelopes = _cluster_browsergym_failure_envelopes
 browsergym_batch_circuit_breaker = _browsergym_batch_circuit_breaker
 update_browsergym_batch_circuit_state = _update_browsergym_batch_circuit_state
+_fuse_visual_candidates = _browsergym_observer.fuse_visual_candidates
+_json_safe = _browsergym_observer.json_safe
+_refresh_dom_grounding_candidates = _browsergym_observer.refresh_dom_grounding_candidates
+_visual_fallback_affordance = _browsergym_observer.visual_fallback_affordance
 
-BROWSERGYM_BACKEND = "browsergym"
 BROWSERGYM_TERMINAL_COMPLETION_POLICY = "official-terminal-v1"
 # BrowserGym defaults Playwright actions to 500ms.  Locally served controls can
 # be visible and preflighted yet still miss that narrow window, so set one
@@ -154,296 +149,6 @@ def _viewport_box(value: Any) -> tuple[float, float, float, float] | None:
     if x < 0 or y < 0 or width <= 0 or height <= 0:
         return None
     return x, y, width, height
-
-
-def _visual_fallback_affordance(snapshot: BrowserSnapshot) -> Affordance | None:
-    """Offer one screenshot-bound target only when structured controls are absent."""
-
-    screenshot_ref = snapshot.observation.screenshot_ref
-    if not screenshot_ref or snapshot.affordance_model.affordances:
-        return None
-    try:
-        screenshot_digest = hashlib.sha256(Path(screenshot_ref).read_bytes()).hexdigest()
-    except OSError:
-        # A missing artifact must not become an executable contract; retaining
-        # the page revision here only lets the later binder emit its explicit
-        # unavailable-screenshot error.
-        screenshot_digest = "artifact-unavailable"
-    fingerprint = (
-        "sha256:"
-        + hashlib.sha256(f"{snapshot.observation.page_revision}\0{screenshot_digest}".encode("utf-8")).hexdigest()
-    )
-    return Affordance(
-        id="visual_current_screenshot",
-        surface=Surface.VISUAL,
-        role="button",
-        label="current screenshot visual target",
-        action="point_activate",
-        locator={"screenshot_ref": screenshot_ref, "coordinate_space": "screenshot_pixels"},
-        lease=AffordanceLease.issue(
-            environment_revision=snapshot.observation.environment_revision,
-            ttl_ms=120_000,
-            provenance=["browsergym", "screenshot"],
-            snapshot_id=snapshot.observation.snapshot_id,
-            page_revision=snapshot.observation.page_revision,
-            target_fingerprint=fingerprint,
-        ),
-        backend_candidates=[BROWSERGYM_BACKEND],
-        confidence=0.0,
-        risk=RiskLevel.LOW,
-        evidence=[screenshot_ref],
-    )
-
-
-@dataclass
-class BrowserGymObserver:
-    session: BrowserSession
-    episode: BrowserGymEpisodeState
-    screenshot_dir: Path
-    perception_requirements: PerceptionRequirements | None = None
-    task_terms: tuple[str, ...] = ()
-    sequence: int = 0
-    lease_ttl_ms: int = 120_000
-    max_capture_attempts: int = 2
-
-    def capture(self) -> BrowserSnapshot:
-        self.sequence += 1
-        self.screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot = self.screenshot_dir / f"observation-{self.sequence:04d}.png"
-        for attempt in range(1, self.max_capture_attempts + 1):
-            try:
-                snapshot = self.session.capture(
-                    page_id=self.episode.task_id,
-                    ttl_ms=self.lease_ttl_ms,
-                    screenshot_path=str(screenshot),
-                    perception_requirements=self.perception_requirements,
-                    task_terms=self.task_terms,
-                    task_instruction=self.episode.goal,
-                )
-                break
-            except RuntimeError as exc:
-                if "coherent observation epoch drifted" not in str(exc) or attempt >= self.max_capture_attempts:
-                    raise
-        else:  # pragma: no cover - loop either returns or raises
-            raise RuntimeError("BrowserGym observation capture did not produce a snapshot")
-        metadata = {
-            **snapshot.observation.metadata,
-            "browsergym": {
-                "goal": self.episode.goal,
-                "reward": self.episode.reward,
-                "terminated": self.episode.terminated,
-                "truncated": self.episode.truncated,
-                "task_info": _json_safe(self.episode.info.get("task_info", {})),
-                "capture_attempt": attempt,
-            },
-        }
-        observation = replace(snapshot.observation, metadata=metadata)
-        return self._attach_drag_geometry(replace(snapshot, observation=observation))
-
-    def _attach_drag_geometry(self, snapshot: BrowserSnapshot) -> BrowserSnapshot:
-        drag_affordances = [item for item in snapshot.affordance_model.affordances if item.action == "drag"]
-        gesture_affordances = [
-            item for item in snapshot.affordance_model.affordances if item.action in {"drag", "drop"}
-        ]
-        boxes = self.session.bounding_boxes_for_selectors(
-            {
-                str(item.locator.get("backend_handle") or ""): str(
-                    item.locator.get("selector") or ""
-                )
-                for item in gesture_affordances
-                if item.locator.get("backend_handle") and item.locator.get("selector")
-            }
-        )
-        if not boxes:
-            return snapshot
-        sortable_position = {
-            item.id: (index, len(drag_affordances)) for index, item in enumerate(drag_affordances, start=1)
-        }
-        areas = {
-            item.id: boxes[str(item.locator.get("backend_handle") or "")][2]
-            * boxes[str(item.locator.get("backend_handle") or "")][3]
-            for item in drag_affordances
-            if str(item.locator.get("backend_handle") or "") in boxes
-        }
-        relative_sizes: dict[str, str] = {}
-        inside_largest: set[str] = set()
-        if len(set(areas.values())) > 1:
-            smallest = min(areas.values())
-            largest = max(areas.values())
-            relative_sizes = {
-                item_id: "smallest" if area == smallest else "largest" if area == largest else ""
-                for item_id, area in areas.items()
-            }
-            smallest_ids = [item_id for item_id, area in areas.items() if area == smallest]
-            largest_ids = [item_id for item_id, area in areas.items() if area == largest]
-            if len(smallest_ids) == 1 and len(largest_ids) == 1:
-                by_id = {item.id: item for item in drag_affordances}
-                source = boxes[str(by_id[smallest_ids[0]].locator.get("backend_handle") or "")]
-                destination = boxes[str(by_id[largest_ids[0]].locator.get("backend_handle") or "")]
-                if (
-                    source[0] > destination[0]
-                    and source[1] > destination[1]
-                    and source[0] + source[2] < destination[0] + destination[2]
-                    and source[1] + source[3] < destination[1] + destination[3]
-                ):
-                    inside_largest.add(smallest_ids[0])
-        affordances: list[Affordance] = []
-        for item in snapshot.affordance_model.affordances:
-            backend_handle = str(item.locator.get("backend_handle") or "")
-            box = boxes.get(backend_handle)
-            if box is None:
-                affordances.append(item)
-                continue
-            fingerprint = "sha256:" + hashlib.sha256(f"{item.target_fingerprint}\0{box}".encode("utf-8")).hexdigest()
-            affordances.append(
-                replace(
-                    item,
-                    locator={
-                        **item.locator,
-                        "bbox": list(box),
-                        "coordinate_space": "viewport_pixels",
-                        **(
-                            {
-                                "sortable_index": sortable_position[item.id][0],
-                                "sortable_count": sortable_position[item.id][1],
-                            }
-                            if item.id in sortable_position
-                            else {}
-                        ),
-                    },
-                    state={
-                        **item.state,
-                        **({"relative_size": relative_sizes[item.id]} if relative_sizes.get(item.id) else {}),
-                        **({"inside_largest": True} if item.id in inside_largest else {}),
-                    },
-                    lease=replace(item.lease, target_fingerprint=fingerprint),
-                )
-            )
-        model = replace(snapshot.affordance_model, affordances=affordances)
-        refreshed = replace(
-            snapshot,
-            observation=replace(
-                snapshot.observation,
-                target_fingerprints={item.id: item.target_fingerprint for item in affordances},
-            ),
-            affordance_model=model,
-        )
-        return _refresh_dom_grounding_candidates(refreshed)
-
-def _refresh_dom_grounding_candidates(snapshot: BrowserSnapshot) -> BrowserSnapshot:
-    """Rebind DOM candidates after observer enrichment changes target identity."""
-
-    existing_by_source = {
-        candidate.source_affordance_id: candidate
-        for candidate in snapshot.grounding_candidates
-        if candidate.source_affordance_id
-    }
-    descriptors: list[CandidateDescriptor] = []
-    for affordance in snapshot.affordance_model.affordances:
-        candidate: GroundingCandidate | None
-        if affordance.surface in {Surface.DOM, Surface.ACCESSIBILITY}:
-            candidate = candidate_from_affordance(
-                affordance,
-                snapshot.observation,
-                semantic_target_id="pending",
-                compatible_executor=BROWSERGYM_BACKEND,
-            )
-        else:
-            candidate = existing_by_source.get(affordance.id)
-        if candidate is None:
-            continue
-        descriptors.append(
-            CandidateDescriptor(
-                role=affordance.role,
-                label=affordance.label,
-                action=affordance.action,
-                container_context=str(affordance.state.get("container_context") or ""),
-                candidate=candidate,
-            )
-        )
-    unified = SemanticEntityResolver().resolve(descriptors)
-    candidates = tuple(candidate for target in unified for candidate in target.grounding_candidates)
-    return replace(
-        snapshot,
-        observation=replace(
-            snapshot.observation,
-            target_fingerprints={
-                **snapshot.observation.target_fingerprints,
-                **candidate_fingerprints(unified),
-            },
-        ),
-        grounding_candidates=candidates,
-        unified_affordances=unified,
-    )
-
-
-def _fuse_visual_candidates(
-    snapshot: BrowserSnapshot,
-    affordances: list[Affordance],
-    image_size: tuple[int, int],
-) -> BrowserSnapshot:
-    descriptors: list[CandidateDescriptor] = []
-    linked_affordances: list[Affordance] = []
-    existing_candidates = {
-        candidate.source_affordance_id: candidate
-        for candidate in snapshot.grounding_candidates
-        if candidate.source_affordance_id
-    }
-    for affordance in snapshot.affordance_model.affordances:
-        candidate = existing_candidates.get(affordance.id)
-        if candidate is None:
-            continue
-        descriptors.append(
-            CandidateDescriptor(
-                role=affordance.role,
-                label=affordance.label,
-                action=affordance.action,
-                container_context=str(affordance.state.get("container_context") or ""),
-                candidate=candidate,
-            )
-        )
-    for affordance in affordances:
-        candidate = candidate_from_affordance(
-            affordance,
-            snapshot.observation,
-            semantic_target_id="pending",
-            image_size=image_size,
-        )
-        descriptors.append(
-            CandidateDescriptor(
-                role=affordance.role,
-                label=affordance.label,
-                action=affordance.action,
-                container_context=str(affordance.state.get("container_context") or ""),
-                candidate=candidate,
-            )
-        )
-        linked_affordances.append(
-            replace(
-                affordance,
-                locator={**affordance.locator, "grounding_candidate_id": candidate.candidate_id},
-            )
-        )
-    unified = SemanticEntityResolver().resolve(descriptors)
-    candidates = tuple(candidate for target in unified for candidate in target.grounding_candidates)
-    return replace(
-        snapshot,
-        observation=replace(
-            snapshot.observation,
-            target_fingerprints={
-                **snapshot.observation.target_fingerprints,
-                **{item.id: item.target_fingerprint for item in linked_affordances},
-                **candidate_fingerprints(unified),
-            },
-        ),
-        affordance_model=replace(
-            snapshot.affordance_model,
-            affordances=[*snapshot.affordance_model.affordances, *linked_affordances],
-            kept_node_count=len(snapshot.affordance_model.affordances) + len(linked_affordances),
-        ),
-        grounding_candidates=candidates,
-        unified_affordances=unified,
-    )
 
 
 @dataclass
@@ -2172,18 +1877,6 @@ def _accessibility_tree_text(observation: dict[str, Any]) -> str:
             if role or name or bid:
                 lines.append(f"[{bid}] {role} {name}".strip())
         return "\n".join(lines)
-
-
-def _json_safe(value: Any) -> Any:
-    try:
-        json.dumps(value)
-        return value
-    except TypeError:
-        if isinstance(value, dict):
-            return {str(key): _json_safe(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [_json_safe(item) for item in value]
-        return str(value)
 
 
 def _quiet_handler(root: Path) -> type[SimpleHTTPRequestHandler]:

@@ -664,7 +664,7 @@ complete; R8 module containment is in progress with TaskPlanLifecycle,
 PerceptionSession, ContractExecutionLoop, and read-only RecoveryHandler
 collaborators plus a separated generalist PlannerContextBuilder, typed default
 SemanticCompiler registry factory, and stateless model/schema repair
-orchestrator in
+orchestrator, plus an adapter-owned BrowserGym observer module, in
 `current-implementation-plan.md`, with findings in
 `current-architecture-audit-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.

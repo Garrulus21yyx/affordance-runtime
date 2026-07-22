@@ -1426,17 +1426,20 @@ as architecture work. The detailed findings and gates are maintained in
    stateless PlannerModelOrchestrator now owns provider-neutral structured
    generation, dynamic candidate schemas, and bounded repair while Generalist
    retains Prompt/model configuration, call-budget reservation, semantic
-   policy, proposal binding, fallback order, and trace assembly. Next split the
-   BrowserGym
-   observer/encoder/runner/reporting internals without adding services or
-   another authoritative state writer. See
+   policy, proposal binding, fallback order, and trace assembly. BrowserGym
+   observation capture, metadata normalization, drag-geometry enrichment, DOM
+   candidate refresh, and visual candidate fusion now live in an adapter-owned
+   observer module while the bridge facade preserves its imports. Next split
+   the BrowserGym encoder, runner, and reporting internals without adding
+   services or another authoritative state writer. See
    `evidence/runtime-r8-task-plan-lifecycle-20260722.md`,
    `evidence/runtime-r8-perception-session-20260722.md`,
    `evidence/runtime-r8-contract-execution-loop-20260722.md`,
    `evidence/runtime-r8-recovery-handler-20260722.md`,
    `evidence/runtime-r8-planner-context-builder-20260722.md`,
    `evidence/runtime-r8-default-semantic-registry-20260722.md`, and
-   `evidence/runtime-r8-planner-model-orchestrator-20260722.md`.
+   `evidence/runtime-r8-planner-model-orchestrator-20260722.md`, and
+   `evidence/runtime-r8-browsergym-observer-20260722.md`.
 
    **Completed R8 registry slice:** moved only the declarative default
    semantic-compiler registry assembly (rule order, applicability declarations,
@@ -1455,6 +1458,14 @@ as architecture work. The detailed findings and gates are maintained in
    payload remain unchanged. Direct provider-neutral tests cover first-pass
    success, one repair on the same context, exhausted semantic validation,
    provider schema failure, and call-budget exhaustion.
+
+   **Completed R8 BrowserGym observer slice:** mapped observer, action encoder,
+   episode runner, and report/checkpoint dependencies, then extracted the
+   cohesive adapter-owned observation component. Public facade imports,
+   observation metadata, coherent-epoch retry bounds, geometry-derived target
+   fingerprints, unified candidates, and visual fallback semantics remain
+   compatible. Scheduling, circuit-break, resume, CLI/report, executor, and
+   shared Runtime code were not changed.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 

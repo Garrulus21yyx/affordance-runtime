@@ -652,6 +652,13 @@ assembly. See `evidence/runtime-r8-planner-context-builder-20260722.md`,
 `evidence/runtime-r8-default-semantic-registry-20260722.md`, and
 `evidence/runtime-r8-planner-model-orchestrator-20260722.md`.
 
+The BrowserGym stream has extracted `BrowserGymObserver` with coherent capture,
+metadata normalization, drag geometry/fingerprint enrichment, DOM grounding
+refresh, screenshot fallback, and visual candidate fusion. The public bridge
+continues to re-export the existing class and helper names; encoders, episode
+runner, and reporting remain in the bridge. See
+`evidence/runtime-r8-browsergym-observer-20260722.md`.
+
 Deliverables:
 
 - extract Coordinator internal collaborators;
