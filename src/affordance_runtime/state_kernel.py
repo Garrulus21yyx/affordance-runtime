@@ -77,6 +77,7 @@ class StateKernel:
     plan_progress: PlanProgress | None = None
     evidence: list[str] = field(default_factory=list)
     hidden_state_hypotheses: list[str] = field(default_factory=list)
+    disproved_assumptions: list[str] = field(default_factory=list)
     pending_obligations: list[str] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     receipts: list[ExecutionReceipt] = field(default_factory=list)
@@ -118,6 +119,12 @@ class StateKernel:
     def add_obligation(self, obligation: str) -> None:
         if obligation not in self.pending_obligations:
             self.pending_obligations.append(obligation)
+            self.version += 1
+
+    def record_disproved_assumption(self, assumption: str) -> None:
+        value = assumption.strip()
+        if value and value not in self.disproved_assumptions:
+            self.disproved_assumptions.append(value)
             self.version += 1
 
     def satisfy_obligation(self, obligation: str) -> None:
@@ -165,9 +172,7 @@ class StateKernel:
             raise ValueError("TaskSkill checkpoint does not match the active step")
         if step_id not in self.task_skill.completed_step_ids:
             self.task_skill.completed_step_ids.append(step_id)
-        self.task_skill.evidence.extend(
-            item for item in evidence if item not in self.task_skill.evidence
-        )
+        self.task_skill.evidence.extend(item for item in evidence if item not in self.task_skill.evidence)
         self.task_skill.next_step_index += 1
         self.task_skill.active_step_id = ""
         self.version += 1
@@ -311,10 +316,20 @@ class StateKernel:
             raise ValueError("cannot replace a missing TaskPlan")
         if plan.task_id != self.task_id:
             raise ValueError("TaskPlan task_id does not match run state")
+        if plan.plan_version != self.task_plan.plan_version + 1:
+            raise ValueError("replanned TaskPlan version must increase by one")
+        if plan.supersedes_plan_id != self.task_plan.plan_id:
+            raise ValueError("replanned TaskPlan must supersede the active plan")
+        if plan.plan_id == self.task_plan.plan_id:
+            raise ValueError("replanned TaskPlan requires a new plan_id")
         new_ids = {item.subgoal_id for item in plan.subgoals}
         completed = set(self.plan_progress.completed_subgoal_ids)
         if not completed.issubset(new_ids):
             raise ValueError("replanned TaskPlan must preserve verified subgoals")
+        previous_by_id = {item.subgoal_id: item for item in self.task_plan.subgoals}
+        replacement_by_id = {item.subgoal_id: item for item in plan.subgoals}
+        if any(replacement_by_id[subgoal_id] != previous_by_id[subgoal_id] for subgoal_id in completed):
+            raise ValueError("replanned TaskPlan cannot redefine a verified subgoal")
         self.task_plan = plan
         self.plan_progress = PlanProgress(
             completed_subgoal_ids=list(self.plan_progress.completed_subgoal_ids),

@@ -29,6 +29,7 @@ from affordance_runtime.task_planning import (
     SubgoalSpec,
     TaskPlanCandidate,
     TaskPlannerPort,
+    TaskPlanningContext,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -133,9 +134,9 @@ class _CountingPlanner:
     delegate: TaskPlannerPort
     calls: int = 0
 
-    def plan(self, task_spec: TaskSpec, *, state_version: int):  # type: ignore[no-untyped-def]
+    def plan(self, context: TaskPlanningContext):  # type: ignore[no-untyped-def]
         self.calls += 1
-        return self.delegate.plan(task_spec, state_version=state_version)
+        return self.delegate.plan(context)
 
 
 def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:

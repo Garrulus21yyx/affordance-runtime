@@ -10,9 +10,17 @@ from urllib.parse import urlsplit
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, RiskLevel, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.fixtures import EXPORT_SHA256
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass
+from affordance_runtime.task_planning import (
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanningContext,
+    TaskPlanSource,
+)
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
@@ -43,7 +51,7 @@ class PricingPlanner:
     """Reveal both pricing cards, then return structured limits with evidence."""
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope, state
+        del envelope
         html = str(snapshot.observation.metadata.get("html") or "")
         plans = extract_pricing(html)
         for plan_name in ("pro", "enterprise"):
@@ -64,18 +72,68 @@ class PricingPlanner:
                             kind="dom_contains",
                             target="html",
                             expected=f'data-plan="{plan_name}" data-visible="true"',
+                            criterion_ids=_active_subgoal_criterion_ids(state),
+                            requirement_ids=_active_subgoal_requirement_ids(state),
                         )
                     ],
                 )
                 return PlannerDecision(contract=contract, reason=f"reveal hidden {plan_name} evidence")
         if plans and all(plan.get("visible") for plan in plans.values()):
-            result = {name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()}
+            result = {
+                name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()
+            }
             return PlannerDecision(
                 done=True,
                 result={"plans": result, "source_url": snapshot.observation.url},
                 reason="all pricing limits are structurally visible",
             )
         return PlannerDecision(done=False, reason="pricing data is not available")
+
+
+@dataclass(frozen=True)
+class PricingTaskPlanner:
+    """Reference-app multi-stage plan; no selectors or backend authority."""
+
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        return TaskPlan(
+            plan_id=f"pricing-plan-v{context.current_plan_version + 1}",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="reveal-pro",
+                    objective="Reveal the Pro plan limits",
+                    success_criteria=("Pro limits are structurally visible",),
+                    evidence_requirements=("post-action DOM shows visible Pro limits",),
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+                SubgoalSpec(
+                    subgoal_id="reveal-enterprise",
+                    objective="Reveal the Enterprise plan limits",
+                    depends_on=("reveal-pro",),
+                    success_criteria=("Enterprise limits are structurally visible",),
+                    evidence_requirements=("post-action DOM shows visible Enterprise limits",),
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+            ),
+            assumptions=("pricing cards can be revealed independently",),
+        )
+
+
+def _active_subgoal_criterion_ids(state: StateKernel) -> tuple[str, ...]:
+    if state.plan_progress is None or not state.plan_progress.active_subgoal_id:
+        return ()
+    return (criterion_id("subgoal", state.plan_progress.active_subgoal_id, 0),)
+
+
+def _active_subgoal_requirement_ids(state: StateKernel) -> tuple[str, ...]:
+    if state.plan_progress is None or not state.plan_progress.active_subgoal_id:
+        return ()
+    return (evidence_requirement_id("subgoal", state.plan_progress.active_subgoal_id, 0),)
 
 
 def _origin(url: str) -> str:
@@ -95,7 +153,11 @@ class SettingsPlanner:
                 reason="persisted settings oracle passed",
             )
         modal_affordance = next(
-            (item for item in snapshot.affordance_model.affordances if item.locator.get("selector") == "#dismiss-modal"),
+            (
+                item
+                for item in snapshot.affordance_model.affordances
+                if item.locator.get("selector") == "#dismiss-modal"
+            ),
             None,
         )
         if modal_affordance is not None:

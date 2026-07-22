@@ -1,3 +1,5 @@
+import pytest
+
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
@@ -8,6 +10,8 @@ from affordance_runtime.task_planning import (
     PlanProgress,
     SubgoalSpec,
     TaskPlan,
+    TaskPlanningBudgetSummary,
+    TaskPlanningContext,
     TaskPlanSource,
     TaskPlanValidationStatus,
     TaskPlanValidator,
@@ -30,8 +34,22 @@ def _task() -> TaskSpec:
     )
 
 
+def _context(*, state_version: int = 4) -> TaskPlanningContext:
+    return TaskPlanningContext(
+        task_spec=_task(),
+        state_version=state_version,
+        remaining_budget=TaskPlanningBudgetSummary(
+            steps_remaining=10,
+            observations_remaining=10,
+            replans_remaining=2,
+            recoveries_remaining=2,
+            effectful_actions_remaining=2,
+        ),
+    )
+
+
 def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> None:
-    plan = PlanningRouter().plan(_task(), state_version=4)
+    plan = PlanningRouter().plan(_context())
 
     assert plan.generated_by == TaskPlanSource.RULE
     assert len(plan.subgoals) == 1
@@ -101,6 +119,49 @@ def test_validator_marks_missing_verification_requirements_repairable() -> None:
     assert {item.code for item in report.issues} == {"missing_success_criteria", "missing_evidence_requirements"}
 
 
+def test_validator_rejects_non_monotonic_replacement_lineage() -> None:
+    previous = synthetic_task_plan(_context())
+    replacement = previous.model_copy(
+        update={
+            "plan_id": "replacement",
+            "based_on_state_version": 5,
+            "plan_version": previous.plan_version,
+            "supersedes_plan_id": "wrong-plan",
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        replacement,
+        _task(),
+        state_version=5,
+        previous_plan=previous,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REJECT
+    assert "invalid_replacement_plan_lineage" in {item.code for item in report.issues}
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    (
+        "use selector=#save",
+        "mouse_click(120, 240)",
+        "x=120 y=240",
+        "backend=playwright",
+        "approval_token=trusted",
+        "grant capability settings.write",
+    ),
+)
+def test_validator_rejects_executable_handles_and_authority_in_plan_text(forbidden: str) -> None:
+    plan = synthetic_task_plan(_context())
+    unsafe = plan.model_copy(update={"subgoals": (plan.subgoals[0].model_copy(update={"objective": forbidden}),)})
+
+    report = TaskPlanValidator().validate(unsafe, _task(), state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.REJECT
+    assert "executable_plan_content" in {item.code for item in report.issues}
+
+
 def test_progress_selects_ready_subgoals_serially_and_preserves_evidence() -> None:
     task = _task()
     first = SubgoalSpec(
@@ -136,13 +197,13 @@ def test_progress_selects_ready_subgoals_serially_and_preserves_evidence() -> No
 
 
 def test_synthetic_plan_copies_task_constraints_into_verification_boundary() -> None:
-    plan = synthetic_task_plan(_task(), state_version=0)
+    plan = synthetic_task_plan(_context(state_version=0))
     assert plan.subgoals[0].evidence_requirements == ("settings API confirms dark",)
 
 
 def test_state_kernel_keeps_plan_immutable_and_tracks_progress_separately() -> None:
     task = _task()
-    plan = synthetic_task_plan(task, state_version=0)
+    plan = synthetic_task_plan(_context(state_version=0).model_copy(update={"task_spec": task}))
     state = StateKernel(task.task_id, task.objective)
 
     state.install_task_plan(plan)
@@ -156,10 +217,30 @@ def test_state_kernel_keeps_plan_immutable_and_tracks_progress_separately() -> N
     assert state.evidence == ["settings-api-receipt"]
 
 
+def test_replan_cannot_redefine_a_verified_subgoal() -> None:
+    plan = synthetic_task_plan(_context(state_version=0))
+    state = StateKernel(_task().task_id, _task().objective)
+    state.install_task_plan(plan)
+    state.complete_subgoal("subgoal-1", ("settings-state",))
+    changed = plan.subgoals[0].model_copy(update={"success_criteria": ("different outcome",)})
+    replacement = plan.model_copy(
+        update={
+            "plan_id": "plan-2",
+            "plan_version": 2,
+            "supersedes_plan_id": plan.plan_id,
+            "based_on_state_version": state.version,
+            "subgoals": (changed,),
+        }
+    )
+
+    with pytest.raises(ValueError, match="cannot redefine"):
+        state.replace_task_plan(replacement)
+
+
 def test_subgoal_verifier_requires_independent_passed_evidence() -> None:
     from affordance_runtime.task_planning import VerifierBackedSubgoalVerifier
 
-    subgoal = synthetic_task_plan(_task(), state_version=0).subgoals[0]
+    subgoal = synthetic_task_plan(_context(state_version=0)).subgoals[0]
     verifier = VerifierBackedSubgoalVerifier()
     report = VerificationReport(
         VerificationStatus.PASSED,
@@ -253,7 +334,7 @@ def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None
     import asyncio
 
     model = RepairingTaskPlanModel()
-    plan = asyncio.run(LLMTaskPlanner(model).plan(_task(), state_version=4))
+    plan = asyncio.run(LLMTaskPlanner(model).plan(_context()))
 
     assert model.calls == 2
     assert plan.generated_by == TaskPlanSource.LLM

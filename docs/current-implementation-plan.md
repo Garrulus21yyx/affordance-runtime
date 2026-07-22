@@ -1,7 +1,7 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8.1, M8.2A, and M8.3 are complete for the
-controlled web profile. M8.2B, M8.4, and M8.5 are in progress. See
+Implementation status: M0-M8.1, M8.2A, M8.3, and M8.4 are complete for the
+controlled web profile. M8.2B and M8.5 are in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
 [Current Architecture Audit](current-architecture-audit-20260722.md). The next
 required increment is semantic completion of the generic Runtime main path,
@@ -11,8 +11,8 @@ restart/waiting evidence; production-scale options remain non-blocking.
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs before the remaining Runtime-first R2-R5 gates close. After
-context-rich planning, generic perception/routing, and de-specialized
+repairs before the remaining Runtime-first R3-R5 gates close. After generic
+perception/routing and de-specialized
 module ownership are proven, rerun the residual release scan as external
 confirmation.
 
@@ -690,7 +690,7 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- pause new task-family semantic compilers until the remaining R2-R5 gates move benchmark
+- pause new task-family semantic compilers until the remaining R3-R5 gates move benchmark
   attributes and authored family logic out of shared DOM/planner modules and
   prove the replacement capability in a non-BrowserGym environment;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
@@ -899,7 +899,7 @@ cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - in progress
+### M8.4: Adaptive Shallow Task Planning - done
 
 Implement the bounded design in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -909,12 +909,13 @@ separate `PlanProgress`, `TaskPlanValidator`, a flat `PlanningRouter`/
 `RuleTaskPlanner`, StateKernel storage, one bounded LM repair, and a controlled
 Flat/Always-plan/Adaptive sequencing experiment.
 
-The milestone is not complete. Runtime-first R1 now requires fresh strong
-evidence with explicit identities and complete mandatory criterion/evidence
-coverage before a Subgoal or SkillStep advances. Task replanning still receives
-only TaskSpec and state_version, plan versions remain fixed, and normal
-BrowserGym, CLI, and natural-language paths do not consistently use task-level
-planning. The controlled ablation proves component sequencing only. See
+Runtime-first R1 requires fresh strong evidence with explicit identities and
+complete mandatory criterion/evidence coverage before a Subgoal or SkillStep
+advances. R2 adds bounded `TaskPlanningContext`, evidence/failure/recovery/
+environment/budget summaries, monotonic replacement lineage, preservation of
+verified subgoals, and an optional real Chromium pricing path through the
+normal CLI entrypoint. See
+`evidence/runtime-r2-task-planning-context-20260722.md`,
 `evidence/runtime-r1-criteria-evidence-20260722.md`,
 `evidence/m8.4-task-planning-ablation.md`, and
 `current-architecture-audit-20260722.md`.
@@ -1368,9 +1369,10 @@ as architecture work. The detailed findings and gates are maintained in
    governs SubgoalSpec, SkillStep, and plan/skill completion; it rejects
    unrelated, partial, stale, weak, or insufficient evidence and traces
    criterion-to-evidence links.
-2. **Context-rich task planning:** introduce TaskPlanningContext with current
-   environment summary, verified progress, failures, disproved assumptions,
-   budgets, and plan lineage; wire it into a normal non-BrowserGym entrypoint.
+2. **Context-rich task planning — complete:** TaskPlanningContext carries the
+   current environment, verified progress, failures, recovery, disproved
+   assumptions, budgets, and plan lineage through a normal non-BrowserGym
+   entrypoint.
 3. **Generic perception orchestration:** derive PerceptionRequirements from
    TaskSpec/SubgoalSpec and pass them through Coordinator to BrowserSession;
    produce DOM, accessibility, SVG, screenshot, and visual candidates through
@@ -1476,7 +1478,7 @@ justify merging the two runtime architectures.
 | P0 | replacement plans do not form a monotonic plan-version chain | increment and trace every accepted replacement plan |
 | P0 | recovery can select compensation, retry, or reroute without an explicit executed recovery command | add a bounded RecoveryExecutor with receipt, post-state inspection, and verification |
 | P0 | Web and BrowserGym intentionally require incompatible Playwright versions | publish and test separate core, Web, BrowserGym, and visual commands |
-| P1 | task replanning receives insufficient failure, evidence, and environment context | add a bounded versioned TaskPlanningContext |
+| done (R2) | task replanning previously received insufficient failure, evidence, and environment context | bounded TaskPlanningContext and monotonic lineage now drive initial planning and replanning |
 | P1 | RunCoordinator is approaching a god-object boundary | extract task-plan lifecycle, contract execution, and recovery collaborators without another state owner |
 | P1 | core affordance payloads still accept untyped dictionaries | migrate boundary payloads to a tagged surface union |
 | P1 | working state can retain unbounded observations and receipts | retain current references and bounded summaries; keep full history in trace and artifact stores |

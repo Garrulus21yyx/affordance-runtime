@@ -14,8 +14,15 @@ from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPo
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
-from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
+from affordance_runtime.planners import (
+    ExportPlanner,
+    PricingPlanner,
+    PricingTaskPlanner,
+    SettingsPlanner,
+    extract_pricing,
+)
 from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--artifacts", type=Path, default=Path("artifacts"))
     run.add_argument("--headed", action="store_true")
     run.add_argument("--approve", action="store_true", help="explicitly approve the export capability")
+    run.add_argument(
+        "--task-planning",
+        action="store_true",
+        help="enable the optional task-planning layer for the reference pricing path",
+    )
 
     baseline = subcommands.add_parser("baseline", help="run the direct Playwright pricing baseline")
     baseline.add_argument("--target", default="http://127.0.0.1:3000/pricing")
@@ -251,9 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "benchmark-screenspot":
         from affordance_runtime.benchmarks.screenspot import run_screenspot_offline_suite
 
-        report = run_screenspot_offline_suite(
-            args.annotations, args.images, args.predictions, args.output
-        )
+        report = run_screenspot_offline_suite(args.annotations, args.images, args.predictions, args.output)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
     if args.command == "benchmark-screenspot-grounder":
@@ -327,6 +337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.artifacts,
             headless=not args.headed,
             approve=args.approve,
+            task_planning=args.task_planning,
         )
         print(json.dumps(result, indent=2, sort_keys=True, default=str))
         return 0 if result["status"] == "done" else 1
@@ -344,6 +355,7 @@ def run_scenario(
     approval_approver: str = "cli-user",
     constraints_override: dict[str, Any] | None = None,
     capabilities_override: list[str] | None = None,
+    task_planning: bool = False,
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
@@ -360,6 +372,23 @@ def run_scenario(
     approval_provider = (
         ConfiguredApprovalProvider(approval_approver, {"report.export"}) if scenario == "export" and approve else None
     )
+    if task_planning and scenario != "pricing":
+        raise ValueError("reference task planning is currently defined for pricing only")
+    selected_run_id = run_id or f"{scenario}-gold-path"
+    task_spec = (
+        TaskSpec(
+            task_id=selected_run_id,
+            revision=1,
+            objective="Reveal Pro and Enterprise plan limits with structural evidence.",
+            operation_class=OperationClass.READ_ONLY,
+            targets=("Pro", "Enterprise"),
+            success_criteria=("both requested pricing plans are structurally visible",),
+            evidence_requirements=("post-action DOM evidence for each pricing plan",),
+            source_request_ref="reference-cli",
+        )
+        if task_planning
+        else None
+    )
     with BrowserSession.launch(target, headless=headless) as session:
         router = ExecutorRouter()
         router.register(DomExecutor(session))
@@ -369,14 +398,19 @@ def run_scenario(
             executor=router,
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,
+            task_planner=PricingTaskPlanner() if task_planning else None,
         ).run_sync(
             TaskEnvelope(
-                task_id=run_id or f"{scenario}-gold-path",
-                goal={
-                    "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
-                    "settings": "Enable the reversible notifications setting and verify persisted state.",
-                    "export": "Export a report only after explicit approval and return the file receipt.",
-                }[scenario],
+                task_id=selected_run_id,
+                goal=(
+                    task_spec.objective
+                    if task_spec is not None
+                    else {
+                        "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
+                        "settings": "Enable the reversible notifications setting and verify persisted state.",
+                        "export": "Export a report only after explicit approval and return the file receipt.",
+                    }[scenario]
+                ),
                 target=target,
                 constraints=constraints_override
                 if constraints_override is not None
@@ -386,6 +420,7 @@ def run_scenario(
                     "approval_required": scenario == "export",
                 },
                 capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
+                task_spec=task_spec,
             )
         )
     return {
@@ -409,5 +444,7 @@ def run_pricing_baseline(target: str, *, headless: bool = True) -> dict[str, obj
     plans = extract_pricing(str(snapshot.observation.metadata.get("html") or ""))
     return {
         "status": "done" if plans and all(plan["visible"] for plan in plans.values()) else "failed",
-        "plans": {name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()},
+        "plans": {
+            name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()
+        },
     }

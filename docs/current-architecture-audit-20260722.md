@@ -104,11 +104,15 @@ Exit evidence:
 Resolution (2026-07-22): the shared matcher, typed identities, current-epoch
 and strong-evidence gates, structured reports, and trace links close F-01/R1.
 Generic negative controls cover unrelated, partial, stale, weak, unbound, and
-explicitly multi-linked evidence. F-02 and Runtime-first R2-R5 remain open.
+explicitly multi-linked evidence. F-02/R2 is also closed by context-rich
+planning evidence; Runtime-first R3-R5 remain open.
 
 ### F-02 - Task-level planning is a controlled component, not a real main path
 
 Severity: high.
+
+Resolution status: closed on 2026-07-22. See
+`evidence/runtime-r2-task-planning-context-20260722.md`.
 
 TaskPlannerPort receives only TaskSpec and state_version. Replanning does not
 receive current observation summary, completed evidence, failure summary, active
@@ -408,7 +412,7 @@ claim correction, not a rewrite.
 | M8.2A | done | typed intake and action-level generalist boundary exist |
 | M8.2B | in progress | residual release and external suites remain |
 | M8.3 | done for RecoveryPolicyPatch | recovery cascade and controlled policy replay are real |
-| M8.4 | in progress | controlled planning exists; criteria matching, context-rich replanning, lineage, and normal-entrypoint wiring remain |
+| M8.4 | done | criteria-bound planning, context-rich replanning, monotonic lineage, flat routing, and a real non-BrowserGym reference entrypoint are proven |
 | M8.5 | in progress | route and gesture components exist; generic perception, calibrated routing, trace mining, and strict checkpoints remain |
 | M9 | pending and conditional | no change |
 
@@ -451,6 +455,9 @@ Exit:
 - trace records criterion-to-evidence links.
 
 ### Phase R2 - Context-Rich Task Planning
+
+Status: complete on 2026-07-22. See
+`evidence/runtime-r2-task-planning-context-20260722.md`.
 
 Deliverables:
 
@@ -593,8 +600,8 @@ Benchmark task-family pass rate alone cannot close an architecture milestone.
 
 1. **Complete:** implement CriteriaEvidenceMatcher and repair Subgoal and
    SkillStep progress.
-2. **Next:** define and wire TaskPlanningContext plus plan lineage.
-3. Pass PerceptionRequirements through generic Coordinator and BrowserSession.
+2. **Complete:** define and wire TaskPlanningContext plus plan lineage.
+3. **Next:** pass PerceptionRequirements through generic Coordinator and BrowserSession.
 4. Create executable generic visual candidates outside BrowserGym.
 5. Move benchmark semantics out of shared DOM and planner modules.
 6. Add verifier-backed route outcomes and target-specific evidence gates.

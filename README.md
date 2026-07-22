@@ -20,10 +20,10 @@ observations, encode validated Runtime actions, and collect official results; it
 must not become a replacement planner, perception stack, verifier, recovery
 engine, or learning system.
 
-The repository implements M0-M8.1, M8.2A, and M8.3 of the controlled web
-profile. M8.2B public benchmark expansion is in progress. M8.4 task-planning
-models, controlled sequencing, and criteria-bound progress exist, but
-context-rich replanning, plan lineage, and normal-entrypoint wiring remain.
+The repository implements M0-M8.1, M8.2A, M8.3, and M8.4 of the controlled web
+profile. M8.2B public benchmark expansion is in progress. M8.4 includes
+criteria-bound progress, context-rich replanning, monotonic plan lineage, and
+an optional real reference-app entrypoint.
 M8.5 route, gesture, fallback, and skill components exist, but generic
 task-aware multimodal perception, verifier-calibrated routing, canonical
 trace-to-skill mining, and broader normal-entrypoint proof remain in progress.
@@ -105,7 +105,7 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 412 current unit/integration tests pass with Ruff in the provisioned
+- all 423 current unit/integration tests pass with Ruff in the provisioned
   BrowserGym environment; full mypy still reports four optional-integration
   boundary errors and is not currently a passing repository-wide gate
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
@@ -127,8 +127,8 @@ Verified evidence:
   unrelated, partial, stale, weak, or unbound evidence cannot advance generic
   Subgoal or TaskSkill progress
 
-Next architecture gate: complete context-rich task planning and generic
-task-aware multimodal perception before adding further
+Next architecture gate: complete generic task-aware multimodal perception and
+target-specific calibrated routing before adding further
 benchmark-family rules. Then remove benchmark semantics from shared modules,
 freeze the current immutable revision, and rerun BrowserGym smoke, PR, nightly,
 and residual release matrices. M9 remains conditional on restart/waiting

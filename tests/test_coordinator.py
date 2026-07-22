@@ -31,7 +31,12 @@ from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
-from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
+from affordance_runtime.task_planning import (
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanningContext,
+    TaskPlanSource,
+)
 from affordance_runtime.trace import TraceDag
 
 
@@ -345,13 +350,14 @@ class ReplanObserver:
 
 
 class TwoStageTaskPlanner:
-    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        task_spec = context.task_spec
         return TaskPlan(
             plan_id="plan-two-stage",
             task_id=task_spec.task_id,
             task_revision=task_spec.revision,
             plan_version=1,
-            based_on_state_version=state_version,
+            based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.RULE,
             subgoals=(
                 SubgoalSpec(
@@ -374,8 +380,8 @@ class TwoStageTaskPlanner:
 
 
 class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
-    async def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
-        return super().plan(task_spec, state_version=state_version)
+    async def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        return super().plan(context)
 
 
 class SubgoalAwarePlanner:
@@ -443,15 +449,19 @@ def test_task_plan_rejects_planner_finish_without_verifier_backed_progress() -> 
 class ReplanningTaskPlanner:
     def __init__(self) -> None:
         self.calls = 0
+        self.contexts: list[TaskPlanningContext] = []
 
-    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
         self.calls += 1
+        self.contexts.append(context)
+        task_spec = context.task_spec
         return TaskPlan(
             plan_id=f"plan-replanned-{self.calls}",
             task_id=task_spec.task_id,
             task_revision=task_spec.revision,
             plan_version=self.calls,
-            based_on_state_version=state_version,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.RULE,
             subgoals=(
                 SubgoalSpec(
@@ -460,7 +470,7 @@ class ReplanningTaskPlanner:
                     success_criteria=("settings are saved",),
                     evidence_requirements=("saved observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
-                    max_actions=1 if self.calls == 1 else 2,
+                    max_actions=2 if context.failures else 1,
                 ),
             ),
         )
@@ -485,6 +495,127 @@ def test_coordinator_replans_only_after_active_subgoal_action_budget_is_exhauste
     assert result.state.plan_progress is not None
     assert result.state.plan_progress.task_replan_count == 1
     assert "TaskReplanned" in [node.kind for node in result.trace.nodes]
+    initial, replacement = planner.contexts
+    assert initial.reason == "initial"
+    assert initial.environment.affordances[0].label == "Save"
+    assert initial.current_plan_version == 0
+    assert replacement.reason == "subgoal_action_budget_exhausted"
+    assert replacement.current_plan_id == "plan-replanned-1"
+    assert replacement.current_plan_version == 1
+    assert replacement.failures[0].error_code == "failed"
+    assert replacement.recovery_summary
+    assert replacement.remaining_budget.steps_remaining < initial.remaining_budget.steps_remaining
+    replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
+    assert replanned.payload["supersedes_plan_id"] == "plan-replanned-1"
+
+
+class EvidencePreservingObserver:
+    def __init__(self) -> None:
+        self.snapshots = [
+            _snapshot(1, saved=True),
+            _snapshot(1, saved=True),
+            _snapshot(2, saved=True),
+            _snapshot(2, saved=True),
+            _snapshot(2, saved=True),
+            _snapshot(3, saved=True),
+            _snapshot(3, saved=True),
+            _snapshot(3, saved=True),
+            _snapshot(4, saved=True),
+        ]
+
+    def capture(self) -> BrowserSnapshot:
+        return self.snapshots.pop(0)
+
+
+class EvidenceAwareTaskPlanner:
+    def __init__(self) -> None:
+        self.contexts: list[TaskPlanningContext] = []
+
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        self.contexts.append(context)
+        task = context.task_spec
+        discovered = any(
+            item.subgoal_id == "discover" and item.evidence_ids for item in context.criteria_evidence_ledger
+        )
+        discover = SubgoalSpec(
+            subgoal_id="discover",
+            objective="Discover saved state",
+            success_criteria=("saved state is observed",),
+            evidence_requirements=("independent saved observation",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+        )
+        apply = SubgoalSpec(
+            subgoal_id="apply",
+            objective=(
+                "Apply using verified saved-state evidence" if discovered else "Apply using the initial assumption"
+            ),
+            depends_on=("discover",),
+            success_criteria=("settings are saved",),
+            evidence_requirements=("independent saved observation",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            max_actions=1,
+        )
+        return TaskPlan(
+            plan_id=f"evidence-plan-{context.current_plan_version + 1}",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(discover, apply),
+            assumptions=("the initial apply route is sufficient",),
+        )
+
+
+class EvidenceAwareActionPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope
+        state.active_subgoal()
+        active_id = state.plan_progress.active_subgoal_id if state.plan_progress else ""
+        plan_version = state.task_plan.plan_version if state.task_plan else 0
+        bound_id = active_id if active_id == "discover" or plan_version >= 2 else "unrelated"
+        return PlannerDecision(
+            contract=ActionContract.from_affordance(
+                snapshot.affordance_model.affordances[0],
+                intent=state.active_subgoal(),
+                backend="fake",
+                verifier_plan=[
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        criterion_ids=(criterion_id("subgoal", bound_id, 0),),
+                        requirement_ids=(evidence_requirement_id("subgoal", bound_id, 0),),
+                    )
+                ],
+            )
+        )
+
+
+def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() -> None:
+    task_planner = EvidenceAwareTaskPlanner()
+    result = RunCoordinator(
+        observer=EvidencePreservingObserver(),
+        planner=EvidenceAwareActionPlanner(),
+        executor=FakeExecutor(),
+        task_planner=task_planner,
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.DONE
+    assert result.state.task_plan is not None
+    assert result.state.task_plan.plan_version == 2
+    assert result.state.task_plan.supersedes_plan_id == "evidence-plan-1"
+    assert result.state.task_plan.subgoals[1].objective == "Apply using verified saved-state evidence"
+    assert result.state.plan_progress is not None
+    assert result.state.plan_progress.completed_subgoal_ids == ["discover", "apply"]
+    assert len(task_planner.contexts) == 2
+    replacement_context = task_planner.contexts[1]
+    assert replacement_context.criteria_evidence_ledger[0].subgoal_id == "discover"
+    assert replacement_context.criteria_evidence_ledger[0].evidence_ids
+    assert replacement_context.failures[0].error_code == "subgoal_action_budget_exhausted"
+    replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
+    assert replanned.payload["planning_context"]["criteria_evidence_ledger"]
 
 
 class RepeatingPlanner:

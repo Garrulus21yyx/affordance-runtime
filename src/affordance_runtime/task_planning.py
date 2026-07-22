@@ -8,6 +8,7 @@ contract boundaries.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Awaitable, Protocol
@@ -25,6 +26,17 @@ from affordance_runtime.criteria import (
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
 from affordance_runtime.verification import VerificationReport
+
+_FORBIDDEN_PLAN_CONTENT = re.compile(
+    r"(?:"
+    r"\bxpath\b|\bcss\s*=|\bselector\s*[:=]|\[\s*bid\s*=|"
+    r"\b(?:mark_id|browser_handle|approval_token)\b|"
+    r"\b(?:x|y)\s*[:=]\s*-?\d|"
+    r"\b(?:mouse_click|mouse_move|mouse_down|mouse_up|drag_and_drop)\s*\(|"
+    r"\blocator\.|\bbackend\s*[:=]|\bgrant\s+capabilit(?:y|ies)\b"
+    r")",
+    re.IGNORECASE,
+)
 
 
 class TaskPlanSource(StrEnum):
@@ -57,6 +69,7 @@ class TaskPlan(StrictModel):
     task_id: str = Field(min_length=1)
     task_revision: int = Field(ge=1)
     plan_version: int = Field(ge=1)
+    supersedes_plan_id: str = ""
     based_on_state_version: int = Field(ge=0)
     generated_by: TaskPlanSource
     subgoals: tuple[SubgoalSpec, ...] = Field(min_length=1, max_length=8)
@@ -68,6 +81,70 @@ class TaskPlanCandidate(StrictModel):
 
     subgoals: tuple[SubgoalSpec, ...] = Field(min_length=1, max_length=8)
     assumptions: tuple[str, ...] = ()
+
+
+class PlanningAffordanceSummary(StrictModel):
+    semantic_target_id: str = Field(min_length=1)
+    role: str = ""
+    label: str = ""
+    supported_actions: tuple[str, ...] = ()
+
+
+class PlanningEnvironmentSummary(StrictModel):
+    environment_revision: str = ""
+    snapshot_id: str = ""
+    page_revision: str = ""
+    url: str = ""
+    affordances: tuple[PlanningAffordanceSummary, ...] = Field(default=(), max_length=64)
+
+
+class CriteriaEvidenceLedgerEntry(StrictModel):
+    subgoal_id: str = Field(min_length=1)
+    evidence_ids: tuple[str, ...] = ()
+
+
+class TaskPlanningFailureSummary(StrictModel):
+    phase: str = ""
+    error_code: str = ""
+    reason: str = ""
+    subgoal_id: str = ""
+    environment_revision: str = ""
+
+
+class TaskPlanningRecoverySummary(StrictModel):
+    incident_id: str = ""
+    root_error_code: str = ""
+    terminal_outcome: str = ""
+    findings: tuple[str, ...] = Field(default=(), max_length=16)
+    attempted_actions: tuple[str, ...] = Field(default=(), max_length=16)
+
+
+class TaskPlanningBudgetSummary(StrictModel):
+    steps_remaining: int = Field(ge=0)
+    observations_remaining: int = Field(ge=0)
+    replans_remaining: int = Field(ge=0)
+    recoveries_remaining: int = Field(ge=0)
+    effectful_actions_remaining: int = Field(ge=0)
+
+
+class TaskPlanningContext(StrictModel):
+    """Bounded, handle-free input for initial planning and replanning."""
+
+    schema_version: str = "1.0"
+    task_spec: TaskSpec
+    state_version: int = Field(ge=0)
+    reason: str = "initial"
+    current_plan_id: str = ""
+    current_plan_version: int = Field(default=0, ge=0)
+    environment: PlanningEnvironmentSummary = Field(default_factory=PlanningEnvironmentSummary)
+    active_subgoal_id: str = ""
+    completed_subgoal_ids: tuple[str, ...] = ()
+    failed_subgoal_ids: tuple[str, ...] = ()
+    criteria_evidence_ledger: tuple[CriteriaEvidenceLedgerEntry, ...] = ()
+    failures: tuple[TaskPlanningFailureSummary, ...] = Field(default=(), max_length=16)
+    recovery_summary: TaskPlanningRecoverySummary | None = None
+    disproved_assumptions: tuple[str, ...] = Field(default=(), max_length=16)
+    remaining_budget: TaskPlanningBudgetSummary
 
 
 @dataclass
@@ -129,7 +206,16 @@ class TaskPlanValidator:
     max_actions_per_subgoal: int = 50
     max_recoveries_per_subgoal: int = 10
 
-    def validate(self, plan: TaskPlan, task_spec: TaskSpec, *, state_version: int) -> TaskPlanValidationReport:
+    def validate(
+        self,
+        plan: TaskPlan,
+        task_spec: TaskSpec,
+        *,
+        state_version: int,
+        previous_plan: TaskPlan | None = None,
+        previous_plan_id: str = "",
+        previous_plan_version: int = 0,
+    ) -> TaskPlanValidationReport:
         fatal: list[TaskPlanValidationIssue] = []
         repairable: list[TaskPlanValidationIssue] = []
         if plan.task_id != task_spec.task_id:
@@ -138,6 +224,17 @@ class TaskPlanValidator:
             fatal.append(TaskPlanValidationIssue(code="task_revision_mismatch"))
         if plan.based_on_state_version != state_version:
             fatal.append(TaskPlanValidationIssue(code="state_version_mismatch"))
+        expected_plan_id = previous_plan.plan_id if previous_plan is not None else previous_plan_id
+        expected_plan_version = previous_plan.plan_version if previous_plan is not None else previous_plan_version
+        if not expected_plan_id:
+            if plan.plan_version != 1 or plan.supersedes_plan_id:
+                fatal.append(TaskPlanValidationIssue(code="invalid_initial_plan_lineage"))
+        elif (
+            plan.plan_version != expected_plan_version + 1
+            or plan.supersedes_plan_id != expected_plan_id
+            or plan.plan_id == expected_plan_id
+        ):
+            fatal.append(TaskPlanValidationIssue(code="invalid_replacement_plan_lineage"))
         if not 1 <= len(plan.subgoals) <= self.max_subgoals:
             fatal.append(TaskPlanValidationIssue(code="subgoal_count_out_of_bounds"))
 
@@ -158,6 +255,19 @@ class TaskPlanValidator:
                 fatal.append(TaskPlanValidationIssue(code="recovery_budget_out_of_bounds", detail=subgoal.subgoal_id))
             if _operation_rank(subgoal.operation_class) > _operation_rank(task_spec.operation_class):
                 fatal.append(TaskPlanValidationIssue(code="operation_class_escalation", detail=subgoal.subgoal_id))
+            if _contains_executable_plan_content(
+                (
+                    subgoal.objective,
+                    *subgoal.success_criteria,
+                    *subgoal.evidence_requirements,
+                )
+            ):
+                fatal.append(
+                    TaskPlanValidationIssue(
+                        code="executable_plan_content",
+                        detail=subgoal.subgoal_id,
+                    )
+                )
             for dependency in subgoal.depends_on:
                 if dependency == subgoal.subgoal_id:
                     fatal.append(TaskPlanValidationIssue(code="self_dependency", detail=subgoal.subgoal_id))
@@ -165,6 +275,13 @@ class TaskPlanValidator:
                     fatal.append(TaskPlanValidationIssue(code="unknown_dependency", detail=dependency))
         if _has_cycle(plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="dependency_cycle"))
+        if _contains_executable_plan_content(plan.assumptions):
+            fatal.append(
+                TaskPlanValidationIssue(
+                    code="executable_plan_content",
+                    detail="assumptions",
+                )
+            )
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
         if not any(item.subgoal_id not in dependency_targets for item in plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="missing_terminal_subgoal"))
@@ -177,7 +294,7 @@ class TaskPlanValidator:
 
 
 class TaskPlannerPort(Protocol):
-    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan | Awaitable[TaskPlan]: ...
+    def plan(self, context: TaskPlanningContext) -> TaskPlan | Awaitable[TaskPlan]: ...
 
 
 class SubgoalVerifierPort(Protocol):
@@ -216,8 +333,8 @@ class VerifierBackedSubgoalVerifier:
 class RuleTaskPlanner:
     """Creates a deterministic flat plan for a directly verifiable task."""
 
-    def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
-        return synthetic_task_plan(task_spec, state_version=state_version, generated_by=TaskPlanSource.RULE)
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
 TASK_PLANNER_PROMPT_VERSION = "task-planner-v1"
@@ -240,20 +357,27 @@ class LLMTaskPlanner:
         )
     )
 
-    async def plan(self, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
-        context = {
+    async def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        task_spec = context.task_spec
+        prompt_context = {
             "task_spec": task_spec.model_dump(mode="json"),
-            "state_version": state_version,
+            "planning_context": context.model_dump(mode="json"),
             "constraints": list(task_spec.constraints),
             "forbidden_effects": list(task_spec.forbidden_effects),
         }
         messages = [
             ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
-            ModelMessage(role="user", content=json.dumps(context, sort_keys=True)),
+            ModelMessage(role="user", content=json.dumps(prompt_context, sort_keys=True)),
         ]
         candidate = await self.model.generate_structured(messages, TaskPlanCandidate, self.config)
-        plan = self._bind_candidate(candidate, task_spec, state_version=state_version)
-        report = self.validator.validate(plan, task_spec, state_version=state_version)
+        plan = self._bind_candidate(candidate, context)
+        report = self.validator.validate(
+            plan,
+            task_spec,
+            state_version=context.state_version,
+            previous_plan_id=context.current_plan_id,
+            previous_plan_version=context.current_plan_version,
+        )
         if report.status != TaskPlanValidationStatus.REPAIRABLE:
             return plan
         repair_context = {
@@ -269,16 +393,18 @@ class LLMTaskPlanner:
             TaskPlanCandidate,
             self.config,
         )
-        return self._bind_candidate(repaired, task_spec, state_version=state_version)
+        return self._bind_candidate(repaired, context)
 
     @staticmethod
-    def _bind_candidate(candidate: TaskPlanCandidate, task_spec: TaskSpec, *, state_version: int) -> TaskPlan:
+    def _bind_candidate(candidate: TaskPlanCandidate, context: TaskPlanningContext) -> TaskPlan:
+        task_spec = context.task_spec
         return TaskPlan(
             plan_id=f"plan-{uuid4().hex}",
             task_id=task_spec.task_id,
             task_revision=task_spec.revision,
-            plan_version=1,
-            based_on_state_version=state_version,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.LLM,
             subgoals=candidate.subgoals,
             assumptions=candidate.assumptions,
@@ -292,30 +418,29 @@ class PlanningRouter:
     rule_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
     complex_planner: TaskPlannerPort | None = None
 
-    def plan(
-        self, task_spec: TaskSpec, *, state_version: int, complex_task: bool = False
-    ) -> TaskPlan | Awaitable[TaskPlan]:
+    def plan(self, context: TaskPlanningContext, *, complex_task: bool = False) -> TaskPlan | Awaitable[TaskPlan]:
         if not complex_task:
-            return self.rule_planner.plan(task_spec, state_version=state_version)
+            return self.rule_planner.plan(context)
         if self.complex_planner is None:
             raise ValueError("complex task requires an LLMTaskPlanner or accepted task planner")
-        return self.complex_planner.plan(task_spec, state_version=state_version)
+        return self.complex_planner.plan(context)
 
 
 def synthetic_task_plan(
-    task_spec: TaskSpec,
+    context: TaskPlanningContext,
     *,
-    state_version: int,
     generated_by: TaskPlanSource = TaskPlanSource.RULE,
 ) -> TaskPlan:
     """Preserve the existing flat action loop as one verifier-backed subgoal."""
 
+    task_spec = context.task_spec
     return TaskPlan(
         plan_id=f"plan-{uuid4().hex}",
         task_id=task_spec.task_id,
         task_revision=task_spec.revision,
-        plan_version=1,
-        based_on_state_version=state_version,
+        plan_version=context.current_plan_version + 1,
+        supersedes_plan_id=context.current_plan_id,
+        based_on_state_version=context.state_version,
         generated_by=generated_by,
         subgoals=(
             SubgoalSpec(
@@ -347,6 +472,10 @@ def _has_cycle(subgoals: tuple[SubgoalSpec, ...]) -> bool:
         return cyclic
 
     return any(visit(identifier) for identifier in dependencies)
+
+
+def _contains_executable_plan_content(values: tuple[str, ...]) -> bool:
+    return any(_FORBIDDEN_PLAN_CONTENT.search(value) is not None for value in values)
 
 
 def _operation_rank(operation: OperationClass) -> int:
