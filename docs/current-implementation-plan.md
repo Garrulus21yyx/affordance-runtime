@@ -8,13 +8,16 @@ Runtime-first R1-R6 sequence is complete. The next required increment is R7
 clean-revision environment and public-evaluation reproduction. M9 remains conditional on
 measured restart/waiting evidence; production-scale options remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-22): v155 records targeted
-`social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
-an immutable nightly or release promotion. Do not add further benchmark-family
-repairs beyond the closed Runtime-first R5/R6 gates. Generic perception,
-verifier-calibrated routing, de-specialized module ownership, and canonical
-harness learning are proven; rerun a clean-revision diagnostic/residual release
-scan as external confirmation.
+Current M8.2B diagnostic position (2026-07-22): clean commit `a0d8125` passed
+smoke 6/6 and PR 18/18, then completed the required seed-major 30-task breadth
+sweep at 23/30 without provider or circuit-break failure. The retained failures
+clustered at one shared Runtime boundary: task-level coherent-epoch perception
+requirements were incorrectly reused as hard evidence gates for unrelated
+later semantic targets. A generic target-scoped projection repair passes 470
+tests and dirty-tree 7/7 plus family 70/70 diagnostics, but those runs are not
+score eligible. Freeze the repair in a clean revision and restart smoke, PR,
+30-task diagnostic, and nightly gates. Do not add benchmark-family repairs or
+promote dirty-tree evidence.
 
 ## 1. Authority
 

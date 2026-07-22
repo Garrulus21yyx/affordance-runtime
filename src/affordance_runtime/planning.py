@@ -21,7 +21,7 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
-from affordance_runtime.perception import derive_perception_requirements
+from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -213,11 +213,23 @@ class UnifiedTargetResolver:
         )
         if target is None:
             raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, semantic_target_id)
+        base_requirements = (
+            snapshot.perception_requirements or derive_perception_requirements(task_spec, active_subgoal=subgoal)
+        )
         route = self.router.plan(
             target,
             action=action.value,
-            requirements=(
-                snapshot.perception_requirements or derive_perception_requirements(task_spec, active_subgoal=subgoal)
+            requirements=route_perception_requirements(
+                base_requirements,
+                action=action.value,
+                target_role=target.role,
+                target_label=target.label,
+                target_context=subgoal,
+                target_evidence=frozenset(
+                    evidence
+                    for candidate in target.grounding_candidates
+                    for evidence in candidate.evidence_kinds
+                ),
             ),
             observation=snapshot.observation,
             available_executors=available_executors,

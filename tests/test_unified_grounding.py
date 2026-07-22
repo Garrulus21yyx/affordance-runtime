@@ -66,6 +66,25 @@ def test_semantic_resolver_groups_matching_dom_and_som_candidates() -> None:
     assert all(item.semantic_target_id == targets[0].semantic_target_id for item in targets[0].grounding_candidates)
 
 
+def test_opaque_dom_drop_endpoint_provides_spatial_binding_without_visual_requirement() -> None:
+    observation = _observation()
+    source = _affordance("drop-target", Surface.DOM, "dom")
+    source = replace(
+        source,
+        action="drop",
+        locator={"backend_handle": "opaque-target"},
+    )
+
+    candidate = candidate_from_affordance(
+        source,
+        observation,
+        semantic_target_id="semantic:drop-target",
+    )
+
+    assert EvidenceKind.SPATIAL in candidate.evidence_kinds
+    assert EvidenceKind.VISUAL_APPEARANCE not in candidate.evidence_kinds
+
+
 def test_semantic_resolver_does_not_merge_same_label_across_containers() -> None:
     observation = _observation()
     first = candidate_from_affordance(

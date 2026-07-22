@@ -59,7 +59,7 @@ def candidate_from_affordance(
         )
         evidence = {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
         if bbox is not None or (
-            affordance.action == "drag"
+            affordance.action in {"drag", "drop"}
             and bool(affordance.locator.get("backend_handle") or affordance.locator.get("selector"))
         ):
             # A current element handle is a trusted spatial binding for

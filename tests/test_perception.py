@@ -3,6 +3,7 @@ from affordance_runtime.perception import (
     PerceptionEscalation,
     derive_perception_requirements,
     perception_task_terms,
+    route_perception_requirements,
 )
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import SubgoalSpec
@@ -41,6 +42,7 @@ def test_inside_relation_accepts_visual_spatial_grounding() -> None:
     requirements = derive_perception_requirements(_task("Drag the smaller box completely inside the larger box"))
 
     assert EvidenceKind.SPATIAL in requirements.required_properties
+    assert EvidenceKind.VISUAL_APPEARANCE not in requirements.required_properties
     assert GroundingSource.VISUAL in requirements.acceptable_evidence
 
 
@@ -94,7 +96,7 @@ def test_hyphenated_task_target_contributes_visual_component_terms() -> None:
     assert {"click-shape", "shape"}.issubset(perception_task_terms(task))
 
 
-def test_ascending_number_sequence_requires_visual_svg_observation() -> None:
+def test_ascending_number_sequence_accepts_structured_or_visual_spatial_observation() -> None:
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -107,12 +109,13 @@ def test_ascending_number_sequence_requires_visual_svg_observation() -> None:
 
     requirements = derive_perception_requirements(task)
 
-    assert EvidenceKind.VISUAL_APPEARANCE in requirements.required_properties
+    assert EvidenceKind.SPATIAL in requirements.required_properties
+    assert EvidenceKind.VISUAL_APPEARANCE not in requirements.required_properties
     assert GroundingSource.SVG in requirements.acceptable_evidence
     assert {"ascending", "numbers"}.issubset(perception_task_terms(task))
 
 
-def test_descending_letter_sequence_uses_the_same_ordering_evidence_rule() -> None:
+def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_appearance() -> None:
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -125,9 +128,112 @@ def test_descending_letter_sequence_uses_the_same_ordering_evidence_rule() -> No
 
     requirements = derive_perception_requirements(task)
 
-    assert requirements.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL})
+    assert requirements.required_properties == frozenset({EvidenceKind.SPATIAL})
     assert GroundingSource.SVG in requirements.acceptable_evidence
     assert GroundingSource.DOM in requirements.acceptable_evidence
+
+
+def test_route_requirements_do_not_apply_circle_evidence_to_later_submit_control() -> None:
+    base = derive_perception_requirements(
+        _task("Find and click on the center of the circle, then press Submit")
+    )
+
+    point = route_perception_requirements(
+        base,
+        action="point_activate",
+        target_role="point",
+        target_label="black circle",
+    )
+    submit = route_perception_requirements(
+        base,
+        action="activate",
+        target_role="button",
+        target_label="Submit",
+    )
+
+    assert point.required_properties == frozenset(
+        {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
+    )
+    assert submit.required_properties == frozenset(
+        {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
+    )
+
+
+def test_route_requirements_treat_layout_word_as_optional_for_typed_target() -> None:
+    base = derive_perception_requirements(
+        _task("Copy the text in the textarea below and paste it into the textbox")
+    )
+
+    target = route_perception_requirements(
+        base,
+        action="type_text",
+        target_role="textbox",
+        target_label="Answer",
+    )
+
+    assert target.required_properties == frozenset(
+        {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
+    )
+
+
+def test_route_requirements_retain_visual_evidence_for_visual_icon_target() -> None:
+    base = derive_perception_requirements(_task("Choose the blue visual icon"))
+
+    target = route_perception_requirements(
+        base,
+        action="activate",
+        target_role="button",
+        target_label="blue icon",
+    )
+
+    assert target.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE})
+
+
+def test_route_requirements_retain_visual_evidence_exposed_by_target_candidates() -> None:
+    base = derive_perception_requirements(_task("Activate the visual Save control"))
+
+    target = route_perception_requirements(
+        base,
+        action="activate",
+        target_role="button",
+        target_label="Save",
+        target_evidence=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+    )
+
+    assert target.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE})
+
+
+def test_route_requirements_retain_visual_evidence_explicit_in_current_subgoal() -> None:
+    base = derive_perception_requirements(_task("Activate the blue visual Save icon"))
+
+    target = route_perception_requirements(
+        base,
+        action="activate",
+        target_role="button",
+        target_label="Save",
+        target_context="Activate the blue visual Save icon",
+        target_evidence=frozenset({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}),
+    )
+
+    assert target.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE})
+
+
+def test_route_requirements_do_not_widen_authoritative_device_sources() -> None:
+    base = derive_perception_requirements(_task("Turn on the authoritative device property"))
+
+    target = route_perception_requirements(
+        base,
+        action="activate",
+        target_role="switch",
+        target_label="Power",
+        target_evidence=frozenset({EvidenceKind.STRUCTURAL}),
+    )
+
+    assert GroundingSource.DOM not in target.acceptable_evidence
+    assert GroundingSource.ACCESSIBILITY not in target.acceptable_evidence
+    assert target.required_properties == frozenset(
+        {EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL}
+    )
 
 
 def test_subgoal_evidence_requirements_drive_perception_even_when_task_is_plain() -> None:

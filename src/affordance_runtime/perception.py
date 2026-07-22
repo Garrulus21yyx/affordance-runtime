@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -53,6 +53,8 @@ _SPATIAL_TERMS = frozenset(
     }
 )
 _DEVICE_TERMS = frozenset({"device", "property", "sensor", "thing", "wot"})
+_VISUAL_TARGET_ROLES = frozenset({"canvas", "graphic", "image", "point", "region", "svg"})
+_VISUAL_TARGET_TERMS = _VISUAL_TERMS | frozenset({"color", "colored", "icon", "pattern", "pixel"})
 
 
 class PerceptionOrchestratorPort(Protocol):
@@ -170,7 +172,7 @@ def derive_perception_requirements(
     preferred: tuple[GroundingSource, ...] = ()
     model_call_budget = 0
     cost_budget = 0.0
-    if visual_required or spatial_required:
+    if visual_required:
         required.add(EvidenceKind.VISUAL_APPEARANCE)
         acceptable.update({GroundingSource.SVG, GroundingSource.SOM, GroundingSource.VISUAL})
         preferred = (GroundingSource.SVG, GroundingSource.SOM, GroundingSource.VISUAL)
@@ -231,6 +233,69 @@ def derive_perception_requirements(
         latency_budget_ms=15_000 if model_call_budget else 5_000,
         cost_budget=cost_budget,
         risk=task_risk(task),
+    )
+
+
+def route_perception_requirements(
+    requirements: PerceptionRequirements,
+    *,
+    action: str,
+    target_role: str,
+    target_label: str,
+    target_context: str = "",
+    target_evidence: frozenset[EvidenceKind] = frozenset(),
+) -> PerceptionRequirements:
+    """Narrow task-level acquisition needs to one semantic action target.
+
+    Task-level requirements decide what a coherent epoch may need to collect.
+    Route hard gates must not force evidence about an earlier visual/spatial
+    target onto a later ordinary control such as Submit. Gesture endpoints
+    retain spatial requirements, and intrinsically visual targets retain visual
+    appearance evidence.
+    """
+
+    required = set(requirements.required_properties)
+    role = target_role.casefold().strip().replace("-", "_")
+    label_terms = set(re.findall(r"[a-z0-9]+", target_label.casefold().replace("-", " ")))
+    context_terms = set(re.findall(r"[a-z0-9]+", target_context.casefold().replace("-", " ")))
+    spatial_action = action in {"drag", "point_activate"}
+    visual_target = (
+        action == "point_activate"
+        or role in _VISUAL_TARGET_ROLES
+        or bool(label_terms.intersection(_VISUAL_TARGET_TERMS))
+        or bool(context_terms.intersection(_VISUAL_TARGET_TERMS))
+        or EvidenceKind.VISUAL_APPEARANCE in target_evidence
+    )
+    if not spatial_action:
+        required.discard(EvidenceKind.SPATIAL)
+    if not visual_target:
+        required.discard(EvidenceKind.VISUAL_APPEARANCE)
+    projected_to_structured_default = not required
+    if projected_to_structured_default:
+        required.update({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL})
+    acceptable = set(requirements.acceptable_evidence)
+    preferred = requirements.preferred_sources
+    if projected_to_structured_default:
+        acceptable.update({GroundingSource.DOM, GroundingSource.ACCESSIBILITY})
+        preferred = (
+            GroundingSource.DOM,
+            GroundingSource.ACCESSIBILITY,
+            *tuple(
+                source
+                for source in preferred
+                if source not in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY}
+            ),
+        )
+    return replace(
+        requirements,
+        required_properties=frozenset(required),
+        acceptable_evidence=frozenset(acceptable),
+        preferred_sources=tuple(dict.fromkeys(preferred)),
+        minimum_confidence=(
+            requirements.minimum_confidence
+            if EvidenceKind.VISUAL_APPEARANCE in required
+            else 0.0
+        ),
     )
 
 
