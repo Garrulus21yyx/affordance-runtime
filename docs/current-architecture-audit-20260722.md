@@ -660,8 +660,15 @@ Coordinator traversal, backend execution, external-policy lifecycle, and
 killable process timeout/exit/cleanup now live in
 `browsergym_episode_runner.py`; breadth-first suite scheduling, frozen identity,
 checkpointing, circuit breaking, and reporting remain in the bridge pending the
-report split. See `evidence/runtime-r8-browsergym-observer-20260722.md` and
-`evidence/runtime-r8-browsergym-episode-runner-20260722.md`.
+report split. Versioned profile metadata is now isolated in
+`browsergym_protocol.py`; FailureEnvelope construction/clustering and aggregate
+publication live in `browsergym_report.py`, while seed-major scheduling,
+circuit state, and atomic checkpoints remain in `browsergym_matrix.py`.
+Unknown release tasks use observed action capability evidence or explicitly
+retain `unresolved:no_action_evidence`, never a task-name dispatch rule. See
+`evidence/runtime-r8-browsergym-observer-20260722.md`,
+`evidence/runtime-r8-browsergym-episode-runner-20260722.md`, and
+`evidence/runtime-r8-browsergym-report-20260722.md`.
 
 `BrowserGymContractBuilder`, `GeneralistBrowserGymContractBuilder`,
 `BrowserGymGestureEncoder`, and `BrowserGymPointEncoder` now live with native

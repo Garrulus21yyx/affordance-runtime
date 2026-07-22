@@ -1491,6 +1491,17 @@ as architecture work. The detailed findings and gates are maintained in
    termination, queue cleanup, and worker-exit diagnostics. See
    `evidence/runtime-r8-browsergym-episode-runner-20260722.md`.
 
+   **Completed R8 BrowserGym report/taxonomy slice:** separated protocol metadata,
+   FailureEnvelope construction/clustering, aggregate report publication, and
+   checkpoint/scheduling machinery without changing the three-layer run
+   protocol. For tasks outside the fixed nightly manifest, derive a bounded
+   observed-action capability family from episode evidence; retain an explicit
+   unresolved family when no action evidence exists. Do not infer families from
+   task-name branches and do not rewrite the completed frozen release artifact.
+   Matrix compatibility exports remain stable; scheduling/circuit state and
+   atomic checkpoints remain in the matrix component. See
+   `evidence/runtime-r8-browsergym-report-20260722.md`.
+
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 
 ~~~text
