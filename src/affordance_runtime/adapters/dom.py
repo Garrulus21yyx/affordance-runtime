@@ -39,10 +39,49 @@ _INPUT_TYPE_ACTION = {
     "submit": "click",
     "button": "click",
 }
-_SELECTOR_CONFIDENCE = {"id": 1.0, "bid": 0.99, "testid": 0.97, "name": 0.85, "class": 0.7, "positional": 0.55}
-_BROWSERGYM_ACTIONABLE_MARK = "browsergym_set_of_marks"
+_SELECTOR_CONFIDENCE = {
+    "id": 1.0,
+    "backend_handle": 0.99,
+    "testid": 0.97,
+    "name": 0.85,
+    "class": 0.7,
+    "positional": 0.55,
+}
 _CONTEXT_CONTAINER_TAGS = frozenset(["article", "dd", "div", "li", "section", "td", "tr"])
 _DRAG_HANDLE_CLASSES = frozenset(["ui-draggable-handle", "ui-sortable-handle"])
+
+
+@dataclass(frozen=True)
+class AuthoredInteractiveExtension:
+    """Opt-in normalization contract for non-standard authored controls."""
+
+    marker_attribute: str
+    backend_handle_attribute: str
+    marker_value: str = "1"
+    visibility_ratio_attribute: str = ""
+    semantic_patterns: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if not self.marker_attribute or not self.backend_handle_attribute:
+            raise ValueError("authored interactive extension fields must be non-empty")
+        attribute_name = re.compile(r"^[A-Za-z_:][A-Za-z0-9_.:-]*$")
+        if not all(
+            attribute_name.fullmatch(value)
+            for value in (self.marker_attribute, self.backend_handle_attribute)
+        ):
+            raise ValueError("authored interactive extension attributes must be valid HTML names")
+        if self.visibility_ratio_attribute and not attribute_name.fullmatch(
+            self.visibility_ratio_attribute
+        ):
+            raise ValueError("authored visibility attribute must be a valid HTML name")
+        supported_patterns = {
+            "calendar_range",
+            "quantity_control",
+            "owner_collection",
+            "color_target",
+        }
+        if not self.semantic_patterns.issubset(supported_patterns):
+            raise ValueError("authored interactive extension contains an unknown semantic pattern")
 
 
 def _drag_capable(attr: dict[str, str]) -> bool:
@@ -65,10 +104,15 @@ def _class_hides(attr: dict[str, str]) -> bool:
     return bool(set(attr.get("class", "").casefold().split()).intersection({"hide", "hidden"}))
 
 
-def _browsergym_hides(attr: dict[str, str]) -> bool:
-    """Honor BrowserGym's current rendered visibility annotation when present."""
+def _extension_hides(
+    attr: dict[str, str],
+    extension: AuthoredInteractiveExtension | None,
+) -> bool:
+    """Honor an opt-in rendered visibility annotation when present."""
 
-    raw = attr.get("browsergym_visibility_ratio", "")
+    if extension is None or not extension.visibility_ratio_attribute:
+        return False
+    raw = attr.get(extension.visibility_ratio_attribute, "")
     if not raw:
         return False
     try:
@@ -120,14 +164,16 @@ def _collection_action_context(
     tag: str,
     attr: dict[str, str],
     ancestors: list[dict[str, Any]],
+    extension: AuthoredInteractiveExtension | None,
 ) -> dict[str, Any] | None:
     """Recognize one authored action inside an owner-labelled collection item.
 
-    A coherent item/action-group structure is required; arbitrary classes and
-    BrowserGym bids do not become executable controls.
+    A coherent item/action-group structure and an opted-in backend handle are
+    required; arbitrary classes do not become executable controls.
     """
 
-    if tag not in {"span", "li"} or not attr.get("bid"):
+    handle_attribute = extension.backend_handle_attribute if extension is not None else ""
+    if tag not in {"span", "li"} or not handle_attribute or not attr.get(handle_attribute):
         return None
     action_tokens = [
         token for token in attr.get("class", "").split() if token not in {"active", "hide"}
@@ -178,9 +224,15 @@ def _collection_action_context(
 
 
 class _InteractiveParser(HTMLParser):
-    def __init__(self, *, allow_offscreen: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        allow_offscreen: bool = False,
+        extension: AuthoredInteractiveExtension | None = None,
+    ) -> None:
         super().__init__(convert_charrefs=True)
         self._allow_offscreen = allow_offscreen
+        self._extension = extension
         self._skip_depth: int | None = None
         self._depth = 0
         self._tag_counts: dict[str, int] = {}
@@ -237,12 +289,11 @@ class _InteractiveParser(HTMLParser):
             or _class_hides(ancestor["attr"])
             for ancestor in ancestors
         )
-        viewport_hidden = _browsergym_hides(attr) or any(
-            _browsergym_hides(ancestor["attr"]) for ancestor in ancestors
+        viewport_hidden = _extension_hides(attr, self._extension) or any(
+            _extension_hides(ancestor["attr"], self._extension) for ancestor in ancestors
         )
-        # A custom-rendered dropdown often retains a hidden native select as
-        # its authoritative semantic value/control. BrowserGym can bind it by
-        # bid without visual targeting; other hidden controls remain omitted.
+        # An opted-in custom-rendered dropdown may retain a hidden native select
+        # as its authoritative semantic value/control.
         if ancestor_hidden or (self_hidden and tag != "select"):
             return
         if viewport_hidden and not self._allow_offscreen and tag != "select":
@@ -252,10 +303,22 @@ class _InteractiveParser(HTMLParser):
             ancestor["tag"] in {"ul", "ol"} or ancestor["attr"].get("role") in {"listbox", "menu"}
             for ancestor in ancestors
         )
-        browsergym_actionable = attr.get(_BROWSERGYM_ACTIONABLE_MARK) == "1"
+        authored_actionable = bool(
+            self._extension is not None
+            and attr.get(self._extension.marker_attribute) == self._extension.marker_value
+        )
         drag_capable = _drag_capable(attr)
-        semantic_color_target = bool(attr.get("data-color"))
-        calendar_slot_index = _calendar_slot_index(attr, ancestors)
+        semantic_color_target = bool(
+            self._extension is not None
+            and "color_target" in self._extension.semantic_patterns
+            and attr.get("data-color")
+        )
+        calendar_slot_index = (
+            _calendar_slot_index(attr, ancestors)
+            if self._extension is not None
+            and "calendar_range" in self._extension.semantic_patterns
+            else None
+        )
         semantic_calendar_slot = calendar_slot_index is not None
         quantity_ancestor = next(
             (
@@ -267,15 +330,25 @@ class _InteractiveParser(HTMLParser):
             None,
         )
         quantity_classes = set(attr.get("class", "").split()).intersection({"add", "remove"})
-        semantic_quantity_control = quantity_ancestor is not None and len(quantity_classes) == 1
-        collection_action_context = _collection_action_context(tag, attr, ancestors)
+        semantic_quantity_control = bool(
+            self._extension is not None
+            and "quantity_control" in self._extension.semantic_patterns
+            and quantity_ancestor is not None
+            and len(quantity_classes) == 1
+        )
+        collection_action_context = (
+            _collection_action_context(tag, attr, ancestors, self._extension)
+            if self._extension is not None
+            and "owner_collection" in self._extension.semantic_patterns
+            else None
+        )
         semantic_collection_action = collection_action_context is not None
         if (
             tag not in _INTERACTIVE_TAGS
             and role not in _ARIA_ACTION_MAP
             and not focusable
             and not programmatic_option
-            and not browsergym_actionable
+            and not authored_actionable
             and not drag_capable
             and not semantic_color_target
             and not semantic_quantity_control
@@ -296,7 +369,7 @@ class _InteractiveParser(HTMLParser):
             "parent_node": parent,
             "context_ancestors": tuple(reversed(self._tree_open[:-1] if tag not in _VOID_TAGS else self._tree_open)),
             "programmatic_option": programmatic_option,
-            "browsergym_actionable": browsergym_actionable,
+            "authored_actionable": authored_actionable,
             "semantic_quantity_control": semantic_quantity_control,
             "semantic_calendar_slot": semantic_calendar_slot,
             "semantic_collection_action": semantic_collection_action,
@@ -363,12 +436,19 @@ def _escape_attr(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _selector_for(node: dict[str, Any]) -> tuple[str, float]:
+def _selector_for(
+    node: dict[str, Any],
+    extension: AuthoredInteractiveExtension | None,
+) -> tuple[str, float]:
     attr, tag = node["attr"], node["tag"]
     if attr.get("id"):
         return f"#{attr['id']}", _SELECTOR_CONFIDENCE["id"]
-    if attr.get("bid"):
-        return f"[bid='{_escape_attr(attr['bid'])}']", _SELECTOR_CONFIDENCE["bid"]
+    handle_attribute = extension.backend_handle_attribute if extension is not None else ""
+    if handle_attribute and attr.get(handle_attribute):
+        return (
+            f"[{handle_attribute}='{_escape_attr(attr[handle_attribute])}']",
+            _SELECTOR_CONFIDENCE["backend_handle"],
+        )
     if attr.get("data-testid"):
         return f"[data-testid='{_escape_attr(attr['data-testid'])}']", _SELECTOR_CONFIDENCE["testid"]
     if attr.get("name"):
@@ -442,11 +522,7 @@ def _action_for(node: dict[str, Any]) -> str:
     native_action = _TAG_ACTION.get(tag)
     if native_action is not None:
         return native_action
-    # BrowserGym annotates its live, custom controls after the task has
-    # rendered.  Treat this as observation metadata, not task-specific DOM
-    # knowledge: it makes spans, tree controls, and other non-native widgets
-    # available through the same semantic activate -> typed-click route.
-    if node.get("browsergym_actionable"):
+    if node.get("authored_actionable"):
         return "click"
     if attr.get("tabindex", "") not in {"", "-1"}:
         return "press"
@@ -498,7 +574,10 @@ def _collection_position(attr: dict[str, str]) -> int | None:
     return value if value > 0 else None
 
 
+@dataclass(frozen=True)
 class DomAdapter:
+    extension: AuthoredInteractiveExtension | None = None
+
     def transduce(
         self,
         html: str,
@@ -511,7 +590,10 @@ class DomAdapter:
         page_revision: str = "",
         allow_offscreen: bool = False,
     ) -> PageAffordanceModel:
-        parser = _InteractiveParser(allow_offscreen=allow_offscreen)
+        parser = _InteractiveParser(
+            allow_offscreen=allow_offscreen,
+            extension=self.extension,
+        )
         parser.feed(html or "")
         parser.close()
         nested_control_label_nodes = {
@@ -522,12 +604,13 @@ class DomAdapter:
         control_ids = {
             node["attr"].get("id", "") for node in parser.nodes if node["tag"] in {"input", "select", "textarea"}
         }
-        menu_owner_bids = {
-            ancestor["attr"].get("bid", "")
+        handle_attribute = self.extension.backend_handle_attribute if self.extension is not None else ""
+        menu_owner_handles = {
+            ancestor["attr"].get(handle_attribute, "")
             for node in parser.nodes
             if node.get("programmatic_option")
             for ancestor in node.get("context_ancestors", ())
-            if ancestor["tag"] in {"ul", "ol"}
+            if handle_attribute and ancestor["tag"] in {"ul", "ol"}
         }
         planner_nodes = [
             node
@@ -536,14 +619,18 @@ class DomAdapter:
                 node["tag"] == "label"
                 and (id(node) in nested_control_label_nodes or node["attr"].get("for", "") in control_ids)
             )
-            and not (node["attr"].get("bid", "") in menu_owner_bids and _action_for(node) == "press")
+            and not (
+                handle_attribute
+                and node["attr"].get(handle_attribute, "") in menu_owner_handles
+                and _action_for(node) == "press"
+            )
         ]
         semantic_nodes = [
             {
                 "tag": node["tag"],
                 "role": node["attr"].get("role", ""),
                 "id": node["attr"].get("id", ""),
-                "bid": node["attr"].get("bid", ""),
+                "backend_handle": node["attr"].get(handle_attribute, "") if handle_attribute else "",
                 "name": node["attr"].get("name", ""),
                 "disabled": "disabled" in node["attr"] or node["attr"].get("aria-disabled") == "true",
                 "label": _label_for(node),
@@ -568,7 +655,7 @@ class DomAdapter:
         for node in planner_nodes:
             attr = node["attr"]
             action = _action_for(node)
-            selector, confidence = _selector_for(node)
+            selector, confidence = _selector_for(node, self.extension)
             disabled = "disabled" in attr or attr.get("aria-disabled") == "true"
             # Container context disambiguates repeated/custom items, but must
             # not make stable native form-control identity depend on mutable
@@ -641,15 +728,23 @@ class DomAdapter:
                     locator={
                         "selector": selector,
                         "strategy": "css",
-                        **({"bid": attr["bid"]} if attr.get("bid") else {}),
+                        **(
+                            {"backend_handle": attr[handle_attribute]}
+                            if self.extension is not None
+                            and handle_attribute
+                            and attr.get(handle_attribute)
+                            else {}
+                        ),
                         **(
                             {
-                                "select_owner_bid": node["parent_attr"]["bid"],
+                                "select_owner_backend_handle": node["parent_attr"][handle_attribute],
                                 "select_option": attr.get("value") or _label_for(node),
                             }
                             if node["tag"] == "option"
                             and node["parent_tag"] == "select"
-                            and node["parent_attr"].get("bid")
+                            and self.extension is not None
+                            and handle_attribute
+                            and node["parent_attr"].get(handle_attribute)
                             else {}
                         ),
                     },
@@ -681,7 +776,7 @@ class DomAdapter:
                         **({"multiple": True} if node["tag"] == "select" and "multiple" in attr else {}),
                         **(
                             {"programmatic_select": True, "rendered_visible": False}
-                            if node["tag"] == "select" and _browsergym_hides(attr)
+                            if node["tag"] == "select" and _extension_hides(attr, self.extension)
                             else {}
                         ),
                         **({"programmatic_option": True} if node.get("programmatic_option") else {}),

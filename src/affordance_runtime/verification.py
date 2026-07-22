@@ -128,10 +128,11 @@ class DomAttributeVerifier:
         del receipt
         if not isinstance(spec.expected, Mapping):
             return False
+        target_attribute = str(spec.expected.get("target_attribute") or "")
         attribute = str(spec.expected.get("attribute") or "")
-        if not attribute or not spec.target:
+        if not target_attribute or not attribute or not spec.target:
             return False
-        parser = _DomAttributeParser("bid", spec.target, attribute)
+        parser = _DomAttributeParser(target_attribute, spec.target, attribute)
         parser.feed(str(observation.metadata.get("html") or ""))
         parser.close()
         return parser.observed == spec.expected.get("value")
@@ -139,7 +140,7 @@ class DomAttributeVerifier:
 
 @dataclass
 class ControlStateVerifier:
-    """Verify a generic post-observation control property by BrowserGym bid."""
+    """Verify a generic post-observation property by an opaque control key."""
 
     kind: str = "control_state"
 
@@ -162,17 +163,16 @@ class ControlStateVerifier:
 
 @dataclass
 class StateDeltaOrTerminalVerifier:
-    """Require a changed state revision or a positive declared terminal oracle."""
+    """Require a changed state revision or a positive adapter-declared terminal result."""
 
     kind: str = "state_delta_or_terminal"
 
     def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        if bool(receipt.evidence.get("terminated")):
-            return (
-                float(receipt.evidence.get("official_reward") or 0.0) > 0.0
-                and not bool(receipt.evidence.get("truncated"))
-            )
-        if observation.metadata.get("active_bid") == spec.target:
+        if receipt.evidence.get("terminal_success") is True:
+            return True
+        if receipt.evidence.get("terminal_failure") is True:
+            return False
+        if observation.metadata.get("active_control") == spec.target:
             return True
         if isinstance(spec.expected, Mapping):
             states = observation.metadata.get("control_states")

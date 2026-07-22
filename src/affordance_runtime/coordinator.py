@@ -2155,7 +2155,7 @@ def _action_progress_signature(
     else:
         payload = {
             "action_kind": contract.action,
-            "target": contract.locator.get("bid") or contract.affordance_id,
+            "target": contract.locator.get("backend_handle") or contract.affordance_id,
             "parameters": contract.parameters,
         }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)

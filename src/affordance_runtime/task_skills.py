@@ -27,7 +27,7 @@ _FORBIDDEN_HANDLE_PATTERNS = (
     r"\bxpath\b",
     r"\bcss\s*=",
     r"\bnth-(?:child|of-type)\b",
-    r"\[\s*bid\s*=",
+    r"\bbackend_handle\s*[:=]",
     r"\b(?:selector|mark_id|screenshot_ref|browser_handle|approval_token)\b",
     r"\b(?:x|y)\s*[:=]\s*-?\d",
     r"://",

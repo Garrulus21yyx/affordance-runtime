@@ -3,17 +3,19 @@
 Implementation status: M0-M8.1, M8.2A, M8.3, and M8.4 are complete for the
 controlled web profile. M8.2B and M8.5 are in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
-[Current Architecture Audit](current-architecture-audit-20260722.md). The next
-required increment is semantic completion of the generic Runtime main path,
-followed by public benchmark confirmation. M9 remains conditional on measured
-restart/waiting evidence; production-scale options remain non-blocking.
+[Current Architecture Audit](current-architecture-audit-20260722.md). The
+Runtime-first R1-R5 sequence is complete. The next required increment is R6
+canonical trace mining and explicit accepted-profile loading, followed by
+clean-revision public benchmark confirmation. M9 remains conditional on
+measured restart/waiting evidence; production-scale options remain non-blocking.
 
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs before the remaining Runtime-first R5 gate closes. Generic perception
-and verifier-calibrated routing are now proven; after de-specialized module
-ownership is proven, rerun the residual release scan as external confirmation.
+repairs beyond the now-closed Runtime-first R5 gate. Generic perception,
+verifier-calibrated routing, and de-specialized module ownership are proven;
+complete R6, then rerun a clean-revision diagnostic/residual release scan as
+external confirmation.
 
 ## 1. Authority
 
@@ -689,9 +691,9 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- pause new task-family semantic compilers until the remaining R5 gate moves
-  benchmark attributes and authored family logic out of shared DOM/planner modules and
-  prove the replacement capability in a non-BrowserGym environment;
+- keep benchmark attributes and authored family logic out of shared DOM/planner
+  modules; R5 moved them behind adapter profiles and proved replacement
+  capabilities with non-BrowserGym and negative-control evidence;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
   claiming an official ScreenSpot prediction result; it accepts immutable
   screenshot input and returns only a bounded point artifact.
@@ -1000,8 +1002,9 @@ The existing local code, tests, ablation, and Chromium diagnostics prove
 important M8.5 components, not the complete generic main path. Runtime-first R3
 now closes task-aware perception, ordinary assertions and active perception;
 R4 closes target-specific evidence, verifier-backed scoped calibration, and
-geometry-aware conservative fusion. Remaining gates are R5 de-specialization,
-canonical trace mining, and normal-entrypoint skill loading. The prior
+geometry-aware conservative fusion; R5 closes planner/observation
+de-specialization. Remaining gates are canonical trace mining and
+normal-entrypoint skill loading. The prior
 completion audit is retained as component evidence, not milestone closure.
 
 #### M8.5A: Unified Target and Route Contracts
@@ -1380,15 +1383,17 @@ as architecture work. The detailed findings and gates are maintained in
    reobservation share fresh coherent epochs. Non-BrowserGym visual-primary,
    DOM-to-visual escalation, persistent-conflict blocking, and real Chromium
    evidence are recorded in
-   `evidence/runtime-r3-generic-perception-20260722.md`. Remaining legacy
-   BrowserGym observer cleanup belongs to R5 adapter de-specialization.
-4. **Target-specific unified routing:** align candidates conservatively with
-   semantic and geometry evidence, apply requirements to the selected target,
-   and update route statistics only from postcondition-verifier outcomes.
-5. **Remove benchmark specialization:** move BrowserGym attributes and action
-   syntax into its adapter; move environment-independent rules into a typed
+   `evidence/runtime-r3-generic-perception-20260722.md`. Legacy BrowserGym
+   observer cleanup was completed by R5 adapter de-specialization.
+4. **Target-specific unified routing — complete:** candidates align
+   conservatively with semantic and geometry evidence, requirements apply to
+   the selected target, and route statistics update only from strong,
+   postcondition-verifier outcomes.
+5. **Remove benchmark specialization — complete:** BrowserGym attributes and
+   action syntax live in its adapter; environment-independent rules use a typed
    SemanticCompilerRegistry with non-BrowserGym and negative-control evidence;
-   remove unconditional MiniWoB-shaped rules from shared modules.
+   a source-boundary test rejects benchmark vocabulary in shared modules. See
+   `evidence/runtime-r5-despecialized-planner-dom-20260722.md`.
 6. **Complete Harness Learning:** extract semantic traces from canonical JSONL,
    mine parameterized TaskSkill candidates across variants, bind replay
    evidence to source/report digests, and explicitly load accepted TaskSkill

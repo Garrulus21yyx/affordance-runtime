@@ -106,7 +106,9 @@ and strong-evidence gates, structured reports, and trace links close F-01/R1.
 Generic negative controls cover unrelated, partial, stale, weak, unbound, and
 explicitly multi-linked evidence. F-02/R2 is also closed by context-rich
 planning evidence; Runtime-first R3 and R4 have since closed with generic,
-verifier-backed evidence, while R5 remains open.
+verifier-backed evidence. R5 has since closed with adapter-owned authored
+profiles, typed semantic compilation, shared-source boundary tests, and
+non-BrowserGym negative controls.
 
 ### F-02 - Task-level planning is a controlled component, not a real main path
 
@@ -414,7 +416,7 @@ claim correction, not a rewrite.
 | M8.2B | in progress | residual release and external suites remain |
 | M8.3 | done for RecoveryPolicyPatch | recovery cascade and controlled policy replay are real |
 | M8.4 | done | criteria-bound planning, context-rich replanning, monotonic lineage, flat routing, and a real non-BrowserGym reference entrypoint are proven |
-| M8.5 | in progress | route and gesture components exist; generic perception, calibrated routing, trace mining, and strict checkpoints remain |
+| M8.5 | in progress | route, gesture, generic perception, calibrated routing, strict checkpoints, and R5 de-specialization exist; canonical trace mining and explicit profile loading remain |
 | M9 | pending and conditional | no change |
 
 ## 7. Detailed Forward Plan
@@ -533,6 +535,9 @@ Evidence: `evidence/runtime-r4-verifier-calibrated-routing-20260722.md`.
 
 ### Phase R5 - De-Specialize Planner and DOM
 
+Status: complete on 2026-07-22. See
+`evidence/runtime-r5-despecialized-planner-dom-20260722.md`.
+
 Deliverables:
 
 - BrowserGym marker handling moved to its observation adapter;
@@ -548,6 +553,25 @@ Exit:
 - generic rules have non-BrowserGym evidence;
 - benchmark gains persist through the Runtime path;
 - disabling benchmark profiles does not remove declared Runtime capabilities.
+
+Resolution (2026-07-22): BrowserGym marker, visibility, handle, SVG, terminal,
+and action-encoding semantics now live in its benchmark adapter. Shared DOM and
+SVG observation accept explicit authored-interactive profiles and expose only
+opaque backend handles. Planner compilation and schema narrowing run through a
+typed `SemanticCompilerRegistry` with declared applicability, evidence,
+required state, output validation, and negative examples. Disabled-profile
+tests prove that BrowserGym-only authored controls disappear while native DOM
+and generic draggable capabilities remain. A source-boundary test rejects
+BrowserGym vocabulary outside the benchmark adapter and CLI.
+
+The first local smoke and family sweep were intentionally retained as failed
+diagnostic evidence. Their repairs were generic: terminal outcomes were
+separated from nonterminal state-delta verification, and a one-step typed
+incremental-control compiler was added for any numeric slider. The latter still
+requires a fresh observation and independent postcondition verification after
+each step. The final dirty-tree confirmation passes the affected family 10/10
+and the seed-major PR profile 18/18, with no provider or retry failures. These
+runs confirm the Runtime path but are not formal benchmark promotion evidence.
 
 ### Phase R6 - Complete Harness Learning
 

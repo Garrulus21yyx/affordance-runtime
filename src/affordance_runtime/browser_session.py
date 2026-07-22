@@ -7,6 +7,7 @@ This is adapted from the earlier repository without importing a package named
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, replace
@@ -287,6 +288,7 @@ class BrowserSession:
         svg_observer: SvgGeometryObserverPort | None = None,
         svg_executor: str = "visual",
         dom_executor: str = "dom",
+        dom_adapter: DomAdapter | None = None,
         perception_orchestrator: PerceptionOrchestratorPort | None = None,
         visual_executor: str = "visual",
     ) -> None:
@@ -294,7 +296,7 @@ class BrowserSession:
         self._initial_url = initial_url
         self._owner = owner
         self._lease_ttl_ms = lease_ttl_ms
-        self._dom = DomAdapter()
+        self._dom = dom_adapter or DomAdapter()
         self._svg_observer = svg_observer or SelectiveSvgGeometryObserver()
         self._svg_executor = svg_executor
         self._dom_executor = dom_executor
@@ -312,6 +314,7 @@ class BrowserSession:
         action_timeout_ms: int = 8_000,
         navigation_attempts: int = 3,
         lease_ttl_ms: int = 2_000,
+        dom_adapter: DomAdapter | None = None,
         perception_orchestrator: PerceptionOrchestratorPort | None = None,
         visual_executor: str = "visual",
     ) -> "BrowserSession":
@@ -345,6 +348,7 @@ class BrowserSession:
             initial_url=url,
             owner=(playwright, browser, context),
             lease_ttl_ms=lease_ttl_ms,
+            dom_adapter=dom_adapter,
             perception_orchestrator=perception_orchestrator,
             visual_executor=visual_executor,
         )
@@ -434,25 +438,44 @@ class BrowserSession:
         svg_geometry: SvgGeometryObservation | None = None
         accessibility_tree = _bounded_accessibility_tree(self._page)
         control_states: dict[str, Any] = {}
-        active_bid = ""
+        active_control = ""
         visible_text = ""
+        live_bindings = [
+            {
+                "key": str(
+                    affordance.locator.get("backend_handle")
+                    or affordance.locator.get("selector")
+                    or ""
+                ),
+                "selector": str(affordance.locator.get("selector") or ""),
+            }
+            for affordance in model.affordances
+            if affordance.locator.get("selector")
+        ]
+        serialized_bindings = json.dumps(live_bindings, separators=(",", ":"))
         evaluator = getattr(self._page, "evaluate", None)
         if evaluator is not None:
             try:
                 captured = evaluator(
-                    """() => Object.fromEntries(Array.from(document.querySelectorAll('[bid]')).map((element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [element.getAttribute('bid'), {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]; }))"""
+                    """() => Object.fromEntries("""
+                    + serialized_bindings
+                    + """.flatMap(({key, selector}) => { const element = document.querySelector(selector); if (!key || !element) return []; const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [[key, {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]]; }))"""
                 )
                 if isinstance(captured, dict):
                     control_states = captured
-                captured_active_bid = evaluator("() => document.activeElement?.getAttribute('bid') || ''")
-                if isinstance(captured_active_bid, str):
-                    active_bid = captured_active_bid
+                captured_active_control = evaluator(
+                    """() => { const active = document.activeElement; const match = """
+                    + serialized_bindings
+                    + """.find(({selector}) => document.querySelector(selector) === active); return match?.key || ''; }"""
+                )
+                if isinstance(captured_active_control, str):
+                    active_control = captured_active_control
                 captured_visible_text = evaluator("() => document.body?.innerText || ''")
                 if isinstance(captured_visible_text, str):
                     visible_text = captured_visible_text[:2_000]
             except Exception:
                 control_states = {}
-                active_bid = ""
+                active_control = ""
                 visible_text = ""
         if (
             (spatial_required or visual_required)
@@ -498,20 +521,24 @@ class BrowserSession:
         enriched_affordances = []
         grounding_candidates: list[GroundingCandidate] = []
         for affordance in model.affordances:
-            bid = str(affordance.locator.get("bid") or "")
+            control_key = str(
+                affordance.locator.get("backend_handle")
+                or affordance.locator.get("selector")
+                or ""
+            )
             state = dict(affordance.state)
             context_text = state.get("context_text")
-            if bid and context_text is not None:
-                control_states.setdefault(bid, {})["context_text"] = context_text
-            control_state = control_states.get(bid, {}) if bid else {}
+            if control_key and context_text is not None:
+                control_states.setdefault(control_key, {})["context_text"] = context_text
+            control_state = control_states.get(control_key, {}) if control_key else {}
             if isinstance(control_state, dict) and isinstance(control_state.get("visible"), bool):
                 if state.get("programmatic_select") is True:
                     state["rendered_visible"] = control_state["visible"]
                     state["visible"] = True
                 else:
                     state["visible"] = control_state["visible"]
-            if bid:
-                state["focused"] = bid == active_bid
+            if control_key:
+                state["focused"] = control_key == active_control
             if isinstance(control_state, dict) and isinstance(control_state.get("checked"), bool):
                 state["checked"] = control_state["checked"]
             aria_selected = control_state.get("aria_selected") if isinstance(control_state, dict) else None
@@ -588,7 +615,7 @@ class BrowserSession:
                         label=element.label or element.element_id,
                         action=element.action,
                         locator={
-                            "bid": element.bid,
+                            "backend_handle": element.backend_handle,
                             "bbox": bbox,
                             "coordinate_space": "viewport_pixels",
                             "svg_element_id": element.element_id,
@@ -697,7 +724,7 @@ class BrowserSession:
             metadata={
                 "html": html,
                 "control_states": control_states,
-                "active_bid": active_bid,
+                "active_control": active_control,
                 "visible_text": visible_text,
                 "environment_family": _environment_family(url),
                 "observation_epoch_id": snapshot_id,
@@ -895,18 +922,21 @@ class BrowserSession:
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()
 
-    def bounding_boxes_for_bids(self, bids: list[str]) -> dict[str, tuple[float, float, float, float]]:
-        """Return current viewport geometry for explicit DOM bids when available."""
+    def bounding_boxes_for_selectors(
+        self,
+        bindings: dict[str, str],
+    ) -> dict[str, tuple[float, float, float, float]]:
+        """Return current viewport geometry for opaque keys and trusted selectors."""
 
         locator = getattr(self._page, "locator", None)
         if not callable(locator):
             return {}
         boxes: dict[str, tuple[float, float, float, float]] = {}
-        for bid in bids:
-            if not bid:
+        for key, selector in bindings.items():
+            if not key or not selector:
                 continue
             try:
-                box = locator(f"[bid='{bid.replace(chr(39), chr(92) + chr(39))}']").bounding_box()
+                box = locator(selector).bounding_box()
             except Exception:
                 continue
             if not isinstance(box, dict):
@@ -919,7 +949,7 @@ class BrowserSession:
             )
             if values[0] < 0 or values[1] < 0 or values[2] <= 0 or values[3] <= 0:
                 continue
-            boxes[bid] = values
+            boxes[key] = values
         return boxes
 
     def wait_for_load_state(self, state: str = "domcontentloaded") -> None:

@@ -159,7 +159,7 @@ class SourceObservation:
 
 @dataclass(frozen=True)
 class DomGroundingPayload:
-    bid: str = ""
+    backend_handle: str = ""
     selector: str = ""
     bbox_xywh: tuple[float, float, float, float] | None = None
 
@@ -193,7 +193,7 @@ class SvgGroundingPayload:
     geometry_bbox_xywh: tuple[float, float, float, float]
     viewport_bbox_xywh: tuple[float, float, float, float]
     transform: SvgTransform
-    bid: str = ""
+    backend_handle: str = ""
 
     @property
     def viewport_center(self) -> tuple[float, float]:

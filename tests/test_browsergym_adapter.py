@@ -47,6 +47,10 @@ from affordance_runtime.benchmarks.browsergym import (
     update_browsergym_batch_circuit_state,
     write_browsergym_report,
 )
+from affordance_runtime.benchmarks.browsergym_dom import (
+    browsergym_dom_adapter,
+    browsergym_svg_observer,
+)
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
     ActionContract,
@@ -81,6 +85,15 @@ from affordance_runtime.verification import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _browsergym_session(page: Any, **kwargs: Any) -> BrowserSession:
+    return BrowserSession(
+        page,
+        dom_adapter=browsergym_dom_adapter(),
+        svg_observer=browsergym_svg_observer(),
+        **kwargs,
+    )
 
 
 class FakeBrowserGymPage:
@@ -274,6 +287,24 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     ]
 
 
+def test_disabling_browsergym_observation_profile_preserves_declared_runtime_actions() -> None:
+    html = (
+        '<span bid="benchmark-only" browsergym_set_of_marks="1">Profile control</span>'
+        '<div id="portable-drag" draggable="true">Portable drag</div>'
+        '<button id="native">Native</button>'
+    )
+
+    enabled = browsergym_dom_adapter().transduce(html, environment_revision="rev-enabled")
+    disabled = DomAdapter().transduce(html, environment_revision="rev-disabled")
+
+    assert any(item.label == "Profile control" for item in enabled.affordances)
+    assert all(item.label != "Profile control" for item in disabled.affordances)
+    assert {(item.label, item.action) for item in disabled.affordances} == {
+        ("Portable drag", "drag"),
+        ("Native", "click"),
+    }
+
+
 def test_generalist_planner_port_runs_browsergym_without_external_action_policy(tmp_path: Path) -> None:
     environment = FakeBrowserGymEnvironment()
     model = GeneralistClickModel()
@@ -306,7 +337,7 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
 
 
 def test_generalist_browsergym_adapter_binds_native_option_activation_as_select() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<select bid="select-bid"><option bid="option-bid" value="earth">Earth</option></select>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -351,7 +382,7 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
 
 
 def test_generalist_browsergym_adapter_uses_navigation_safe_hash_link_click() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<a bid="result" href="#">Result</a>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -397,7 +428,7 @@ def test_generalist_browsergym_adapter_uses_navigation_safe_hash_link_click() ->
 
 
 def test_generalist_browsergym_adapter_uses_current_dom_click_for_collection_control() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         """
         <div class="media" data-result="0">
           <span class="username">@owner</span>
@@ -460,7 +491,7 @@ def test_generalist_browsergym_adapter_binds_semantic_drag_to_two_bids() -> None
                 '<li bid="destination" class="ui-sortable-handle">Destination</li>'
             )
 
-    snapshot = BrowserSession(
+    snapshot = _browsergym_session(
         cast(Any, SortablePage()),
         lease_ttl_ms=60_000,
         dom_executor="browsergym",
@@ -530,7 +561,7 @@ def test_browsergym_point_encoder_uses_current_svg_viewport_box() -> None:
 
 
 def test_browsergym_sortable_list_drag_uses_insertion_geometry() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<li bid="source" class="ui-sortable-handle">Source</li>'
         '<li bid="destination" class="ui-sortable-handle">Destination</li>',
         environment_revision="rev-1",
@@ -589,7 +620,7 @@ def test_browsergym_single_calendar_slot_uses_distinct_boundary_pointer_motion()
         "8:00am calendar slot",
         "drag",
         {
-            "bid": "slot-16",
+            "backend_handle": "slot-16",
             "bbox": [10, 20, 100, 20],
             "calendar_endpoint": "start",
         },
@@ -602,7 +633,7 @@ def test_browsergym_single_calendar_slot_uses_distinct_boundary_pointer_motion()
         "8:00am calendar slot end boundary",
         "drop",
         {
-            "bid": "slot-16",
+            "backend_handle": "slot-16",
             "bbox": [10, 20, 100, 20],
             "calendar_endpoint": "end",
         },
@@ -738,7 +769,7 @@ def test_browsergym_observer_fuses_visual_drag_regions_with_mixed_dom(tmp_path: 
         ),
         model_call_budget=1,
     )
-    fused = BrowserSession(
+    fused = _browsergym_session(
         cast(Any, MixedPage()),
         dom_executor="browsergym",
         visual_executor="browsergym",
@@ -780,7 +811,7 @@ def test_browsergym_observer_preserves_typed_visual_provider_failure(tmp_path: P
                 Path(kwargs["path"]).write_bytes(png)
             return png
 
-    session = BrowserSession(
+    session = _browsergym_session(
         cast(Any, CanvasPage()),
         dom_executor="browsergym",
         visual_executor="browsergym",
@@ -818,7 +849,7 @@ def test_browsergym_observer_materializes_visual_grounding_before_contract_bindi
                 Path(kwargs["path"]).write_bytes(png)
             return png
 
-    grounded = BrowserSession(
+    grounded = _browsergym_session(
         cast(Any, CanvasPage()),
         dom_executor="browsergym",
         visual_executor="browsergym",
@@ -841,7 +872,7 @@ def test_browsergym_observer_materializes_visual_grounding_before_contract_bindi
 
 
 def test_browsergym_observer_retries_one_transient_coherent_epoch_drift(tmp_path: Path) -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         "<button bid='target'>Target</button>", environment_revision="rev-1", snapshot_id="snap-1"
     )
     snapshot = BrowserSnapshot(
@@ -859,8 +890,10 @@ def test_browsergym_observer_retries_one_transient_coherent_epoch_drift(tmp_path
                 raise RuntimeError("coherent observation epoch drifted during multi-source capture")
             return snapshot
 
-        def bounding_boxes_for_bids(self, bids: list[str]) -> dict[str, tuple[float, float, float, float]]:
-            del bids
+        def bounding_boxes_for_selectors(
+            self, bindings: dict[str, str]
+        ) -> dict[str, tuple[float, float, float, float]]:
+            del bindings
             return {}
 
     session = DriftThenSnapshotSession()
@@ -873,7 +906,7 @@ def test_browsergym_observer_retries_one_transient_coherent_epoch_drift(tmp_path
 
 
 def test_browsergym_drag_geometry_refreshes_dom_grounding_candidate(tmp_path: Path) -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<li bid="source" class="ui-sortable-handle">Source</li>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -886,8 +919,10 @@ def test_browsergym_drag_geometry_refreshes_dom_grounding_candidate(tmp_path: Pa
     )
 
     class GeometrySession:
-        def bounding_boxes_for_bids(self, bids: list[str]) -> dict[str, tuple[float, float, float, float]]:
-            assert bids == ["source"]
+        def bounding_boxes_for_selectors(
+            self, bindings: dict[str, str]
+        ) -> dict[str, tuple[float, float, float, float]]:
+            assert bindings == {"source": "[bid='source']"}
             return {"source": (10.0, 20.0, 100.0, 24.0)}
 
     observer = BrowserGymObserver(GeometrySession(), BrowserGymEpisodeState("drag", 0, "Drag source", {}, {}), tmp_path)
@@ -904,7 +939,7 @@ def test_browsergym_drag_geometry_refreshes_dom_grounding_candidate(tmp_path: Pa
 
 
 def test_browsergym_drag_geometry_adds_semantic_relative_size_without_coordinates(tmp_path: Path) -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<div bid="small" class="ui-draggable-handle">s</div><div bid="large" class="ui-draggable-handle">L</div>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -917,8 +952,10 @@ def test_browsergym_drag_geometry_adds_semantic_relative_size_without_coordinate
     )
 
     class GeometrySession:
-        def bounding_boxes_for_bids(self, bids: list[str]) -> dict[str, tuple[float, float, float, float]]:
-            assert bids == ["small", "large"]
+        def bounding_boxes_for_selectors(
+            self, bindings: dict[str, str]
+        ) -> dict[str, tuple[float, float, float, float]]:
+            assert bindings == {"small": "[bid='small']", "large": "[bid='large']"}
             return {
                 "small": (10.0, 20.0, 20.0, 20.0),
                 "large": (0.0, 0.0, 80.0, 80.0),
@@ -941,7 +978,7 @@ def test_generalist_browsergym_adapter_binds_screenshot_only_target_without_expo
 ) -> None:
     screenshot = tmp_path / "view.png"
     screenshot.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (200).to_bytes(4, "big") + (100).to_bytes(4, "big"))
-    model = DomAdapter().transduce("<main>canvas</main>", environment_revision="rev-1", snapshot_id="snap-1")
+    model = browsergym_dom_adapter().transduce("<main>canvas</main>", environment_revision="rev-1", snapshot_id="snap-1")
     observation = Observation(
         "rev-1", screenshot_ref=str(screenshot), snapshot_id="snap-1", page_revision=model.page_revision
     )
@@ -998,7 +1035,7 @@ def test_visual_fallback_fingerprint_tracks_pixels_not_observation_filename(tmp_
     first, second = tmp_path / "first.png", tmp_path / "second.png"
     first.write_bytes(png)
     second.write_bytes(png)
-    model = DomAdapter().transduce("<main>canvas</main>", environment_revision="rev-1")
+    model = browsergym_dom_adapter().transduce("<main>canvas</main>", environment_revision="rev-1")
     first_target = _visual_fallback_affordance(
         BrowserSnapshot(Observation("rev-1", screenshot_ref=str(first), page_revision=model.page_revision), model)
     )
@@ -1253,7 +1290,7 @@ def test_browsergym_navigation_safe_click_uses_direct_lifecycle() -> None:
 
 
 def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<span bid="slider" class="ui-slider-handle" tabindex="0"></span>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1307,7 +1344,7 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
 
 
 def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<textarea bid="source">Long text</textarea>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1368,7 +1405,7 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
 
 
 def test_generalist_browsergym_text_contract_verifies_post_observation_value() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<input bid="text-bid" value="">',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1417,7 +1454,7 @@ def test_generalist_browsergym_text_contract_verifies_post_observation_value() -
 
 
 def test_generalist_browsergym_search_contract_uses_keyboard_events() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<input bid="search-bid" placeholder="Search" value="">',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1463,7 +1500,7 @@ def test_generalist_browsergym_search_contract_uses_keyboard_events() -> None:
 
 
 def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<input bid="date-bid" type="date">',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1503,12 +1540,14 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
         "arguments": {"bid": "date-bid", "value": "2012-02-04"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-        "dom_attribute", "date-bid", {"attribute": "value", "value": "2012-02-04"}
+            "dom_attribute",
+            "date-bid",
+            {"target_attribute": "bid", "attribute": "value", "value": "2012-02-04"},
     )
 
 
 def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<input bid="time-bid" type="time">',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1553,12 +1592,14 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
         "arguments": {"bid": "time-bid", "value": "11:10"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-        "dom_attribute", "time-bid", {"attribute": "value", "value": "11:10"}
+            "dom_attribute",
+            "time-bid",
+            {"target_attribute": "bid", "attribute": "value", "value": "11:10"},
     )
 
 
 def test_generalist_browsergym_click_requires_state_delta_or_positive_terminal_oracle() -> None:
-    model = DomAdapter().transduce(
+    model = browsergym_dom_adapter().transduce(
         '<button bid="target">Target</button>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
@@ -1606,7 +1647,13 @@ def test_generalist_browsergym_click_requires_state_delta_or_positive_terminal_o
         "rev-1",
         "rev-1",
         1.0,
-        evidence={"last_action_error": "", "terminated": True, "truncated": False, "official_reward": 1.0},
+        evidence={
+            "last_action_error": "",
+            "terminated": True,
+            "truncated": False,
+            "official_reward": 1.0,
+            "terminal_success": True,
+        },
     )
 
     assert contract.verifier_plan[-1].kind == "state_delta_or_terminal"

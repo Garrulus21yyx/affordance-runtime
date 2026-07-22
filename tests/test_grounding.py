@@ -19,7 +19,7 @@ def _candidate(candidate_id: str = "dom-save") -> GroundingCandidate:
         candidate_id=candidate_id,
         semantic_target_id="save",
         source=GroundingSource.DOM,
-        payload=DomGroundingPayload(bid="save"),
+        payload=DomGroundingPayload(backend_handle="save-handle"),
         compatible_executor="browsergym",
         observation_epoch_id="snap-1",
         environment_revision="rev-1",

@@ -29,10 +29,10 @@ from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
     r"(?:"
-    r"\bxpath\b|\bcss\s*=|\bselector\s*[:=]|\[\s*bid\s*=|"
+    r"\bxpath\b|\bcss\s*=|\bselector\s*[:=]|\bbackend_handle\s*[:=]|"
     r"\b(?:mark_id|browser_handle|approval_token)\b|"
     r"\b(?:x|y)\s*[:=]\s*-?\d|"
-    r"\b(?:mouse_click|mouse_move|mouse_down|mouse_up|drag_and_drop)\s*\(|"
+    r"\b(?:pointer|mouse)_(?:click|move|down|up|drag)\s*\(|"
     r"\blocator\.|\bbackend\s*[:=]|\bgrant\s+capabilit(?:y|ies)\b"
     r")",
     re.IGNORECASE,

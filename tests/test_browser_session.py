@@ -93,9 +93,9 @@ def test_browser_session_keeps_same_label_checkbox_siblings_as_ordered_targets()
     class CheckboxPage(FakePage):
         def content(self) -> str:
             return (
-                '<input bid="first" type="checkbox">'
-                '<input bid="second" type="checkbox">'
-                '<input bid="third" type="checkbox">'
+                '<input id="first" type="checkbox">'
+                '<input id="second" type="checkbox">'
+                '<input id="third" type="checkbox">'
             )
 
     snapshot = BrowserSession(CheckboxPage()).capture(page_id="form")
@@ -157,7 +157,7 @@ def test_browser_session_maps_bounded_gesture_to_playwright_mouse() -> None:
 def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
     class EvaluatingPage(FakePage):
         def content(self) -> str:
-            return "<textarea bid='source'>Trim-sensitive text </textarea><input bid='target' type='text'>"
+            return "<textarea id='source'>Trim-sensitive text </textarea><input id='target' type='text'>"
 
         def evaluate(self, expression: str) -> object:
             if "document.activeElement" in expression:
@@ -165,8 +165,8 @@ def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
             if "innerText" in expression:
                 return "Copy this exactly: Trim-sensitive text "
             return {
-                "source": {"value": "Trim-sensitive text ", "checked": None},
-                "target": {"value": "", "checked": None},
+                "#source": {"value": "Trim-sensitive text ", "checked": None},
+                "#target": {"value": "", "checked": None},
             }
 
     snapshot = BrowserSession(EvaluatingPage()).capture(page_id="copy")
@@ -188,7 +188,7 @@ def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
 def test_browser_session_preserves_current_multi_select_values() -> None:
     class EvaluatingPage(FakePage):
         def content(self) -> str:
-            return "<select bid='items' multiple><option>Ertha</option><option>Aurel</option></select>"
+            return "<select id='items' multiple><option>Ertha</option><option>Aurel</option></select>"
 
         def evaluate(self, expression: str) -> object:
             if "document.activeElement" in expression:
@@ -196,7 +196,7 @@ def test_browser_session_preserves_current_multi_select_values() -> None:
             if "innerText" in expression:
                 return "Ertha Aurel"
             return {
-                "items": {
+                "#items": {
                     "value": "Ertha",
                     "selected_options": ["Ertha"],
                     "visible": True,
@@ -212,7 +212,7 @@ def test_browser_session_preserves_current_multi_select_values() -> None:
 def test_browser_session_uses_runtime_visibility_for_current_affordances() -> None:
     class EvaluatingPage(FakePage):
         def content(self) -> str:
-            return "<button bid='open'>Open</button><input bid='hidden' type='text'>"
+            return "<button id='open'>Open</button><input id='hidden' type='text'>"
 
         def evaluate(self, expression: str) -> object:
             if "document.activeElement" in expression:
@@ -220,21 +220,21 @@ def test_browser_session_uses_runtime_visibility_for_current_affordances() -> No
             if "innerText" in expression:
                 return "Open"
             return {
-                "open": {"value": "", "visible": True},
-                "hidden": {"value": "", "visible": False},
+                "#open": {"value": "", "visible": True},
+                "#hidden": {"value": "", "visible": False},
             }
 
     snapshot = BrowserSession(EvaluatingPage()).capture(page_id="visibility")
-    states = {item.locator["bid"]: item.state for item in snapshot.affordance_model.affordances}
+    states = {item.locator["selector"]: item.state for item in snapshot.affordance_model.affordances}
 
-    assert states["open"]["visible"] is True
-    assert states["hidden"]["visible"] is False
+    assert states["#open"]["visible"] is True
+    assert states["#hidden"]["visible"] is False
 
 
 def test_browser_session_derives_scroll_region_with_live_control_state() -> None:
     class ScrollPage(FakePage):
         def content(self) -> str:
-            return "<textarea bid='source'>Long text</textarea><button bid='submit'>Submit</button>"
+            return "<textarea id='source'>Long text</textarea><button id='submit'>Submit</button>"
 
         def evaluate(self, expression: str) -> object:
             if "document.activeElement" in expression:
@@ -242,14 +242,14 @@ def test_browser_session_derives_scroll_region_with_live_control_state() -> None
             if "innerText" in expression:
                 return "Long text\nSubmit"
             return {
-                "source": {
+                "#source": {
                     "value": "Long text",
                     "checked": None,
                     "scroll_top": 48,
                     "scroll_height": 300,
                     "client_height": 100,
                 },
-                "submit": {
+                "#submit": {
                     "value": "",
                     "checked": None,
                     "scroll_top": 0,
@@ -263,7 +263,7 @@ def test_browser_session_derives_scroll_region_with_live_control_state() -> None
 
     assert scroll_region.id == "dom_textarea_1_scroll"
     assert scroll_region.action == "press"
-    assert scroll_region.locator["bid"] == "source"
+    assert scroll_region.locator["selector"] == "#source"
     assert scroll_region.state == {
         "enabled": True,
         "visible": True,
@@ -284,7 +284,12 @@ def test_browser_session_captures_svg_and_screenshot_in_one_epoch(tmp_path) -> N
 
         def evaluate(self, expression: str, arg: Any = None) -> object:
             if "getScreenCTM" in expression:
-                assert arg == ["blue", "point"]
+                assert arg == {
+                    "task_terms": ["blue", "point"],
+                    "marker_attribute": "",
+                    "marker_value": "1",
+                    "backend_handle_attribute": "",
+                }
                 return {
                     "viewport": [800, 600],
                     "elements": [
@@ -294,7 +299,7 @@ def test_browser_session_captures_svg_and_screenshot_in_one_epoch(tmp_path) -> N
                             "label": "Blue point",
                             "role": "button",
                             "action": "point_activate",
-                            "bid": "",
+                            "backend_handle": "",
                             "view_box": [0, 0, 100, 100],
                             "geometry_bbox": [10, 20, 4, 4],
                             "viewport_bbox": [120, 240, 8, 8],
@@ -345,7 +350,12 @@ def test_browser_session_collects_svg_for_visual_only_requirement(tmp_path) -> N
 
         def evaluate(self, expression: str, arg: Any = None) -> object:
             if "getScreenCTM" in expression:
-                assert arg == ["shape", "8"]
+                assert arg == {
+                    "task_terms": ["shape", "8"],
+                    "marker_attribute": "",
+                    "marker_value": "1",
+                    "backend_handle_attribute": "",
+                }
                 return {
                     "viewport": [800, 600],
                     "elements": [
@@ -355,7 +365,7 @@ def test_browser_session_collects_svg_for_visual_only_requirement(tmp_path) -> N
                             "label": "8",
                             "role": "",
                             "action": "point_activate",
-                            "bid": "",
+                            "backend_handle": "",
                             "view_box": [0, 0, 100, 100],
                             "geometry_bbox": [10, 20, 4, 4],
                             "viewport_bbox": [120, 240, 8, 8],
@@ -392,7 +402,7 @@ def test_browser_session_allows_nonsemantic_svg_animation_within_epoch(tmp_path)
         def content(self) -> str:
             self.captures += 1
             return (
-                "<main><button bid='submit'>Submit</button>"
+                "<main><button id='submit'>Submit</button>"
                 f"<svg><text transform='rotate({self.captures})'>decoration</text></svg></main>"
             )
 
@@ -417,7 +427,7 @@ def test_browser_session_rejects_semantic_dom_drift_within_epoch(tmp_path) -> No
         def content(self) -> str:
             self.captures += 1
             label = "Save" if self.captures == 1 else "Delete"
-            return f"<main><button bid='action'>{label}</button></main>"
+            return f"<main><button id='action'>{label}</button></main>"
 
     requirements = PerceptionRequirements(
         required_properties=frozenset({EvidenceKind.SPATIAL}),
@@ -585,7 +595,7 @@ def test_svg_visual_position_conflict_requests_reobservation_and_blocks_target(
                             "label": "Target",
                             "role": "button",
                             "action": "point_activate",
-                            "bid": "",
+                            "backend_handle": "",
                             "view_box": [0, 0, 100, 100],
                             "geometry_bbox": [10, 10, 10, 10],
                             "viewport_bbox": [100, 100, 20, 20],

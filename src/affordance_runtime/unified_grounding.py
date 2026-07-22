@@ -53,13 +53,14 @@ def candidate_from_affordance(
         source = GroundingSource.DOM if affordance.surface == Surface.DOM else GroundingSource.ACCESSIBILITY
         bbox = _optional_box(affordance.locator.get("bbox"))
         payload = DomGroundingPayload(
-            bid=str(affordance.locator.get("bid") or ""),
+            backend_handle=str(affordance.locator.get("backend_handle") or ""),
             selector=str(affordance.locator.get("selector") or ""),
             bbox_xywh=bbox,
         )
         evidence = {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
         if bbox is not None or (
-            affordance.action == "drag" and bool(affordance.locator.get("bid") or affordance.locator.get("selector"))
+            affordance.action == "drag"
+            and bool(affordance.locator.get("backend_handle") or affordance.locator.get("selector"))
         ):
             # A current element handle is a trusted spatial binding for
             # locator-based drag executors even when raw coordinates are not

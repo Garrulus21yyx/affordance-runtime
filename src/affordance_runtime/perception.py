@@ -133,7 +133,7 @@ class PerceptionEscalation:
     """Evidence-driven request to widen perception after a failed route.
 
     This carries only typed source classes and a generic failure reason.  It
-    deliberately contains no task-family name, selector, coordinate, bid, or
+    deliberately contains no task-family name, selector, coordinate, backend handle, or
     backend action syntax.
     """
 

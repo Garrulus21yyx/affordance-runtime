@@ -227,8 +227,8 @@ class GestureContractBinder:
     """Resolve and validate a gesture before any backend encodes it.
 
     The binder owns semantic endpoint compatibility, coherent-observation, and
-    shared-route invariants.  It deliberately does not inspect BrowserGym bids,
-    Playwright locators, or visual coordinates.
+    shared-route invariants.  It deliberately does not inspect backend handles,
+    backend locators, or visual coordinates.
     """
 
     def bind(
@@ -300,7 +300,7 @@ def gesture_preflight(
 ) -> RuntimeErrorCode | None:
     """Validate every gesture endpoint against the current observation.
 
-    This deliberately contains no BrowserGym, Playwright, or coordinate logic.
+    This deliberately contains no backend-specific handle, locator, or coordinate logic.
     Backends receive a valid semantic binding and only encode their own gesture.
     """
 

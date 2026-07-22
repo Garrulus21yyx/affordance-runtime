@@ -29,7 +29,7 @@ class SvgGeometryElement:
     label: str
     role: str
     action: str
-    bid: str
+    backend_handle: str
     view_box: tuple[float, float, float, float]
     geometry_bbox_xywh: tuple[float, float, float, float]
     viewport_bbox_xywh: tuple[float, float, float, float]
@@ -56,7 +56,7 @@ class SvgGeometryElement:
             geometry_bbox_xywh=self.geometry_bbox_xywh,
             viewport_bbox_xywh=self.viewport_bbox_xywh,
             transform=self.transform,
-            bid=self.bid,
+            backend_handle=self.backend_handle,
         )
         fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -65,7 +65,7 @@ class SvgGeometryElement:
                     "tag": self.tag,
                     "label": self.label,
                     "action": self.action,
-                    "bid": self.bid,
+                    "backend_handle": self.backend_handle,
                     "observed_color": self.observed_color,
                     "relative_size": self.relative_size,
                     "item_type": self.item_type,
@@ -123,8 +123,21 @@ class SvgGeometryObserverPort(Protocol):
     ) -> SvgGeometryObservation: ...
 
 
+@dataclass(frozen=True)
+class SvgAuthoredExtension:
+    """Optional authored SVG annotations normalized at an adapter boundary."""
+
+    marker_attribute: str = ""
+    marker_value: str = "1"
+    backend_handle_attribute: str = ""
+
+
 _SVG_OBSERVATION_SCRIPT = r"""
-(taskTerms) => {
+(request) => {
+  const taskTerms = request.task_terms || [];
+  const markerAttribute = String(request.marker_attribute || '');
+  const markerValue = String(request.marker_value || '1');
+  const handleAttribute = String(request.backend_handle_attribute || '');
   const normalizedTerms = (taskTerms || []).map(term => String(term).toLowerCase()).filter(Boolean);
   const dragRequested = normalizedTerms.some(term => ['drag', 'move'].includes(term));
   const itemRequested = normalizedTerms.some(term => ['shape', 'shapes', 'item', 'number', 'numbers', 'digit', 'digits', 'letter', 'letters'].includes(term));
@@ -178,16 +191,16 @@ _SVG_OBSERVATION_SCRIPT = r"""
       const authoredLabel = element.getAttribute('aria-label') || element.querySelector(':scope > title')?.textContent || element.textContent;
       const label = (authoredLabel || (action === 'drop' ? inferredLabel : element.id || classLabel || inferredLabel) || '').trim();
       const role = (element.getAttribute('role') || (action === 'drop' ? 'drop_target' : action === 'drag' ? 'draggable' : '')).toLowerCase();
-      const bid = element.getAttribute('bid') || '';
-      const marked = element.getAttribute('browsergym_set_of_marks') === '1';
+      const backendHandle = handleAttribute ? (element.getAttribute(handleAttribute) || '') : '';
+      const marked = markerAttribute ? element.getAttribute(markerAttribute) === markerValue : false;
       const boundedShape = ['circle', 'ellipse', 'rect', 'polygon', 'text'].includes(tag) && Boolean(element.id || classLabel || dragRequested || itemRequested);
-      const actionable = marked || Boolean(bid) || boundedShape || ['button', 'link', 'slider'].includes(role) || tag === 'a' || element.getAttribute('draggable') === 'true';
+      const actionable = marked || Boolean(backendHandle) || boundedShape || ['button', 'link', 'slider'].includes(role) || tag === 'a' || element.getAttribute('draggable') === 'true';
       const taskRelevant = normalizedTerms.some(term => label.toLowerCase().includes(term));
       if (!actionable && !label && !taskRelevant) continue;
       if (!actionable && !taskRelevant) continue;
       ordinal += 1;
       const authoredSequenceIndex = String(element.getAttribute('data-index') || '').trim();
-      const baseElementId = element.id || bid || (authoredSequenceIndex ? `${tag}-data-index-${authoredSequenceIndex}` : `${tag}-${ordinal}`);
+      const baseElementId = element.id || backendHandle || (authoredSequenceIndex ? `${tag}-data-index-${authoredSequenceIndex}` : `${tag}-${ordinal}`);
       const duplicateOrdinal = (seenElementIds.get(baseElementId) || 0) + 1;
       seenElementIds.set(baseElementId, duplicateOrdinal);
       elements.push({
@@ -196,7 +209,7 @@ _SVG_OBSERVATION_SCRIPT = r"""
         label,
         role,
         action,
-        bid,
+        backend_handle: backendHandle,
         observed_color: fill,
         relative_size: relativeSize,
         item_type: itemType,
@@ -217,6 +230,7 @@ _SVG_OBSERVATION_SCRIPT = r"""
 class SelectiveSvgGeometryObserver:
     parser_id: str = "selective-svg-geometry-v1"
     max_elements: int = 64
+    authored_extension: SvgAuthoredExtension | None = None
 
     def observe(
         self,
@@ -228,7 +242,16 @@ class SelectiveSvgGeometryObserver:
         task_terms: Sequence[str] = (),
         evidence_ref: str = "",
     ) -> SvgGeometryObservation:
-        raw = page.evaluate(_SVG_OBSERVATION_SCRIPT, list(task_terms))
+        extension = self.authored_extension or SvgAuthoredExtension()
+        raw = page.evaluate(
+            _SVG_OBSERVATION_SCRIPT,
+            {
+                "task_terms": list(task_terms),
+                "marker_attribute": extension.marker_attribute,
+                "marker_value": extension.marker_value,
+                "backend_handle_attribute": extension.backend_handle_attribute,
+            },
+        )
         if not isinstance(raw, dict):
             raise ValueError("SVG observer must return an object")
         viewport = _finite_tuple(raw.get("viewport"), 2, "SVG viewport")
@@ -264,7 +287,7 @@ class SelectiveSvgGeometryObserver:
             label=str(raw.get("label") or ""),
             role=str(raw.get("role") or ""),
             action=str(raw.get("action") or "point_activate"),
-            bid=str(raw.get("bid") or ""),
+            backend_handle=str(raw.get("backend_handle") or ""),
             view_box=view_box,
             geometry_bbox_xywh=geometry,
             viewport_bbox_xywh=viewport,

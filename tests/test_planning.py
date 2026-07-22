@@ -100,7 +100,7 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
         url = "https://example.test/settings"
 
         def content(self) -> str:
-            return '<input bid="theme-bid" id="theme" aria-label="Theme">'
+                return '<input id="theme" aria-label="Theme">'
 
         def evaluate(self, script: str) -> object:
             if "Object.fromEntries" in script:
@@ -138,7 +138,13 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
     contract = ContractBuilder(
         requirements={
             semantic_target: ContractRequirements(
-                verifier_plan=(VerifierSpec("dom_attribute", "theme", "dark"),)
+                    verifier_plan=(
+                        VerifierSpec(
+                            "dom_attribute",
+                            "theme",
+                            {"target_attribute": "id", "attribute": "value", "value": "dark"},
+                        ),
+                    )
             )
         }
     ).build(proposal, spec, state, snapshot)
@@ -147,7 +153,7 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
     assert contract.grounding_candidate is not None
     assert contract.route_plan is not None
     assert contract.backend == contract.grounding_candidate.compatible_executor == "dom"
-    assert contract.locator["bid"] == "theme-bid"
+    assert contract.locator["selector"] == "#theme"
     assert contract.target_fingerprint_key == contract.grounding_candidate.fingerprint_key
 
 

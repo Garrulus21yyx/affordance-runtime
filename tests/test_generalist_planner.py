@@ -5,7 +5,7 @@ from typing import Sequence, TypeVar, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.adapters.dom import AuthoredInteractiveExtension, DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot, _bounded_control_value
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
@@ -42,6 +42,7 @@ from affordance_runtime.generalist_planner import (
     _table_value_entry_constraints,
     _target_discovery_constraints,
     build_planner_context,
+    default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planning import PlannerActionKind
@@ -50,6 +51,15 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 T = TypeVar("T", bound=BaseModel)
+
+_AUTHORED_EXTENSION = AuthoredInteractiveExtension(
+    marker_attribute="data-runtime-interactive",
+    backend_handle_attribute="data-runtime-handle",
+)
+
+
+def _authored_dom_adapter() -> DomAdapter:
+    return DomAdapter(extension=_AUTHORED_EXTENSION)
 
 
 def test_generalist_exact_point_binding_preserves_coordinate_signs() -> None:
@@ -799,7 +809,7 @@ def test_generalist_compiles_readonly_calendar_month_day_and_submit() -> None:
 
 
 def test_generalist_compiles_explicit_lowercase_transform_without_model_spelling() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<input><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -828,9 +838,9 @@ def test_generalist_compiles_explicit_lowercase_transform_without_model_spelling
 
 
 def test_generalist_opens_tightest_visible_ancestor_of_hidden_quoted_target() -> None:
-    model = DomAdapter().transduce(
-        '<ul><li><span browsergym_set_of_marks="1">Leonie</span></li>'
-        '<li><span browsergym_set_of_marks="1">Sergio</span>'
+    model = _authored_dom_adapter().transduce(
+        '<ul><li><span data-runtime-interactive="1">Leonie</span></li>'
+        '<li><span data-runtime-interactive="1">Sergio</span>'
         '<ul style="display:none"><li><span>Nathalie</span></li></ul></li></ul>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -852,7 +862,7 @@ def test_generalist_opens_tightest_visible_ancestor_of_hidden_quoted_target() ->
     proposal = PlannerProposalCandidate(
         action_kind=PlannerActionKind.ACTIVATE,
         target_affordance_id="dom_span_1",
-    ).bind(context)
+    ).bind(context, compilation=default_semantic_compiler_registry().compile(context))
 
     assert proposal.target_affordance_id == "dom_span_2"
 
@@ -887,8 +897,8 @@ class ProposalModel:
 
 
 def test_generalist_context_is_bounded_semantic_and_authority_separated() -> None:
-    model = DomAdapter().transduce(
-        '<button id="save" bid="secret-browser-id">Save</button>',
+    model = _authored_dom_adapter().transduce(
+        '<button id="save" data-runtime-handle="secret-backend-handle">Save</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -923,7 +933,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     affordance = fixed.context["affordances"][0]  # type: ignore[index]
     assert affordance["id"] == "dom_button_1"
     assert "locator" not in affordance
-    assert "secret-browser-id" not in str(fixed.context)
+    assert "secret-backend-handle" not in str(fixed.context)
     assert fixed.context["granted_capabilities"] == ["settings.write"]
     assert fixed.context["permitted_action_kinds"] == ["activate", "ask_user", "finish"]
     assert fixed.context["task_spec"]["requested_capabilities"] == [  # type: ignore[index]
@@ -940,7 +950,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<button id="save">Save</button>', environment_revision="rev-1", snapshot_id="snapshot-1"
     )
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
@@ -998,7 +1008,7 @@ def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases
 
 
 def test_generalist_redacts_invalid_candidate_payloads() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="name"><input id="email">', environment_revision="rev-1", snapshot_id="snapshot-1"
     )
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
@@ -1045,7 +1055,7 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
 
 
 def test_generalist_repairs_one_invalid_candidate_on_the_same_snapshot() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="name"><input id="email">', environment_revision="rev-1", snapshot_id="snapshot-1"
     )
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
@@ -1125,7 +1135,7 @@ def test_drag_repair_schema_requires_a_semantic_destination() -> None:
 
 
 def test_generalist_compiles_explicit_one_position_drag_to_adjacent_semantic_targets() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<li class="ui-sortable-handle">Lesly</li>'
         '<li class="ui-sortable-handle">Marianna</li>'
         '<li class="ui-sortable-handle">Lyssa</li>'
@@ -1156,7 +1166,7 @@ def test_generalist_compiles_explicit_one_position_drag_to_adjacent_semantic_tar
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_li_3",
         destination_affordance_id="dom_li_2",
-    ).bind(context)
+    ).bind(context, compilation=default_semantic_compiler_registry().compile(context))
 
     assert proposal.target_affordance_id == "dom_li_3"
     assert proposal.destination_affordance_id == "dom_li_4"
@@ -1173,13 +1183,16 @@ def test_generalist_compiles_explicit_one_position_drag_to_adjacent_semantic_tar
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_li_2",
         destination_affordance_id="dom_li_3",
-    ).bind(fourth_context)
+    ).bind(
+        fourth_context,
+        compilation=default_semantic_compiler_registry().compile(fourth_context),
+    )
     assert fourth.target_affordance_id == "dom_li_2"
     assert fourth.destination_affordance_id == "dom_li_4"
 
 
 def test_generalist_compiles_an_already_sorted_numeric_list_to_submit() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<li class="ui-sortable-handle">-59</li>'
         '<li class="ui-sortable-handle">-14</li>'
         '<li class="ui-sortable-handle">70</li>'
@@ -1210,7 +1223,7 @@ def test_generalist_compiles_an_already_sorted_numeric_list_to_submit() -> None:
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_li_1",
         destination_affordance_id="dom_li_2",
-    ).bind(context)
+    ).bind(context, compilation=default_semantic_compiler_registry().compile(context))
 
     assert proposal.action_kind == PlannerActionKind.ACTIVATE
     assert proposal.target_affordance_id == "dom_button_1"
@@ -1218,7 +1231,7 @@ def test_generalist_compiles_an_already_sorted_numeric_list_to_submit() -> None:
 
 
 def test_generalist_compiles_smaller_inside_larger_to_distinct_semantic_endpoints() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<div draggable="true">small red box</div><div draggable="true">larger blue box</div>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1245,14 +1258,14 @@ def test_generalist_compiles_smaller_inside_larger_to_distinct_semantic_endpoint
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_div_1",
         destination_affordance_id="dom_div_1",
-    ).bind(context)
+    ).bind(context, compilation=default_semantic_compiler_registry().compile(context))
 
     assert proposal.target_affordance_id == "dom_div_1"
     assert proposal.destination_affordance_id == "dom_div_2"
 
 
 def test_generalist_compiles_size_relation_from_observed_geometry_semantics() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<div draggable="true">s</div><div draggable="true">L</div><button>Submit</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1289,7 +1302,7 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_div_2",
         destination_affordance_id="dom_div_1",
-    ).bind(context)
+    ).bind(context, compilation=default_semantic_compiler_registry().compile(context))
 
     assert proposal.target_affordance_id == "dom_div_1"
     assert proposal.destination_affordance_id == "dom_div_2"
@@ -1309,7 +1322,10 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_div_1",
         destination_affordance_id="dom_div_2",
-    ).bind(completed_context)
+    ).bind(
+        completed_context,
+        compilation=default_semantic_compiler_registry().compile(completed_context),
+    )
 
     assert terminal.action_kind == PlannerActionKind.ACTIVATE
     assert terminal.target_affordance_id == "dom_button_1"
@@ -1333,14 +1349,17 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
         action_kind=PlannerActionKind.DRAG,
         target_affordance_id="dom_div_1",
         destination_affordance_id="dom_div_2",
-    ).bind(contained_context)
+    ).bind(
+        contained_context,
+        compilation=default_semantic_compiler_registry().compile(contained_context),
+    )
 
     assert contained_terminal.action_kind == PlannerActionKind.ACTIVATE
     assert contained_terminal.target_affordance_id == "dom_button_1"
 
 
 def test_generalist_derives_terminal_flags_from_action_kind_at_binding() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="answer">',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1381,7 +1400,7 @@ def test_generalist_derives_terminal_flags_from_action_kind_at_binding() -> None
 
 
 def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_exists() -> None:
-    model = DomAdapter().transduce('<input id="name">', environment_revision="rev-1", snapshot_id="snapshot-1")
+    model = _authored_dom_adapter().transduce('<input id="name">', environment_revision="rev-1", snapshot_id="snapshot-1")
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
     snapshot = BrowserSnapshot(observation, model)
     state = StateKernel("task-1", "Enter name")
@@ -1420,7 +1439,7 @@ def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_e
 
 
 def test_generalist_normalizes_select_target_id_to_current_visible_option_label() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<select><option value="earth">Earth</option></select>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1461,7 +1480,7 @@ def test_generalist_normalizes_select_target_id_to_current_visible_option_label(
 
 
 def test_generalist_fills_a_missing_select_option_only_from_one_objective_match() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<select><option>Earth</option><option>Mars</option></select><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1534,7 +1553,7 @@ def test_generalist_initial_schema_fails_safe_when_constraints_exhaust_actions()
 
 
 def test_generalist_repairs_a_numeric_slider_key_only_toward_the_target() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<span class="ui-slider-handle" role="slider" tabindex="0">5</span>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1587,13 +1606,14 @@ def test_generalist_repairs_a_numeric_slider_key_only_toward_the_target() -> Non
         GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert repair_model.calls == 1
+    assert repair_model.calls == 0
     assert decision.proposal is not None
     assert decision.proposal.parameters == {"key": "ArrowLeft"}
+    assert decision.planner_context["semantic_compiler"]["compiler_id"] == "typed-incremental-control-v1"
 
 
 def test_generalist_exposes_submit_when_slider_context_reaches_target() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<span class="ui-slider-handle" role="slider" tabindex="0">4</span><button>Submit</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1638,7 +1658,7 @@ def test_generalist_uses_page_key_for_large_slider_distance(
     objective: str,
     expected_key: str,
 ) -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<span class="ui-slider-handle" role="slider" tabindex="0"></span>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1675,7 +1695,7 @@ def test_generalist_uses_page_key_for_large_slider_distance(
 
 
 def test_generalist_extracts_slider_target_when_objective_contains_checkbox_ordinal() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<span class="ui-slider-handle" role="slider" tabindex="0">-9</span>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1725,13 +1745,14 @@ def test_generalist_extracts_slider_target_when_objective_contains_checkbox_ordi
         GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert repair_model.calls == 1
+    assert repair_model.calls == 0
     assert decision.proposal is not None
     assert decision.proposal.parameters == {"key": "ArrowRight"}
+    assert decision.planner_context["semantic_compiler"]["compiler_id"] == "typed-incremental-control-v1"
 
 
 def test_generalist_binds_copy_paste_to_exact_source_value_and_destination() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<textarea>Trim-sensitive text </textarea><input type='text'><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -1837,7 +1858,7 @@ def test_generalist_binds_copy_paste_to_exact_source_value_and_destination() -> 
 
 
 def test_generalist_binds_ordinal_copy_source_and_exposes_only_submit_after_destination_matches() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<textarea>first</textarea><textarea>second</textarea><textarea>third exact </textarea>"
         "<input type='text'><button>Submit</button>",
         environment_revision="rev-1",
@@ -1908,7 +1929,7 @@ def test_generalist_binds_ordinal_copy_source_and_exposes_only_submit_after_dest
 
 
 def test_generalist_ordinal_copy_takes_priority_over_scroll_progress() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<textarea>first</textarea><textarea>second</textarea><textarea>third exact </textarea>"
         "<input type='text'><button>Submit</button>",
         environment_revision="rev-1",
@@ -1970,10 +1991,10 @@ def test_generalist_ordinal_copy_takes_priority_over_scroll_progress() -> None:
 
 
 def test_generalist_binds_table_field_to_adjacent_value_and_then_submit() -> None:
-    model = DomAdapter().transduce(
-        '<table><tr><td bid="header" browsergym_set_of_marks="1">Gender</td>'
-        '<td bid="value" browsergym_set_of_marks="1">Male</td></tr></table>'
-        '<input bid="target" type="text"><button bid="submit">Submit</button>',
+    model = _authored_dom_adapter().transduce(
+        '<table><tr><td data-runtime-handle="header" data-runtime-interactive="1">Gender</td>'
+        '<td data-runtime-handle="value" data-runtime-interactive="1">Male</td></tr></table>'
+        '<input data-runtime-handle="target" type="text"><button data-runtime-handle="submit">Submit</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2022,7 +2043,7 @@ def test_generalist_binds_table_field_to_adjacent_value_and_then_submit() -> Non
 
 
 def test_generalist_binds_one_isolated_visible_value_for_deictic_text_entry() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<input type='text'><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2084,7 +2105,7 @@ def test_generalist_binds_one_isolated_visible_value_for_deictic_text_entry() ->
 
 def test_generalist_keeps_long_text_suffix_and_writes_only_the_destination() -> None:
     source_value = ("alpha beta gamma " * 40) + "finalword."
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         f"<textarea>{source_value}</textarea><input type='text'><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2168,8 +2189,8 @@ def test_generalist_binds_textarea_scroll_to_exact_boundary_key(
     scroll_top: int,
     required_key: str,
 ) -> None:
-    model = DomAdapter().transduce(
-        "<textarea bid='source'>Long text</textarea><button bid='submit'>Submit</button>",
+    model = _authored_dom_adapter().transduce(
+        "<textarea data-runtime-handle='source'>Long text</textarea><button data-runtime-handle='submit'>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2257,8 +2278,8 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
     objective: str,
     scroll_top: int,
 ) -> None:
-    model = DomAdapter().transduce(
-        "<textarea bid='source'>Long text</textarea><button bid='submit'>Submit</button>",
+    model = _authored_dom_adapter().transduce(
+        "<textarea data-runtime-handle='source'>Long text</textarea><button data-runtime-handle='submit'>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2329,7 +2350,7 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
 
 
 def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input">',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2393,7 +2414,7 @@ def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:
 
 
 def test_generalist_repair_excludes_siblings_after_one_ordinal_control_is_satisfied() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input type="checkbox"><input type="checkbox"><input type="checkbox"><button>Submit</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2435,7 +2456,7 @@ def test_generalist_repair_excludes_siblings_after_one_ordinal_control_is_satisf
 
 
 def test_generalist_target_scope_keeps_only_named_checkbox_labels_and_submit() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<label><input type="checkbox">Jc</label>'
         '<label><input type="checkbox">skip</label>'
         '<label><input type="checkbox">XMHY</label>'
@@ -2467,7 +2488,7 @@ def test_generalist_target_scope_keeps_only_named_checkbox_labels_and_submit() -
 
 
 def test_generalist_selection_only_goal_excludes_incidental_text_inputs() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<select><option>Earth</option><option>Mars</option></select><input><button>No</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2507,7 +2528,7 @@ def test_generalist_selection_only_goal_excludes_incidental_text_inputs() -> Non
 
 
 def test_generalist_excludes_autocomplete_refill_after_current_value_matches() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input" value="Comoros"><button>Submit</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2538,7 +2559,7 @@ def test_generalist_excludes_autocomplete_refill_after_current_value_matches() -
 
 
 def test_generalist_compiles_unique_terminal_after_requested_text_is_present() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<textarea id="reply-text">Ornare commodo.</textarea><button>Send reply</button><button>Cancel</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2577,10 +2598,10 @@ def test_generalist_compiles_unique_terminal_after_requested_text_is_present() -
 
 
 def test_generalist_opens_unique_search_when_named_source_is_not_visible() -> None:
-    model = DomAdapter().transduce(
-        '<span id="open-search" bid="open" browsergym_set_of_marks="1"></span>'
-        '<span id="search-cancel" bid="cancel" browsergym_set_of_marks="1"></span>'
-        '<div bid="other" tabindex="0">Other</div>',
+    model = _authored_dom_adapter().transduce(
+        '<span id="open-search" data-runtime-handle="open" data-runtime-interactive="1"></span>'
+        '<span id="search-cancel" data-runtime-handle="cancel" data-runtime-interactive="1"></span>'
+        '<div data-runtime-handle="other" tabindex="0">Other</div>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2609,7 +2630,7 @@ def test_generalist_opens_unique_search_when_named_source_is_not_visible() -> No
 
 
 def test_generalist_enters_absent_source_into_unique_search_and_forward_recipient_into_unique_input() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="search-input" placeholder="Search">',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2635,9 +2656,9 @@ def test_generalist_enters_absent_source_into_unique_search_and_forward_recipien
     )
     assert (permitted, targets, value) == (["type_text"], {"type_text": ["dom_input_1"]}, "Ryann")
 
-    forward_model = DomAdapter().transduce(
+    forward_model = _authored_dom_adapter().transduce(
         '<input id="forward-sender"><textarea id="forward-text">Message body</textarea>'
-        '<span id="send-forward" bid="send" browsergym_set_of_marks="1"></span>',
+        '<span id="send-forward" data-runtime-handle="send" data-runtime-interactive="1"></span>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2664,7 +2685,7 @@ def test_generalist_enters_absent_source_into_unique_search_and_forward_recipien
 
 
 def test_generalist_prefers_terminal_control_after_requested_text_is_present() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<textarea id="reply-text">Ornare commodo.</textarea><button>Send reply</button><button>Cancel</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2707,9 +2728,9 @@ def test_generalist_prefers_terminal_control_after_requested_text_is_present() -
 
 
 def test_generalist_recognizes_hyphenated_terminal_control_after_text_is_present() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<textarea id="reply-text">Ornare commodo.</textarea>'
-        '<span bid="send" browsergym_set_of_marks="1">send-reply</span>'
+        '<span data-runtime-handle="send" data-runtime-interactive="1">send-reply</span>'
         "<label>to:</label>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2752,7 +2773,7 @@ def test_generalist_recognizes_hyphenated_terminal_control_after_text_is_present
 
 
 def test_generalist_resolves_ordinal_collection_across_pagination() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<div><a data-result="0">one</a></div>'
         '<div><a data-result="1">two</a></div>'
         '<div><a data-result="2">three</a></div>'
@@ -2780,7 +2801,7 @@ def test_generalist_resolves_ordinal_collection_across_pagination() -> None:
 
     assert _ordinal_collection_operation(context) == "dom_a_4"
 
-    page_two = DomAdapter().transduce(
+    page_two = _authored_dom_adapter().transduce(
         '<div><a data-result="3">four</a></div><div><a data-result="4">five</a></div>',
         environment_revision="rev-2",
         snapshot_id="snapshot-2",
@@ -2802,8 +2823,8 @@ def test_generalist_resolves_ordinal_collection_across_pagination() -> None:
 
 
 def test_generalist_binds_only_remaining_requested_multi_select_value() -> None:
-    model = DomAdapter().transduce(
-        '<select bid="items" multiple><option>Ertha</option><option>Aurel</option></select>',
+    model = _authored_dom_adapter().transduce(
+        '<select data-runtime-handle="items" multiple><option>Ertha</option><option>Aurel</option></select>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
     )
@@ -2842,11 +2863,11 @@ def test_generalist_binds_only_remaining_requested_multi_select_value() -> None:
 
 
 def test_generalist_keeps_only_autocomplete_option_matching_prefix_and_suffix() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input" value="Mo"><button>Submit</button>'
-        '<ul bid="menu" tabindex="0">'
-        '<li><div bid="moldova" tabindex="-1">Moldova</div></li>'
-        '<li><div bid="morocco" tabindex="-1">Morocco</div></li>'
+        '<ul data-runtime-handle="menu" tabindex="0">'
+        '<li><div data-runtime-handle="moldova" tabindex="-1">Moldova</div></li>'
+        '<li><div data-runtime-handle="morocco" tabindex="-1">Morocco</div></li>'
         "</ul>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2875,7 +2896,7 @@ def test_generalist_keeps_only_autocomplete_option_matching_prefix_and_suffix() 
 
 
 def test_generalist_target_scope_binds_each_ordinal_to_its_control_role() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<input type="radio" value="1"><input type="radio" value="2"><input type="radio" value="3">'
         '<input type="text"><input type="text"><input type="text"><button>Submit</button>',
         environment_revision="rev-1",
@@ -2911,7 +2932,7 @@ def test_generalist_target_scope_binds_each_ordinal_to_its_control_role() -> Non
 
 
 def test_generalist_rejects_an_action_target_mismatch_before_binding() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         "<select><option>Earth</option></select><button>Submit</button>",
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2939,7 +2960,7 @@ def test_generalist_rejects_an_action_target_mismatch_before_binding() -> None:
 
 
 def test_generalist_rebinds_select_option_from_option_affordance_to_unique_select_owner() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<select><option value="earth">Earth</option></select>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -2980,7 +3001,7 @@ def test_generalist_rebinds_select_option_from_option_affordance_to_unique_selec
 
 
 def test_generalist_context_exposes_passed_effect_without_surface_payload() -> None:
-    model = DomAdapter().transduce(
+    model = _authored_dom_adapter().transduce(
         '<button id="save">Save</button>',
         environment_revision="rev-1",
         snapshot_id="snapshot-1",
@@ -3024,7 +3045,7 @@ def test_generalist_context_exposes_passed_effect_without_surface_payload() -> N
 
 def test_generalist_context_bounds_inventory_history_and_failure_detail() -> None:
     html = "".join(f'<button id="button-{index}">Button {index}</button>' for index in range(90))
-    model = DomAdapter().transduce(html, environment_revision="rev-1", snapshot_id="snapshot-1")
+    model = _authored_dom_adapter().transduce(html, environment_revision="rev-1", snapshot_id="snapshot-1")
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
     snapshot = BrowserSnapshot(observation, model)
     state = StateKernel("task-1", "Click a button")

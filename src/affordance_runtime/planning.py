@@ -56,7 +56,6 @@ _FORBIDDEN_PARAMETER_KEYS = {
     "approval_token",
     "backend",
     "bbox",
-    "bid",
     "capability",
     "capabilities",
     "coordinates",

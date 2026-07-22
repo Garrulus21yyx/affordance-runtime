@@ -4,13 +4,27 @@ from typing import Any
 import pytest
 
 from affordance_runtime.grounding import EvidenceKind, GroundingSource, SvgGroundingPayload
-from affordance_runtime.svg_geometry import SelectiveSvgGeometryObserver
+from affordance_runtime.svg_geometry import SelectiveSvgGeometryObserver, SvgAuthoredExtension
+
+
+def _observer() -> SelectiveSvgGeometryObserver:
+    return SelectiveSvgGeometryObserver(
+        authored_extension=SvgAuthoredExtension(
+            marker_attribute="data-runtime-interactive",
+            backend_handle_attribute="data-runtime-handle",
+        )
+    )
 
 
 class FakeSvgPage:
     def evaluate(self, expression: str, arg: Any = None) -> object:
         assert "getScreenCTM" in expression
-        assert arg == ["blue", "point"]
+        assert arg == {
+            "task_terms": ["blue", "point"],
+            "marker_attribute": "data-runtime-interactive",
+            "marker_value": "1",
+            "backend_handle_attribute": "data-runtime-handle",
+        }
         return {
             "viewport": [800, 600],
             "elements": [
@@ -20,7 +34,7 @@ class FakeSvgPage:
                     "label": "Blue point",
                     "role": "button",
                     "action": "point_activate",
-                    "bid": "42",
+                    "backend_handle": "42",
                     "view_box": [0, 0, 100, 100],
                     "geometry_bbox": [10, 20, 4, 4],
                     "viewport_bbox": [120, 240, 8, 8],
@@ -31,7 +45,7 @@ class FakeSvgPage:
 
 
 def test_selective_svg_observation_and_candidate_share_one_epoch() -> None:
-    observation = SelectiveSvgGeometryObserver().observe(
+    observation = _observer().observe(
         FakeSvgPage(),
         observation_epoch_id="snap-1",
         environment_revision="rev-1",
@@ -43,7 +57,7 @@ def test_selective_svg_observation_and_candidate_share_one_epoch() -> None:
         semantic_target_id="blue-point",
         source=observation.source_observation,
         expires_at_s=100.0,
-        executor="browsergym",
+        executor="visual",
     )
 
     assert observation.source_observation.source == GroundingSource.SVG
@@ -58,11 +72,11 @@ def test_selective_svg_observation_and_candidate_share_one_epoch() -> None:
         semantic_target_id="blue-point",
         source=observation.source_observation,
         expires_at_s=100.0,
-        executor="browsergym",
+        executor="visual",
     )
     assert changed_semantics.target_fingerprint != candidate.target_fingerprint
 
-    next_observation = SelectiveSvgGeometryObserver().observe(
+    next_observation = _observer().observe(
         FakeSvgPage(),
         observation_epoch_id="snap-2",
         environment_revision="rev-1",
@@ -74,7 +88,7 @@ def test_selective_svg_observation_and_candidate_share_one_epoch() -> None:
         semantic_target_id="blue-point",
         source=next_observation.source_observation,
         expires_at_s=200.0,
-        executor="browsergym",
+        executor="visual",
     )
     assert next_candidate.observation_epoch_id == "snap-2"
     assert next_candidate.target_fingerprint == candidate.target_fingerprint
@@ -89,7 +103,7 @@ def test_svg_observer_rejects_non_finite_or_empty_geometry() -> None:
             return raw
 
     with pytest.raises(ValueError, match="dimensions must be positive"):
-        SelectiveSvgGeometryObserver().observe(
+        _observer().observe(
             InvalidPage(),
             observation_epoch_id="snap-1",
             environment_revision="rev-1",
@@ -102,7 +116,12 @@ def test_svg_drop_candidate_exposes_semantic_drag_while_retaining_drop_direction
     class DropPage:
         def evaluate(self, expression: str, arg: Any = None) -> object:
             assert "getScreenCTM" in expression
-            assert arg == ["drag", "right"]
+            assert arg == {
+                "task_terms": ["drag", "right"],
+                "marker_attribute": "data-runtime-interactive",
+                "marker_value": "1",
+                "backend_handle_attribute": "data-runtime-handle",
+            }
             return {
                 "viewport": [800, 600],
                 "elements": [
@@ -112,7 +131,7 @@ def test_svg_drop_candidate_exposes_semantic_drag_while_retaining_drop_direction
                         "label": "right box",
                         "role": "drop_target",
                         "action": "drop",
-                        "bid": "",
+                        "backend_handle": "",
                         "view_box": [0, 0, 160, 160],
                         "geometry_bbox": [84, 5, 70, 50],
                         "viewport_bbox": [92, 48, 70, 50],
@@ -121,7 +140,7 @@ def test_svg_drop_candidate_exposes_semantic_drag_while_retaining_drop_direction
                 ],
             }
 
-    observation = SelectiveSvgGeometryObserver().observe(
+    observation = _observer().observe(
         DropPage(),
         observation_epoch_id="snap-1",
         environment_revision="rev-1",
@@ -134,7 +153,7 @@ def test_svg_drop_candidate_exposes_semantic_drag_while_retaining_drop_direction
         source_affordance_id="svg_rect_1",
         source=observation.source_observation,
         expires_at_s=9999999999.0,
-        executor="browsergym",
+        executor="visual",
     )
 
     assert element.action == "drop"

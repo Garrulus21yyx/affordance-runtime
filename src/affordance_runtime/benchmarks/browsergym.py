@@ -24,6 +24,7 @@ from affordance_runtime.benchmarks.browsergym_action_schema import (
 from affordance_runtime.benchmarks.browsergym_action_schema import (
     BrowserGymAction,
 )
+from affordance_runtime.benchmarks.browsergym_dom import browsergym_dom_adapter, browsergym_svg_observer
 from affordance_runtime.benchmarks.browsergym_matrix import (
     BROWSERGYM_VERSION,
     NIGHTLY_ACTION_FAMILY_MANIFEST,
@@ -244,8 +245,14 @@ class BrowserGymObserver:
         gesture_affordances = [
             item for item in snapshot.affordance_model.affordances if item.action in {"drag", "drop"}
         ]
-        boxes = self.session.bounding_boxes_for_bids(
-            [str(item.locator.get("bid") or "") for item in gesture_affordances]
+        boxes = self.session.bounding_boxes_for_selectors(
+            {
+                str(item.locator.get("backend_handle") or ""): str(
+                    item.locator.get("selector") or ""
+                )
+                for item in gesture_affordances
+                if item.locator.get("backend_handle") and item.locator.get("selector")
+            }
         )
         if not boxes:
             return snapshot
@@ -253,9 +260,10 @@ class BrowserGymObserver:
             item.id: (index, len(drag_affordances)) for index, item in enumerate(drag_affordances, start=1)
         }
         areas = {
-            item.id: boxes[str(item.locator.get("bid") or "")][2] * boxes[str(item.locator.get("bid") or "")][3]
+            item.id: boxes[str(item.locator.get("backend_handle") or "")][2]
+            * boxes[str(item.locator.get("backend_handle") or "")][3]
             for item in drag_affordances
-            if str(item.locator.get("bid") or "") in boxes
+            if str(item.locator.get("backend_handle") or "") in boxes
         }
         relative_sizes: dict[str, str] = {}
         inside_largest: set[str] = set()
@@ -270,8 +278,8 @@ class BrowserGymObserver:
             largest_ids = [item_id for item_id, area in areas.items() if area == largest]
             if len(smallest_ids) == 1 and len(largest_ids) == 1:
                 by_id = {item.id: item for item in drag_affordances}
-                source = boxes[str(by_id[smallest_ids[0]].locator.get("bid") or "")]
-                destination = boxes[str(by_id[largest_ids[0]].locator.get("bid") or "")]
+                source = boxes[str(by_id[smallest_ids[0]].locator.get("backend_handle") or "")]
+                destination = boxes[str(by_id[largest_ids[0]].locator.get("backend_handle") or "")]
                 if (
                     source[0] > destination[0]
                     and source[1] > destination[1]
@@ -281,8 +289,8 @@ class BrowserGymObserver:
                     inside_largest.add(smallest_ids[0])
         affordances: list[Affordance] = []
         for item in snapshot.affordance_model.affordances:
-            bid = str(item.locator.get("bid") or "")
-            box = boxes.get(bid)
+            backend_handle = str(item.locator.get("backend_handle") or "")
+            box = boxes.get(backend_handle)
             if box is None:
                 affordances.append(item)
                 continue
@@ -460,7 +468,7 @@ class BrowserGymPlanner:
                     "role": item.role,
                     "label": item.label,
                     "action": item.action,
-                    "locator": item.locator,
+                    "locator": _browsergym_policy_locator(item.locator),
                     "confidence": item.confidence,
                 }
                 for item in snapshot.affordance_model.affordances
@@ -595,8 +603,8 @@ class BrowserGymGestureEncoder:
     def encode(self, binding: GestureBinding) -> BrowserGymAction:
         source_locator = binding.source.locator
         destination_locator = binding.destination.locator
-        source_bid = str(source_locator.get("bid") or "")
-        destination_bid = str(destination_locator.get("bid") or "")
+        source_bid = str(source_locator.get("backend_handle") or "")
+        destination_bid = str(destination_locator.get("backend_handle") or "")
         sortable = _is_sortable_list_binding(binding)
         calendar_range = (
             source_locator.get("calendar_endpoint") == "start"
@@ -674,7 +682,7 @@ class BrowserGymPointEncoder:
     """Translate one current semantic point target to a BrowserGym action."""
 
     def encode(self, affordance: Affordance) -> BrowserGymAction:
-        bid = str(affordance.locator.get("bid") or "")
+        bid = str(affordance.locator.get("backend_handle") or "")
         if bid:
             return BrowserGymAction("click", {"bid": bid})
         box = _viewport_box(affordance.locator.get("bbox"))
@@ -689,7 +697,7 @@ class BrowserGymPointEncoder:
         candidate = contract.grounding_candidate
         if candidate is None:
             raise ValueError("BrowserGym point contract requires a selected grounding candidate")
-        bid = str(getattr(candidate.payload, "bid", "") or "")
+        bid = str(getattr(candidate.payload, "backend_handle", "") or "")
         if bid:
             return BrowserGymAction("click", {"bid": bid})
         point = contract.locator.get("point")
@@ -725,10 +733,10 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
             )
         )
         if proposal.action_kind == PlannerActionKind.ACTIVATE:
-            bid = str(affordance.locator.get("bid") or "")
+            bid = str(affordance.locator.get("backend_handle") or "")
             if not bid:
                 raise ValueError("Generalist BrowserGym binding requires an affordance bid")
-            select_owner_bid = str(affordance.locator.get("select_owner_bid") or "")
+            select_owner_bid = str(affordance.locator.get("select_owner_backend_handle") or "")
             select_option = str(affordance.locator.get("select_option") or "")
             if select_owner_bid and select_option:
                 action = BrowserGymAction("select_option", {"bid": select_owner_bid, "options": select_option})
@@ -770,7 +778,7 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
             )
             action = self.point_encoder.encode_contract(contract)
         elif proposal.action_kind == PlannerActionKind.TYPE_TEXT:
-            bid = str(affordance.locator.get("bid") or "")
+            bid = str(affordance.locator.get("backend_handle") or "")
             if not bid:
                 raise ValueError("Generalist BrowserGym binding requires an affordance bid")
             value = _browsergym_fill_value(affordance.state, str(proposal.parameters["text"]))
@@ -780,13 +788,13 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
                 else BrowserGymAction("fill", {"bid": bid, "value": value})
             )
         elif proposal.action_kind == PlannerActionKind.SELECT_OPTION:
-            bid = str(affordance.locator.get("bid") or "")
+            bid = str(affordance.locator.get("backend_handle") or "")
             if not bid:
                 raise ValueError("Generalist BrowserGym binding requires an affordance bid")
             option = proposal.parameters["option"]
             action = BrowserGymAction("select_option", {"bid": bid, "options": option})
         elif proposal.action_kind == PlannerActionKind.PRESS_KEY:
-            bid = str(affordance.locator.get("bid") or "")
+            bid = str(affordance.locator.get("backend_handle") or "")
             if not bid:
                 raise ValueError("Generalist BrowserGym binding requires an affordance bid")
             action = BrowserGymAction("press", {"bid": bid, "key_comb": str(proposal.parameters["key"])})
@@ -870,6 +878,7 @@ def _browsergym_action_verifiers(
                 "dom_attribute",
                 action_bid,
                 {
+                    "target_attribute": "bid",
                     "attribute": "value",
                     "value": str(action.arguments.get("value", action.arguments.get("text", ""))),
                 },
@@ -1138,6 +1147,14 @@ class BrowserGymExecutor:
                     "official_reward": float(reward),
                     "terminated": bool(terminated),
                     "truncated": bool(truncated),
+                    **(
+                        {
+                            "terminal_success": bool(terminated) and float(reward) > 0.0,
+                            "terminal_failure": not (bool(terminated) and float(reward) > 0.0),
+                        }
+                        if terminated or truncated
+                        else {}
+                    ),
                     "task_info": _json_safe(info.get("task_info", {})),
                     **(
                         {"direct_dispatch": direct_dispatch_evidence}
@@ -1178,7 +1195,11 @@ def run_browsergym_episode(
         raise
     goal = _goal_text(obs.get("goal", ""))
     episode = BrowserGymEpisodeState(task_id, seed, goal, obs, info)
-    session = BrowserSession(environment.unwrapped.page)
+    session = BrowserSession(
+        environment.unwrapped.page,
+        dom_adapter=browsergym_dom_adapter(),
+        svg_observer=browsergym_svg_observer(),
+    )
     run_id = f"browsergym-{task_id}-seed-{seed}"
     result_error = ""
     unsupported: list[str] = []
@@ -1291,6 +1312,8 @@ def run_browsergym_generalist_episode(
             environment.unwrapped.page,
             svg_executor=BROWSERGYM_BACKEND,
             dom_executor=BROWSERGYM_BACKEND,
+            dom_adapter=browsergym_dom_adapter(),
+            svg_observer=browsergym_svg_observer(),
             perception_orchestrator=(
                 GenericPerceptionOrchestrator(
                     region_proposer=visual_region_proposer,
@@ -2035,7 +2058,7 @@ def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> A
         (
             item
             for item in snapshot.affordance_model.affordances
-            if item.locator.get("bid") == bid or item.locator.get("selector") == selector
+            if item.locator.get("backend_handle") == bid or item.locator.get("selector") == selector
         ),
         None,
     )
@@ -2055,11 +2078,24 @@ def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> A
         role="browser_action",
         label=bid or action.name,
         action=action.name,
-        locator={"bid": bid, "selector": selector, "action_name": action.name},
+        locator={"backend_handle": bid, "selector": selector, "action_name": action.name},
         lease=lease,
         backend_candidates=[BROWSERGYM_BACKEND],
         risk=RiskLevel.LOW,
     )
+
+
+def _browsergym_policy_locator(locator: dict[str, Any]) -> dict[str, Any]:
+    """Expose BrowserGym naming only at its legacy policy adapter boundary."""
+
+    encoded = dict(locator)
+    backend_handle = str(encoded.pop("backend_handle", "") or "")
+    if backend_handle:
+        encoded["bid"] = backend_handle
+    owner_handle = str(encoded.pop("select_owner_backend_handle", "") or "")
+    if owner_handle:
+        encoded["select_owner_bid"] = owner_handle
+    return encoded
 
 
 def _browsergym_proposal(
