@@ -57,6 +57,19 @@ password value disclosure, and expose a terminal only after every obligation
 is satisfied. Ambiguous values or fields must fall through to System 2; no
 guessing and no task-name branch.
 
+R9 validation result (2026-07-23): clean `b4e596e` passes the original two
+failures 2/2, their 2-task x 10-seed family 20/20, and PR 18/18, all at official
+reward 1.0 with no FailureEnvelope, provider failure, or retry. The complete
+30-task x seed-0 diagnostic is 29/30 (0.9667), with no missing episode,
+provider/retry failure, or batch circuit. Its sole failure is a planning-budget
+envelope: the generic exact-value obligation misclassifies a quoted prefix in
+a suggestion-selection intent, repeatedly alternating fill-prefix and select.
+Freeze this diagnostic as evidence. The next generic boundary is typed
+exact-value versus prefix/suggestion constraints with negative controls; do not
+raise budgets, change Prompt/model, or add task/benchmark dispatch. M8.2B
+therefore remains in progress. See
+[R9 evidence](evidence/m8.2b-r9-form-obligations-20260723.md).
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
