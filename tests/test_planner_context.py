@@ -1,0 +1,87 @@
+import pytest
+
+from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
+from affordance_runtime.planner_context import (
+    PlannerContextBuilder,
+    PlannerLimits,
+    build_planner_context,
+)
+from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+
+
+def _fixture() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+    task = TaskSpec(
+        task_id="context-task",
+        revision=1,
+        objective="Save the display name",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("display name",),
+        success_criteria=("display name is saved",),
+        evidence_requirements=("fresh saved-state observation",),
+        requested_capabilities=("settings.write",),
+        source_request_ref="context-request",
+    )
+    model = DomAdapter().transduce(
+        "<main><label>Name <input id='name'></label><button id='save'>Save</button></main>",
+        environment_revision="environment-1",
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+    )
+    observation = Observation(
+        environment_revision="environment-1",
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+        artifact_refs=["artifact:first", "artifact:last"],
+        metadata={"visible_text": "x" * 2_100},
+    )
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    state.remember_observation(observation)
+    return TaskEnvelope(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
+
+
+def test_builder_bounds_untrusted_context_and_exposes_only_semantic_inventory() -> None:
+    envelope, state, snapshot = _fixture()
+    builder = PlannerContextBuilder(
+        limits=PlannerLimits(max_affordances=2, max_artifact_refs=1, max_accepted_knowledge=2),
+        accepted_knowledge=("old", "current-a", "current-b"),
+        allow_finish=False,
+    )
+
+    context = builder.build(envelope, state, snapshot)
+
+    assert len(context.observed_text) == 2_000
+    assert len(context.affordances) == 2
+    assert context.selected_artifact_refs == ("artifact:last",)
+    assert context.accepted_knowledge == ("current-a", "current-b")
+    assert context.granted_capabilities == ("settings.write",)
+    assert "finish" not in context.permitted_action_kinds
+    assert {item.action for item in context.affordances} == {"click", "type"}
+    assert {"activate", "type_text"}.issubset(context.permitted_action_kinds)
+    assert "selector" not in context.model_dump_json()
+    assert "backend_handle" not in context.model_dump_json()
+
+
+def test_compatibility_function_matches_explicit_builder() -> None:
+    envelope, state, snapshot = _fixture()
+    limits = PlannerLimits(max_artifact_refs=1)
+
+    direct = PlannerContextBuilder(limits=limits).build(envelope, state, snapshot)
+    compatible = build_planner_context(envelope, state, snapshot, limits=limits)
+
+    assert compatible == direct
+
+
+def test_builder_rejects_unvalidated_legacy_envelope() -> None:
+    _envelope, state, snapshot = _fixture()
+
+    with pytest.raises(ValueError, match="validated TaskSpec"):
+        PlannerContextBuilder().build(
+            TaskEnvelope("legacy", "Save the display name"),
+            state,
+            snapshot,
+        )

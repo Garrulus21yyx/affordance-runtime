@@ -15,11 +15,9 @@ from affordance_runtime.generalist_planner import (
     PlannerContext,
     PlannerProposalCandidate,
     _ascending_numeric_item_operation,
-    _bounded_affordances,
     _calendar_date_operation,
     _calendar_event_gesture_operation,
     _candidate_prebind_issue,
-    _compact_mapping,
     _compiled_calendar_event_operation,
     _copy_text_constraints,
     _explicit_observed_color_operation,
@@ -45,6 +43,7 @@ from affordance_runtime.generalist_planner import (
     default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
+from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel

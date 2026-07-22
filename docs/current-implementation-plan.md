@@ -7,8 +7,9 @@ the controlled web profile. M8.2B remains in progress. See
 Runtime-first R1-R7 sequence is complete. R8 module containment after semantic
 stabilization is in progress; stateless TaskPlanLifecycle, PerceptionSession,
 ContractExecutionLoop, and RecoveryHandler collaborators are now extracted.
-M8.2B remains open for release capability and separately provisioned public
-suites. M9 remains
+The generalist PlannerContextBuilder is also separated from LM and compiler
+logic. M8.2B remains open for release capability and separately provisioned
+public suites. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
@@ -1417,14 +1418,16 @@ as architecture work. The detailed findings and gates are maintained in
    observation-port acquisition, stateless contract stages, and read-only
    recovery assessment respectively, while Coordinator and StateKernel retain
    all authoritative mutation, budgets, approval consumption, incident updates,
-   and trace order. Next split generalist planner context/LM/rule internals and
-   BrowserGym
+   and trace order. Generalist PlannerContextBuilder is now separate with its
+   context-policy version and public compatibility function unchanged. Next
+   split generalist LM/schema repair from rule registration and BrowserGym
    observer/encoder/runner/reporting internals without adding services or
    another authoritative state writer. See
    `evidence/runtime-r8-task-plan-lifecycle-20260722.md`,
    `evidence/runtime-r8-perception-session-20260722.md`,
-   `evidence/runtime-r8-contract-execution-loop-20260722.md`, and
-   `evidence/runtime-r8-recovery-handler-20260722.md`.
+   `evidence/runtime-r8-contract-execution-loop-20260722.md`,
+   `evidence/runtime-r8-recovery-handler-20260722.md`, and
+   `evidence/runtime-r8-planner-context-builder-20260722.md`.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 
