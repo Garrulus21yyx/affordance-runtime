@@ -644,9 +644,13 @@ its bounded input models without changing the Prompt or context-policy version.
 Default compiler rule order, applicability, evidence metadata, operation
 classes, output kinds, and negative examples now live in a typed declarative
 factory; Generalist injects the unchanged semantic algorithms and preserves its
-public registry entrypoint. LM/schema repair remains to be split. See
-`evidence/runtime-r8-planner-context-builder-20260722.md` and
-`evidence/runtime-r8-default-semantic-registry-20260722.md`.
+public registry entrypoint. Provider-neutral structured generation, candidate
+schema construction, and bounded repair now live in a stateless
+`PlannerModelOrchestrator`; Generalist retains Prompt/configuration, call-budget
+reservation, semantic issue policy, binding, fallback order, and trace
+assembly. See `evidence/runtime-r8-planner-context-builder-20260722.md`,
+`evidence/runtime-r8-default-semantic-registry-20260722.md`, and
+`evidence/runtime-r8-planner-model-orchestrator-20260722.md`.
 
 Deliverables:
 
