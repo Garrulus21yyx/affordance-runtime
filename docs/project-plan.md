@@ -659,15 +659,16 @@ metrics, and acceptance criteria are authoritative in
 `current-implementation-plan.md`.
 
 The prior `evidence/m8.5-completion-audit-20260722.md` remains component and
-perturbation evidence rather than the closure proof. Runtime-first R1-R7 are
-complete; R8 module containment is in progress with TaskPlanLifecycle,
+perturbation evidence rather than the closure proof. Runtime-first R1-R8 are
+complete; R8 module containment closed with TaskPlanLifecycle,
 PerceptionSession, ContractExecutionLoop, and read-only RecoveryHandler
 collaborators plus a separated generalist PlannerContextBuilder, typed default
 SemanticCompiler registry factory, and stateless model/schema repair
 orchestrator, plus adapter-owned BrowserGym observer, encoder, episode runner,
 versioned protocol, and report/taxonomy modules, in
 `current-implementation-plan.md`, with findings in
-`current-architecture-audit-20260722.md`. BrowserGym nightly and public suites
+`current-architecture-audit-20260722.md` and closure evidence in
+`evidence/runtime-r8-closure-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
 ### M9: Durable Single-Run Recovery - conditional

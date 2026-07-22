@@ -4,8 +4,8 @@ Implementation status: M0-M8.1, M8.2A, M8.3, M8.4, and M8.5 are complete for
 the controlled web profile. M8.2B remains in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
 [Current Architecture Audit](current-architecture-audit-20260722.md). The
-Runtime-first R1-R7 sequence is complete. R8 module containment after semantic
-stabilization is in progress; stateless TaskPlanLifecycle, PerceptionSession,
+Runtime-first R1-R8 sequence is complete. R8 module containment after semantic
+stabilization is closed; stateless TaskPlanLifecycle, PerceptionSession,
 ContractExecutionLoop, and RecoveryHandler collaborators are now extracted.
 The generalist PlannerContextBuilder is also separated from LM and compiler
 logic. BrowserGym observation, encoding, and one-episode/process-isolation
@@ -1414,7 +1414,7 @@ as architecture work. The detailed findings and gates are maintained in
    current-HEAD smoke, PR, diagnostic, nightly, and residual release evidence
    is frozen at clean `7e1c7db`. See
    `evidence/runtime-r7-clean-public-evaluation-20260722.md`.
-8. **Contain modules after semantics stabilize — in progress:** stateless
+8. **Contain modules after semantics stabilize — complete:** stateless
    TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, and
    RecoveryHandler collaborators now own immutable plan preparation/validation,
    observation-port acquisition, stateless contract stages, and read-only
@@ -1434,8 +1434,11 @@ as architecture work. The detailed findings and gates are maintained in
    observer module while the bridge facade preserves its imports. BrowserGym
    contract/action, gesture, point, native-value, and verifier encoding now
    also live in an adapter-owned encoder module; Core still owns semantic
-   gesture binding and preflight. Next split the BrowserGym runner and reporting
-   internals without adding services or another authoritative state writer. See
+   gesture binding and preflight. BrowserGym episode execution/process isolation,
+   protocol metadata, FailureEnvelope taxonomy, and aggregate reporting are now
+   separated while matrix scheduling/checkpoints remain cohesive. The final
+   ownership audit confirms no additional authoritative state/trace writer and
+   preserves facade identities. See
    `evidence/runtime-r8-task-plan-lifecycle-20260722.md`,
    `evidence/runtime-r8-perception-session-20260722.md`,
    `evidence/runtime-r8-contract-execution-loop-20260722.md`,
@@ -1443,8 +1446,11 @@ as architecture work. The detailed findings and gates are maintained in
    `evidence/runtime-r8-planner-context-builder-20260722.md`,
    `evidence/runtime-r8-default-semantic-registry-20260722.md`,
    `evidence/runtime-r8-planner-model-orchestrator-20260722.md`,
-   `evidence/runtime-r8-browsergym-observer-20260722.md`, and
-   `evidence/runtime-r8-browsergym-encoder-20260722.md`.
+   `evidence/runtime-r8-browsergym-observer-20260722.md`,
+   `evidence/runtime-r8-browsergym-encoder-20260722.md`,
+   `evidence/runtime-r8-browsergym-episode-runner-20260722.md`,
+   `evidence/runtime-r8-browsergym-report-20260722.md`, and
+   `evidence/runtime-r8-closure-20260722.md`.
 
    **Completed R8 registry slice:** moved only the declarative default
    semantic-compiler registry assembly (rule order, applicability declarations,

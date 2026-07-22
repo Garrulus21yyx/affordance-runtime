@@ -629,7 +629,7 @@ Exit:
 
 ### Phase R8 - Internal Module Containment
 
-Status on 2026-07-22: in progress. The first four slices extract stateless
+Status on 2026-07-22: complete. The first four slices extract stateless
 `TaskPlanLifecycle`, `PerceptionSession`, `ContractExecutionLoop`, and
 read-only `RecoveryHandler` collaborators. Coordinator still performs plan
 mutation, observation/receipt recording, budget accounting, approval
@@ -658,9 +658,8 @@ refresh, screenshot fallback, and visual candidate fusion. The public bridge
 continues to re-export the existing class and helper names. One-episode setup,
 Coordinator traversal, backend execution, external-policy lifecycle, and
 killable process timeout/exit/cleanup now live in
-`browsergym_episode_runner.py`; breadth-first suite scheduling, frozen identity,
-checkpointing, circuit breaking, and reporting remain in the bridge pending the
-report split. Versioned profile metadata is now isolated in
+`browsergym_episode_runner.py`; breadth-first suite orchestration and frozen
+identity remain in the bridge. Versioned profile metadata is now isolated in
 `browsergym_protocol.py`; FailureEnvelope construction/clustering and aggregate
 publication live in `browsergym_report.py`, while seed-major scheduling,
 circuit state, and atomic checkpoints remain in `browsergym_matrix.py`.
@@ -691,6 +690,11 @@ Exit:
 - no service, queue, or distributed state is introduced;
 - module ownership matches runtime-first-boundary.md;
 - behavior and trace schemas remain stable.
+
+Closure evidence: `evidence/runtime-r8-closure-20260722.md`. The legacy
+`AffordanceRuntime.run_contract` remains a non-authoritative one-contract
+conformance harness for compatibility; only `RunCoordinator` owns full task
+planning, observation, recovery, budget, approval, and trace progression.
 
 ## 8. Required Evaluation Matrix
 
