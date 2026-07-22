@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import replace
 
 import pytest
@@ -5,7 +6,13 @@ import pytest
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
-from affordance_runtime.evolution import CandidateRuntimeProfile, EvolutionRegistry, EvolutionStatus
+from affordance_runtime.evolution import (
+    AcceptedProfileLoader,
+    CandidateRuntimeProfile,
+    EvolutionRegistry,
+    EvolutionRegistryStore,
+    EvolutionStatus,
+)
 from affordance_runtime.grounding import UnifiedAffordance
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -104,6 +111,47 @@ def test_task_skill_candidate_is_quarantined_and_digest_gated_before_loading() -
     assert profile.task_skills_for("profile update") == (payload,)
     profile.rollback(artifact.id)
     assert not profile.task_skills_for("profile update")
+
+
+def test_accepted_profile_loader_binds_registry_digest_and_ignores_nonaccepted(tmp_path) -> None:
+    registry = EvolutionRegistry()
+    accepted = quarantine_task_skill(_payload(), registry)
+    accepted.status = EvolutionStatus.ACCEPTED
+    quarantined_payload = replace(_payload(), skill_id="profile.pending-name", version="1.0.1")
+    quarantine_task_skill(quarantined_payload, registry)
+    path = tmp_path / "accepted-registry.json"
+    EvolutionRegistryStore(path).save(registry)
+
+    loaded = AcceptedProfileLoader(path).load()
+
+    assert loaded.profile_digest.startswith("sha256:")
+    assert loaded.artifact_ids == (accepted.id,)
+    assert loaded.task_skill_runtime is not None
+    assert tuple(loaded.profile.loaded) == (accepted.id,)
+
+
+def test_accepted_profile_loader_rejects_payload_digest_mismatch(tmp_path) -> None:
+    registry = EvolutionRegistry()
+    artifact = quarantine_task_skill(_payload(), registry)
+    artifact.status = EvolutionStatus.ACCEPTED
+    artifact.payload["skill_id"] = "profile.tampered-name"
+    path = tmp_path / "tampered-registry.json"
+    EvolutionRegistryStore(path).save(registry)
+
+    with pytest.raises(ValueError, match="payload digest mismatch"):
+        AcceptedProfileLoader(path).load()
+
+
+def test_rolled_back_artifact_is_absent_from_a_fresh_profile(tmp_path) -> None:
+    registry = EvolutionRegistry()
+    artifact = quarantine_task_skill(_payload(), registry)
+    artifact.status = EvolutionStatus.ACCEPTED
+    registry.rollback(artifact.id, reason="heldout regression", reviewer="test-reviewer")
+    path = tmp_path / "rolled-back-registry.json"
+    EvolutionRegistryStore(path).save(registry)
+
+    with pytest.raises(ValueError, match="no accepted artifacts"):
+        AcceptedProfileLoader(path).load()
 
 
 def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoints_only_verification() -> None:
@@ -219,7 +267,7 @@ def test_task_skill_types_do_not_change_task_authority() -> None:
 
 
 def _replay(category: str, *, activated: bool = True, applicable: bool = True) -> TaskSkillReplayEvidence:
-    return TaskSkillReplayEvidence(
+    evidence = TaskSkillReplayEvidence(
         category,
         f"replay-{category}",
         f"variant-{category}",
@@ -229,7 +277,14 @@ def _replay(category: str, *, activated: bool = True, applicable: bool = True) -
         applicable,
         model_calls=1 if activated else 2,
         latency_ms=20.0,
+        source_trace_digest=_digest(f"trace:{category}"),
+        skill_payload_digest=_payload().digest(),
     )
+    return replace(evidence, replay_report_digest=evidence.canonical_report_digest())
+
+
+def _digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 
 
 def test_task_skill_replay_gate_accepts_only_complete_safe_heldout_efficiency_evidence() -> None:
@@ -278,3 +333,26 @@ def test_task_skill_replay_gate_keeps_missing_heldout_or_efficiency_in_quarantin
     assert decision.status == EvolutionStatus.QUARANTINED.value
     assert "heldout" in decision.reason
     assert "did not reduce" in decision.reason
+
+
+def test_task_skill_replay_gate_rejects_unbound_or_reused_reports() -> None:
+    registry = EvolutionRegistry()
+    artifact = quarantine_task_skill(_payload(), registry)
+    evidence = tuple(
+        replace(
+            _replay(category, activated=category not in {"global_smoke", "safety_smoke"}, applicable=category not in {"global_smoke", "safety_smoke"}),
+            replay_report_digest=_digest("one-reused-report"),
+        )
+        for category in ("original", "task_family", "heldout", "global_smoke", "safety_smoke")
+    )
+
+    decision = TaskSkillReplayGate().evaluate(
+        registry,
+        artifact.id,
+        evidence,
+        baseline_model_calls=3.0,
+        baseline_latency_ms=50.0,
+    )
+
+    assert decision.status == EvolutionStatus.QUARANTINED.value
+    assert "independently digest-bound" in decision.reason

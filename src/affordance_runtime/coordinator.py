@@ -172,6 +172,8 @@ class RunCoordinator:
     task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
+    runtime_profile_digest: str = ""
+    loaded_profile_artifact_ids: tuple[str, ...] = ()
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
 
     def __post_init__(self) -> None:
@@ -197,7 +199,14 @@ class RunCoordinator:
         upstream_parent = trace.nodes[-1] if trace.nodes else None
         parent: TraceNode | None = trace.add(
             "TaskCreated",
-            {"state": RuntimeStep.CREATED.value, "goal": envelope.goal, "constraints": envelope.constraints},
+            {
+                "state": RuntimeStep.CREATED.value,
+                "goal": envelope.goal,
+                "constraints": envelope.constraints,
+                "task_spec_identity": envelope.task_spec.identity if envelope.task_spec is not None else "",
+                "runtime_profile_digest": self.runtime_profile_digest,
+                "loaded_profile_artifact_ids": list(self.loaded_profile_artifact_ids),
+            },
             parents=[upstream_parent.id] if upstream_parent else None,
         )
         latest_verification: VerificationReport | None = None
@@ -439,6 +448,18 @@ class RunCoordinator:
                             attempted=True,
                             reason=reason,
                         )
+                    parent = trace.add(
+                        "TaskSkillSelectionEvaluated",
+                        {
+                            "state": state.phase,
+                            "matched": skill_decision.payload is not None,
+                            "newly_activated": skill_decision.newly_activated,
+                            "attempted": skill_decision.attempted,
+                            "reason": skill_decision.reason,
+                            "profile_digest": self.runtime_profile_digest,
+                        },
+                        parents=[parent.id],
+                    )
                     if skill_decision.newly_activated and skill_decision.payload is not None:
                         parent = trace.add(
                             "TaskSkillActivated",
@@ -565,6 +586,14 @@ class RunCoordinator:
                         "snapshot_id": proposal.snapshot_id,
                         "action_kind": proposal.action_kind.value,
                         "target_affordance_id": proposal.target_affordance_id,
+                        "semantic_target": _semantic_target_descriptor(
+                            snapshot,
+                            proposal.target_affordance_id,
+                        ),
+                        "semantic_destination": _semantic_target_descriptor(
+                            snapshot,
+                            proposal.destination_affordance_id,
+                        ),
                         "uncertainty": proposal.uncertainty,
                         "requires_clarification": proposal.requires_clarification,
                         "proposal": proposal.model_dump(mode="json"),
@@ -783,6 +812,26 @@ class RunCoordinator:
                     "supersedes_contract_id": contract.supersedes_contract_id,
                     "source_contract_id": contract.source_contract_id,
                     "fallback_reason": contract.fallback_reason,
+                    "semantic_action": (
+                        {
+                            "action_kind": decision.proposal.action_kind.value,
+                            "target": _semantic_target_descriptor(
+                                snapshot,
+                                decision.proposal.target_affordance_id,
+                            ),
+                            "destination": _semantic_target_descriptor(
+                                snapshot,
+                                decision.proposal.destination_affordance_id,
+                            ),
+                            "parameters": dict(decision.proposal.parameters),
+                            "expected_effects": [asdict(item) for item in contract.expected_effects],
+                            "verifier_plan": [asdict(item) for item in contract.verifier_plan],
+                            "required_capabilities": list(contract.required_capabilities),
+                            "risk": contract.risk.value,
+                        }
+                        if decision.proposal is not None
+                        else None
+                    ),
                     "task_skill": (
                         {
                             "skill_id": state.task_skill.skill_id,
@@ -1232,9 +1281,11 @@ class RunCoordinator:
                 "PostconditionPassed" if latest_verification.passed else "PostconditionFailed",
                 {
                     "state": state.phase,
+                    "contract_id": contract.id,
                     "status": latest_verification.status.value,
                     "reason": latest_verification.reason,
                     "artifact_refs": [verification_ref.path] if verification_ref else [],
+                    "evidence": [asdict(item) for item in latest_verification.evidence],
                 },
                 parents=[parent.id],
             )
@@ -2186,3 +2237,19 @@ def _verification_satisfies_effect(report: VerificationReport) -> bool:
         item.verifier_kind == "control_state" and isinstance(item.expected, dict) and "changed_from" in item.expected
         for item in report.evidence
     )
+
+
+def _semantic_target_descriptor(snapshot: BrowserSnapshot, semantic_target_id: str) -> dict[str, str] | None:
+    if not semantic_target_id:
+        return None
+    target = next(
+        (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
+        None,
+    )
+    if target is None:
+        return None
+    return {
+        "semantic_target_id": target.semantic_target_id,
+        "role": target.role,
+        "label": target.label,
+    }

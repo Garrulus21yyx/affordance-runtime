@@ -1,21 +1,20 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8.1, M8.2A, M8.3, and M8.4 are complete for the
-controlled web profile. M8.2B and M8.5 are in progress. See
+Implementation status: M0-M8.1, M8.2A, M8.3, M8.4, and M8.5 are complete for
+the controlled web profile. M8.2B remains in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
 [Current Architecture Audit](current-architecture-audit-20260722.md). The
-Runtime-first R1-R5 sequence is complete. The next required increment is R6
-canonical trace mining and explicit accepted-profile loading, followed by
-clean-revision public benchmark confirmation. M9 remains conditional on
+Runtime-first R1-R6 sequence is complete. The next required increment is R7
+clean-revision environment and public-evaluation reproduction. M9 remains conditional on
 measured restart/waiting evidence; production-scale options remain non-blocking.
 
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs beyond the now-closed Runtime-first R5 gate. Generic perception,
-verifier-calibrated routing, and de-specialized module ownership are proven;
-complete R6, then rerun a clean-revision diagnostic/residual release scan as
-external confirmation.
+repairs beyond the closed Runtime-first R5/R6 gates. Generic perception,
+verifier-calibrated routing, de-specialized module ownership, and canonical
+harness learning are proven; rerun a clean-revision diagnostic/residual release
+scan as external confirmation.
 
 ## 1. Authority
 
@@ -947,7 +946,7 @@ This milestone does not add recursive hierarchy, parallel effectful subgoals, a
 generic DAG scheduler, one agent per node, continuous watching, or a runtime
 framework dependency.
 
-### M8.5: Unified Adaptive Routing and Skill Internalization - in progress
+### M8.5: Unified Adaptive Routing and Skill Internalization - done
 
 Objective: promote the current shared execution shell into one adaptive decision
 plane. The same semantic target may have DOM, accessibility, SoM, pure-visual,
@@ -1003,8 +1002,8 @@ important M8.5 components, not the complete generic main path. Runtime-first R3
 now closes task-aware perception, ordinary assertions and active perception;
 R4 closes target-specific evidence, verifier-backed scoped calibration, and
 geometry-aware conservative fusion; R5 closes planner/observation
-de-specialization. Remaining gates are canonical trace mining and
-normal-entrypoint skill loading. The prior
+de-specialization; R6 closes canonical trace mining, replay-bound learning, and
+normal-entrypoint profile loading. The prior
 completion audit is retained as component evidence, not milestone closure.
 
 #### M8.5A: Unified Target and Route Contracts
@@ -1394,10 +1393,12 @@ as architecture work. The detailed findings and gates are maintained in
    SemanticCompilerRegistry with non-BrowserGym and negative-control evidence;
    a source-boundary test rejects benchmark vocabulary in shared modules. See
    `evidence/runtime-r5-despecialized-planner-dom-20260722.md`.
-6. **Complete Harness Learning:** extract semantic traces from canonical JSONL,
-   mine parameterized TaskSkill candidates across variants, bind replay
-   evidence to source/report digests, and explicitly load accepted TaskSkill
-   and RecoverySkill profiles in normal entrypoints.
+6. **Complete Harness Learning — complete:** canonical JSONL causality and
+   strong evidence are validated before semantic extraction; cross-variant
+   traces mine parameterized quarantined TaskSkills; replay binds source,
+   report, and payload digests; accepted TaskSkill and RecoverySkill profiles
+   load explicitly in normal entrypoints. See
+   `evidence/runtime-r6-canonical-harness-learning-20260722.md`.
 7. **Reproducible public evaluation:** separate compatible Web and BrowserGym
    dependency profiles, add BrowserGym container or isolated-environment
    reproduction, clear full static checks, and freeze current-HEAD smoke, PR,

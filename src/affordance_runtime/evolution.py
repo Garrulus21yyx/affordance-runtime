@@ -19,7 +19,7 @@ from affordance_runtime.recovery import (
     RecoveryContext,
     RecoveryDecision,
 )
-from affordance_runtime.task_skills import TaskSkillPayload
+from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillPayload
 
 
 class EvolutionStatus(StrEnum):
@@ -535,3 +535,49 @@ class EvolutionRegistryStore:
         item = dict(value)
         item["status"] = EvolutionStatus(item.get("status", EvolutionStatus.PROPOSED.value))
         return EvolutionArtifact(**item)
+
+
+@dataclass(frozen=True)
+class LoadedRuntimeProfile:
+    """Digest-bound accepted components ready for a normal Runtime entrypoint."""
+
+    profile: CandidateRuntimeProfile
+    profile_digest: str
+    artifact_ids: tuple[str, ...]
+    task_skill_runtime: AcceptedTaskSkillRuntime | None
+
+    def recovery_policy(self) -> BoundedRecoveryPolicy:
+        return self.profile.recovery_policy()
+
+
+@dataclass(frozen=True)
+class AcceptedProfileLoader:
+    """Load only accepted, payload-valid artifacts from a persisted registry."""
+
+    path: Path
+
+    def load(self) -> LoadedRuntimeProfile:
+        encoded = self.path.read_bytes()
+        profile_digest = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        registry = EvolutionRegistryStore(self.path).load()
+        accepted = tuple(
+            artifact
+            for _, artifact in sorted(registry.artifacts.items())
+            if artifact.status == EvolutionStatus.ACCEPTED
+        )
+        if not accepted:
+            raise ValueError("accepted runtime profile contains no accepted artifacts")
+        profile = CandidateRuntimeProfile()
+        for artifact in accepted:
+            profile.load(artifact)
+        task_skill_runtime = (
+            AcceptedTaskSkillRuntime.from_profile(profile)
+            if any(isinstance(item, TaskSkillPayload) for item in profile.loaded.values())
+            else None
+        )
+        return LoadedRuntimeProfile(
+            profile,
+            profile_digest,
+            tuple(artifact.id for artifact in accepted),
+            task_skill_runtime,
+        )

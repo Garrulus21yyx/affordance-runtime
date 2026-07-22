@@ -10,7 +10,7 @@ from typing import Any, Sequence
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator
+from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator, RuntimeFeatures
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
@@ -21,6 +21,7 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
 )
+from affordance_runtime.recovery import BoundedRecoveryPolicy
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -43,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--task-planning",
         action="store_true",
         help="enable the optional task-planning layer for the reference pricing path",
+    )
+    run.add_argument(
+        "--accepted-profile",
+        type=Path,
+        help="load a digest-validated registry containing accepted TaskSkill/RecoverySkill artifacts",
     )
 
     baseline = subcommands.add_parser("baseline", help="run the direct Playwright pricing baseline")
@@ -338,6 +344,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             headless=not args.headed,
             approve=args.approve,
             task_planning=args.task_planning,
+            accepted_profile=args.accepted_profile,
         )
         print(json.dumps(result, indent=2, sort_keys=True, default=str))
         return 0 if result["status"] == "done" else 1
@@ -356,6 +363,7 @@ def run_scenario(
     constraints_override: dict[str, Any] | None = None,
     capabilities_override: list[str] | None = None,
     task_planning: bool = False,
+    accepted_profile: Path | None = None,
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
@@ -375,8 +383,14 @@ def run_scenario(
     if task_planning and scenario != "pricing":
         raise ValueError("reference task planning is currently defined for pricing only")
     selected_run_id = run_id or f"{scenario}-gold-path"
-    task_spec = (
-        TaskSpec(
+    loaded_profile = None
+    if accepted_profile is not None:
+        from affordance_runtime.evolution import AcceptedProfileLoader
+
+        loaded_profile = AcceptedProfileLoader(accepted_profile).load()
+    task_spec = None
+    if task_planning:
+        task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
             objective="Reveal Pro and Enterprise plan limits with structural evidence.",
@@ -386,9 +400,37 @@ def run_scenario(
             evidence_requirements=("post-action DOM evidence for each pricing plan",),
             source_request_ref="reference-cli",
         )
-        if task_planning
-        else None
-    )
+    elif loaded_profile is not None:
+        profile_objectives = {
+            "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
+            "settings": "Enable the reversible notifications setting and verify persisted state.",
+            "export": "Export a report only after explicit approval and return the file receipt.",
+        }
+        task_spec = TaskSpec(
+            task_id=selected_run_id,
+            revision=1,
+            objective=profile_objectives[scenario],
+            operation_class={
+                "pricing": OperationClass.READ_ONLY,
+                "settings": OperationClass.REVERSIBLE_WRITE,
+                "export": OperationClass.EXTERNAL_SIDE_EFFECT,
+            }[scenario],
+            targets={
+                "pricing": ("Pro", "Enterprise"),
+                "settings": ("notifications",),
+                "export": ("report",),
+            }[scenario],
+            success_criteria={
+                "pricing": ("both requested pricing plans are structurally visible",),
+                "settings": ("notification setting is persisted",),
+                "export": ("approved report file is exported",),
+            }[scenario],
+            evidence_requirements=("independent post-action evidence",),
+            requested_capabilities=tuple(
+                capabilities_override if capabilities_override is not None else capabilities[scenario]
+            ),
+            source_request_ref="reference-cli-accepted-profile",
+        )
     with BrowserSession.launch(target, headless=headless) as session:
         router = ExecutorRouter()
         router.register(DomExecutor(session))
@@ -399,6 +441,15 @@ def run_scenario(
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,
             task_planner=PricingTaskPlanner() if task_planning else None,
+            features=(
+                loaded_profile.profile.features_for(selected_run_id)
+                if loaded_profile is not None
+                else RuntimeFeatures()
+            ),
+            recovery=(loaded_profile.recovery_policy() if loaded_profile is not None else BoundedRecoveryPolicy()),
+            task_skill_runtime=(loaded_profile.task_skill_runtime if loaded_profile is not None else None),
+            runtime_profile_digest=(loaded_profile.profile_digest if loaded_profile is not None else ""),
+            loaded_profile_artifact_ids=(loaded_profile.artifact_ids if loaded_profile is not None else ()),
         ).run_sync(
             TaskEnvelope(
                 task_id=selected_run_id,
@@ -429,6 +480,8 @@ def run_scenario(
         "result": result.result,
         "error_code": result.error_code.value if result.error_code else None,
         "artifacts": [item.path for item in result.artifacts],
+        "runtime_profile_digest": loaded_profile.profile_digest if loaded_profile is not None else "",
+        "loaded_profile_artifact_ids": list(loaded_profile.artifact_ids) if loaded_profile is not None else [],
     }
 
 

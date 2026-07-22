@@ -416,7 +416,7 @@ claim correction, not a rewrite.
 | M8.2B | in progress | residual release and external suites remain |
 | M8.3 | done for RecoveryPolicyPatch | recovery cascade and controlled policy replay are real |
 | M8.4 | done | criteria-bound planning, context-rich replanning, monotonic lineage, flat routing, and a real non-BrowserGym reference entrypoint are proven |
-| M8.5 | in progress | route, gesture, generic perception, calibrated routing, strict checkpoints, and R5 de-specialization exist; canonical trace mining and explicit profile loading remain |
+| M8.5 | done | Runtime-first R1-R6 close criteria-bound planning, perception, routing, de-specialization, canonical learning, replay gates, and accepted-profile loading |
 | M9 | pending and conditional | no change |
 
 ## 7. Detailed Forward Plan
@@ -575,6 +575,9 @@ runs confirm the Runtime path but are not formal benchmark promotion evidence.
 
 ### Phase R6 - Complete Harness Learning
 
+Status: complete on 2026-07-22. See
+`evidence/runtime-r6-canonical-harness-learning-20260722.md`.
+
 Deliverables:
 
 - canonical trace validator and semantic step extractor;
@@ -591,6 +594,21 @@ Exit:
 - held-out replay proves success and reduced model calls or latency;
 - skill failure preserves progress and enters recovery or System 2;
 - rollback removes the artifact from a fresh profile.
+
+Resolution (2026-07-22): persisted Runtime JSONL now has a causal validator
+that binds the complete file digest, requires ordered parentage, one successful
+terminal task, unique semantic contracts, and strong independent verification
+before extraction. Coordinator traces include backend-neutral role/label,
+semantic parameters, verifier plans, verification evidence, accepted-profile
+digests, and explicit System 1 selection. Three real non-BrowserGym System 2
+runs across three DOM variants produce one schema 1.1, source/report-digest-bound
+TaskSkill and quarantine it automatically. Fresh original, family, held-out,
+global, and safety replay accepts it only after success, activation precision,
+safety, verifier, duplicate-effect, and efficiency gates pass. A persisted
+accepted registry then loads into a fresh Runtime and completes a new held-out
+variant with zero System 2 planner calls. RecoverySkill normal-entrypoint
+loading, fallthrough with preserved progress, digest mismatch rejection, and
+fresh-profile rollback are also covered.
 
 ### Phase R7 - Reproducible Public Evaluation
 
@@ -647,10 +665,10 @@ Benchmark task-family pass rate alone cannot close an architecture milestone.
 2. **Complete:** define and wire TaskPlanningContext plus plan lineage.
 3. **Complete:** pass PerceptionRequirements through generic Coordinator and BrowserSession.
 4. **Complete:** create executable generic visual candidates outside BrowserGym.
-5. **Next:** move benchmark semantics out of shared DOM and planner modules.
+5. **Complete:** move benchmark semantics out of shared DOM and planner modules.
 6. **Complete:** add verifier-backed route outcomes and target-specific evidence gates.
-7. Connect canonical traces to TaskSkill mining and explicit profile loading.
-8. Resolve Playwright profile incompatibility and freeze current-HEAD evidence.
+7. **Complete:** connect canonical traces to TaskSkill mining and explicit profile loading.
+8. **Next:** resolve Playwright profile incompatibility and freeze current-HEAD evidence.
 9. Split oversized modules after semantic behavior is protected by tests.
 
 ## 10. Final Governance Judgment

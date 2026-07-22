@@ -137,11 +137,13 @@ class TaskSkillPayload:
     applicability: tuple[str, ...]
     source_traces: tuple[str, ...]
     source_variants: tuple[str, ...]
+    source_trace_digests: tuple[str, ...] = ()
+    mining_report_digests: tuple[str, ...] = ()
     negative_examples: tuple[str, ...] = ()
     heldout_suite: str = ""
 
     def validate(self) -> None:
-        if self.schema_version != "1.0" or self.patch_kind != "task_skill":
+        if self.schema_version not in {"1.0", "1.1"} or self.patch_kind != "task_skill":
             raise ValueError("unsupported TaskSkill payload schema or kind")
         if not re.fullmatch(r"[a-z][a-z0-9_.-]{2,127}", self.skill_id):
             raise ValueError("invalid TaskSkill id")
@@ -150,6 +152,13 @@ class TaskSkillPayload:
         self.trigger.validate()
         if len(self.source_traces) < 3 or len(set(self.source_variants)) < 2:
             raise ValueError("TaskSkill requires at least three traces across two variants")
+        if self.schema_version == "1.1":
+            if len(self.source_trace_digests) != len(self.source_traces):
+                raise ValueError("TaskSkill source trace digests must bind every source trace")
+            if len(self.mining_report_digests) != len(self.source_traces):
+                raise ValueError("TaskSkill mining report digests must bind every source trace")
+            if not all(_is_sha256_digest(item) for item in (*self.source_trace_digests, *self.mining_report_digests)):
+                raise ValueError("TaskSkill provenance requires sha256 digests")
         if not self.steps or not self.applicability or not self.heldout_suite:
             raise ValueError("TaskSkill requires steps, applicability, and a held-out suite")
         names = [item.name for item in self.parameters]
@@ -198,6 +207,12 @@ class TaskSkillPayload:
             applicability=tuple(_string_list(value.get("applicability"), "applicability")),
             source_traces=tuple(_string_list(value.get("source_traces"), "source_traces")),
             source_variants=tuple(_string_list(value.get("source_variants"), "source_variants")),
+            source_trace_digests=tuple(
+                _string_list(value.get("source_trace_digests", []), "source_trace_digests")
+            ),
+            mining_report_digests=tuple(
+                _string_list(value.get("mining_report_digests", []), "mining_report_digests")
+            ),
             negative_examples=tuple(_string_list(value.get("negative_examples", []), "negative_examples")),
             heldout_suite=str(value.get("heldout_suite", "")),
         )
@@ -227,6 +242,8 @@ class VerifiedSemanticTrace:
     independently_verified: bool = True
     policy_violations: int = 0
     verifier_false_accepts: int = 0
+    source_digest: str = ""
+    report_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -263,6 +280,8 @@ class SemanticTraceNormalizer:
             _normalize(trace.variant),
             " ".join(trace.objective.split()),
             steps,
+            source_digest=trace.source_digest,
+            report_digest=trace.report_digest,
         )
         _assert_semantic(asdict(normalized))
         return normalized
@@ -347,8 +366,17 @@ class TaskSkillMiner:
         objective_terms = tuple(
             dict.fromkeys(term for item in normalized for term in re.findall(r"[a-z0-9_-]+", item.objective.casefold()))
         )[:16]
+        digest_bound = all(item.source_digest and item.report_digest for item in normalized)
+        if digest_bound and not all(
+            _is_sha256_digest(value)
+            for item in normalized
+            for value in (item.source_digest, item.report_digest)
+        ):
+            raise ValueError("canonical TaskSkill traces require sha256 provenance digests")
+        if any(item.source_digest or item.report_digest for item in normalized) and not digest_bound:
+            raise ValueError("TaskSkill trace provenance must bind both source and report digests")
         payload = TaskSkillPayload(
-            "1.0",
+            "1.1" if digest_bound else "1.0",
             "task_skill",
             skill_id,
             "1.0.0",
@@ -358,6 +386,8 @@ class TaskSkillMiner:
             tuple(sorted(variants)),
             tuple(item.trace_id for item in normalized),
             tuple(item.variant for item in normalized),
+            tuple(item.source_digest for item in normalized) if digest_bound else (),
+            tuple(item.report_digest for item in normalized) if digest_bound else (),
             heldout_suite=heldout_suite,
         )
         payload.validate()
@@ -756,6 +786,32 @@ class TaskSkillReplayEvidence:
     verifier_false_accepts: int = 0
     duplicate_effect_risks: int = 0
     fell_through: bool = False
+    source_trace_digest: str = ""
+    replay_report_digest: str = ""
+    skill_payload_digest: str = ""
+
+    def canonical_report_digest(self) -> str:
+        value = {
+            "schema_version": "task-skill-replay-evidence-v1",
+            "category": self.category,
+            "trace_id": self.trace_id,
+            "variant": self.variant,
+            "success": self.success,
+            "independently_verified": self.independently_verified,
+            "activated": self.activated,
+            "applicable": self.applicable,
+            "model_calls": self.model_calls,
+            "latency_ms": self.latency_ms,
+            "policy_violations": self.policy_violations,
+            "verifier_false_accepts": self.verifier_false_accepts,
+            "duplicate_effect_risks": self.duplicate_effect_risks,
+            "fell_through": self.fell_through,
+            "source_trace_digest": self.source_trace_digest,
+            "skill_payload_digest": self.skill_payload_digest,
+        }
+        return "sha256:" + hashlib.sha256(
+            json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -788,6 +844,14 @@ class TaskSkillReplayGate:
 
         artifact = registry.artifacts[artifact_id]
         runs = tuple(evidence)
+        invalid_provenance = [
+            item.trace_id
+            for item in runs
+            if not _is_sha256_digest(item.source_trace_digest)
+            or item.replay_report_digest != item.canonical_report_digest()
+            or item.skill_payload_digest != artifact.payload_digest
+        ]
+        duplicate_reports = len({item.replay_report_digest for item in runs}) != len(runs)
         categories = {item.category for item in runs if item.success and item.independently_verified}
         activated = [item for item in runs if item.activated]
         correct_activations = [item for item in activated if item.applicable]
@@ -810,7 +874,7 @@ class TaskSkillReplayGate:
         artifact.regression_results = metrics
         missing = sorted(self.mandatory_categories - categories)
         efficiency_improved = metrics["model_call_reduction"] > 0 or metrics["latency_reduction_ms"] > 0
-        if missing or not runs or not efficiency_improved:
+        if missing or not runs or not efficiency_improved or invalid_provenance or duplicate_reports:
             artifact.status = EvolutionStatus.QUARANTINED
             reasons = []
             if missing:
@@ -819,6 +883,10 @@ class TaskSkillReplayGate:
                 reasons.append("no fresh replay evidence")
             if not efficiency_improved:
                 reasons.append("TaskSkill did not reduce model calls or latency")
+            if invalid_provenance:
+                reasons.append("replay evidence is not digest-bound to trace, report, and skill payload")
+            if duplicate_reports:
+                reasons.append("replay reports must be independently digest-bound")
             artifact.decision_reason = "; ".join(reasons)
             return TaskSkillReplayDecision(
                 artifact.status.value,
@@ -1026,6 +1094,10 @@ def _assert_semantic(value: Any) -> None:
     encoded = json.dumps(value, sort_keys=True, default=str)
     if _FORBIDDEN_HANDLE_RE.search(encoded):
         raise ValueError("TaskSkill payload contains a forbidden raw handle or coordinate")
+
+
+def _is_sha256_digest(value: str) -> bool:
+    return bool(re.fullmatch(r"sha256:[0-9a-f]{64}", value))
 
 
 def _normalize(value: str) -> str:

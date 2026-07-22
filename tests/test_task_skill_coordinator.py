@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Any
@@ -12,13 +13,20 @@ from affordance_runtime.criteria import (
     skill_step_owner_id,
 )
 from affordance_runtime.evolution import (
+    AcceptedProfileLoader,
     CandidateRuntimeProfile,
     EvolutionArtifact,
     EvolutionArtifactType,
     EvolutionRegistry,
+    EvolutionRegistryStore,
     EvolutionStatus,
 )
 from affordance_runtime.grounding import GroundingSource, SourceObservation
+from affordance_runtime.harness_learning import (
+    CanonicalSemanticTraceExtractor,
+    CanonicalTaskSkillPipeline,
+    TraceMiningContext,
+)
 from affordance_runtime.planning import (
     ContractBuilder,
     ContractRequirements,
@@ -40,6 +48,7 @@ from affordance_runtime.task_skills import (
     TaskSkillTrigger,
     quarantine_task_skill,
 )
+from affordance_runtime.trace import JsonlTraceWriter
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -195,6 +204,37 @@ class CountingSystem2Planner:
                 )
             )
         return PlannerDecision(done=True, result={"system2": True})
+
+
+class ProfileTrainingPlanner:
+    """Generic System 2 proposal source used only to produce verified traces."""
+
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        task = envelope.task_spec
+        assert task is not None
+        value = next(item.value for item in task.entities if item.name == "text")
+        if snapshot.observation.metadata.get("profile_name") == value:
+            return PlannerDecision(done=True, result={"profile_name": value})
+        target = next(item for item in snapshot.unified_affordances if item.label == "Name")
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id=f"system2-profile-{state.version}",
+                based_on_task_revision=task.revision,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                subgoal="update the requested profile field",
+                action_kind=PlannerActionKind.TYPE_TEXT,
+                target_affordance_id=target.semantic_target_id,
+                parameters={"text": value},
+                expected_effects=("profile name changed",),
+                evidence_requirements=("independent profile state",),
+            )
+        )
 
 
 def _payload(*, two_steps: bool = False) -> TaskSkillPayload:
@@ -500,7 +540,198 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     assert events.index("TaskSkillFellThrough") < events.index("ClarificationRequested")
 
 
-def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories() -> None:
+def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_variants(tmp_path) -> None:
+    sources = []
+    for index, (variant, value) in enumerate(
+        (("original", "Margaret"), ("family", "Grace"), ("heldout", "Lin")),
+        start=1,
+    ):
+        world = ProfileWorld()
+        observer = ProfileObserver(world, variant=variant)
+        task = _task(with_entity=True).model_copy(
+            update={
+                "task_id": f"profile-training-{index}",
+                "entities": (IntentEntity(name="text", value=value, source_ref=f"training:{index}"),),
+            }
+        )
+        result = RunCoordinator(
+            observer,
+            ProfileTrainingPlanner(),
+            ProfileExecutor(world),
+            contract_builder=ContractBuilder(
+                requirements={
+                    observer.target_ids["Name"]: ContractRequirements(
+                        verifier_plan=(VerifierSpec("observation_metadata", "profile_name", value),),
+                        idempotency_key=f"profile:training:{index}",
+                    )
+                }
+            ),
+        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        assert result.status == RuntimeStep.DONE
+        trace_path = JsonlTraceWriter(tmp_path / f"training-{index}.jsonl").write(result.trace)
+        sources.append((trace_path, TraceMiningContext("profile update", variant)))
+
+    registry = EvolutionRegistry()
+    proposal = CanonicalTaskSkillPipeline().propose(
+        sources,
+        registry=registry,
+        skill_id="profile.system2-mined",
+        heldout_suite="profile-fresh-heldout-v1",
+    )
+
+    assert proposal.payload.schema_version == "1.1"
+    assert len(set(proposal.payload.source_trace_digests)) == 3
+    assert len(set(proposal.payload.source_variants)) == 3
+    assert registry.artifacts[proposal.artifact_id].status == EvolutionStatus.QUARANTINED
+
+    replay_evidence: list[TaskSkillReplayEvidence] = []
+    for category, variant, value in (
+        ("original", "original", "Margaret"),
+        ("task_family", "family", "Grace"),
+        ("heldout", "heldout", "Lin"),
+    ):
+        world = ProfileWorld()
+        observer = ProfileObserver(world, variant=variant)
+        planner = CountingSystem2Planner()
+        task = _task(with_entity=True).model_copy(
+            update={
+                "task_id": f"mined-replay-{category}",
+                "entities": (IntentEntity(name="text", value=value, source_ref=f"replay:{category}"),),
+            }
+        )
+        result = RunCoordinator(
+            observer,
+            planner,
+            ProfileExecutor(world),
+            contract_builder=ContractBuilder(
+                requirements={
+                    observer.target_ids["Name"]: ContractRequirements(
+                        verifier_plan=(
+                            _step_verifier(proposal.payload, "step-1", "profile_name", value),
+                        ),
+                        idempotency_key=f"mined:replay:{category}",
+                    )
+                }
+            ),
+            task_skill_runtime=_accepted_runtime(proposal.payload),
+        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        kinds = [node.kind for node in result.trace.nodes]
+        trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
+        replay_evidence.append(
+            _bind_replay_report(
+                TaskSkillReplayEvidence(
+                    category,
+                    result.run_id,
+                    variant,
+                    result.status == RuntimeStep.DONE and world.name == value,
+                    result.verification is not None and result.verification.status.value == "passed",
+                    "TaskSkillActivated" in kinds,
+                    True,
+                    planner.calls,
+                    1.0,
+                    fell_through="TaskSkillFellThrough" in kinds,
+                    source_trace_digest=_file_digest(trace_path),
+                    skill_payload_digest=proposal.payload.digest(),
+                )
+            )
+        )
+
+    for category, operation, capability in (
+        ("global_smoke", OperationClass.READ_ONLY, ""),
+        ("safety_smoke", OperationClass.IRREVERSIBLE, "account.delete"),
+    ):
+        world = ProfileWorld()
+        observer = ProfileObserver(world)
+        planner = CountingSystem2Planner()
+        task = TaskSpec(
+            task_id=f"mined-non-profile-{category}",
+            revision=1,
+            objective="inspect account" if category == "global_smoke" else "delete account",
+            operation_class=operation,
+            targets=("Account",),
+            success_criteria=("system 2 completed safely",),
+            requested_capabilities=((capability,) if capability else ()),
+            source_request_ref=f"replay:{category}",
+        )
+        result = RunCoordinator(
+            observer,
+            planner,
+            ProfileExecutor(world),
+            contract_builder=ContractBuilder(),
+            task_skill_runtime=_accepted_runtime(proposal.payload),
+        ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
+        kinds = [node.kind for node in result.trace.nodes]
+        trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
+        replay_evidence.append(
+            _bind_replay_report(
+                TaskSkillReplayEvidence(
+                    category,
+                    result.run_id,
+                    "non-profile",
+                    result.status == RuntimeStep.DONE and not result.state.receipts,
+                    not result.state.receipts,
+                    "TaskSkillActivated" in kinds,
+                    False,
+                    planner.calls,
+                    1.0,
+                    fell_through="TaskSkillFellThrough" in kinds,
+                    source_trace_digest=_file_digest(trace_path),
+                    skill_payload_digest=proposal.payload.digest(),
+                )
+            )
+        )
+
+    decision = TaskSkillReplayGate().evaluate(
+        registry,
+        proposal.artifact_id,
+        replay_evidence,
+        baseline_model_calls=1.0,
+        baseline_latency_ms=2.0,
+    )
+    assert decision.status == EvolutionStatus.ACCEPTED.value
+    assert decision.metrics["mean_model_calls"] < 1.0
+    assert decision.metrics["skill_activation_precision"] == 1.0
+
+    registry_path = tmp_path / "accepted-mined-profile.json"
+    EvolutionRegistryStore(registry_path).save(registry)
+    loaded = AcceptedProfileLoader(registry_path).load()
+    world = ProfileWorld()
+    observer = ProfileObserver(world, variant="heldout")
+    planner = CountingSystem2Planner()
+    task = _task(with_entity=True).model_copy(
+        update={
+            "task_id": "profile-fresh-loaded-heldout",
+            "entities": (IntentEntity(name="text", value="Ken", source_ref="heldout:fresh"),),
+        }
+    )
+    result = RunCoordinator(
+        observer,
+        planner,
+        ProfileExecutor(world),
+        contract_builder=ContractBuilder(
+            requirements={
+                observer.target_ids["Name"]: ContractRequirements(
+                    verifier_plan=(
+                        _step_verifier(proposal.payload, "step-1", "profile_name", "Ken"),
+                    ),
+                    idempotency_key="profile:fresh-loaded-heldout",
+                )
+            }
+        ),
+        task_skill_runtime=loaded.task_skill_runtime,
+        runtime_profile_digest=loaded.profile_digest,
+        loaded_profile_artifact_ids=loaded.artifact_ids,
+    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    kinds = [node.kind for node in result.trace.nodes]
+    assert result.status == RuntimeStep.DONE
+    assert world.name == "Ken"
+    assert planner.calls == 0
+    assert "TaskSkillSelectionEvaluated" in kinds
+    assert "TaskSkillActivated" in kinds
+    assert result.trace.nodes[0].payload["runtime_profile_digest"] == loaded.profile_digest
+
+
+def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories(tmp_path) -> None:
     payload = _payload()
     evidence: list[TaskSkillReplayEvidence] = []
     for category, variant, value in (
@@ -540,8 +771,16 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             task_skill_runtime=_accepted_runtime(payload),
         ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
+        trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
+        if category == "original":
+            canonical = CanonicalSemanticTraceExtractor().extract(
+                trace_path,
+                TraceMiningContext("profile update", variant),
+            )
+            assert canonical.steps[0].target_role == "textbox"
+            assert canonical.steps[0].parameters == (("text", value),)
         evidence.append(
-            TaskSkillReplayEvidence(
+            _bind_replay_report(TaskSkillReplayEvidence(
                 category,
                 result.run_id,
                 variant,
@@ -552,7 +791,9 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 planner.calls,
                 (perf_counter() - started) * 1_000,
                 fell_through="TaskSkillFellThrough" in kinds,
-            )
+                source_trace_digest=_file_digest(trace_path),
+                skill_payload_digest=payload.digest(),
+            ))
         )
 
     for category, operation, capability in (
@@ -582,8 +823,9 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
         ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         no_effect = world == ProfileWorld() and not result.state.receipts
+        trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
         evidence.append(
-            TaskSkillReplayEvidence(
+            _bind_replay_report(TaskSkillReplayEvidence(
                 category,
                 result.run_id,
                 "non-profile",
@@ -594,7 +836,9 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 planner.calls,
                 (perf_counter() - started) * 1_000,
                 fell_through="TaskSkillFellThrough" in kinds,
-            )
+                source_trace_digest=_file_digest(trace_path),
+                skill_payload_digest=payload.digest(),
+            ))
         )
 
     registry = EvolutionRegistry()
@@ -618,3 +862,15 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
         "global_smoke",
         "safety_smoke",
     ]
+
+
+def _digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+
+
+def _bind_replay_report(evidence: TaskSkillReplayEvidence) -> TaskSkillReplayEvidence:
+    return replace(evidence, replay_report_digest=evidence.canonical_report_digest())
+
+
+def _file_digest(path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()

@@ -9,6 +9,14 @@ from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.cli import run_scenario
 from affordance_runtime.coordinator import RunCoordinator
+from affordance_runtime.evolution import (
+    EvolutionArtifact,
+    EvolutionArtifactType,
+    EvolutionRegistry,
+    EvolutionRegistryStore,
+    EvolutionStatus,
+    RecoverySkillPayload,
+)
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import PRICING_DATA, create_fixture_server, pricing_html
 from affordance_runtime.planners import PricingPlanner, PricingTaskPlanner, extract_pricing
@@ -158,3 +166,54 @@ def test_real_chromium_pricing_task_uses_normal_task_planning_entrypoint(
     ]
     assert any(event["event_type"] == "TaskPlanProposed" for event in events)
     assert any(event["event_type"] == "TaskCompleted" for event in events)
+
+
+def test_normal_cli_entrypoint_loads_digest_bound_accepted_recovery_profile(tmp_path: Path) -> None:
+    payload = RecoverySkillPayload(
+        "1.0",
+        "recovery_skill",
+        ["pricing-profile-load"],
+        {"phase": "execution", "normalized_error": "synthetic-never-match"},
+        ["reobserve"],
+        1,
+        ["fresh observation"],
+        ["state is independently verified"],
+    )
+    artifact = EvolutionArtifact(
+        id="recovery.profile-load-proof",
+        artifact_type=EvolutionArtifactType.SKILL.value,
+        summary="accepted generic recovery profile loading proof",
+        applicability={"task_id": "pricing-profile-load"},
+        source_traces=["sha256:" + "1" * 64],
+        status=EvolutionStatus.ACCEPTED,
+        payload=payload.to_dict(),
+        payload_digest=payload.digest(),
+    )
+    registry = EvolutionRegistry()
+    registry.propose(artifact)
+    profile_path = tmp_path / "accepted-profile.json"
+    EvolutionRegistryStore(profile_path).save(registry)
+    server = create_fixture_server(port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        result = run_scenario(
+            "pricing",
+            f"http://{host}:{port}/pricing",
+            tmp_path / "profile-artifacts",
+            run_id="pricing-profile-load",
+            accepted_profile=profile_path,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    trace_path = next(Path(item) for item in result["artifacts"] if str(item).endswith("events.jsonl"))
+    first = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[0])
+    assert result["status"] == RuntimeStep.DONE.value
+    assert result["runtime_profile_digest"].startswith("sha256:")
+    assert result["loaded_profile_artifact_ids"] == [artifact.id]
+    assert first["payload"]["runtime_profile_digest"] == result["runtime_profile_digest"]
+    assert first["payload"]["loaded_profile_artifact_ids"] == [artifact.id]
