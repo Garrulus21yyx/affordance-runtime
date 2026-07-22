@@ -4,6 +4,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Sequence, TypeVar
 
+import pytest
 from pydantic import BaseModel, ConfigDict
 
 from affordance_runtime.model_port import (
@@ -12,6 +13,8 @@ from affordance_runtime.model_port import (
     ModelMessage,
     OllamaModelPort,
     OpenAICompatibleModelPort,
+    ProviderFailureKind,
+    ProviderModelError,
     StructuredModelError,
     model_port_from_environment,
 )
@@ -113,6 +116,26 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_call.total_tokens == 11
 
 
+def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> None:
+    server, thread, _ = _serve(
+        {
+            "choices": [{"message": {"content": "```json\n{\"value\":\"fenced\"}\n```"}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="remote-test"
+        )
+        answer = asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "fenced"
+
+
 def test_openai_compatible_adapter_retries_a_bounded_rate_limit_response() -> None:
     requests = 0
 
@@ -159,6 +182,116 @@ def test_openai_compatible_adapter_retries_a_bounded_rate_limit_response() -> No
     assert port.last_call is not None
     assert port.last_call.rate_limit_retry_count == 1
     assert port.last_call.transient_retry_count == 0
+
+
+def test_gemini_retry_info_is_parsed_without_exposing_quota_payload() -> None:
+    requests = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal requests
+            requests += 1
+            self.rfile.read(int(self.headers["Content-Length"]))
+            if requests == 1:
+                payload = json.dumps(
+                    {
+                        "error": {
+                            "code": 429,
+                            "status": "RESOURCE_EXHAUSTED",
+                            "details": [
+                                {"@type": "type.googleapis.com/google.rpc.QuotaFailure"},
+                                {
+                                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                                    "retryDelay": "0s",
+                                },
+                            ],
+                        }
+                    }
+                ).encode()
+                self.send_response(429)
+            else:
+                payload = json.dumps(
+                    {"choices": [{"message": {"content": '{"value":"retried"}'}}], "usage": {}}
+                ).encode()
+                self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="gemini-test",
+            provider="gemini",
+        )
+        answer = asyncio.run(port.generate_structured([], Answer, ModelConfig(rate_limit_retries=1)))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "retried"
+    assert requests == 2
+    assert port.last_call is not None and port.last_call.rate_limit_retry_count == 1
+
+
+def test_quota_exhaustion_trips_circuit_and_defers_without_retry() -> None:
+    requests = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal requests
+            requests += 1
+            self.rfile.read(int(self.headers["Content-Length"]))
+            payload = json.dumps(
+                {
+                    "error": {
+                        "code": 429,
+                        "status": "RESOURCE_EXHAUSTED",
+                        "details": [{"@type": "type.googleapis.com/google.rpc.QuotaFailure"}],
+                    }
+                }
+            ).encode()
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="gemini-test"
+        )
+        config = ModelConfig(rate_limit_retries=3, quota_circuit_break_s=60)
+        with pytest.raises(ProviderModelError) as first:
+            asyncio.run(port.generate_structured([], Answer, config))
+        with pytest.raises(ProviderModelError) as second:
+            asyncio.run(port.generate_structured([], Answer, config))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert first.value.kind == ProviderFailureKind.QUOTA_EXHAUSTED
+    assert first.value.circuit_open is False
+    assert second.value.kind == ProviderFailureKind.QUOTA_EXHAUSTED
+    assert second.value.circuit_open is True
+    assert second.value.retry_after_s is not None
+    assert requests == 1
 
 
 def test_openai_compatible_adapter_retries_a_bounded_transient_response() -> None:
@@ -271,6 +404,21 @@ def test_environment_factory_selects_gemini_profile_without_exposing_key() -> No
     assert port.provider == "gemini"
     assert port.model == "gemini-test"
     assert "gemini-secret" not in repr(port)
+
+
+def test_environment_factory_selects_zhipu_profile_without_exposing_key() -> None:
+    port = model_port_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "zhipu",
+            "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
+            "LLM_ZHIPU_API_KEY": "zhipu-secret",
+            "LLM_ZHIPU_MODEL": "glm-test",
+        }
+    )
+
+    assert port.provider == "zhipu"
+    assert port.model == "glm-test"
+    assert "zhipu-secret" not in repr(port)
 
 
 class _FailedPort:

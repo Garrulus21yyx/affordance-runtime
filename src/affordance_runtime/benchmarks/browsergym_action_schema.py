@@ -14,6 +14,7 @@ from typing import Any
 BROWSERGYM_ACTION_ARGUMENTS: dict[str, frozenset[str]] = {
     "noop": frozenset(),
     "click": frozenset({"bid", "button", "modifiers"}),
+    "click_no_navigation": frozenset({"bid"}),
     "dblclick": frozenset({"bid", "button", "modifiers"}),
     "fill": frozenset({"bid", "value"}),
     "select_option": frozenset({"bid", "options"}),
@@ -26,10 +27,12 @@ BROWSERGYM_ACTION_ARGUMENTS: dict[str, frozenset[str]] = {
     "mouse_move": frozenset({"x", "y"}),
     "mouse_click": frozenset({"x", "y", "button"}),
     "mouse_dblclick": frozenset({"x", "y", "button"}),
+    "mouse_drag_and_drop": frozenset({"from_x", "from_y", "to_x", "to_y", "from_bid", "to_bid"}),
     "mouse_down": frozenset({"button"}),
     "mouse_up": frozenset({"button"}),
     "keyboard_press": frozenset({"key"}),
     "keyboard_type": frozenset({"text"}),
+    "type_text_with_events": frozenset({"bid", "text"}),
     "go_back": frozenset(),
     "go_forward": frozenset(),
     "goto": frozenset({"url"}),
@@ -42,6 +45,7 @@ BROWSERGYM_ACTION_ARGUMENTS: dict[str, frozenset[str]] = {
 
 _POSITIONAL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "click": ("bid",),
+    "click_no_navigation": ("bid",),
     "dblclick": ("bid",),
     "fill": ("bid", "value"),
     "select_option": ("bid", "options"),
@@ -54,8 +58,10 @@ _POSITIONAL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "mouse_move": ("x", "y"),
     "mouse_click": ("x", "y"),
     "mouse_dblclick": ("x", "y"),
+    "mouse_drag_and_drop": ("from_x", "from_y", "to_x", "to_y"),
     "keyboard_press": ("key",),
     "keyboard_type": ("text",),
+    "type_text_with_events": ("bid", "text"),
     "goto": ("url",),
     "tab_focus": ("index",),
     "send_msg_to_user": ("text",),
@@ -65,7 +71,7 @@ _POSITIONAL_ARGUMENTS: dict[str, tuple[str, ...]] = {
 _STRING_ARGUMENTS = {
     "bid", "from_bid", "to_bid", "button", "value", "key_comb", "key", "text", "url", "reason"
 }
-_NUMBER_ARGUMENTS = {"delta_x", "delta_y", "x", "y"}
+_NUMBER_ARGUMENTS = {"delta_x", "delta_y", "x", "y", "from_x", "from_y", "to_x", "to_y"}
 
 
 @dataclass(frozen=True)

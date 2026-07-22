@@ -7,6 +7,7 @@ browser or network. Playwright and richer transports remain optional adapters.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from time import monotonic, perf_counter
 from typing import Any, Callable, Protocol
@@ -27,6 +28,8 @@ class DomPage(Protocol):
 
     def fill(self, selector: str, value: str) -> Any: ...
 
+    def locator(self, selector: str) -> Any: ...
+
 
 class VisualPointer(Protocol):
     def click_xy(self, x: int, y: int) -> Any: ...
@@ -35,6 +38,76 @@ class VisualPointer(Protocol):
 
 
 SendFn = Callable[..., tuple[int, Any]]
+
+
+@dataclass(frozen=True)
+class PlaywrightDragAction:
+    source_selector: str
+    destination_selector: str
+
+
+@dataclass(frozen=True)
+class PlaywrightGestureEncoder:
+    """Encode a core gesture binding as a Playwright locator-to-locator drag."""
+
+    def encode(self, contract: ActionContract) -> PlaywrightDragAction:
+        binding = contract.gesture_binding
+        if binding is None:
+            raise ValueError("Playwright drag contract requires a gesture binding")
+        source = str(binding.source.locator.get("selector") or "")
+        destination = str(binding.destination.locator.get("selector") or "")
+        if not source or not destination:
+            raise ValueError("Playwright drag encoding requires source and destination selectors")
+        return PlaywrightDragAction(source, destination)
+
+
+@dataclass(frozen=True)
+class VisualDragAction:
+    source_xy: tuple[int, int]
+    destination_xy: tuple[int, int]
+    steps: int = 10
+
+
+@dataclass(frozen=True)
+class VisualGestureEncoder:
+    """Encode fresh visual endpoint geometry as one bounded pointer gesture."""
+
+    steps: int = 10
+
+    def encode(self, contract: ActionContract, observation: Observation) -> VisualDragAction:
+        binding = contract.gesture_binding
+        if binding is None:
+            raise ValueError("visual drag contract requires a gesture binding")
+        source = _visual_locator_center(binding.source.locator)
+        destination = _visual_locator_center(binding.destination.locator)
+        viewport = observation.metadata.get("viewport_size")
+        for name, point in (("source", source), ("destination", destination)):
+            if not all(math.isfinite(value) for value in point) or min(point) < 0:
+                raise ValueError(f"visual drag {name} point is invalid")
+            if isinstance(viewport, (list, tuple)) and len(viewport) == 2:
+                width, height = (float(value) for value in viewport)
+                if width <= 0 or height <= 0 or point[0] > width or point[1] > height:
+                    raise ValueError(f"visual drag {name} point is outside the viewport")
+        if source == destination:
+            raise ValueError("visual drag source and destination points must differ")
+        return VisualDragAction(
+            (round(source[0]), round(source[1])),
+            (round(destination[0]), round(destination[1])),
+            max(1, self.steps),
+        )
+
+
+def _visual_locator_center(locator: dict[str, Any]) -> tuple[float, float]:
+    for key in ("point", "center"):
+        raw = locator.get(key)
+        if isinstance(raw, (list, tuple)) and len(raw) == 2:
+            return float(raw[0]), float(raw[1])
+    raw = locator.get("bbox")
+    if isinstance(raw, (list, tuple)) and len(raw) == 4:
+        left, top, width, height = (float(value) for value in raw)
+        if width > 0 and height > 0:
+            return left + width / 2, top + height / 2
+    raise ValueError("visual gesture endpoint requires point, center, or positive bbox")
 
 
 def _receipt(
@@ -65,11 +138,13 @@ def _receipt(
 class DomExecutor:
     page: DomPage
     backend: str = "dom"
+    gesture_encoder: PlaywrightGestureEncoder = field(default_factory=PlaywrightGestureEncoder)
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         started_at = perf_counter()
         selector = str(contract.locator.get("selector") or "")
-        if not selector and contract.action != "navigate":
+        action = contract.action.lower()
+        if not selector and action not in {"navigate", "drag"}:
             return _receipt(
                 contract,
                 observation,
@@ -81,7 +156,6 @@ class DomExecutor:
             )
 
         try:
-            action = contract.action.lower()
             value = contract.parameters.get("value", "")
             if action in {"click", "activate"}:
                 self.page.click(selector)
@@ -119,6 +193,22 @@ class DomExecutor:
                 if not destination_dir:
                     raise ValueError("download contract requires parameters.destination_dir")
                 evidence = {"action": "download", "selector": selector, **download(selector, destination_dir)}
+            elif action == "drag":
+                encoded = self.gesture_encoder.encode(contract)
+                locator = getattr(self.page, "locator", None)
+                if locator is None:
+                    raise RuntimeError("DOM page does not support Playwright locators")
+                source = locator(encoded.source_selector)
+                destination = locator(encoded.destination_selector)
+                drag_to = getattr(source, "drag_to", None)
+                if drag_to is None:
+                    raise RuntimeError("Playwright source locator does not support drag_to")
+                drag_to(destination)
+                evidence = {
+                    "action": "playwright_drag_to",
+                    "source_selector": encoded.source_selector,
+                    "destination_selector": encoded.destination_selector,
+                }
             else:
                 raise ValueError(f"unsupported DOM action: {contract.action}")
             return _receipt(
@@ -155,11 +245,41 @@ class DomExecutor:
 class VisualExecutor:
     pointer: VisualPointer
     backend: str = "visual"
+    gesture_encoder: VisualGestureEncoder = field(default_factory=VisualGestureEncoder)
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         started_at = perf_counter()
         try:
-            center = contract.locator.get("center")
+            action = contract.action.lower()
+            if action == "drag":
+                encoded = self.gesture_encoder.encode(contract, observation)
+                move_xy = getattr(self.pointer, "move_xy", None)
+                button_down = getattr(self.pointer, "button_down", None)
+                button_up = getattr(self.pointer, "button_up", None)
+                if move_xy is None or button_down is None or button_up is None:
+                    raise RuntimeError("visual pointer does not support bounded drag gestures")
+                move_xy(*encoded.source_xy, steps=1)
+                button_down("left")
+                pressed = True
+                try:
+                    move_xy(*encoded.destination_xy, steps=encoded.steps)
+                finally:
+                    if pressed:
+                        button_up("left")
+                return _receipt(
+                    contract,
+                    observation,
+                    backend=self.backend,
+                    started_at=started_at,
+                    success=True,
+                    evidence={
+                        "action": "visual_drag",
+                        "source_center": list(encoded.source_xy),
+                        "destination_center": list(encoded.destination_xy),
+                        "steps": encoded.steps,
+                    },
+                )
+            center = contract.locator.get("point") or contract.locator.get("center")
             if center is None:
                 bbox = contract.locator.get("bbox")
                 if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
@@ -174,11 +294,11 @@ class VisualExecutor:
                 "mark_id": contract.locator.get("mark_id", ""),
                 "screenshot_ref": contract.locator.get("screenshot_ref", ""),
             }
-            if contract.action.lower() in {"type", "fill"}:
+            if action in {"type", "fill"}:
                 value = str(contract.parameters.get("value", ""))
                 self.pointer.type_text(value)
                 evidence["typed"] = value
-            elif contract.action.lower() not in {"click", "activate"}:
+            elif action not in {"click", "activate", "point_activate"}:
                 raise ValueError(f"unsupported visual action: {contract.action}")
             return _receipt(
                 contract,

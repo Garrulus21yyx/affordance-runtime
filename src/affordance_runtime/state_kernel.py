@@ -8,6 +8,7 @@ LangGraph, OpenHands, or a local planner can all use the same execution memory.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
@@ -18,7 +19,7 @@ from affordance_runtime.verification import VerificationReport
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "created": {"observing", "aborted"},
     "observing": {"planning", "failed", "aborted"},
-    "planning": {"preflight", "waiting_clarification", "done", "failed", "aborted"},
+    "planning": {"observing", "preflight", "waiting_clarification", "deferred", "done", "failed", "aborted"},
     "waiting_clarification": {"observing", "aborted"},
     "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
     "waiting_approval": {"preflight", "aborted"},
@@ -28,7 +29,42 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "done": set(),
     "failed": set(),
     "aborted": set(),
+    "deferred": set(),
 }
+
+
+class ProgressGuardReason(StrEnum):
+    EFFECT_ALREADY_SATISFIED = "effect_already_satisfied"
+    NO_PROGRESS_REPEAT = "no_progress_repeat"
+
+
+@dataclass(frozen=True)
+class ActionProgressRecord:
+    """Minimal verified outcome used to block duplicate semantic actions."""
+
+    signature: str
+    post_environment_revision: str
+    verification_passed: bool
+    effect_satisfied: bool
+    post_page_revision: str = ""
+
+
+@dataclass
+class TaskSkillRunState:
+    """Authoritative verified progress for one accepted TaskSkill activation."""
+
+    skill_id: str
+    version: str
+    bindings: dict[str, Any] = field(default_factory=dict)
+    next_step_index: int = 0
+    completed_step_ids: list[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
+    active_step_id: str = ""
+    fallthrough_reason: str = ""
+
+    @property
+    def active(self) -> bool:
+        return not self.fallthrough_reason
 
 
 @dataclass
@@ -52,12 +88,18 @@ class StateKernel:
     observation_count: int = 0
     replan_count: int = 0
     recovery_count: int = 0
+    active_perception_count: int = 0
     recovery_incident: RecoveryIncident | None = None
     recovery_diagnostics: dict[str, Any] = field(default_factory=dict)
     effectful_action_count: int = 0
     transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)
     planner_history: list[dict[str, Any]] = field(default_factory=list)
+    action_progress: list[ActionProgressRecord] = field(default_factory=list)
+    progress_guard_events: list[dict[str, str]] = field(default_factory=list)
+    excluded_grounding_candidates: dict[str, list[str]] = field(default_factory=dict)
+    grounding_fallback_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
+    task_skill: TaskSkillRunState | None = None
     version: int = 0
 
     def remember_observation(self, observation: Observation) -> None:
@@ -87,6 +129,145 @@ class StateKernel:
     def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
         self.planner_history.append(proposal)
         self.version += 1
+
+    def activate_task_skill(
+        self,
+        skill_id: str,
+        version: str,
+        bindings: dict[str, Any],
+    ) -> TaskSkillRunState:
+        if self.task_skill is not None and self.task_skill.active:
+            raise ValueError("another TaskSkill is already active")
+        self.task_skill = TaskSkillRunState(skill_id, version, dict(bindings))
+        self.version += 1
+        return self.task_skill
+
+    def update_task_skill_bindings(self, bindings: dict[str, Any]) -> None:
+        if self.task_skill is None:
+            raise ValueError("no TaskSkill is active")
+        changed = False
+        for name, value in bindings.items():
+            if self.task_skill.bindings.get(name) != value:
+                self.task_skill.bindings[name] = value
+                changed = True
+        if changed:
+            self.version += 1
+
+    def expose_task_skill_step(self, step_id: str) -> None:
+        if self.task_skill is None or not self.task_skill.active:
+            raise ValueError("no active TaskSkill can expose a step")
+        if self.task_skill.active_step_id != step_id:
+            self.task_skill.active_step_id = step_id
+            self.version += 1
+
+    def checkpoint_task_skill_step(self, step_id: str, evidence: list[str]) -> None:
+        if self.task_skill is None or self.task_skill.active_step_id != step_id:
+            raise ValueError("TaskSkill checkpoint does not match the active step")
+        if step_id not in self.task_skill.completed_step_ids:
+            self.task_skill.completed_step_ids.append(step_id)
+        self.task_skill.evidence.extend(
+            item for item in evidence if item not in self.task_skill.evidence
+        )
+        self.task_skill.next_step_index += 1
+        self.task_skill.active_step_id = ""
+        self.version += 1
+
+    def fall_through_task_skill(self, reason: str) -> None:
+        if self.task_skill is None:
+            return
+        self.task_skill.fallthrough_reason = reason
+        self.task_skill.active_step_id = ""
+        self.version += 1
+
+    def record_action_progress(
+        self,
+        signature: str,
+        post_environment_revision: str,
+        *,
+        verification_passed: bool,
+        effect_satisfied: bool | None = None,
+        post_page_revision: str = "",
+    ) -> None:
+        self.action_progress.append(
+            ActionProgressRecord(
+                signature=signature,
+                post_environment_revision=post_environment_revision,
+                verification_passed=verification_passed,
+                effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
+                post_page_revision=post_page_revision,
+            )
+        )
+        self.version += 1
+
+    def check_progress_guard(self, signature: str) -> ProgressGuardReason | None:
+        if not self.action_progress:
+            return None
+        previous = next(
+            (item for item in reversed(self.action_progress) if item.signature == signature),
+            None,
+        )
+        if previous is None:
+            return None
+        same_page = (
+            previous.post_page_revision == self.current_page_revision()
+            if previous.post_page_revision and self.current_page_revision()
+            else previous.post_environment_revision == self.current_revision()
+        )
+        if previous.effect_satisfied and same_page:
+            return ProgressGuardReason.EFFECT_ALREADY_SATISFIED
+        if not previous.verification_passed and previous.post_environment_revision == self.current_revision():
+            return ProgressGuardReason.NO_PROGRESS_REPEAT
+        return None
+
+    def record_progress_guard(self, reason: ProgressGuardReason, signature: str) -> None:
+        self.progress_guard_events.append(
+            {
+                "reason": reason.value,
+                "signature": signature,
+                "environment_revision": self.current_revision(),
+            }
+        )
+        self.version += 1
+
+    def record_grounding_reroute(
+        self,
+        contract: ActionContract,
+        reason: str,
+        *,
+        exclude_candidate: bool = True,
+    ) -> None:
+        """Retain immutable recovery lineage and optionally exclude a failed route."""
+
+        candidate = contract.grounding_candidate
+        if candidate is None:
+            return
+        if exclude_candidate:
+            excluded = self.excluded_grounding_candidates.setdefault(candidate.semantic_target_id, [])
+            if candidate.candidate_id not in excluded:
+                excluded.append(candidate.candidate_id)
+        self.grounding_fallback_lineage[candidate.semantic_target_id] = {
+            "supersedes_contract_id": contract.id,
+            "source_contract_id": contract.source_contract_id or contract.id,
+            "fallback_reason": reason,
+        }
+        self.version += 1
+
+    def complete_grounding_recovery(self, semantic_target_id: str) -> None:
+        """Release incident-local exclusions after a replacement contract verifies."""
+
+        changed = False
+        if self.excluded_grounding_candidates.pop(semantic_target_id, None) is not None:
+            changed = True
+        if self.grounding_fallback_lineage.pop(semantic_target_id, None) is not None:
+            changed = True
+        if changed:
+            self.version += 1
+
+    def excluded_candidates_for(self, semantic_target_id: str) -> frozenset[str]:
+        return frozenset(self.excluded_grounding_candidates.get(semantic_target_id, ()))
+
+    def fallback_lineage_for(self, semantic_target_id: str) -> dict[str, str]:
+        return dict(self.grounding_fallback_lineage.get(semantic_target_id, {}))
 
     def install_task_plan(self, plan: TaskPlan) -> None:
         """Attach a validated immutable plan without advancing any subgoal."""
@@ -145,6 +326,9 @@ class StateKernel:
 
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""
+
+    def current_page_revision(self) -> str:
+        return self.observations[-1].page_revision if self.observations else ""
 
     def constraint_summary(self) -> str:
         return "; ".join(f"{key}={value}" for key, value in sorted(self.constraints.items()))

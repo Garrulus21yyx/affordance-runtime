@@ -5,12 +5,16 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements M0-M8.1, M8.2A, and M8.3 of the controlled web
-profile: three reproducible Web/SaaS scenarios, trace and artifacts, independent
-verification, distinct seeded layouts, baseline/ablation evaluation, executable evolution,
-external parent integration, and held-out, visual, and official MiniWoB++
-generalization evidence. Service-grade distributed options remain explicitly
-deferred.
+The repository implements M0-M8.1, M8.2A, M8.3, and M8.4 of the controlled
+web profile. M8.2B public benchmark expansion is in progress: the Generalist
+BrowserGym PR matrix, reproducibility constraints, fixed nightly manifest, and
+external-suite preflight bridges exist, while larger official matrices and
+provisioned external environments remain outstanding. The completed profile
+includes three reproducible Web/SaaS scenarios, trace and artifacts,
+independent verification, distinct seeded layouts, baseline/ablation evaluation,
+executable evolution, external parent integration, and held-out, visual, and
+official MiniWoB++ generalization evidence. Service-grade distributed options
+remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
 for code and release scope, while the complete architecture blueprint preserves
@@ -68,10 +72,24 @@ Implemented current profile:
 - a digest-pinned, non-root Playwright Compose profile for fixture, tests, benchmark, and mounted evidence
 - an optional real node-wot conformance profile that reaches one independently observed state through DOM, screenshot/SoM, and WoT
 - normalized recovery incidents with online cascade detection and offline, regression-gated policy/skill evolution
+- optional adaptive shallow task planning with validated subgoals,
+  verifier-backed serial progress, bounded replanning, and a controlled
+  Flat/Always-plan/Adaptive ablation
+- BrowserGym PR/nightly/release profiles with typed action binding, resumable
+  checkpoints, a versioned action-family-stratified nightly manifest, and
+  explicit missing-coverage reporting
+- action-specific BrowserGym effect verification, deterministic semantic
+  no-progress blocking, compact planner context, and typed provider deferral
+- an Ollama GPU preflight that fails closed unless the requested model has
+  non-zero VRAM residency and records its model/GPU identity manifest
+- task-derived perception requirements, typed unified grounding candidates,
+  selective SVG geometry, Core dual-target gesture contracts, and semantic
+  `POINT_ACTIVATE`/`DRAG` boundaries with backend-only coordinate encoding
 
 Verified evidence:
 
-- all 137 current unit/integration tests pass with Ruff and mypy
+- all 254 current unit/integration tests pass with Ruff; focused mypy checks
+  pass for every reliability-gate module
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -79,12 +97,26 @@ Verified evidence:
 - a real LangGraph 1.2.9 parent completes pricing and approval-gated export over an external process boundary with no primitive GUI tools
 - three distinct training layouts and six held-out scenario runs pass with Full Runtime task success 1.0 and unsafe side-effect rate 0.0
 - five screenshot-grounded visual runs detect five distinct boxes and succeed without DOM coordinates
-- 18 pinned official Farama MiniWoB++ episodes across click, type, select, dialog, sequence, and form pass with raw-reward success 1.0
+- historical M8 evidence records 18 pinned official Farama MiniWoB++ episodes
+  passing at raw-reward success 1.0; the current GPU-local Generalist
+  BrowserGym reliability smoke passes all six selected task families at
+  official reward 1.0, the PR matrix passes 18/18, and the structured SVG point
+  family passes 20/20 (`grid-coordinate` and `circle-center`, ten seeds each)
+  under explicit time and model-call budgets
 - a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
+- the controlled M8.4 ablation keeps the short flat path and completes the
+  three-stage verifier-backed path adaptively; it makes no remote-model-quality
+  claim
 
-Next evidence gate: complete the bounded M8.2B consolidation pass, rerun the
-current generalist PR matrix, then scale MiniWoB and the planned public suites.
-M9 remains conditional on restart/waiting evidence.
+Next evidence gate: reconcile the remaining drag/read/navigation clusters,
+then run the pinned 30-task x 10-seed nightly matrix from a clean immutable
+revision. The v58 post-SVG smoke passed 6/6, the PR matrix passed 18/18, and
+the SVG point family passed 20/20. The fixed budget
+for smoke/PR is 165 seconds per episode, 10 seconds per model call, at most 15
+calls, and a 15-second execution reserve. The next resumable nightly matrix keeps the
+same episode/reserve but uses a GPU-local 5-second call timeout and 30-call
+horizon because verified one-step sliders require up to 20 actions. Release
+follows nightly. M9 remains conditional on restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -264,6 +296,7 @@ The implementation is in `src/affordance_runtime`:
 - `routing.py`: backend confidence tracking and cost-aware routing.
 - `recovery.py`: bounded, side-effect-aware recovery decisions.
 - `verification.py`: declarative preflight checks and verifier ladder.
+- `provider_preflight.py`: fail-closed Ollama identity, GPU, and VRAM-residency manifest.
 - `safety.py`: scoped capability and approval gate.
 - `trace.py`: causal trace events and JSONL persistence.
 - `evolution.py`: regression-gated evolution registry.

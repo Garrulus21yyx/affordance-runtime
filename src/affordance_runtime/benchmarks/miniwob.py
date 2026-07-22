@@ -1,4 +1,9 @@
-"""Pinned official MiniWoB++ adapter with official reward extraction."""
+"""Legacy task-specific MiniWoB++ compatibility diagnostic.
+
+The current M8.2B scored path is the BrowserGym Generalist planner. This
+module is retained only to reproduce earlier M8 compatibility evidence; its
+task-specific parsing and selectors make it ineligible for M8.2B scoring.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ from affordance_runtime.executors import DomExecutor
 
 MINIWOB_REPOSITORY = "https://github.com/Farama-Foundation/MiniWoB-plusplus.git"
 MINIWOB_COMMIT = "eb59fed60fabe8951350275ba8650633b740013b"
+LEGACY_MINIWOB_DIAGNOSTIC_VERSION = "legacy-task-specific-v1"
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,9 @@ def run_official_miniwob_suite(
         errors.append(f"missing successful task families: {sorted(required_families - families)}")
     report = {
         "suite_version": "official-miniwob-curated-v1",
+        "diagnostic_solver_version": LEGACY_MINIWOB_DIAGNOSTIC_VERSION,
+        "m8_2b_scoring_eligible": False,
+        "official_score_claimed": False,
         "repository": MINIWOB_REPOSITORY,
         "commit": MINIWOB_COMMIT,
         "seeds": list(seeds),
@@ -162,6 +171,7 @@ def run_official_miniwob_suite(
     markdown = [
         "# Official MiniWoB++ Curated Report",
         "",
+        "- Track: legacy task-specific compatibility diagnostic; not M8.2B score eligible",
         f"- Commit: `{MINIWOB_COMMIT}`",
         f"- Tasks: `{len(CURATED_TASKS)}` across `{', '.join(sorted(required_families))}`",
         f"- Seeds per task: `{len(seeds)}`",

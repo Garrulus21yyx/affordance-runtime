@@ -112,6 +112,19 @@ Core abstractions should be tested by disabling them:
 | no capability gate | task policy and approval enforcement | unsafe or unauthorized side effects |
 | no recovery | bounded recovery strategies | lower completion under modal/drift |
 | DOM-only | visual fallback disabled | exposes where visual grounding is needed |
+| pure-visual-only | structured candidates disabled | exposes unnecessary visual acquisition and latency/cost |
+| fixed DOM-to-visual cascade | static DOM-first ordering | baseline for adaptive evidence acquisition and route choice |
+| adaptive unified routing | task/evidence-aware current route | target route policy without skill reuse |
+| adaptive plus accepted TaskSkill | adaptive route plus System 1 | measures safe model-call/latency reduction |
+| always System 2 | accepted TaskSkill disabled | deliberative-planner comparison |
+
+The controlled `m8.5-routing-system1-ablation-v1` gate runs these six profiles
+over structured-primary, visual-primary, DOM-failure fallback, material
+conflict, stale-candidate, and accepted-skill cases. The separate live Chromium
+conflict family uses full-screenshot pixel evidence to verify that adaptive
+arbitration re-observes before action when DOM and rendered state disagree.
+These local gates calibrate runtime policy; they do not replace the public
+BrowserGym nightly/release breadth ladder below.
 
 ## Metric Schema
 
@@ -174,6 +187,11 @@ Each report should record:
 - temperature and decoding configuration
 - seeds and number of repetitions
 - timeout, retry, and recovery budgets
+- separate fixed episode timeout, model-call timeout, maximum model calls, and
+  execution/verification reserve; diagnostic 300-second runs are never merged
+  with the fixed PR/release score
+- a fixed `smoke` profile runs the six PR task types at seed 0 before the
+  18-episode PR profile is eligible to run
 - cache policy
 - whether failures are retried
 - mean and standard deviation where repeated runs are used
@@ -202,7 +220,7 @@ templates and its solver contains task-specific parsing and selectors.
 | Gate | Coverage | Purpose |
 | --- | --- | --- |
 | PR smoke | current 6 task types x 3 seeds | fast adapter/browser regression |
-| Nightly | at least 30 task types x 10 seeds | task-family variance and unsupported actions |
+| Nightly | `miniwob-action-family-v1`: 30 task types x 10 seeds | task-family variance and unsupported actions |
 | Release | every task supported by pinned BrowserGym x 5 seeds | broad reproducible coverage |
 
 The scored path must not use per-task regexes or hardcoded selectors. Every
@@ -216,6 +234,61 @@ observe -> affordance -> proposal -> contract -> preflight
 Report supported/unsupported tasks, action-family coverage, seed variance,
 official reward/success, runtime errors, and artifacts. Unsupported cases must
 not be silently excluded.
+
+The older `benchmarks.miniwob` runner is retained only for historical M8
+compatibility reproduction. Its report explicitly sets
+`m8_2b_scoring_eligible=false` and `official_score_claimed=false`, because it
+contains task-specific parsing and selectors. M8.2B claims may use only the
+BrowserGym full-Coordinator path.
+
+The Nightly profile is a fixed, versioned manifest rather than the first 30
+registered Gym tasks: three tasks each from activation, form, text entry,
+selection, keyboard, scroll, drag, navigation, read, and spatial/value action
+families. The report records both the manifest version and its task-family map;
+if a manifest task is absent from a particular BrowserGym registration, it is
+reported as missing instead of being replaced or dropped.
+
+### Three-Layer Execution Protocol
+
+BrowserGym Generalist execution is breadth-first by seed: all selected tasks at
+seed 0, then all selected tasks at seed 1, and so on. This exposes every action
+family early rather than spending the beginning of a batch on one task.
+
+| Layer | CLI profile | Matrix | Stopping rule |
+| --- | --- | --- | --- |
+| Smoke | `smoke` | 6 tasks x 1 seed | only a batch circuit breaker |
+| PR gate | `pr` | 6 tasks x 3 seeds | only a batch circuit breaker |
+| Diagnostic sweep | `diagnostic` | 30 tasks x 2 seeds | completes ordinary failures; emits clusters |
+| Frozen nightly | `nightly` | fixed 30 tasks x 10 seeds | completes ordinary failures; requires clean committed source |
+
+Each non-success episode emits a redacted `FailureEnvelope` with task/family,
+seed, phase, signature, root layer, action kind, final serialized planner
+context size, affordance-limit signal, verification state, provider/runtime
+status, and artifact references. Reports cluster these envelopes before a
+repair decision. The only batch circuit
+breakers are provider-wide/continuous throttling, MiniWoB source or oracle
+failure, schema-wide incompatibility, artifact/checkpoint failure, safety
+violation, or immutable-version drift. A reward-zero task, local grounding
+failure, or insufficient context remains a recorded episode failure.
+
+Checkpoint metadata binds provider/model, git identity, prompt, planner schema
+digest, context policy, and all budgets. `--resume` is therefore valid only for
+the exact interrupted run; any code, prompt, schema, context-policy, model, or
+budget change requires a new output directory. An interrupted diagnostic is
+reported as `incomplete_diagnostic`, never as a nightly score.
+
+BrowserGym matrices must be launched only through
+`scripts/run_browsergym_generalist.py`. The launcher accepts an explicit
+isolated Python 3.12 path (or `AFFORDANCE_BROWSERGYM_PYTHON`), rejects the
+repository `.venv`, validates `browsergym-miniwob==0.14.3` and
+`playwright==1.44.0`, and writes `browsergym-runtime-preflight.json` containing
+the exact `sys.executable` and dependency versions. Its durable default is
+`~/.venvs/affordance-browsergym-py312/bin/python`; a temporary `/tmp` runtime
+must be supplied explicitly and is not a durable benchmark identity.
+The launcher also holds a non-blocking single-writer lock inside the selected
+output directory for its full lifetime. A second launch against the same
+checkpoint/output directory fails before preflight or browser startup; distinct
+fresh output directories remain independent.
 
 | Order | Suite | Planned use |
 | --- | --- | --- |
@@ -242,9 +315,30 @@ predictions. It is a reproducible offline evaluation harness, not an official
 ScreenSpot score until the complete official assets and a versioned prediction
 artifact are supplied.
 
+`VisualGrounderPort` is the separate screenshot-to-point boundary for creating
+that artifact. It receives only immutable screenshot bytes, image dimensions,
+and the benchmark instruction, then emits one bounded pixel or normalized point.
+It cannot return a selector, action contract, capability, or policy decision.
+`run_screenspot_grounder_suite` records the grounder's provider/model/prompt
+version, writes its explicit prediction artifact, and fail-closes individual
+grounding errors before the same offline scorer evaluates coverage and accuracy.
+Every ScreenSpot report binds the annotation input, ordered image-byte manifest,
+and prediction artifact to SHA-256 values and keeps
+`official_score_claimed=false`; this makes a later official score reviewable
+without treating arbitrary local assets as benchmark evidence.
+Annotation image paths are resolved beneath the explicit image root before any
+read, hash, or model request. Escaped paths are rejected, while missing or
+unreadable assets produce a persisted fail-closed report and redacted source
+image error rather than a partial score or manifest-time crash.
+The configured Zhipu implementation uses the same `LLM_ZHIPU_BASE_URL` and
+`LLM_ZHIPU_API_KEY` as text planning, with `LLM_ZHIPU_VISION_MODEL` defaulting
+to `glm-4.6v-flash`; `LLM_VISUAL_PROFILE=zhipu` selects it. The CLI command
+`benchmark-screenspot-grounder` invokes this port and never turns its point
+into a browser action.
+
 ### WorkArena L1 Deployment Gate
 
-`affordance-runtime benchmark-workarena-preflight` verifies the isolated
+`affordance-runtime benchmark-workarena-preflight --runtime-python <path>` verifies the isolated
 `browsergym-workarena` / Playwright 1.44 environment, the official 33-task L1
 registration, and one permitted ServiceNow instance source. It reports only
 the source category (`explicit_instance`, `custom_instance_pool`, or
@@ -256,7 +350,10 @@ The preflight must pass before an L1 matrix can be run through the existing
 BrowserGym observation → proposal → contract → preflight → execution path.
 The current default Web runtime intentionally does not satisfy this gate because
 it uses Playwright 1.61; WorkArena must run in a dedicated BrowserGym 1.44
-environment with authorized ServiceNow access.
+environment with authorized ServiceNow access. The durable default interpreter
+is `~/.venvs/affordance-workarena/bin/python`, overridable through
+`AFFORDANCE_WORKARENA_PYTHON`; its child probe is credential-free and records
+only runtime identity and registration facts.
 
 ### WASP Security Baseline
 
@@ -264,7 +361,7 @@ Before a WASP subset is attached, the general planner marks every page-derived
 label, DOM/accessibility/OCR string, and screenshot as an untrusted observation.
 Such content can ground an already-authorized affordance only; it cannot alter
 the `TaskSpec`, grant a capability, supply approval, or become planner policy.
-This is enforced by the `generalist-planner-v9` prompt boundary together with
+This is enforced by the `generalist-planner-v47` prompt boundary together with
 the existing deterministic proposal schema, contract capability gate, and
 approval binding. A future WASP run must exercise this baseline against the
 official malicious-page cases and report the result separately; this statement
@@ -276,6 +373,9 @@ round-robin selection and exposes only opaque case indices plus evaluator-type
 metadata; malicious instructions and their parameters remain in the upstream
 source configuration. The resulting manifest is preparation evidence, never a
 security score.
+Environment and evaluator-type fields are accepted only as bounded metadata
+identifiers; prompt-like prose or duplicated evaluator labels fail before a
+manifest is written.
 
 ### WebArena-Verified Subset Manifest
 
@@ -295,6 +395,10 @@ local score approximation.
 passes the digest-bound manifest IDs to upstream without a shell, retains every
 upstream `eval_result.json`, computes only a transparent aggregate of upstream
 scores, and fails if any requested task lacks an official result.
+The v2 result boundary also requires task-ID ownership, finite `[0,1]` scores,
+and result paths confined beneath the agent-log root. Invalid upstream files
+are excluded from the mean and reported separately; exact manifest/result bytes
+are SHA-bound.
 
 [BrowserGym](https://github.com/ServiceNow/BrowserGym) is the preferred adapter
 for suites it exposes. Reuse official reset, registration, action, and grading

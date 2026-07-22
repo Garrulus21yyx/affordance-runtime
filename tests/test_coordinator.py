@@ -8,9 +8,16 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator, _resolve_planner_decision
+from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator, _resolve_planner_decision
+from affordance_runtime.grounding import GroundingSource, SourceAssertion
 from affordance_runtime.intent_compiler import LLMIntentCompiler
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.model_port import (
+    ModelCallRecord,
+    ModelConfig,
+    ModelMessage,
+    ProviderFailureKind,
+    ProviderModelError,
+)
 from affordance_runtime.planning import (
     ContractBuilder,
     ContractRequirements,
@@ -19,7 +26,8 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryDecision
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.source_assertions import SourceAssertionArbiter
+from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
@@ -116,6 +124,159 @@ def test_coordinator_continues_an_upstream_compiler_trace() -> None:
     assert result.trace is trace
     task_node = next(node for node in trace.nodes if node.kind == "TaskCreated")
     assert task_node.parents == [compiler_node.id]
+
+
+def test_coordinator_traces_source_assertion_decisions_and_targeted_perception() -> None:
+    snapshot = _snapshot(1)
+    assertions = (
+        SourceAssertion(
+            "visible-true",
+            "semantic:save",
+            "visible",
+            True,
+            "boolean",
+            GroundingSource.DOM,
+            snapshot.observation.snapshot_id,
+            snapshot.observation.environment_revision,
+            snapshot.observation.page_revision,
+            "dom-parser-v1",
+            evidence_refs=("artifact:dom",),
+        ),
+        SourceAssertion(
+            "visible-false",
+            "semantic:save",
+            "visible",
+            False,
+            "boolean",
+            GroundingSource.DOM,
+            snapshot.observation.snapshot_id,
+            snapshot.observation.environment_revision,
+            snapshot.observation.page_revision,
+            "dom-parser-v1",
+            evidence_refs=("artifact:dom-second",),
+        ),
+    )
+    arbitration = SourceAssertionArbiter().arbitrate(
+        assertions,
+        snapshot.observation,
+        available_sources=frozenset({GroundingSource.DOM, GroundingSource.ACCESSIBILITY}),
+        observation_budget=1,
+    )
+
+    class AssertionObserver:
+        def __init__(self) -> None:
+            self.targeted_calls = 0
+
+        def capture(self) -> BrowserSnapshot:
+            return replace(
+                snapshot,
+                source_assertions=assertions,
+                assertion_decisions=arbitration.decisions,
+                active_perception_requests=arbitration.active_perception_requests,
+            )
+
+        def capture_targeted(self, requests: object) -> BrowserSnapshot:
+            assert requests == arbitration.active_perception_requests
+            self.targeted_calls += 1
+            return _snapshot(2)
+
+    class FinishPlanner:
+        def propose(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            observed: BrowserSnapshot,
+        ) -> PlannerDecision:
+            del envelope, state, observed
+            return PlannerDecision(done=True, result={"observed": True})
+
+    observer = AssertionObserver()
+    result = RunCoordinator(
+        observer=observer,
+        planner=FinishPlanner(),
+        executor=FakeExecutor(),
+    ).run_sync(TaskEnvelope("assertion-trace", "inspect save visibility"))
+
+    events = [node.kind for node in result.trace.nodes]
+    assert "SourceAssertionsCollected" in events
+    assert "SourceAssertionsArbitrated" in events
+    assert "TargetedPerceptionRequested" in events
+    assert "TargetedPerceptionCaptured" in events
+    assert observer.targeted_calls == 1
+    assert result.state.active_perception_count == 1
+    collected = next(node for node in result.trace.nodes if node.kind == "SourceAssertionsCollected")
+    assert collected.payload["assertions"][0]["evidence_refs"] == ["artifact:dom"]
+    assert "value" not in collected.payload["assertions"][0]
+
+
+def test_coordinator_bounds_repeated_targeted_perception_requests() -> None:
+    snapshot = _snapshot(1)
+    assertions = (
+        SourceAssertion(
+            "checked-true",
+            "semantic:save",
+            "checked",
+            True,
+            "boolean",
+            GroundingSource.DOM,
+            snapshot.observation.snapshot_id,
+            snapshot.observation.environment_revision,
+            snapshot.observation.page_revision,
+            "dom-parser-v1",
+        ),
+        SourceAssertion(
+            "checked-false",
+            "semantic:save",
+            "checked",
+            False,
+            "boolean",
+            GroundingSource.DOM,
+            snapshot.observation.snapshot_id,
+            snapshot.observation.environment_revision,
+            snapshot.observation.page_revision,
+            "dom-parser-v1",
+        ),
+    )
+    arbitration = SourceAssertionArbiter().arbitrate(assertions, snapshot.observation)
+    unresolved = replace(
+        snapshot,
+        source_assertions=assertions,
+        assertion_decisions=arbitration.decisions,
+        active_perception_requests=arbitration.active_perception_requests,
+    )
+
+    class LoopingObserver:
+        targeted_calls = 0
+
+        def capture(self) -> BrowserSnapshot:
+            return unresolved
+
+        def capture_targeted(self, requests: object) -> BrowserSnapshot:
+            assert requests == arbitration.active_perception_requests
+            self.targeted_calls += 1
+            return unresolved
+
+    class FinishPlanner:
+        def propose(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            observed: BrowserSnapshot,
+        ) -> PlannerDecision:
+            del envelope, state, observed
+            return PlannerDecision(done=True, result={"bounded": True})
+
+    observer = LoopingObserver()
+    result = RunCoordinator(
+        observer=observer,
+        planner=FinishPlanner(),
+        executor=FakeExecutor(),
+        budget=RunBudget(max_active_perception_observations=2),
+    ).run_sync(TaskEnvelope("bounded-perception", "inspect checkbox"))
+
+    assert observer.targeted_calls == 2
+    assert result.state.active_perception_count == 2
+    assert "TargetedPerceptionBudgetExhausted" in [node.kind for node in result.trace.nodes]
 
 
 class DriftingObserver:
@@ -437,6 +598,131 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     assert contract_event.payload["proposal_id"] == "proposal-save"
 
 
+@dataclass
+class RepeatingSemanticPlanner:
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope
+        if state.progress_guard_events:
+            return PlannerDecision(done=True, result={"guarded": True})
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id=f"proposal-repeat-{len(state.planner_history)}",
+                based_on_task_revision=1,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=snapshot.affordance_model.affordances[0].id,
+                expected_effects=("settings are saved",),
+                evidence_requirements=("saved observation",),
+            )
+        )
+
+
+class StableSavedObserver:
+    def __init__(self, *, saved: bool) -> None:
+        self.saved = saved
+
+    def capture(self) -> BrowserSnapshot:
+        return _snapshot(1, saved=self.saved)
+
+
+@dataclass
+class CountingExecutor(FakeExecutor):
+    calls: int = 0
+
+    def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
+        self.calls += 1
+        return super().execute(contract, observation)
+
+
+def _semantic_guard_builder() -> ContractBuilder:
+    return ContractBuilder(
+        requirements={
+            "dom_button_1": ContractRequirements(
+                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                required_capabilities=("settings.write",),
+                idempotency_key="semantic-repeat-v1",
+            )
+        }
+    )
+
+
+def test_progress_guard_blocks_already_verified_semantic_action() -> None:
+    executor = CountingExecutor()
+    result = RunCoordinator(
+        observer=StableSavedObserver(saved=True),
+        planner=RepeatingSemanticPlanner(),
+        executor=executor,
+        contract_builder=_semantic_guard_builder(),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task(), capabilities=["settings.write"]))
+
+    assert result.status == RuntimeStep.DONE
+    assert executor.calls == 1
+    assert result.state.progress_guard_events[-1]["reason"] == "effect_already_satisfied"
+    blocked = [node for node in result.trace.nodes if node.kind == "PlannerProgressBlocked"]
+    assert blocked[-1].payload["error_code"] == RuntimeErrorCode.EFFECT_ALREADY_SATISFIED.value
+
+
+def test_progress_guard_blocks_failed_action_when_state_did_not_change() -> None:
+    executor = CountingExecutor()
+    result = RunCoordinator(
+        observer=StableSavedObserver(saved=False),
+        planner=RepeatingSemanticPlanner(),
+        executor=executor,
+        contract_builder=_semantic_guard_builder(),
+        recovery=BoundedRecoveryPolicy(
+            decision_override=lambda contract, receipt, context, error: RecoveryDecision(
+                RecoveryAction.REOBSERVE, "replan after failed verification"
+            )
+        ),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task(), capabilities=["settings.write"]))
+
+    assert result.status == RuntimeStep.DONE
+    assert executor.calls == 1
+    assert result.state.progress_guard_events[-1]["reason"] == "no_progress_repeat"
+    blocked = [node for node in result.trace.nodes if node.kind == "PlannerProgressBlocked"]
+    assert blocked[-1].payload["error_code"] == RuntimeErrorCode.NO_PROGRESS_REPEAT.value
+
+
+def test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied() -> None:
+    state = StateKernel("slider", "move slider several steps")
+    state.remember_observation(Observation("rev-2"))
+    state.record_action_progress(
+        "press:slider:ArrowRight",
+        "rev-2",
+        verification_passed=True,
+        effect_satisfied=False,
+    )
+
+    assert state.check_progress_guard("press:slider:ArrowRight") is None
+
+
+def test_progress_guard_blocks_an_alternating_return_to_a_satisfied_effect() -> None:
+    state = StateKernel("task-1", "Select controls")
+    state.remember_observation(Observation("rev-3", page_revision="page-1"))
+    state.record_action_progress(
+        "activate:checkbox-a",
+        "rev-1",
+        verification_passed=True,
+        effect_satisfied=True,
+        post_page_revision="page-1",
+    )
+    state.record_action_progress(
+        "activate:checkbox-b",
+        "rev-2",
+        verification_passed=True,
+        effect_satisfied=True,
+        post_page_revision="page-1",
+    )
+
+    assert state.check_progress_guard("activate:checkbox-a") == ProgressGuardReason.EFFECT_ALREADY_SATISFIED
+
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -492,9 +778,7 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
         granted_capabilities=("settings.write", "admin.unrequested"),
     )
 
-    result = asyncio.run(
-        pipeline.run(UserRequest(request_id="pipeline-run", raw_text="Save my settings"))
-    )
+    result = asyncio.run(pipeline.run(UserRequest(request_id="pipeline-run", raw_text="Save my settings")))
 
     assert result.status == "done"
     assert result.coordinator is not None
@@ -571,3 +855,30 @@ def test_semantic_planner_can_request_clarification_without_contract_or_effect()
     assert result.state.receipts == []
     assert result.result["clarification"] == "Which settings profile should be changed?"
     assert "ClarificationRequested" in [node.kind for node in result.trace.nodes]
+
+
+class QuotaExhaustedPlanner:
+    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
+        del envelope, state, snapshot
+        raise ProviderModelError(ProviderFailureKind.QUOTA_EXHAUSTED, retry_after_s=60)
+
+
+def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tmp_path) -> None:
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=QuotaExhaustedPlanner(),
+        executor=FakeExecutor(),
+        artifacts=ArtifactStore(tmp_path / "artifacts"),
+    ).run_sync(TaskEnvelope("provider-defer", "wait for provider capacity"))
+
+    assert result.status == RuntimeStep.DEFERRED
+    assert result.error_code == RuntimeErrorCode.QUOTA_EXHAUSTED
+    assert result.result == {
+        "deferred": True,
+        "provider_failure": "quota_exhausted",
+        "retry_after_s": 60,
+        "resumable": True,
+    }
+    event = next(node for node in result.trace.nodes if node.kind == "PlannerDeferred")
+    assert event.payload["resumable"] is True
+    assert (tmp_path / "artifacts/provider-defer/run.json").exists()

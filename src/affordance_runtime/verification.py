@@ -7,6 +7,7 @@ import json
 import operator
 from dataclasses import dataclass, field
 from enum import StrEnum
+from html.parser import HTMLParser
 from time import time
 from typing import Any, Callable, Mapping, Protocol
 from urllib.request import urlopen
@@ -18,6 +19,7 @@ from affordance_runtime.contracts import (
     Observation,
     RuntimeErrorCode,
     VerifierSpec,
+    gesture_preflight,
 )
 
 
@@ -95,6 +97,90 @@ class DomAbsentVerifier:
         return str(spec.expected) not in str(observation.metadata.get("html") or "")
 
 
+class _DomAttributeParser(HTMLParser):
+    def __init__(self, target_attribute: str, target_value: str, observed_attribute: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.target_attribute = target_attribute
+        self.target_value = target_value
+        self.observed_attribute = observed_attribute
+        self.observed: Any = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del tag
+        values = {key: (value or "") for key, value in attrs}
+        if values.get(self.target_attribute) == self.target_value:
+            self.observed = values.get(self.observed_attribute)
+
+
+@dataclass
+class DomAttributeVerifier:
+    """Verify one attribute on one post-observation DOM element."""
+
+    kind: str = "dom_attribute"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        del receipt
+        if not isinstance(spec.expected, Mapping):
+            return False
+        attribute = str(spec.expected.get("attribute") or "")
+        if not attribute or not spec.target:
+            return False
+        parser = _DomAttributeParser("bid", spec.target, attribute)
+        parser.feed(str(observation.metadata.get("html") or ""))
+        parser.close()
+        return parser.observed == spec.expected.get("value")
+
+
+@dataclass
+class ControlStateVerifier:
+    """Verify a generic post-observation control property by BrowserGym bid."""
+
+    kind: str = "control_state"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        del receipt
+        if not isinstance(spec.expected, Mapping):
+            return False
+        states = observation.metadata.get("control_states")
+        if not isinstance(states, Mapping):
+            return False
+        state = states.get(spec.target)
+        if not isinstance(state, Mapping):
+            return False
+        field_name = str(spec.expected.get("field") or "")
+        observed = state.get(field_name)
+        if "changed_from" in spec.expected:
+            return observed not in {None, ""} and observed != spec.expected.get("changed_from")
+        return observed == spec.expected.get("value")
+
+
+@dataclass
+class StateDeltaOrTerminalVerifier:
+    """Require a changed state revision or a positive declared terminal oracle."""
+
+    kind: str = "state_delta_or_terminal"
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        if bool(receipt.evidence.get("terminated")):
+            return (
+                float(receipt.evidence.get("official_reward") or 0.0) > 0.0
+                and not bool(receipt.evidence.get("truncated"))
+            )
+        if observation.metadata.get("active_bid") == spec.target:
+            return True
+        if isinstance(spec.expected, Mapping):
+            states = observation.metadata.get("control_states")
+            state = states.get(spec.target) if isinstance(states, Mapping) else None
+            field_name = str(spec.expected.get("field") or "")
+            if isinstance(state, Mapping) and field_name:
+                observed = state.get(field_name)
+                if observed != spec.expected.get("changed_from"):
+                    return True
+        return bool(observation.environment_revision) and (
+            observation.environment_revision != receipt.started_revision
+        )
+
+
 @dataclass
 class HttpJsonVerifier:
     """Strong fixture/API verifier for persisted business effects."""
@@ -127,6 +213,9 @@ class VerifierLadder:
             ObservationMetadataVerifier(),
             DomContainsVerifier(),
             DomAbsentVerifier(),
+            DomAttributeVerifier(),
+            ControlStateVerifier(),
+            StateDeltaOrTerminalVerifier(),
         ]
     )
 
@@ -165,6 +254,8 @@ class VerifierLadder:
             elif spec.kind == "dom_absent":
                 observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
             elif spec.kind == "http_json":
+                observed = passed
+            elif spec.kind in {"dom_attribute", "control_state", "state_delta_or_terminal"}:
                 observed = passed
             else:
                 observed = observation.metadata.get(spec.target)
@@ -220,9 +311,20 @@ def preflight(
     if contract.expires_at_s and time() > contract.expires_at_s:
         return RuntimeErrorCode.LEASE_EXPIRED
     if contract.target_fingerprint:
-        observed_fingerprint = observation.target_fingerprints.get(contract.affordance_id)
+        observed_fingerprint = observation.target_fingerprints.get(
+            contract.target_fingerprint_key or contract.affordance_id
+        )
         if observed_fingerprint != contract.target_fingerprint:
             return RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
+    if contract.gesture_binding is not None:
+        gesture_error = gesture_preflight(
+            contract.gesture_binding,
+            observation,
+            require_snapshot_identity=require_snapshot_identity,
+            require_environment_revision=require_environment_revision,
+        )
+        if gesture_error is not None:
+            return gesture_error
     facts = {
         **observation.metadata,
         "observation": {

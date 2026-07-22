@@ -8,11 +8,18 @@ bounded click-point predictions through the same reproducible artifact format.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+from affordance_runtime.visual_grounding import (
+    VisualGrounderPort,
+    VisualGroundingPoint,
+    VisualGroundingRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -65,7 +72,7 @@ def load_screenspot_samples(annotations_path: Path, images_root: Path) -> list[S
         samples.append(
             ScreenSpotSample(
                 sample_id=sample_id,
-                image_path=images_root / filename,
+                image_path=_bounded_image_path(images_root, filename, index),
                 instruction=instruction,
                 bbox_xywh=bbox,
                 data_type=str(item.get("data_type") or "unknown"),
@@ -151,7 +158,82 @@ def run_screenspot_offline_suite(
 ) -> dict[str, Any]:
     samples = load_screenspot_samples(annotations_path, images_root)
     report = evaluate_screenspot(samples, load_screenspot_predictions(predictions_path))
+    _attach_source_manifest(report, annotations_path, images_root, samples)
+    report["prediction_artifact_sha256"] = _sha256_file(predictions_path)
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "screenspot-report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return report
+
+
+def run_screenspot_grounder_suite(
+    annotations_path: Path,
+    images_root: Path,
+    grounder: VisualGrounderPort,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Run a screenshot-only grounder and score its emitted predictions.
+
+    The runner is not an action executor. It writes the exact points supplied
+    by the port and delegates scoring to the strict offline evaluator, keeping
+    missing or failed predictions visible.
+    """
+
+    samples = load_screenspot_samples(annotations_path, images_root)
+    predictions: dict[str, ScreenSpotPrediction] = {}
+    grounder_errors: dict[str, str] = {}
+    for sample in samples:
+        try:
+            image_size = _image_size(sample.image_path)
+            point = grounder.ground(
+                VisualGroundingRequest(
+                    sample_id=sample.sample_id,
+                    image_path=sample.image_path,
+                    image_bytes=sample.image_path.read_bytes(),
+                    image_size=image_size,
+                    instruction=sample.instruction,
+                )
+            )
+            _validate_grounder_point(point, image_size)
+            predictions[sample.sample_id] = ScreenSpotPrediction(
+                sample_id=sample.sample_id,
+                point_xy=point.point_xy,
+                normalized=point.normalized,
+            )
+        except Exception as exc:
+            grounder_errors[sample.sample_id] = f"{type(exc).__name__}: {exc}"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    predictions_path = output_dir / "screenspot-predictions.json"
+    predictions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": prediction.sample_id,
+                    "point_xy": list(prediction.point_xy),
+                    "normalized": prediction.normalized,
+                }
+                for prediction in predictions.values()
+            ],
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    report = evaluate_screenspot(samples, predictions)
+    _attach_source_manifest(report, annotations_path, images_root, samples)
+    report["grounder"] = {
+        "provider": str(grounder.provider),
+        "model": str(grounder.model),
+        "prompt_version": str(grounder.prompt_version),
+        "input": "screenshot_bytes_and_instruction_only",
+        "prediction_artifact": str(predictions_path),
+    }
+    report["grounder_errors"] = grounder_errors
+    report["prediction_artifact_sha256"] = _sha256_file(predictions_path)
+    if grounder_errors:
+        report["acceptance_errors"].append(f"grounder failures: {len(grounder_errors)}")
     (output_dir / "screenspot-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -162,7 +244,7 @@ def _evaluate_sample(sample: ScreenSpotSample, prediction: ScreenSpotPrediction 
     if prediction is None:
         return ScreenSpotResult(sample.sample_id, False, False, False, None, sample.bbox_xywh, sample.data_type, sample.data_source, None)
     try:
-        from PIL import Image
+        from PIL import Image  # type: ignore[import-not-found]
 
         with Image.open(sample.image_path) as image:
             width, height = image.size
@@ -182,6 +264,71 @@ def _evaluate_sample(sample: ScreenSpotSample, prediction: ScreenSpotPrediction 
         sample.sample_id, correct, True, valid, (x, y), sample.bbox_xywh,
         sample.data_type, sample.data_source, (width, height), "" if valid else "prediction outside image"
     )
+
+
+def _image_size(path: Path) -> tuple[int, int]:
+    from PIL import Image  # type: ignore[import-not-found]
+
+    with Image.open(path) as image:
+        return image.size
+
+
+def _validate_grounder_point(point: VisualGroundingPoint, image_size: tuple[int, int]) -> None:
+    if not isinstance(point, VisualGroundingPoint):
+        raise TypeError("VisualGrounderPort must return VisualGroundingPoint")
+    point.pixel_coordinates(image_size)
+
+
+def _attach_source_manifest(
+    report: dict[str, Any],
+    annotations_path: Path,
+    images_root: Path,
+    samples: Iterable[ScreenSpotSample],
+) -> None:
+    """Bind an offline score to exact annotations and image bytes."""
+
+    resolved_root = images_root.resolve()
+    image_entries: list[dict[str, str]] = []
+    image_errors: dict[str, str] = {}
+    for sample in sorted(samples, key=lambda item: item.sample_id):
+        try:
+            digest = _sha256_file(sample.image_path)
+            error = ""
+        except OSError as exc:
+            digest = ""
+            error = type(exc).__name__
+            image_errors[sample.sample_id] = error
+        image_entries.append(
+            {
+                "sample_id": sample.sample_id,
+                "image_path": sample.image_path.relative_to(resolved_root).as_posix(),
+                "sha256": digest,
+                "error": error,
+            }
+        )
+    encoded = json.dumps(image_entries, separators=(",", ":"), sort_keys=True).encode()
+    report["source_annotations_sha256"] = _sha256_file(annotations_path)
+    report["source_image_manifest_sha256"] = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+    report["source_image_errors"] = image_errors
+    if image_errors:
+        report["acceptance_errors"].append(f"source image failures: {len(image_errors)}")
+    report["official_score_claimed"] = False
+
+
+def _bounded_image_path(images_root: Path, filename: str, index: int) -> Path:
+    """Resolve one annotation image without allowing escape from its asset root."""
+
+    root = images_root.resolve()
+    candidate = (root / filename).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"annotations[{index}].img_filename escapes the images root") from exc
+    return candidate
+
+
+def _sha256_file(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
 def _breakdown(results: list[ScreenSpotResult], field: str) -> dict[str, dict[str, float | int]]:

@@ -1,11 +1,13 @@
 import time
+from dataclasses import replace
 
 import pytest
 from pydantic import ValidationError
 
 from affordance_runtime.adapters.dom import DomAdapter
-from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import Observation, RiskLevel, VerifierSpec
+from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface, VerifierSpec
+from affordance_runtime.grounding import UnifiedAffordance
 from affordance_runtime.planning import (
     ContractBuilder,
     ContractRequirements,
@@ -16,6 +18,12 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.unified_grounding import (
+    CandidateDescriptor,
+    SemanticEntityResolver,
+    candidate_fingerprints,
+    candidate_from_affordance,
+)
 
 
 def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:
@@ -87,6 +95,261 @@ def test_contract_builder_binds_current_target_authority_and_verifier() -> None:
     assert contract.idempotency_key
 
 
+def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() -> None:
+    class Page:
+        url = "https://example.test/settings"
+
+        def content(self) -> str:
+            return '<input bid="theme-bid" id="theme" aria-label="Theme">'
+
+        def evaluate(self, script: str) -> object:
+            if "Object.fromEntries" in script:
+                return {}
+            return ""
+
+        def screenshot(self, **kwargs: object) -> bytes:
+            del kwargs
+            return b""
+
+    snapshot = BrowserSession(Page(), lease_ttl_ms=60_000).capture()
+    semantic_target = snapshot.unified_affordances[0].semantic_target_id
+    state = StateKernel("task-semantic", "Set theme")
+    state.remember_observation(snapshot.observation)
+    spec = TaskSpec(
+        task_id="task-semantic",
+        revision=1,
+        objective="Set theme to dark",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("theme",),
+        success_criteria=("theme is dark",),
+        source_request_ref="request-semantic",
+    )
+    proposal = PlannerProposal(
+        proposal_id="proposal-semantic",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+        subgoal="Set theme to dark",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=semantic_target,
+        parameters={"text": "dark"},
+    )
+
+    contract = ContractBuilder(
+        requirements={
+            semantic_target: ContractRequirements(
+                verifier_plan=(VerifierSpec("dom_attribute", "theme", "dark"),)
+            )
+        }
+    ).build(proposal, spec, state, snapshot)
+
+    assert contract.affordance_id == semantic_target
+    assert contract.grounding_candidate is not None
+    assert contract.route_plan is not None
+    assert contract.backend == contract.grounding_candidate.compatible_executor == "dom"
+    assert contract.locator["bid"] == "theme-bid"
+    assert contract.target_fingerprint_key == contract.grounding_candidate.fingerprint_key
+
+
+def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage() -> None:
+    model = DomAdapter().transduce(
+        '<button bid="save">Save</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+        ttl_ms=60_000,
+    )
+    dom = model.affordances[0]
+    accessibility = replace(
+        dom,
+        id="a11y_button_1",
+        surface=Surface.ACCESSIBILITY,
+        locator={"selector": "role=button[name='Save']"},
+        backend_candidates=["a11y"],
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+    )
+    candidates = (
+        candidate_from_affordance(dom, observation, semantic_target_id="pending"),
+        candidate_from_affordance(accessibility, observation, semantic_target_id="pending"),
+    )
+    target: UnifiedAffordance = SemanticEntityResolver().resolve(
+        tuple(
+            CandidateDescriptor("button", "Save", "click", "", candidate)
+            for candidate in candidates
+        )
+    )[0]
+    observation = replace(
+        observation,
+        target_fingerprints=candidate_fingerprints((target,)),
+    )
+    snapshot = BrowserSnapshot(
+        observation,
+        replace(model, affordances=[dom, accessibility], kept_node_count=2),
+        grounding_candidates=target.grounding_candidates,
+        unified_affordances=(target,),
+    )
+    state = StateKernel("task-reroute", "Save")
+    state.remember_observation(observation)
+    spec = TaskSpec(
+        task_id="task-reroute",
+        revision=1,
+        objective="Save",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("Save",),
+        success_criteria=("saved",),
+        source_request_ref="request-reroute",
+    )
+    builder = ContractBuilder(
+        requirements={
+            target.semantic_target_id: ContractRequirements(
+                verifier_plan=(VerifierSpec("state_delta", "save", True),)
+            )
+        }
+    )
+    first_proposal = PlannerProposal(
+        proposal_id="proposal-first",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id=observation.snapshot_id,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=target.semantic_target_id,
+    )
+    first = builder.build(first_proposal, spec, state, snapshot)
+
+    state.record_grounding_reroute(first, "first candidate failed deterministically")
+    second = builder.build(
+        first_proposal.model_copy(
+            update={
+                "proposal_id": "proposal-second",
+                "based_on_state_version": state.version,
+            }
+        ),
+        spec,
+        state,
+        snapshot,
+    )
+
+    assert first.grounding_candidate is not None
+    assert second.grounding_candidate is not None
+    assert first.grounding_candidate.source.value == "dom"
+    assert second.grounding_candidate.source.value == "accessibility"
+    assert second.contract_hash != first.contract_hash
+    assert second.supersedes_contract_id == first.id
+    assert second.source_contract_id == first.id
+    assert second.fallback_reason == "first candidate failed deterministically"
+    assert second.route_plan is not None
+    failed_gate = next(
+        item for item in second.route_plan.hard_gate_results
+        if item.candidate_id == first.grounding_candidate.candidate_id
+    )
+    assert failed_gate.reasons == ("candidate_excluded",)
+
+
+def test_core_contract_builder_binds_both_semantic_drag_endpoints() -> None:
+    class Page:
+        url = "https://example.test/sortable"
+
+        def content(self) -> str:
+            return (
+                '<li bid="source" class="ui-sortable-handle">Source</li>'
+                '<li bid="destination" class="ui-sortable-handle">Destination</li>'
+            )
+
+        def evaluate(self, script: str) -> object:
+            if "Object.fromEntries" in script:
+                return {}
+            return ""
+
+        def screenshot(self, **kwargs: object) -> bytes:
+            del kwargs
+            return b""
+
+    snapshot = BrowserSession(Page(), lease_ttl_ms=60_000).capture()
+    target_by_label = {item.label: item.semantic_target_id for item in snapshot.unified_affordances}
+    source_id = target_by_label["Source"]
+    destination_id = target_by_label["Destination"]
+    state = StateKernel("task-drag", "Reorder items")
+    state.remember_observation(snapshot.observation)
+    spec = TaskSpec(
+        task_id="task-drag",
+        revision=1,
+        objective="Drag Source to Destination",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("sortable",),
+        success_criteria=("items are reordered",),
+        source_request_ref="request-drag",
+    )
+    proposal = PlannerProposal(
+        proposal_id="proposal-drag",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+        action_kind=PlannerActionKind.DRAG,
+        target_affordance_id=source_id,
+        destination_affordance_id=destination_id,
+    )
+
+    contract = ContractBuilder(
+        requirements={
+            source_id: ContractRequirements(
+                verifier_plan=(VerifierSpec("state_delta", "sortable", True),)
+            )
+        }
+    ).build(proposal, spec, state, snapshot)
+
+    assert contract.gesture_binding is not None
+    assert contract.gesture_binding.source.semantic_target_id == source_id
+    assert contract.gesture_binding.destination.semantic_target_id == destination_id
+    assert contract.gesture_binding.source.candidate_id.startswith("candidate:dom:")
+    assert contract.gesture_binding.destination.candidate_id.startswith("candidate:dom:")
+    assert contract.gesture_binding.source.snapshot_id == contract.gesture_binding.destination.snapshot_id
+    assert contract.gesture_binding.selected_route == contract.backend == "dom"
+
+
+def test_point_activate_binds_semantic_svg_target_without_planner_coordinates() -> None:
+    spec, state, snapshot = _fixture()
+    point = Affordance(
+        id="svg_circle_1",
+        surface=Surface.SVG,
+        role="point",
+        label="(-1,0)",
+        action="point_activate",
+        locator={"bbox": [20.0, 30.0, 8.0, 8.0], "coordinate_space": "viewport_pixels"},
+        lease=AffordanceLease.issue(
+            environment_revision=snapshot.observation.environment_revision,
+            ttl_ms=60_000,
+            snapshot_id=snapshot.observation.snapshot_id,
+            page_revision=snapshot.observation.page_revision,
+            target_fingerprint="svg-fingerprint",
+        ),
+        backend_candidates=["visual"],
+    )
+    point_snapshot = BrowserSnapshot(
+        replace(
+            snapshot.observation,
+            target_fingerprints={"svg_circle_1": "svg-fingerprint"},
+        ),
+        replace(snapshot.affordance_model, affordances=[point], kept_node_count=1),
+    )
+    state.remember_observation(point_snapshot.observation)
+    proposal = _proposal(
+        state,
+        action_kind=PlannerActionKind.POINT_ACTIVATE,
+        target_affordance_id="svg_circle_1",
+        parameters={},
+    )
+
+    contract = ContractBuilder().build(proposal, spec, state, point_snapshot)
+
+    assert contract.action == "point_activate"
+    assert contract.affordance_id == "svg_circle_1"
+    assert contract.backend == "visual"
+    assert contract.parameters == {}
+
+
 @pytest.mark.parametrize(
     ("changes", "code"),
     [
@@ -119,6 +382,12 @@ def test_proposal_schema_rejects_surface_and_authority_fields() -> None:
         _proposal(state, action_kind=PlannerActionKind.NAVIGATE, target_affordance_id="", parameters={})
     with pytest.raises(ValidationError, match="at least 1 character"):
         _proposal(state, snapshot_id="")
+    with pytest.raises(ValidationError, match="select_option requires option"):
+        _proposal(
+            state,
+            action_kind=PlannerActionKind.SELECT_OPTION,
+            parameters={},
+        )
 
 
 def test_finish_and_ask_flags_are_deterministically_derived_from_action_kind() -> None:

@@ -6,6 +6,13 @@ controlled web profile. See
 required increment is M8.2B public benchmark expansion. M9 is conditional on
 measured restart/waiting evidence; production-scale options remain non-blocking.
 
+Current M8.2B diagnostic position (2026-07-22): v155 closes the shared
+`social-media*` authored-control/context failure without promoting arbitrary
+unmarked bids. The same dirty-tree source digest passes all three families at
+30/30, local PR 18/18, and the seed-major 30 x 2 diagnostic sweep 60/60. This
+is repair-ladder evidence, not an immutable nightly or release promotion. The
+next step is a fresh residual release-cluster rescan against this source.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
@@ -93,12 +100,12 @@ The following capabilities are required to prove the project thesis:
 | Action Contract | the only object that may enter an executor |
 | State validity | snapshot identity, page revision, target fingerprint, and expiration |
 | Policy | task constraints, capability checks, and approval for effectful actions |
-| Execution routing | Playwright DOM first; visual and WoT as bounded adapter proofs |
+| Adaptive routing | choose a verified perception, grounding, executor, and verifier route from DOM, accessibility, SoM, pure visual, WoT, and API candidates according to task needs and current environment evidence |
 | Verification | receipt separated from independent postcondition evidence |
 | Recovery | small deterministic matrix with explicit budgets and no blind effectful retry |
 | Trace | append-only event log plus artifact references |
 | Evaluation | resettable fixtures, baselines, perturbations, ablations, and independent oracles |
-| Evolution | failure classification, declarative artifact proposal, replay, and registry decision |
+| Evolution | verified-success TaskSkill mining plus failure/recovery artifact proposal, quarantine, replay, registry decision, and rollback |
 
 ## 4. What Is Intentionally Narrow
 
@@ -663,26 +670,172 @@ Before scaling public suites, complete this bounded consolidation gate:
 - retain the completed BrowserGym split across action schema, environment
   adapter/episode execution, matrix/checkpoint, and MiniWoB task source;
   public facade imports and runtime behavior remain stable;
-- replace the first-sorted-task nightly selection with a versioned,
-  action-family-stratified manifest;
-- rerun the current generalist-planner PR profile before scaling: the latest
-  complete evidence is 18/18 episode coverage and 15/18 official success, with
-  the form/slider gap still explicit;
+- retain the completed `miniwob-action-family-v1` nightly manifest: 30 tasks
+  across ten action families, independent of Gym registration order; absent
+  registered tasks must remain visible as missing coverage rather than shrink
+  the matrix;
+- retain the current GPU-local gate before scaling: repaired families, PR, and
+  breadth pass 30/30, 18/18, and 60/60; clean v112 then passes the immutable
+  30 x 10 nightly at official success/reward 1.0 without acceptance,
+  runtime/provider/429/retry, unsupported-action, or failure-cluster errors;
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- add a screenshot-capable `VisualGrounderPort` before claiming an official
-  ScreenSpot prediction result.
+- retain the implemented screenshot-capable `VisualGrounderPort` before
+  claiming an official ScreenSpot prediction result; it accepts immutable
+  screenshot input and returns only a bounded point artifact.
 
-This gate is an internal cleanup, not a framework redesign. Do not add a
-scheduler, worker pool, second state machine, distributed event bus, or
-benchmark-specific Coordinator path.
+This gate remains an internal cleanup, not a framework redesign. The one
+permitted scheduling addition is the BrowserGym matrix's seed-major,
+single-process three-layer protocol with immutable checkpoints and batch-level
+diagnosis. Do not add a worker pool, second state machine, distributed event
+bus, or benchmark-specific Coordinator path.
+
+##### M8.2B.1: Provider and Runtime Reliability Gate - completed locally
+
+The initial 2026-07-21 diagnostics proved that increasing the 150-second episode
+timeout alone would hide independent failures rather than close M8.2B:
+
+- an explicit Gemini BrowserGym probe failed before its first action with HTTP
+  429 `RESOURCE_EXHAUSTED`. The response named the free-tier
+  per-project/per-model request quota, reported a quota value of 20, and
+  supplied a retry delay of about 17 seconds;
+- the HTTP adapter at diagnosis time retried a 429 only once, used a one-second
+  fallback, caps a server hint at five seconds, and ignores structured
+  `google.rpc.RetryInfo`. It cannot distinguish transient throttling from
+  exhausted quota;
+- the native Ollama adapter completed one real `click-button` episode with
+  official reward 1.0, but its planner call took about 25.8 seconds;
+- SL09 exposed the RTX 3080 device nodes to the old Ollama container, but NVML
+  initialization and Ollama GPU discovery fail. The loaded `qwen2.5:7b`
+  reports `size_vram=0`, so the measured run is CPU-bound;
+- a real `enter-text` trace repeated `type_text("Myron")` after the
+  post-observation already contained that value. Four calls took roughly
+  10-20 seconds each, prompt history grew, and the next call timed out;
+- BrowserGym at diagnosis time verified only the generic transport condition
+  `last_action_error == ""`. This does not prove semantic effects such as
+  input value, selected option, slider state, navigation, or task completion.
+
+| Layer | Required correction |
+| --- | --- |
+| Provider capacity | pin one quota-sufficient remote provider or a verified GPU-local model; never merge fallback providers into one scored report |
+| Provider protocol | parse bounded retry metadata, classify transient rate limit versus hard quota, circuit-break exhausted providers, and checkpoint/defer |
+| Local inference | repair or recreate the NVIDIA-enabled Ollama container; require container `nvidia-smi` and Ollama `size_vram > 0` |
+| Verification | add action-specific postcondition verifiers; keep execution receipt distinct from effect evidence |
+| Progress | block an already-satisfied or unchanged repeated semantic action before execution |
+| Context and time | compact proposal history and declare separate episode, model-call, call-count, and execution/verification budgets |
+
+Required implementation order:
+
+1. Verify text value, selected option, keyboard/slider state delta, and declared
+   click/terminal/oracle effects instead of treating no executor error as
+   success.
+2. Add a deterministic progress guard keyed by action kind, stable target, and
+   normalized parameters. Return `effect_already_satisfied` or
+   `no_progress_repeat` and enter bounded repair/replanning.
+3. Send only the current task/subgoal summary, bounded affordances, last
+   verified state delta, and one relevant failure to the planner.
+4. Add typed `rate_limit_transient`, `quota_exhausted`, and
+   `provider_capacity` errors, bounded server-hint parsing, circuit breaking,
+   and resumable deferral.
+5. Use the native Ollama adapter for local evidence and repair GPU residency;
+   record model digest, quantization, context, Ollama version, GPU, and VRAM.
+6. Separate `episode_timeout_s`, `model_call_timeout_s`,
+   `max_model_calls`, and execution reserve. A 300-second local run is
+   diagnostic only and is not score-equivalent to the fixed PR/release budget.
+7. Re-run in order: one click seed, one text-entry seed, six tasks x one seed,
+   the 18-episode PR matrix, then the 30 x 10 nightly and release matrices.
+
+Local implementation status: items 1-6 are complete in the working tree and
+the current repository gate passes 365 local tests. Text, selection, keyboard/slider,
+and click state-delta/terminal-oracle verifiers are distinct from the executor
+receipt. The semantic progress guard blocks verified or unchanged duplicate
+actions before execution. Planner v47 bounds affordances and keeps one proposal,
+one verified delta, and one relevant failure; bounded repair calls use a
+dynamically narrowed action/target schema that cannot re-admit a rejected
+signature. Provider errors are typed and
+quota exhaustion opens a resumable circuit-break deferral. Recreating the stale
+Ollama container while retaining its named model volume restored container
+NVML; the fail-closed preflight records `qwen2.5:7b` with
+`size_vram=4748056984` on the RTX 3080. Checkpoint v5 binds all four explicit
+time budgets, model/prompt/schema identity, the task/seed matrix, and an
+executable-source digest without reading `.env`; both nightly and release now
+reject dirty worktrees. The fixed local smoke budget
+is `episode_timeout_s=165`, `model_call_timeout_s=10`, `max_model_calls=15`, and
+`execution_reserve_s=15`. Ordered click/text checks and the six-task smoke have
+passed. The fresh single-version v47 PR matrix passed 18/18 with mean official
+reward 1.0, 47 model calls, no runtime/provider failures, and no retries. Item 7
+is complete through the PR gate. A v36 nightly diagnostic was stopped after 89
+episodes when all nine `enter-date` seeds failed on the browser-native date
+format; v37 normalizes semantic dates at contract binding and passes the
+targeted 10-seed date matrix. Later v42 diagnostics exposed hidden autocomplete
+menus and prefix/suffix ambiguity; programmatic visible options, native-only
+completion, and deterministic prefix/suffix narrowing now pass 10/10. A v42
+nightly then exposed a slider objective containing both its target and a
+checkbox ordinal; v43 extracts the value grammatically attached to the slider
+instruction. The next v43 nightly passed 130 episodes before three systematic
+`copy-paste` failures showed that label normalization removed a required
+trailing space and that a verified destination did not exclude the source
+textarea. v44 preserves bounded exact non-sensitive control values and binds a
+copy/paste instruction to one source and destination; its targeted matrix passes
+10/10. A v44 PR diagnostic then showed that slider-direction repair could still
+arrive only after the bounded repair budget was consumed. v45 constrains an
+unambiguous pending slider direction before decoding and passes targeted
+`form-sequence` 10/10, smoke 6/6, and PR 18/18. The v45 nightly then passed 140
+episodes before `text-transform` exposed missing non-interactive text
+observation. v47 adds bounded, explicitly untrusted visible body text to
+PlannerContext and constrains one isolated visible value for a deictic
+text-entry request; the targeted matrix passes 10/10. Subsequent generic
+target-discovery, role-binding, visibility, and focus-aware typing repairs now
+pass `email-inbox` 10/10 and `search-engine` 10/10. The latest v101 PR gate is
+18/18; v102 covers 30/30 tasks at seed 0 with 0.9667 mean reward and no
+provider/runtime/429/retry failures. The clean v109 nightly then completed
+300/300 and exposed three trace-backed failure clusters without promoting a
+score. After generic repairs, a hierarchy-scope follow-up, PR, and breadth all
+passed. The replacement clean v112 nightly passes 300/300 at official
+success/reward 1.0 with `official_score_claimed=true`. The larger release
+profile remains distinct; v103 continues to enforce its immutable boundary.
+That complete v112 release measured 321/625 and truthfully grouped all 304
+failures into eight repair clusters. The current dirty-tree repair ladder has
+since closed empty dynamic schemas, animated-SVG preflight, exact copy,
+structured dual-target SVG drag, date/time binding, authored color, pure-visual
+SVG item observation, multi-epoch SVG numeric identity, structured authored
+quantity controls, and calendar range selection. `ascending-numbers` passes 10/10 with 50 current-epoch SVG
+actions and zero model calls; a four-family SVG cross-regression passes 20/20.
+`order-food` and `daily-calendar` each pass 10/10 with zero model calls. The
+same v149 source passes the fixed 165/10/15/15 PR and breadth at 18/18 and
+60/60; the launcher now fails closed unless local Ollama has non-zero GPU
+residency. These diagnostics do not replace the
+immutable release result. Evidence is recorded in
+`evidence/m8.2b-v112-release-boundary-20260722.md` through
+`evidence/m8.2b-v149-daily-calendar-range-binding-20260722.md`.
+
+Provider fallback is allowed only in explicitly labelled operational mode. A
+scored matrix pins one provider, model, prompt/schema version, sampling
+configuration, timeout policy, and task manifest.
+
+Exit:
+
+- the selected provider passes identity/capacity preflight;
+- selected local evidence proves non-zero GPU residency;
+- text entry reaches its semantic postcondition without repeated success;
+- a deliberate no-progress repeat is blocked before duplicate execution;
+- six-task smoke passes before the 18-episode matrix is scheduled;
+- the PR report includes model-call latency, retries, typed provider failures,
+  manifests, checkpoint provenance, and a fixed episode budget;
+- no health check, mixed-provider run, or diagnostic timeout is promoted to an
+  M8.2B completion claim.
+
+Remaining suite expansion:
 
 - use the implemented BrowserGym adapter to route every supported action
   through the full coordinator path and keep the scored policy external
 - cover focusable keyboard controls through the semantic `press_key` proposal
   action; it may carry only a key value and is bound to a current affordance
 - keep 18 episodes for PR smoke; add 30 task types x 10 seeds nightly
+- use the fixed local nightly long-action budget of 165-second episodes,
+  5-second model calls, at most 30 calls, and a 15-second execution reserve;
+  this covers verified one-step slider horizons without a 300-second catch-all
 - release-test every supported pinned MiniWoB task x 5 seeds
 - retain the implemented coverage, unsupported-action, variance, official
   reward, and runtime-failure report fields while scaling the matrices
@@ -698,10 +851,12 @@ families remain visible rather than being silently excluded.
 Recommended execution order:
 
 ```text
-generalist PR rerun and form semantics
+semantic verification, no-progress guard, and provider preflight
+  -> one click seed and one text-entry seed
+  -> six tasks x one seed
+  -> resumable 18-episode PR matrix
   -> resumable 30 x 10 MiniWoB nightly
   -> ScreenSpot assets and visual grounding
-  -> M8.4 adaptive shallow-planning controlled gate
   -> one real WebArena-Verified task, then the 30-task subset
   -> WASP security subset
   -> WorkArena when authorized access is available
@@ -775,6 +930,416 @@ This milestone does not add recursive hierarchy, parallel effectful subgoals, a
 generic DAG scheduler, one agent per node, continuous watching, or a runtime
 framework dependency.
 
+### M8.5: Unified Adaptive Routing and Skill Internalization - done locally
+
+Objective: promote the current shared execution shell into one adaptive decision
+plane. The same semantic target may have DOM, accessibility, SoM, pure-visual,
+WoT, or API grounding candidates. The Runtime selects the most effective
+verified route for the active subgoal, safely changes route when evidence
+invalidates the first choice, and internalizes repeated verified behavior as
+regression-gated semantic skills.
+
+Entry criteria:
+
+- close the M8.2B semantic-verification and no-progress reliability gate;
+- retain M8.3 RecoveryIncident/cascade detection and executable registry
+  boundary;
+- retain M8.4 verified serial subgoal progress;
+- preserve one Coordinator, one authoritative RunState, and one effectful
+  ActionContract at a time.
+
+M8.5 implementation baseline (the first two bullets describe retained inputs;
+the remaining bullets reflect the current working-tree implementation):
+
+- DOM, SoM visual, and WoT affordances already share the Coordinator,
+  ActionContract, verifier, trace, and evaluator path;
+- typed `GroundingCandidate`, `UnifiedAffordance`, and `RoutePlan` apply
+  deterministic hard gates before backend encoding;
+- the Planner names semantic target ids only, and the core `ContractBuilder`
+  binds selected single- or dual-target candidates, leases, fingerprints,
+  policy, and route identity;
+- SVG geometry and observation-time visual candidates share the unified route
+  and `VisualContractBinder`; BrowserGym remains a backend encoder;
+- recovery re-observes and builds a new immutable contract with candidate
+  exclusion when a route is proven bad, plus source/supersession lineage;
+- sourced state assertions now retain freshness/provenance, apply
+  property-specific rule-first arbitration, block unresolved material
+  conflicts at Unified Route, and request bounded coherent active perception;
+- deterministic DOM failure now excludes the failed candidate and completes
+  through a fresh pixel-grounded visual contract with independent Chromium
+  post-state verification;
+- conservative fusion keeps ambiguous same-source siblings separate and in
+  observation order so ordinal identities are not erased;
+- RecoverySkillPayload is executable for bounded recovery actions. Repeated
+  verified success now produces quarantined semantic TaskSkill payloads, and a
+  digest-accepted TaskSkill can run incrementally before System 2 through fresh
+  contracts and verifier-backed checkpoints.
+
+The target is not a lowest-common-denominator parser. It is one semantic target
+with multiple typed, provenance-preserving ways to perceive, ground, execute,
+and verify it.
+
+All declared M8.5 perturbations and exit criteria are closed by the local code,
+tests, controlled ablation, and real Chromium diagnostics recorded in
+`evidence/m8.5-completion-audit-20260722.md`. The clean immutable public
+BrowserGym nightly remains an M8.2B gate and is not part of this completion
+claim.
+
+#### M8.5A: Unified Target and Route Contracts
+
+Add immutable boundary types:
+
+~~~text
+PerceptionRequirements
+  required properties: textual, structural, visual appearance, spatial,
+  device state
+  acceptable evidence kinds
+  minimum confidence and verifier strength
+  observation, model-call, latency, and cost budgets
+  task risk and freshness requirements
+
+SourceObservation
+  source and parser identity
+  observation epoch and revision
+  artifact references
+  latency and monetary/model cost
+  freshness and calibrated confidence semantics
+
+UnifiedAffordance
+  semantic_target_id
+  role, label, actions, and accepted semantic state
+  unresolved conflicts
+  grounding_candidates
+
+GroundingCandidate
+  source: DOM, accessibility, SVG geometry, SoM, pure visual, WoT, or API
+  typed source-specific payload
+  compatible executor
+  snapshot and target fingerprint
+  supported actions
+  confidence, freshness, cost, latency, and evidence references
+
+RoutePlan
+  active semantic target
+  selected GroundingCandidate
+  ordered viable alternatives
+  required verifier plan
+  hard-gate results, score components, and decision reason
+~~~
+
+SemanticEntityResolver aligns candidates only when role/name, action semantics,
+container context, and geometry provide sufficient evidence. It retains
+separate entities or returns CONFLICT rather than forcing an uncertain merge.
+Source-specific payloads remain typed and are never collapsed into one opaque
+locator dictionary.
+
+ActionContract continues to represent exactly one selected attempt. RoutePlan,
+not a mutable contract, owns alternatives. A fallback re-observes, selects a
+fresh candidate, and builds a new contract linked by
+`supersedes_contract_id`, `source_contract_id`, and a typed fallback reason.
+
+#### M8.5B: Task- and Environment-Aware Route Selection
+
+Task intake or the active SubgoalSpec derives PerceptionRequirements. The
+task/action planner continues to propose semantic intent and target criteria;
+it cannot select a raw selector, coordinate, backend, capability, or approval.
+
+PerceptionOrchestrator uses staged, lazy observation:
+
+~~~text
+cheap environment/source probe
+  -> primary structured observation when suitable
+  -> targeted additional source on missing evidence, ambiguity, or conflict
+  -> expensive VLM grounding only when task requirements or failure justify it
+~~~
+
+Typical policy examples:
+
+- ordinary Web form control: DOM plus accessibility first;
+- visual appearance, layout, or vibe: screenshot evidence is primary, with DOM
+  metadata as optional support;
+- SVG coordinate/spatial target: capture DOM/accessibility, selective SVG
+  geometry, and screenshot in one coherent epoch; prefer structured SVG
+  grounding when semantics are sufficient and visual grounding otherwise;
+- canvas or remote-rendered control: SoM or pure visual is primary;
+- authoritative device state/action: WoT or API first, with GUI as fallback;
+- safety-relevant cross-source disagreement: active perception or safe
+  inconclusive, never arbitrary source precedence.
+
+Route selection first applies deterministic hard gates:
+
+~~~text
+source and executor available
+snapshot and target current
+action kind supported
+capability and approval valid
+confidence and evidence meet task requirements
+required verifier is available
+no unresolved material conflict
+~~~
+
+Only viable candidates are ranked using calibrated verifier-backed success,
+latency, model/API cost, task preference, and risk. Executor receipt success is
+not a routing success label. Route statistics update only after postcondition
+verification and remain scoped by environment family, action kind, and source.
+
+#### M8.5C: Safe Cross-Surface Fallback
+
+Fallback semantics depend on the phase:
+
+| Failure point | Required response |
+| --- | --- |
+| no target candidate | activate the next permitted perception source |
+| duplicate or ambiguous structured target | use accessibility, SoM, or visual evidence to disambiguate |
+| material source conflict | targeted re-observation; unresolved safety conflict blocks execution |
+| stale snapshot or fingerprint | rebuild the observation bundle, route plan, and contract |
+| executor fails before dispatch | re-observe, then select a fresh alternate route |
+| timeout or uncertain external effect | inspect post-state before any retry or reroute |
+| verifier is inconclusive | acquire a stronger verifier/source without repeating the effect |
+| verifier confirms effect absent | reroute only when idempotency or compensation permits |
+| policy or capability denied | never use another source/backend to bypass policy |
+| route/recovery budget exhausted | fall through to System 2, ask the user, or abort safely |
+
+Fallback Controller may exclude a failed candidate or source for the current
+attempt, but cannot mutate an old contract in place. Every decision, exclusion,
+new observation, candidate, contract, receipt, verifier result, and fallback
+outcome enters the canonical trace.
+
+#### M8.5D: Complete SVG, SoM, Pure-Visual, and Gesture Routes
+
+Add four bounded ports:
+
+~~~text
+SvgGeometryObserverPort
+  current SVG/viewport -> viewBox, labelled or marked geometry, bid/role/action
+  metadata, coordinate transforms, and evidence references
+
+VisualRegionProposerPort
+  screenshot -> regions, OCR descriptors, marks, and rendered overlay artifact
+
+VisualGrounderPort
+  raw or marked screenshot plus semantic target -> bounded point, box, or mark
+
+VisualContractBinder
+  SVG geometry or visual point/box/mark plus current revisions
+  -> typed GroundingCandidate
+~~~
+
+SVG collection is selective. Preserve labelled, actionable, BrowserGym-marked,
+or task-relevant geometry and its `viewBox`/viewport transform; do not flatten
+every decorative path, line, and shape into planner context.
+
+When a TaskSpec or active SubgoalSpec requires `visual + spatial`, the
+PerceptionOrchestrator captures DOM/accessibility, SVG geometry when present,
+and a screenshot in one coherent observation epoch. Implementations may acquire
+them concurrently or serially, but the artifacts must describe the same current
+environment state before fusion.
+
+The required end-to-end path is:
+
+~~~text
+user task / active subgoal
+  -> derive visual + spatial PerceptionRequirements
+  -> coherent DOM/accessibility + SVG geometry + screenshot observation
+  -> SVG or visual grounding to a point, box, mark, or source/target pair
+  -> attach visual/SVG GroundingCandidate to a UnifiedAffordance
+  -> RoutePlan selects the viable SVG or visual path
+  -> build one fresh ActionContract
+  -> BrowserGym mouse_click/drag_and_drop or the bounded VisualExecutor
+  -> post-action observation and independent verification
+~~~
+
+Extend the semantic action vocabulary with bounded `POINT_ACTIVATE` and `DRAG`
+intent. The task/action planner names semantic target ids, or semantic source
+and destination ids for drag; it never emits raw x/y coordinates, a mouse path,
+selector, or backend. The binder maps a current candidate to:
+
+- `click(bid)` or `drag_and_drop(from_bid, to_bid)` when reliable BrowserGym
+  marks exist;
+- `mouse_click(x, y)` for a verified point/box candidate;
+- bounded `mouse_down`/`mouse_move`/`mouse_up` or an extended VisualExecutor
+  only when source and destination are freshly grounded.
+
+The binder validates image dimensions, SVG `viewBox` to viewport transforms,
+coordinate space, screenshot/page revision, target fingerprint, viewport
+bounds, and blocking overlays. It binds expiration and never grants authority.
+The selected candidate then uses normal policy, ContractBuilder, preflight,
+post-action screenshot/observation, verifier, trace, and recovery.
+
+The first end-to-end visual/SVG gate must use real Chromium pixels and no hidden
+DOM coordinates or task-specific coordinate constants. ScreenSpot remains a
+grounding benchmark; it does not by itself prove action execution or
+postcondition verification.
+
+#### M8.5E: Verified-Success TaskSkill Mining
+
+Add a second learning stream beside failure evolution:
+
+~~~text
+verified successful traces
+  -> SemanticTraceNormalizer
+  -> repeated sequence clustering and parameter-slot extraction
+  -> quarantined TaskSkill proposal
+
+RecoveryIncident and failed traces
+  -> Failure/Recovery Miner
+  -> RecoverySkill or RecoveryPolicyPatch proposal
+
+both streams
+  -> fresh original/family/held-out/global/safety replay
+  -> accept, remain quarantined, reject, or roll back
+~~~
+
+A TaskSkill stores parameterized semantic behavior:
+
+~~~text
+skill id, version, and task trigger
+typed parameter schema
+ordered outcome-oriented SkillSteps
+semantic target query per step
+action intent and parameter binding
+preconditions and invalidation rules
+postconditions and evidence requirements
+capability, approval, and risk requirements
+source traces, negative examples, and applicability
+~~~
+
+It must not store raw CSS/XPath, DOM index, WoT URL, mark id, screenshot
+coordinate, browser handle, or approval token. Concrete grounding remains the
+responsibility of the current Unified Route Planner.
+
+Mining requires a configurable minimum of independently verified traces. The
+first controlled gate uses at least three traces across at least two
+layout/environment variants, independent postcondition evidence for every
+step, zero policy violations and verifier false accepts, extractable typed
+parameters, and a successful held-out replay. Trace count alone never activates
+a skill.
+
+TaskSkill execution is incremental:
+
+~~~text
+match accepted skill and bind typed parameters
+  -> expose one semantic SkillStep
+  -> observe and build UnifiedAffordance candidates
+  -> choose RoutePlan and build a fresh ActionContract
+  -> execute and verify
+  -> checkpoint verified skill progress
+  -> expose the next step
+~~~
+
+A SkillExecutor is therefore not a primitive macro player. It cannot skip
+observation, routing, policy, preflight, or verification, and it does not replay
+the whole sequence after a later step fails.
+
+#### M8.5F: Recovery Cascade and Skill Failure
+
+TaskSkill and RecoverySkill remain separate artifact types:
+
+| Artifact | Trigger | Payload |
+| --- | --- | --- |
+| TaskSkill | matching task/parameter pattern | normal semantic subgoal/action sequence |
+| RecoverySkill | matching FailureSignature/RecoveryIncident | bounded observe, verify, reroute, ask, compensate, or abort sequence |
+| RecoveryPolicyPatch | matching incident rule | one constrained recovery decision |
+
+A skill-step failure records skill id/version, step id, selected route, source
+evidence, failure signature, state transition, recovery action, and outcome.
+The bounded escalation order is:
+
+~~~text
+reobserve
+  -> alternate grounding candidate
+  -> alternate executor route
+  -> replan the current semantic step
+  -> abandon the skill and resume System 2 task/action planning
+  -> ask user or abort
+~~~
+
+Verified progress from earlier steps is retained. Uncertain effects always
+cause post-state inspection before reroute. Repeated successful recovery may
+propose a RecoverySkill, but it follows the same quarantine and mandatory
+replay gate as the existing M8.3 artifacts.
+
+#### M8.5G: System 1, System 2, and Controlled Learning
+
+Accepted TaskSkill plus calibrated route hints form the System 1 normal fast
+path. Accepted RecoverySkill/Policy forms a narrow known-failure fast path.
+Generalist task/action planning, stronger perception, VLM grounding, and
+ask-user handling form System 2.
+
+System 1 still creates fresh contracts and passes all guards. System 2 output
+remains a proposal. Online runs may update session-scoped health statistics,
+but cross-run TaskSkill, RecoverySkill, AffordanceRule, or RoutingPolicyPatch
+activation remains offline, versioned, digest-validated, regression-gated, and
+rollbackable.
+
+#### M8.5H: Evaluation
+
+Compare:
+
+~~~text
+DOM-only
+pure-visual-only
+fixed DOM-to-visual cascade
+adaptive unified routing
+adaptive routing plus accepted TaskSkill
+always-System-2 planner
+~~~
+
+Required perturbations include healthy DOM, stale locator, duplicate label,
+blocking overlay, BrowserGym-marked custom controls, SVG coordinate grids,
+SVG viewport transforms, DOM- and visually-grounded drag, canvas-only
+controls, visual-property tasks, shifted layout, unavailable visual model,
+authoritative WoT state, cross-source conflict, and uncertain effect after
+dispatch.
+
+Report at least task success, verifier false accept, constraint violation,
+duplicate-effect risk, stale block, route-selection/fallback success,
+unnecessary visual-model call rate, latency, model calls, cost, skill activation
+precision, skill fallthrough, and regression delta.
+
+Implementation order:
+
+1. add typed GroundingCandidate, UnifiedAffordance, and RoutePlan;
+2. derive task-level PerceptionRequirements and add selective SVG geometry
+   observation with coherent epoch identity;
+3. group real DOM, SVG, and screenshot candidates under semantic targets;
+4. integrate VisualGrounder output through VisualContractBinder and
+   VisualExecutor;
+5. add semantic POINT_ACTIVATE and DRAG binding to current bid/point/box
+   candidates without exposing raw coordinates to the planner;
+6. make fallback create a fresh route/contract after re-observation;
+7. prove DOM failure to visual success, SVG point execution, semantic drag, and
+   uncertain-effect no-duplicate paths;
+8. add SourceAssertion conflict handling and targeted active perception;
+9. add SemanticTraceNormalizer, TaskSkill schema, miner, incremental executor,
+   quarantine, and held-out replay;
+10. connect skill failure to the existing RecoveryIncident cascade;
+11. calibrate route/System 1 policy through the declared ablations.
+
+Exit:
+
+- a normal structured task selects the cheaper structured route without an
+  unnecessary VLM call;
+- a task requiring visual evidence selects visual perception as primary;
+- a real SVG/spatial task derives a current point candidate and completes
+  through a fresh, verified mouse contract without planner-authored coordinates;
+- a semantic drag binds current source/destination candidates and verifies the
+  resulting state;
+- a broken/stale DOM route safely completes through a fresh visual contract;
+- an authoritative WoT/API candidate can outrank a GUI route when appropriate;
+- an uncertain effect never produces a blind duplicate through fallback;
+- repeated verified traces create a parameterized TaskSkill candidate that
+  passes quarantine and held-out replay, reduces model calls or latency, and
+  preserves success and safety;
+- a skill mismatch or failed step falls through to System 2 or Recovery Cascade
+  without losing verified progress;
+- traces and reports attribute perception, grounding, routing, execution,
+  verification, skill, and recovery decisions separately.
+
+This milestone does not add a second Coordinator, mutable shared blackboard,
+raw action-sequence replay, arbitrary online code mutation, a general
+distributed workflow engine, or simultaneous effectful control of one session.
+
 ### M9: Durable Single-Run Recovery - conditional
 
 Promote only after restart, approval-wait, or uncertain-effect tests expose a
@@ -806,3 +1371,248 @@ normal run console are insufficient.
 These remain available in the complete blueprint. They become current work only
 after a measured bottleneck, a scenario requirement, and an explicit project
 plan update justify them.
+
+## 12. Governance and Correctness Gates
+
+### 12.1 Evidence Boundary
+
+The external review and follow-up plans for the earlier C009 modular-action
+repository are historical inputs, not reviews of this repository. They are
+used only as governance principles and as a source of selectively migrated
+components. Concrete statements about Affordance Runtime must be supported by
+this repository's current code, tests, traces, and benchmark artifacts.
+
+Applicable historical principles:
+
+- composition evidence is stronger than disconnected component demos;
+- a selected recovery action is not implemented until the main loop executes
+  and verifies it;
+- state, routing, and trace truth require one canonical owner;
+- confidence and fusion claims require provenance and calibration data;
+- visual and public-benchmark claims must identify real assets, scored paths,
+  and limitations;
+- each metric identifies episodes, denominator, environment, planner, and
+  commit.
+
+These principles do not imply that old C009 defects exist here and do not
+justify merging the two runtime architectures.
+
+### 12.2 Current Correctness Queue
+
+| Priority | Finding | Required correction |
+| --- | --- | --- |
+| P0 | VerifierBackedSubgoalVerifier does not match evidence to the active SubgoalSpec obligations | advance only from evidence satisfying that subgoal's success criteria and evidence requirements |
+| P0 | the initial Coordinator path records the same observation twice | record it once and increment state and budget counters once |
+| P0 | replacement plans do not form a monotonic plan-version chain | increment and trace every accepted replacement plan |
+| P0 | recovery can select compensation, retry, or reroute without an explicit executed recovery command | add a bounded RecoveryExecutor with receipt, post-state inspection, and verification |
+| P0 | Web and BrowserGym intentionally require incompatible Playwright versions | publish and test separate core, Web, BrowserGym, and visual commands |
+| P1 | task replanning receives insufficient failure, evidence, and environment context | add a bounded versioned TaskPlanningContext |
+| P1 | RunCoordinator is approaching a god-object boundary | extract task-plan lifecycle, contract execution, and recovery collaborators without another state owner |
+| P1 | core affordance payloads still accept untyped dictionaries | migrate boundary payloads to a tagged surface union |
+| P1 | working state can retain unbounded observations and receipts | retain current references and bounded summaries; keep full history in trace and artifact stores |
+| P1 | controlled visual grounding and the unfinished public scorer path are easy to conflate | require official assets and prediction artifacts for public visual claims |
+
+The Coordinator remains the sole state writer. Internal collaborators return
+immutable results and may not own a second run state, event log, or execution
+authority.
+
+### 12.3 Selective C009 Reuse
+
+Reuse is accepted only when it strengthens the current contract-driven loop
+without importing a second runtime.
+
+Candidates for bounded migration:
+
+- sourced state assertions, explicit conflicts, and rule-first arbitration;
+- active re-observation when evidence conflicts or confidence is insufficient;
+- stable state fingerprints and affordance keys;
+- Thing Directory and real node-wot discovery;
+- backend confidence and cost calibration plus safety-gated reflex lookup;
+- chaos injection and oracle-backed calibration fixtures;
+- checkpoint/restore verbs and supervised takeover semantics.
+
+Do not migrate:
+
+- the complete ContinuousInteractionManager;
+- the old goal-plan-primitive-action authority chain;
+- smart-room-specific routing policy;
+- duplicate planner/router namespaces or a second CognitiveMap;
+- browser-context isolation described as Picture-in-Picture;
+- proposals activated without fresh replay acceptance;
+- probabilistic fusion before labelled calibration data exists.
+
+If multi-source evidence is added, it follows:
+
+    Observation
+      -> SourceAssertions
+      -> rule-first arbitration
+      -> accepted evidence or unresolved conflict
+      -> AffordanceSnapshot
+
+It does not create a second mutable world model. A transition view is derived
+from the canonical trace and links pre-snapshot, contract, backend, receipt,
+post-snapshot, verification, recovery, and fault context.
+
+### 12.4 Ordered Governance Work
+
+#### G0: Correctness and Claim Integrity
+
+- close the P0 findings;
+- split and verify outstanding benchmark and visual changes;
+- label every capability implemented, experimental, planned, or deferred;
+- make each reproduction command name one compatible dependency profile;
+- bind result claims to commit, planner/model manifest, task manifest, and
+  generated artifacts.
+
+Exit: each documented profile works from a clean checkout, every implemented
+claim has executable evidence, and partial recovery or visual paths are not
+presented as complete.
+
+#### G1: Architecture Containment
+
+- extract TaskPlanController, ContractExecutionEngine, and RecoveryExecutor as
+  internal collaborators;
+- retain one RunCoordinator, one RunState, and one canonical trace;
+- add versioned planning context and typed surface payloads;
+- bound working-state growth.
+
+Exit: no collaborator can execute outside an Action Contract and no duplicate
+authority is introduced.
+
+#### G2: Environment Truth and Transition Evidence
+
+- add sourced assertions with provenance, timestamp, confidence, and artifact
+  references where multi-source reasoning is needed;
+- add rule-first conflict arbitration and targeted active perception;
+- derive transition records from canonical trace events;
+- calibrate confidence and routing with fault injection and independent
+  oracles;
+- extend real WoT discovery without making it the primary product line.
+
+Current status: DOM, visual, and WoT adapters already share the Affordance,
+Action Contract, Coordinator, verifier, and trace path. The explicit
+SourceAssertion/FusedAssertion conflict gate, active perception, reflex cache,
+and dual-process escalation policy are not currently implemented.
+
+##### G2A: Sourced Assertions and Rule-First Arbitration
+
+Deliverables:
+
+- add typed SourceAssertion with entity/property identity, typed value/unit,
+  source, observed time, freshness, confidence semantics, parser version, and
+  artifact reference;
+- normalize DOM, accessibility, visual, WoT, and API evidence into comparable
+  property assertions without discarding source-specific payloads;
+- add a property-level source policy rather than a global DOM/WoT/visual
+  priority;
+- return ACCEPTED, CONFLICT, REOBSERVE, or INCONCLUSIVE;
+- keep raw assertions and the arbitration decision in the canonical trace;
+- allow only accepted state to enter target fingerprints, preconditions, and
+  verifier inputs.
+
+Exit: agreeing sources produce one provenance-preserving accepted view; stale
+evidence is rejected; a material DOM/WoT or DOM/visual disagreement cannot
+silently reach an effectful contract.
+
+##### G2B: Targeted Active Perception
+
+Deliverables:
+
+- map each unresolved property conflict to permitted probes such as refresh DOM,
+  repeat accessibility capture, recapture screenshot, repoll WoT, or query an
+  independent fixture/API oracle;
+- bind every probe to observation, time, and recovery budgets;
+- re-run arbitration after each probe;
+- return a safe inconclusive result when the conflict survives the budget;
+- trace the original assertions, selected probe, new evidence, and final
+  resolution.
+
+Exit: at least one injected stale-source case resolves after a targeted probe,
+and one irreducible safety-relevant conflict blocks execution without an
+arbitrary source winner.
+
+##### G2C: Gated System 1 Fast Path
+
+Entry:
+
+- G2A and G2B are complete;
+- source confidence and routing thresholds have held-out calibration evidence;
+- an accepted skill or grounding has stable semantic identity and invalidation
+  rules.
+
+Deliverables:
+
+- add a small ReflexPolicy/cache keyed by accepted skill, surface semantics, and
+  backend rather than raw selector alone;
+- require current snapshot lease, matching target fingerprint, no unresolved
+  source conflict, calibrated confidence, valid capability/approval, and an
+  available verifier;
+- create a fresh Action Contract and run normal preflight even on a cache hit;
+- invalidate cached grounding after stale state, execution failure, verification
+  failure, policy change, or incompatible task/surface revision;
+- record cache hit, routing latency, validation outcome, success, and
+  invalidation reason.
+
+Exit: the gated path reduces median planning/grounding latency on repeated safe
+tasks without increasing stale execution, verifier false accepts, constraint
+violations, or unsafe side effects relative to the always-deliberative
+baseline.
+
+##### G2D: System 2 Escalation Integration
+
+System 2 reuses the existing GeneralistLMPlanner, TaskPlanner, stronger
+observation, bounded recovery, and ask-user/abort paths. It does not introduce a
+second Coordinator or execution runtime.
+
+Trigger it for:
+
+- new or complex tasks without an exact accepted skill;
+- missing or low-confidence grounding;
+- unresolved source conflict;
+- stale snapshot or failed precondition;
+- unavailable backend;
+- failed or inconclusive verification;
+- repeated recovery or no-progress incidents;
+- high-risk actions requiring clarification or approval.
+
+The escalation payload contains current TaskSpec/subgoal, accepted and
+conflicting evidence, available affordances, failed contract/receipt,
+verification report, remaining budgets, and an allowlist of probes or recovery
+actions. System 2 output remains a proposal and must pass the normal validator,
+ContractBuilder, policy, preflight, execution, and verification chain.
+
+Exit: traces distinguish fast-path acceptance, fast-path rejection, active
+perception, action replanning, task replanning, recovery, and human escalation.
+A controlled comparison reports always-System-2 versus gated-System-1/System-2
+success, safety, latency, model calls, and recovery rate.
+
+Do not migrate the legacy ContinuousInteractionManager or its mutable
+CognitiveMap. Implement these stages as bounded modules under the current
+single-writer Coordinator.
+
+Exit: a reproducible trace shows conflicting sources causing re-observation and
+either evidence-backed resolution or a safe inconclusive result.
+
+#### G3: Public Evaluation and Controlled Evolution
+
+- expand agentic MiniWoB separately from scripted runtime tests;
+- score official ScreenSpot assets only with real prediction artifacts;
+- provision WebArena-Verified and WASP before reporting suite results;
+- add WorkArena when authorized access is available;
+- require original, family, global, and safety replay before activating an
+  evolution artifact;
+- retain calibrated heuristic arbitration unless held-out data demonstrates a
+  benefit from more complex fusion.
+
+Exit: public results are reproducible, planner and runtime failures remain
+attributable, and accepted patches do not regress mandatory safety suites.
+
+### 12.5 Claim and Change Rules
+
+1. A class, schema, proposal, or selected enum is not an implemented capability
+   until the Coordinator path consumes it.
+2. A recovery action requires an execution receipt and post-recovery
+   verification.
+3. A subgoal completes only from evidence matched to its own obligations.
+4. A public benchmark result names the official evaluator and scored path.
+5. A synthetic or controlled fixture remains labelled as such.

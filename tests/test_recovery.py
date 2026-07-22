@@ -1,4 +1,11 @@
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
+from affordance_runtime.grounding import (
+    DomGroundingPayload,
+    EvidenceKind,
+    GroundingCandidate,
+    GroundingSource,
+    RoutePlan,
+)
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
     FailureSignature,
@@ -71,6 +78,48 @@ def test_recovery_uses_declared_fallback_after_retry_budget() -> None:
     )
     assert decision.action == RecoveryAction.REROUTE
     assert decision.backend == "visual"
+
+
+def test_recovery_prefers_fresh_grounding_candidate_over_blind_retry() -> None:
+    selected = GroundingCandidate(
+        "candidate:dom:save",
+        "semantic:save",
+        GroundingSource.DOM,
+        DomGroundingPayload(bid="save"),
+        "browsergym",
+        "snapshot-1",
+        "rev-1",
+        "page-1",
+        "fp-dom",
+        frozenset({"activate"}),
+        frozenset({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}),
+    )
+    alternative = GroundingCandidate(
+        "candidate:accessibility:save",
+        "semantic:save",
+        GroundingSource.ACCESSIBILITY,
+        DomGroundingPayload(selector="role=button[name='Save']"),
+        "browsergym",
+        "snapshot-1",
+        "rev-1",
+        "page-1",
+        "fp-a11y",
+        frozenset({"activate"}),
+        frozenset({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}),
+    )
+    decision = BoundedRecoveryPolicy().decide(
+        _contract(
+            grounding_candidate=selected,
+            route_plan=RoutePlan("semantic:save", selected, (alternative,)),
+            idempotency_key="save:1",
+        ),
+        _failed_receipt(),
+        RecoveryContext(),
+    )
+
+    assert decision.action == RecoveryAction.REROUTE
+    assert decision.backend == "browsergym"
+    assert "fresh route" in decision.reason
 
 
 def _signature(name: str, revision: str = "rev-1") -> FailureSignature:

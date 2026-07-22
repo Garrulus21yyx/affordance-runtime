@@ -64,3 +64,22 @@ class BrowserGymEpisodeResult:
     runtime_error: str
     policy_stopped: bool
     trace_path: str
+    model_call_count: int = 0
+    model_call_latency_ms: float = 0.0
+    rate_limit_retry_count: int = 0
+    transient_retry_count: int = 0
+    provider_failures: list[str] = field(default_factory=list)
+    planner_context_size: int = 0
+    planner_context_truncation: str = "unknown"
+    planner_affordance_count: int = 0
+    planner_permitted_action_kinds: list[str] = field(default_factory=list)
+    last_verified_step: int = 0
+    route_selection_count: int = 0
+    route_sources: list[str] = field(default_factory=list)
+    visual_route_count: int = 0
+    fallback_route_count: int = 0
+    targeted_perception_count: int = 0
+    source_conflict_count: int = 0
+    task_skill_activated_count: int = 0
+    task_skill_completed_count: int = 0
+    task_skill_fallthrough_count: int = 0

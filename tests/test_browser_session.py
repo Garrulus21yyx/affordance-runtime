@@ -1,6 +1,9 @@
 from typing import Any
 
+import pytest
+
 from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
 
 
 class FakePage:
@@ -33,6 +36,26 @@ def test_browser_session_captures_observation_and_affordances() -> None:
     assert snapshot.observation.dom_hash
     assert snapshot.affordance_model.environment_revision == snapshot.observation.environment_revision
     assert snapshot.affordance_model.affordances[0].label == "Save"
+    assert len(snapshot.unified_affordances) == 1
+    assert snapshot.grounding_candidates[0].is_current(snapshot.observation)
+
+
+def test_browser_session_keeps_same_label_checkbox_siblings_as_ordered_targets() -> None:
+    class CheckboxPage(FakePage):
+        def content(self) -> str:
+            return (
+                '<input bid="first" type="checkbox">'
+                '<input bid="second" type="checkbox">'
+                '<input bid="third" type="checkbox">'
+            )
+
+    snapshot = BrowserSession(CheckboxPage()).capture(page_id="form")
+
+    assert len(snapshot.unified_affordances) == 3
+    assert [
+        target.grounding_candidates[0].source_affordance_id
+        for target in snapshot.unified_affordances
+    ] == ["dom_input_1", "dom_input_2", "dom_input_3"]
 
 
 def test_browser_session_uses_configured_default_affordance_lease() -> None:
@@ -48,3 +71,306 @@ def test_browser_session_reset_uses_initial_url() -> None:
     session.reset()
 
     assert page.visits == ["http://fixture/other", "http://fixture/start"]
+
+
+def test_browser_session_maps_bounded_gesture_to_playwright_mouse() -> None:
+    class Mouse:
+        def __init__(self) -> None:
+            self.actions: list[tuple[object, ...]] = []
+
+        def move(self, x: int, y: int, *, steps: int) -> None:
+            self.actions.append(("move", x, y, steps))
+
+        def down(self, *, button: str) -> None:
+            self.actions.append(("down", button))
+
+        def up(self, *, button: str) -> None:
+            self.actions.append(("up", button))
+
+    page = FakePage()
+    page.mouse = Mouse()  # type: ignore[attr-defined]
+    session = BrowserSession(page)
+
+    session.move_xy(10, 20, steps=1)
+    session.button_down("left")
+    session.move_xy(100, 120, steps=8)
+    session.button_up("left")
+
+    assert page.mouse.actions == [  # type: ignore[attr-defined]
+        ("move", 10, 20, 1),
+        ("down", "left"),
+        ("move", 100, 120, 8),
+        ("up", "left"),
+    ]
+
+
+def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
+    class EvaluatingPage(FakePage):
+        def content(self) -> str:
+            return "<textarea bid='source'>Trim-sensitive text </textarea><input bid='target' type='text'>"
+
+        def evaluate(self, expression: str) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Copy this exactly: Trim-sensitive text "
+            return {
+                "source": {"value": "Trim-sensitive text ", "checked": None},
+                "target": {"value": "", "checked": None},
+            }
+
+    snapshot = BrowserSession(EvaluatingPage()).capture(page_id="copy")
+    states = {item.state["element_tag"]: item.state for item in snapshot.affordance_model.affordances}
+
+    assert states["textarea"]["control_value"] == "Trim-sensitive text "
+    assert states["input"]["control_value"] == ""
+    assert snapshot.observation.metadata["visible_text"] == "Copy this exactly: Trim-sensitive text "
+
+
+def test_browser_session_preserves_current_multi_select_values() -> None:
+    class EvaluatingPage(FakePage):
+        def content(self) -> str:
+            return "<select bid='items' multiple><option>Ertha</option><option>Aurel</option></select>"
+
+        def evaluate(self, expression: str) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Ertha Aurel"
+            return {
+                "items": {
+                    "value": "Ertha",
+                    "selected_options": ["Ertha"],
+                    "visible": True,
+                }
+            }
+
+    snapshot = BrowserSession(EvaluatingPage()).capture(page_id="multi-select")
+    select = next(item for item in snapshot.affordance_model.affordances if item.action == "select")
+
+    assert select.state["selected_options"] == ["Ertha"]
+
+
+def test_browser_session_uses_runtime_visibility_for_current_affordances() -> None:
+    class EvaluatingPage(FakePage):
+        def content(self) -> str:
+            return "<button bid='open'>Open</button><input bid='hidden' type='text'>"
+
+        def evaluate(self, expression: str) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Open"
+            return {
+                "open": {"value": "", "visible": True},
+                "hidden": {"value": "", "visible": False},
+            }
+
+    snapshot = BrowserSession(EvaluatingPage()).capture(page_id="visibility")
+    states = {item.locator["bid"]: item.state for item in snapshot.affordance_model.affordances}
+
+    assert states["open"]["visible"] is True
+    assert states["hidden"]["visible"] is False
+
+
+def test_browser_session_derives_scroll_region_with_live_control_state() -> None:
+    class ScrollPage(FakePage):
+        def content(self) -> str:
+            return "<textarea bid='source'>Long text</textarea><button bid='submit'>Submit</button>"
+
+        def evaluate(self, expression: str) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Long text\nSubmit"
+            return {
+                "source": {
+                    "value": "Long text",
+                    "checked": None,
+                    "scroll_top": 48,
+                    "scroll_height": 300,
+                    "client_height": 100,
+                },
+                "submit": {
+                    "value": "",
+                    "checked": None,
+                    "scroll_top": 0,
+                    "scroll_height": 20,
+                    "client_height": 20,
+                },
+            }
+
+    snapshot = BrowserSession(ScrollPage()).capture(page_id="scroll")
+    scroll_region = next(item for item in snapshot.affordance_model.affordances if item.role == "scroll_region")
+
+    assert scroll_region.id == "dom_textarea_1_scroll"
+    assert scroll_region.action == "press"
+    assert scroll_region.locator["bid"] == "source"
+    assert scroll_region.state == {
+        "enabled": True,
+        "visible": True,
+        "element_tag": "textarea",
+        "scrollable": True,
+        "scroll_top": 48,
+        "scroll_height": 300,
+        "client_height": 100,
+    }
+    assert snapshot.observation.target_fingerprints[scroll_region.id] == scroll_region.target_fingerprint
+    assert snapshot.affordance_model.kept_node_count == 3
+
+
+def test_browser_session_captures_svg_and_screenshot_in_one_epoch(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class SpatialPage(FakePage):
+        def content(self) -> str:
+            return "<main><svg viewBox='0 0 100 100'><circle id='target' aria-label='Blue point'/></svg></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            if "getScreenCTM" in expression:
+                assert arg == ["blue", "point"]
+                return {
+                    "viewport": [800, 600],
+                    "elements": [
+                        {
+                            "element_id": "target",
+                            "tag": "circle",
+                            "label": "Blue point",
+                            "role": "button",
+                            "action": "point_activate",
+                            "bid": "",
+                            "view_box": [0, 0, 100, 100],
+                            "geometry_bbox": [10, 20, 4, 4],
+                            "viewport_bbox": [120, 240, 8, 8],
+                            "transform": [2, 0, 0, 2, 100, 200],
+                        }
+                    ],
+                }
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Blue point"
+            return {}
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.SVG, GroundingSource.VISUAL}),
+    )
+    snapshot = BrowserSession(SpatialPage()).capture(
+        page_id="spatial",
+        screenshot_path=str(tmp_path / "spatial.png"),
+        perception_requirements=requirements,
+        task_terms=("blue", "point"),
+    )
+
+    assert snapshot.svg_geometry is not None
+    assert snapshot.svg_geometry.elements[0].element_id == "target"
+    point = next(item for item in snapshot.affordance_model.affordances if item.action == "point_activate")
+    assert point.label == "Blue point"
+    assert point.locator["bbox"] == [120.0, 240.0, 8.0, 8.0]
+    assert point.id in snapshot.observation.target_fingerprints
+    assert snapshot.grounding_candidates[0].source_affordance_id == point.id
+    assert snapshot.grounding_candidates[0].semantic_target_id.startswith("semantic:blue-point:")
+    assert point.locator["grounding_candidate_id"] == "svg:target"
+    assert {item.source for item in snapshot.source_observations} == {
+        GroundingSource.DOM,
+        GroundingSource.SVG,
+        GroundingSource.VISUAL,
+    }
+    assert {item.observation_epoch_id for item in snapshot.source_observations} == {
+        snapshot.observation.snapshot_id
+    }
+    svg_target = next(item for item in snapshot.unified_affordances if item.label == "Blue point")
+    assert svg_target.grounding_candidates[0].is_current(snapshot.observation)
+
+
+def test_browser_session_collects_svg_for_visual_only_requirement(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class VisualSvgPage(FakePage):
+        def content(self) -> str:
+            return "<main><svg><text>8</text></svg></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            if "getScreenCTM" in expression:
+                assert arg == ["shape", "8"]
+                return {
+                    "viewport": [800, 600],
+                    "elements": [
+                        {
+                            "element_id": "text-1",
+                            "tag": "text",
+                            "label": "8",
+                            "role": "",
+                            "action": "point_activate",
+                            "bid": "",
+                            "view_box": [0, 0, 100, 100],
+                            "geometry_bbox": [10, 20, 4, 4],
+                            "viewport_bbox": [120, 240, 8, 8],
+                            "transform": [2, 0, 0, 2, 100, 200],
+                        }
+                    ],
+                }
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "8"
+            return {}
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+        acceptable_evidence=frozenset({GroundingSource.SVG, GroundingSource.VISUAL}),
+    )
+    snapshot = BrowserSession(VisualSvgPage()).capture(
+        page_id="visual-svg",
+        screenshot_path=str(tmp_path / "visual-svg.png"),
+        perception_requirements=requirements,
+        task_terms=("shape", "8"),
+    )
+
+    assert snapshot.svg_geometry is not None
+    assert snapshot.svg_geometry.elements[0].element_id == "text-1"
+    assert any(item.action == "point_activate" and item.label == "8" for item in snapshot.affordance_model.affordances)
+
+
+def test_browser_session_allows_nonsemantic_svg_animation_within_epoch(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class AnimatedSvgPage(FakePage):
+        captures = 0
+
+        def content(self) -> str:
+            self.captures += 1
+            return (
+                "<main><button bid='submit'>Submit</button>"
+                f"<svg><text transform='rotate({self.captures})'>decoration</text></svg></main>"
+            )
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.SVG}),
+    )
+
+    snapshot = BrowserSession(AnimatedSvgPage()).capture(
+        page_id="animated",
+        screenshot_path=str(tmp_path / "animated.png"),
+        perception_requirements=requirements,
+    )
+
+    assert snapshot.affordance_model.affordances[0].label == "Submit"
+
+
+def test_browser_session_rejects_semantic_dom_drift_within_epoch(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class DriftingControlPage(FakePage):
+        captures = 0
+
+        def content(self) -> str:
+            self.captures += 1
+            label = "Save" if self.captures == 1 else "Delete"
+            return f"<main><button bid='action'>{label}</button></main>"
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.SVG}),
+    )
+
+    with pytest.raises(RuntimeError, match="coherent observation epoch drifted"):
+        BrowserSession(DriftingControlPage()).capture(
+            page_id="drifting",
+            screenshot_path=str(tmp_path / "drifting.png"),
+            perception_requirements=requirements,
+        )

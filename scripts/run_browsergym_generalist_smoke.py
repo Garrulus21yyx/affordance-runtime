@@ -10,14 +10,22 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from affordance_runtime.benchmarks.browsergym import run_browsergym_generalist_episode
+from affordance_runtime.benchmarks.browsergym import run_browsergym_generalist_episode_isolated
 from affordance_runtime.model_port import model_port_from_environment
 
 
-def run(task_id: str, seed: int, miniwob_root: Path, artifact_root: Path) -> dict[str, Any]:
+def run(
+    task_id: str,
+    seed: int,
+    miniwob_root: Path,
+    artifact_root: Path,
+    *,
+    episode_timeout_s: float = 165.0,
+    model_call_timeout_s: float = 10.0,
+    max_model_calls: int = 15,
+) -> dict[str, Any]:
     try:
         import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
-        import gymnasium as gym  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("BrowserGym is not installed; use the browsergym isolated environment") from exc
 
@@ -33,18 +41,16 @@ def run(task_id: str, seed: int, miniwob_root: Path, artifact_root: Path) -> dic
     thread.start()
     try:
         base_url = f"http://{server.server_name}:{server.server_port}/miniwob/"
-        environment = gym.make(
-            f"browsergym/miniwob.{task_id}",
-            task_kwargs={"base_url": base_url},
-            headless=True,
-        )
-        result = run_browsergym_generalist_episode(
-            environment,
+        result = run_browsergym_generalist_episode_isolated(
             model_port_from_environment(),
             task_id=task_id,
             seed=seed,
+            base_url=base_url,
+            headless=True,
             artifact_root=artifact_root,
-            max_steps=5,
+            timeout_s=episode_timeout_s,
+            model_timeout_s=model_call_timeout_s,
+            max_model_calls=max_model_calls,
         )
         return result.__dict__
     finally:
@@ -60,8 +66,19 @@ def main() -> int:
     parser.add_argument("--miniwob-root", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--episode-timeout-s", type=float, default=165.0)
+    parser.add_argument("--model-call-timeout-s", type=float, default=10.0)
+    parser.add_argument("--max-model-calls", type=int, default=15)
     args = parser.parse_args()
-    value = run(args.task, args.seed, args.miniwob_root, args.artifacts)
+    value = run(
+        args.task,
+        args.seed,
+        args.miniwob_root,
+        args.artifacts,
+        episode_timeout_s=args.episode_timeout_s,
+        model_call_timeout_s=args.model_call_timeout_s,
+        max_model_calls=args.max_model_calls,
+    )
     rendered = json.dumps(value, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

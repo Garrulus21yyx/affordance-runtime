@@ -19,6 +19,7 @@ from affordance_runtime.recovery import (
     RecoveryContext,
     RecoveryDecision,
 )
+from affordance_runtime.task_skills import TaskSkillPayload
 
 
 class EvolutionStatus(StrEnum):
@@ -46,6 +47,7 @@ class FailureClass(StrEnum):
 
 class EvolutionArtifactType(StrEnum):
     SKILL = "skill"
+    TASK_SKILL = "task_skill"
     POLICY_PATCH = "policy_patch"
     VERIFIER_PATCH = "verifier_patch"
     AFFORDANCE_RULE = "affordance_rule"
@@ -339,7 +341,10 @@ class CandidateRuntimeProfile:
     base_features: RuntimeFeatures = field(
         default_factory=lambda: RuntimeFeatures(structural_verification=False)
     )
-    loaded: dict[str, RuntimePatchPayload | RecoveryPolicyPatchPayload | RecoverySkillPayload] = field(
+    loaded: dict[
+        str,
+        RuntimePatchPayload | RecoveryPolicyPatchPayload | RecoverySkillPayload | TaskSkillPayload,
+    ] = field(
         default_factory=dict
     )
     recovery_applications: dict[str, int] = field(default_factory=dict)
@@ -351,11 +356,18 @@ class CandidateRuntimeProfile:
             runtime_payload = RuntimePatchPayload.from_dict(artifact.payload)
             if runtime_payload.feature_overrides != {"structural_verification": True}:
                 raise ValueError("verifier patch may only enable structural verification")
-            payload: RuntimePatchPayload | RecoveryPolicyPatchPayload | RecoverySkillPayload = runtime_payload
+            payload: (
+                RuntimePatchPayload
+                | RecoveryPolicyPatchPayload
+                | RecoverySkillPayload
+                | TaskSkillPayload
+            ) = runtime_payload
         elif artifact.artifact_type == EvolutionArtifactType.POLICY_PATCH.value:
             payload = RecoveryPolicyPatchPayload.from_dict(artifact.payload)
         elif artifact.artifact_type == EvolutionArtifactType.SKILL.value:
             payload = RecoverySkillPayload.from_dict(artifact.payload)
+        elif artifact.artifact_type == EvolutionArtifactType.TASK_SKILL.value:
+            payload = TaskSkillPayload.from_dict(artifact.payload)
         else:
             raise ValueError(f"unsupported executable artifact type: {artifact.artifact_type}")
         if not artifact.payload_digest or payload.digest() != artifact.payload_digest:
@@ -372,6 +384,14 @@ class CandidateRuntimeProfile:
     def recovery_policy(self) -> BoundedRecoveryPolicy:
         return BoundedRecoveryPolicy(decision_override=self._recovery_override)
 
+    def task_skills_for(self, task_family: str) -> tuple[TaskSkillPayload, ...]:
+        return tuple(
+            payload
+            for payload in self.loaded.values()
+            if isinstance(payload, TaskSkillPayload)
+            and payload.trigger.task_family == task_family.casefold().strip()
+        )
+
     def _recovery_override(
         self,
         contract: ActionContract,
@@ -387,9 +407,9 @@ class CandidateRuntimeProfile:
         if context.effect_may_have_occurred:
             return RecoveryDecision(RecoveryAction.VERIFY_STATE, "candidate preserves inspect-before-recovery")
         for artifact_id, payload in self.loaded.items():
-            if isinstance(payload, RuntimePatchPayload) or not payload.matches(
-                context.task_id, signature, contract.risk
-            ):
+            if not isinstance(payload, (RecoveryPolicyPatchPayload, RecoverySkillPayload)):
+                continue
+            if not payload.matches(context.task_id, signature, contract.risk):
                 continue
             applied = self.recovery_applications.get(artifact_id, 0)
             if applied >= payload.max_applications:

@@ -21,7 +21,7 @@ from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import VisualExecutor, WotExecutor
 from affordance_runtime.generalist_planner import GeneralistLMPlanner
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
-from affordance_runtime.planning import ContractBuilder, ContractRequirements, PlannerActionKind, PlannerProposal
+from affordance_runtime.planning import ContractBuilder, ContractRequirements, PlannerActionKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -93,17 +93,13 @@ class GeneralistSurfaceModel:
         del config
         context = json.loads(messages[-1].content)
         completed = context["latest_outcome"]["verification_status"] == "passed"
-        payload = PlannerProposal(
-            proposal_id=f"surface-{context['state_version']}",
-            based_on_task_revision=context["task_revision"],
-            based_on_state_version=context["state_version"],
-            snapshot_id=context["snapshot_id"],
-            action_kind=PlannerActionKind.FINISH if completed else PlannerActionKind.ACTIVATE,
-            target_affordance_id="" if completed else context["affordances"][0]["id"],
-            done=completed,
-            result={"verified": True} if completed else {},
-            expected_effects=("shared state enabled",),
-        ).model_dump(mode="json")
+        payload = {
+            "action_kind": PlannerActionKind.FINISH if completed else PlannerActionKind.ACTIVATE,
+            "target_affordance_id": "" if completed else context["affordances"][0]["id"],
+            "done": completed,
+            "result": {"verified": True} if completed else {},
+            "expected_effects": ["shared state enabled"],
+        }
         return output_schema.model_validate(payload)
 
 

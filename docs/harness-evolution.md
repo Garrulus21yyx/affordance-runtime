@@ -163,8 +163,12 @@ the uncertain-effect path before failing safe.
 
 ## 8. Skill Mining
 
-A reusable skill may be proposed from repeated failure or repeated successful
-recovery only after incident grouping and signatures are implemented:
+A reusable RecoverySkill may be proposed from repeated failure or repeated
+successful recovery only after incident grouping and signatures are
+implemented. A separate TaskSkill may be proposed from repeated independently
+verified ordinary task success. The two artifact types have different triggers
+and payloads, but share quarantine, fresh replay, acceptance, and rollback
+governance:
 
 ```yaml
 skill_id: close_cookie_banner
@@ -184,6 +188,73 @@ evidence:
 ```
 
 Skills should be versioned and tested against regression fixtures.
+
+### 8.1 TaskSkill and RecoverySkill Boundaries
+
+| Skill type | Source evidence | Runtime purpose |
+| --- | --- | --- |
+| TaskSkill | repeated independently verified successful task traces | parameterized normal semantic action/subgoal sequence |
+| RecoverySkill | repeated FailureSignature/RecoveryIncident pattern or repeatedly successful bounded recovery | observe, verify, reroute, ask, compensate, or abort sequence |
+
+TaskSkill mining normalizes traces into semantic steps, clusters equivalent
+sequences, and extracts typed parameter slots. It may propose a candidate only
+when every source run has independent postcondition evidence, no policy or
+capability violation, no verifier false accept, and sufficient variation to
+avoid memorizing one layout. The first controlled gate requires at least three
+verified traces across at least two layout/environment variants plus a held-out
+replay.
+
+A TaskSkill stores:
+
+~~~text
+task trigger and typed parameters
+ordered outcome-oriented SkillSteps
+semantic target query and action intent per step
+preconditions and invalidation rules
+postconditions and evidence requirements
+capability, approval, and risk requirements
+applicability, source traces, and negative examples
+~~~
+
+It never stores raw selector, DOM index, coordinate, mark id, WoT URL, browser
+handle, snapshot identity, or approval token. Each accepted step is grounded
+again through Unified Routing and becomes a fresh ActionContract.
+
+TaskSkill execution is incremental: bind parameters, expose one semantic step,
+observe, choose a current route, build and preflight a fresh contract, execute,
+verify, checkpoint progress, then expose the next step. It is not a primitive
+macro player and never replays the whole sequence after a later-step failure.
+
+RecoverySkill remains the narrow M8.3 executable payload matched by failure
+signature and risk. A TaskSkill failure retains verified prior progress and
+enters the Recovery Cascade: reobserve, alternate grounding, alternate route,
+replan the current step, abandon the skill into System 2, ask, or abort.
+Uncertain effect is inspected before any reroute.
+
+Both skill types use the same lifecycle:
+
+~~~text
+PROPOSED -> QUARANTINED -> fresh replay
+  -> ACCEPTED | REJECTED | remain QUARANTINED
+  -> ACTIVE -> ROLLED_BACK when regression or invalidation requires it
+~~~
+
+Acceptance compares task success, verifier false accepts, constraint and unsafe
+effects, duplicate-effect risk, latency/model calls, activation precision,
+fallthrough, and relevant recovery metrics against a baseline. Version, digest,
+source traces, validation suites, decision, and rollback remain auditable.
+
+The detailed implementation milestone is M8.5 in
+`current-implementation-plan.md`.
+
+Current implementation status: the semantic-only TaskSkill payload, verified
+3-trace/2-variant miner, quarantine/digest boundary, incremental one-step
+exposure, verifier-only checkpoint, and held-out/safety/efficiency acceptance
+gate are implemented. Accepted skills now run before System 2 through the normal
+Coordinator contract/policy/preflight/verification path. Fresh
+original/family/held-out/global/safety replay accepts the controlled skill, and
+verification failure retains prior checkpoints while recording skill context
+in the existing RecoveryIncident cascade.
 
 ## 9. Evolution Proposal Schema
 

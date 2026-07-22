@@ -9,12 +9,35 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
-from affordance_runtime.contracts import Observation
+from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
+from affordance_runtime.grounding import (
+    ActivePerceptionRequest,
+    AssertionDecision,
+    EvidenceKind,
+    GroundingCandidate,
+    GroundingSource,
+    PerceptionRequirements,
+    SourceAssertion,
+    SourceObservation,
+    UnifiedAffordance,
+)
+from affordance_runtime.svg_geometry import (
+    SelectiveSvgGeometryObserver,
+    SvgGeometryObservation,
+    SvgGeometryObserverPort,
+    SvgPagePort,
+)
+from affordance_runtime.unified_grounding import (
+    CandidateDescriptor,
+    SemanticEntityResolver,
+    candidate_fingerprints,
+    candidate_from_affordance,
+)
 
 
 class PageDriver(Protocol):
@@ -30,11 +53,31 @@ class PageDriver(Protocol):
 
     def wait_for_load_state(self, state: str = "load", **kwargs: Any) -> Any: ...
 
+    def locator(self, selector: str) -> Any: ...
+
 
 @dataclass(frozen=True)
 class BrowserSnapshot:
     observation: Observation
     affordance_model: PageAffordanceModel
+    source_observations: tuple[SourceObservation, ...] = ()
+    svg_geometry: SvgGeometryObservation | None = None
+    grounding_candidates: tuple[GroundingCandidate, ...] = ()
+    unified_affordances: tuple[UnifiedAffordance, ...] = ()
+    source_assertions: tuple[SourceAssertion, ...] = ()
+    assertion_decisions: tuple[AssertionDecision, ...] = ()
+    active_perception_requests: tuple[ActivePerceptionRequest, ...] = ()
+
+
+def _bounded_control_value(value: str, limit: int = 480) -> str:
+    """Keep both ends of long control text for bounded relational reading tasks."""
+
+    if len(value) <= limit:
+        return value
+    marker = "\n...[truncated]...\n"
+    prefix_length = (limit - len(marker)) // 2
+    suffix_length = limit - len(marker) - prefix_length
+    return value[:prefix_length] + marker + value[-suffix_length:]
 
 
 class BrowserSession:
@@ -47,12 +90,18 @@ class BrowserSession:
         initial_url: str = "",
         owner: Any = None,
         lease_ttl_ms: int = 2_000,
+        svg_observer: SvgGeometryObserverPort | None = None,
+        svg_executor: str = "visual",
+        dom_executor: str = "dom",
     ) -> None:
         self._page = page
         self._initial_url = initial_url
         self._owner = owner
         self._lease_ttl_ms = lease_ttl_ms
         self._dom = DomAdapter()
+        self._svg_observer = svg_observer or SelectiveSvgGeometryObserver()
+        self._svg_executor = svg_executor
+        self._dom_executor = dom_executor
 
     @classmethod
     def launch(
@@ -103,6 +152,11 @@ class BrowserSession:
         if self._initial_url:
             self._page.goto(self._initial_url)
 
+    def locator(self, selector: str) -> Any:
+        """Expose the session-owned locator boundary for DOM gesture encoding."""
+
+        return self._page.locator(selector)
+
     def close(self) -> None:
         if self._owner is None:
             return
@@ -135,18 +189,16 @@ class BrowserSession:
         page_id: str = "page",
         ttl_ms: int | None = None,
         screenshot_path: str | None = None,
+        perception_requirements: PerceptionRequirements | None = None,
+        task_terms: tuple[str, ...] = (),
     ) -> BrowserSnapshot:
-        """Capture one coherent HTML observation and derive its affordances."""
+        """Capture one coherent, selectively multi-source observation epoch."""
 
         html = self._page.content()
         url = self.url
         snapshot_id = f"snap_{uuid.uuid4().hex}"
         dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
         environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
-        screenshot_ref = ""
-        if screenshot_path is not None:
-            screenshot_bytes = self._page.screenshot(path=screenshot_path)
-            screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
         effective_ttl_ms = self._lease_ttl_ms if ttl_ms is None else ttl_ms
         model = self._dom.transduce(
             html,
@@ -155,22 +207,324 @@ class BrowserSession:
             url=url,
             ttl_ms=effective_ttl_ms,
             snapshot_id=snapshot_id,
+            allow_offscreen=True,
+        )
+        visual_required = bool(
+            perception_requirements
+            and EvidenceKind.VISUAL_APPEARANCE in perception_requirements.required_properties
+        )
+        spatial_required = bool(
+            perception_requirements and EvidenceKind.SPATIAL in perception_requirements.required_properties
+        )
+        if visual_required and screenshot_path is None:
+            raise ValueError("visual perception requires a persistent screenshot_path")
+        screenshot_ref = ""
+        svg_geometry: SvgGeometryObservation | None = None
+        control_states: dict[str, Any] = {}
+        active_bid = ""
+        visible_text = ""
+        evaluator = getattr(self._page, "evaluate", None)
+        if evaluator is not None:
+            try:
+                captured = evaluator(
+                    """() => Object.fromEntries(Array.from(document.querySelectorAll('[bid]')).map((element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [element.getAttribute('bid'), {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]; }))"""
+                )
+                if isinstance(captured, dict):
+                    control_states = captured
+                captured_active_bid = evaluator(
+                    "() => document.activeElement?.getAttribute('bid') || ''"
+                )
+                if isinstance(captured_active_bid, str):
+                    active_bid = captured_active_bid
+                captured_visible_text = evaluator("() => document.body?.innerText || ''")
+                if isinstance(captured_visible_text, str):
+                    visible_text = captured_visible_text[:2_000]
+            except Exception:
+                control_states = {}
+                active_bid = ""
+                visible_text = ""
+        if (
+            (spatial_required or visual_required)
+            and perception_requirements is not None
+            and GroundingSource.SVG in perception_requirements.acceptable_evidence
+            and callable(evaluator)
+        ):
+            svg_geometry = self._svg_observer.observe(
+                cast(SvgPagePort, self._page),
+                observation_epoch_id=snapshot_id,
+                environment_revision=environment_revision,
+                page_revision=model.page_revision,
+                task_terms=task_terms,
+                evidence_ref=screenshot_path or "",
+            )
+        if screenshot_path is not None:
+            screenshot_bytes = self._page.screenshot(path=screenshot_path)
+            screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
+        if perception_requirements is not None and (visual_required or spatial_required):
+            final_html = self._page.content()
+            final_url = self.url
+            final_model = self._dom.transduce(
+                final_html,
+                environment_revision=environment_revision,
+                page_id=page_id,
+                url=final_url,
+                ttl_ms=effective_ttl_ms,
+                snapshot_id=snapshot_id,
+                allow_offscreen=True,
+            )
+            # Rendered SVGs may animate decorative transform/stroke attributes
+            # continuously.  Raw HTML equality would make a coherent visual
+            # epoch impossible even though the actionable DOM inventory and
+            # page identity are stable.  Fail only when the URL or semantic
+            # DOM revision changed while the extra sources were captured.
+            if final_url != url or final_model.page_revision != model.page_revision:
+                raise RuntimeError("coherent observation epoch drifted during multi-source capture")
+        enriched_affordances = []
+        grounding_candidates: list[GroundingCandidate] = []
+        for affordance in model.affordances:
+            bid = str(affordance.locator.get("bid") or "")
+            state = dict(affordance.state)
+            context_text = state.get("context_text")
+            if bid and context_text is not None:
+                control_states.setdefault(bid, {})["context_text"] = context_text
+            control_state = control_states.get(bid, {}) if bid else {}
+            if isinstance(control_state, dict) and isinstance(control_state.get("visible"), bool):
+                if state.get("programmatic_select") is True:
+                    state["rendered_visible"] = control_state["visible"]
+                    state["visible"] = True
+                else:
+                    state["visible"] = control_state["visible"]
+            if bid:
+                state["focused"] = bid == active_bid
+            if isinstance(control_state, dict) and isinstance(control_state.get("checked"), bool):
+                state["checked"] = control_state["checked"]
+            aria_selected = control_state.get("aria_selected") if isinstance(control_state, dict) else None
+            if isinstance(aria_selected, str) and aria_selected:
+                state["aria_selected"] = aria_selected
+            value = control_state.get("value") if isinstance(control_state, dict) else None
+            element_tag = str(state.get("element_tag") or "")
+            input_type = str(state.get("input_type") or "")
+            if isinstance(value, str) and (
+                element_tag == "textarea" or (element_tag == "input" and input_type != "password")
+            ):
+                state["control_value"] = _bounded_control_value(value)
+                if len(value) > 240:
+                    state["control_value_prefix"] = value[:240]
+                    state["control_value_suffix"] = value[-240:]
+            selected_options = (
+                control_state.get("selected_options") if isinstance(control_state, dict) else None
+            )
+            if element_tag == "select" and isinstance(selected_options, list):
+                state["selected_options"] = [
+                    str(item)[:160] for item in selected_options if isinstance(item, str) and item
+                ][:20]
+            enriched_affordances.append(replace(affordance, state=state))
+            if element_tag == "textarea" and isinstance(control_state, dict):
+                scroll_top = control_state.get("scroll_top")
+                scroll_height = control_state.get("scroll_height")
+                client_height = control_state.get("client_height")
+                if (
+                    isinstance(scroll_top, (int, float))
+                    and isinstance(scroll_height, (int, float))
+                    and isinstance(client_height, (int, float))
+                    and scroll_height > client_height
+                ):
+                    scroll_id = f"{affordance.id}_scroll"
+                    scroll_fingerprint = "sha256:" + hashlib.sha256(
+                        f"{affordance.target_fingerprint}\0scroll-region".encode("utf-8")
+                    ).hexdigest()
+                    enriched_affordances.append(
+                        replace(
+                            affordance,
+                            id=scroll_id,
+                            role="scroll_region",
+                            label=f"{affordance.label} scroll region".strip(),
+                            action="press",
+                            lease=replace(affordance.lease, target_fingerprint=scroll_fingerprint),
+                            state={
+                                "enabled": bool(state.get("enabled", True)),
+                                "visible": bool(state.get("visible", True)),
+                                "element_tag": "textarea",
+                                "scrollable": True,
+                                "scroll_top": scroll_top,
+                                "scroll_height": scroll_height,
+                                "client_height": client_height,
+                            },
+                        )
+                    )
+        if svg_geometry is not None:
+            for element in svg_geometry.elements:
+                source_identity = hashlib.sha256(
+                    f"{element.tag}\0{element.element_id}".encode()
+                ).hexdigest()[:12]
+                semantic_target_id = f"svg_{element.tag}_{source_identity}"
+                candidate = element.grounding_candidate(
+                    semantic_target_id=semantic_target_id,
+                    source_affordance_id=semantic_target_id,
+                    source=svg_geometry.source_observation,
+                    expires_at_s=time.time() + effective_ttl_ms / 1_000.0,
+                    executor=self._svg_executor,
+                )
+                grounding_candidates.append(candidate)
+                bbox = list(element.viewport_bbox_xywh)
+                enriched_affordances.append(
+                    Affordance(
+                        id=semantic_target_id,
+                        surface=Surface.SVG,
+                        role=element.role or "point",
+                        label=element.label or element.element_id,
+                        action=element.action,
+                        locator={
+                            "bid": element.bid,
+                            "bbox": bbox,
+                            "coordinate_space": "viewport_pixels",
+                            "svg_element_id": element.element_id,
+                            "grounding_candidate_id": candidate.candidate_id,
+                        },
+                        lease=AffordanceLease.issue(
+                            environment_revision=environment_revision,
+                            ttl_ms=effective_ttl_ms,
+                            provenance=["selective-svg-geometry", candidate.candidate_id],
+                            confidence=candidate.confidence,
+                            snapshot_id=snapshot_id,
+                            page_revision=model.page_revision,
+                            target_fingerprint=candidate.target_fingerprint,
+                        ),
+                        backend_candidates=[candidate.compatible_executor],
+                        confidence=candidate.confidence,
+                        state={
+                            "element_tag": element.tag,
+                            "svg_element_id": element.element_id,
+                            "coordinate_space": "viewport_pixels",
+                            "accepts_drop": element.action == "drop",
+                            **({"observed_color": element.observed_color} if element.observed_color else {}),
+                            **({"relative_size": element.relative_size} if element.relative_size else {}),
+                            **({"observed_item_type": element.item_type} if element.item_type else {}),
+                            **({"observed_item_text": element.item_text} if element.item_text else {}),
+                        },
+                        risk=RiskLevel.LOW,
+                        evidence=[*candidate.evidence_refs],
+                    )
+                )
+        model = replace(
+            model,
+            affordances=enriched_affordances,
+            kept_node_count=len(enriched_affordances),
         )
         observation = Observation(
             environment_revision=environment_revision,
             url=url,
             dom_hash=dom_hash,
             screenshot_ref=screenshot_ref,
-            metadata={"html": html},
+            metadata={
+                "html": html,
+                "control_states": control_states,
+                "active_bid": active_bid,
+                "visible_text": visible_text,
+                "observation_epoch_id": snapshot_id,
+                "svg_geometry_count": len(svg_geometry.elements) if svg_geometry is not None else 0,
+            },
             snapshot_id=snapshot_id,
             page_revision=model.page_revision,
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
             artifact_refs=[screenshot_ref] if screenshot_ref else [],
         )
-        return BrowserSnapshot(observation=observation, affordance_model=model)
+        svg_candidates = {item.candidate_id: item for item in grounding_candidates}
+        descriptors: list[CandidateDescriptor] = []
+        for affordance in model.affordances:
+            candidate_id = str(affordance.locator.get("grounding_candidate_id") or "")
+            current_candidate: GroundingCandidate | None = svg_candidates.get(candidate_id)
+            if current_candidate is None and affordance.surface in {Surface.DOM, Surface.ACCESSIBILITY}:
+                current_candidate = candidate_from_affordance(
+                    affordance,
+                    observation,
+                    semantic_target_id="pending",
+                    compatible_executor=self._dom_executor,
+                )
+            if current_candidate is None:
+                continue
+            descriptors.append(
+                CandidateDescriptor(
+                    role=affordance.role,
+                    label=affordance.label,
+                    action=affordance.action,
+                    container_context=str(affordance.state.get("container_context") or ""),
+                    candidate=current_candidate,
+                )
+            )
+        unified_affordances = SemanticEntityResolver().resolve(descriptors)
+        grounding_candidates = [
+            candidate
+            for target in unified_affordances
+            for candidate in target.grounding_candidates
+        ]
+        observation = replace(
+            observation,
+            target_fingerprints={
+                **observation.target_fingerprints,
+                **candidate_fingerprints(unified_affordances),
+            },
+        )
+        source_observations = [
+            SourceObservation(
+                source=GroundingSource.DOM,
+                parser_id="dom-adapter",
+                observation_epoch_id=snapshot_id,
+                environment_revision=environment_revision,
+                page_revision=model.page_revision,
+            )
+        ]
+        if svg_geometry is not None:
+            source_observations.append(svg_geometry.source_observation)
+        if screenshot_ref:
+            source_observations.append(
+                SourceObservation(
+                    source=GroundingSource.VISUAL,
+                    parser_id="playwright-screenshot",
+                    observation_epoch_id=snapshot_id,
+                    environment_revision=environment_revision,
+                    page_revision=model.page_revision,
+                    artifact_refs=(screenshot_ref,),
+                )
+            )
+        return BrowserSnapshot(
+            observation=observation,
+            affordance_model=model,
+            source_observations=tuple(source_observations),
+            svg_geometry=svg_geometry,
+            grounding_candidates=tuple(grounding_candidates),
+            unified_affordances=unified_affordances,
+        )
 
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()
+
+    def bounding_boxes_for_bids(self, bids: list[str]) -> dict[str, tuple[float, float, float, float]]:
+        """Return current viewport geometry for explicit DOM bids when available."""
+
+        locator = getattr(self._page, "locator", None)
+        if not callable(locator):
+            return {}
+        boxes: dict[str, tuple[float, float, float, float]] = {}
+        for bid in bids:
+            if not bid:
+                continue
+            try:
+                box = locator(f"[bid='{bid.replace(chr(39), chr(92) + chr(39))}']").bounding_box()
+            except Exception:
+                continue
+            if not isinstance(box, dict):
+                continue
+            values = (
+                float(box.get("x", -1)),
+                float(box.get("y", -1)),
+                float(box.get("width", -1)),
+                float(box.get("height", -1)),
+            )
+            if values[0] < 0 or values[1] < 0 or values[2] <= 0 or values[3] <= 0:
+                continue
+            boxes[bid] = values
+        return boxes
 
     def wait_for_load_state(self, state: str = "domcontentloaded") -> None:
         waiter = getattr(self._page, "wait_for_load_state", None)
@@ -229,6 +583,36 @@ class BrowserSession:
         if click_xy is None:
             raise RuntimeError("page does not support pointer clicks")
         click_xy(x, y)
+
+    def move_xy(self, x: int, y: int, *, steps: int = 1) -> None:
+        mouse = getattr(self._page, "mouse", None)
+        if mouse is not None:
+            mouse.move(x, y, steps=max(1, steps))
+            return
+        move_xy = getattr(self._page, "move_xy", None)
+        if move_xy is None:
+            raise RuntimeError("page does not support pointer movement")
+        move_xy(x, y, steps=max(1, steps))
+
+    def button_down(self, button: str = "left") -> None:
+        mouse = getattr(self._page, "mouse", None)
+        if mouse is not None:
+            mouse.down(button=button)
+            return
+        button_down = getattr(self._page, "button_down", None)
+        if button_down is None:
+            raise RuntimeError("page does not support pointer button down")
+        button_down(button)
+
+    def button_up(self, button: str = "left") -> None:
+        mouse = getattr(self._page, "mouse", None)
+        if mouse is not None:
+            mouse.up(button=button)
+            return
+        button_up = getattr(self._page, "button_up", None)
+        if button_up is None:
+            raise RuntimeError("page does not support pointer button up")
+        button_up(button)
 
     def type_text(self, text: str) -> None:
         keyboard = getattr(self._page, "keyboard", None)

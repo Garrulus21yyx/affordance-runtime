@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from typing import Any
 
@@ -17,6 +18,7 @@ from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel,
 _INTERACTIVE_TAGS = frozenset(["a", "button", "input", "select", "textarea", "label", "form", "option"])
 _STRIP_TAGS = frozenset(["script", "style", "meta", "link", "noscript", "head", "svg"])
 _VOID_STRIP_TAGS = frozenset(["meta", "link"])
+_VOID_TAGS = frozenset(["area", "base", "br", "col", "embed", "hr", "img", "input", "source", "track", "wbr"])
 _ARIA_ACTION_MAP = {
     "button": "click",
     "link": "click",
@@ -38,15 +40,152 @@ _INPUT_TYPE_ACTION = {
     "button": "click",
 }
 _SELECTOR_CONFIDENCE = {"id": 1.0, "bid": 0.99, "testid": 0.97, "name": 0.85, "class": 0.7, "positional": 0.55}
+_BROWSERGYM_ACTIONABLE_MARK = "browsergym_set_of_marks"
+_CONTEXT_CONTAINER_TAGS = frozenset(["article", "dd", "div", "li", "section", "td", "tr"])
+_DRAG_HANDLE_CLASSES = frozenset(["ui-draggable-handle", "ui-sortable-handle"])
+
+
+def _drag_capable(attr: dict[str, str]) -> bool:
+    classes = set(attr.get("class", "").split())
+    return (
+        attr.get("draggable", "").lower() == "true"
+        or attr.get("aria-grabbed", "").lower() in {"true", "false"}
+        or bool(classes.intersection(_DRAG_HANDLE_CLASSES))
+    )
+
+
+def _style_hides(attr: dict[str, str]) -> bool:
+    style = "".join(attr.get("style", "").casefold().split())
+    return "display:none" in style or "visibility:hidden" in style
+
+
+def _class_hides(attr: dict[str, str]) -> bool:
+    """Honor explicit authored hide-state classes, including off viewport."""
+
+    return bool(set(attr.get("class", "").casefold().split()).intersection({"hide", "hidden"}))
+
+
+def _browsergym_hides(attr: dict[str, str]) -> bool:
+    """Honor BrowserGym's current rendered visibility annotation when present."""
+
+    raw = attr.get("browsergym_visibility_ratio", "")
+    if not raw:
+        return False
+    try:
+        return float(raw) <= 0.0
+    except ValueError:
+        return False
+
+
+def _calendar_slot_index(attr: dict[str, str], ancestors: list[dict[str, Any]]) -> int | None:
+    """Return an authored half-hour slot only when its calendar structure is coherent."""
+
+    classes = set(attr.get("class", "").split())
+    match = re.fullmatch(r"hh-(\d+)", attr.get("id", ""))
+    if "half-hour" not in classes or match is None:
+        return None
+    calendar_parent = next(
+        (
+            ancestor
+            for ancestor in reversed(ancestors)
+            if "calendar" in set(ancestor["attr"].get("class", "").split())
+        ),
+        None,
+    )
+    hour_parent = next(
+        (ancestor for ancestor in reversed(ancestors) if "data-hour" in ancestor["attr"]),
+        None,
+    )
+    if calendar_parent is None or hour_parent is None:
+        return None
+    try:
+        slot_index = int(match.group(1))
+        hour_index = int(hour_parent["attr"]["data-hour"])
+    except ValueError:
+        return None
+    if not 0 <= slot_index < 48 or not 0 <= hour_index < 24 or slot_index // 2 != hour_index:
+        return None
+    return slot_index
+
+
+def _calendar_slot_label(slot_index: int) -> str:
+    minutes = slot_index * 30
+    hour_24, minute = divmod(minutes, 60)
+    meridiem = "am" if hour_24 < 12 else "pm"
+    hour_12 = hour_24 % 12 or 12
+    return f"{hour_12}:{minute:02d}{meridiem} calendar slot"
+
+
+def _collection_action_context(
+    tag: str,
+    attr: dict[str, str],
+    ancestors: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Recognize one authored action inside an owner-labelled collection item.
+
+    A coherent item/action-group structure is required; arbitrary classes and
+    BrowserGym bids do not become executable controls.
+    """
+
+    if tag not in {"span", "li"} or not attr.get("bid"):
+        return None
+    action_tokens = [
+        token for token in attr.get("class", "").split() if token not in {"active", "hide"}
+    ]
+    if len(action_tokens) != 1:
+        return None
+    controls_index = next(
+        (
+            index
+            for index in range(len(ancestors) - 1, -1, -1)
+            if "controls" in ancestors[index]["attr"].get("class", "").split()
+        ),
+        None,
+    )
+    item_index = next(
+        (
+            index
+            for index in range(len(ancestors) - 1, -1, -1)
+            if "data-result" in ancestors[index]["attr"]
+        ),
+        None,
+    )
+    if controls_index is None or item_index is None or item_index >= controls_index:
+        return None
+    item = ancestors[item_index]
+    owners = list(
+        dict.fromkeys(
+            re.findall(
+                r"@[A-Za-z0-9_.-]+",
+                " ".join(str(part) for part in item.get("text_parts", ())),
+            )
+        )
+    )
+    if len(owners) != 1:
+        return None
+    try:
+        position = int(item["attr"]["data-result"]) + 1
+    except (TypeError, ValueError):
+        return None
+    if position <= 0:
+        return None
+    return {
+        "collection_action_key": action_tokens[0],
+        "collection_owner": owners[0],
+        "collection_position": position,
+        "toggle_selected": "active" in attr.get("class", "").split(),
+    }
 
 
 class _InteractiveParser(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, *, allow_offscreen: bool = False) -> None:
         super().__init__(convert_charrefs=True)
+        self._allow_offscreen = allow_offscreen
         self._skip_depth: int | None = None
         self._depth = 0
         self._tag_counts: dict[str, int] = {}
         self._open: list[dict[str, Any]] = []
+        self._tree_open: list[dict[str, Any]] = []
         self.total_nodes = 0
         self.nodes: list[dict[str, Any]] = []
 
@@ -65,11 +204,84 @@ class _InteractiveParser(HTMLParser):
             return
 
         attr = {key: (value or "") for key, value in attrs}
+        tree_node: dict[str, Any] = {
+            "tag": tag,
+            "attr": attr,
+            "text_parts": [],
+            "semantic_types": [],
+        }
+        parent_tree = self._tree_open[-1] if self._tree_open else None
+        if parent_tree is not None:
+            tree_node["parent"] = parent_tree
+        if tag not in _VOID_TAGS:
+            self._tree_open.append(tree_node)
+        ancestors = self._tree_open[:-1] if tag not in _VOID_TAGS else self._tree_open
+        authored_type = (attr.get("alt") or attr.get("title") or "").strip()
+        if tag == "img" and authored_type:
+            for ancestor in ancestors:
+                if ancestor["attr"].get("data-item"):
+                    semantic_types = ancestor["semantic_types"]
+                    if authored_type not in semantic_types:
+                        semantic_types.append(authored_type)
         role = attr.get("role", "")
-        if "hidden" in attr or attr.get("aria-hidden") == "true":
+        self_hidden = (
+            "hidden" in attr
+            or attr.get("aria-hidden") == "true"
+            or _style_hides(attr)
+            or _class_hides(attr)
+        )
+        ancestor_hidden = any(
+            "hidden" in ancestor["attr"]
+            or ancestor["attr"].get("aria-hidden") == "true"
+            or _style_hides(ancestor["attr"])
+            or _class_hides(ancestor["attr"])
+            for ancestor in ancestors
+        )
+        viewport_hidden = _browsergym_hides(attr) or any(
+            _browsergym_hides(ancestor["attr"]) for ancestor in ancestors
+        )
+        # A custom-rendered dropdown often retains a hidden native select as
+        # its authoritative semantic value/control. BrowserGym can bind it by
+        # bid without visual targeting; other hidden controls remain omitted.
+        if ancestor_hidden or (self_hidden and tag != "select"):
+            return
+        if viewport_hidden and not self._allow_offscreen and tag != "select":
             return
         focusable = attr.get("tabindex", "") not in {"", "-1"}
-        if tag not in _INTERACTIVE_TAGS and role not in _ARIA_ACTION_MAP and not focusable:
+        programmatic_option = attr.get("tabindex") == "-1" and any(
+            ancestor["tag"] in {"ul", "ol"} or ancestor["attr"].get("role") in {"listbox", "menu"}
+            for ancestor in ancestors
+        )
+        browsergym_actionable = attr.get(_BROWSERGYM_ACTIONABLE_MARK) == "1"
+        drag_capable = _drag_capable(attr)
+        semantic_color_target = bool(attr.get("data-color"))
+        calendar_slot_index = _calendar_slot_index(attr, ancestors)
+        semantic_calendar_slot = calendar_slot_index is not None
+        quantity_ancestor = next(
+            (
+                ancestor
+                for ancestor in reversed(ancestors)
+                if ancestor["attr"].get("data-item")
+                and "data-quantity" in ancestor["attr"]
+            ),
+            None,
+        )
+        quantity_classes = set(attr.get("class", "").split()).intersection({"add", "remove"})
+        semantic_quantity_control = quantity_ancestor is not None and len(quantity_classes) == 1
+        collection_action_context = _collection_action_context(tag, attr, ancestors)
+        semantic_collection_action = collection_action_context is not None
+        if (
+            tag not in _INTERACTIVE_TAGS
+            and role not in _ARIA_ACTION_MAP
+            and not focusable
+            and not programmatic_option
+            and not browsergym_actionable
+            and not drag_capable
+            and not semantic_color_target
+            and not semantic_quantity_control
+            and not semantic_calendar_slot
+            and not semantic_collection_action
+        ):
             return
 
         self._tag_counts[tag] = self._tag_counts.get(tag, 0) + 1
@@ -81,22 +293,53 @@ class _InteractiveParser(HTMLParser):
             "text_parts": [],
             "parent_tag": parent["tag"] if parent else "",
             "parent_attr": dict(parent["attr"]) if parent else {},
+            "parent_node": parent,
+            "context_ancestors": tuple(reversed(self._tree_open[:-1] if tag not in _VOID_TAGS else self._tree_open)),
+            "programmatic_option": programmatic_option,
+            "browsergym_actionable": browsergym_actionable,
+            "semantic_quantity_control": semantic_quantity_control,
+            "semantic_calendar_slot": semantic_calendar_slot,
+            "semantic_collection_action": semantic_collection_action,
         }
+        if calendar_slot_index is not None:
+            node["calendar_slot_index"] = calendar_slot_index
+        if semantic_quantity_control and quantity_ancestor is not None:
+            quantity_class = next(iter(quantity_classes))
+            try:
+                current_quantity = int(quantity_ancestor["attr"].get("data-quantity", "0"))
+            except ValueError:
+                current_quantity = 0
+            node.update(
+                {
+                    "quantity_item_name": quantity_ancestor["attr"]["data-item"].strip(),
+                    "quantity_current": max(0, current_quantity),
+                    "quantity_delta": 1 if quantity_class == "add" else -1,
+                    "quantity_item_types": tuple(quantity_ancestor["semantic_types"]),
+                }
+            )
+        if collection_action_context is not None:
+            node.update(collection_action_context)
         self.nodes.append(node)
-        self._open.append(node)
+        if tag not in _VOID_TAGS:
+            self._open.append(node)
 
     def handle_endtag(self, tag: str) -> None:
         if self._skip_depth is not None and self._depth == self._skip_depth:
             self._skip_depth = None
         if self._open and self._open[-1]["tag"] == tag:
             self._open.pop()
+        if self._tree_open and self._tree_open[-1]["tag"] == tag:
+            self._tree_open.pop()
         self._depth = max(0, self._depth - 1)
 
     def handle_data(self, data: str) -> None:
-        if self._skip_depth is None and self._open:
+        if self._skip_depth is None:
             text = data.strip()
             if text:
-                self._open[-1]["text_parts"].append(text)
+                if self._open:
+                    self._open[-1]["text_parts"].append(text)
+                for ancestor in self._tree_open:
+                    ancestor["text_parts"].append(text)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -137,15 +380,41 @@ def _selector_for(node: dict[str, Any]) -> tuple[str, float]:
 
 def _label_for(node: dict[str, Any]) -> str:
     attr = node["attr"]
-    for key in ("aria-label", "value", "placeholder", "title", "alt"):
+    if node.get("semantic_calendar_slot"):
+        return _calendar_slot_label(int(node["calendar_slot_index"]))
+    if node.get("semantic_quantity_control"):
+        direction = "increase" if node.get("quantity_delta") == 1 else "decrease"
+        return f"{direction} {node.get('quantity_item_name', 'item')} quantity"
+    if node.get("semantic_collection_action"):
+        text = " ".join(node["text_parts"]).strip()
+        if text:
+            return text
+        return str(node["collection_action_key"]).replace("-", " ").replace("_", " ").title()
+    parent = node.get("parent_node")
+    if (
+        node["tag"] == "input"
+        and attr.get("type", "").lower() in {"checkbox", "radio"}
+        and isinstance(parent, dict)
+        and parent.get("tag") == "label"
+    ):
+        parent_text = " ".join(parent.get("text_parts", [])).strip()
+        if parent_text:
+            return parent_text
+    for key in ("aria-label", "placeholder", "title", "alt", "data-color"):
         if attr.get(key):
             return attr[key].strip()
+    if node["tag"] == "option" and attr.get("value"):
+        return attr["value"].strip()
+    if node["tag"] == "input" and attr.get("type", "text").lower() in {"submit", "button"} and attr.get("value"):
+        return attr["value"].strip()
     text = " ".join(node["text_parts"]).strip()
     if text:
         return text
     for key in ("name", "id"):
         if attr.get(key):
             return attr[key].strip()
+    if node["tag"] == "input" and attr.get("value"):
+        return attr["value"].strip()
     if attr.get("class"):
         return attr["class"].split()[0]
     return node["tag"]
@@ -153,16 +422,80 @@ def _label_for(node: dict[str, Any]) -> str:
 
 def _action_for(node: dict[str, Any]) -> str:
     attr, tag = node["attr"], node["tag"]
+    if node.get("semantic_calendar_slot"):
+        return "drag"
     role = attr.get("role", "")
     if role in _ARIA_ACTION_MAP:
         return _ARIA_ACTION_MAP[role]
     if tag == "a" and "download" in attr:
         return "download"
     if tag == "input":
+        if "readonly" in attr:
+            # Readonly text-like controls commonly own a picker/popover. They
+            # are activatable but cannot satisfy a fill contract.
+            return "click"
         return _INPUT_TYPE_ACTION.get(attr.get("type", "text").lower(), "type")
+    if node.get("programmatic_option"):
+        return "click"
+    if _drag_capable(attr):
+        return "drag"
+    native_action = _TAG_ACTION.get(tag)
+    if native_action is not None:
+        return native_action
+    # BrowserGym annotates its live, custom controls after the task has
+    # rendered.  Treat this as observation metadata, not task-specific DOM
+    # knowledge: it makes spans, tree controls, and other non-native widgets
+    # available through the same semantic activate -> typed-click route.
+    if node.get("browsergym_actionable"):
+        return "click"
     if attr.get("tabindex", "") not in {"", "-1"}:
         return "press"
-    return _TAG_ACTION.get(tag, "click")
+    return "click"
+
+
+def _nearby_context_text(node: dict[str, Any]) -> str:
+    """Return concise visible ancestor text without making it planner authority."""
+
+    for ancestor in node.get("context_ancestors", ()):  # nearest ancestor first
+        if ancestor.get("tag") not in _CONTEXT_CONTAINER_TAGS:
+            continue
+        text = " ".join(ancestor["text_parts"]).strip()
+        if text and text != _label_for(node):
+            return text[:160]
+    return ""
+
+
+def _group_context_text(node: dict[str, Any], container_context: str) -> str:
+    """Return the next distinct bounded ancestor for relational item binding."""
+
+    for ancestor in node.get("context_ancestors", ()):
+        if ancestor.get("tag") not in _CONTEXT_CONTAINER_TAGS:
+            continue
+        text = " ".join(ancestor["text_parts"]).strip()
+        if text and text != _label_for(node) and text != container_context:
+            return text[:240]
+    return ""
+
+
+def _collection_position(attr: dict[str, str]) -> int | None:
+    """Normalize common DOM collection indices into a one-based position."""
+
+    raw = attr.get("aria-posinset")
+    zero_based = False
+    if raw is None:
+        for key in ("data-index", "data-result"):
+            if key in attr:
+                raw = attr[key]
+                zero_based = True
+                break
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    value = value + 1 if zero_based else value
+    return value if value > 0 else None
 
 
 class DomAdapter:
@@ -176,10 +509,35 @@ class DomAdapter:
         ttl_ms: int = 2_000,
         snapshot_id: str = "",
         page_revision: str = "",
+        allow_offscreen: bool = False,
     ) -> PageAffordanceModel:
-        parser = _InteractiveParser()
+        parser = _InteractiveParser(allow_offscreen=allow_offscreen)
         parser.feed(html or "")
         parser.close()
+        nested_control_label_nodes = {
+            id(parent)
+            for node in parser.nodes
+            if isinstance((parent := node.get("parent_node")), dict) and parent.get("tag") == "label"
+        }
+        control_ids = {
+            node["attr"].get("id", "") for node in parser.nodes if node["tag"] in {"input", "select", "textarea"}
+        }
+        menu_owner_bids = {
+            ancestor["attr"].get("bid", "")
+            for node in parser.nodes
+            if node.get("programmatic_option")
+            for ancestor in node.get("context_ancestors", ())
+            if ancestor["tag"] in {"ul", "ol"}
+        }
+        planner_nodes = [
+            node
+            for node in parser.nodes
+            if not (
+                node["tag"] == "label"
+                and (id(node) in nested_control_label_nodes or node["attr"].get("for", "") in control_ids)
+            )
+            and not (node["attr"].get("bid", "") in menu_owner_bids and _action_for(node) == "press")
+        ]
         semantic_nodes = [
             {
                 "tag": node["tag"],
@@ -189,31 +547,62 @@ class DomAdapter:
                 "name": node["attr"].get("name", ""),
                 "disabled": "disabled" in node["attr"] or node["attr"].get("aria-disabled") == "true",
                 "label": _label_for(node),
+                "quantity_current": node.get("quantity_current"),
+                "calendar_slot_index": node.get("calendar_slot_index"),
+                "collection_action": (
+                    _label_for(node) if node.get("semantic_collection_action") else None
+                ),
+                "collection_owner": node.get("collection_owner"),
+                "toggle_selected": node.get("toggle_selected"),
             }
-            for node in parser.nodes
+            for node in planner_nodes
         ]
-        effective_page_revision = page_revision or "page:sha256:" + hashlib.sha256(
-            json.dumps({"url": url, "nodes": semantic_nodes}, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        effective_page_revision = (
+            page_revision
+            or "page:sha256:"
+            + hashlib.sha256(
+                json.dumps({"url": url, "nodes": semantic_nodes}, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+        )
         affordances: list[Affordance] = []
-        for node in parser.nodes:
+        for node in planner_nodes:
             attr = node["attr"]
             action = _action_for(node)
             selector, confidence = _selector_for(node)
             disabled = "disabled" in attr or attr.get("aria-disabled") == "true"
+            # Container context disambiguates repeated/custom items, but must
+            # not make stable native form-control identity depend on mutable
+            # sibling content elsewhere in the form or page.
+            context_text = (
+                _nearby_context_text(node)
+                if node["tag"] == "a" or node["tag"] not in _INTERACTIVE_TAGS or action in {"drag", "press"}
+                else ""
+            )
+            collection_position = node.get("collection_position") or _collection_position(attr)
+            group_context = _group_context_text(node, context_text) if context_text else ""
             affordance_id = f"dom_{node['tag']}_{node['nth']}"
-            target_fingerprint = "sha256:" + hashlib.sha256(
-                json.dumps(
-                    {
-                        "id": affordance_id,
-                        "role": attr.get("role") or node["tag"],
-                        "label": _label_for(node),
-                        "selector": selector,
-                        "enabled": not disabled,
-                    },
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest()
+            target_fingerprint = (
+                "sha256:"
+                + hashlib.sha256(
+                    json.dumps(
+                        {
+                            "id": affordance_id,
+                            "role": attr.get("role") or node["tag"],
+                            "label": _label_for(node),
+                            "selector": selector,
+                            "enabled": not disabled,
+                            "quantity_current": node.get("quantity_current"),
+                            "calendar_slot_index": node.get("calendar_slot_index"),
+                            "collection_action": (
+                                _label_for(node) if node.get("semantic_collection_action") else None
+                            ),
+                            "collection_owner": node.get("collection_owner"),
+                            "toggle_selected": node.get("toggle_selected"),
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+            )
             lease = AffordanceLease.issue(
                 environment_revision=environment_revision,
                 ttl_ms=ttl_ms,
@@ -226,7 +615,27 @@ class DomAdapter:
                 Affordance(
                     id=affordance_id,
                     surface=Surface.DOM,
-                    role="input" if action in {"type", "select"} else "button",
+                    role=(
+                        "option"
+                        if node["tag"] == "option" or node.get("programmatic_option")
+                        else "checkbox"
+                        if node["tag"] == "input" and attr.get("type", "").lower() == "checkbox"
+                        else "radio"
+                        if node["tag"] == "input" and attr.get("type", "").lower() == "radio"
+                        else "picker"
+                        if node["tag"] == "input" and "readonly" in attr
+                        else "textbox"
+                        if action == "type"
+                        else "combobox"
+                        if action == "select"
+                        else "slider"
+                        if action == "press" and "slider" in attr.get("class", "").lower()
+                        else "link"
+                        if node["tag"] == "a" or attr.get("role") == "link"
+                        else "time_slot"
+                        if node.get("semantic_calendar_slot")
+                        else "button"
+                    ),
                     label=_label_for(node),
                     action=action,
                     locator={
@@ -247,11 +656,99 @@ class DomAdapter:
                     lease=lease,
                     backend_candidates=["dom"],
                     confidence=0.0 if disabled else confidence,
-                    state={"enabled": not disabled, "visible": True},
+                    state={
+                        "enabled": not disabled,
+                        "visible": True,
+                        "element_tag": node["tag"],
+                        **({"input_type": attr.get("type", "text").lower()} if node["tag"] == "input" else {}),
+                        **({"readonly": True} if node["tag"] == "input" and "readonly" in attr else {}),
+                        **(
+                            {"control_value": attr["value"]}
+                            if node["tag"] == "input"
+                            and attr.get("type", "text").lower() != "password"
+                            and "value" in attr
+                            else {}
+                        ),
+                        **(
+                            {"autocomplete": True}
+                            if node["tag"] == "input"
+                            and (
+                                "autocomplete" in attr.get("class", "").lower()
+                                or attr.get("aria-autocomplete", "") in {"inline", "list", "both"}
+                            )
+                            else {}
+                        ),
+                        **({"multiple": True} if node["tag"] == "select" and "multiple" in attr else {}),
+                        **(
+                            {"programmatic_select": True, "rendered_visible": False}
+                            if node["tag"] == "select" and _browsergym_hides(attr)
+                            else {}
+                        ),
+                        **({"programmatic_option": True} if node.get("programmatic_option") else {}),
+                        **({"context_text": context_text} if action == "press" and context_text else {}),
+                        **({"container_context": context_text} if context_text else {}),
+                        **({"group_context": group_context} if group_context else {}),
+                        **({"collection_position": collection_position} if collection_position is not None else {}),
+                        **({"href": attr["href"]} if node["tag"] == "a" and "href" in attr else {}),
+                        **({"observed_color": attr["data-color"]} if attr.get("data-color") else {}),
+                        **(
+                            {
+                                "collection_action": _label_for(node),
+                                "collection_owner": node["collection_owner"],
+                                "toggle_selected": bool(node["toggle_selected"]),
+                            }
+                            if node.get("semantic_collection_action")
+                            else {}
+                        ),
+                        **(
+                            {
+                                "calendar_slot_index": node["calendar_slot_index"],
+                                "calendar_time_minutes": node["calendar_slot_index"] * 30,
+                                "accepts_drop": True,
+                                "range_selectable": True,
+                            }
+                            if node.get("semantic_calendar_slot")
+                            else {}
+                        ),
+                        **(
+                            {
+                                "item_name": node["quantity_item_name"],
+                                "item_types": list(node["quantity_item_types"]),
+                                "current_quantity": node["quantity_current"],
+                                "quantity_delta": node["quantity_delta"],
+                                "repeatable": True,
+                            }
+                            if node.get("semantic_quantity_control")
+                            else {}
+                        ),
+                    },
                     risk=RiskLevel.LOW,
                     evidence=[url] if url else [],
                 )
             )
+            if node.get("semantic_calendar_slot"):
+                source = affordances[-1]
+                source = replace(
+                    source,
+                    locator={**source.locator, "calendar_endpoint": "start"},
+                    state={**source.state, "calendar_endpoint": "start", "accepts_drop": False},
+                )
+                affordances[-1] = source
+                destination_fingerprint = "sha256:" + hashlib.sha256(
+                    f"{source.target_fingerprint}\0calendar-end-boundary".encode("utf-8")
+                ).hexdigest()
+                affordances.append(
+                    replace(
+                        source,
+                        id=f"{source.id}_end",
+                        role="time_slot_end",
+                        label=f"{source.label} end boundary",
+                        action="drop",
+                        locator={**source.locator, "calendar_endpoint": "end"},
+                        lease=replace(source.lease, target_fingerprint=destination_fingerprint),
+                        state={**source.state, "calendar_endpoint": "end", "accepts_drop": True},
+                    )
+                )
         return PageAffordanceModel(
             page_id=page_id,
             url=url,

@@ -10,6 +10,7 @@ from affordance_runtime.task_intake import (
     IntentAmbiguity,
     IntentDraft,
     IntentDraftValidator,
+    IntentEntity,
     OperationClass,
     RequestedEffect,
     UserRequest,
@@ -40,13 +41,19 @@ def _draft(**changes: object) -> IntentDraft:
 
 
 def test_ready_compilation_creates_immutable_versioned_task_spec_without_granting_capability() -> None:
-    result = IntentDraftValidator().compile(_request(), _draft(), revision=2)
+    entity = IntentEntity(name="theme", value="dark", source_ref="request-1:20-24")
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(entities=(entity,)),
+        revision=2,
+    )
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
     assert result.task_spec.revision == 2
     assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
     assert result.task_spec.requested_capabilities == ("settings.write",)
+    assert result.task_spec.entities == (entity,)
     assert result.task_spec.evidence_requirements == ("settings API confirms dark",)
     assert "granted" not in result.task_spec.model_dump()
     with pytest.raises(ValidationError):

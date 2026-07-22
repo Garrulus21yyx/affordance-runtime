@@ -153,6 +153,61 @@ Perception produces observations, not action contracts. Page text, DOM labels,
 OCR, and accessibility labels are treated as tainted input until interpreted by
 runtime policy.
 
+#### 2.1.1 Multi-Source Observation Arbitration
+
+DOM, accessibility, screenshot/vision, and WoT parsers may describe the same
+environment property differently. They do not produce alternative user tasks;
+they produce sourced state assertions before the authoritative snapshot is
+built.
+
+A source assertion contains:
+
+    entity_key
+    property_key
+    value and value type
+    source: dom | accessibility | visual | wot | api
+    observed_at and freshness
+    confidence and confidence semantics
+    evidence/artifact reference
+    parser and schema version
+
+The rule-first arbiter returns ACCEPTED, CONFLICT, REOBSERVE, or INCONCLUSIVE.
+It applies these rules:
+
+1. Normalize assertions to the same entity, property, unit, and value domain
+   before comparing them.
+2. Reject invalid or stale evidence before considering confidence.
+3. Use source policy by property: DOM may be authoritative for rendered control
+   state, WoT/API for device state, and screenshot evidence for visual
+   appearance. There is no universal DOM-over-WoT priority.
+4. Treat parser confidence as source-local unless calibration proves scores are
+   comparable across sources.
+5. Prefer independent agreeing evidence, while retaining every raw assertion
+   and its provenance.
+6. Trigger targeted active perception when disagreement could change target
+   selection, safety, or expected effects.
+7. If a material conflict remains unresolved, mark the state inconclusive and
+   block the fast path or effectful action.
+
+The bounded resolution loop is:
+
+    parallel observations
+      -> sourced assertions
+      -> normalize and arbitrate
+      -> accepted state
+         or targeted re-observation
+         or safe inconclusive result
+      -> AffordanceSnapshot
+
+Only accepted state enters target fingerprints, preconditions, and verifier
+inputs. Raw assertions and conflict decisions remain in trace artifacts.
+
+Current status: immutable sourced assertions, rule-first arbitration,
+property-specific authority, unresolved-conflict route blocking, and a bounded
+coherent `capture_targeted()` observation port are implemented. Assertion and
+active-perception decisions are separately traced. Live cross-source conflict
+families and calibration remain part of M8.5 evaluation.
+
 ### 2.2 Affordance Layer
 
 Transforms observations into executable opportunities:
@@ -297,6 +352,55 @@ Backends:
 
 The executor should revalidate target-critical facts as close to action time as
 possible to reduce TOCTOU risk between preflight and the physical click/type.
+
+Gesture execution follows one dual-target Core binding. Core preflight checks
+both endpoint leases, fingerprints, observation epoch, distinct identity,
+shared route, policy, and current blocking overlays. Backend adapters only
+encode the validated binding: BrowserGym uses marked or viewport drag actions,
+Playwright uses `locator.drag_to()`, and Visual/Desktop uses a bounded pointer
+move/down/move/up sequence. A backend never repairs or substitutes one endpoint
+inside an existing contract.
+
+#### 2.7.1 Optional System 1 / System 2 Execution Policy
+
+System 1 and System 2 describe a fast/deliberative policy split above the same
+contract runtime. They are not separate executors and may not bypass policy,
+preflight, post-action observation, verification, or trace.
+
+System 1 may reuse an accepted grounding or harness skill only when:
+
+- task/skill identity and surface semantics match;
+- snapshot lease and target fingerprint are current;
+- multi-source arbitration has no material unresolved conflict;
+- confidence is calibrated above the configured threshold;
+- risk, capability, and approval policy allow the action;
+- expected effects have an available verifier.
+
+A System 1 cache hit still creates a fresh Action Contract and runs preflight.
+Execution or verification failure invalidates the cached grounding.
+
+System 2 is triggered by a new or complex task, missing exact skill, unresolved
+source conflict, low confidence, stale state, failed precondition, unavailable
+backend, failed/inconclusive verification, repeated recovery, or high-risk
+decision. It may invoke active perception, the generalist/task planner, bounded
+recovery, or human clarification.
+
+Migration status:
+
+| C009 mechanism | Affordance Runtime status |
+| --- | --- |
+| DOM/visual/WoT executors | migrated behind Action Contract |
+| backend confidence and cost routing | migrated |
+| bounded recovery and escalation reasons | partially migrated and extended; explicit recovery execution remains a governance gate |
+| LM/action and shallow task planning | implemented through PlannerPort and TaskPlannerPort |
+| System1ReflexLibrary grounding cache | grounding cache not migrated; accepted TaskSkill System 1 path implemented |
+| StateAssertion/FusedAssertion conflict gate | implemented as SourceAssertion arbitration |
+| active perception for cross-source conflict | implemented with bounded targeted perception |
+| explicit System 1 latency/cache metrics | TaskSkill activation/fallthrough/model-call/latency replay metrics implemented; grounding-cache metrics not migrated |
+| regression-gated skills and policies | implemented with stricter acceptance than the old proposal-only path |
+
+The first implementation should add source arbitration before enabling a reflex
+cache. Otherwise a fast path could amplify stale or conflicting state.
 
 ### 2.8 Verification Layer
 

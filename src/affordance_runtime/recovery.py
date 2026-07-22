@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Callable
+from typing import Any, Callable
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 
@@ -114,6 +114,7 @@ class RecoveryIncident:
     symptom_chain: list[FailureSignature] = field(default_factory=list)
     findings: list[RecoveryLoopKind] = field(default_factory=list)
     terminal_outcome: str = "open"
+    context: dict[str, Any] = field(default_factory=dict)
 
     def complete_pending(self, state_after: str, outcome: RecoveryAttemptOutcome) -> None:
         pending = next((item for item in reversed(self.attempts) if item.outcome == RecoveryAttemptOutcome.PENDING), None)
@@ -121,7 +122,7 @@ class RecoveryIncident:
             pending.state_after = state_after
             pending.outcome = outcome
 
-    def diagnostics(self) -> dict[str, float | int | str | list[str]]:
+    def diagnostics(self) -> dict[str, Any]:
         repeated = max(0, len(self.attempts) - len({item.signature.key() for item in self.attempts}))
         completed = [item for item in self.attempts if item.outcome != RecoveryAttemptOutcome.PENDING]
         effective = sum(item.outcome == RecoveryAttemptOutcome.SUCCEEDED for item in completed)
@@ -142,6 +143,7 @@ class RecoveryIncident:
             "duplicate_effect_risk_count": duplicate_risks,
             "findings": [item.value for item in self.findings],
             "terminal_outcome": self.terminal_outcome,
+            "context": dict(self.context),
         }
 
 
@@ -277,6 +279,15 @@ class BoundedRecoveryPolicy:
 
         if receipt is not None and receipt.success:
             return RecoveryDecision(RecoveryAction.VERIFY_STATE, "execution succeeded; verify expected effects")
+
+        route_alternatives = contract.route_plan.viable_alternatives if contract.route_plan else ()
+        if route_alternatives:
+            alternative = route_alternatives[0]
+            return RecoveryDecision(
+                RecoveryAction.REROUTE,
+                "exclude failed grounding candidate and bind a fresh route",
+                alternative.compatible_executor,
+            )
 
         can_retry = (
             context.attempt < self.max_retries

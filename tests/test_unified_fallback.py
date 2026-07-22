@@ -1,0 +1,396 @@
+from dataclasses import dataclass, replace
+
+from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import (
+    Affordance,
+    AffordanceLease,
+    ExecutionReceipt,
+    Observation,
+    RuntimeErrorCode,
+    Surface,
+    VerifierSpec,
+)
+from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.executors import ExecutorRouter, VisualExecutor
+from affordance_runtime.grounding import GroundingCandidate, GroundingSource, SourceObservation
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+)
+from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.unified_grounding import (
+    CandidateDescriptor,
+    SemanticEntityResolver,
+    candidate_fingerprints,
+    candidate_from_affordance,
+)
+
+
+@dataclass
+class FallbackWorld:
+    saved: bool = False
+    visual_clicks: int = 0
+
+
+class FallbackPointer:
+    def __init__(self, world: FallbackWorld) -> None:
+        self.world = world
+
+    def click_xy(self, x: int, y: int) -> None:
+        assert (x, y) == (120, 90)
+        self.world.visual_clicks += 1
+        self.world.saved = True
+
+    def type_text(self, text: str) -> None:
+        raise AssertionError(f"unexpected text input: {text}")
+
+
+@dataclass
+class FailBeforeDispatchDomExecutor:
+    calls: int = 0
+    backend: str = "dom"
+
+    def execute(self, contract: object, observation: Observation) -> ExecutionReceipt:
+        self.calls += 1
+        contract_id = str(getattr(contract, "id"))
+        return ExecutionReceipt(
+            contract_id,
+            self.backend,
+            False,
+            observation.environment_revision,
+            observation.environment_revision,
+            1.0,
+            evidence={"dispatched": False},
+            error_code=RuntimeErrorCode.EXECUTION_FAILED,
+            message="deterministic DOM locator dispatch failure",
+        )
+
+
+class CrossSurfaceObserver:
+    def __init__(self, world: FallbackWorld) -> None:
+        self.world = world
+        self.sequence = 0
+        probe = self._snapshot(0)
+        self.semantic_target_id = probe.unified_affordances[0].semantic_target_id
+
+    def capture(self) -> BrowserSnapshot:
+        self.sequence += 1
+        return self._snapshot(self.sequence)
+
+    def _snapshot(self, sequence: int) -> BrowserSnapshot:
+        snapshot_id = f"snapshot-{sequence}"
+        model = DomAdapter().transduce(
+            '<button id="save">Visual Save</button>',
+            environment_revision="rev-1",
+            snapshot_id=snapshot_id,
+            page_revision="page-1",
+            ttl_ms=60_000,
+        )
+        dom = replace(model.affordances[0], backend_candidates=["dom"])
+        visual = Affordance(
+            "visual_save",
+            Surface.VISUAL,
+            "button",
+            "Visual Save",
+            "click",
+            {"bbox": [100, 70, 40, 40], "screenshot_ref": f"screen-{sequence}.png"},
+            AffordanceLease.issue(
+                environment_revision="rev-1",
+                ttl_ms=60_000,
+                snapshot_id=snapshot_id,
+                page_revision="page-1",
+                target_fingerprint="visual-save-v1",
+            ),
+            backend_candidates=["visual"],
+            confidence=0.95,
+            evidence=[f"screen-{sequence}.png"],
+        )
+        observation = Observation(
+            "rev-1",
+            screenshot_ref=f"screen-{sequence}.png",
+            snapshot_id=snapshot_id,
+            page_revision="page-1",
+            metadata={
+                "saved": self.world.saved,
+                "viewport_size": [640, 480],
+            },
+        )
+        candidates: tuple[GroundingCandidate, ...] = (
+            candidate_from_affordance(
+                dom,
+                observation,
+                semantic_target_id="pending",
+                compatible_executor="dom",
+            ),
+            candidate_from_affordance(
+                visual,
+                observation,
+                semantic_target_id="pending",
+                compatible_executor="visual",
+                image_size=(640, 480),
+            ),
+        )
+        target = SemanticEntityResolver().resolve(
+            tuple(
+                CandidateDescriptor("button", "Visual Save", "click", "main", candidate)
+                for candidate in candidates
+            )
+        )[0]
+        observation = replace(
+            observation,
+            target_fingerprints=candidate_fingerprints((target,)),
+        )
+        return BrowserSnapshot(
+            observation,
+            replace(model, affordances=[dom, visual], kept_node_count=2),
+            source_observations=(
+                SourceObservation(
+                    GroundingSource.DOM,
+                    "dom-adapter",
+                    snapshot_id,
+                    "rev-1",
+                    "page-1",
+                ),
+                SourceObservation(
+                    GroundingSource.VISUAL,
+                    "visual-region-v1",
+                    snapshot_id,
+                    "rev-1",
+                    "page-1",
+                    artifact_refs=(f"screen-{sequence}.png",),
+                ),
+            ),
+            grounding_candidates=target.grounding_candidates,
+            unified_affordances=(target,),
+        )
+
+
+class FallbackPlanner:
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        if any(receipt.success for receipt in state.receipts):
+            return PlannerDecision(done=True, result={"saved": True})
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id=f"proposal-{state.version}",
+                based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                subgoal="Activate the visual save control at the current position",
+            )
+        )
+
+
+def test_coordinator_recovers_from_dom_failure_through_fresh_visual_contract() -> None:
+    world = FallbackWorld()
+    observer = CrossSurfaceObserver(world)
+    dom = FailBeforeDispatchDomExecutor()
+    executors = ExecutorRouter()
+    executors.register(dom)
+    executors.register(VisualExecutor(FallbackPointer(world)))
+    task = TaskSpec(
+        task_id="fallback-task",
+        revision=1,
+        objective="Activate the visual save control at the current position",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("Visual Save",),
+        success_criteria=("saved state is true",),
+        source_request_ref="test",
+        requested_capabilities=("settings.write",),
+    )
+    builder = ContractBuilder(
+        requirements={
+            observer.semantic_target_id: ContractRequirements(
+                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                idempotency_key="fallback-task:save:v1",
+            )
+        }
+    )
+
+    result = RunCoordinator(
+        observer=observer,
+        planner=FallbackPlanner(),
+        executor=executors,
+        contract_builder=builder,
+    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+
+    assert result.status == RuntimeStep.DONE
+    assert result.result == {"saved": True}
+    assert dom.calls == 1
+    assert world.visual_clicks == 1
+    assert result.verification is not None and result.verification.passed
+    route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]
+    assert [node.payload["source"] for node in route_nodes] == ["dom", "visual"]
+    rejected_dom_gate = next(
+        gate
+        for gate in route_nodes[1].payload["hard_gates"]
+        if gate["candidate_id"] == "candidate:dom:dom_button_1"
+    )
+    assert rejected_dom_gate == {
+        "candidate_id": "candidate:dom:dom_button_1",
+        "passed": False,
+        "reasons": ["candidate_excluded"],
+    }
+    contract_nodes = [node for node in result.trace.nodes if node.kind == "ContractBuilt"]
+    assert len(contract_nodes) == 2
+    assert contract_nodes[0].payload["contract_id"] != contract_nodes[1].payload["contract_id"]
+    assert (
+        contract_nodes[1].payload["supersedes_contract_id"]
+        == contract_nodes[0].payload["contract_id"]
+    )
+    recovery = next(node for node in result.trace.nodes if node.kind == "RecoveryStarted")
+    assert recovery.payload["action"] == "reroute"
+    assert not result.state.excluded_grounding_candidates
+    assert result.state.recovery_incident is not None
+    assert result.state.recovery_incident.terminal_outcome == "recovered"
+    assert result.state.effectful_action_count == 2
+    assert all(receipt.evidence.get("dispatched") is not True for receipt in result.state.receipts[:1])
+    assert [receipt.success for receipt in result.state.receipts] == [False, True]
+
+
+def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
+    world = FallbackWorld()
+
+    class MovingPointer:
+        def click_xy(self, x: int, y: int) -> None:
+            assert (x, y) == (220, 90)
+            world.visual_clicks += 1
+            world.saved = True
+
+        def type_text(self, text: str) -> None:
+            raise AssertionError(f"unexpected text input: {text}")
+
+    class MovingPointObserver:
+        def __init__(self) -> None:
+            self.sequence = 0
+            self.semantic_target_id = self._snapshot(0).unified_affordances[0].semantic_target_id
+
+        def capture(self) -> BrowserSnapshot:
+            self.sequence += 1
+            return self._snapshot(self.sequence)
+
+        def _snapshot(self, sequence: int) -> BrowserSnapshot:
+            snapshot_id = f"moving-{sequence}"
+            left = 100 if sequence <= 1 else 200
+            model = DomAdapter().transduce(
+                "<main>moving point</main>",
+                environment_revision="rev-1",
+                snapshot_id=snapshot_id,
+                page_revision="page-1",
+                ttl_ms=60_000,
+            )
+            visual = Affordance(
+                "visual_point",
+                Surface.VISUAL,
+                "point",
+                "Moving target",
+                "point_activate",
+                {"bbox": [left, 70, 40, 40], "screenshot_ref": f"moving-{sequence}.png"},
+                AffordanceLease.issue(
+                    environment_revision="rev-1",
+                    ttl_ms=60_000,
+                    snapshot_id=snapshot_id,
+                    page_revision="page-1",
+                    target_fingerprint=f"moving-point-{sequence}",
+                ),
+                backend_candidates=["visual"],
+                confidence=0.95,
+                evidence=[f"moving-{sequence}.png"],
+            )
+            observation = Observation(
+                "rev-1",
+                screenshot_ref=f"moving-{sequence}.png",
+                snapshot_id=snapshot_id,
+                page_revision="page-1",
+                metadata={"saved": world.saved, "viewport_size": [640, 480]},
+            )
+            candidate = candidate_from_affordance(
+                visual,
+                observation,
+                semantic_target_id="pending",
+                compatible_executor="visual",
+                image_size=(640, 480),
+            )
+            target = SemanticEntityResolver().resolve(
+                (CandidateDescriptor("point", "Moving target", "point_activate", "main", candidate),)
+            )[0]
+            observation = replace(observation, target_fingerprints=candidate_fingerprints((target,)))
+            return BrowserSnapshot(
+                observation,
+                replace(model, affordances=[visual], kept_node_count=1),
+                source_observations=(
+                    SourceObservation(
+                        GroundingSource.VISUAL,
+                        "visual-region-v1",
+                        snapshot_id,
+                        "rev-1",
+                        "page-1",
+                    ),
+                ),
+                grounding_candidates=target.grounding_candidates,
+                unified_affordances=(target,),
+            )
+
+    class MovingPointPlanner:
+        def propose(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlannerDecision:
+            if world.saved:
+                return PlannerDecision(done=True, result={"saved": True})
+            return PlannerDecision(
+                proposal=PlannerProposal(
+                    proposal_id=f"moving-proposal-{state.version}",
+                    based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
+                    based_on_state_version=state.version,
+                    snapshot_id=snapshot.observation.snapshot_id,
+                    action_kind=PlannerActionKind.POINT_ACTIVATE,
+                    target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                )
+            )
+
+    observer = MovingPointObserver()
+    task = TaskSpec(
+        task_id="moving-point-task",
+        revision=1,
+        objective="Click the visual moving target",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("Moving target",),
+        success_criteria=("saved state is true",),
+        source_request_ref="test",
+    )
+    builder = ContractBuilder(
+        requirements={
+            observer.semantic_target_id: ContractRequirements(
+                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+            )
+        }
+    )
+    executors = ExecutorRouter()
+    executors.register(VisualExecutor(MovingPointer()))
+
+    result = RunCoordinator(
+        observer=observer,
+        planner=MovingPointPlanner(),
+        executor=executors,
+        contract_builder=builder,
+    ).run_sync(TaskEnvelope(task_spec=task))
+
+    assert result.status == RuntimeStep.DONE
+    assert world.visual_clicks == 1
+    rebound = [node for node in result.trace.nodes if node.kind == "ContractReboundAtPreflight"]
+    assert len(rebound) == 1
+    assert rebound[0].payload["source_contract_hash"] != rebound[0].payload["contract_hash"]

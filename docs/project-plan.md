@@ -38,6 +38,10 @@ The project uses two compatible planning horizons:
 - [Complete Architecture Blueprint](complete-architecture-blueprint.md): a
   non-blocking reference for a future durable, multi-run, service-grade system.
 
+Repository governance, current correctness work, selective C009 reuse, and
+claim/evidence gates are maintained in the Governance and Correctness Gates
+section of the current implementation plan.
+
 They are not competing designs. The complete blueprint preserves production
 reasoning; the current plan deliberately implements a smaller topology while
 retaining the complete domain loop.
@@ -155,9 +159,10 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
-| M8.2B Public Benchmark Expansion | in progress | generalist PR matrix reaches 18/18 coverage and 15/18 official success; public suite runners and larger matrices remain |
+| M8.2B Public Benchmark Expansion | in progress | clean v112 nightly passes 300/300; complete release measures 321/625 across 125 tasks and exposes eight cross-seed repair clusters while provider/429/retry failures remain zero; v113-v132 close the first schema/SVG/copy/date/color/quantity clusters, v148-v149 close `daily-calendar`, and v155 closes the shared `social-media*` authored-control/context cluster at 30/30. The same source passes fixed-budget PR 18/18 and breadth 60/60 with fail-closed local Ollama GPU residency; a residual release rescan and provisioned public suites remain. |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 | M8.4 Adaptive Shallow Task Planning | done | immutable task-plan/validation, flat/router plus LLM one-repair decomposition, Coordinator serial verifier-backed progress, budgeted task replanning, and controlled Flat/Always-plan/Adaptive ablation at `m8.4-task-planning-ablation.md` |
+| M8.5 Unified Adaptive Routing and Skill Internalization | done | unified typed routes, dual-target gesture contracts, live visual drag and DOM-to-visual fallback, source arbitration, authoritative WoT selection, safe uncertain-effect handling, accepted TaskSkill, six-profile ablation, and completion audit |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -489,7 +494,8 @@ First complete a bounded consolidation pass:
 - freeze a versioned, action-family-stratified nightly task manifest;
 - rerun the current generalist PR profile and retain the form/slider failure as
   an explicit gap until it is solved semantically;
-- add a real multimodal grounding boundary before ScreenSpot predictions;
+- retain the implemented screenshot-to-point `VisualGrounderPort` before
+  ScreenSpot predictions;
 - keep suite-specific reset, task, trace, and evaluator code outside
   `RunCoordinator`.
 
@@ -503,6 +509,25 @@ current 18 MiniWoB++ episodes as compatibility smoke, then add at least 30 task
 types x 10 seeds nightly and every supported pinned MiniWoB task x 5 seeds for
 release with a reproducible external planner. No task-specific regex or
 hardcoded selector solver may be the scored path.
+
+#### M8.2B Reliability Blocker
+
+The current gate is not resolved by increasing the 150-second episode timeout.
+Diagnostics separate three blockers: Gemini free-tier quota exhaustion before
+action, an Ollama container whose exposed GPU cannot initialize NVML and
+therefore loads with zero VRAM residency, and a Runtime semantic gap that can
+treat transport success as effect success and repeat an already-satisfied
+action.
+
+Before another scored matrix, complete the detailed
+`M8.2B.1 Provider and Runtime Reliability Gate` in
+`current-implementation-plan.md`: action-specific postcondition verification,
+deterministic no-progress blocking, bounded planner context and deadlines,
+typed quota handling, and either a repaired GPU-local path or one
+quota-sufficient pinned remote provider. Re-run one task, six tasks, and 18
+episodes before nightly and release expansion. Diagnostic 300-second runs and
+operational provider fallback are not score-equivalent to the fixed
+single-provider benchmark profile.
 
 Then add ScreenSpot, WorkArena L1, a 30-50 task stratified
 WebArena-Verified subset followed by its hard subset, and a WASP security
@@ -547,6 +572,87 @@ Evaluate Flat, Always-plan, and Adaptive profiles on short tasks and a
 controlled long-horizon family before using the layer for WebArena/WorkArena.
 Do not add a generic DAG scheduler, recursive hierarchy, parallel effectful
 nodes, per-node agents, or continuous watching.
+
+### M8.5: Unified Adaptive Routing and Skill Internalization - done locally
+
+M8.5 implements the project's intended unified behavior rather than treating
+DOM, SVG, visual, and WoT as unrelated demos. One semantic target may expose
+multiple typed GroundingCandidates from DOM, accessibility, SVG geometry, SoM,
+pure visual, WoT, or API evidence. A task-aware PerceptionOrchestrator acquires
+sources lazily; a SemanticEntityResolver preserves provenance and conflicts;
+an Adaptive Route Planner applies capability, freshness, confidence, verifier,
+and risk gates before ranking viable perception/grounding/executor/verifier
+routes.
+
+The planner and accepted skills specify semantic target queries and desired
+effects, never selectors, coordinates, backends, or authority. RoutePlan owns
+ordered alternatives; each ActionContract binds exactly one fresh candidate.
+Fallback after missing/stale grounding creates a new observation, route, and
+contract. Timeout or uncertain effect requires post-state inspection before
+retry or cross-surface reroute, and policy denial can never be bypassed through
+another backend.
+
+Complete the SVG/visual route with a selective SvgGeometryObserverPort,
+VisualRegionProposerPort, VisualGrounderPort, and deterministic
+VisualContractBinder. A subgoal requiring `visual + spatial` captures
+DOM/accessibility, SVG geometry when present, and screenshot artifacts in one
+coherent observation epoch, then creates visual/SVG GroundingCandidates under
+the relevant UnifiedAffordance.
+
+The planner proposes semantic POINT_ACTIVATE or DRAG over target/source ids and
+never emits raw coordinates. The binder maps the selected current candidate to
+`click`/`drag_and_drop` when reliable bids exist, `mouse_click` for a grounded
+point, or a bounded visual drag gesture. Every route creates a fresh
+ActionContract and traverses preflight, execution, post-observation, independent
+verification, trace, and recovery. Visual evidence may be primary for
+appearance, layout, vibe, SVG/canvas spatial tasks, or remote-rendered controls
+rather than only a last fallback.
+
+Add two separate regression-gated learning streams:
+
+~~~text
+repeated independently verified success
+  -> parameterized semantic TaskSkill candidate
+
+repeated FailureSignature / RecoveryIncident
+  -> RecoverySkill or RecoveryPolicyPatch candidate
+
+candidate
+  -> quarantine
+  -> original, family, held-out, global, and safety replay
+  -> accept, reject, remain quarantined, or roll back
+~~~
+
+TaskSkill stores typed parameters, ordered semantic SkillSteps, preconditions,
+postconditions, evidence requirements, capabilities, risk, applicability, and
+negative examples. It never stores raw selector, coordinate, mark id, WoT URL,
+browser handle, or approval token. An accepted skill executes one verified step
+at a time and asks Unified Routing to ground each step in the current
+environment. A failed step retains prior verified progress, enters the existing
+Recovery Cascade, and may fall through to System 2 planning.
+
+Accepted TaskSkill and calibrated route hints form the System 1 normal fast
+path; accepted RecoverySkill/Policy forms the known-failure fast path;
+Generalist task/action planning, stronger perception, VLM grounding, and
+ask-user handling form System 2. Every path still creates fresh contracts and
+passes policy, preflight, execution, and verification.
+
+Entry requires the M8.2B semantic-verification/no-progress gate plus the
+implemented M8.3 cascade and M8.4 subgoal progression. Exit requires a cheap
+structured primary route, a task-driven visual-primary case, verified
+DOM-to-visual fallback, an authoritative WoT/API selection, zero blind
+duplicate effects, one accepted held-out TaskSkill that reduces model calls or
+latency without safety regression, and skill failure that safely resumes System
+2 or Recovery Cascade.
+
+The detailed contracts, fallback matrix, phased implementation, baselines,
+metrics, and acceptance criteria are authoritative in
+`current-implementation-plan.md`.
+
+The local milestone is closed by
+`evidence/m8.5-completion-audit-20260722.md`. That audit does not claim the
+clean immutable BrowserGym nightly or unavailable provisioned public suites;
+those remain under M8.2B.
 
 ### M9: Durable Single-Run Recovery - conditional
 

@@ -185,6 +185,7 @@ intersection of caller grants, runtime policy, and action requirements.
 A user intent change creates a new `TaskSpec` revision. Pending proposals and
 contracts based on an older revision are rejected or revalidated.
 
+
 ## 5. Planner Boundary
 
 ### 5.1 PlannerContext
@@ -281,12 +282,20 @@ class ModelPort(Protocol):
 Provider adapters may use OpenAI, Anthropic, Gemini, OpenRouter, vLLM, or
 Ollama. Runtime core does not import a provider SDK.
 
-The shipped environment factory supports `local`, `mistral`, and `gemini`
-profiles.  Gemini uses an OpenAI-compatible endpoint and reads only
+The shipped environment factory supports `local`, `mistral`, `gemini`, and
+`zhipu` profiles. Gemini and Zhipu use OpenAI-compatible endpoints. Gemini reads only
 `LLM_GEMINI_BASE_URL`, `LLM_GEMINI_MODEL`, and `LLM_GEMINI_API_KEY`; the
-profile is selected with `LLM_ACTIVE_PROFILE=gemini`.  Missing configuration
-fails closed before a request is sent.  Secrets are never added to traces,
-reports, or error details.
+Zhipu profile reads `LLM_ZHIPU_BASE_URL`, `LLM_ZHIPU_MODEL`, and
+`LLM_ZHIPU_API_KEY`; either profile is selected with `LLM_ACTIVE_PROFILE`.
+Missing configuration fails closed before a request is sent. Secrets are never
+added to traces, reports, or error details.
+
+The provider boundary distinguishes transient 429 throttling, exhausted quota,
+and provider capacity. It parses bounded `Retry-After` and
+`google.rpc.RetryInfo` delays, opens a local circuit after terminal provider
+failure, and lets the Coordinator persist a redacted resumable deferral. Local
+Ollama evidence must pass `provider-preflight-ollama`, including container GPU
+visibility and non-zero model VRAM residency.
 
 The compiler and planner may use the same underlying model, but they are
 separate structured calls with separate prompts and traces.
@@ -302,6 +311,12 @@ The first generalist planner is one LM worker with:
 - optional plan summary;
 - explicit expected-effect and evidence obligations;
 - one semantic action per decision.
+
+The v47 reliability profile bounds the inventory to 80 ranked affordances and
+retains only one recent proposal, one verified state delta, and one relevant
+failure. Bounded repair calls use a dynamically narrowed action/target schema
+after semantic or progress rejection. Page-derived state remains bounded and
+untrusted.
 
 It may update a short plan after verification or unexpected state change. It
 does not require Manager/Worker/Reflector agents for the first release.

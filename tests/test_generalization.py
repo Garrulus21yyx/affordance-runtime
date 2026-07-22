@@ -2,7 +2,11 @@ import io
 
 from PIL import Image, ImageDraw
 
-from affordance_runtime.benchmarks.miniwob import CURATED_TASKS, MINIWOB_COMMIT
+from affordance_runtime.benchmarks.miniwob import (
+    CURATED_TASKS,
+    LEGACY_MINIWOB_DIAGNOSTIC_VERSION,
+    MINIWOB_COMMIT,
+)
 from affordance_runtime.benchmarks.visual import detect_magenta_region
 from affordance_runtime.fixtures import pricing_html, reports_html, visual_html
 
@@ -31,4 +35,5 @@ def test_visual_detector_derives_real_pixel_bbox() -> None:
 
 def test_official_miniwob_subset_is_pinned_and_covers_required_families() -> None:
     assert len(MINIWOB_COMMIT) == 40
+    assert LEGACY_MINIWOB_DIAGNOSTIC_VERSION == "legacy-task-specific-v1"
     assert {task.family for task in CURATED_TASKS} == {"click", "type", "select", "dialog", "sequence", "form"}

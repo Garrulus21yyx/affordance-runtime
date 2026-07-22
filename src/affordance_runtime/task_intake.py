@@ -103,6 +103,7 @@ class TaskSpec(StrictModel):
     objective: str = Field(min_length=1)
     operation_class: OperationClass
     targets: tuple[str, ...]
+    entities: tuple[IntentEntity, ...] = ()
     preferences: tuple[str, ...] = ()
     desired_outputs: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
@@ -249,6 +250,7 @@ class IntentDraftValidator:
             objective=draft.objective.strip(),
             operation_class=operation,
             targets=_ordered_unique(effect.target for effect in draft.requested_effects),
+            entities=draft.entities,
             preferences=draft.preferences,
             desired_outputs=draft.desired_outputs,
             success_criteria=draft.candidate_success_criteria,

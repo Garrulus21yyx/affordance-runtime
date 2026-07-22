@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
@@ -121,8 +122,20 @@ def evaluate_webarena_verified_manifest(
     if not isinstance(manifest, dict) or manifest.get("schema_version") != "webarena-verified-subset-v1":
         raise ValueError("invalid WebArena-Verified subset manifest")
     task_ids = manifest.get("task_ids")
-    if not isinstance(task_ids, list) or any(isinstance(value, bool) or not isinstance(value, int) for value in task_ids):
-        raise ValueError("WebArena-Verified manifest task_ids must be an integer array")
+    if (
+        not isinstance(task_ids, list)
+        or not task_ids
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in task_ids)
+    ):
+        raise ValueError("WebArena-Verified manifest task_ids must be a non-empty non-negative integer array")
+    if len(set(task_ids)) != len(task_ids):
+        raise ValueError("WebArena-Verified manifest task_ids must be unique")
+    selected_count = manifest.get("selected_task_count")
+    if selected_count is not None and selected_count != len(task_ids):
+        raise ValueError("WebArena-Verified manifest selected_task_count does not match task_ids")
+    source_digest = manifest.get("source_dataset_sha256")
+    if not _is_sha256(source_digest):
+        raise ValueError("WebArena-Verified manifest requires a valid source dataset SHA-256")
     command = [
         executable,
         "eval-tasks",
@@ -136,46 +149,127 @@ def evaluate_webarena_verified_manifest(
     try:
         completed = runner(command, check=False, capture_output=True, text=True)
     except OSError as exc:
-        return _evaluation_report(manifest, command, task_ids, {}, f"official evaluator unavailable: {type(exc).__name__}")
+        return _evaluation_report(
+            manifest,
+            manifest_path,
+            command,
+            task_ids,
+            {},
+            {},
+            {},
+            f"official evaluator unavailable: {type(exc).__name__}",
+        )
     if completed.returncode != 0:
-        return _evaluation_report(manifest, command, task_ids, {}, f"official evaluator failed: exit_{completed.returncode}")
+        return _evaluation_report(
+            manifest,
+            manifest_path,
+            command,
+            task_ids,
+            {},
+            {},
+            {},
+            f"official evaluator failed: exit_{completed.returncode}",
+        )
     results: dict[int, dict[str, Any]] = {}
+    result_digests: dict[int, str] = {}
+    invalid_results: dict[int, str] = {}
+    resolved_logs = agent_logs_dir.resolve()
     for task_id in task_ids:
         path = agent_logs_dir / str(task_id) / "eval_result.json"
         if not path.exists():
             continue
-        value = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(value, dict):
-            results[task_id] = value
-    return _evaluation_report(manifest, command, task_ids, results, "")
+        try:
+            resolved_path = path.resolve()
+            resolved_path.relative_to(resolved_logs)
+        except (OSError, ValueError):
+            invalid_results[task_id] = "result_path_escape"
+            continue
+        try:
+            raw_result = resolved_path.read_bytes()
+            value = json.loads(raw_result.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            invalid_results[task_id] = f"unreadable_result:{type(exc).__name__}"
+            continue
+        error = _validate_upstream_result(value, task_id)
+        if error:
+            invalid_results[task_id] = error
+            continue
+        results[task_id] = value
+        result_digests[task_id] = f"sha256:{hashlib.sha256(raw_result).hexdigest()}"
+    return _evaluation_report(
+        manifest,
+        manifest_path,
+        command,
+        task_ids,
+        results,
+        result_digests,
+        invalid_results,
+        "",
+    )
 
 
 def _evaluation_report(
     manifest: dict[str, Any],
+    manifest_path: Path,
     command: list[str],
     task_ids: list[int],
     results: dict[int, dict[str, Any]],
+    result_digests: dict[int, str],
+    invalid_results: dict[int, str],
     evaluator_error: str,
 ) -> dict[str, Any]:
-    missing = [task_id for task_id in task_ids if task_id not in results]
-    scores = [float(result["score"]) for result in results.values() if isinstance(result.get("score"), (int, float))]
+    missing = [
+        task_id
+        for task_id in task_ids
+        if task_id not in results and task_id not in invalid_results
+    ]
+    scores = [float(result["score"]) for result in results.values()]
     report = {
-        "schema_version": "webarena-verified-evaluation-v1",
+        "schema_version": "webarena-verified-evaluation-v2",
         "official_evaluator": "webarena-verified eval-tasks",
         "source_dataset_sha256": manifest.get("source_dataset_sha256", ""),
+        "manifest_sha256": f"sha256:{hashlib.sha256(manifest_path.read_bytes()).hexdigest()}",
         "manifest_task_ids": task_ids,
         "evaluated_task_count": len(results),
         "missing_result_ids": missing,
+        "invalid_results": {str(task_id): invalid_results[task_id] for task_id in sorted(invalid_results)},
+        "upstream_result_sha256": {
+            str(task_id): result_digests[task_id] for task_id in sorted(result_digests)
+        },
         # Absence of an upstream result is not an official zero.  Keeping this
         # nullable makes fail-closed preflight reports impossible to misread as
         # a scored run.
         "mean_official_score": sum(scores) / len(scores) if scores else None,
         "upstream_results": {str(task_id): results[task_id] for task_id in sorted(results)},
         "command": command,
+        "official_score_claimed": False,
         "acceptance_errors": [],
     }
     if evaluator_error:
         report["acceptance_errors"].append(evaluator_error)
     if missing:
         report["acceptance_errors"].append(f"missing official results: {len(missing)}")
+    if invalid_results:
+        report["acceptance_errors"].append(f"invalid official results: {len(invalid_results)}")
     return report
+
+
+def _validate_upstream_result(value: Any, expected_task_id: int) -> str:
+    if not isinstance(value, dict):
+        return "result_not_object"
+    task_id = value.get("task_id")
+    if task_id != expected_task_id:
+        return "task_id_mismatch"
+    score = value.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return "score_not_numeric"
+    if not math.isfinite(float(score)) or not 0.0 <= float(score) <= 1.0:
+        return "score_out_of_range"
+    return ""
+
+
+def _is_sha256(value: Any) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)

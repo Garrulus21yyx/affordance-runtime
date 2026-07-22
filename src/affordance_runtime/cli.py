@@ -49,12 +49,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     task_planning.add_argument("--output", type=Path, default=Path("task-planning-results"))
 
+    adaptive_routing = subcommands.add_parser(
+        "benchmark-adaptive-routing",
+        help="run the controlled M8.5 routing/System 1 six-profile ablation",
+    )
+    adaptive_routing.add_argument(
+        "--output",
+        type=Path,
+        default=Path("adaptive-routing-results"),
+    )
+
     browsergym = subcommands.add_parser(
         "benchmark-browsergym",
         help="run the isolated BrowserGym MiniWoB full-Coordinator track with an external policy",
     )
     browsergym.add_argument("--output", type=Path, default=Path("browsergym-results"))
-    browsergym.add_argument("--profile", choices=("pr", "nightly", "release"), default="pr")
+    browsergym.add_argument("--profile", choices=("smoke", "pr", "diagnostic", "nightly", "release"), default="pr")
     browsergym.add_argument("--policy-command", required=True, help="JSON-lines planner process; no shell is used")
     browsergym.add_argument("--headed", action="store_true")
 
@@ -63,10 +73,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="run the isolated BrowserGym MiniWoB track with the configured GeneralistLMPlanner profile",
     )
     browsergym_generalist.add_argument("--output", type=Path, default=Path("browsergym-generalist-results"))
-    browsergym_generalist.add_argument("--profile", choices=("pr", "nightly", "release"), default="pr")
+    browsergym_generalist.add_argument(
+        "--profile", choices=("smoke", "pr", "diagnostic", "nightly", "release"), default="pr"
+    )
     browsergym_generalist.add_argument("--headed", action="store_true")
-    browsergym_generalist.add_argument("--resume", action="store_true", help="reuse complete per-episode checkpoints in --output")
-    browsergym_generalist.add_argument("--episode-timeout-s", type=float, default=150.0)
+    browsergym_generalist.add_argument(
+        "--visual-grounding",
+        action="store_true",
+        help="enable screenshot-only visual fallback when no structured control is available",
+    )
+    browsergym_generalist.add_argument(
+        "--task",
+        action="append",
+        default=[],
+        help="repeatable targeted regression task; does not create an official profile score",
+    )
+    browsergym_generalist.add_argument(
+        "--seed-count",
+        type=int,
+        help="override profile seed count for a targeted regression replay",
+    )
+    browsergym_generalist.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume only an identical immutable run after interruption; changed code/prompt/schema/context needs a new --output",
+    )
+    browsergym_generalist.add_argument("--episode-timeout-s", type=float, default=165.0)
+    browsergym_generalist.add_argument("--model-call-timeout-s", type=float, default=10.0)
+    browsergym_generalist.add_argument("--max-model-calls", type=int, default=15)
+    browsergym_generalist.add_argument("--execution-reserve-s", type=float, default=15.0)
 
     screenspot = subcommands.add_parser(
         "benchmark-screenspot",
@@ -77,11 +112,20 @@ def build_parser() -> argparse.ArgumentParser:
     screenspot.add_argument("--predictions", type=Path, required=True)
     screenspot.add_argument("--output", type=Path, default=Path("screenspot-results"))
 
+    screenspot_grounder = subcommands.add_parser(
+        "benchmark-screenspot-grounder",
+        help="generate and score ScreenSpot predictions with the configured visual grounder",
+    )
+    screenspot_grounder.add_argument("--annotations", type=Path, required=True)
+    screenspot_grounder.add_argument("--images", type=Path, required=True)
+    screenspot_grounder.add_argument("--output", type=Path, default=Path("screenspot-grounder-results"))
+
     workarena = subcommands.add_parser(
         "benchmark-workarena-preflight",
         help="inspect isolated WorkArena L1 prerequisites without loading credentials",
     )
     workarena.add_argument("--output", type=Path, default=Path("workarena-results"))
+    workarena.add_argument("--runtime-python", type=Path)
 
     webarena_verified = subcommands.add_parser(
         "prepare-webarena-verified-subset",
@@ -112,6 +156,15 @@ def build_parser() -> argparse.ArgumentParser:
     evolve = subcommands.add_parser("evolve", help="classify a real failed run and apply the regression replay gate")
     evolve.add_argument("--benchmark-report", type=Path, required=True)
     evolve.add_argument("--output", type=Path, default=Path("evolution-results"))
+
+    ollama_preflight = subcommands.add_parser(
+        "provider-preflight-ollama",
+        help="record Ollama identity, container GPU visibility, and non-zero model VRAM residency",
+    )
+    ollama_preflight.add_argument("--output", type=Path, default=Path("artifacts/ollama-preflight.json"))
+    ollama_preflight.add_argument("--base-url", default="http://127.0.0.1:11434")
+    ollama_preflight.add_argument("--model", default="qwen2.5:7b")
+    ollama_preflight.add_argument("--container", default="ollama")
     return parser
 
 
@@ -151,6 +204,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = run_task_planning_ablation(args.output)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "benchmark-adaptive-routing":
+        from affordance_runtime.benchmarks.adaptive_routing import (
+            run_adaptive_routing_ablation,
+        )
+
+        report = run_adaptive_routing_ablation(args.output)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["acceptance_errors"] else 1
     if args.command == "benchmark-browsergym":
         from affordance_runtime.benchmarks.browsergym import run_browsergym_miniwob_suite
 
@@ -165,14 +226,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "benchmark-browsergym-generalist":
         from affordance_runtime.benchmarks.browsergym import run_browsergym_miniwob_generalist_suite
         from affordance_runtime.model_port import model_port_from_environment
+        from affordance_runtime.visual_grounding import (
+            visual_grounder_from_environment,
+            visual_region_proposer_from_environment,
+        )
 
         browsergym_report = run_browsergym_miniwob_generalist_suite(
             args.output,
             profile=args.profile,
             model=model_port_from_environment(),
+            visual_grounder=visual_grounder_from_environment() if args.visual_grounding else None,
+            visual_region_proposer=visual_region_proposer_from_environment() if args.visual_grounding else None,
+            task_ids=args.task or None,
+            seed_count=args.seed_count,
             headless=not args.headed,
             resume=args.resume,
             episode_timeout_s=args.episode_timeout_s,
+            model_call_timeout_s=args.model_call_timeout_s,
+            max_model_calls=args.max_model_calls,
+            execution_reserve_s=args.execution_reserve_s,
         )
         print(json.dumps(browsergym_report, indent=2, sort_keys=True))
         return 0 if not browsergym_report["acceptance_errors"] else 1
@@ -184,10 +256,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "benchmark-screenspot-grounder":
+        from affordance_runtime.benchmarks.screenspot import run_screenspot_grounder_suite
+        from affordance_runtime.visual_grounding import visual_grounder_from_environment
+
+        report = run_screenspot_grounder_suite(
+            args.annotations, args.images, visual_grounder_from_environment(), args.output
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["acceptance_errors"] else 1
     if args.command == "benchmark-workarena-preflight":
         from affordance_runtime.benchmarks.workarena import write_workarena_preflight
 
-        report = write_workarena_preflight(args.output)
+        report = write_workarena_preflight(args.output, runtime_python=args.runtime_python)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["ready"] else 1
     if args.command == "prepare-webarena-verified-subset":
@@ -228,6 +309,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0 if evolution_report.decision.value == "accepted" else 1
+    if args.command == "provider-preflight-ollama":
+        from affordance_runtime.provider_preflight import write_ollama_gpu_preflight
+
+        ollama_report = write_ollama_gpu_preflight(
+            args.output,
+            base_url=args.base_url,
+            model=args.model,
+            container_name=args.container,
+        )
+        print(json.dumps(ollama_report.to_dict(), indent=2, sort_keys=True))
+        return 0 if ollama_report.ready else 1
     if args.command == "run":
         result = run_scenario(
             args.scenario,

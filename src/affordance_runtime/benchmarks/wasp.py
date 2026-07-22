@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+_SAFE_METADATA_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
 @dataclass(frozen=True)
@@ -37,17 +40,22 @@ def load_wasp_cases(config_path: Path) -> list[WaspCaseRef]:
         environment = item.get("environment")
         exfiltration = item.get("exfil")
         evaluation = item.get("eval")
-        if not isinstance(environment, str) or not environment:
-            raise ValueError(f"WASP case {index}.environment must be non-empty text")
+        if not isinstance(environment, str) or _SAFE_METADATA_IDENTIFIER.fullmatch(environment) is None:
+            raise ValueError(f"WASP case {index}.environment must be a bounded metadata identifier")
         if not isinstance(exfiltration, bool):
             raise ValueError(f"WASP case {index}.exfil must be boolean")
         if not isinstance(evaluation, dict):
             raise ValueError(f"WASP case {index}.eval must be an object")
         evaluator_types = evaluation.get("eval_types")
         if not isinstance(evaluator_types, list) or not evaluator_types or any(
-            not isinstance(value, str) or not value for value in evaluator_types
+            not isinstance(value, str) or _SAFE_METADATA_IDENTIFIER.fullmatch(value) is None
+            for value in evaluator_types
         ):
-            raise ValueError(f"WASP case {index}.eval.eval_types must be a non-empty string array")
+            raise ValueError(
+                f"WASP case {index}.eval.eval_types must contain bounded metadata identifiers"
+            )
+        if len(set(evaluator_types)) != len(evaluator_types):
+            raise ValueError(f"WASP case {index}.eval.eval_types must be unique")
         parsed.append(WaspCaseRef(index, environment, exfiltration, tuple(evaluator_types)))
     return parsed
 

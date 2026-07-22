@@ -1,0 +1,280 @@
+from dataclasses import replace
+
+import pytest
+
+from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
+from affordance_runtime.evolution import CandidateRuntimeProfile, EvolutionRegistry, EvolutionStatus
+from affordance_runtime.grounding import UnifiedAffordance
+from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_skills import (
+    IncrementalTaskSkillExecutor,
+    SemanticTargetQuery,
+    SkillParameterType,
+    TaskSkillMiner,
+    TaskSkillPayload,
+    TaskSkillProgress,
+    TaskSkillReplayEvidence,
+    TaskSkillReplayGate,
+    VerifiedSemanticStep,
+    VerifiedSemanticTrace,
+    quarantine_task_skill,
+)
+
+
+def _trace(index: int, variant: str, label: str, value: str) -> VerifiedSemanticTrace:
+    return VerifiedSemanticTrace(
+        trace_id=f"trace-{index}",
+        task_family="profile update",
+        variant=variant,
+        objective=f"Set {label} to {value}",
+        steps=(
+            VerifiedSemanticStep(
+                "type_text",
+                "textbox",
+                label,
+                parameters=(("text", value),),
+                postconditions=("profile value changed",),
+                evidence_requirements=("independent control state",),
+            ),
+        ),
+    )
+
+
+def _payload() -> TaskSkillPayload:
+    return TaskSkillMiner().mine(
+        (
+            _trace(1, "layout-a", "Name", "Ada"),
+            _trace(2, "layout-b", "Full name", "Grace"),
+            _trace(3, "layout-a", "Name", "Linus"),
+        ),
+        skill_id="profile.update-name",
+        heldout_suite="profile-heldout-v1",
+    )
+
+
+def test_task_skill_miner_extracts_typed_slots_from_verified_variant_traces() -> None:
+    payload = _payload()
+
+    assert payload.parameters[0].name == "step_1_target_label"
+    assert payload.parameters[0].value_type == SkillParameterType.STRING
+    assert payload.parameters[1].name == "step_1_text"
+    assert payload.steps[0].target_query.label_template == "{{step_1_target_label}}"
+    assert payload.steps[0].parameter_bindings == (("text", "step_1_text"),)
+    assert len(payload.source_traces) == 3
+    assert len(set(payload.source_variants)) == 2
+    assert payload.digest() == TaskSkillPayload.from_dict(payload.to_dict()).digest()
+
+
+def test_task_skill_rejects_raw_backend_handles_and_unverified_sources() -> None:
+    payload = _payload()
+    unsafe_step = replace(
+        payload.steps[0],
+        target_query=SemanticTargetQuery("textbox", "selector=#name", "type_text"),
+    )
+    with pytest.raises(ValueError, match="forbidden raw handle"):
+        replace(payload, steps=(unsafe_step,)).validate()
+
+    unsafe_trace = replace(_trace(4, "layout-c", "Name", "Ken"), independently_verified=False)
+    with pytest.raises(ValueError, match="not independently safe and verified"):
+        TaskSkillMiner().mine(
+            (_trace(1, "layout-a", "Name", "Ada"), _trace(2, "layout-b", "Name", "Grace"), unsafe_trace),
+            skill_id="profile.unsafe-name",
+            heldout_suite="profile-heldout-v1",
+        )
+
+
+def test_task_skill_candidate_is_quarantined_and_digest_gated_before_loading() -> None:
+    payload = _payload()
+    registry = EvolutionRegistry()
+
+    artifact = quarantine_task_skill(payload, registry)
+
+    assert artifact.status == EvolutionStatus.QUARANTINED
+    assert registry.artifacts[payload.skill_id].payload_digest == payload.digest()
+    with pytest.raises(ValueError, match="only accepted artifacts"):
+        CandidateRuntimeProfile().load(artifact)
+
+    artifact.status = EvolutionStatus.ACCEPTED
+    profile = CandidateRuntimeProfile()
+    profile.load(artifact)
+    assert profile.task_skills_for("profile update") == (payload,)
+    profile.rollback(artifact.id)
+    assert not profile.task_skills_for("profile update")
+
+
+def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoints_only_verification() -> None:
+    payload = _payload()
+    observation = Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")
+    model = DomAdapter().transduce(
+        "<main></main>",
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+    )
+    target = UnifiedAffordance(
+        "semantic:full-name",
+        "textbox",
+        "Full name",
+        frozenset({"type_text"}),
+    )
+    snapshot = BrowserSnapshot(observation, model, unified_affordances=(target,))
+    state = StateKernel("profile-task", "Set Full name to Margaret")
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id="profile-task",
+        revision=1,
+        objective="Set Full name to Margaret",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("Full name",),
+        success_criteria=("profile value changed",),
+        source_request_ref="test",
+    )
+    bindings = {
+        "step_1_target_label": "Full name",
+        "step_1_text": "Margaret",
+    }
+    progress = TaskSkillProgress(payload.skill_id, payload.version)
+    executor = IncrementalTaskSkillExecutor()
+
+    exposure = executor.expose_next(payload, bindings, task, state, snapshot, progress)
+
+    assert exposure.proposal is not None
+    assert exposure.proposal.target_affordance_id == "semantic:full-name"
+    assert exposure.proposal.parameters == {"text": "Margaret"}
+    assert progress.next_step_index == 0
+    executor.checkpoint_verified(payload, progress, step_id="step-1", verified=False)
+    assert progress.next_step_index == 0
+    assert progress.completed_step_ids == []
+    executor.checkpoint_verified(
+        payload,
+        progress,
+        step_id="step-1",
+        verified=True,
+        evidence=("artifact:post-state",),
+    )
+    assert progress.next_step_index == 1
+    assert progress.completed_step_ids == ["step-1"]
+    assert progress.evidence == ["artifact:post-state"]
+    assert executor.expose_next(payload, bindings, task, state, snapshot, progress).proposal is None
+
+
+def test_task_skill_mismatch_falls_through_without_losing_verified_progress() -> None:
+    payload = _payload()
+    observation = Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")
+    model = DomAdapter().transduce(
+        "<main></main>",
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+    )
+    snapshot = BrowserSnapshot(
+        observation,
+        model,
+        unified_affordances=(
+            UnifiedAffordance("semantic:other", "textbox", "Other", frozenset({"type_text"})),
+        ),
+    )
+    state = StateKernel("profile-task", "Set Full name")
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id="profile-task",
+        revision=1,
+        objective="Set Full name",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("Full name",),
+        success_criteria=("profile value changed",),
+        source_request_ref="test",
+    )
+    progress = TaskSkillProgress(
+        payload.skill_id,
+        payload.version,
+        completed_step_ids=["prior-step"],
+        evidence=["artifact:prior"],
+    )
+
+    exposure = IncrementalTaskSkillExecutor().expose_next(
+        payload,
+        {"step_1_target_label": "Full name", "step_1_text": "Ada"},
+        task,
+        state,
+        snapshot,
+        progress,
+    )
+
+    assert exposure.fallthrough
+    assert exposure.proposal is None
+    assert progress.completed_step_ids == ["prior-step"]
+    assert progress.evidence == ["artifact:prior"]
+    assert "matched 0" in progress.fallthrough_reason
+
+
+def test_task_skill_types_do_not_change_task_authority() -> None:
+    payload = _payload()
+    assert all(not step.required_capabilities for step in payload.steps)
+    assert TaskEnvelope(task_id="run", goal="profile update").capabilities == []
+
+
+def _replay(category: str, *, activated: bool = True, applicable: bool = True) -> TaskSkillReplayEvidence:
+    return TaskSkillReplayEvidence(
+        category,
+        f"replay-{category}",
+        f"variant-{category}",
+        True,
+        True,
+        activated,
+        applicable,
+        model_calls=1 if activated else 2,
+        latency_ms=20.0,
+    )
+
+
+def test_task_skill_replay_gate_accepts_only_complete_safe_heldout_efficiency_evidence() -> None:
+    registry = EvolutionRegistry()
+    artifact = quarantine_task_skill(_payload(), registry)
+    evidence = (
+        _replay("original"),
+        _replay("task_family"),
+        _replay("heldout"),
+        _replay("global_smoke", activated=False, applicable=False),
+        _replay("safety_smoke", activated=False, applicable=False),
+    )
+
+    decision = TaskSkillReplayGate().evaluate(
+        registry,
+        artifact.id,
+        evidence,
+        baseline_model_calls=3.0,
+        baseline_latency_ms=50.0,
+    )
+
+    assert decision.status == EvolutionStatus.ACCEPTED.value
+    assert decision.metrics["task_success_rate"] == 1.0
+    assert decision.metrics["skill_activation_precision"] == 1.0
+    assert decision.metrics["model_call_reduction"] > 0
+
+
+def test_task_skill_replay_gate_keeps_missing_heldout_or_efficiency_in_quarantine() -> None:
+    registry = EvolutionRegistry()
+    artifact = quarantine_task_skill(_payload(), registry)
+    evidence = (
+        _replay("original"),
+        _replay("task_family"),
+        _replay("global_smoke", activated=False, applicable=False),
+        _replay("safety_smoke", activated=False, applicable=False),
+    )
+
+    decision = TaskSkillReplayGate().evaluate(
+        registry,
+        artifact.id,
+        evidence,
+        baseline_model_calls=1.0,
+        baseline_latency_ms=20.0,
+    )
+
+    assert decision.status == EvolutionStatus.QUARANTINED.value
+    assert "heldout" in decision.reason
+    assert "did not reduce" in decision.reason

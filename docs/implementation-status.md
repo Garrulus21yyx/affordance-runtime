@@ -27,9 +27,10 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | Generalist BrowserGym v8 PR matrix: 18/18 coverage, 15/18 official success with no 429/timeout; `press_key` executed on the remaining form tasks, whose behavioral gap remains explicit. ScreenSpot, WorkArena, WebArena-Verified, and WASP preparation gates added; committed Web/BrowserGym constraints and split BrowserGym bridge improve evidence reproducibility | documentation consolidation, official ScreenSpot assets/predictions, authorized WorkArena instance, provisioned WebArena environments/logs, current-planner/nightly/release matrices, slider behavioral coverage, and WASP end-to-end run |
+| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300 at official success/reward 1.0. The complete 125-task × 5-seed release observes 321/625 success but correctly withholds its score for 163 runtime acceptance failures. v113-v132 close the first schema/SVG/copy/date/color/quantity clusters; v148-v149 close `daily-calendar`; v155 closes the shared `social-media*` authored-control/context cluster at 30/30. The same source passes fixed-budget PR 18/18 and breadth 60/60, while the launcher fails closed on local Ollama GPU residency. | Re-scan residual release clusters against v155 before selecting the next shared repair layer; provisioned WorkArena/ScreenSpot/WebArena-Verified/WASP inputs remain external gates. |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M8.4 Adaptive Shallow Task Planning | done | immutable TaskPlan/SubgoalSpec, PlanProgress, deterministic validator, flat RuleTaskPlanner/router, LLM candidate plus one repair, Coordinator serial verifier-backed progress/early-finish rejection, action-budget task replanning traces, and controlled Flat/Always-plan/Adaptive ablation | `evidence/m8.4-task-planning-ablation.md`; controlled fixture validates runtime sequencing, not remote-model quality |
+| M8.5 Unified Adaptive Routing and Skill Internalization | done | typed unified routes, Core dual-target gesture binding/preflight, BrowserGym/Playwright/Visual encoders, real screenshot-pixel canvas drag, bounded source-conflict perception, verified DOM-to-visual fallback, authoritative WoT routing, inspect-before-repeat, accepted TaskSkill System 1, six-profile ablation, public report metrics, and the complete perturbation/exit audit | none; frozen nightly/release breadth remains separate M8.2B work |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -161,17 +162,47 @@ See `evidence/m8.2a-7edaa97.md`.
 The isolated BrowserGym 0.14.3 adapter routes every supported action through
 `RunCoordinator`, exposes a typed action whitelist, discovers 125 registered
 MiniWoB tasks, checkpoints resumable episodes, and records official reward
-separately from runtime diagnostics. The latest complete generalist PR matrix
-has 18/18 coverage and 15/18 official success; the three form/slider cases
-remain an explicit behavior gap.
+separately from runtime diagnostics. The latest GPU-local v101 PR matrix has
+18/18 coverage and official success; v102 covers all 30 nightly-manifest tasks
+at seed 0 with 0.9667 mean reward and no provider/runtime/429/retry failure.
+Structured SVG point families and sortable drag families pass 10/10, while
+v103 enforces clean source identity for the pending frozen nightly/release.
 
-Before larger or external matrices, reconcile repository claims, lock
-dependencies, split the oversized BrowserGym benchmark module, freeze a
-versioned stratified nightly manifest, and add a real screenshot-capable visual
-grounder. WebArena-Verified is publicly provisioned rather than authorization
+Before larger or external matrices, repository claims, dependency constraints,
+the BrowserGym module split, and the `miniwob-action-family-v1` 30-task nightly
+manifest are complete. A real screenshot-capable visual grounder is implemented,
+but official ScreenSpot assets are still required before a result claim.
+WebArena-Verified is publicly provisioned rather than authorization
 gated; its missing requirement is a running official environment plus agent
 response/HAR artifacts. WorkArena remains the only suite in this ladder that
 requires gated instance access.
+
+The earlier task-specific `benchmarks.miniwob` compatibility runner remains
+available only to reproduce historical M8 evidence. Its generated reports are
+explicitly ineligible for M8.2B scoring; current MiniWoB claims must use the
+BrowserGym Generalist full-Coordinator track.
+
+Current local external-suite preflight (2026-07-22) remains intentionally
+non-runnable where provisioned inputs are absent: the ordinary project Python lacks BrowserGym,
+but the existing isolated Python 3.12 runtime has pinned MiniWoB 0.14.3 and
+Playwright 1.44, and the launcher-confirmed current-code local smoke passes
+6/6 with 18 calls and no runtime/provider failure. This dirty-tree run remains
+a runtime confirmation rather than a promoted score. Runtime discovery is now
+guarded by dedicated BrowserGym and WorkArena preflight boundaries. WorkArena
+v104 selects only its dedicated interpreter and probes it without credentials;
+the environment, L1 registration, and authorized ServiceNow instance are still
+absent. ScreenSpot assets, a running WebArena-Verified
+environment plus upstream agent artifacts, and an isolated WASP VisualWebArena
+evaluator are likewise absent from this worktree. These are deployment/asset
+gates, not zero-score results; no dependency install, credential lookup, or
+remote benchmark request was made.
+
+The v109 clean immutable 30x10 nightly completed 300/300 and exposed one
+acceptance error plus two execution failures. Trace-derived generic repairs and
+the hierarchy-scope follow-up passed their family, PR, and breadth ladders. The
+replacement clean v112 nightly then passed 300/300 at official success/reward
+1.0 with `official_score_claimed=true` and no error/failure cluster. The local
+frozen nightly gate is closed; release and provisioned external suites remain.
 
 ### M8.3 Recovery-Cascade Evolution — done
 
@@ -188,14 +219,18 @@ original/family replays to depth one, passed global and uncertain-effect safety
 smoke with no blind retry, persisted acceptance, and proved rollback. See
 `evidence/m8.3-07e406f.md`.
 
-### M8.4 Adaptive Shallow Task Planning - planned
+### M8.4 Adaptive Shallow Task Planning - done
 
-The current `GeneralistLMPlanner` is action-level; `StateKernel.subgoals`
-does not yet provide a first-class task plan, dependency validation, or
-verifier-backed subgoal lifecycle. The planned M8.4 layer adds adaptive
-rule/LM task planning, mandatory validation, serial outcome-oriented progress,
-and Flat/Always-plan/Adaptive ablation without adding a DAG scheduler or a
-second execution runtime.
+`TaskPlan`/`SubgoalSpec`, `PlanProgress`, deterministic validation, and the
+rule/LLM planner router now provide the bounded task layer above the
+action-level `GeneralistLMPlanner`. The Coordinator advances subgoals only on
+verifier evidence, rejects early completion, and performs bounded replacement
+planning after an action-budget exhaustion. The controlled
+Flat/Always-plan/Adaptive ablation is complete without adding a DAG scheduler or
+a second execution runtime.
+
+See `evidence/m8.4-task-planning-ablation.md`; it proves runtime sequencing
+with a deterministic structured-model fixture, not remote-model quality.
 
 ## Verification Commands
 
@@ -255,3 +290,7 @@ Clean-checkout M0-M8 gate:
 | 2026-07-20 | M6 | Added SHA-bound executable verifier payloads, fresh candidate runtime replay, atomic registry persistence, accepted-only loading, versioned reports, and two-layer rollback proof | evolution modules, explicit benchmark runtime profiles, evidence gate, tests | clean clone at `4cccc96`: 51 tests plus 21 benchmark and 6 fresh replay runs; accepted registry and rolled-back proof verified |
 | 2026-07-20 | M7 | Added external task JSON-RPC, a separate runtime server process, and a compiled LangGraph parent for pricing and approval-gated export | integration modules, parent smoke, CI/reproduction, tests, evidence | clean clone at `9a9796e`: 52 tests; pricing success; export waited then succeeded; evidence and trace retrieved; no primitive GUI tools exposed |
 | 2026-07-20 | M8 | Added distinct seeded and held-out layouts, real screenshot grounding, and a pinned official MiniWoB++ curated adapter | fixture v2, benchmark/generalization modules, CI/reproduction, tests, evidence | clean clone at `e463e16`: 55 tests; 63 matrix runs, 6 held-out runs, 5 visual runs, and 18 official episodes all passed |
+| 2026-07-22 | M8.2B v132 | Added bounded authored item/type/current-quantity observation and fresh-epoch semantic increment selection without admitting every unmarked `bid` | DOM adapter, browser session, generalist planner, tests, evidence | `order-food` 10/10 with zero model calls; same-source PR 18/18 and breadth 60/60; 388 tests, Ruff, focused mypy, diff check |
+| 2026-07-22 | M8.2B v148 | Preserved action-family diversity in the bounded planner inventory so a 96-endpoint calendar cannot hide its newly rendered name/create controls | generalist planner, DOM/BrowserGym calendar path, tests, evidence | same-source `daily-calendar` 10/10, PR 18/18, and seed-major breadth 60/60; 395 tests, Ruff, focused mypy, diff check; no provider, 429, retry, runtime, acceptance, or failure cluster |
+| 2026-07-22 | M8.2B v149 | Restored local Ollama GPU residency without replacing its model volume, added fail-closed provider preflight to the sole launcher, and restored documented smoke/PR defaults | launcher, provider preflight, fixed-budget evidence | same-source fixed 165/10/15/15 PR 18/18; RTX 3080 and 4.75 GB model residency recorded; no provider, 429, retry, runtime, acceptance, or failure cluster |
+| 2026-07-22 | M8.2B v155 | Added bounded owner/position/action/toggle semantics for authored collection controls and a BrowserGym current-bid scroll/DOM-click route without exposing bids to Planner proposals | DOM adapter, generalist compiler, BrowserGym binder/executor, tests, evidence | same-source social families 30/30, PR 18/18, and seed-major breadth 60/60; 401 tests; no provider, 429, retry, runtime, acceptance, or failure cluster |
