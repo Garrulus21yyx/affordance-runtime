@@ -164,7 +164,6 @@ def _bounded_accessibility_tree(page: PageDriver, *, max_nodes: int = 256) -> di
                     "children",
                     "nodes",
                     "childIds",
-                    "browsergym_id",
                 }:
                     kept[str(key)] = bounded(item, depth + 1)
             return kept
@@ -211,9 +210,28 @@ def _source_assertions(
             values: list[tuple[str, Any, str]] = [
                 ("semantic_label", affordance.label, "string"),
             ]
-            for property_key in ("visible", "enabled"):
+            for property_key in (
+                "visible",
+                "enabled",
+                "checked",
+                "focused",
+                "aria_selected",
+                "control_value",
+                "selected_options",
+            ):
                 if property_key in affordance.state:
-                    values.append((property_key, bool(affordance.state[property_key]), "boolean"))
+                    value = affordance.state[property_key]
+                    normalized_key = (
+                        "selected" if property_key == "aria_selected" else property_key
+                    )
+                    value_type = (
+                        "boolean"
+                        if isinstance(value, bool)
+                        else "string"
+                        if isinstance(value, str)
+                        else "json"
+                    )
+                    values.append((normalized_key, value, value_type))
             bbox = affordance.locator.get("bbox")
             if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
                 values.append(("position", tuple(float(item) for item in bbox), "bbox"))

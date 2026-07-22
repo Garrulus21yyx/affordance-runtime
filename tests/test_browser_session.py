@@ -56,6 +56,7 @@ def test_browser_session_bundles_browser_accessibility_tree_in_same_epoch() -> N
             return {
                 "role": "WebArea",
                 "name": "Settings",
+                "vendor_internal_id": "must-not-cross-runtime-boundary",
                 "children": [{"role": "button", "name": "Save"}],
             }
 
@@ -163,6 +164,14 @@ def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
 
     assert states["textarea"]["control_value"] == "Trim-sensitive text "
     assert states["input"]["control_value"] == ""
+    assertions = {
+        (item.property_key, item.value)
+        for item in snapshot.source_assertions
+        if item.source == GroundingSource.DOM
+    }
+    assert ("control_value", "Trim-sensitive text ") in assertions
+    assert ("control_value", "") in assertions
+    assert ("focused", False) in assertions
     assert snapshot.observation.metadata["visible_text"] == "Copy this exactly: Trim-sensitive text "
 
 
