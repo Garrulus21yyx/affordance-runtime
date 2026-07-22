@@ -305,6 +305,21 @@ def test_disabling_browsergym_observation_profile_preserves_declared_runtime_act
     }
 
 
+def test_browsergym_marks_do_not_promote_native_labels_over_their_controls() -> None:
+    model = browsergym_dom_adapter().transduce(
+        '<p><label bid="label-1" browsergym_set_of_marks="1">Password</label>'
+        '<input id="password" bid="input-1" browsergym_set_of_marks="1" type="password"></p>'
+        '<p><label bid="label-2" browsergym_set_of_marks="1">Verify password</label>'
+        '<input id="verify" bid="input-2" browsergym_set_of_marks="1" type="password"></p>',
+        environment_revision="rev-1",
+    )
+
+    assert [(item.label, item.action, item.locator.get("backend_handle")) for item in model.affordances] == [
+        ("Password", "type", "input-1"),
+        ("Verify password", "type", "input-2"),
+    ]
+
+
 def test_generalist_planner_port_runs_browsergym_without_external_action_policy(tmp_path: Path) -> None:
     environment = FakeBrowserGymEnvironment()
     model = GeneralistClickModel()

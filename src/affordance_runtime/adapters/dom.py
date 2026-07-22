@@ -49,6 +49,9 @@ _SELECTOR_CONFIDENCE = {
 }
 _CONTEXT_CONTAINER_TAGS = frozenset(["article", "dd", "div", "li", "section", "td", "tr"])
 _DRAG_HANDLE_CLASSES = frozenset(["ui-draggable-handle", "ui-sortable-handle"])
+_DESCRIPTIVE_PROXY_TAGS = frozenset(["form", "label"])
+_LABELABLE_TAGS = frozenset(["input", "select", "textarea"])
+_LABEL_CONTAINER_TAGS = frozenset(["div", "fieldset", "form", "li", "p", "section", "td"])
 
 
 @dataclass(frozen=True)
@@ -306,6 +309,10 @@ class _InteractiveParser(HTMLParser):
         authored_actionable = bool(
             self._extension is not None
             and attr.get(self._extension.marker_attribute) == self._extension.marker_value
+            # Rendered-mark systems can annotate descriptive proxies as well
+            # as controls. Native label/form semantics need independent
+            # interaction evidence before they become executable targets.
+            and tag not in _DESCRIPTIVE_PROXY_TAGS
         )
         drag_capable = _drag_capable(attr)
         semantic_color_target = bool(
@@ -483,6 +490,8 @@ def _label_for(node: dict[str, Any]) -> str:
     for key in ("aria-label", "placeholder", "title", "alt", "data-color"):
         if attr.get(key):
             return attr[key].strip()
+    if node.get("associated_label"):
+        return str(node["associated_label"]).strip()
     if node["tag"] == "option" and attr.get("value"):
         return attr["value"].strip()
     if node["tag"] == "input" and attr.get("type", "text").lower() in {"submit", "button"} and attr.get("value"):
@@ -574,6 +583,70 @@ def _collection_position(attr: dict[str, str]) -> int | None:
     return value if value > 0 else None
 
 
+def _has_independent_action_semantics(node: dict[str, Any]) -> bool:
+    """Require more than a rendered marker for native descriptive proxies."""
+
+    attr = node["attr"]
+    return bool(
+        attr.get("role", "") in _ARIA_ACTION_MAP
+        or attr.get("tabindex", "") not in {"", "-1"}
+        or "onclick" in attr
+        or _drag_capable(attr)
+        or node.get("semantic_quantity_control")
+        or node.get("semantic_calendar_slot")
+        or node.get("semantic_collection_action")
+    )
+
+
+def _label_container(node: dict[str, Any]) -> object | None:
+    return next(
+        (
+            ancestor
+            for ancestor in node.get("context_ancestors", ())
+            if ancestor.get("tag") in _LABEL_CONTAINER_TAGS
+        ),
+        None,
+    )
+
+
+def _associate_control_labels(nodes: list[dict[str, Any]]) -> None:
+    """Attach only unambiguous explicit, nested, or adjacent native labels."""
+
+    controls_by_id = {
+        node["attr"]["id"]: node
+        for node in nodes
+        if node["tag"] in _LABELABLE_TAGS and node["attr"].get("id")
+    }
+    for index, label_node in enumerate(nodes):
+        if label_node["tag"] != "label":
+            continue
+        label = " ".join(label_node.get("text_parts", ())).strip()
+        if not label:
+            continue
+        explicit_target = controls_by_id.get(label_node["attr"].get("for", ""))
+        nested_target = next(
+            (
+                node
+                for node in nodes
+                if node["tag"] in _LABELABLE_TAGS and node.get("parent_node") is label_node
+            ),
+            None,
+        )
+        target = explicit_target or nested_target
+        if target is None:
+            container = _label_container(label_node)
+            for candidate in nodes[index + 1 :]:
+                if candidate["tag"] == "label" and _label_container(candidate) is container:
+                    break
+                if candidate["tag"] in _LABELABLE_TAGS and _label_container(candidate) is container:
+                    target = candidate
+                    break
+        if target is not None and not any(
+            target["attr"].get(key) for key in ("aria-label", "placeholder", "title")
+        ):
+            target["associated_label"] = label
+
+
 @dataclass(frozen=True)
 class DomAdapter:
     extension: AuthoredInteractiveExtension | None = None
@@ -596,6 +669,7 @@ class DomAdapter:
         )
         parser.feed(html or "")
         parser.close()
+        _associate_control_labels(parser.nodes)
         nested_control_label_nodes = {
             id(parent)
             for node in parser.nodes
@@ -616,6 +690,10 @@ class DomAdapter:
             node
             for node in parser.nodes
             if not (
+                node["tag"] in _DESCRIPTIVE_PROXY_TAGS
+                and not _has_independent_action_semantics(node)
+            )
+            and not (
                 node["tag"] == "label"
                 and (id(node) in nested_control_label_nodes or node["attr"].get("for", "") in control_ids)
             )
@@ -756,6 +834,7 @@ class DomAdapter:
                         "visible": True,
                         "element_tag": node["tag"],
                         **({"input_type": attr.get("type", "text").lower()} if node["tag"] == "input" else {}),
+                        **({"label_source": "native_label"} if node.get("associated_label") else {}),
                         **({"readonly": True} if node["tag"] == "input" and "readonly" in attr else {}),
                         **(
                             {"control_value": attr["value"]}

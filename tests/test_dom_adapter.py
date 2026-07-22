@@ -182,6 +182,41 @@ def test_dom_adapter_merges_a_nested_label_into_its_checkbox_control() -> None:
     assert model.affordances[0].locator["backend_handle"] == "input-bid"
 
 
+def test_dom_adapter_associates_adjacent_labels_without_exposing_proxy_actions() -> None:
+    model = _authored_adapter().transduce(
+        '<p><label data-runtime-handle="label-1" data-runtime-interactive="1">Password</label>'
+        '<input id="password" data-runtime-handle="input-1" type="password"></p>'
+        '<p><label data-runtime-handle="label-2" data-runtime-interactive="1">Verify password</label>'
+        '<input id="verify" data-runtime-handle="input-2" type="password"></p>'
+        '<button data-runtime-handle="submit">Submit</button>',
+        environment_revision="rev-1",
+    )
+
+    assert [(item.role, item.label, item.action) for item in model.affordances] == [
+        ("textbox", "Password", "type"),
+        ("textbox", "Verify password", "type"),
+        ("button", "Submit", "click"),
+    ]
+    assert [item.state.get("label_source") for item in model.affordances[:2]] == [
+        "native_label",
+        "native_label",
+    ]
+
+
+def test_dom_adapter_requires_independent_semantics_for_marked_descriptive_tags() -> None:
+    model = _authored_adapter().transduce(
+        '<label role="button" data-runtime-handle="role-label" data-runtime-interactive="1">Open chooser</label>'
+        '<form data-runtime-handle="marked-form" data-runtime-interactive="1">Form text</form>'
+        '<span data-runtime-handle="custom" data-runtime-interactive="1">Custom control</span>',
+        environment_revision="rev-1",
+    )
+
+    assert [(item.label, item.action) for item in model.affordances] == [
+        ("Open chooser", "click"),
+        ("Custom control", "click"),
+    ]
+
+
 def test_dom_adapter_distinguishes_radio_and_textbox_roles() -> None:
     model = _authored_adapter().transduce(
         '<input type="radio" value="1"><input type="text" id="answer">',
@@ -219,10 +254,11 @@ def test_dom_adapter_exposes_autocomplete_options_without_label_or_menu_containe
     )
 
     assert [(item.role, item.label, item.action) for item in model.affordances] == [
-        ("textbox", "tags", "type"),
+        ("textbox", "Tags:", "type"),
         ("button", "Submit", "click"),
         ("option", "Colombia", "click"),
     ]
+    assert model.affordances[0].state["label_source"] == "native_label"
     assert model.affordances[0].state["autocomplete"] is True
     assert model.affordances[-1].state["programmatic_option"] is True
 

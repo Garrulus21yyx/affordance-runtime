@@ -26,6 +26,22 @@ patch this frozen batch. Improve generic trace-derived family attribution,
 select architecture work from cross-task clusters, and keep task-specific
 solvers out of shared Runtime code.
 
+Current post-R8 repair slice (2026-07-23): release traces for the stable
+password/login verification cluster show a shared observation defect. Native
+`label` elements without independent interaction semantics are emitted as
+`button/activate` affordances, while their adjacent password/text controls keep
+weak id-derived labels. The Planner fills the first field, then selects the
+descriptive label instead of the next typed control; both `enter-password` and
+`login-user` reproduce this pattern for all five seeds. Repair this at the
+generic DOM actionability and label-association boundary: descriptive/proxy
+labels must not become independent actions solely because an authored marker
+exists, and an unambiguous explicit, nested, or adjacent label must enrich its
+labelable control. Required proof is a non-BrowserGym DOM unit test, an authored
+extension conformance test, negative controls for genuinely interactive custom
+elements and explicit roles, then the original failures, corresponding generic
+form family, PR 18, and a new diagnostic sweep. Do not add task-name, URL,
+benchmark-family, Prompt, or model-specific branches.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
