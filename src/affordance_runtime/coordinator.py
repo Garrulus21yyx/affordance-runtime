@@ -14,6 +14,7 @@ from uuid import uuid4
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
 from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
@@ -55,7 +56,7 @@ from affordance_runtime.task_planning import (
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder, preflight
+from affordance_runtime.verification import VerificationReport, VerifierLadder
 
 
 @dataclass(frozen=True)
@@ -161,9 +162,17 @@ class RunCoordinator:
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
+    contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.perception_session = PerceptionSession(self.observer, self.artifacts)
+        self.contract_execution_loop = ContractExecutionLoop(
+            executor=self.executor,
+            verifier=self.verifier,
+            gate=self.gate,
+            task_policy=self.task_policy,
+            artifacts=self.artifacts,
+        )
         if self.task_planner is not None:
             self.task_plan_lifecycle = TaskPlanLifecycle(
                 planner=self.task_planner,
@@ -739,7 +748,11 @@ class RunCoordinator:
                     latest_verification,
                 )
 
-            contract = self._bind_contract(contract, envelope, snapshot)
+            contract = self.contract_execution_loop.bind_contract(
+                contract,
+                envelope,
+                snapshot.observation,
+            )
             if skill_step_id and self.task_skill_runtime is not None:
                 requirement_error = self.task_skill_runtime.contract_requirement_error(
                     state,
@@ -907,19 +920,15 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-            effective_gate = CapabilityGate(
-                granted_capabilities=self.gate.granted_capabilities | set(envelope.capabilities),
-                approval_required_risks=set(self.gate.approval_required_risks),
-                approval_required_capabilities=self.gate.approval_required_capabilities
-                | set(str(item) for item in envelope.constraints.get("require_approval_for", [])),
-                approval_tokens=self.gate.approval_tokens,
-                approved_contract_ids=set(self.gate.approved_contract_ids),
+            contract_check = self.contract_execution_loop.initial_check(
+                contract,
+                envelope,
+                snapshot.observation,
+                capability_gate_enabled=self.features.capability_gate,
+                preflight_enabled=self.features.preflight,
             )
-            error = (
-                self.task_policy.check(contract, envelope.constraints)
-                or (effective_gate.check(contract) if self.features.capability_gate else None)
-                or (preflight(contract, snapshot.observation) if self.features.preflight else None)
-            )
+            effective_gate = contract_check.gate
+            error = contract_check.error
             execution_observation = snapshot.observation
             if error is None and self.features.preflight:
                 preflight_snapshot = self.perception_session.capture(
@@ -943,9 +952,13 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 parent = self._trace_source_arbitration(trace, parent, preflight_snapshot, state.phase)
-                error = preflight(
+                error = self.contract_execution_loop.revalidate(
                     contract,
+                    envelope,
                     preflight_snapshot.observation,
+                    effective_gate,
+                    capability_gate_enabled=False,
+                    include_policy=False,
                     require_snapshot_identity=False,
                     require_environment_revision=False,
                 )
@@ -980,11 +993,18 @@ class RunCoordinator:
                     except ProposalRejected:
                         pass
                     else:
-                        rebound_contract = self._bind_contract(rebound_contract, envelope, preflight_snapshot)
-                        rebound_error = (
-                            self.task_policy.check(rebound_contract, envelope.constraints)
-                            or (effective_gate.check(rebound_contract) if self.features.capability_gate else None)
-                            or preflight(rebound_contract, preflight_snapshot.observation)
+                        rebound_contract = self.contract_execution_loop.bind_contract(
+                            rebound_contract,
+                            envelope,
+                            preflight_snapshot.observation,
+                        )
+                        rebound_error = self.contract_execution_loop.revalidate(
+                            rebound_contract,
+                            envelope,
+                            preflight_snapshot.observation,
+                            effective_gate,
+                            capability_gate_enabled=self.features.capability_gate,
+                            include_policy=True,
                         )
                         if rebound_error is None:
                             parent = trace.add(
@@ -1067,9 +1087,13 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 parent = self._trace_source_arbitration(trace, parent, approval_snapshot, state.phase)
-                error = effective_gate.check(contract) or preflight(
+                error = self.contract_execution_loop.revalidate(
                     contract,
+                    envelope,
                     approval_snapshot.observation,
+                    effective_gate,
+                    capability_gate_enabled=True,
+                    include_policy=False,
                     require_snapshot_identity=False,
                     require_environment_revision=False,
                 )
@@ -1137,7 +1161,7 @@ class RunCoordinator:
 
             state.transition(RuntimeStep.ACTING.value)
             parent = trace.add("ActionStarted", {"state": state.phase, "contract_id": contract.id}, parents=[parent.id])
-            receipt = self.executor.execute(contract, execution_observation)
+            receipt = self.contract_execution_loop.execute(contract, execution_observation)
             state.record_receipt(receipt)
             state.step_count += 1
             state.record_subgoal_action()
@@ -1194,10 +1218,12 @@ class RunCoordinator:
                     inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
                     self._index(trace, inspection_ref)
                     self._index_paths(trace, inspection.observation.artifact_refs)
-                    latest_verification = self.verifier.verify_report(
-                        contract.verifier_plan,
+                    latest_verification = self.contract_execution_loop.verify(
+                        contract,
                         receipt,
                         inspection.observation,
+                        structural_verification_enabled=True,
+                        disabled_reason="",
                     )
                     state.latest_verification = latest_verification
                     parent = trace.add(
@@ -1262,17 +1288,13 @@ class RunCoordinator:
                 parents=[parent.id],
             )
             parent = self._trace_source_arbitration(trace, parent, post_snapshot, state.phase)
-            if self.features.structural_verification:
-                latest_verification = self.verifier.verify_report(
-                    contract.verifier_plan,
-                    receipt,
-                    post_snapshot.observation,
-                )
-            else:
-                latest_verification = VerificationReport(
-                    VerificationStatus.PASSED,
-                    reason="structural verification disabled by benchmark ablation",
-                )
+            latest_verification = self.contract_execution_loop.verify(
+                contract,
+                receipt,
+                post_snapshot.observation,
+                structural_verification_enabled=self.features.structural_verification,
+                disabled_reason="structural verification disabled by benchmark ablation",
+            )
             state.latest_verification = latest_verification
             if decision.proposal is not None:
                 state.record_action_progress(
@@ -1559,25 +1581,6 @@ class RunCoordinator:
                 RuntimeErrorCode.VERIFICATION_FAILED,
                 latest_verification,
             )
-
-    def _bind_contract(
-        self,
-        contract: ActionContract,
-        envelope: TaskEnvelope,
-        snapshot: BrowserSnapshot,
-    ) -> ActionContract:
-        parameters = dict(contract.parameters)
-        if contract.action == "download" and self.artifacts is not None:
-            parameters.setdefault("destination_dir", str(self.artifacts.run_dir(envelope.task_id) / "downloads"))
-        return replace(
-            contract,
-            run_id=envelope.task_id,
-            snapshot_id=contract.snapshot_id or snapshot.observation.snapshot_id,
-            page_revision=contract.page_revision or snapshot.observation.page_revision,
-            observed_at_s=contract.observed_at_s or snapshot.observation.observed_at_s,
-            parameters=parameters,
-            contract_hash="",
-        )
 
     def _recover(
         self,
