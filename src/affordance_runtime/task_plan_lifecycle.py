@@ -1,0 +1,251 @@
+"""Internal task-plan lifecycle collaborator for the serial Coordinator.
+
+The lifecycle is deliberately stateless.  It prepares and validates plan
+transitions while the Coordinator remains the sole control-flow authority and
+``StateKernel`` remains the single mutable run state.
+"""
+
+from __future__ import annotations
+
+import inspect
+from dataclasses import dataclass, field
+from typing import Awaitable, Protocol, cast
+
+from affordance_runtime.async_bridge import resolve_awaitable
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_planning import (
+    CriteriaEvidenceLedgerEntry,
+    PlanningAffordanceSummary,
+    PlanningEnvironmentSummary,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlannerPort,
+    TaskPlanningBudgetSummary,
+    TaskPlanningContext,
+    TaskPlanningFailureSummary,
+    TaskPlanningRecoverySummary,
+    TaskPlanValidationReport,
+    TaskPlanValidator,
+)
+
+
+class TaskPlanBudgetLimits(Protocol):
+    """Structural view of the run limits used in planning context."""
+
+    @property
+    def max_steps(self) -> int: ...
+
+    @property
+    def max_observations(self) -> int: ...
+
+    @property
+    def max_replans(self) -> int: ...
+
+    @property
+    def max_recoveries(self) -> int: ...
+
+    @property
+    def max_effectful_actions(self) -> int: ...
+
+
+@dataclass(frozen=True)
+class TaskPlanTransition:
+    """A proposed immutable plan transition, before state mutation."""
+
+    context: TaskPlanningContext
+    plan: TaskPlan
+    validation: TaskPlanValidationReport
+    previous_plan: TaskPlan | None = None
+
+
+@dataclass(frozen=True)
+class TaskPlanLifecycle:
+    """Prepare task-plan transitions without owning mutable run state."""
+
+    planner: TaskPlannerPort
+    validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
+
+    def propose_initial(
+        self,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        budget: TaskPlanBudgetLimits,
+    ) -> TaskPlanTransition:
+        context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
+        plan = _resolve_task_plan(self.planner.plan(context))
+        validation = self.validator.validate(plan, task_spec, state_version=state.version)
+        return TaskPlanTransition(context=context, plan=plan, validation=validation)
+
+    def propose_replacement(
+        self,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        budget: TaskPlanBudgetLimits,
+        *,
+        reason: str,
+    ) -> TaskPlanTransition:
+        previous_plan = state.task_plan
+        if previous_plan is None or state.plan_progress is None:
+            raise ValueError("cannot replan without an active TaskPlan")
+        context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
+        plan = _resolve_task_plan(self.planner.plan(context))
+        validation = self.validator.validate(
+            plan,
+            task_spec,
+            state_version=state.version,
+            previous_plan=previous_plan,
+        )
+        return TaskPlanTransition(
+            context=context,
+            plan=plan,
+            validation=validation,
+            previous_plan=previous_plan,
+        )
+
+    @staticmethod
+    def should_replan(state: StateKernel) -> bool:
+        return (
+            state.task_plan is not None
+            and state.plan_progress is not None
+            and state.plan_progress.action_budget_exhausted(state.task_plan)
+        )
+
+    @staticmethod
+    def completed(state: StateKernel) -> bool:
+        if state.task_plan is None or state.plan_progress is None:
+            return False
+        completed = set(state.plan_progress.completed_subgoal_ids)
+        return all(item.subgoal_id in completed for item in state.task_plan.subgoals)
+
+    @staticmethod
+    def active_subgoal_spec(state: StateKernel) -> SubgoalSpec | None:
+        if state.task_plan is None or state.plan_progress is None:
+            return None
+        active_id = state.plan_progress.active_subgoal_id
+        return next((item for item in state.task_plan.subgoals if item.subgoal_id == active_id), None)
+
+    @classmethod
+    def active_subgoal_for_perception(cls, state: StateKernel) -> SubgoalSpec | str | None:
+        if state.task_plan is None or state.plan_progress is None:
+            return state.subgoals[-1] if state.subgoals else None
+        return cls.active_subgoal_spec(state)
+
+    @staticmethod
+    def build_context(
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        budget: TaskPlanBudgetLimits,
+        *,
+        reason: str,
+    ) -> TaskPlanningContext:
+        plan = state.task_plan
+        progress = state.plan_progress
+        if snapshot.unified_affordances:
+            affordances = tuple(
+                PlanningAffordanceSummary(
+                    semantic_target_id=item.semantic_target_id,
+                    role=item.role,
+                    label=item.label,
+                    supported_actions=tuple(item.supported_actions),
+                )
+                for item in snapshot.unified_affordances[:64]
+            )
+        else:
+            affordances = tuple(
+                PlanningAffordanceSummary(
+                    semantic_target_id=item.id,
+                    role=item.role,
+                    label=item.label,
+                    supported_actions=(item.action,),
+                )
+                for item in snapshot.affordance_model.affordances[:64]
+            )
+        failures: tuple[TaskPlanningFailureSummary, ...] = ()
+        latest = state.latest_verification
+        if latest is not None and not latest.passed:
+            failures = (
+                TaskPlanningFailureSummary(
+                    phase=state.phase,
+                    error_code=latest.status.value,
+                    reason=latest.reason[:500],
+                    subgoal_id=progress.active_subgoal_id if progress is not None else "",
+                    environment_revision=snapshot.observation.environment_revision,
+                ),
+            )
+        elif reason == "subgoal_action_budget_exhausted":
+            failures = (
+                TaskPlanningFailureSummary(
+                    phase="task_planning",
+                    error_code="subgoal_action_budget_exhausted",
+                    reason="active subgoal exhausted its action budget without matched criteria evidence",
+                    subgoal_id=progress.active_subgoal_id if progress is not None else "",
+                    environment_revision=snapshot.observation.environment_revision,
+                ),
+            )
+        incident = state.recovery_incident
+        recovery_summary = (
+            TaskPlanningRecoverySummary(
+                incident_id=incident.incident_id,
+                root_error_code=incident.root_failure.error_code,
+                terminal_outcome=incident.terminal_outcome,
+                findings=tuple(item.value for item in incident.findings[:16]),
+                attempted_actions=tuple(item.recovery_action.value for item in incident.attempts[-16:]),
+            )
+            if incident is not None
+            else None
+        )
+        return TaskPlanningContext(
+            task_spec=task_spec,
+            state_version=state.version,
+            reason=reason,
+            current_plan_id=plan.plan_id if plan is not None else "",
+            current_plan_version=plan.plan_version if plan is not None else 0,
+            environment=PlanningEnvironmentSummary(
+                environment_revision=snapshot.observation.environment_revision,
+                snapshot_id=snapshot.observation.snapshot_id,
+                page_revision=snapshot.observation.page_revision,
+                url=snapshot.observation.url,
+                affordances=affordances,
+            ),
+            active_subgoal_id=progress.active_subgoal_id if progress is not None else "",
+            completed_subgoal_ids=tuple(progress.completed_subgoal_ids) if progress is not None else (),
+            failed_subgoal_ids=tuple(progress.failed_subgoal_ids) if progress is not None else (),
+            criteria_evidence_ledger=(
+                tuple(
+                    CriteriaEvidenceLedgerEntry(
+                        subgoal_id=subgoal_id,
+                        evidence_ids=tuple(evidence_ids),
+                    )
+                    for subgoal_id, evidence_ids in sorted(progress.evidence_by_subgoal.items())
+                )
+                if progress is not None
+                else ()
+            ),
+            failures=failures,
+            recovery_summary=recovery_summary,
+            disproved_assumptions=tuple(state.disproved_assumptions[-16:]),
+            remaining_budget=TaskPlanningBudgetSummary(
+                steps_remaining=max(0, budget.max_steps - state.step_count),
+                observations_remaining=max(0, budget.max_observations - state.observation_count),
+                replans_remaining=max(
+                    0,
+                    budget.max_replans - (progress.task_replan_count if progress is not None else 0),
+                ),
+                recoveries_remaining=max(0, budget.max_recoveries - state.recovery_count),
+                effectful_actions_remaining=max(
+                    0,
+                    budget.max_effectful_actions - state.effectful_action_count,
+                ),
+            ),
+        )
+
+
+def _resolve_task_plan(value: TaskPlan | Awaitable[TaskPlan]) -> TaskPlan:
+    if not inspect.isawaitable(value):
+        return value
+    return cast(TaskPlan, resolve_awaitable(value))
