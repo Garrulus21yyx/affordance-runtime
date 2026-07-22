@@ -5,8 +5,8 @@ the controlled web profile. M8.2B remains in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
 [Current Architecture Audit](current-architecture-audit-20260722.md). The
 Runtime-first R1-R7 sequence is complete. R8 module containment after semantic
-stabilization is in progress, beginning with the stateless TaskPlanLifecycle
-extraction. M8.2B remains open for
+stabilization is in progress; stateless TaskPlanLifecycle and PerceptionSession
+collaborators are now extracted. M8.2B remains open for
 release capability and separately provisioned public suites. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
@@ -1410,14 +1410,16 @@ as architecture work. The detailed findings and gates are maintained in
    current-HEAD smoke, PR, diagnostic, nightly, and residual release evidence
    is frozen at clean `7e1c7db`. See
    `evidence/runtime-r7-clean-public-evaluation-20260722.md`.
-8. **Contain modules after semantics stabilize — in progress:** the stateless
-   TaskPlanLifecycle now owns plan/context preparation, validation, async
-   resolution, and lifecycle queries while Coordinator and StateKernel retain
-   all authoritative mutation. Next extract PerceptionSession,
-   ContractExecutionLoop, RecoveryHandler, generalist planner context/LM/rule
-   internals, and BrowserGym observer/encoder/runner/reporting internals without
-   adding services or another authoritative state writer. See
-   `evidence/runtime-r8-task-plan-lifecycle-20260722.md`.
+8. **Contain modules after semantics stabilize — in progress:** stateless
+   TaskPlanLifecycle and PerceptionSession collaborators now own immutable plan
+   preparation/validation and observation-port acquisition respectively, while
+   Coordinator and StateKernel retain all authoritative mutation, budgets, and
+   trace order. Next extract ContractExecutionLoop, RecoveryHandler, generalist
+   planner context/LM/rule internals, and BrowserGym
+   observer/encoder/runner/reporting internals without adding services or
+   another authoritative state writer. See
+   `evidence/runtime-r8-task-plan-lifecycle-20260722.md` and
+   `evidence/runtime-r8-perception-session-20260722.md`.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 

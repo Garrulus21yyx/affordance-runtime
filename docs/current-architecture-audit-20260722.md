@@ -629,10 +629,12 @@ Exit:
 
 ### Phase R8 - Internal Module Containment
 
-Status on 2026-07-22: in progress. The first slice extracts a stateless
-`TaskPlanLifecycle`; Coordinator still performs plan installation, replacement,
-activation, completion, and all trace/state transitions. See
-`evidence/runtime-r8-task-plan-lifecycle-20260722.md`.
+Status on 2026-07-22: in progress. The first two slices extract stateless
+`TaskPlanLifecycle` and `PerceptionSession` collaborators. Coordinator still
+performs plan installation/replacement/activation/completion, observation
+recording, budget accounting, and all trace/state transitions. See
+`evidence/runtime-r8-task-plan-lifecycle-20260722.md` and
+`evidence/runtime-r8-perception-session-20260722.md`.
 
 Deliverables:
 

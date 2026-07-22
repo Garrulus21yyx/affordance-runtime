@@ -13,15 +13,11 @@ from uuid import uuid4
 
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
-from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
 from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
-from affordance_runtime.perception import (
-    PerceptionEscalation,
-    derive_perception_requirements,
-    perception_task_terms,
-)
+from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -51,7 +47,6 @@ from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planning import (
-    SubgoalSpec,
     SubgoalVerifierPort,
     TaskPlannerPort,
     TaskPlanValidationStatus,
@@ -61,10 +56,6 @@ from affordance_runtime.task_planning import (
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder, preflight
-
-
-class ObservationSource(Protocol):
-    def capture(self) -> BrowserSnapshot: ...
 
 
 @dataclass(frozen=True)
@@ -169,8 +160,10 @@ class RunCoordinator:
     loaded_profile_artifact_ids: tuple[str, ...] = ()
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
+    perception_session: PerceptionSession = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self.perception_session = PerceptionSession(self.observer, self.artifacts)
         if self.task_planner is not None:
             self.task_plan_lifecycle = TaskPlanLifecycle(
                 planner=self.task_planner,
@@ -226,7 +219,7 @@ class RunCoordinator:
             if state.phase in {RuntimeStep.CREATED.value, RuntimeStep.RECOVERING.value}:
                 state.transition(RuntimeStep.OBSERVING.value)
 
-            snapshot = self._capture(envelope, state, state.observation_count + 1)
+            snapshot = self.perception_session.capture(envelope, state, state.observation_count + 1)
             state.remember_observation(snapshot.observation)
             observation_ref = self._write_observation(envelope.task_id, state.observation_count, snapshot)
             parent = trace.add(
@@ -929,7 +922,11 @@ class RunCoordinator:
             )
             execution_observation = snapshot.observation
             if error is None and self.features.preflight:
-                preflight_snapshot = self._capture(envelope, state, state.observation_count + 1)
+                preflight_snapshot = self.perception_session.capture(
+                    envelope,
+                    state,
+                    state.observation_count + 1,
+                )
                 state.remember_observation(preflight_snapshot.observation)
                 preflight_ref = self._write_observation(envelope.task_id, state.observation_count, preflight_snapshot)
                 self._index(trace, preflight_ref)
@@ -1049,7 +1046,11 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                approval_snapshot = self._capture(envelope, state, state.observation_count + 1)
+                approval_snapshot = self.perception_session.capture(
+                    envelope,
+                    state,
+                    state.observation_count + 1,
+                )
                 state.remember_observation(approval_snapshot.observation)
                 approval_ref = self._write_observation(envelope.task_id, state.observation_count, approval_snapshot)
                 self._index(trace, approval_ref)
@@ -1184,7 +1185,11 @@ class RunCoordinator:
                 if recovery_result in {RecoveryAction.REOBSERVE, RecoveryAction.RETRY, RecoveryAction.REROUTE}:
                     continue
                 if recovery_result == RecoveryAction.VERIFY_STATE:
-                    inspection = self._capture(envelope, state, state.observation_count + 1)
+                    inspection = self.perception_session.capture(
+                        envelope,
+                        state,
+                        state.observation_count + 1,
+                    )
                     state.remember_observation(inspection.observation)
                     inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
                     self._index(trace, inspection_ref)
@@ -1237,7 +1242,11 @@ class RunCoordinator:
                 )
 
             state.transition(RuntimeStep.VERIFYING.value)
-            post_snapshot = self._capture(envelope, state, state.observation_count + 1)
+            post_snapshot = self.perception_session.capture(
+                envelope,
+                state,
+                state.observation_count + 1,
+            )
             state.remember_observation(post_snapshot.observation)
             post_ref = self._write_observation(envelope.task_id, state.observation_count, post_snapshot)
             self._index(trace, post_ref)
@@ -1689,78 +1698,6 @@ class RunCoordinator:
     def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
         return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
 
-    def _capture(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        sequence: int,
-    ) -> BrowserSnapshot:
-        if isinstance(self.observer, BrowserSession):
-            artifacts = self.artifacts
-            active_subgoal = TaskPlanLifecycle.active_subgoal_for_perception(state)
-            escalation = self._perception_escalation(state)
-            requirements = (
-                derive_perception_requirements(
-                    envelope.task_spec,
-                    active_subgoal=active_subgoal,
-                    escalation=escalation,
-                )
-                if envelope.task_spec is not None
-                else None
-            )
-            screenshot_path = None
-            if artifacts is not None:
-                screenshot_path = artifacts.run_dir(envelope.task_id) / "screenshots" / f"screenshot_{sequence:04d}.png"
-                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-            snapshot = self.observer.capture(
-                screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
-                perception_requirements=requirements,
-                task_terms=(
-                    perception_task_terms(
-                        envelope.task_spec,
-                        active_subgoal=active_subgoal,
-                    )
-                    if envelope.task_spec is not None
-                    else ()
-                ),
-                task_instruction=(
-                    " ".join(
-                        item
-                        for item in (
-                            envelope.task_spec.objective,
-                            active_subgoal.objective
-                            if isinstance(active_subgoal, SubgoalSpec)
-                            else active_subgoal or "",
-                        )
-                        if item
-                    )
-                    if envelope.task_spec is not None
-                    else envelope.goal
-                ),
-            )
-            if screenshot_path is not None and artifacts is not None:
-                if not screenshot_path.exists():
-                    screenshot_path.write_bytes(self.observer.screenshot())
-                artifacts.register_file(envelope.task_id, screenshot_path, "image/png")
-            return snapshot
-        return self.observer.capture()
-
-    @staticmethod
-    def _perception_escalation(state: StateKernel) -> PerceptionEscalation | None:
-        failed_sources: set[GroundingSource] = set()
-        for lineage in state.grounding_fallback_lineage.values():
-            raw_source = lineage.get("failed_source", "")
-            try:
-                failed_sources.add(GroundingSource(raw_source))
-            except ValueError:
-                continue
-        if not failed_sources:
-            return None
-        return PerceptionEscalation(
-            reason="previous grounding route failed before a verified effect",
-            failed_sources=frozenset(failed_sources),
-        )
-
     def _fulfill_targeted_perception(
         self,
         run_id: str,
@@ -1771,9 +1708,8 @@ class RunCoordinator:
     ) -> tuple[BrowserSnapshot, TraceNode]:
         """Acquire bounded coherent snapshots when arbitration requests them."""
 
-        capture_targeted = getattr(self.observer, "capture_targeted", None)
         while snapshot.active_perception_requests:
-            if not callable(capture_targeted):
+            if not self.perception_session.supports_targeted_capture:
                 parent = trace.add(
                     "TargetedPerceptionUnavailable",
                     {
@@ -1797,11 +1733,7 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 break
-            targeted = capture_targeted(snapshot.active_perception_requests)
-            if inspect.isawaitable(targeted):
-                targeted = resolve_awaitable(targeted)
-            if not isinstance(targeted, BrowserSnapshot):
-                raise TypeError("capture_targeted must return one coherent BrowserSnapshot")
+            targeted = self.perception_session.capture_targeted(snapshot.active_perception_requests)
             state.active_perception_count += 1
             state.remember_observation(targeted.observation)
             targeted_ref = self._write_observation(run_id, state.observation_count, targeted)
