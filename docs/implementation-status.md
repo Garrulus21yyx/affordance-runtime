@@ -27,10 +27,10 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300 at official success/reward 1.0. The complete 125-task × 5-seed release observes 321/625 success but correctly withholds its score for 163 runtime acceptance failures. v113-v132 close the first schema/SVG/copy/date/color/quantity clusters; v148-v149 close `daily-calendar`; v155 closes the shared `social-media*` authored-control/context cluster at 30/30. The same source passes fixed-budget PR 18/18 and breadth 60/60, while the launcher fails closed on local Ollama GPU residency. | Re-scan residual release clusters against v155 before selecting the next shared repair layer; provisioned WorkArena/ScreenSpot/WebArena-Verified/WASP inputs remain external gates. |
+| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300; the complete release observes 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic evidence only | pause benchmark-family repair, close Runtime-first R1-R5 and de-specialize shared modules, then run residual release scan; provisioned external suites remain separate gates |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
-| M8.4 Adaptive Shallow Task Planning | done | immutable TaskPlan/SubgoalSpec, PlanProgress, deterministic validator, flat RuleTaskPlanner/router, LLM candidate plus one repair, Coordinator serial verifier-backed progress/early-finish rejection, action-budget task replanning traces, and controlled Flat/Always-plan/Adaptive ablation | `evidence/m8.4-task-planning-ablation.md`; controlled fixture validates runtime sequencing, not remote-model quality |
-| M8.5 Unified Adaptive Routing and Skill Internalization | done | typed unified routes, Core dual-target gesture binding/preflight, BrowserGym/Playwright/Visual encoders, real screenshot-pixel canvas drag, bounded source-conflict perception, verified DOM-to-visual fallback, authoritative WoT routing, inspect-before-repeat, accepted TaskSkill System 1, six-profile ablation, public report metrics, and the complete perturbation/exit audit | none; frozen nightly/release breadth remains separate M8.2B work |
+| M8.4 Adaptive Shallow Task Planning | in_progress | immutable plan models, validator, router, one-repair LM candidate, Coordinator sequencing, and controlled ablation exist | criteria-bound evidence matching, TaskPlanningContext, plan lineage, and normal-entrypoint non-BrowserGym proof |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | typed routes, Core gesture binding, visual/DOM/WoT component proofs, safe fallback, TaskSkill/RecoverySkill components, and ablation exist | generic task-aware perception, ordinary source assertions, target-specific calibrated routing, canonical trace mining, strict SkillStep checkpoints, and de-specialization |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -219,18 +219,34 @@ original/family replays to depth one, passed global and uncertain-effect safety
 smoke with no blind retry, persisted acceptance, and proved rollback. See
 `evidence/m8.3-07e406f.md`.
 
-### M8.4 Adaptive Shallow Task Planning - done
+### M8.4 Adaptive Shallow Task Planning - in progress
 
-`TaskPlan`/`SubgoalSpec`, `PlanProgress`, deterministic validation, and the
-rule/LLM planner router now provide the bounded task layer above the
-action-level `GeneralistLMPlanner`. The Coordinator advances subgoals only on
-verifier evidence, rejects early completion, and performs bounded replacement
-planning after an action-budget exhaustion. The controlled
-Flat/Always-plan/Adaptive ablation is complete without adding a DAG scheduler or
-a second execution runtime.
+`TaskPlan`/`SubgoalSpec`, `PlanProgress`, deterministic validation, the
+rule/LLM planner router, Coordinator sequencing, and controlled
+Flat/Always-plan/Adaptive ablation exist.
 
-See `evidence/m8.4-task-planning-ablation.md`; it proves runtime sequencing
-with a deterministic structured-model fixture, not remote-model quality.
+The current verifier does not match passed evidence to the active subgoal
+criteria, replanning lacks environment/failure/evidence context and plan
+lineage, and normal entrypoints do not consistently use task-level planning.
+See `evidence/m8.4-task-planning-ablation.md` for component sequencing and
+`current-architecture-audit-20260722.md` for the remaining completion gates.
+
+### M8.5 Unified Adaptive Routing and Skill Internalization - in progress
+
+Typed candidates, unified routes, Core dual-target gesture contracts, fresh
+fallback contracts, inspect-before-repeat, visual/DOM/WoT component proofs,
+source-conflict extension points, and TaskSkill/RecoverySkill models exist.
+
+Milestone completion still requires generic TaskSpec/SubgoalSpec-to-perception
+wiring, ordinary BrowserSession visual candidates and sourced assertions,
+target-specific evidence gates, verifier-backed route calibration,
+geometry-aware fusion, canonical trace-to-TaskSkill extraction, strict
+SkillStep verification, explicit accepted-profile loading, and removal of
+benchmark-family semantics from shared modules.
+
+Follow M8.5R in `current-implementation-plan.md` and the normative
+`runtime-first-boundary.md`. The prior completion audit is component evidence,
+not milestone closure.
 
 ## Verification Commands
 
@@ -240,11 +256,14 @@ Run these from the repository root:
 docker compose build runtime-test
 docker compose run --rm runtime-test
 
-# A separately provisioned development environment may run the same gate:
+# A separately provisioned development environment may run:
 python -m pytest -q
 python -m ruff check src tests scripts
-python -m mypy src
 python -m build
+
+# Repository-wide mypy is an open R7 gate until optional integration
+# environments and ignore policies are aligned:
+python -m mypy src
 ```
 
 M1 end-to-end commands:
@@ -277,6 +296,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-22 | Architecture audit | Adopted Runtime-first boundary, prohibited benchmark specialization in shared architecture, corrected M8.4/M8.5 status, and added ordered remediation gates | boundary, audit, README, project/current plans, status ledger | reviewed `0272765`; 401 tests pass, Ruff passes, full mypy has four optional-integration errors |
 | 2026-07-20 | M0-M4 | Created milestone implementation ledger from the authoritative plan and current source audit | `docs/implementation-status.md` | baseline: 27 tests, Ruff, and mypy passing before implementation changes |
 | 2026-07-20 | M0 | Implemented frozen state, contract, approval, trace, and evolution semantics | core runtime modules and tests | 32+ tests, Ruff, mypy |
 | 2026-07-20 | M1 | Implemented coordinator, artifacts, pricing fixture/planner, CLI, structural post-verification, immediate revalidation, screenshots, and baseline | coordinator, artifacts, fixture, planner, CLI, tests | 36 tests; Ruff/mypy; real Chromium gold path/baseline; three repeated runs |

@@ -40,7 +40,11 @@ The project uses two compatible planning horizons:
 
 Repository governance, current correctness work, selective C009 reuse, and
 claim/evidence gates are maintained in the Governance and Correctness Gates
-section of the current implementation plan.
+section of the current implementation plan. The normative
+[Runtime-First Architecture Boundary](runtime-first-boundary.md) prohibits
+benchmark-specific logic in Runtime core and requires every benchmark-discovered
+architecture repair to have non-BrowserGym conformance and negative-control
+evidence before benchmark confirmation.
 
 They are not competing designs. The complete blueprint preserves production
 reasoning; the current plan deliberately implements a smaller topology while
@@ -159,10 +163,10 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
-| M8.2B Public Benchmark Expansion | in progress | clean v112 nightly passes 300/300; complete release measures 321/625 across 125 tasks and exposes eight cross-seed repair clusters while provider/429/retry failures remain zero; v113-v132 close the first schema/SVG/copy/date/color/quantity clusters, v148-v149 close `daily-calendar`, and v155 closes the shared `social-media*` authored-control/context cluster at 30/30. The same source passes fixed-budget PR 18/18 and breadth 60/60 with fail-closed local Ollama GPU residency; a residual release rescan and provisioned public suites remain. |
+| M8.2B Public Benchmark Expansion | in progress | historical v112 nightly is 300/300 and the complete release is 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic only. Pause benchmark-family repair, close Runtime-first R1-R5 and remove shared-module specialization, then rerun residual release and provisioned public suites. |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
-| M8.4 Adaptive Shallow Task Planning | done | immutable task-plan/validation, flat/router plus LLM one-repair decomposition, Coordinator serial verifier-backed progress, budgeted task replanning, and controlled Flat/Always-plan/Adaptive ablation at `m8.4-task-planning-ablation.md` |
-| M8.5 Unified Adaptive Routing and Skill Internalization | done | unified typed routes, dual-target gesture contracts, live visual drag and DOM-to-visual fallback, source arbitration, authoritative WoT selection, safe uncertain-effect handling, accepted TaskSkill, six-profile ablation, and completion audit |
+| M8.4 Adaptive Shallow Task Planning | in progress | plan models and controlled sequencing exist; criteria-bound evidence, context-rich replanning, plan lineage, and normal-entrypoint integration remain |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in progress | route, gesture, fallback, and skill components exist; generic task-aware perception, calibrated routing, canonical trace mining, and strict SkillStep verification remain |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -553,7 +557,7 @@ accepted policy artifact, and shown through fresh replays, persisted registries,
 uncertain-effect inspection, and rollback not to introduce duplicate effects,
 blind retries, or safety regressions. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - done
+### M8.4: Adaptive Shallow Task Planning - in progress
 
 Add an optional task-level layer above the implemented action planner. A
 deterministic router keeps simple tasks flat, uses accepted rule/skill templates
@@ -568,12 +572,14 @@ coordinates, and executable actions. The Coordinator executes one ready
 subgoal at a time through the existing observe/propose/contract/preflight/act/
 post-observe/verify loop; only verifier evidence advances progress.
 
-Evaluate Flat, Always-plan, and Adaptive profiles on short tasks and a
-controlled long-horizon family before using the layer for WebArena/WorkArena.
-Do not add a generic DAG scheduler, recursive hierarchy, parallel effectful
-nodes, per-node agents, or continuous watching.
+The controlled Flat/Always-plan/Adaptive experiment proves sequencing but does
+not close the milestone. Complete criteria-to-evidence matching, TaskPlanningContext,
+plan version lineage, and one normal non-BrowserGym multi-stage path before
+using the layer for WebArena or WorkArena. Do not add a generic DAG scheduler,
+recursive hierarchy, parallel effectful nodes, per-node agents, or continuous
+watching.
 
-### M8.5: Unified Adaptive Routing and Skill Internalization - done locally
+### M8.5: Unified Adaptive Routing and Skill Internalization - in progress
 
 M8.5 implements the project's intended unified behavior rather than treating
 DOM, SVG, visual, and WoT as unrelated demos. One semantic target may expose
@@ -637,8 +643,9 @@ Generalist task/action planning, stronger perception, VLM grounding, and
 ask-user handling form System 2. Every path still creates fresh contracts and
 passes policy, preflight, execution, and verification.
 
-Entry requires the M8.2B semantic-verification/no-progress gate plus the
-implemented M8.3 cascade and M8.4 subgoal progression. Exit requires a cheap
+Entry retains the implemented M8.3 cascade and existing M8.4 planning
+components, but M8.4 criteria-bound progression is now a shared completion
+gate. Exit requires a cheap
 structured primary route, a task-driven visual-primary case, verified
 DOM-to-visual fallback, an authoritative WoT/API selection, zero blind
 duplicate effects, one accepted held-out TaskSkill that reduces model calls or
@@ -649,10 +656,11 @@ The detailed contracts, fallback matrix, phased implementation, baselines,
 metrics, and acceptance criteria are authoritative in
 `current-implementation-plan.md`.
 
-The local milestone is closed by
-`evidence/m8.5-completion-audit-20260722.md`. That audit does not claim the
-clean immutable BrowserGym nightly or unavailable provisioned public suites;
-those remain under M8.2B.
+The prior `evidence/m8.5-completion-audit-20260722.md` remains component and
+perturbation evidence, not milestone closure. The authoritative remaining
+sequence is M8.5R in `current-implementation-plan.md` and the findings are in
+`current-architecture-audit-20260722.md`. BrowserGym nightly and public suites
+remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
 ### M9: Durable Single-Run Recovery - conditional
 

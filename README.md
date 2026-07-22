@@ -5,16 +5,29 @@ GUI actions to versioned environment state, scoped capabilities, expected
 effects, verifier evidence, trace, benchmark scoring, and regression-gated
 harness evolution.
 
-The repository implements M0-M8.1, M8.2A, M8.3, and M8.4 of the controlled
-web profile. M8.2B public benchmark expansion is in progress: the Generalist
-BrowserGym PR matrix, reproducibility constraints, fixed nightly manifest, and
-external-suite preflight bridges exist, while larger official matrices and
-provisioned external environments remain outstanding. The completed profile
-includes three reproducible Web/SaaS scenarios, trace and artifacts,
-independent verification, distinct seeded layouts, baseline/ablation evaluation,
-executable evolution, external parent integration, and held-out, visual, and
-official MiniWoB++ generalization evidence. Service-grade distributed options
-remain explicitly deferred.
+## Architecture Boundary
+
+**Affordance Runtime is the product. BrowserGym and every other benchmark are
+external consumers and evaluation environments.** Architecture changes must
+improve the generic Runtime main path first and must have non-BrowserGym
+conformance evidence. Benchmark task ids, families, selectors, coordinates,
+answers, and authored task semantics may not be embedded in Runtime core,
+generalist planning, or shared adapters.
+
+See [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md) for the
+normative ownership, review, and evidence rules. BrowserGym may normalize
+observations, encode validated Runtime actions, and collect official results; it
+must not become a replacement planner, perception stack, verifier, recovery
+engine, or learning system.
+
+The repository implements M0-M8.1, M8.2A, and M8.3 of the controlled web
+profile. M8.2B public benchmark expansion is in progress. M8.4 task-planning
+models and controlled sequencing exist, but criteria-bound progress,
+context-rich replanning, plan lineage, and normal-entrypoint wiring remain.
+M8.5 route, gesture, fallback, and skill components exist, but generic
+task-aware multimodal perception, verifier-calibrated routing, canonical
+trace-to-skill mining, and strict SkillStep checkpoints remain in progress.
+Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
 for code and release scope, while the complete architecture blueprint preserves
@@ -82,14 +95,16 @@ Implemented current profile:
   no-progress blocking, compact planner context, and typed provider deferral
 - an Ollama GPU preflight that fails closed unless the requested model has
   non-zero VRAM residency and records its model/GPU identity manifest
-- task-derived perception requirements, typed unified grounding candidates,
+- component-level perception requirements, typed unified grounding candidates,
   selective SVG geometry, Core dual-target gesture contracts, and semantic
-  `POINT_ACTIVATE`/`DRAG` boundaries with backend-only coordinate encoding
+  action boundaries with backend-only coordinate encoding; generic
+  task-to-perception wiring remains an active gate
 
 Verified evidence:
 
-- all 254 current unit/integration tests pass with Ruff; focused mypy checks
-  pass for every reliability-gate module
+- all 401 current unit/integration tests pass with Ruff in the provisioned
+  BrowserGym environment; full mypy still reports four optional-integration
+  boundary errors and is not currently a passing repository-wide gate
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -104,19 +119,15 @@ Verified evidence:
   family passes 20/20 (`grid-coordinate` and `circle-center`, ten seeds each)
   under explicit time and model-call budgets
 - a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
-- the controlled M8.4 ablation keeps the short flat path and completes the
-  three-stage verifier-backed path adaptively; it makes no remote-model-quality
-  claim
+- the controlled M8.4 ablation keeps the short flat path and completes a
+  three-stage path in a controlled fixture; it does not yet prove criteria-bound generic task progression
 
-Next evidence gate: reconcile the remaining drag/read/navigation clusters,
-then run the pinned 30-task x 10-seed nightly matrix from a clean immutable
-revision. The v58 post-SVG smoke passed 6/6, the PR matrix passed 18/18, and
-the SVG point family passed 20/20. The fixed budget
-for smoke/PR is 165 seconds per episode, 10 seconds per model call, at most 15
-calls, and a 15-second execution reserve. The next resumable nightly matrix keeps the
-same episode/reserve but uses a GPU-local 5-second call timeout and 30-call
-horizon because verified one-step sliders require up to 20 actions. Release
-follows nightly. M9 remains conditional on restart/waiting evidence.
+Next architecture gate: complete criteria-bound progress, context-rich task
+planning, and generic task-aware multimodal perception before adding further
+benchmark-family rules. Then remove benchmark semantics from shared modules,
+freeze the current immutable revision, and rerun BrowserGym smoke, PR, nightly,
+and residual release matrices. M9 remains conditional on restart/waiting
+evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -127,6 +138,8 @@ Explicitly deferred beyond the current profile:
 
 ## Documents
 
+- [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md)
+- [Current Architecture Audit - 2026-07-22](docs/current-architecture-audit-20260722.md)
 - [Project Plan](docs/project-plan.md)
 - [Implementation Status and Forward Gates](docs/implementation-status.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)

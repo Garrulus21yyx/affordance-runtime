@@ -1,17 +1,20 @@
 # Current Implementation Plan
 
 Implementation status: M0-M8.1, M8.2A, and M8.3 are complete for the
-controlled web profile. See
-[Implementation Status and Forward Gates](implementation-status.md). The next
-required increment is M8.2B public benchmark expansion. M9 is conditional on
-measured restart/waiting evidence; production-scale options remain non-blocking.
+controlled web profile. M8.2B, M8.4, and M8.5 are in progress. See
+[Implementation Status and Forward Gates](implementation-status.md) and the
+[Current Architecture Audit](current-architecture-audit-20260722.md). The next
+required increment is semantic completion of the generic Runtime main path,
+followed by public benchmark confirmation. M9 remains conditional on measured
+restart/waiting evidence; production-scale options remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-22): v155 closes the shared
-`social-media*` authored-control/context failure without promoting arbitrary
-unmarked bids. The same dirty-tree source digest passes all three families at
-30/30, local PR 18/18, and the seed-major 30 x 2 diagnostic sweep 60/60. This
-is repair-ladder evidence, not an immutable nightly or release promotion. The
-next step is a fresh residual release-cluster rescan against this source.
+Current M8.2B diagnostic position (2026-07-22): v155 records targeted
+`social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
+an immutable nightly or release promotion. Do not add further benchmark-family
+repairs before the Runtime-first R1-R5 gates close. After criteria-bound
+progress, context-rich planning, generic perception/routing, and de-specialized
+module ownership are proven, rerun the residual release scan as external
+confirmation.
 
 ## 1. Authority
 
@@ -23,6 +26,12 @@ describes a possible production-scale destination. It does not create current
 release requirements. When the two documents differ, this implementation plan
 wins until a production feature is explicitly promoted through the decision
 gate in the main [Project Plan](project-plan.md).
+
+The [Runtime-First Architecture Boundary](runtime-first-boundary.md) is
+normative for module ownership and benchmark-driven work. BrowserGym is an
+external adapter and evaluation consumer. No benchmark task family, selector,
+coordinate, authored answer, or fixture-specific semantic solver may enter the
+generic Runtime core, shared adapters, or generalist planner.
 
 The governing strategy is:
 
@@ -681,6 +690,9 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
+- pause new task-family semantic compilers until R1-R5 move benchmark
+  attributes and authored family logic out of shared DOM/planner modules and
+  prove the replacement capability in a non-BrowserGym environment;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
   claiming an official ScreenSpot prediction result; it accepts immutable
   screenshot input and returns only a bounded point artifact.
@@ -887,24 +899,23 @@ cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - done
+### M8.4: Adaptive Shallow Task Planning - in progress
 
 Implement the bounded design in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
 
-The first implementation slice now provides immutable `TaskPlan`/
-`SubgoalSpec`, separate `PlanProgress`, `TaskPlanValidator`, a flat-path
-`PlanningRouter`/`RuleTaskPlanner`, and StateKernel storage. The Coordinator
-creates/validates a plan after its initial observation, advances one serial
-subgoal only from passed verifier evidence, and rejects planner completion
-before all subgoals are verified. `LLMTaskPlanner` generates an outcome-only
-candidate and receives one bounded deterministic-validation repair attempt.
-Task-level replanning occurs after a local subgoal action budget is exhausted,
-preserves verified subgoals/evidence, and is traced separately from local
-recovery. The controlled Flat/Always-plan/Adaptive ablation passes: Adaptive
-preserves the short flat path and completes a three-stage oracle while the
-comparison profiles expose their expected limits. See
-`evidence/m8.4-task-planning-ablation.md`.
+The first implementation slice provides immutable `TaskPlan`/`SubgoalSpec`,
+separate `PlanProgress`, `TaskPlanValidator`, a flat `PlanningRouter`/
+`RuleTaskPlanner`, StateKernel storage, one bounded LM repair, and a controlled
+Flat/Always-plan/Adaptive sequencing experiment.
+
+The milestone is not complete. The current subgoal verifier accepts arbitrary
+passed evidence without matching the active success criteria or evidence
+requirements. Task replanning receives only TaskSpec and state_version, plan
+versions remain fixed, and normal BrowserGym, CLI, and natural-language paths
+do not consistently use task-level planning. The controlled ablation proves
+component sequencing only. See `evidence/m8.4-task-planning-ablation.md` and
+`current-architecture-audit-20260722.md`.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
   deterministic `RuleTaskPlanner`;
@@ -922,15 +933,17 @@ comparison profiles expose their expected limits. See
   incidents;
 - compare Flat, Always-plan, and Adaptive profiles.
 
-Exit: simple tasks retain the flat path; at least one controlled long-horizon
-family improves without regressing short-task safety; traces distinguish task
+Exit: simple tasks retain the flat path; criteria-bound evidence advances only
+the matching subgoal; replanning receives environment, evidence, failure, and
+budget context; plan version lineage is complete; one real non-BrowserGym
+multi-stage task runs through a normal entrypoint; traces distinguish task
 planning, action planning, local recovery, and task-level replanning.
 
 This milestone does not add recursive hierarchy, parallel effectful subgoals, a
 generic DAG scheduler, one agent per node, continuous watching, or a runtime
 framework dependency.
 
-### M8.5: Unified Adaptive Routing and Skill Internalization - done locally
+### M8.5: Unified Adaptive Routing and Skill Internalization - in progress
 
 Objective: promote the current shared execution shell into one adaptive decision
 plane. The same semantic target may have DOM, accessibility, SoM, pure-visual,
@@ -941,7 +954,8 @@ regression-gated semantic skills.
 
 Entry criteria:
 
-- close the M8.2B semantic-verification and no-progress reliability gate;
+- use M8.2B semantic-verification and no-progress failures as diagnostic input,
+  but do not gate Runtime architecture on benchmark score or family repair;
 - retain M8.3 RecoveryIncident/cascade detection and executable registry
   boundary;
 - retain M8.4 verified serial subgoal progress;
@@ -970,20 +984,22 @@ the remaining bullets reflect the current working-tree implementation):
   post-state verification;
 - conservative fusion keeps ambiguous same-source siblings separate and in
   observation order so ordinal identities are not erased;
-- RecoverySkillPayload is executable for bounded recovery actions. Repeated
-  verified success now produces quarantined semantic TaskSkill payloads, and a
-  digest-accepted TaskSkill can run incrementally before System 2 through fresh
-  contracts and verifier-backed checkpoints.
+- RecoverySkillPayload is executable through an explicitly loaded Runtime
+  profile, and TaskSkill mining/execution components pass controlled tests;
+  canonical persisted trace extraction, criteria-bound SkillStep checkpoints,
+  normal-entrypoint profile loading, and automatic trace-to-skill activation
+  remain open.
 
 The target is not a lowest-common-denominator parser. It is one semantic target
 with multiple typed, provenance-preserving ways to perceive, ground, execute,
 and verify it.
 
-All declared M8.5 perturbations and exit criteria are closed by the local code,
-tests, controlled ablation, and real Chromium diagnostics recorded in
-`evidence/m8.5-completion-audit-20260722.md`. The clean immutable public
-BrowserGym nightly remains an M8.2B gate and is not part of this completion
-claim.
+The existing local code, tests, ablation, and Chromium diagnostics prove
+important M8.5 components, not the complete generic main path. Remaining gates
+are task-to-perception wiring, ordinary source assertions/active perception,
+target-specific evidence, verifier-backed route calibration, geometry-aware
+fusion, canonical trace mining, and strict SkillStep verification. The prior
+completion audit is retained as component evidence, not milestone closure.
 
 #### M8.5A: Unified Target and Route Contracts
 
@@ -1339,6 +1355,57 @@ Exit:
 This milestone does not add a second Coordinator, mutable shared blackboard,
 raw action-sequence replay, arbitrary online code mutation, a general
 distributed workflow engine, or simultaneous effectful control of one session.
+
+### M8.5R: Runtime-First Completion Sequence
+
+This sequence is mandatory before further benchmark-family repair is promoted
+as architecture work. The detailed findings and gates are maintained in
+`current-architecture-audit-20260722.md`.
+
+1. **Criteria-bound progress:** implement one CriteriaEvidenceMatcher for
+   SubgoalSpec, SkillStep, and task completion; reject unrelated, partial,
+   stale, or insufficient evidence and trace criterion-to-evidence links.
+2. **Context-rich task planning:** introduce TaskPlanningContext with current
+   environment summary, verified progress, failures, disproved assumptions,
+   budgets, and plan lineage; wire it into a normal non-BrowserGym entrypoint.
+3. **Generic perception orchestration:** derive PerceptionRequirements from
+   TaskSpec/SubgoalSpec and pass them through Coordinator to BrowserSession;
+   produce DOM, accessibility, SVG, screenshot, and visual candidates through
+   generic ports in one coherent observation epoch.
+4. **Target-specific unified routing:** align candidates conservatively with
+   semantic and geometry evidence, apply requirements to the selected target,
+   and update route statistics only from postcondition-verifier outcomes.
+5. **Remove benchmark specialization:** move BrowserGym attributes and action
+   syntax into its adapter; move environment-independent rules into a typed
+   SemanticCompilerRegistry with non-BrowserGym and negative-control evidence;
+   remove unconditional MiniWoB-shaped rules from shared modules.
+6. **Complete Harness Learning:** extract semantic traces from canonical JSONL,
+   mine parameterized TaskSkill candidates across variants, bind replay
+   evidence to source/report digests, and explicitly load accepted TaskSkill
+   and RecoverySkill profiles in normal entrypoints.
+7. **Reproducible public evaluation:** separate compatible Web and BrowserGym
+   dependency profiles, add BrowserGym container or isolated-environment
+   reproduction, clear full static checks, and freeze current-HEAD smoke, PR,
+   nightly, and residual release evidence.
+8. **Contain modules after semantics stabilize:** extract TaskPlanLifecycle,
+   PerceptionSession, ContractExecutionLoop, RecoveryHandler,
+   SemanticCompilerRegistry, and BrowserGym observer/encoder/runner internals
+   without adding services or another authoritative state writer.
+
+Runtime-first acceptance requires, for every benchmark-discovered repair:
+
+~~~text
+generic invariant
+  -> unit test without BrowserGym import
+  -> non-BrowserGym integration proof
+  -> negative control and safety proof
+  -> BrowserGym adapter conformance
+  -> targeted and breadth benchmark confirmation
+~~~
+
+BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
+milestone. The benchmark remains an external pressure test of the Runtime main
+path.
 
 ### M9: Durable Single-Run Recovery - conditional
 

@@ -2,7 +2,12 @@
 
 This document describes the current implementation architecture. Production
 scaling options are preserved separately in the
-[Complete Architecture Blueprint](complete-architecture-blueprint.md).
+[Complete Architecture Blueprint](complete-architecture-blueprint.md). The
+[Runtime-First Architecture Boundary](runtime-first-boundary.md) is normative:
+BrowserGym and other benchmarks consume this architecture through adapters;
+they do not own task semantics, perception orchestration, routing, contracts,
+verification, recovery, or learning. Benchmark-specific task logic is
+prohibited in the generic path.
 
 ## 1. High-Level System
 
