@@ -28,15 +28,13 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
-    FailureSignature,
     RecoveryAction,
     RecoveryAttempt,
     RecoveryAttemptOutcome,
     RecoveryCascadeDetector,
-    RecoveryContext,
-    RecoveryDecision,
     RecoveryIncident,
 )
+from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
@@ -163,6 +161,7 @@ class RunCoordinator:
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
+    recovery_handler: RecoveryHandler = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.perception_session = PerceptionSession(self.observer, self.artifacts)
@@ -172,6 +171,10 @@ class RunCoordinator:
             gate=self.gate,
             task_policy=self.task_policy,
             artifacts=self.artifacts,
+        )
+        self.recovery_handler = RecoveryHandler(
+            policy=self.recovery,
+            cascade_detector=self.cascade_detector,
         )
         if self.task_planner is not None:
             self.task_plan_lifecycle = TaskPlanLifecycle(
@@ -1593,16 +1596,25 @@ class RunCoordinator:
     ) -> RecoveryAction:
         failure_phase = state.phase
         state.transition(RuntimeStep.RECOVERING.value)
-        effect_may_have_occurred = bool(receipt and receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT)
-        signature = FailureSignature.from_failure(
-            contract,
-            receipt,
-            phase=failure_phase,
-            error_code=error,
-            state_revision=state.current_revision(),
+        evaluation = self.recovery_handler.evaluate(
+            RecoveryRequest(
+                contract=contract,
+                receipt=receipt,
+                error=error,
+                failure_phase=failure_phase,
+                state_revision=state.current_revision(),
+                task_id=state.task_id,
+                recovery_count=state.recovery_count,
+                tried_backends=tuple(item.backend for item in state.receipts),
+                incident=state.recovery_incident,
+            )
         )
+        signature = evaluation.signature
+        assessment = evaluation.assessment
+        decision = evaluation.decision
+        effect_may_have_occurred = evaluation.effect_may_have_occurred
         incident = state.recovery_incident
-        if incident is None or incident.terminal_outcome != "open":
+        if not evaluation.continues_open_incident:
             incident = RecoveryIncident(
                 incident_id=f"recovery-{state.task_id}-{state.recovery_count + 1}",
                 source_contract_id=contract.id,
@@ -1611,37 +1623,15 @@ class RunCoordinator:
             )
             state.recovery_incident = incident
         else:
+            if incident is None:
+                raise ValueError("open recovery evaluation requires an active incident")
             incident.complete_pending(state.current_revision(), RecoveryAttemptOutcome.FAILED)
             incident.symptom_chain.append(signature)
+        if incident is None:
+            raise ValueError("recovery incident was not initialized")
         if failure_context:
             incident.context.update(failure_context)
-
-        tried_backends = [item.backend for item in state.receipts]
-        fallbacks_remaining = any(item not in set(tried_backends) for item in contract.fallback_backends)
-        assessment = self.cascade_detector.assess(
-            incident,
-            signature,
-            fallbacks_remaining=fallbacks_remaining,
-            effect_may_have_occurred=effect_may_have_occurred,
-            idempotency_key=contract.idempotency_key,
-        )
         incident.findings.extend(item for item in assessment.findings if item not in incident.findings)
-        context = RecoveryContext(
-            attempt=state.recovery_count,
-            recovery_count=state.recovery_count,
-            tried_backends=tried_backends,
-            effect_may_have_occurred=effect_may_have_occurred,
-            failure_signature=signature,
-            task_id=state.task_id,
-        )
-        decision = (
-            RecoveryDecision(
-                RecoveryAction.ABORT,
-                "recovery cascade detector stopped a repeated or unsafe loop",
-            )
-            if assessment.should_abort
-            else self.recovery.decide(contract, receipt, context, error_code=error)
-        )
         if contract.grounding_candidate is not None:
             if decision.action == RecoveryAction.REROUTE:
                 state.record_grounding_reroute(
