@@ -45,7 +45,13 @@ def _svg_candidate() -> GroundingCandidate:
         target_fingerprint="svg-fingerprint",
         fingerprint_key="svg:target",
         supported_actions=frozenset({"point_activate"}),
-        evidence_kinds=frozenset({EvidenceKind.STRUCTURAL, EvidenceKind.SPATIAL}),
+        evidence_kinds=frozenset(
+            {
+                EvidenceKind.STRUCTURAL,
+                EvidenceKind.SPATIAL,
+                EvidenceKind.VISUAL_APPEARANCE,
+            }
+        ),
         expires_at_s=time() + 60,
     )
 

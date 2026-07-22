@@ -58,8 +58,7 @@ def candidate_from_affordance(
         )
         evidence = {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
         if bbox is not None or (
-            affordance.action == "drag"
-            and bool(affordance.locator.get("bid") or affordance.locator.get("selector"))
+            affordance.action == "drag" and bool(affordance.locator.get("bid") or affordance.locator.get("selector"))
         ):
             # A current element handle is a trusted spatial binding for
             # locator-based drag executors even when raw coordinates are not
@@ -77,7 +76,13 @@ def candidate_from_affordance(
             bbox_xywh=_optional_box(affordance.locator.get("bbox")),
             mark_id=str(affordance.locator.get("mark_id") or ""),
         )
-        evidence_kinds = frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL})
+        evidence_kinds = frozenset(
+            {
+                EvidenceKind.VISUAL_APPEARANCE,
+                EvidenceKind.SPATIAL,
+                *({EvidenceKind.TEXTUAL} if affordance.label.strip() else set()),
+            }
+        )
     elif affordance.surface == Surface.WOT:
         source = GroundingSource.WOT
         payload = WoTGroundingPayload(
@@ -101,8 +106,7 @@ def candidate_from_affordance(
         source=source,
         payload=payload,
         compatible_executor=(
-            compatible_executor
-            or (affordance.backend_candidates[0] if affordance.backend_candidates else source.value)
+            compatible_executor or (affordance.backend_candidates[0] if affordance.backend_candidates else source.value)
         ),
         observation_epoch_id=observation.snapshot_id,
         environment_revision=observation.environment_revision,
@@ -177,9 +181,7 @@ class SemanticEntityResolver:
                         semantic_target_id=semantic_target_id,
                         role=partition_items[0].role,
                         label=partition_items[0].label,
-                        supported_actions=frozenset().union(
-                            *(item.supported_actions for item in candidates)
-                        ),
+                        supported_actions=frozenset().union(*(item.supported_actions for item in candidates)),
                         grounding_candidates=candidates,
                     )
                 )
@@ -212,12 +214,14 @@ class UnifiedRoutePlanner:
         requirements: PerceptionRequirements,
         observation: Observation,
         available_executors: frozenset[str],
-        available_evidence: frozenset[EvidenceKind] = frozenset(),
         verifier_kinds: tuple[str, ...] = (),
         excluded_candidate_ids: frozenset[str] = frozenset(),
     ) -> RoutePlan:
         if target.unresolved_conflicts:
             raise ValueError("cannot route a target with unresolved material conflicts")
+        target_evidence: frozenset[EvidenceKind] = frozenset().union(
+            *(item.evidence_kinds for item in target.grounding_candidates)
+        )
         gates = tuple(
             self._gate(
                 item,
@@ -225,7 +229,7 @@ class UnifiedRoutePlanner:
                 requirements=requirements,
                 observation=observation,
                 available_executors=available_executors,
-                available_evidence=available_evidence,
+                target_evidence=target_evidence,
                 verifier_available=bool(verifier_kinds),
                 excluded=item.candidate_id in excluded_candidate_ids,
             )
@@ -258,7 +262,7 @@ class UnifiedRoutePlanner:
         requirements: PerceptionRequirements,
         observation: Observation,
         available_executors: frozenset[str],
-        available_evidence: frozenset[EvidenceKind],
+        target_evidence: frozenset[EvidenceKind],
         verifier_available: bool,
         excluded: bool,
     ) -> RouteGateResult:
@@ -277,7 +281,9 @@ class UnifiedRoutePlanner:
             reasons.append("candidate_expired")
         if candidate.confidence < requirements.minimum_confidence:
             reasons.append("confidence_below_requirement")
-        if not requirements.required_properties.issubset(candidate.evidence_kinds | available_evidence):
+        if not requirements.required_properties.issubset(
+            candidate.evidence_kinds | target_evidence
+        ):
             reasons.append("required_evidence_missing")
         if candidate.verifier_strength < requirements.minimum_verifier_strength and not verifier_available:
             reasons.append("verifier_unavailable")

@@ -24,9 +24,11 @@ The repository implements M0-M8.1, M8.2A, M8.3, and M8.4 of the controlled web
 profile. M8.2B public benchmark expansion is in progress. M8.4 includes
 criteria-bound progress, context-rich replanning, monotonic plan lineage, and
 an optional real reference-app entrypoint.
-M8.5 route, gesture, fallback, and skill components exist, but generic
-task-aware multimodal perception, verifier-calibrated routing, canonical
-trace-to-skill mining, and broader normal-entrypoint proof remain in progress.
+M8.5 route, gesture, fallback, and skill components exist. Runtime-first R3 now
+provides generic task/subgoal-aware multimodal perception, coherent epochs,
+ordinary sourced assertions, targeted reobservation, and verified
+DOM-to-visual escalation. Verifier-calibrated routing, canonical trace-to-skill
+mining, and broader de-specialization remain in progress.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -101,13 +103,14 @@ Implemented current profile:
 - component-level perception requirements, typed unified grounding candidates,
   selective SVG geometry, Core dual-target gesture contracts, and semantic
   action boundaries with backend-only coordinate encoding; generic
-  task-to-perception wiring remains an active gate
+  task-to-perception wiring now runs through the normal Coordinator and
+  BrowserSession path
 
 Verified evidence:
 
-- all 423 current unit/integration tests pass with Ruff in the provisioned
-  BrowserGym environment; full mypy still reports four optional-integration
-  boundary errors and is not currently a passing repository-wide gate
+- all 433 current unit/integration tests pass with Ruff in the provisioned
+  BrowserGym environment; mypy with optional imports ignored passes all 73
+  source files
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval

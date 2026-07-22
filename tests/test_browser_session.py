@@ -1,9 +1,18 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
+from affordance_runtime.grounding import (
+    ActivePerceptionRequest,
+    EvidenceKind,
+    GroundingSource,
+    PerceptionRequirements,
+    VisualGroundingPayload,
+)
+from affordance_runtime.perception import GenericPerceptionOrchestrator
+from affordance_runtime.visual_grounding import VisualRegion
 
 
 class FakePage:
@@ -40,6 +49,35 @@ def test_browser_session_captures_observation_and_affordances() -> None:
     assert snapshot.grounding_candidates[0].is_current(snapshot.observation)
 
 
+def test_browser_session_bundles_browser_accessibility_tree_in_same_epoch() -> None:
+    class AccessibilityApi:
+        def snapshot(self, *, interesting_only: bool) -> dict[str, object]:
+            assert interesting_only is False
+            return {
+                "role": "WebArea",
+                "name": "Settings",
+                "children": [{"role": "button", "name": "Save"}],
+            }
+
+    page = FakePage()
+    page.accessibility = AccessibilityApi()  # type: ignore[attr-defined]
+
+    snapshot = BrowserSession(page).capture(page_id="settings")
+
+    assert snapshot.accessibility_tree == {
+        "role": "WebArea",
+        "name": "Settings",
+        "children": [{"role": "button", "name": "Save"}],
+    }
+    accessibility = next(
+        item
+        for item in snapshot.source_observations
+        if item.source == GroundingSource.ACCESSIBILITY
+    )
+    assert accessibility.observation_epoch_id == snapshot.observation.snapshot_id
+    assert snapshot.observation.metadata["accessibility_tree"] == snapshot.accessibility_tree
+
+
 def test_browser_session_keeps_same_label_checkbox_siblings_as_ordered_targets() -> None:
     class CheckboxPage(FakePage):
         def content(self) -> str:
@@ -52,10 +90,11 @@ def test_browser_session_keeps_same_label_checkbox_siblings_as_ordered_targets()
     snapshot = BrowserSession(CheckboxPage()).capture(page_id="form")
 
     assert len(snapshot.unified_affordances) == 3
-    assert [
-        target.grounding_candidates[0].source_affordance_id
-        for target in snapshot.unified_affordances
-    ] == ["dom_input_1", "dom_input_2", "dom_input_3"]
+    assert [target.grounding_candidates[0].source_affordance_id for target in snapshot.unified_affordances] == [
+        "dom_input_1",
+        "dom_input_2",
+        "dom_input_3",
+    ]
 
 
 def test_browser_session_uses_configured_default_affordance_lease() -> None:
@@ -275,9 +314,7 @@ def test_browser_session_captures_svg_and_screenshot_in_one_epoch(tmp_path) -> N
         GroundingSource.SVG,
         GroundingSource.VISUAL,
     }
-    assert {item.observation_epoch_id for item in snapshot.source_observations} == {
-        snapshot.observation.snapshot_id
-    }
+    assert {item.observation_epoch_id for item in snapshot.source_observations} == {snapshot.observation.snapshot_id}
     svg_target = next(item for item in snapshot.unified_affordances if item.label == "Blue point")
     assert svg_target.grounding_candidates[0].is_current(snapshot.observation)
 
@@ -374,3 +411,218 @@ def test_browser_session_rejects_semantic_dom_drift_within_epoch(tmp_path) -> No
             screenshot_path=str(tmp_path / "drifting.png"),
             perception_requirements=requirements,
         )
+
+
+def test_generic_visual_orchestrator_produces_current_candidate_and_assertions(
+    tmp_path: Path,
+) -> None:
+    class VisualPage(FakePage):
+        def content(self) -> str:
+            return "<main><canvas aria-label='workspace'></canvas></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            del arg
+            if "innerWidth" in expression:
+                return [800, 600]
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return ""
+            return {}
+
+        def screenshot(self, **kwargs: Any) -> bytes:
+            payload = b"visual-image"
+            path = kwargs.get("path")
+            if path:
+                Path(path).write_bytes(payload)
+            return payload
+
+    class RegionProposer:
+        provider = "fixture"
+        model = "deterministic-regions"
+        prompt_version = "test-v1"
+        calls = 0
+
+        def propose(self, request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            assert request.instruction == "Activate the blue visual icon"
+            assert request.image_size == (800, 600)
+            return [VisualRegion((0.25, 0.25, 0.1, 0.1), "Blue icon", 0.9)]
+
+    proposer = RegionProposer()
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+        model_call_budget=1,
+    )
+    snapshot = BrowserSession(
+        VisualPage(),
+        perception_orchestrator=GenericPerceptionOrchestrator(proposer),
+    ).capture(
+        screenshot_path=str(tmp_path / "visual.png"),
+        perception_requirements=requirements,
+        task_instruction="Activate the blue visual icon",
+    )
+
+    assert proposer.calls == 1
+    candidate = next(item for item in snapshot.grounding_candidates if item.source == GroundingSource.VISUAL)
+    assert candidate.is_current(snapshot.observation)
+    assert candidate.compatible_executor == "visual"
+    assert isinstance(candidate.payload, VisualGroundingPayload)
+    assert candidate.payload.bbox_xywh == (200.0, 150.0, 80.0, 60.0)
+    assert {item.observation_epoch_id for item in snapshot.source_observations} == {snapshot.observation.snapshot_id}
+    assert any(
+        item.entity_key == candidate.semantic_target_id
+        and item.property_key == "position"
+        and item.source == GroundingSource.VISUAL
+        for item in snapshot.source_assertions
+    )
+
+
+def test_targeted_perception_issues_a_fresh_epoch_and_visual_candidate(
+    tmp_path: Path,
+) -> None:
+    class TargetedPage(FakePage):
+        def content(self) -> str:
+            return "<main><canvas></canvas></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            del arg
+            if "innerWidth" in expression:
+                return [640, 480]
+            if "document.activeElement" in expression or "innerText" in expression:
+                return ""
+            return {}
+
+        def screenshot(self, **kwargs: Any) -> bytes:
+            payload = b"targeted-visual"
+            path = kwargs.get("path")
+            if path:
+                Path(path).write_bytes(payload)
+            return payload
+
+    class Proposer:
+        provider = "fixture"
+        model = "targeted-regions"
+        prompt_version = "test-v1"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def propose(self, request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            return [VisualRegion((0.2, 0.3, 0.1, 0.1), "Target", 0.9)]
+
+    proposer = Proposer()
+    session = BrowserSession(
+        TargetedPage(),
+        perception_orchestrator=GenericPerceptionOrchestrator(proposer),
+    )
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+        model_call_budget=1,
+    )
+    first = session.capture(
+        screenshot_path=str(tmp_path / "epoch.png"),
+        perception_requirements=requirements,
+        task_instruction="Locate the target",
+    )
+    second = session.capture_targeted(
+        (
+            ActivePerceptionRequest(
+                first.unified_affordances[0].semantic_target_id,
+                "position",
+                (GroundingSource.VISUAL,),
+                "confirm current position",
+            ),
+        )
+    )
+
+    assert proposer.calls == 2
+    assert second.observation.snapshot_id != first.observation.snapshot_id
+    assert second.observation.screenshot_ref != first.observation.screenshot_ref
+    assert "targeted-1" in second.observation.screenshot_ref
+    assert second.grounding_candidates[0].is_current(second.observation)
+    assert not first.grounding_candidates[0].is_current(second.observation)
+
+
+def test_svg_visual_position_conflict_requests_reobservation_and_blocks_target(
+    tmp_path: Path,
+) -> None:
+    class ConflictPage(FakePage):
+        def content(self) -> str:
+            return "<main><svg><circle id='target'/></svg></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            del arg
+            if "getScreenCTM" in expression:
+                return {
+                    "viewport": [800, 600],
+                    "elements": [
+                        {
+                            "element_id": "target",
+                            "tag": "circle",
+                            "label": "Target",
+                            "role": "button",
+                            "action": "point_activate",
+                            "bid": "",
+                            "view_box": [0, 0, 100, 100],
+                            "geometry_bbox": [10, 10, 10, 10],
+                            "viewport_bbox": [100, 100, 20, 20],
+                            "transform": [2, 0, 0, 2, 80, 80],
+                        }
+                    ],
+                }
+            if "innerWidth" in expression:
+                return [800, 600]
+            if "document.activeElement" in expression or "innerText" in expression:
+                return ""
+            return {}
+
+        def screenshot(self, **kwargs: Any) -> bytes:
+            payload = b"conflicting-sources"
+            path = kwargs.get("path")
+            if path:
+                Path(path).write_bytes(payload)
+            return payload
+
+    class ConflictProposer:
+        provider = "fixture"
+        model = "conflicting-regions"
+        prompt_version = "test-v1"
+
+        def propose(self, request):  # type: ignore[no-untyped-def]
+            return [VisualRegion((0.6, 0.6, 0.1, 0.1), "Target", 0.9)]
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.SVG, GroundingSource.VISUAL}),
+        observation_budget=1,
+        model_call_budget=1,
+    )
+    session = BrowserSession(
+        ConflictPage(),
+        perception_orchestrator=GenericPerceptionOrchestrator(ConflictProposer()),
+    )
+    first = session.capture(
+        screenshot_path=str(tmp_path / "conflict.png"),
+        perception_requirements=requirements,
+        task_terms=("target",),
+        task_instruction="Activate the target",
+    )
+
+    target = next(item for item in first.unified_affordances if item.label == "Target")
+    assert set(candidate.source for candidate in target.grounding_candidates) == {
+        GroundingSource.SVG,
+        GroundingSource.VISUAL,
+    }
+    assert "position:reobserve" in target.unresolved_conflicts
+    assert first.active_perception_requests[0].property_key == "position"
+
+    second = session.capture_targeted(first.active_perception_requests)
+
+    assert second.observation.snapshot_id != first.observation.snapshot_id
+    second_target = next(item for item in second.unified_affordances if item.label == "Target")
+    assert "position:reobserve" in second_target.unresolved_conflicts
+    assert second.active_perception_requests

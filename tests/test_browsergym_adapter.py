@@ -59,7 +59,12 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.generalist_planner import PlannerLimits
-from affordance_runtime.grounding import GroundingSource, SourceObservation
+from affordance_runtime.grounding import (
+    EvidenceKind,
+    GroundingSource,
+    PerceptionRequirements,
+    SourceObservation,
+)
 from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
@@ -68,6 +73,7 @@ from affordance_runtime.model_port import (
     ProviderFailureKind,
     ProviderModelError,
 )
+from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -244,16 +250,24 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     assert events == [
         "TaskCreated",
         "ObservationCaptured",
+        "SourceAssertionsCollected",
+        "SourceAssertionsArbitrated",
         "PlanProposed",
         "PlannerProposalProduced",
         "ContractBuilt",
         "PreflightObservationCaptured",
+        "SourceAssertionsCollected",
+        "SourceAssertionsArbitrated",
         "PreflightPassed",
         "ActionStarted",
         "ActionCompleted",
         "PostActionObservationCaptured",
+        "SourceAssertionsCollected",
+        "SourceAssertionsArbitrated",
         "PostconditionPassed",
         "ObservationCaptured",
+        "SourceAssertionsCollected",
+        "SourceAssertionsArbitrated",
         "PlanProposed",
         "PlannerProposalProduced",
         "TaskCompleted",
@@ -715,29 +729,30 @@ def test_browsergym_observer_fuses_visual_drag_regions_with_mixed_dom(tmp_path: 
                 Path(kwargs["path"]).write_bytes(png)
             return png
 
-    snapshot = BrowserSession(
+    requirements = PerceptionRequirements(
+        required_properties=frozenset(
+            {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
+        ),
+        acceptable_evidence=frozenset(
+            {GroundingSource.DOM, GroundingSource.VISUAL}
+        ),
+        model_call_budget=1,
+    )
+    fused = BrowserSession(
         cast(Any, MixedPage()),
         dom_executor="browsergym",
+        visual_executor="browsergym",
         lease_ttl_ms=60_000,
-    ).capture(screenshot_path=str(tmp_path / "drag-box.png"))
-    observer = BrowserGymObserver(
-        cast(Any, None),
-        BrowserGymEpisodeState(
-            "drag-box",
-            0,
-            "Drag the smaller box so that it is completely inside the larger box.",
-            {},
-            {},
+        perception_orchestrator=GenericPerceptionOrchestrator(
+            FakeVisualRegionProposer()
         ),
-        tmp_path,
-        visual_grounding_enabled=True,
-        visual_region_proposer=FakeVisualRegionProposer(),
+    ).capture(
+        screenshot_path=str(tmp_path / "drag-box.png"),
+        perception_requirements=requirements,
         task_terms=("drag", "smaller", "box", "larger"),
+        task_instruction="Drag the smaller box completely inside the larger box",
     )
 
-    fused = observer._visual_region_model(snapshot)
-
-    assert fused is not None
     assert [(item.label, item.action) for item in fused.affordance_model.affordances] == [
         ("Submit", "click"),
         ("smaller box", "drag"),
@@ -765,52 +780,61 @@ def test_browsergym_observer_preserves_typed_visual_provider_failure(tmp_path: P
                 Path(kwargs["path"]).write_bytes(png)
             return png
 
-    snapshot = BrowserSession(
+    session = BrowserSession(
         cast(Any, CanvasPage()),
         dom_executor="browsergym",
+        visual_executor="browsergym",
         lease_ttl_ms=60_000,
-    ).capture(screenshot_path=str(tmp_path / "drag-box-429.png"))
-    observer = BrowserGymObserver(
-        cast(Any, None),
-        BrowserGymEpisodeState("drag-box", 0, "Drag the smaller box inside the larger box.", {}, {}),
-        tmp_path,
-        visual_grounding_enabled=True,
-        visual_region_proposer=RateLimitedVisualRegionProposer(),
-        task_terms=("drag", "smaller", "inside", "larger"),
+        perception_orchestrator=GenericPerceptionOrchestrator(
+            RateLimitedVisualRegionProposer()
+        ),
     )
 
     with pytest.raises(ProviderModelError, match="rate_limit_transient"):
-        observer._visual_region_model(snapshot)
+        session.capture(
+            screenshot_path=str(tmp_path / "drag-box-429.png"),
+            perception_requirements=PerceptionRequirements(
+                required_properties=frozenset(
+                    {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
+                ),
+                acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+                model_call_budget=1,
+            ),
+            task_terms=("drag", "smaller", "inside", "larger"),
+        )
 
 
 def test_browsergym_observer_materializes_visual_grounding_before_contract_binding(tmp_path: Path) -> None:
-    screenshot = tmp_path / "view.png"
-    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (200).to_bytes(4, "big") + (100).to_bytes(4, "big"))
-    model = DomAdapter().transduce("<main>canvas</main>", environment_revision="rev-1", snapshot_id="snap-1")
-    observation = Observation(
-        "rev-1",
-        screenshot_ref=str(screenshot),
-        snapshot_id="snap-1",
-        page_revision=model.page_revision,
-    )
-    snapshot = BrowserSnapshot(
-        observation,
-        model,
-        source_observations=(
-            SourceObservation(GroundingSource.DOM, "dom", "snap-1", "rev-1", model.page_revision),
-            SourceObservation(GroundingSource.VISUAL, "screenshot", "snap-1", "rev-1", model.page_revision),
+    png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (200).to_bytes(4, "big") + (100).to_bytes(4, "big")
+
+    class CanvasPage:
+        url = "http://fixture/visual"
+
+        def content(self) -> str:
+            return "<main><canvas></canvas></main>"
+
+        def screenshot(self, **kwargs: Any) -> bytes:
+            if kwargs.get("path"):
+                Path(kwargs["path"]).write_bytes(png)
+            return png
+
+    grounded = BrowserSession(
+        cast(Any, CanvasPage()),
+        dom_executor="browsergym",
+        visual_executor="browsergym",
+        perception_orchestrator=GenericPerceptionOrchestrator(
+            point_grounder=FakeVisualGrounder()
         ),
-    )
-    observer = BrowserGymObserver(
-        cast(Any, None),
-        BrowserGymEpisodeState("visual", 0, "Click the target", {}, {}),
-        tmp_path,
-        visual_grounder=FakeVisualGrounder(),
+    ).capture(
+        screenshot_path=str(tmp_path / "view.png"),
+        perception_requirements=PerceptionRequirements(
+            required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+            acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+            model_call_budget=1,
+        ),
+        task_instruction="Click the target",
     )
 
-    grounded = observer._visual_grounded_model(snapshot)
-
-    assert grounded is not None
     assert grounded.affordance_model.affordances[0].action == "point_activate"
     assert grounded.grounding_candidates[0].payload.point_xy == (50.0, 50.0)
     assert grounded.grounding_candidates[0].is_current(grounded.observation)

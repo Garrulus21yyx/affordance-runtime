@@ -17,6 +17,11 @@ from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
 from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
+from affordance_runtime.perception import (
+    PerceptionEscalation,
+    derive_perception_requirements,
+    perception_task_terms,
+)
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -43,6 +48,7 @@ from affordance_runtime.task_planning import (
     CriteriaEvidenceLedgerEntry,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
+    SubgoalSpec,
     SubgoalVerifierPort,
     TaskPlannerPort,
     TaskPlanningBudgetSummary,
@@ -197,7 +203,7 @@ class RunCoordinator:
             if state.phase in {RuntimeStep.CREATED.value, RuntimeStep.RECOVERING.value}:
                 state.transition(RuntimeStep.OBSERVING.value)
 
-            snapshot = self._capture(envelope.task_id, state.observation_count + 1)
+            snapshot = self._capture(envelope, state, state.observation_count + 1)
             state.remember_observation(snapshot.observation)
             observation_ref = self._write_observation(envelope.task_id, state.observation_count, snapshot)
             parent = trace.add(
@@ -210,6 +216,18 @@ class RunCoordinator:
                     "url": snapshot.observation.url,
                     "artifact_refs": ([observation_ref.path] if observation_ref else [])
                     + snapshot.observation.artifact_refs,
+                    "perception_requirements": snapshot.observation.metadata.get(
+                        "perception_requirements"
+                    ),
+                    "source_observations": [
+                        {
+                            "source": item.source.value,
+                            "parser_id": item.parser_id,
+                            "observation_epoch_id": item.observation_epoch_id,
+                            "artifact_refs": list(item.artifact_refs),
+                        }
+                        for item in snapshot.source_observations
+                    ],
                 },
                 parents=[parent.id] if parent else None,
             )
@@ -848,7 +866,7 @@ class RunCoordinator:
             )
             execution_observation = snapshot.observation
             if error is None and self.features.preflight:
-                preflight_snapshot = self._capture(envelope.task_id, state.observation_count + 1)
+                preflight_snapshot = self._capture(envelope, state, state.observation_count + 1)
                 state.remember_observation(preflight_snapshot.observation)
                 preflight_ref = self._write_observation(envelope.task_id, state.observation_count, preflight_snapshot)
                 self._index(trace, preflight_ref)
@@ -968,7 +986,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                approval_snapshot = self._capture(envelope.task_id, state.observation_count + 1)
+                approval_snapshot = self._capture(envelope, state, state.observation_count + 1)
                 state.remember_observation(approval_snapshot.observation)
                 approval_ref = self._write_observation(envelope.task_id, state.observation_count, approval_snapshot)
                 self._index(trace, approval_ref)
@@ -1103,7 +1121,7 @@ class RunCoordinator:
                 if recovery_result in {RecoveryAction.REOBSERVE, RecoveryAction.RETRY, RecoveryAction.REROUTE}:
                     continue
                 if recovery_result == RecoveryAction.VERIFY_STATE:
-                    inspection = self._capture(envelope.task_id, state.observation_count + 1)
+                    inspection = self._capture(envelope, state, state.observation_count + 1)
                     state.remember_observation(inspection.observation)
                     inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
                     self._index(trace, inspection_ref)
@@ -1156,7 +1174,7 @@ class RunCoordinator:
                 )
 
             state.transition(RuntimeStep.VERIFYING.value)
-            post_snapshot = self._capture(envelope.task_id, state.observation_count + 1)
+            post_snapshot = self._capture(envelope, state, state.observation_count + 1)
             state.remember_observation(post_snapshot.observation)
             post_ref = self._write_observation(envelope.task_id, state.observation_count, post_snapshot)
             self._index(trace, post_ref)
@@ -1532,7 +1550,10 @@ class RunCoordinator:
             task_id=state.task_id,
         )
         decision = (
-            RecoveryDecision(RecoveryAction.ABORT, "recovery cascade detector stopped a repeated or unsafe loop")
+            RecoveryDecision(
+                RecoveryAction.ABORT,
+                "recovery cascade detector stopped a repeated or unsafe loop",
+            )
             if assessment.should_abort
             else self.recovery.decide(contract, receipt, context, error_code=error)
         )
@@ -1704,16 +1725,87 @@ class RunCoordinator:
     def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
         return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
 
-    def _capture(self, run_id: str, sequence: int) -> BrowserSnapshot:
-        if self.artifacts is not None and isinstance(self.observer, BrowserSession):
-            screenshot_path = self.artifacts.run_dir(run_id) / "screenshots" / f"screenshot_{sequence:04d}.png"
-            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-            snapshot = self.observer.capture(screenshot_path=str(screenshot_path))
-            if not screenshot_path.exists():
-                screenshot_path.write_bytes(self.observer.screenshot())
-            self.artifacts.register_file(run_id, screenshot_path, "image/png")
+    def _capture(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        sequence: int,
+    ) -> BrowserSnapshot:
+        if isinstance(self.observer, BrowserSession):
+            artifacts = self.artifacts
+            active_subgoal = self._active_subgoal_for_perception(state)
+            escalation = self._perception_escalation(state)
+            requirements = (
+                derive_perception_requirements(
+                    envelope.task_spec,
+                    active_subgoal=active_subgoal,
+                    escalation=escalation,
+                )
+                if envelope.task_spec is not None
+                else None
+            )
+            screenshot_path = None
+            if artifacts is not None:
+                screenshot_path = artifacts.run_dir(envelope.task_id) / "screenshots" / f"screenshot_{sequence:04d}.png"
+                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = self.observer.capture(
+                screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
+                perception_requirements=requirements,
+                task_terms=(
+                    perception_task_terms(
+                        envelope.task_spec,
+                        active_subgoal=active_subgoal,
+                    )
+                    if envelope.task_spec is not None
+                    else ()
+                ),
+                task_instruction=(
+                    " ".join(
+                        item
+                        for item in (
+                            envelope.task_spec.objective,
+                            active_subgoal.objective
+                            if isinstance(active_subgoal, SubgoalSpec)
+                            else active_subgoal or "",
+                        )
+                        if item
+                    )
+                    if envelope.task_spec is not None
+                    else envelope.goal
+                ),
+            )
+            if screenshot_path is not None and artifacts is not None:
+                if not screenshot_path.exists():
+                    screenshot_path.write_bytes(self.observer.screenshot())
+                artifacts.register_file(envelope.task_id, screenshot_path, "image/png")
             return snapshot
         return self.observer.capture()
+
+    @staticmethod
+    def _active_subgoal_for_perception(state: StateKernel) -> SubgoalSpec | str | None:
+        if state.task_plan is None or state.plan_progress is None:
+            return state.subgoals[-1] if state.subgoals else None
+        active_id = state.plan_progress.active_subgoal_id
+        return next(
+            (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+            None,
+        )
+
+    @staticmethod
+    def _perception_escalation(state: StateKernel) -> PerceptionEscalation | None:
+        failed_sources: set[GroundingSource] = set()
+        for lineage in state.grounding_fallback_lineage.values():
+            raw_source = lineage.get("failed_source", "")
+            try:
+                failed_sources.add(GroundingSource(raw_source))
+            except ValueError:
+                continue
+        if not failed_sources:
+            return None
+        return PerceptionEscalation(
+            reason="previous grounding route failed before a verified effect",
+            failed_sources=frozenset(failed_sources),
+        )
 
     def _fulfill_targeted_perception(
         self,
@@ -1769,6 +1861,14 @@ class RunCoordinator:
                     "page_revision": targeted.observation.page_revision,
                     "environment_revision": targeted.observation.environment_revision,
                     "artifact_refs": ([targeted_ref.path] if targeted_ref else []) + targeted.observation.artifact_refs,
+                    "source_observations": [
+                        {
+                            "source": item.source.value,
+                            "parser_id": item.parser_id,
+                            "observation_epoch_id": item.observation_epoch_id,
+                        }
+                        for item in targeted.source_observations
+                    ],
                 },
                 parents=[parent.id],
             )

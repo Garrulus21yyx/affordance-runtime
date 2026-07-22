@@ -105,7 +105,8 @@ Resolution (2026-07-22): the shared matcher, typed identities, current-epoch
 and strong-evidence gates, structured reports, and trace links close F-01/R1.
 Generic negative controls cover unrelated, partial, stale, weak, unbound, and
 explicitly multi-linked evidence. F-02/R2 is also closed by context-rich
-planning evidence; Runtime-first R3-R5 remain open.
+planning evidence; Runtime-first R3 has since closed with generic and real
+Chromium evidence, while R4-R5 remain open.
 
 ### F-02 - Task-level planning is a controlled component, not a real main path
 
@@ -142,24 +143,22 @@ Wire the optional PlanningRouter into the normal reference application and one
 non-BrowserGym real Chromium scenario. Increment plan_version and record
 supersedes_plan_id.
 
-### F-03 - Generic task-aware multimodal perception is not fully wired
+### F-03 - Generic task-aware multimodal perception — resolved for R3
 
-Severity: high.
+Severity: resolved Runtime gate; legacy adapter cleanup remains under R5.
 
-BrowserSession.capture accepts PerceptionRequirements, but the generic
-Coordinator capture path does not derive or pass requirements from TaskSpec or
-the active subgoal. Generic BrowserSession can record screenshot artifacts and
-construct DOM, accessibility, and SVG candidates, but does not generally run the
-visual region proposer and grounder to create executable visual candidates.
-
-More complete visual candidate logic currently lives in the BrowserGym adapter
-or custom diagnostic observers.
+Coordinator now derives requirements from TaskSpec and the complete active
+SubgoalSpec, then passes them to BrowserSession. BrowserSession captures bounded
+DOM/accessibility/SVG/screenshot evidence, calls the generic bounded visual
+region port, emits current typed candidates and sourced assertions, and binds
+semantic point activation through the trusted visual binder.
 
 Required repair:
 
-Add a generic PerceptionOrchestratorPort and pass task/subgoal requirements
-through Coordinator capture. BrowserGym must call that same port rather than own
-the product-level multimodal path.
+Completed. Ordinary BrowserGym point-region observation also reuses the generic
+orchestrator. BrowserGym drag geometry normalization, backend action encoding,
+and compatibility fallback helpers remain adapter-local and are audited again
+in R5.
 
 Exit evidence:
 
@@ -170,21 +169,23 @@ Exit evidence:
 - ContractBuilder creates a fresh contract;
 - execution and independent verification succeed.
 
-### F-04 - Source assertion and active perception are extension-point proofs
+Evidence: `evidence/runtime-r3-generic-perception-20260722.md`.
 
-Severity: high.
+### F-04 - Browser source assertion and active perception — resolved for R3
 
-Coordinator supports capture_targeted, conflict traces, and bounded active
-perception. Generic BrowserSession and BrowserGymObserver do not yet produce the
-same complete source-assertion model. The strongest conflict proof uses a custom
-observer with hand-built pixel assertions.
+Severity: resolved for the generic browser observation path.
+
+Generic BrowserSession now produces property-specific current assertions,
+arbitrates them, and implements bounded `capture_targeted` by creating a fresh
+coherent epoch with new leases, fingerprints, and screenshot references.
+Persistent SVG/visual position disagreement remains unresolved and blocks route
+selection rather than being averaged or silently accepted.
 
 Required repair:
 
-Make sourced assertions an ordinary generic observation output. Implement
-property-specific assertions for visibility, enabled state, semantic label,
-spatial location, device state, and postcondition state. Active perception must
-use a normal observer port and coherent observation epochs.
+Completed for browser visibility, enabled state, semantic label, and spatial
+location. Cross-surface device/postcondition calibration remains part of R4 and
+does not weaken the R3 browser conflict boundary.
 
 ### F-05 - Route ranking is not verifier-calibrated as planned
 
@@ -475,7 +476,7 @@ Exit:
 - simple tasks remain flat;
 - no planner emits selectors, coordinates, backend strings, or authority.
 
-### Phase R3 - Generic Perception Orchestration
+### Phase R3 - Generic Perception Orchestration — Runtime exit complete
 
 Deliverables:
 
@@ -492,6 +493,12 @@ Exit:
 - one DOM-primary task escalates to visual after a generic failure;
 - one source conflict triggers targeted perception or safe inconclusive;
 - all routes use one coherent epoch and the same Coordinator.
+
+All four exit cases are covered by generic unit/integration tests plus a public
+`BrowserSession.launch` real-Chromium run; see
+`evidence/runtime-r3-generic-perception-20260722.md`. Full legacy BrowserGym
+observer removal remains an R5 de-specialization item rather than a reason to
+keep the generic Runtime path open.
 
 ### Phase R4 - Target-Specific Unified Routing
 

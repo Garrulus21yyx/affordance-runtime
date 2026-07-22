@@ -280,6 +280,20 @@ class BoundedRecoveryPolicy:
         if receipt is not None and receipt.success:
             return RecoveryDecision(RecoveryAction.VERIFY_STATE, "execution succeeded; verify expected effects")
 
+        if (
+            receipt is not None
+            and receipt.evidence.get("dispatched") is False
+            and contract.grounding_candidate is not None
+            and code == RuntimeErrorCode.EXECUTION_FAILED
+        ):
+            # A deterministic failure before dispatch disproves the selected
+            # grounding route, not the semantic intent.  Exclude it and let
+            # the next coherent observation acquire another typed source.
+            return RecoveryDecision(
+                RecoveryAction.REROUTE,
+                "selected grounding route failed before dispatch",
+            )
+
         route_alternatives = contract.route_plan.viable_alternatives if contract.route_plan else ()
         if route_alternatives:
             alternative = route_alternatives[0]

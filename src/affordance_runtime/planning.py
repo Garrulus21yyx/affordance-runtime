@@ -20,12 +20,13 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.grounding import EvidenceKind, GroundingSource, RoutePlan, UnifiedAffordance
+from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
 from affordance_runtime.perception import derive_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
+from affordance_runtime.visual_contracts import VisualContractBinder
 
 
 class PlannerActionKind(StrEnum):
@@ -208,11 +209,7 @@ class UnifiedTargetResolver:
         excluded_candidate_ids: frozenset[str] = frozenset(),
     ) -> UnifiedTargetResolution:
         target = next(
-            (
-                item
-                for item in snapshot.unified_affordances
-                if item.semantic_target_id == semantic_target_id
-            ),
+            (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
             None,
         )
         if target is None:
@@ -220,10 +217,11 @@ class UnifiedTargetResolver:
         route = self.router.plan(
             target,
             action=action.value,
-            requirements=derive_perception_requirements(task_spec, active_subgoal=subgoal),
+            requirements=(
+                snapshot.perception_requirements or derive_perception_requirements(task_spec, active_subgoal=subgoal)
+            ),
             observation=snapshot.observation,
             available_executors=available_executors,
-            available_evidence=_snapshot_evidence(snapshot),
             verifier_kinds=verifier_kinds,
             excluded_candidate_ids=excluded_candidate_ids,
         )
@@ -234,24 +232,11 @@ class UnifiedTargetResolver:
         return UnifiedTargetResolution(target, route, source)
 
 
-def _snapshot_evidence(snapshot: BrowserSnapshot) -> frozenset[EvidenceKind]:
-    evidence: set[EvidenceKind] = set()
-    for source in snapshot.source_observations:
-        if source.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY}:
-            evidence.update({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL})
-        elif source.source == GroundingSource.SVG:
-            evidence.update({EvidenceKind.STRUCTURAL, EvidenceKind.SPATIAL})
-        elif source.source in {GroundingSource.SOM, GroundingSource.VISUAL}:
-            evidence.update({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL})
-        elif source.source in {GroundingSource.WOT, GroundingSource.API}:
-            evidence.update({EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL})
-    return frozenset(evidence)
-
-
 @dataclass
 class ContractBuilder:
     router: CostAwareRouter = field(default_factory=CostAwareRouter)
     gesture_binder: GestureContractBinder = field(default_factory=GestureContractBinder)
+    visual_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
     unified_resolver: UnifiedTargetResolver = field(default_factory=UnifiedTargetResolver)
     requirements: Mapping[str, ContractRequirements] = field(default_factory=dict)
 
@@ -296,9 +281,7 @@ class ContractBuilder:
         gesture_binding = None
         if proposal.action_kind == PlannerActionKind.DRAG:
             selected_executor = (
-                source_resolution.route.selected_candidate.compatible_executor
-                if source_resolution is not None
-                else ""
+                source_resolution.route.selected_candidate.compatible_executor if source_resolution is not None else ""
             )
             destination_resolution = self._resolve_unified_target(
                 proposal.destination_affordance_id,
@@ -306,12 +289,8 @@ class ContractBuilder:
                 proposal=proposal,
                 task_spec=task_spec,
                 snapshot=snapshot,
-                available_executors=(
-                    frozenset({selected_executor}) if selected_executor else None
-                ),
-                excluded_candidate_ids=state.excluded_candidates_for(
-                    proposal.destination_affordance_id
-                ),
+                available_executors=(frozenset({selected_executor}) if selected_executor else None),
+                excluded_candidate_ids=state.excluded_candidates_for(proposal.destination_affordance_id),
                 verifier_kinds=self._route_verifier_kinds(proposal.target_affordance_id),
             )
             destination = (
@@ -327,9 +306,7 @@ class ContractBuilder:
             backend_names = set(affordance.backend_candidates)
             if destination is not None:
                 backend_names.intersection_update(destination.backend_candidates)
-            candidates = {
-                name: affordance for name in affordance.backend_candidates if name in backend_names
-            }
+            candidates = {name: affordance for name in affordance.backend_candidates if name in backend_names}
             route = self.router.route(candidates)
             if route.selected_backend is None:
                 raise ProposalRejected(ProposalRejectionCode.NO_BACKEND, affordance.id)
@@ -357,49 +334,65 @@ class ContractBuilder:
             )
         )
         parameters = _contract_parameters(proposal)
-        contract = ActionContract.from_affordance(
-            affordance,
-            intent=proposal.subgoal or task_spec.objective,
-            backend=selected_backend,
-            expected_effects=list(contract_requirements.expected_effects),
-            verifier_plan=list(contract_requirements.verifier_plan),
-            required_capabilities=list(required_capabilities),
-            parameters=parameters,
-        )
-        if source_resolution is not None:
+        if source_resolution is not None and proposal.action_kind == PlannerActionKind.POINT_ACTIVATE:
             candidate = source_resolution.route.selected_candidate
             lineage = state.fallback_lineage_for(source_resolution.target.semantic_target_id)
+            try:
+                contract = self.visual_binder.bind_point_activate(
+                    source_resolution.route,
+                    snapshot.observation,
+                    intent=proposal.subgoal or task_spec.objective,
+                    verifier_plan=contract_requirements.verifier_plan,
+                    required_capabilities=required_capabilities,
+                    supersedes_contract_id=lineage.get("supersedes_contract_id", ""),
+                    source_contract_id=lineage.get("source_contract_id", ""),
+                    fallback_reason=lineage.get("fallback_reason", ""),
+                )
+            except ValueError as exc:
+                raise ProposalRejected(
+                    ProposalRejectionCode.STALE_SNAPSHOT,
+                    str(exc),
+                ) from exc
             contract = replace(
                 contract,
-                id=(
-                    f"contract_{candidate.candidate_id.replace(':', '_')}_"
-                    f"{candidate.observation_epoch_id}"
-                ),
-                affordance_id=source_resolution.target.semantic_target_id,
-                backend=candidate.compatible_executor,
-                grounding_candidate=candidate,
-                route_plan=source_resolution.route,
-                snapshot_id=candidate.observation_epoch_id,
-                page_revision=candidate.page_revision,
-                target_fingerprint=candidate.target_fingerprint,
-                target_fingerprint_key=candidate.fingerprint_key or candidate.candidate_id,
-                expires_at_s=candidate.expires_at_s,
-                supersedes_contract_id=lineage.get("supersedes_contract_id", ""),
-                source_contract_id=lineage.get("source_contract_id", ""),
-                fallback_reason=lineage.get("fallback_reason", ""),
+                expected_effects=list(contract_requirements.expected_effects),
                 contract_hash="",
             )
+        else:
+            contract = ActionContract.from_affordance(
+                affordance,
+                intent=proposal.subgoal or task_spec.objective,
+                backend=selected_backend,
+                expected_effects=list(contract_requirements.expected_effects),
+                verifier_plan=list(contract_requirements.verifier_plan),
+                required_capabilities=list(required_capabilities),
+                parameters=parameters,
+            )
+            if source_resolution is not None:
+                candidate = source_resolution.route.selected_candidate
+                lineage = state.fallback_lineage_for(source_resolution.target.semantic_target_id)
+                contract = replace(
+                    contract,
+                    id=(f"contract_{candidate.candidate_id.replace(':', '_')}_{candidate.observation_epoch_id}"),
+                    affordance_id=source_resolution.target.semantic_target_id,
+                    backend=candidate.compatible_executor,
+                    grounding_candidate=candidate,
+                    route_plan=source_resolution.route,
+                    snapshot_id=candidate.observation_epoch_id,
+                    page_revision=candidate.page_revision,
+                    target_fingerprint=candidate.target_fingerprint,
+                    target_fingerprint_key=candidate.fingerprint_key or candidate.candidate_id,
+                    expires_at_s=candidate.expires_at_s,
+                    supersedes_contract_id=lineage.get("supersedes_contract_id", ""),
+                    source_contract_id=lineage.get("source_contract_id", ""),
+                    fallback_reason=lineage.get("fallback_reason", ""),
+                    contract_hash="",
+                )
         if destination is not None:
             try:
-                source_candidate = (
-                    source_resolution.route.selected_candidate
-                    if source_resolution is not None
-                    else None
-                )
+                source_candidate = source_resolution.route.selected_candidate if source_resolution is not None else None
                 destination_candidate = (
-                    destination_resolution.route.selected_candidate
-                    if destination_resolution is not None
-                    else None
+                    destination_resolution.route.selected_candidate if destination_resolution is not None else None
                 )
                 gesture_binding = self.gesture_binder.bind(
                     replace(affordance, backend_candidates=[selected_backend]),
@@ -407,9 +400,7 @@ class ContractBuilder:
                     selected_route=selected_backend,
                     observation=snapshot.observation,
                     source_semantic_target_id=(
-                        source_resolution.target.semantic_target_id
-                        if source_resolution is not None
-                        else affordance.id
+                        source_resolution.target.semantic_target_id if source_resolution is not None else affordance.id
                     ),
                     source_candidate_id=(
                         source_candidate.candidate_id if source_candidate is not None else affordance.id
@@ -425,9 +416,7 @@ class ContractBuilder:
                         else destination.id
                     ),
                     destination_candidate_id=(
-                        destination_candidate.candidate_id
-                        if destination_candidate is not None
-                        else destination.id
+                        destination_candidate.candidate_id if destination_candidate is not None else destination.id
                     ),
                     destination_fingerprint_key=(
                         destination_candidate.fingerprint_key or destination_candidate.candidate_id
@@ -486,10 +475,7 @@ class ContractBuilder:
         verifier_kinds: tuple[str, ...] | None = None,
         excluded_candidate_ids: frozenset[str] = frozenset(),
     ) -> UnifiedTargetResolution | None:
-        if not any(
-            item.semantic_target_id == semantic_target_id
-            for item in snapshot.unified_affordances
-        ):
+        if not any(item.semantic_target_id == semantic_target_id for item in snapshot.unified_affordances):
             return None
         try:
             return self.unified_resolver.resolve(
@@ -499,14 +485,10 @@ class ContractBuilder:
                 subgoal=proposal.subgoal,
                 snapshot=snapshot,
                 available_executors=(
-                    available_executors
-                    if available_executors is not None
-                    else self._available_executors(snapshot)
+                    available_executors if available_executors is not None else self._available_executors(snapshot)
                 ),
                 verifier_kinds=(
-                    verifier_kinds
-                    if verifier_kinds is not None
-                    else self._route_verifier_kinds(semantic_target_id)
+                    verifier_kinds if verifier_kinds is not None else self._route_verifier_kinds(semantic_target_id)
                 ),
                 excluded_candidate_ids=excluded_candidate_ids,
             )
@@ -530,29 +512,28 @@ class ContractBuilder:
         snapshot: BrowserSnapshot,
     ) -> Affordance | None:
         return next(
-            (
-                item
-                for item in snapshot.affordance_model.affordances
-                if item.id == affordance_id
-            ),
+            (item for item in snapshot.affordance_model.affordances if item.id == affordance_id),
             None,
         )
 
 
 def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:
-    return affordance_action in {
-        PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
-        PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
-        PlannerActionKind.TYPE_TEXT: {"fill", "type"},
-        PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
+    return (
+        affordance_action
+        in {
+            PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
+            PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
+            PlannerActionKind.TYPE_TEXT: {"fill", "type"},
+            PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
             PlannerActionKind.PRESS_KEY: {"press"},
             PlannerActionKind.DRAG: {"drag"},
             PlannerActionKind.NAVIGATE: {"navigate"},
-        PlannerActionKind.SCROLL: {"scroll"},
-        PlannerActionKind.WAIT: {"wait"},
-        PlannerActionKind.ASK_USER: set(),
-        PlannerActionKind.FINISH: set(),
-    }[kind]
+            PlannerActionKind.SCROLL: {"scroll"},
+            PlannerActionKind.WAIT: {"wait"},
+            PlannerActionKind.ASK_USER: set(),
+            PlannerActionKind.FINISH: set(),
+        }[kind]
+    )
 
 
 def _contract_parameters(proposal: PlannerProposal) -> dict[str, Any]:

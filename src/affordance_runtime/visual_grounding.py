@@ -18,7 +18,7 @@ class VisualGroundingRequest:
     """One immutable screenshot-bound visual grounding request."""
 
     sample_id: str
-    image_path: Path
+    image_path: Path | None
     image_bytes: bytes
     image_size: tuple[int, int]
     instruction: str
@@ -71,7 +71,7 @@ class VisualRegionProposalRequest:
     """Immutable screenshot-bound request for a small set of visual regions."""
 
     sample_id: str
-    image_path: Path
+    image_path: Path | None
     image_bytes: bytes
     image_size: tuple[int, int]
     instruction: str = ""

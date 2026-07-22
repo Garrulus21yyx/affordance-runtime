@@ -26,6 +26,7 @@ from affordance_runtime.grounding import (
     SourceObservation,
     UnifiedAffordance,
 )
+from affordance_runtime.perception import PerceptionOrchestratorPort
 from affordance_runtime.svg_geometry import (
     SelectiveSvgGeometryObserver,
     SvgGeometryObservation,
@@ -67,6 +68,18 @@ class BrowserSnapshot:
     source_assertions: tuple[SourceAssertion, ...] = ()
     assertion_decisions: tuple[AssertionDecision, ...] = ()
     active_perception_requests: tuple[ActivePerceptionRequest, ...] = ()
+    accessibility_tree: dict[str, Any] | None = None
+    perception_requirements: PerceptionRequirements | None = None
+
+
+@dataclass(frozen=True)
+class _CaptureProfile:
+    page_id: str
+    ttl_ms: int
+    screenshot_path: str | None
+    perception_requirements: PerceptionRequirements | None
+    task_terms: tuple[str, ...]
+    task_instruction: str
 
 
 def _bounded_control_value(value: str, limit: int = 480) -> str:
@@ -78,6 +91,152 @@ def _bounded_control_value(value: str, limit: int = 480) -> str:
     prefix_length = (limit - len(marker)) // 2
     suffix_length = limit - len(marker) - prefix_length
     return value[:prefix_length] + marker + value[-suffix_length:]
+
+
+def _image_size(
+    screenshot_bytes: bytes,
+    evaluator: Any,
+) -> tuple[int, int] | None:
+    if len(screenshot_bytes) >= 24 and screenshot_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        width = int.from_bytes(screenshot_bytes[16:20], "big")
+        height = int.from_bytes(screenshot_bytes[20:24], "big")
+        if width > 0 and height > 0:
+            return width, height
+    if callable(evaluator):
+        try:
+            value = evaluator("() => [window.innerWidth, window.innerHeight]")
+            if isinstance(value, (list, tuple)) and len(value) == 2:
+                width, height = int(value[0]), int(value[1])
+                if width > 0 and height > 0:
+                    return width, height
+        except Exception:
+            return None
+    return None
+
+
+def _bounded_accessibility_tree(page: PageDriver, *, max_nodes: int = 256) -> dict[str, Any] | None:
+    """Capture a bounded browser accessibility tree when the driver exposes it."""
+
+    accessibility = getattr(page, "accessibility", None)
+    snapshot = getattr(accessibility, "snapshot", None)
+    raw: object = None
+    if callable(snapshot):
+        try:
+            raw = snapshot(interesting_only=False)
+        except Exception:
+            raw = None
+    if raw is None:
+        context = getattr(page, "context", None)
+        new_session = getattr(context, "new_cdp_session", None)
+        if callable(new_session):
+            session = None
+            try:
+                session = new_session(page)
+                raw = session.send("Accessibility.getFullAXTree")
+            except Exception:
+                raw = None
+            finally:
+                detach = getattr(session, "detach", None)
+                if callable(detach):
+                    detach()
+    if not isinstance(raw, dict):
+        return None
+
+    remaining = max_nodes
+
+    def bounded(value: object, depth: int = 0) -> object:
+        nonlocal remaining
+        if remaining <= 0 or depth > 12:
+            return None
+        if isinstance(value, dict):
+            remaining -= 1
+            kept: dict[str, object] = {}
+            for key, item in value.items():
+                if key in {
+                    "role",
+                    "name",
+                    "value",
+                    "description",
+                    "checked",
+                    "disabled",
+                    "focused",
+                    "selected",
+                    "children",
+                    "nodes",
+                    "childIds",
+                    "browsergym_id",
+                }:
+                    kept[str(key)] = bounded(item, depth + 1)
+            return kept
+        if isinstance(value, (list, tuple)):
+            return [bounded(item, depth + 1) for item in value[:remaining]]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)[:240]
+
+    result = bounded(raw)
+    return cast(dict[str, Any], result) if isinstance(result, dict) and result else None
+
+
+def _assertion_property_evidence(property_key: str) -> EvidenceKind:
+    normalized = property_key.casefold().strip()
+    if normalized in {"appearance", "color", "shape"}:
+        return EvidenceKind.VISUAL_APPEARANCE
+    if normalized in {"bbox", "geometry", "inside", "position"}:
+        return EvidenceKind.SPATIAL
+    if normalized in {"device_state", "power", "sensor", "status", "temperature"}:
+        return EvidenceKind.DEVICE_STATE
+    return EvidenceKind.STRUCTURAL
+
+
+def _source_assertions(
+    snapshot: BrowserSnapshot,
+    ttl_ms: int,
+) -> tuple[SourceAssertion, ...]:
+    affordances = {item.id: item for item in snapshot.affordance_model.affordances}
+    assertions: list[SourceAssertion] = []
+    expires_at_s = time.time() + ttl_ms / 1_000.0
+    for target in snapshot.unified_affordances:
+        for candidate in target.grounding_candidates:
+            affordance = affordances.get(candidate.source_affordance_id)
+            if affordance is None:
+                continue
+            parser_id = {
+                GroundingSource.DOM: "dom-adapter",
+                GroundingSource.ACCESSIBILITY: "accessibility-adapter",
+                GroundingSource.SVG: "selective-svg-geometry",
+                GroundingSource.SOM: "set-of-marks",
+                GroundingSource.VISUAL: "generic-visual-region-proposer",
+            }.get(candidate.source, candidate.source.value)
+            values: list[tuple[str, Any, str]] = [
+                ("semantic_label", affordance.label, "string"),
+            ]
+            for property_key in ("visible", "enabled"):
+                if property_key in affordance.state:
+                    values.append((property_key, bool(affordance.state[property_key]), "boolean"))
+            bbox = affordance.locator.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                values.append(("position", tuple(float(item) for item in bbox), "bbox"))
+            for property_key, value, value_type in values:
+                assertion_id = f"assertion:{candidate.candidate_id}:{property_key}"
+                assertions.append(
+                    SourceAssertion(
+                        assertion_id=assertion_id,
+                        entity_key=target.semantic_target_id,
+                        property_key=property_key,
+                        value=value,
+                        value_type=value_type,
+                        source=candidate.source,
+                        observation_epoch_id=snapshot.observation.snapshot_id,
+                        environment_revision=snapshot.observation.environment_revision,
+                        page_revision=snapshot.observation.page_revision,
+                        parser_id=parser_id,
+                        expires_at_s=expires_at_s,
+                        confidence=candidate.confidence,
+                        evidence_refs=candidate.evidence_refs,
+                    )
+                )
+    return tuple(assertions)
 
 
 class BrowserSession:
@@ -93,6 +252,8 @@ class BrowserSession:
         svg_observer: SvgGeometryObserverPort | None = None,
         svg_executor: str = "visual",
         dom_executor: str = "dom",
+        perception_orchestrator: PerceptionOrchestratorPort | None = None,
+        visual_executor: str = "visual",
     ) -> None:
         self._page = page
         self._initial_url = initial_url
@@ -102,6 +263,10 @@ class BrowserSession:
         self._svg_observer = svg_observer or SelectiveSvgGeometryObserver()
         self._svg_executor = svg_executor
         self._dom_executor = dom_executor
+        self._perception_orchestrator = perception_orchestrator
+        self._visual_executor = visual_executor
+        self._last_capture_profile: _CaptureProfile | None = None
+        self._targeted_capture_sequence = 0
 
     @classmethod
     def launch(
@@ -112,6 +277,8 @@ class BrowserSession:
         action_timeout_ms: int = 8_000,
         navigation_attempts: int = 3,
         lease_ttl_ms: int = 2_000,
+        perception_orchestrator: PerceptionOrchestratorPort | None = None,
+        visual_executor: str = "visual",
     ) -> "BrowserSession":
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
@@ -143,6 +310,8 @@ class BrowserSession:
             initial_url=url,
             owner=(playwright, browser, context),
             lease_ttl_ms=lease_ttl_ms,
+            perception_orchestrator=perception_orchestrator,
+            visual_executor=visual_executor,
         )
 
     def open(self, url: str) -> None:
@@ -191,6 +360,7 @@ class BrowserSession:
         screenshot_path: str | None = None,
         perception_requirements: PerceptionRequirements | None = None,
         task_terms: tuple[str, ...] = (),
+        task_instruction: str = "",
     ) -> BrowserSnapshot:
         """Capture one coherent, selectively multi-source observation epoch."""
 
@@ -210,16 +380,24 @@ class BrowserSession:
             allow_offscreen=True,
         )
         visual_required = bool(
-            perception_requirements
-            and EvidenceKind.VISUAL_APPEARANCE in perception_requirements.required_properties
+            perception_requirements and EvidenceKind.VISUAL_APPEARANCE in perception_requirements.required_properties
         )
         spatial_required = bool(
             perception_requirements and EvidenceKind.SPATIAL in perception_requirements.required_properties
         )
-        if visual_required and screenshot_path is None:
-            raise ValueError("visual perception requires a persistent screenshot_path")
+        self._last_capture_profile = _CaptureProfile(
+            page_id=page_id,
+            ttl_ms=effective_ttl_ms,
+            screenshot_path=screenshot_path,
+            perception_requirements=perception_requirements,
+            task_terms=task_terms,
+            task_instruction=task_instruction,
+        )
         screenshot_ref = ""
+        screenshot_bytes = b""
+        image_size: tuple[int, int] | None = None
         svg_geometry: SvgGeometryObservation | None = None
+        accessibility_tree = _bounded_accessibility_tree(self._page)
         control_states: dict[str, Any] = {}
         active_bid = ""
         visible_text = ""
@@ -231,9 +409,7 @@ class BrowserSession:
                 )
                 if isinstance(captured, dict):
                     control_states = captured
-                captured_active_bid = evaluator(
-                    "() => document.activeElement?.getAttribute('bid') || ''"
-                )
+                captured_active_bid = evaluator("() => document.activeElement?.getAttribute('bid') || ''")
                 if isinstance(captured_active_bid, str):
                     active_bid = captured_active_bid
                 captured_visible_text = evaluator("() => document.body?.innerText || ''")
@@ -257,10 +433,15 @@ class BrowserSession:
                 task_terms=task_terms,
                 evidence_ref=screenshot_path or "",
             )
-        if screenshot_path is not None:
-            screenshot_bytes = self._page.screenshot(path=screenshot_path)
+        if screenshot_path is not None or visual_required or spatial_required:
+            screenshot_bytes = (
+                self._page.screenshot(path=screenshot_path) if screenshot_path is not None else self._page.screenshot()
+            )
             screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
-        if perception_requirements is not None and (visual_required or spatial_required):
+            image_size = _image_size(screenshot_bytes, evaluator)
+        if accessibility_tree is not None or (
+            perception_requirements is not None and (visual_required or spatial_required)
+        ):
             final_html = self._page.content()
             final_url = self.url
             final_model = self._dom.transduce(
@@ -311,9 +492,7 @@ class BrowserSession:
                 if len(value) > 240:
                     state["control_value_prefix"] = value[:240]
                     state["control_value_suffix"] = value[-240:]
-            selected_options = (
-                control_state.get("selected_options") if isinstance(control_state, dict) else None
-            )
+            selected_options = control_state.get("selected_options") if isinstance(control_state, dict) else None
             if element_tag == "select" and isinstance(selected_options, list):
                 state["selected_options"] = [
                     str(item)[:160] for item in selected_options if isinstance(item, str) and item
@@ -330,9 +509,10 @@ class BrowserSession:
                     and scroll_height > client_height
                 ):
                     scroll_id = f"{affordance.id}_scroll"
-                    scroll_fingerprint = "sha256:" + hashlib.sha256(
-                        f"{affordance.target_fingerprint}\0scroll-region".encode("utf-8")
-                    ).hexdigest()
+                    scroll_fingerprint = (
+                        "sha256:"
+                        + hashlib.sha256(f"{affordance.target_fingerprint}\0scroll-region".encode("utf-8")).hexdigest()
+                    )
                     enriched_affordances.append(
                         replace(
                             affordance,
@@ -354,9 +534,7 @@ class BrowserSession:
                     )
         if svg_geometry is not None:
             for element in svg_geometry.elements:
-                source_identity = hashlib.sha256(
-                    f"{element.tag}\0{element.element_id}".encode()
-                ).hexdigest()[:12]
+                source_identity = hashlib.sha256(f"{element.tag}\0{element.element_id}".encode()).hexdigest()[:12]
                 semantic_target_id = f"svg_{element.tag}_{source_identity}"
                 candidate = element.grounding_candidate(
                     semantic_target_id=semantic_target_id,
@@ -406,6 +584,71 @@ class BrowserSession:
                         evidence=[*candidate.evidence_refs],
                     )
                 )
+        if (
+            (visual_required or spatial_required)
+            and self._perception_orchestrator is not None
+            and perception_requirements is not None
+            and GroundingSource.VISUAL in perception_requirements.acceptable_evidence
+            and image_size is not None
+        ):
+            regions = self._perception_orchestrator.propose_visual_regions(
+                observation_epoch_id=snapshot_id,
+                screenshot_path=Path(screenshot_path) if screenshot_path is not None else None,
+                screenshot_bytes=screenshot_bytes,
+                image_size=image_size,
+                instruction=task_instruction or " ".join(task_terms),
+                requirements=perception_requirements,
+            )
+            structured_context = bool(
+                perception_requirements.required_properties.intersection(
+                    {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
+                )
+            )
+            gesture_terms = {item.casefold() for item in task_terms}
+            visual_action = (
+                "drag"
+                if gesture_terms.intersection({"drag", "drop"})
+                else "click"
+                if structured_context and not spatial_required
+                else "point_activate"
+            )
+            for index, region in enumerate(regions):
+                visual_bbox = region.pixel_bbox(image_size)
+                region_identity = hashlib.sha256(f"{region.label}\0{visual_bbox}\0{index}".encode()).hexdigest()[:12]
+                affordance_id = f"visual_region_{region_identity}"
+                fingerprint = "sha256:" + hashlib.sha256(f"{affordance_id}\0{visual_bbox}".encode()).hexdigest()
+                enriched_affordances.append(
+                    Affordance(
+                        id=affordance_id,
+                        surface=Surface.VISUAL,
+                        role="button",
+                        label=region.label or f"visual region {index + 1}",
+                        action=visual_action,
+                        locator={
+                            "bbox": list(visual_bbox),
+                            "center": [
+                                visual_bbox[0] + visual_bbox[2] / 2,
+                                visual_bbox[1] + visual_bbox[3] / 2,
+                            ],
+                            "coordinate_space": "screenshot_pixels",
+                            "screenshot_ref": screenshot_ref,
+                        },
+                        lease=AffordanceLease.issue(
+                            environment_revision=environment_revision,
+                            ttl_ms=effective_ttl_ms,
+                            provenance=["generic-visual-region-proposer", screenshot_ref],
+                            confidence=region.confidence,
+                            snapshot_id=snapshot_id,
+                            page_revision=model.page_revision,
+                            target_fingerprint=fingerprint,
+                        ),
+                        backend_candidates=[self._visual_executor],
+                        confidence=region.confidence,
+                        state={"visible": True, "visual_region": True},
+                        risk=RiskLevel.LOW,
+                        evidence=[screenshot_ref],
+                    )
+                )
         model = replace(
             model,
             affordances=enriched_affordances,
@@ -423,6 +666,23 @@ class BrowserSession:
                 "visible_text": visible_text,
                 "observation_epoch_id": snapshot_id,
                 "svg_geometry_count": len(svg_geometry.elements) if svg_geometry is not None else 0,
+                "viewport_size": list(image_size) if image_size is not None else None,
+                "accessibility_tree": accessibility_tree,
+                "perception_requirements": (
+                    {
+                        "required_properties": sorted(
+                            item.value for item in perception_requirements.required_properties
+                        ),
+                        "acceptable_sources": sorted(
+                            item.value for item in perception_requirements.acceptable_evidence
+                        ),
+                        "preferred_sources": [item.value for item in perception_requirements.preferred_sources],
+                        "observation_budget": perception_requirements.observation_budget,
+                        "model_call_budget": perception_requirements.model_call_budget,
+                    }
+                    if perception_requirements is not None
+                    else None
+                ),
             },
             snapshot_id=snapshot_id,
             page_revision=model.page_revision,
@@ -441,6 +701,16 @@ class BrowserSession:
                     semantic_target_id="pending",
                     compatible_executor=self._dom_executor,
                 )
+            if current_candidate is None and affordance.surface == Surface.VISUAL:
+                if image_size is None:
+                    continue
+                current_candidate = candidate_from_affordance(
+                    affordance,
+                    observation,
+                    semantic_target_id="pending",
+                    image_size=image_size,
+                    compatible_executor=self._visual_executor,
+                )
             if current_candidate is None:
                 continue
             descriptors.append(
@@ -454,9 +724,7 @@ class BrowserSession:
             )
         unified_affordances = SemanticEntityResolver().resolve(descriptors)
         grounding_candidates = [
-            candidate
-            for target in unified_affordances
-            for candidate in target.grounding_candidates
+            candidate for target in unified_affordances for candidate in target.grounding_candidates
         ]
         observation = replace(
             observation,
@@ -474,6 +742,16 @@ class BrowserSession:
                 page_revision=model.page_revision,
             )
         ]
+        if accessibility_tree is not None:
+            source_observations.append(
+                SourceObservation(
+                    source=GroundingSource.ACCESSIBILITY,
+                    parser_id="browser-accessibility-tree",
+                    observation_epoch_id=snapshot_id,
+                    environment_revision=environment_revision,
+                    page_revision=model.page_revision,
+                )
+            )
         if svg_geometry is not None:
             source_observations.append(svg_geometry.source_observation)
         if screenshot_ref:
@@ -487,13 +765,95 @@ class BrowserSession:
                     artifact_refs=(screenshot_ref,),
                 )
             )
-        return BrowserSnapshot(
+        missing_evidence_requests: tuple[ActivePerceptionRequest, ...] = ()
+        if (
+            not unified_affordances
+            and self._perception_orchestrator is not None
+            and perception_requirements is not None
+            and not visual_required
+        ):
+            missing_evidence_requests = (
+                ActivePerceptionRequest(
+                    entity_key="task:unresolved-target",
+                    property_key="appearance",
+                    requested_sources=(GroundingSource.VISUAL,),
+                    reason="structured observation produced no actionable semantic target",
+                    max_observations=1,
+                ),
+            )
+        snapshot = BrowserSnapshot(
             observation=observation,
             affordance_model=model,
             source_observations=tuple(source_observations),
             svg_geometry=svg_geometry,
             grounding_candidates=tuple(grounding_candidates),
             unified_affordances=unified_affordances,
+            accessibility_tree=accessibility_tree,
+            perception_requirements=perception_requirements,
+            active_perception_requests=missing_evidence_requests,
+        )
+        assertions = _source_assertions(snapshot, effective_ttl_ms)
+        if not assertions:
+            return snapshot
+        # Imported lazily to keep the snapshot type boundary acyclic.
+        from affordance_runtime.source_assertions import SourceAssertionOrchestrator
+
+        return SourceAssertionOrchestrator().reconcile_snapshot(
+            snapshot,
+            assertions,
+            available_sources=frozenset(item.source for item in source_observations),
+            observation_budget=(
+                perception_requirements.observation_budget if perception_requirements is not None else 1
+            ),
+        )
+
+    def capture_targeted(
+        self,
+        requests: tuple[ActivePerceptionRequest, ...],
+    ) -> BrowserSnapshot:
+        """Reobserve requested sources in one fresh, bounded coherent epoch."""
+
+        profile = self._last_capture_profile
+        if profile is None:
+            raise RuntimeError("targeted perception requires a prior capture profile")
+        if not requests:
+            raise ValueError("targeted perception requires at least one request")
+        if any(item.max_observations != 1 for item in requests):
+            raise ValueError("BrowserSession targeted perception accepts one epoch per request")
+        requested_source_order = tuple(
+            dict.fromkeys(source for request in requests for source in request.requested_sources)
+        )
+        requested_sources = frozenset(requested_source_order)
+        required_properties = frozenset(_assertion_property_evidence(request.property_key) for request in requests)
+        if requested_sources.intersection({GroundingSource.SOM, GroundingSource.VISUAL}):
+            required_properties |= frozenset({EvidenceKind.VISUAL_APPEARANCE})
+        base = profile.perception_requirements or PerceptionRequirements()
+        requirements = replace(
+            base,
+            required_properties=base.required_properties | required_properties,
+            acceptable_evidence=base.acceptable_evidence | requested_sources,
+            preferred_sources=tuple(dict.fromkeys((*requested_source_order, *base.preferred_sources))),
+            observation_budget=1,
+            model_call_budget=(
+                max(1, base.model_call_budget)
+                if requested_sources.intersection({GroundingSource.SOM, GroundingSource.VISUAL})
+                else base.model_call_budget
+            ),
+        )
+        self._targeted_capture_sequence += 1
+        screenshot_path = profile.screenshot_path
+        if screenshot_path:
+            path = Path(screenshot_path)
+            screenshot_path = str(
+                path.with_name(f"{path.stem}-targeted-{self._targeted_capture_sequence}{path.suffix}")
+            )
+        return self.capture(
+            page_id=profile.page_id,
+            ttl_ms=profile.ttl_ms,
+            screenshot_path=screenshot_path,
+            perception_requirements=requirements,
+            task_terms=profile.task_terms,
+            task_instruction=profile.task_instruction,
         )
 
     def screenshot(self, path: str | None = None) -> bytes:

@@ -26,11 +26,7 @@ def _affordance(affordance_id: str, surface: Surface, backend: str) -> Affordanc
         target_fingerprint=f"fp-{affordance_id}",
         ttl_ms=60_000,
     )
-    locator = (
-        {"bid": affordance_id}
-        if surface == Surface.DOM
-        else {"mark_id": "M1", "bbox": [10, 20, 30, 40]}
-    )
+    locator = {"bid": affordance_id} if surface == Surface.DOM else {"mark_id": "M1", "bbox": [10, 20, 30, 40]}
     return Affordance(
         affordance_id,
         surface,
@@ -67,10 +63,7 @@ def test_semantic_resolver_groups_matching_dom_and_som_candidates() -> None:
         GroundingSource.DOM,
         GroundingSource.SOM,
     }
-    assert all(
-        item.semantic_target_id == targets[0].semantic_target_id
-        for item in targets[0].grounding_candidates
-    )
+    assert all(item.semantic_target_id == targets[0].semantic_target_id for item in targets[0].grounding_candidates)
 
 
 def test_semantic_resolver_does_not_merge_same_label_across_containers() -> None:
@@ -155,11 +148,36 @@ def test_route_planner_applies_hard_gates_before_preferring_cheaper_dom() -> Non
     )
 
     assert route.selected_candidate.source == GroundingSource.DOM
-    assert route.viable_alternatives == ()
-    assert all(
-        item.passed == (item.candidate_id == route.selected_candidate.candidate_id)
-        for item in route.hard_gate_results
+    assert [item.source for item in route.viable_alternatives] == [GroundingSource.SOM]
+    assert all(item.passed for item in route.hard_gate_results)
+
+
+def test_unrelated_page_visual_evidence_cannot_satisfy_dom_candidate_gate() -> None:
+    base_observation = _observation()
+    dom = candidate_from_affordance(
+        _affordance("save", Surface.DOM, "browsergym"),
+        base_observation,
+        semantic_target_id="pending",
     )
+    target = SemanticEntityResolver().resolve((CandidateDescriptor("button", "Save", "click", "settings", dom),))[0]
+    observation = replace(
+        base_observation,
+        screenshot_ref="unrelated-page.png",
+        target_fingerprints=candidate_fingerprints((target,)),
+    )
+
+    with pytest.raises(ValueError, match="required_evidence_missing"):
+        UnifiedRoutePlanner().plan(
+            target,
+            action="activate",
+            requirements=PerceptionRequirements(
+                required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+                acceptable_evidence=frozenset({GroundingSource.DOM}),
+            ),
+            observation=observation,
+            available_executors=frozenset({"browsergym"}),
+            verifier_kinds=("state_delta_or_terminal",),
+        )
 
 
 def test_route_planner_rejects_expired_or_unverified_candidates() -> None:
@@ -167,9 +185,9 @@ def test_route_planner_rejects_expired_or_unverified_candidates() -> None:
     candidate = candidate_from_affordance(
         _affordance("save", Surface.DOM, "browsergym"), observation, semantic_target_id="pending"
     )
-    target = SemanticEntityResolver().resolve(
-        (CandidateDescriptor("button", "Save", "click", "settings", candidate),)
-    )[0]
+    target = SemanticEntityResolver().resolve((CandidateDescriptor("button", "Save", "click", "settings", candidate),))[
+        0
+    ]
     expired = replace(target.grounding_candidates[0], expires_at_s=time() - 1)
     target = replace(target, grounding_candidates=(expired,))
     observation = replace(observation, target_fingerprints=candidate_fingerprints((target,)))
@@ -218,8 +236,7 @@ def test_route_planner_excludes_failed_candidate_and_selects_fresh_alternative()
 
     assert route.selected_candidate.candidate_id == target.grounding_candidates[1].candidate_id
     excluded_gate = next(
-        item for item in route.hard_gate_results
-        if item.candidate_id == target.grounding_candidates[0].candidate_id
+        item for item in route.hard_gate_results if item.candidate_id == target.grounding_candidates[0].candidate_id
     )
     assert excluded_gate.passed is False
     assert excluded_gate.reasons == ("candidate_excluded",)

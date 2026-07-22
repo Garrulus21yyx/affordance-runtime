@@ -7,7 +7,6 @@ import json
 import multiprocessing as mp
 import re
 import shlex
-import struct
 import subprocess
 import threading
 from dataclasses import asdict, dataclass, field, replace
@@ -18,7 +17,6 @@ from queue import Empty
 from time import perf_counter
 from typing import Any, Callable, Sequence, cast
 
-from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.browsergym_action_schema import (
     BROWSERGYM_ACTION_ARGUMENTS as _BROWSERGYM_ACTION_ARGUMENTS,
@@ -96,8 +94,12 @@ from affordance_runtime.grounding import (
     GroundingSource,
     PerceptionRequirements,
 )
-from affordance_runtime.model_port import ModelConfig, ModelPort, ProviderModelError
-from affordance_runtime.perception import derive_perception_requirements, perception_task_terms
+from affordance_runtime.model_port import ModelConfig, ModelPort
+from affordance_runtime.perception import (
+    GenericPerceptionOrchestrator,
+    derive_perception_requirements,
+    perception_task_terms,
+)
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -116,8 +118,6 @@ from affordance_runtime.unified_grounding import (
 from affordance_runtime.visual_contracts import VisualContractBinder
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
-    VisualGroundingRequest,
-    VisualRegionProposalRequest,
     VisualRegionProposerPort,
 )
 
@@ -153,17 +153,6 @@ def _viewport_box(value: Any) -> tuple[float, float, float, float] | None:
     if x < 0 or y < 0 or width <= 0 or height <= 0:
         return None
     return x, y, width, height
-
-
-def _png_image_size(image_bytes: bytes) -> tuple[int, int]:
-    """Read PNG dimensions without adding an image-processing dependency."""
-
-    if image_bytes[:8] != b"\x89PNG\r\n\x1a\n" or image_bytes[12:16] != b"IHDR":
-        raise ValueError("BrowserGym visual grounding requires a PNG screenshot")
-    width, height = struct.unpack(">II", image_bytes[16:24])
-    if width <= 0 or height <= 0:
-        raise ValueError("BrowserGym visual screenshot dimensions must be positive")
-    return width, height
 
 
 def _visual_fallback_affordance(snapshot: BrowserSnapshot) -> Affordance | None:
@@ -210,9 +199,6 @@ class BrowserGymObserver:
     session: BrowserSession
     episode: BrowserGymEpisodeState
     screenshot_dir: Path
-    visual_grounding_enabled: bool = False
-    visual_grounder: VisualGrounderPort | None = None
-    visual_region_proposer: VisualRegionProposerPort | None = None
     perception_requirements: PerceptionRequirements | None = None
     task_terms: tuple[str, ...] = ()
     sequence: int = 0
@@ -231,6 +217,7 @@ class BrowserGymObserver:
                     screenshot_path=str(screenshot),
                     perception_requirements=self.perception_requirements,
                     task_terms=self.task_terms,
+                    task_instruction=self.episode.goal,
                 )
                 break
             except RuntimeError as exc:
@@ -250,14 +237,7 @@ class BrowserGymObserver:
             },
         }
         observation = replace(snapshot.observation, metadata=metadata)
-        enriched = self._attach_drag_geometry(replace(snapshot, observation=observation))
-        if not self.visual_grounding_enabled:
-            return enriched
-        regional = self._visual_region_model(enriched)
-        if regional is not None:
-            return regional
-        grounded = self._visual_grounded_model(enriched)
-        return grounded or enriched
+        return self._attach_drag_geometry(replace(snapshot, observation=observation))
 
     def _attach_drag_geometry(self, snapshot: BrowserSnapshot) -> BrowserSnapshot:
         drag_affordances = [item for item in snapshot.affordance_model.affordances if item.action == "drag"]
@@ -341,137 +321,6 @@ class BrowserGymObserver:
             affordance_model=model,
         )
         return _refresh_dom_grounding_candidates(refreshed)
-
-    def _visual_region_model(self, snapshot: BrowserSnapshot) -> BrowserSnapshot | None:
-        if self.visual_region_proposer is None or not self._needs_visual_regions(snapshot):
-            return None
-        screenshot_ref = snapshot.observation.screenshot_ref
-        path = Path(screenshot_ref)
-        if not screenshot_ref or not path.is_file():
-            return None
-        try:
-            image_bytes = path.read_bytes()
-            image_size = _png_image_size(image_bytes)
-            regions = self.visual_region_proposer.propose(
-                VisualRegionProposalRequest(
-                    sample_id=snapshot.observation.snapshot_id,
-                    image_path=path,
-                    image_bytes=image_bytes,
-                    image_size=image_size,
-                    instruction=self.episode.goal,
-                )
-            )
-        except ProviderModelError:
-            # Preserve typed 429/quota/capacity failures so the coordinator can
-            # attribute the real provider cause and open the correct circuit.
-            raise
-        except Exception:
-            return None
-        visual_action = "drag" if self._requires_visual_drag(snapshot) else "point_activate"
-        normalized_regions = [
-            {
-                "bbox": [round(value) for value in region.pixel_bbox(image_size)],
-                "label": region.label,
-                "confidence": region.confidence,
-                "action": visual_action,
-            }
-            for region in regions
-        ]
-        if not normalized_regions:
-            return None
-        affordances = SomAdapter().parse(
-            normalized_regions,
-            environment_revision=snapshot.observation.environment_revision,
-            screenshot_ref=screenshot_ref,
-            ttl_ms=self.lease_ttl_ms,
-            snapshot_id=snapshot.observation.snapshot_id,
-            page_revision=snapshot.observation.page_revision,
-        )
-        affordances = [replace(item, backend_candidates=[BROWSERGYM_BACKEND]) for item in affordances]
-        return _fuse_visual_candidates(
-            replace(
-                snapshot,
-                observation=replace(
-                    snapshot.observation,
-                    metadata={**snapshot.observation.metadata, "visual_region_count": len(affordances)},
-                ),
-            ),
-            affordances,
-            image_size,
-        )
-
-    def _visual_grounded_model(self, snapshot: BrowserSnapshot) -> BrowserSnapshot | None:
-        if (
-            self.visual_grounder is None
-            or self._requires_visual_drag(snapshot)
-            or any(item.action == "point_activate" for item in snapshot.affordance_model.affordances)
-        ):
-            return None
-        screenshot_ref = snapshot.observation.screenshot_ref
-        path = Path(screenshot_ref)
-        if not screenshot_ref or not path.is_file():
-            return None
-        image_bytes = path.read_bytes()
-        image_size = _png_image_size(image_bytes)
-        point = self.visual_grounder.ground(
-            VisualGroundingRequest(
-                sample_id=snapshot.observation.snapshot_id,
-                image_path=path,
-                image_bytes=image_bytes,
-                image_size=image_size,
-                instruction=self.episode.goal,
-            )
-        )
-        x, y = point.pixel_coordinates(image_size)
-        if not (0 <= x < image_size[0] and 0 <= y < image_size[1]):
-            raise ValueError("visual grounder point is outside the current screenshot")
-        fingerprint = (
-            "sha256:"
-            + hashlib.sha256(
-                f"{snapshot.observation.page_revision}\0{hashlib.sha256(image_bytes).hexdigest()}\0{x}\0{y}".encode()
-            ).hexdigest()
-        )
-        affordance = Affordance(
-            id="visual_grounded_target",
-            surface=Surface.VISUAL,
-            role="point",
-            label="current visually grounded target",
-            action="point_activate",
-            locator={
-                "center": [x, y],
-                "screenshot_ref": screenshot_ref,
-                "coordinate_space": "screenshot_pixels",
-            },
-            lease=AffordanceLease.issue(
-                environment_revision=snapshot.observation.environment_revision,
-                ttl_ms=self.lease_ttl_ms,
-                provenance=["screenshot", self.visual_grounder.provider, self.visual_grounder.model],
-                confidence=1.0,
-                snapshot_id=snapshot.observation.snapshot_id,
-                page_revision=snapshot.observation.page_revision,
-                target_fingerprint=fingerprint,
-            ),
-            backend_candidates=[BROWSERGYM_BACKEND],
-            confidence=1.0,
-            evidence=[screenshot_ref],
-        )
-        return _fuse_visual_candidates(snapshot, [affordance], image_size)
-
-    def _requires_visual_drag(self, snapshot: BrowserSnapshot) -> bool:
-        del snapshot
-        return "drag" in {item.casefold() for item in self.task_terms} or "drag" in self.episode.goal.casefold()
-
-    def _needs_visual_regions(self, snapshot: BrowserSnapshot) -> bool:
-        if not snapshot.affordance_model.affordances:
-            return True
-        if self._requires_visual_drag(snapshot):
-            return not any(item.action == "drag" for item in snapshot.affordance_model.affordances)
-        required = self.perception_requirements.required_properties if self.perception_requirements else frozenset()
-        return bool(
-            {EvidenceKind.SPATIAL, EvidenceKind.VISUAL_APPEARANCE}.intersection(required)
-            and not any(item.action == "point_activate" for item in snapshot.affordance_model.affordances)
-        )
-
 
 def _refresh_dom_grounding_candidates(snapshot: BrowserSnapshot) -> BrowserSnapshot:
     """Rebind DOM candidates after observer enrichment changes target identity."""
@@ -853,7 +702,6 @@ class BrowserGymPointEncoder:
 class GeneralistBrowserGymContractBuilder(ContractBuilder):
     """Bind the common semantic vocabulary to typed BrowserGym actions."""
 
-    visual_grounder: VisualGrounderPort | None = None
     gesture_encoder: BrowserGymGestureEncoder = field(default_factory=BrowserGymGestureEncoder)
     point_encoder: BrowserGymPointEncoder = field(default_factory=BrowserGymPointEncoder)
     visual_contract_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
@@ -1443,6 +1291,15 @@ def run_browsergym_generalist_episode(
             environment.unwrapped.page,
             svg_executor=BROWSERGYM_BACKEND,
             dom_executor=BROWSERGYM_BACKEND,
+            perception_orchestrator=(
+                GenericPerceptionOrchestrator(
+                    region_proposer=visual_region_proposer,
+                    point_grounder=visual_grounder,
+                )
+                if visual_region_proposer is not None or visual_grounder is not None
+                else None
+            ),
+            visual_executor=BROWSERGYM_BACKEND,
         )
         run_id = f"browsergym-generalist-{task_id}-seed-{seed}"
         task_spec = TaskSpec(
@@ -1478,9 +1335,6 @@ def run_browsergym_generalist_episode(
                 session,
                 episode,
                 artifact_root / "screenshots" / run_id,
-                visual_grounding_enabled=visual_grounder is not None or visual_region_proposer is not None,
-                visual_grounder=visual_grounder,
-                visual_region_proposer=visual_region_proposer,
                 perception_requirements=perception_requirements,
                 task_terms=perception_task_terms(task_spec),
             ),
@@ -1494,7 +1348,7 @@ def run_browsergym_generalist_episode(
                 max_recoveries=3,
                 max_effectful_actions=max_steps + 1,
             ),
-            contract_builder=GeneralistBrowserGymContractBuilder(visual_grounder=visual_grounder),
+            contract_builder=GeneralistBrowserGymContractBuilder(),
         ).run_sync(TaskEnvelope(task_spec=task_spec))
         planner_error = next(
             (

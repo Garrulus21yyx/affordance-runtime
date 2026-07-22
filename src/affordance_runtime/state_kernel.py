@@ -254,6 +254,7 @@ class StateKernel:
             "supersedes_contract_id": contract.id,
             "source_contract_id": contract.source_contract_id or contract.id,
             "fallback_reason": reason,
+            "failed_source": candidate.source.value,
         }
         self.version += 1
 

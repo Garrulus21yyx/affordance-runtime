@@ -1,6 +1,11 @@
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
-from affordance_runtime.perception import derive_perception_requirements, perception_task_terms
+from affordance_runtime.perception import (
+    PerceptionEscalation,
+    derive_perception_requirements,
+    perception_task_terms,
+)
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_planning import SubgoalSpec
 
 
 def _task(objective: str) -> TaskSpec:
@@ -120,8 +125,42 @@ def test_descending_letter_sequence_uses_the_same_ordering_evidence_rule() -> No
 
     requirements = derive_perception_requirements(task)
 
-    assert requirements.required_properties == frozenset(
-        {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
-    )
+    assert requirements.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL})
     assert GroundingSource.SVG in requirements.acceptable_evidence
     assert GroundingSource.DOM in requirements.acceptable_evidence
+
+
+def test_subgoal_evidence_requirements_drive_perception_even_when_task_is_plain() -> None:
+    subgoal = SubgoalSpec(
+        subgoal_id="inspect-chart",
+        objective="Inspect the current chart",
+        success_criteria=("the marked point is identified",),
+        evidence_requirements=("visual appearance and spatial position",),
+        operation_class=OperationClass.READ_ONLY,
+    )
+
+    requirements = derive_perception_requirements(
+        _task("Review the report"),
+        active_subgoal=subgoal,
+    )
+
+    assert EvidenceKind.VISUAL_APPEARANCE in requirements.required_properties
+    assert EvidenceKind.SPATIAL in requirements.required_properties
+    assert {"inspect", "chart", "spatial", "position"}.issubset(
+        perception_task_terms(_task("Review the report"), active_subgoal=subgoal)
+    )
+
+
+def test_failed_structured_route_escalates_to_independent_visual_evidence() -> None:
+    requirements = derive_perception_requirements(
+        _task("Activate the named control"),
+        escalation=PerceptionEscalation(
+            reason="current DOM route failed before verification",
+            failed_sources=frozenset({GroundingSource.DOM}),
+        ),
+    )
+
+    assert EvidenceKind.VISUAL_APPEARANCE in requirements.required_properties
+    assert GroundingSource.VISUAL in requirements.acceptable_evidence
+    assert GroundingSource.DOM not in requirements.preferred_sources
+    assert requirements.model_call_budget == 1

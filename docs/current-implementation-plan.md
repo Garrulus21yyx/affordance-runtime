@@ -11,7 +11,7 @@ restart/waiting evidence; production-scale options remain non-blocking.
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs before the remaining Runtime-first R3-R5 gates close. After generic
+repairs before the remaining Runtime-first R4-R5 gates close. After generic
 perception/routing and de-specialized
 module ownership are proven, rerun the residual release scan as external
 confirmation.
@@ -690,7 +690,7 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- pause new task-family semantic compilers until the remaining R3-R5 gates move benchmark
+- pause new task-family semantic compilers until the remaining R4-R5 gates move benchmark
   attributes and authored family logic out of shared DOM/planner modules and
   prove the replacement capability in a non-BrowserGym environment;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
@@ -1373,10 +1373,15 @@ as architecture work. The detailed findings and gates are maintained in
    current environment, verified progress, failures, recovery, disproved
    assumptions, budgets, and plan lineage through a normal non-BrowserGym
    entrypoint.
-3. **Generic perception orchestration:** derive PerceptionRequirements from
-   TaskSpec/SubgoalSpec and pass them through Coordinator to BrowserSession;
-   produce DOM, accessibility, SVG, screenshot, and visual candidates through
-   generic ports in one coherent observation epoch.
+3. **Generic perception orchestration — Runtime exit complete:**
+   PerceptionRequirements are derived from TaskSpec/SubgoalSpec and passed
+   through Coordinator to BrowserSession; DOM, bounded accessibility, SVG,
+   screenshot, visual candidates, sourced assertions, and targeted
+   reobservation share fresh coherent epochs. Non-BrowserGym visual-primary,
+   DOM-to-visual escalation, persistent-conflict blocking, and real Chromium
+   evidence are recorded in
+   `evidence/runtime-r3-generic-perception-20260722.md`. Remaining legacy
+   BrowserGym observer cleanup belongs to R5 adapter de-specialization.
 4. **Target-specific unified routing:** align candidates conservatively with
    semantic and geometry evidence, apply requirements to the selected target,
    and update route statistics only from postcondition-verifier outcomes.

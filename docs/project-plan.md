@@ -163,10 +163,10 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
-| M8.2B Public Benchmark Expansion | in progress | historical v112 nightly is 300/300 and the complete release is 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic only. Pause benchmark-family repair, close remaining Runtime-first R3-R5 and remove shared-module specialization, then rerun residual release and provisioned public suites. |
+| M8.2B Public Benchmark Expansion | in progress | historical v112 nightly is 300/300 and the complete release is 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic only. Pause benchmark-family repair, close remaining Runtime-first R4-R5 and remove shared-module specialization, then rerun residual release and provisioned public suites. |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 | M8.4 Adaptive Shallow Task Planning | done | criteria-bound progress, context-rich replanning, monotonic lineage, flat routing, and a real non-BrowserGym reference entrypoint are proven |
-| M8.5 Unified Adaptive Routing and Skill Internalization | in progress | route, gesture, fallback, and skill components exist; SkillStep checkpoints now share criteria-bound verification, while generic task-aware perception, calibrated routing, and canonical trace mining remain |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in progress | route, gesture, fallback, and skill components exist; Runtime-first R3 generic perception and SkillStep criteria-bound verification are complete, while verifier-calibrated routing, canonical trace mining, and R5 de-specialization remain |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
