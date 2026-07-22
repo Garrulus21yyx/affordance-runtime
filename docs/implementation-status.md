@@ -27,10 +27,10 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300; the complete release observes 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic evidence only | pause benchmark-family repair, close Runtime-first R1-R5 and de-specialize shared modules, then run residual release scan; provisioned external suites remain separate gates |
+| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300; the complete release observes 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic evidence only | pause benchmark-family repair, close remaining Runtime-first R2-R5 and de-specialize shared modules, then run residual release scan; provisioned external suites remain separate gates |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
-| M8.4 Adaptive Shallow Task Planning | in_progress | immutable plan models, validator, router, one-repair LM candidate, Coordinator sequencing, and controlled ablation exist | criteria-bound evidence matching, TaskPlanningContext, plan lineage, and normal-entrypoint non-BrowserGym proof |
-| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | typed routes, Core gesture binding, visual/DOM/WoT component proofs, safe fallback, TaskSkill/RecoverySkill components, and ablation exist | generic task-aware perception, ordinary source assertions, target-specific calibrated routing, canonical trace mining, strict SkillStep checkpoints, and de-specialization |
+| M8.4 Adaptive Shallow Task Planning | in_progress | immutable plan models, validator, router, one-repair LM candidate, Coordinator sequencing, controlled ablation, and criteria-bound progress exist | TaskPlanningContext, plan lineage, and normal-entrypoint non-BrowserGym proof |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | typed routes, Core gesture binding, visual/DOM/WoT component proofs, safe fallback, TaskSkill/RecoverySkill components, criteria-bound SkillStep checkpoints, and ablation exist | generic task-aware perception, ordinary source assertions, target-specific calibrated routing, canonical trace mining, explicit profile loading, and de-specialization |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -225,10 +225,12 @@ smoke with no blind retry, persisted acceptance, and proved rollback. See
 rule/LLM planner router, Coordinator sequencing, and controlled
 Flat/Always-plan/Adaptive ablation exist.
 
-The current verifier does not match passed evidence to the active subgoal
-criteria, replanning lacks environment/failure/evidence context and plan
-lineage, and normal entrypoints do not consistently use task-level planning.
-See `evidence/m8.4-task-planning-ablation.md` for component sequencing and
+The shared matcher now advances Subgoals and SkillSteps only from fresh, strong,
+explicitly linked evidence covering every mandatory criterion and evidence
+requirement. Replanning still lacks environment/failure/evidence context and
+plan lineage, and normal entrypoints do not consistently use task-level
+planning. See `evidence/runtime-r1-criteria-evidence-20260722.md`,
+`evidence/m8.4-task-planning-ablation.md`, and
 `current-architecture-audit-20260722.md` for the remaining completion gates.
 
 ### M8.5 Unified Adaptive Routing and Skill Internalization - in progress
@@ -296,6 +298,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-22 | Runtime-first R1 | Added shared criteria/evidence matching, explicit verifier evidence identity and obligation links, fresh strong-evidence gates for Subgoal and TaskSkill checkpoints, and structured trace reports | criteria, contracts, verifier, task planning/skills, Coordinator, controlled benchmark fixtures, tests, plans/status | fixed Python 3.12: 412 tests pass; Ruff passes; mypy with optional imports ignored passes all 73 source files; unrelated, partial, stale-revision, stale-snapshot, weak/self-declared receipt, state-delta weakness, mandatory-coverage, multi-criterion, and unbound SkillStep cases covered |
 | 2026-07-22 | Architecture audit | Adopted Runtime-first boundary, prohibited benchmark specialization in shared architecture, corrected M8.4/M8.5 status, and added ordered remediation gates | boundary, audit, README, project/current plans, status ledger | reviewed `0272765`; 401 tests pass, Ruff passes, full mypy has four optional-integration errors |
 | 2026-07-20 | M0-M4 | Created milestone implementation ledger from the authoritative plan and current source audit | `docs/implementation-status.md` | baseline: 27 tests, Ruff, and mypy passing before implementation changes |
 | 2026-07-20 | M0 | Implemented frozen state, contract, approval, trace, and evolution semantics | core runtime modules and tests | 32+ tests, Ruff, mypy |

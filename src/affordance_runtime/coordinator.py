@@ -1176,29 +1176,56 @@ class RunCoordinator:
             )
             if latest_verification.passed:
                 if skill_step_id and self.task_skill_runtime is not None:
-                    skill_complete = self.task_skill_runtime.checkpoint_verified(
+                    skill_complete = False
+                    skill_report = self.task_skill_runtime.verify_active_step(
                         state,
                         step_id=skill_step_id,
-                        evidence=(
-                            ([verification_ref.path] if verification_ref else [])
-                            + [item.source for item in latest_verification.evidence]
-                        ),
+                        verification=latest_verification,
+                        observation=post_snapshot.observation,
                     )
-                    parent = trace.add(
-                        "TaskSkillStepCompleted",
-                        {
-                            "state": state.phase,
-                            "skill_id": state.task_skill.skill_id if state.task_skill else "",
-                            "version": state.task_skill.version if state.task_skill else "",
-                            "step_id": skill_step_id,
-                            "completed_step_ids": (
-                                list(state.task_skill.completed_step_ids) if state.task_skill is not None else []
-                            ),
-                            "evidence": (list(state.task_skill.evidence) if state.task_skill is not None else []),
-                        },
-                        parents=[parent.id],
-                    )
-                    if skill_complete and state.task_plan is None:
+                    if not skill_report.passed:
+                        reason = skill_report.match.reason
+                        self.task_skill_runtime.fallthrough(state, reason)
+                        parent = trace.add(
+                            "TaskSkillStepEvidenceRejected",
+                            {
+                                "state": state.phase,
+                                "skill_id": skill_report.skill_id,
+                                "version": skill_report.skill_version,
+                                "step_id": skill_report.step_id,
+                                "criteria_match": asdict(skill_report.match),
+                            },
+                            parents=[parent.id],
+                        )
+                        parent = self._trace_task_skill_fallthrough(
+                            trace,
+                            parent,
+                            state,
+                            reason,
+                            step_id=skill_step_id,
+                        )
+                    else:
+                        skill_complete = self.task_skill_runtime.checkpoint_verified(
+                            state,
+                            report=skill_report,
+                            artifact_refs=([verification_ref.path] if verification_ref else []),
+                        )
+                        parent = trace.add(
+                            "TaskSkillStepCompleted",
+                            {
+                                "state": state.phase,
+                                "skill_id": state.task_skill.skill_id if state.task_skill else "",
+                                "version": state.task_skill.version if state.task_skill else "",
+                                "step_id": skill_step_id,
+                                "completed_step_ids": (
+                                    list(state.task_skill.completed_step_ids) if state.task_skill is not None else []
+                                ),
+                                "evidence": (list(state.task_skill.evidence) if state.task_skill is not None else []),
+                                "criterion_evidence_links": [asdict(item) for item in skill_report.match.links],
+                            },
+                            parents=[parent.id],
+                        )
+                    if skill_report.passed and skill_complete and state.task_plan is None:
                         skill_progress = state.task_skill
                         if skill_progress is None:
                             raise ValueError("verified TaskSkill progress is missing")
@@ -1261,18 +1288,28 @@ class RunCoordinator:
                 if state.task_plan is not None and state.plan_progress is not None:
                     active_id = state.plan_progress.active_subgoal_id
                     subgoal = next((item for item in state.task_plan.subgoals if item.subgoal_id == active_id), None)
-                    evidence = (
-                        self.subgoal_verifier.verify(subgoal, latest_verification) if subgoal is not None else None
+                    progress_report = (
+                        self.subgoal_verifier.verify(
+                            subgoal,
+                            latest_verification,
+                            post_snapshot.observation,
+                        )
+                        if subgoal is not None
+                        else None
                     )
-                    if evidence is not None and subgoal is not None:
-                        state.complete_subgoal(subgoal.subgoal_id, evidence)
+                    if progress_report is not None and progress_report.passed and subgoal is not None:
+                        state.complete_subgoal(
+                            subgoal.subgoal_id,
+                            progress_report.match.evidence_ids,
+                        )
                         parent = trace.add(
                             "SubgoalCompleted",
                             {
                                 "state": state.phase,
                                 "plan_id": state.task_plan.plan_id,
                                 "subgoal_id": subgoal.subgoal_id,
-                                "evidence": list(evidence),
+                                "evidence": list(progress_report.match.evidence_ids),
+                                "criterion_evidence_links": [asdict(item) for item in progress_report.match.links],
                             },
                             parents=[parent.id],
                         )
@@ -1296,6 +1333,17 @@ class RunCoordinator:
                                 None,
                                 latest_verification,
                             )
+                    elif progress_report is not None and subgoal is not None:
+                        parent = trace.add(
+                            "SubgoalEvidenceRejected",
+                            {
+                                "state": state.phase,
+                                "plan_id": state.task_plan.plan_id,
+                                "subgoal_id": subgoal.subgoal_id,
+                                "criteria_match": asdict(progress_report.match),
+                            },
+                            parents=[parent.id],
+                        )
                 state.replan_count += 1
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue

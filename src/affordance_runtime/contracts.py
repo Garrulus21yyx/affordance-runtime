@@ -255,9 +255,7 @@ class GestureContractBinder:
                 RuntimeErrorCode.PRECONDITION_FAILED,
                 f"gesture source does not support drag: {source.id}",
             )
-        if destination.action not in {"drag", "drop"} and not bool(
-            destination.state.get("accepts_drop")
-        ):
+        if destination.action not in {"drag", "drop"} and not bool(destination.state.get("accepts_drop")):
             raise GestureBindingError(
                 RuntimeErrorCode.PRECONDITION_FAILED,
                 f"gesture destination cannot accept a drop: {destination.id}",
@@ -326,16 +324,12 @@ def gesture_preflight(
         if require_snapshot_identity and target.snapshot_id and target.snapshot_id != observation.snapshot_id:
             return RuntimeErrorCode.SNAPSHOT_MISMATCH
         if target.target_fingerprint and (
-            observation.target_fingerprints.get(
-                target.target_fingerprint_key or target.semantic_target_id
-            )
+            observation.target_fingerprints.get(target.target_fingerprint_key or target.semantic_target_id)
             != target.target_fingerprint
         ):
             return RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
     overlays = observation.metadata.get("blocking_overlays")
-    if _gesture_endpoint_blocked(source, overlays) or _gesture_endpoint_blocked(
-        destination, overlays
-    ):
+    if _gesture_endpoint_blocked(source, overlays) or _gesture_endpoint_blocked(destination, overlays):
         return RuntimeErrorCode.PRECONDITION_FAILED
     return None
 
@@ -389,6 +383,8 @@ class VerifierSpec:
     expected: Any = True
     strict: bool = True
     evidence_key: str = ""
+    criterion_ids: tuple[str, ...] = ()
+    requirement_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -441,7 +437,9 @@ class ActionContract:
         return payload
 
     def compute_hash(self) -> str:
-        encoded = json.dumps(self.canonical_payload(), sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        encoded = json.dumps(self.canonical_payload(), sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
     @classmethod

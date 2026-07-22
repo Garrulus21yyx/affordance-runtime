@@ -11,8 +11,8 @@ restart/waiting evidence; production-scale options remain non-blocking.
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs before the Runtime-first R1-R5 gates close. After criteria-bound
-progress, context-rich planning, generic perception/routing, and de-specialized
+repairs before the remaining Runtime-first R2-R5 gates close. After
+context-rich planning, generic perception/routing, and de-specialized
 module ownership are proven, rerun the residual release scan as external
 confirmation.
 
@@ -690,7 +690,7 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- pause new task-family semantic compilers until R1-R5 move benchmark
+- pause new task-family semantic compilers until the remaining R2-R5 gates move benchmark
   attributes and authored family logic out of shared DOM/planner modules and
   prove the replacement capability in a non-BrowserGym environment;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
@@ -909,12 +909,14 @@ separate `PlanProgress`, `TaskPlanValidator`, a flat `PlanningRouter`/
 `RuleTaskPlanner`, StateKernel storage, one bounded LM repair, and a controlled
 Flat/Always-plan/Adaptive sequencing experiment.
 
-The milestone is not complete. The current subgoal verifier accepts arbitrary
-passed evidence without matching the active success criteria or evidence
-requirements. Task replanning receives only TaskSpec and state_version, plan
-versions remain fixed, and normal BrowserGym, CLI, and natural-language paths
-do not consistently use task-level planning. The controlled ablation proves
-component sequencing only. See `evidence/m8.4-task-planning-ablation.md` and
+The milestone is not complete. Runtime-first R1 now requires fresh strong
+evidence with explicit identities and complete mandatory criterion/evidence
+coverage before a Subgoal or SkillStep advances. Task replanning still receives
+only TaskSpec and state_version, plan versions remain fixed, and normal
+BrowserGym, CLI, and natural-language paths do not consistently use task-level
+planning. The controlled ablation proves component sequencing only. See
+`evidence/runtime-r1-criteria-evidence-20260722.md`,
+`evidence/m8.4-task-planning-ablation.md`, and
 `current-architecture-audit-20260722.md`.
 
 - route simple tasks to one synthetic subgoal and exact accepted templates to a
@@ -986,9 +988,9 @@ the remaining bullets reflect the current working-tree implementation):
   observation order so ordinal identities are not erased;
 - RecoverySkillPayload is executable through an explicitly loaded Runtime
   profile, and TaskSkill mining/execution components pass controlled tests;
-  canonical persisted trace extraction, criteria-bound SkillStep checkpoints,
-  normal-entrypoint profile loading, and automatic trace-to-skill activation
-  remain open.
+  criteria-bound SkillStep checkpoints now exist; canonical persisted trace
+  extraction, normal-entrypoint profile loading, and automatic trace-to-skill
+  activation remain open.
 
 The target is not a lowest-common-denominator parser. It is one semantic target
 with multiple typed, provenance-preserving ways to perceive, ground, execute,
@@ -998,7 +1000,7 @@ The existing local code, tests, ablation, and Chromium diagnostics prove
 important M8.5 components, not the complete generic main path. Remaining gates
 are task-to-perception wiring, ordinary source assertions/active perception,
 target-specific evidence, verifier-backed route calibration, geometry-aware
-fusion, canonical trace mining, and strict SkillStep verification. The prior
+fusion, canonical trace mining, and normal-entrypoint skill loading. The prior
 completion audit is retained as component evidence, not milestone closure.
 
 #### M8.5A: Unified Target and Route Contracts
@@ -1362,9 +1364,10 @@ This sequence is mandatory before further benchmark-family repair is promoted
 as architecture work. The detailed findings and gates are maintained in
 `current-architecture-audit-20260722.md`.
 
-1. **Criteria-bound progress:** implement one CriteriaEvidenceMatcher for
-   SubgoalSpec, SkillStep, and task completion; reject unrelated, partial,
-   stale, or insufficient evidence and trace criterion-to-evidence links.
+1. **Criteria-bound progress — complete:** one CriteriaEvidenceMatcher now
+   governs SubgoalSpec, SkillStep, and plan/skill completion; it rejects
+   unrelated, partial, stale, weak, or insufficient evidence and traces
+   criterion-to-evidence links.
 2. **Context-rich task planning:** introduce TaskPlanningContext with current
    environment summary, verified progress, failures, disproved assumptions,
    budgets, and plan lineage; wire it into a normal non-BrowserGym entrypoint.
@@ -1468,7 +1471,7 @@ justify merging the two runtime architectures.
 
 | Priority | Finding | Required correction |
 | --- | --- | --- |
-| P0 | VerifierBackedSubgoalVerifier does not match evidence to the active SubgoalSpec obligations | advance only from evidence satisfying that subgoal's success criteria and evidence requirements |
+| done (R1) | Subgoal and SkillStep progress previously accepted unbound evidence | shared matcher now requires explicit, fresh, strong, complete criterion/evidence links; see `evidence/runtime-r1-criteria-evidence-20260722.md` |
 | P0 | the initial Coordinator path records the same observation twice | record it once and increment state and budget counters once |
 | P0 | replacement plans do not form a monotonic plan-version chain | increment and trace every accepted replacement plan |
 | P0 | recovery can select compensation, retry, or reroute without an explicit executed recovery command | add a bounded RecoveryExecutor with receipt, post-state inspection, and verification |

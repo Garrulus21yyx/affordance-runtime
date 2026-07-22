@@ -22,11 +22,11 @@ engine, or learning system.
 
 The repository implements M0-M8.1, M8.2A, and M8.3 of the controlled web
 profile. M8.2B public benchmark expansion is in progress. M8.4 task-planning
-models and controlled sequencing exist, but criteria-bound progress,
+models, controlled sequencing, and criteria-bound progress exist, but
 context-rich replanning, plan lineage, and normal-entrypoint wiring remain.
 M8.5 route, gesture, fallback, and skill components exist, but generic
 task-aware multimodal perception, verifier-calibrated routing, canonical
-trace-to-skill mining, and strict SkillStep checkpoints remain in progress.
+trace-to-skill mining, and broader normal-entrypoint proof remain in progress.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -86,8 +86,11 @@ Implemented current profile:
 - an optional real node-wot conformance profile that reaches one independently observed state through DOM, screenshot/SoM, and WoT
 - normalized recovery incidents with online cascade detection and offline, regression-gated policy/skill evolution
 - optional adaptive shallow task planning with validated subgoals,
-  verifier-backed serial progress, bounded replanning, and a controlled
-  Flat/Always-plan/Adaptive ablation
+  criteria-bound verifier-backed serial progress, bounded replanning, and a
+  controlled Flat/Always-plan/Adaptive ablation
+- one shared criteria/evidence matcher for Subgoal and accepted TaskSkill
+  checkpoints, with explicit evidence identity, observation-epoch freshness,
+  mandatory coverage, and criterion-to-evidence trace links
 - BrowserGym PR/nightly/release profiles with typed action binding, resumable
   checkpoints, a versioned action-family-stratified nightly manifest, and
   explicit missing-coverage reporting
@@ -102,7 +105,7 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 401 current unit/integration tests pass with Ruff in the provisioned
+- all 412 current unit/integration tests pass with Ruff in the provisioned
   BrowserGym environment; full mypy still reports four optional-integration
   boundary errors and is not currently a passing repository-wide gate
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
@@ -120,10 +123,12 @@ Verified evidence:
   under explicit time and model-call budgets
 - a real repeated recovery cascade is stopped at depth two; a quarantined policy reduces fresh matched replays to depth one, passes global and uncertain-effect safety smoke, persists acceptance, and rolls back
 - the controlled M8.4 ablation keeps the short flat path and completes a
-  three-stage path in a controlled fixture; it does not yet prove criteria-bound generic task progression
+  three-stage path in a controlled fixture; R1 additionally proves that
+  unrelated, partial, stale, weak, or unbound evidence cannot advance generic
+  Subgoal or TaskSkill progress
 
-Next architecture gate: complete criteria-bound progress, context-rich task
-planning, and generic task-aware multimodal perception before adding further
+Next architecture gate: complete context-rich task planning and generic
+task-aware multimodal perception before adding further
 benchmark-family rules. Then remove benchmark semantics from shared modules,
 freeze the current immutable revision, and rerun BrowserGym smoke, PR, nightly,
 and residual release matrices. M9 remains conditional on restart/waiting

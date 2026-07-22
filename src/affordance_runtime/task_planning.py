@@ -15,6 +15,13 @@ from uuid import uuid4
 
 from pydantic import Field
 
+from affordance_runtime.contracts import Observation
+from affordance_runtime.criteria import (
+    CriteriaEvidenceMatcher,
+    SubgoalVerificationReport,
+    criteria_from_descriptions,
+    evidence_requirements_from_descriptions,
+)
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
 from affordance_runtime.verification import VerificationReport
@@ -142,7 +149,9 @@ class TaskPlanValidator:
             if not subgoal.success_criteria:
                 repairable.append(TaskPlanValidationIssue(code="missing_success_criteria", detail=subgoal.subgoal_id))
             if not subgoal.evidence_requirements:
-                repairable.append(TaskPlanValidationIssue(code="missing_evidence_requirements", detail=subgoal.subgoal_id))
+                repairable.append(
+                    TaskPlanValidationIssue(code="missing_evidence_requirements", detail=subgoal.subgoal_id)
+                )
             if subgoal.max_actions > self.max_actions_per_subgoal:
                 fatal.append(TaskPlanValidationIssue(code="action_budget_out_of_bounds", detail=subgoal.subgoal_id))
             if subgoal.max_recoveries > self.max_recoveries_per_subgoal:
@@ -172,23 +181,35 @@ class TaskPlannerPort(Protocol):
 
 
 class SubgoalVerifierPort(Protocol):
-    def verify(self, subgoal: SubgoalSpec, report: VerificationReport) -> tuple[str, ...] | None: ...
+    def verify(
+        self,
+        subgoal: SubgoalSpec,
+        report: VerificationReport,
+        observation: Observation,
+    ) -> SubgoalVerificationReport: ...
 
 
 @dataclass(frozen=True)
 class VerifierBackedSubgoalVerifier:
-    """Promote only independent, passed verification evidence into progress."""
+    """Bind fresh independent evidence to the active subgoal's obligations."""
 
-    def verify(self, subgoal: SubgoalSpec, report: VerificationReport) -> tuple[str, ...] | None:
-        del subgoal
-        if not report.passed:
-            return None
-        evidence = tuple(
-            f"{item.verifier_kind}:{item.target}"
-            for item in report.evidence
-            if item.passed
+    matcher: CriteriaEvidenceMatcher = CriteriaEvidenceMatcher()
+
+    def verify(
+        self,
+        subgoal: SubgoalSpec,
+        report: VerificationReport,
+        observation: Observation,
+    ) -> SubgoalVerificationReport:
+        match = self.matcher.match(
+            criteria=criteria_from_descriptions("subgoal", subgoal.subgoal_id, subgoal.success_criteria),
+            requirements=evidence_requirements_from_descriptions(
+                "subgoal", subgoal.subgoal_id, subgoal.evidence_requirements
+            ),
+            verification=report,
+            observation=observation,
         )
-        return evidence or None
+        return SubgoalVerificationReport(subgoal.subgoal_id, match)
 
 
 @dataclass(frozen=True)
@@ -240,7 +261,11 @@ class LLMTaskPlanner:
             "instruction": "Repair only the reported plan fields; retain outcome-only semantics and constraints.",
         }
         repaired = await self.model.generate_structured(
-            [*messages, ModelMessage(role="assistant", content=candidate.model_dump_json()), ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True))],
+            [
+                *messages,
+                ModelMessage(role="assistant", content=candidate.model_dump_json()),
+                ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
+            ],
             TaskPlanCandidate,
             self.config,
         )
@@ -267,7 +292,9 @@ class PlanningRouter:
     rule_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
     complex_planner: TaskPlannerPort | None = None
 
-    def plan(self, task_spec: TaskSpec, *, state_version: int, complex_task: bool = False) -> TaskPlan | Awaitable[TaskPlan]:
+    def plan(
+        self, task_spec: TaskSpec, *, state_version: int, complex_task: bool = False
+    ) -> TaskPlan | Awaitable[TaskPlan]:
         if not complex_task:
             return self.rule_planner.plan(task_spec, state_version=state_version)
         if self.complex_planner is None:

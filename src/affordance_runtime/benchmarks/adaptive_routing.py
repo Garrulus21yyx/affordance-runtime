@@ -26,6 +26,11 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.criteria import (
+    criterion_id,
+    evidence_requirement_id,
+    skill_step_owner_id,
+)
 from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
@@ -174,8 +179,7 @@ class _AblationObserver:
                 candidate = replace(candidate, observation_epoch_id="stale-observation")
             candidates.append(candidate)
         target = SemanticEntityResolver().resolve(
-            CandidateDescriptor("button", "Save", "click", "main", item)
-            for item in candidates
+            CandidateDescriptor("button", "Save", "click", "main", item) for item in candidates
         )[0]
         if self.case_id == "material_conflict":
             target = replace(target, unresolved_conflicts=("save.enabled",))
@@ -301,14 +305,9 @@ def run_adaptive_routing_ablation(output_dir: Path) -> dict[str, Any]:
     """Execute all six profiles and persist a deterministic JSON report."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    runs = [
-        _run_case(profile, case_id)
-        for profile in ABLATION_PROFILES
-        for case_id in ABLATION_CASES
-    ]
+    runs = [_run_case(profile, case_id) for profile in ABLATION_PROFILES for case_id in ABLATION_CASES]
     profiles = {
-        profile: _aggregate_profile([item for item in runs if item.profile == profile])
-        for profile in ABLATION_PROFILES
+        profile: _aggregate_profile([item for item in runs if item.profile == profile]) for profile in ABLATION_PROFILES
     }
     baseline_success = profiles["always_system2"]["task_success_rate"]
     for metrics in profiles.values():
@@ -320,9 +319,7 @@ def run_adaptive_routing_ablation(output_dir: Path) -> dict[str, Any]:
         "runs": [item.__dict__ for item in runs],
         "acceptance_errors": errors,
         "remote_model_used": False,
-        "oracle": (
-            "effect cases require verified saved state; conflict/stale cases require zero effects"
-        ),
+        "oracle": ("effect cases require verified saved state; conflict/stale cases require zero effects"),
     }
     (output_dir / "adaptive-routing-ablation.json").write_text(
         json.dumps(report, indent=2, sort_keys=True),
@@ -370,10 +367,20 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         requested_capabilities=("settings.write",),
         source_request_ref="m8.5-ablation",
     )
+    task_skill_runtime = _accepted_save_skill() if profile == "adaptive_plus_task_skill" else None
+    skill_owner_id = skill_step_owner_id("profile.save", "1.0.0", "step-1")
     builder = ContractBuilder(
         requirements={
             observer.semantic_target_id: ContractRequirements(
-                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        criterion_ids=(criterion_id("skill-step", skill_owner_id, 0),),
+                        requirement_ids=(evidence_requirement_id("skill-step", skill_owner_id, 0),),
+                    ),
+                ),
                 idempotency_key=f"m85:{profile}:{case_id}:save",
             )
         }
@@ -384,11 +391,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         planner,
         executors,
         contract_builder=builder,
-        task_skill_runtime=(
-            _accepted_save_skill()
-            if profile == "adaptive_plus_task_skill"
-            else None
-        ),
+        task_skill_runtime=task_skill_runtime,
     ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
@@ -401,9 +404,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         else result.status == RuntimeStep.DONE and world.saved and world.effects == 1
     )
     diagnostics = result.state.recovery_diagnostics
-    verifier_false_accepts = int(
-        result.verification is not None and result.verification.passed and not world.saved
-    )
+    verifier_false_accepts = int(result.verification is not None and result.verification.passed and not world.saved)
     return AdaptiveRoutingAblationRun(
         profile,
         case_id,
@@ -487,9 +488,7 @@ def _aggregate_profile(runs: list[AdaptiveRoutingAblationRun]) -> dict[str, floa
         "skill_case_planner_calls": float(skill.planner_calls),
         "skill_activation_precision": float(not skill.skill_activated or skill.success),
         "skill_fallthrough_rate": sum(item.skill_fell_through for item in runs) / total,
-        "stale_block_rate": float(
-            next(item for item in runs if item.case_id == "stale_candidates").stale_blocked
-        ),
+        "stale_block_rate": float(next(item for item in runs if item.case_id == "stale_candidates").stale_blocked),
         "constraint_violation_rate": sum(item.constraint_violations for item in runs) / total,
         "unsafe_side_effect_rate": sum(item.unsafe_side_effects for item in runs) / total,
         "verifier_false_accept_rate": sum(item.verifier_false_accepts for item in runs) / total,

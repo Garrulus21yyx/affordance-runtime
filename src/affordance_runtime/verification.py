@@ -26,8 +26,7 @@ from affordance_runtime.contracts import (
 class Verifier(Protocol):
     kind: str
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        ...
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool: ...
 
 
 class VerificationStatus(StrEnum):
@@ -46,6 +45,13 @@ class VerificationEvidence:
     source: str
     observed: Any = None
     expected: Any = None
+    evidence_id: str = ""
+    criterion_ids: tuple[str, ...] = ()
+    requirement_ids: tuple[str, ...] = ()
+    environment_revision: str = ""
+    snapshot_id: str = ""
+    observed_at_s: float = 0.0
+    strength: str = "weak"
 
 
 @dataclass(frozen=True)
@@ -176,9 +182,7 @@ class StateDeltaOrTerminalVerifier:
                 observed = state.get(field_name)
                 if observed != spec.expected.get("changed_from"):
                     return True
-        return bool(observation.environment_revision) and (
-            observation.environment_revision != receipt.started_revision
-        )
+        return bool(observation.environment_revision) and (observation.environment_revision != receipt.started_revision)
 
 
 @dataclass
@@ -236,7 +240,7 @@ class VerifierLadder:
             status = VerificationStatus.INCONCLUSIVE if receipt.success else VerificationStatus.FAILED
             return VerificationReport(status, reason="no independent verifier was specified")
         evidence: list[VerificationEvidence] = []
-        for spec in specs:
+        for index, spec in enumerate(specs):
             verifier = next((item for item in self.verifiers if item.kind == spec.kind), None)
             if verifier is None:
                 if spec.strict:
@@ -264,13 +268,35 @@ class VerifierLadder:
                     verifier_kind=spec.kind,
                     target=spec.target,
                     passed=passed,
-                    source="execution_receipt" if spec.kind == "evidence" else "post_action_observation",
+                    source=(
+                        "execution_receipt"
+                        if spec.kind == "evidence"
+                        else "independent_http_json"
+                        if spec.kind == "http_json"
+                        else "post_action_observation"
+                    ),
                     observed=observed,
                     expected=spec.expected,
+                    evidence_id=(
+                        f"verification:{observation.snapshot_id or observation.environment_revision}:"
+                        f"{index}:{spec.evidence_key or f'{spec.kind}:{spec.target}'}"
+                    ),
+                    criterion_ids=spec.criterion_ids,
+                    requirement_ids=spec.requirement_ids,
+                    environment_revision=observation.environment_revision,
+                    snapshot_id=observation.snapshot_id,
+                    observed_at_s=observation.observed_at_s,
+                    strength=(
+                        "weak"
+                        if spec.kind in {"evidence", "state_delta_or_terminal"}
+                        else "strong"
+                    ),
                 )
             )
             if not passed:
-                return VerificationReport(VerificationStatus.FAILED, evidence, f"verifier failed: {spec.kind}:{spec.target}")
+                return VerificationReport(
+                    VerificationStatus.FAILED, evidence, f"verifier failed: {spec.kind}:{spec.target}"
+                )
         if not evidence:
             return VerificationReport(VerificationStatus.NOT_APPLICABLE, reason="no applicable verifier")
         return VerificationReport(VerificationStatus.PASSED, evidence)
@@ -348,7 +374,9 @@ def evaluate_condition(condition: Condition, facts: Mapping[str, Any]) -> Condit
     try:
         parts = [part.strip() for part in predicate.split(" and ") if part.strip()]
         if len(parts) > 1:
-            results = [evaluate_condition(Condition(part, condition.description, condition.required), facts) for part in parts]
+            results = [
+                evaluate_condition(Condition(part, condition.description, condition.required), facts) for part in parts
+            ]
             return ConditionResult(
                 condition=condition,
                 passed=all(result.passed for result in results),
@@ -373,7 +401,10 @@ def evaluate_condition(condition: Condition, facts: Mapping[str, Any]) -> Condit
 
 
 def evaluate_conditions(conditions: list[Condition], facts: Mapping[str, Any]) -> bool:
-    return all(result.passed or not result.condition.required for result in (evaluate_condition(item, facts) for item in conditions))
+    return all(
+        result.passed or not result.condition.required
+        for result in (evaluate_condition(item, facts) for item in conditions)
+    )
 
 
 def _split_predicate(predicate: str) -> tuple[str, str | None, str]:

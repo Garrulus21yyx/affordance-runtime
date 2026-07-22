@@ -6,6 +6,11 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.criteria import (
+    criterion_id,
+    evidence_requirement_id,
+    skill_step_owner_id,
+)
 from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
@@ -75,12 +80,8 @@ class ProfileObserver:
             "",
         )
         if self.include_name:
-            controls.append(
-                f'<input id="name{suffix}" placeholder="Name" value="{self.world.name}">'
-            )
-        controls.append(
-            f'<input id="email{suffix}" placeholder="Email" value="{self.world.email}">'
-        )
+            controls.append(f'<input id="name{suffix}" placeholder="Name" value="{self.world.name}">')
+        controls.append(f'<input id="email{suffix}" placeholder="Email" value="{self.world.email}">')
         if self.variant == "heldout":
             controls.reverse()
             markup = "<section><div>Account profile</div>" + "".join(controls) + "</section>"
@@ -138,9 +139,7 @@ class ProfileObserver:
                     "page-1",
                 ),
             ),
-            grounding_candidates=tuple(
-                candidate for target in targets for candidate in target.grounding_candidates
-            ),
+            grounding_candidates=tuple(candidate for target in targets for candidate in target.grounding_candidates),
             unified_affordances=targets,
         )
 
@@ -199,11 +198,7 @@ class CountingSystem2Planner:
 
 
 def _payload(*, two_steps: bool = False) -> TaskSkillPayload:
-    parameters = (
-        ()
-        if two_steps
-        else (SkillParameter("step_1_text", SkillParameterType.STRING),)
-    )
+    parameters = () if two_steps else (SkillParameter("step_1_text", SkillParameterType.STRING),)
     steps = [
         SkillStep(
             "step-1",
@@ -266,6 +261,22 @@ def _accepted_runtime(payload: TaskSkillPayload) -> AcceptedTaskSkillRuntime:
     return AcceptedTaskSkillRuntime.from_profile(profile)
 
 
+def _step_verifier(
+    payload: TaskSkillPayload,
+    step_id: str,
+    target: str,
+    expected: Any,
+) -> VerifierSpec:
+    owner_id = skill_step_owner_id(payload.skill_id, payload.version, step_id)
+    return VerifierSpec(
+        "observation_metadata",
+        target,
+        expected,
+        criterion_ids=(criterion_id("skill-step", owner_id, 0),),
+        requirement_ids=(evidence_requirement_id("skill-step", owner_id, 0),),
+    )
+
+
 def _task(*, with_entity: bool) -> TaskSpec:
     return TaskSpec(
         task_id="profile-task",
@@ -273,11 +284,7 @@ def _task(*, with_entity: bool) -> TaskSpec:
         objective="profile update Name",
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Name", "Email"),
-        entities=(
-            (IntentEntity(name="text", value="Margaret", source_ref="user"),)
-            if with_entity
-            else ()
-        ),
+        entities=((IntentEntity(name="text", value="Margaret", source_ref="user"),) if with_entity else ()),
         success_criteria=("profile fields changed",),
         evidence_requirements=("independent profile state",),
         requested_capabilities=("settings.write",),
@@ -293,9 +300,7 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
     builder = ContractBuilder(
         requirements={
             observer.target_ids["Name"]: ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec("observation_metadata", "profile_name", "Margaret"),
-                ),
+                verifier_plan=(_step_verifier(payload, "step-1", "profile_name", "Margaret"),),
                 idempotency_key="profile:name:v1",
             )
         }
@@ -321,6 +326,50 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
     assert "RouteSelected" in events
     assert "TaskSkillStepCompleted" in events
     assert "TaskSkillCompleted" in events
+
+
+def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
+    world = ProfileWorld()
+    observer = ProfileObserver(world)
+    planner = CountingSystem2Planner()
+    payload = _payload()
+    builder = ContractBuilder(
+        requirements={
+            observer.target_ids["Name"]: ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "profile_name",
+                        "Margaret",
+                    ),
+                ),
+                idempotency_key="profile:name:unbound",
+            )
+        }
+    )
+
+    result = RunCoordinator(
+        observer,
+        planner,
+        ProfileExecutor(world),
+        contract_builder=builder,
+        task_skill_runtime=_accepted_runtime(payload),
+    ).run_sync(
+        TaskEnvelope(
+            task_spec=_task(with_entity=True),
+            capabilities=["settings.write"],
+        )
+    )
+
+    assert result.status == RuntimeStep.DONE
+    assert world.name == "Margaret"
+    assert planner.calls == 1
+    assert result.state.task_skill is not None
+    assert result.state.task_skill.completed_step_ids == []
+    events = [node.kind for node in result.trace.nodes]
+    assert "PostconditionPassed" in events
+    assert "TaskSkillStepEvidenceRejected" in events
+    assert "TaskSkillFellThrough" in events
 
 
 def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> None:
@@ -382,9 +431,7 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
         contract_builder=ContractBuilder(
             requirements={
                 observer.target_ids["Name"]: ContractRequirements(
-                    verifier_plan=(
-                        VerifierSpec("observation_metadata", "profile_name", "Margaret"),
-                    ),
+                    verifier_plan=(_step_verifier(payload, "step-1", "profile_name", "Margaret"),),
                     idempotency_key="profile:name:v1",
                 )
             }
@@ -407,13 +454,14 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     builder = ContractBuilder(
         requirements={
             observer.target_ids["Name"]: ContractRequirements(
-                verifier_plan=(VerifierSpec("observation_metadata", "profile_name", "Ada"),),
+                verifier_plan=(_step_verifier(payload, "step-1", "profile_name", "Ada"),),
                 idempotency_key="profile:name:v1",
             ),
             observer.target_ids["Email"]: ContractRequirements(
                 verifier_plan=(
-                    VerifierSpec(
-                        "observation_metadata",
+                    _step_verifier(
+                        payload,
+                        "step-2",
                         "profile_email",
                         "ada@example.test",
                     ),
@@ -444,9 +492,7 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     assert result.state.recovery_incident.context["task_skill_id"] == payload.skill_id
     assert result.state.recovery_incident.context["task_skill_step_id"] == "step-2"
     assert result.state.recovery_incident.context["selected_route"] == "dom"
-    assert result.state.recovery_incident.context["preserved_completed_step_ids"] == [
-        "step-1"
-    ]
+    assert result.state.recovery_incident.context["preserved_completed_step_ids"] == ["step-1"]
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TaskSkillStepCompleted") == 1
     assert "TaskSkillStepFailed" in events
@@ -468,9 +514,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
         task = _task(with_entity=True).model_copy(
             update={
                 "task_id": f"profile-{category}",
-                "entities": (
-                    IntentEntity(name="text", value=value, source_ref=f"replay:{category}"),
-                ),
+                "entities": (IntentEntity(name="text", value=value, source_ref=f"replay:{category}"),),
             }
         )
         started = perf_counter()
@@ -482,7 +526,12 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 requirements={
                     observer.target_ids["Name"]: ContractRequirements(
                         verifier_plan=(
-                            VerifierSpec("observation_metadata", "profile_name", value),
+                            _step_verifier(
+                                payload,
+                                "step-1",
+                                "profile_name",
+                                value,
+                            ),
                         ),
                         idempotency_key=f"profile:name:{category}",
                     )

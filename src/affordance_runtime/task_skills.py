@@ -10,10 +10,18 @@ from enum import StrEnum
 from typing import Any, Callable, Iterable, Mapping
 
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, RiskLevel
+from affordance_runtime.contracts import ActionContract, Observation, RiskLevel
+from affordance_runtime.criteria import (
+    CriteriaEvidenceMatcher,
+    SkillStepVerificationReport,
+    criteria_from_descriptions,
+    evidence_requirements_from_descriptions,
+    skill_step_owner_id,
+)
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel, TaskSkillRunState
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_HANDLE_PATTERNS = (
     r"\bxpath\b",
@@ -99,9 +107,7 @@ class SkillStep:
             raise ValueError("TaskSkill step parameter destinations must be unique")
         if len({name for name, _ in self.constant_parameters}) != len(self.constant_parameters):
             raise ValueError("TaskSkill step constant parameter names must be unique")
-        if set(name for name, _ in self.parameter_bindings).intersection(
-            name for name, _ in self.constant_parameters
-        ):
+        if set(name for name, _ in self.parameter_bindings).intersection(name for name, _ in self.constant_parameters):
             raise ValueError("TaskSkill parameter cannot be both bound and constant")
         if not self.postconditions or not self.evidence_requirements:
             raise ValueError("every TaskSkill step requires postconditions and independent evidence")
@@ -162,9 +168,7 @@ class TaskSkillPayload:
         return asdict(self)
 
     def digest(self) -> str:
-        encoded = json.dumps(
-            self.to_dict(), sort_keys=True, separators=(",", ":"), default=str
-        ).encode()
+        encoded = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"), default=str).encode()
         return hashlib.sha256(encoded).hexdigest()
 
     @classmethod
@@ -247,9 +251,7 @@ class SemanticTraceNormalizer:
                 destination_role=_normalize(step.destination_role),
                 destination_label=" ".join(step.destination_label.split()),
                 postconditions=tuple(_normalize(item) for item in step.postconditions),
-                evidence_requirements=tuple(
-                    _normalize(item) for item in step.evidence_requirements
-                ),
+                evidence_requirements=tuple(_normalize(item) for item in step.evidence_requirements),
             )
             for step in trace.steps
         )
@@ -343,11 +345,7 @@ class TaskSkillMiner:
                 )
             )
         objective_terms = tuple(
-            dict.fromkeys(
-                term
-                for item in normalized
-                for term in re.findall(r"[a-z0-9_-]+", item.objective.casefold())
-            )
+            dict.fromkeys(term for item in normalized for term in re.findall(r"[a-z0-9_-]+", item.objective.casefold()))
         )[:16]
         payload = TaskSkillPayload(
             "1.0",
@@ -451,6 +449,7 @@ class IncrementalTaskSkillExecutor:
             target_affordance_id=targets[0].semantic_target_id,
             destination_affordance_id=destination_id,
             parameters=parameters,
+            expected_effects=step.postconditions,
             evidence_requirements=step.evidence_requirements,
         )
         return SkillStepExposure(proposal, step.step_id)
@@ -499,6 +498,7 @@ class AcceptedTaskSkillRuntime:
     accepted_payload_digests: frozenset[str]
     binding_resolver: TaskSkillBindingResolver | None = None
     executor: IncrementalTaskSkillExecutor = IncrementalTaskSkillExecutor()
+    criteria_matcher: CriteriaEvidenceMatcher = CriteriaEvidenceMatcher()
 
     def __post_init__(self) -> None:
         digests = frozenset(item.digest() for item in self.payloads)
@@ -512,9 +512,7 @@ class AcceptedTaskSkillRuntime:
         *,
         binding_resolver: TaskSkillBindingResolver | None = None,
     ) -> "AcceptedTaskSkillRuntime":
-        payloads = tuple(
-            item for item in profile.loaded.values() if isinstance(item, TaskSkillPayload)
-        )
+        payloads = tuple(item for item in profile.loaded.values() if isinstance(item, TaskSkillPayload))
         return cls(
             payloads,
             frozenset(item.digest() for item in payloads),
@@ -532,11 +530,7 @@ class AcceptedTaskSkillRuntime:
             if not active.active:
                 return TaskSkillRuntimeDecision(reason=active.fallthrough_reason)
             payload = next(
-                (
-                    item
-                    for item in self.payloads
-                    if item.skill_id == active.skill_id and item.version == active.version
-                ),
+                (item for item in self.payloads if item.skill_id == active.skill_id and item.version == active.version),
                 None,
             )
             if payload is None:
@@ -568,22 +562,58 @@ class AcceptedTaskSkillRuntime:
         state.activate_task_skill(payload.skill_id, payload.version, dict(bindings))
         return self._expose_payload(payload, task, state, snapshot, newly_activated=True)
 
-    def checkpoint_verified(
+    def verify_active_step(
         self,
         state: StateKernel,
         *,
         step_id: str,
-        evidence: Iterable[str],
-    ) -> bool:
+        verification: VerificationReport,
+        observation: Observation,
+    ) -> SkillStepVerificationReport:
         active = state.task_skill
         if active is None:
             raise ValueError("no TaskSkill progress to checkpoint")
         payload = next(
-            item
-            for item in self.payloads
-            if item.skill_id == active.skill_id and item.version == active.version
+            item for item in self.payloads if item.skill_id == active.skill_id and item.version == active.version
         )
-        state.checkpoint_task_skill_step(step_id, list(evidence))
+        if active.next_step_index >= len(payload.steps):
+            raise ValueError("TaskSkill has no active step to verify")
+        step = payload.steps[active.next_step_index]
+        if step.step_id != step_id:
+            raise ValueError("TaskSkill verification does not match the active step")
+        owner_id = skill_step_owner_id(payload.skill_id, payload.version, step.step_id)
+        match = self.criteria_matcher.match(
+            criteria=criteria_from_descriptions("skill-step", owner_id, step.postconditions),
+            requirements=evidence_requirements_from_descriptions("skill-step", owner_id, step.evidence_requirements),
+            verification=verification,
+            observation=observation,
+        )
+        return SkillStepVerificationReport(
+            payload.skill_id,
+            payload.version,
+            step.step_id,
+            match,
+        )
+
+    def checkpoint_verified(
+        self,
+        state: StateKernel,
+        *,
+        report: SkillStepVerificationReport,
+        artifact_refs: Iterable[str] = (),
+    ) -> bool:
+        if not report.passed:
+            raise ValueError("TaskSkill progress requires a passed criteria match report")
+        active = state.task_skill
+        if active is None:
+            raise ValueError("no TaskSkill progress to checkpoint")
+        payload = next(
+            item for item in self.payloads if item.skill_id == active.skill_id and item.version == active.version
+        )
+        if report.skill_id != payload.skill_id or report.skill_version != payload.version:
+            raise ValueError("TaskSkill criteria report identity mismatch")
+        evidence = [*report.match.evidence_ids, *artifact_refs]
+        state.checkpoint_task_skill_step(report.step_id, evidence)
         return state.task_skill is not None and state.task_skill.next_step_index >= len(payload.steps)
 
     def contract_requirement_error(
@@ -604,11 +634,7 @@ class AcceptedTaskSkillRuntime:
         if active is None:
             return "TaskSkill progress is missing"
         payload = next(
-            (
-                item
-                for item in self.payloads
-                if item.skill_id == active.skill_id and item.version == active.version
-            ),
+            (item for item in self.payloads if item.skill_id == active.skill_id and item.version == active.version),
             None,
         )
         if payload is None or active.next_step_index >= len(payload.steps):
@@ -654,14 +680,9 @@ class AcceptedTaskSkillRuntime:
                 "TaskSkill completed",
             )
         step = payload.steps[active.next_step_index]
-        missing_capabilities = sorted(
-            set(step.required_capabilities) - set(task.requested_capabilities)
-        )
+        missing_capabilities = sorted(set(step.required_capabilities) - set(task.requested_capabilities))
         if missing_capabilities:
-            reason = (
-                "TaskSkill cannot extend task capability authority: "
-                + ", ".join(missing_capabilities)
-            )
+            reason = "TaskSkill cannot extend task capability authority: " + ", ".join(missing_capabilities)
             state.fall_through_task_skill(reason)
             return TaskSkillRuntimeDecision(
                 payload,
@@ -772,35 +793,23 @@ class TaskSkillReplayGate:
         correct_activations = [item for item in activated if item.applicable]
         metrics = {
             "task_success_rate": sum(item.success for item in runs) / len(runs) if runs else 0.0,
-            "unsafe_side_effect_rate": (
-                sum(item.policy_violations for item in runs) / len(runs) if runs else 1.0
-            ),
+            "unsafe_side_effect_rate": (sum(item.policy_violations for item in runs) / len(runs) if runs else 1.0),
             "verifier_false_accept_rate": (
                 sum(item.verifier_false_accepts for item in runs) / len(runs) if runs else 1.0
             ),
             "duplicate_effect_risk_rate": (
                 sum(item.duplicate_effect_risks for item in runs) / len(runs) if runs else 1.0
             ),
-            "skill_activation_precision": (
-                len(correct_activations) / len(activated) if activated else 0.0
-            ),
-            "skill_fallthrough_rate": (
-                sum(item.fell_through for item in runs) / len(runs) if runs else 1.0
-            ),
-            "mean_model_calls": (
-                sum(item.model_calls for item in runs) / len(runs) if runs else float("inf")
-            ),
-            "mean_latency_ms": (
-                sum(item.latency_ms for item in runs) / len(runs) if runs else float("inf")
-            ),
+            "skill_activation_precision": (len(correct_activations) / len(activated) if activated else 0.0),
+            "skill_fallthrough_rate": (sum(item.fell_through for item in runs) / len(runs) if runs else 1.0),
+            "mean_model_calls": (sum(item.model_calls for item in runs) / len(runs) if runs else float("inf")),
+            "mean_latency_ms": (sum(item.latency_ms for item in runs) / len(runs) if runs else float("inf")),
         }
         metrics["model_call_reduction"] = baseline_model_calls - metrics["mean_model_calls"]
         metrics["latency_reduction_ms"] = baseline_latency_ms - metrics["mean_latency_ms"]
         artifact.regression_results = metrics
         missing = sorted(self.mandatory_categories - categories)
-        efficiency_improved = (
-            metrics["model_call_reduction"] > 0 or metrics["latency_reduction_ms"] > 0
-        )
+        efficiency_improved = metrics["model_call_reduction"] > 0 or metrics["latency_reduction_ms"] > 0
         if missing or not runs or not efficiency_improved:
             artifact.status = EvolutionStatus.QUARANTINED
             reasons = []
@@ -821,15 +830,9 @@ class TaskSkillReplayGate:
             rules=[
                 RegressionRule("task_success_rate", MetricDirection.HIGHER_IS_BETTER, 1.0),
                 RegressionRule("unsafe_side_effect_rate", MetricDirection.LOWER_IS_BETTER, 0.0),
-                RegressionRule(
-                    "verifier_false_accept_rate", MetricDirection.LOWER_IS_BETTER, 0.0
-                ),
-                RegressionRule(
-                    "duplicate_effect_risk_rate", MetricDirection.LOWER_IS_BETTER, 0.0
-                ),
-                RegressionRule(
-                    "skill_activation_precision", MetricDirection.HIGHER_IS_BETTER, 1.0
-                ),
+                RegressionRule("verifier_false_accept_rate", MetricDirection.LOWER_IS_BETTER, 0.0),
+                RegressionRule("duplicate_effect_risk_rate", MetricDirection.LOWER_IS_BETTER, 0.0),
+                RegressionRule("skill_activation_precision", MetricDirection.HIGHER_IS_BETTER, 1.0),
             ],
         )
         return TaskSkillReplayDecision(status.value, artifact.decision_reason, metrics)
@@ -890,12 +893,8 @@ def _step_from_dict(value: dict[str, Any]) -> SkillStep:
         preconditions=tuple(_string_list(value.get("preconditions", []), "preconditions")),
         invalidation_rules=tuple(_string_list(value.get("invalidation_rules", []), "invalidation_rules")),
         postconditions=tuple(_string_list(value.get("postconditions"), "postconditions")),
-        evidence_requirements=tuple(
-            _string_list(value.get("evidence_requirements"), "evidence_requirements")
-        ),
-        required_capabilities=tuple(
-            _string_list(value.get("required_capabilities", []), "required_capabilities")
-        ),
+        evidence_requirements=tuple(_string_list(value.get("evidence_requirements"), "evidence_requirements")),
+        required_capabilities=tuple(_string_list(value.get("required_capabilities", []), "required_capabilities")),
         risk=str(value.get("risk", RiskLevel.LOW.value)),
         requires_approval=bool(value.get("requires_approval", False)),
     )
@@ -909,9 +908,7 @@ def _validate_bindings(
 ) -> None:
     declared = {item.name: item for item in parameters}
     required = (
-        required_names
-        if required_names is not None
-        else frozenset(item.name for item in parameters if item.required)
+        required_names if required_names is not None else frozenset(item.name for item in parameters if item.required)
     )
     missing = sorted(name for name in required if name not in bindings)
     unknown = sorted(set(bindings) - set(declared))
@@ -962,11 +959,7 @@ def _default_skill_bindings(
             continue
         if parameter.name.endswith("_destination_label"):
             step_index = _slot_step_index(parameter.name)
-            query = (
-                payload.steps[step_index].destination_query
-                if step_index is not None
-                else None
-            )
+            query = payload.steps[step_index].destination_query if step_index is not None else None
             label = _semantic_label_binding(task, snapshot, query, destination=True)
             if label is not None:
                 bindings[parameter.name] = label
@@ -998,13 +991,10 @@ def _semantic_label_binding(
     candidates = [
         item.label
         for item in snapshot.unified_affordances
-        if _normalize(item.role) == _normalize(query.role)
-        and query.action in item.supported_actions
+        if _normalize(item.role) == _normalize(query.role) and query.action in item.supported_actions
     ]
     target_matches = [
-        label
-        for label in candidates
-        if any(_normalize(label) == _normalize(target) for target in task.targets)
+        label for label in candidates if any(_normalize(label) == _normalize(target) for target in task.targets)
     ]
     if len(target_matches) == 1:
         return target_matches[0]

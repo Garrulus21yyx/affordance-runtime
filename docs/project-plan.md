@@ -163,10 +163,10 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
-| M8.2B Public Benchmark Expansion | in progress | historical v112 nightly is 300/300 and the complete release is 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic only. Pause benchmark-family repair, close Runtime-first R1-R5 and remove shared-module specialization, then rerun residual release and provisioned public suites. |
+| M8.2B Public Benchmark Expansion | in progress | historical v112 nightly is 300/300 and the complete release is 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic only. Pause benchmark-family repair, close remaining Runtime-first R2-R5 and remove shared-module specialization, then rerun residual release and provisioned public suites. |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
-| M8.4 Adaptive Shallow Task Planning | in progress | plan models and controlled sequencing exist; criteria-bound evidence, context-rich replanning, plan lineage, and normal-entrypoint integration remain |
-| M8.5 Unified Adaptive Routing and Skill Internalization | in progress | route, gesture, fallback, and skill components exist; generic task-aware perception, calibrated routing, canonical trace mining, and strict SkillStep verification remain |
+| M8.4 Adaptive Shallow Task Planning | in progress | plan models, controlled sequencing, and criteria-bound evidence exist; context-rich replanning, plan lineage, and normal-entrypoint integration remain |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in progress | route, gesture, fallback, and skill components exist; SkillStep checkpoints now share criteria-bound verification, while generic task-aware perception, calibrated routing, and canonical trace mining remain |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -572,9 +572,11 @@ coordinates, and executable actions. The Coordinator executes one ready
 subgoal at a time through the existing observe/propose/contract/preflight/act/
 post-observe/verify loop; only verifier evidence advances progress.
 
-The controlled Flat/Always-plan/Adaptive experiment proves sequencing but does
-not close the milestone. Complete criteria-to-evidence matching, TaskPlanningContext,
-plan version lineage, and one normal non-BrowserGym multi-stage path before
+The controlled Flat/Always-plan/Adaptive experiment proves sequencing, and the
+Runtime-first R1 gate now binds fresh strong evidence explicitly to every
+mandatory Subgoal and SkillStep obligation. This does not close the milestone.
+Complete TaskPlanningContext, plan version lineage, and one normal
+non-BrowserGym multi-stage path before
 using the layer for WebArena or WorkArena. Do not add a generic DAG scheduler,
 recursive hierarchy, parallel effectful nodes, per-node agents, or continuous
 watching.

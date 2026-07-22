@@ -9,6 +9,7 @@ from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator, _resolve_planner_decision
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import GroundingSource, SourceAssertion
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import (
@@ -380,12 +381,22 @@ class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
 class SubgoalAwarePlanner:
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
+        active_objective = state.active_subgoal()
+        active_id = state.plan_progress.active_subgoal_id if state.plan_progress else ""
         return PlannerDecision(
             contract=ActionContract.from_affordance(
                 snapshot.affordance_model.affordances[0],
-                intent=state.active_subgoal(),
+                intent=active_objective,
                 backend="fake",
-                verifier_plan=[VerifierSpec("observation_metadata", "saved", True)],
+                verifier_plan=[
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        criterion_ids=(criterion_id("subgoal", active_id, 0),),
+                        requirement_ids=(evidence_requirement_id("subgoal", active_id, 0),),
+                    )
+                ],
             )
         )
 
@@ -405,6 +416,8 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     events = [node.kind for node in result.trace.nodes]
     assert events.count("SubgoalCompleted") == 2
     assert events.index("TaskPlanAccepted") < events.index("SubgoalCompleted")
+    completed = [node for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
+    assert all(node.payload["criterion_evidence_links"] for node in completed)
 
 
 class EarlyFinishPlanner:

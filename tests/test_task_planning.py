@@ -1,3 +1,5 @@
+from affordance_runtime.contracts import Observation
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -102,16 +104,28 @@ def test_validator_marks_missing_verification_requirements_repairable() -> None:
 def test_progress_selects_ready_subgoals_serially_and_preserves_evidence() -> None:
     task = _task()
     first = SubgoalSpec(
-        subgoal_id="write", objective="Write", success_criteria=("written",), evidence_requirements=("receipt",),
+        subgoal_id="write",
+        objective="Write",
+        success_criteria=("written",),
+        evidence_requirements=("receipt",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
     )
     second = SubgoalSpec(
-        subgoal_id="verify", objective="Verify", depends_on=("write",), success_criteria=("verified",),
-        evidence_requirements=("API",), operation_class=OperationClass.REVERSIBLE_WRITE,
+        subgoal_id="verify",
+        objective="Verify",
+        depends_on=("write",),
+        success_criteria=("verified",),
+        evidence_requirements=("API",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
     )
     plan = TaskPlan(
-        plan_id="plan-1", task_id=task.task_id, task_revision=task.revision, plan_version=1,
-        based_on_state_version=0, generated_by=TaskPlanSource.RULE, subgoals=(first, second),
+        plan_id="plan-1",
+        task_id=task.task_id,
+        task_revision=task.revision,
+        plan_version=1,
+        based_on_state_version=0,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(first, second),
     )
     progress = PlanProgress()
 
@@ -149,11 +163,33 @@ def test_subgoal_verifier_requires_independent_passed_evidence() -> None:
     verifier = VerifierBackedSubgoalVerifier()
     report = VerificationReport(
         VerificationStatus.PASSED,
-        evidence=[VerificationEvidence("observation_metadata", "saved", True, "post_action_observation")],
+        evidence=[
+            VerificationEvidence(
+                "observation_metadata",
+                "saved",
+                True,
+                "post_action_observation",
+                evidence_id="settings-state",
+                criterion_ids=(criterion_id("subgoal", subgoal.subgoal_id, 0),),
+                requirement_ids=(evidence_requirement_id("subgoal", subgoal.subgoal_id, 0),),
+                environment_revision="revision-1",
+                snapshot_id="snapshot-1",
+                strength="strong",
+            )
+        ],
+    )
+    observation = Observation("revision-1", snapshot_id="snapshot-1")
+
+    matched = verifier.verify(subgoal, report, observation)
+    unmatched = verifier.verify(
+        subgoal,
+        VerificationReport(VerificationStatus.PASSED),
+        observation,
     )
 
-    assert verifier.verify(subgoal, report) == ("observation_metadata:saved",)
-    assert verifier.verify(subgoal, VerificationReport(VerificationStatus.PASSED)) is None
+    assert matched.passed
+    assert matched.match.evidence_ids == ("settings-state",)
+    assert not unmatched.passed
 
 
 class RepairingTaskPlanModel:
@@ -171,15 +207,43 @@ class RepairingTaskPlanModel:
         if self.calls == 1:
             assert len(messages) == 2
             return output_schema.model_validate(
-                {"subgoals": [{"subgoal_id": "discover", "objective": "Discover current setting", "operation_class": "reversible_write"}]}
+                {
+                    "subgoals": [
+                        {
+                            "subgoal_id": "discover",
+                            "objective": "Discover current setting",
+                            "operation_class": "reversible_write",
+                        }
+                    ]
+                }
             )
         assert "validation_errors" in messages[-1].content
         return output_schema.model_validate(
             {
                 "subgoals": [
-                    {"subgoal_id": "discover", "objective": "Discover current setting", "success_criteria": ["setting is known"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
-                    {"subgoal_id": "write", "objective": "Write desired setting", "depends_on": ["discover"], "success_criteria": ["setting is dark"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
-                    {"subgoal_id": "confirm", "objective": "Confirm desired setting", "depends_on": ["write"], "success_criteria": ["setting remains dark"], "evidence_requirements": ["settings API"], "operation_class": "reversible_write"},
+                    {
+                        "subgoal_id": "discover",
+                        "objective": "Discover current setting",
+                        "success_criteria": ["setting is known"],
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                    },
+                    {
+                        "subgoal_id": "write",
+                        "objective": "Write desired setting",
+                        "depends_on": ["discover"],
+                        "success_criteria": ["setting is dark"],
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                    },
+                    {
+                        "subgoal_id": "confirm",
+                        "objective": "Confirm desired setting",
+                        "depends_on": ["write"],
+                        "success_criteria": ["setting remains dark"],
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                    },
                 ]
             }
         )

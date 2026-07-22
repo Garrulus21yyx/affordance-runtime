@@ -18,6 +18,7 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -87,12 +88,22 @@ class _StageActionPlanner:
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
         next_stage = int(snapshot.observation.metadata["stage"]) + 1
+        active_objective = state.active_subgoal()
+        active_id = state.plan_progress.active_subgoal_id if state.plan_progress else "subgoal-1"
         return PlannerDecision(
             contract=ActionContract.from_affordance(
                 snapshot.affordance_model.affordances[0],
-                intent=state.active_subgoal() or state.goal,
+                intent=active_objective or state.goal,
                 backend="controlled-stage",
-                verifier_plan=[VerifierSpec("observation_metadata", "stage", next_stage)],
+                verifier_plan=[
+                    VerifierSpec(
+                        "observation_metadata",
+                        "stage",
+                        next_stage,
+                        criterion_ids=(criterion_id("subgoal", active_id, 0),),
+                        requirement_ids=(evidence_requirement_id("subgoal", active_id, 0),),
+                    )
+                ],
             )
         )
 
@@ -161,7 +172,9 @@ def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:
         "oracle": "final controlled environment stage equals target_stage",
         "remote_model_used": False,
     }
-    (output_dir / "task-planning-ablation.json").write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "task-planning-ablation.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return report
 
 

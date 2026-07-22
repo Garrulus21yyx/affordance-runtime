@@ -101,6 +101,11 @@ Exit evidence:
 - all mandatory evidence must be present;
 - one action satisfies multiple criteria only through explicit matches.
 
+Resolution (2026-07-22): the shared matcher, typed identities, current-epoch
+and strong-evidence gates, structured reports, and trace links close F-01/R1.
+Generic negative controls cover unrelated, partial, stale, weak, unbound, and
+explicitly multi-linked evidence. F-02 and Runtime-first R2-R5 remain open.
+
 ### F-02 - Task-level planning is a controlled component, not a real main path
 
 Severity: high.
@@ -427,6 +432,9 @@ Exit:
 
 ### Phase R1 - Criteria-Bound Progress
 
+Status: complete on 2026-07-22. See
+`evidence/runtime-r1-criteria-evidence-20260722.md`.
+
 Deliverables:
 
 - typed criteria and evidence identity where necessary;
@@ -583,8 +591,9 @@ Benchmark task-family pass rate alone cannot close an architecture milestone.
 
 ## 9. Immediate Ordered Queue
 
-1. Implement CriteriaEvidenceMatcher and repair subgoal and SkillStep progress.
-2. Define and wire TaskPlanningContext plus plan lineage.
+1. **Complete:** implement CriteriaEvidenceMatcher and repair Subgoal and
+   SkillStep progress.
+2. **Next:** define and wire TaskPlanningContext plus plan lineage.
 3. Pass PerceptionRequirements through generic Coordinator and BrowserSession.
 4. Create executable generic visual candidates outside BrowserGym.
 5. Move benchmark semantics out of shared DOM and planner modules.
@@ -611,4 +620,3 @@ one Runtime capability
 
 BrowserGym remains important only as an external pressure test and conformance
 consumer of the Runtime main path.
-
