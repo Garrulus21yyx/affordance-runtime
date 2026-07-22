@@ -7,6 +7,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
+    _explicit_form_field_obligations,
     build_planner_context,
     default_semantic_compiler_registry,
 )
@@ -185,6 +186,81 @@ def test_typed_incremental_control_uses_bounded_page_step_for_large_distance() -
     assert compiled is not None
     assert compiled.compiler_id == "typed-incremental-control-v1"
     assert compiled.parameters == {"key": "PageUp"}
+
+
+def _form_context(objective: str):
+    model = DomAdapter().transduce(
+        '<p><label>Username</label><input id="username" type="text"></p>'
+        '<p><label>Password</label><input id="password" type="password"></p>'
+        '<button id="submit">Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    task = TaskSpec(
+        task_id="portable-form",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.READ_ONLY,
+        targets=("form",),
+        success_criteria=("all requested fields are submitted",),
+        source_request_ref="test",
+    )
+    state = StateKernel(task.task_id, task.objective)
+    state.remember_observation(observation)
+    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+
+
+def test_explicit_form_compiler_binds_each_labelled_value_before_terminal() -> None:
+    context = _form_context('Enter the username "Ada" and the password "s3cret" and press Submit.')
+    registry = default_semantic_compiler_registry()
+
+    first = registry.compile(context)
+    assert first is not None
+    assert first.compiler_id == "explicit-form-field-binding-v1"
+    assert (first.action_kind, first.target_affordance_id, first.parameters) == (
+        "type_text",
+        "dom_input_1",
+        {"text": "Ada"},
+    )
+
+    after_username = context.model_copy(
+        update={"satisfied_action_targets": {"type_text": ("dom_input_1",)}}
+    )
+    second = registry.compile(after_username)
+    assert second is not None
+    assert (second.action_kind, second.target_affordance_id, second.parameters) == (
+        "type_text",
+        "dom_input_2",
+        {"text": "s3cret"},
+    )
+
+    complete = after_username.model_copy(
+        update={"satisfied_action_targets": {"type_text": ("dom_input_1", "dom_input_2")}}
+    )
+    terminal = registry.compile(complete)
+    assert terminal is not None
+    assert (terminal.action_kind, terminal.target_affordance_id) == ("activate", "dom_button_1")
+
+
+def test_explicit_form_compiler_applies_one_value_to_both_requested_fields() -> None:
+    context = _form_context('Enter "Q1" into both text fields and press Submit.')
+
+    obligations = _explicit_form_field_obligations(context)
+
+    assert [(item.target_id, item.value) for item in obligations] == [
+        ("dom_input_1", "Q1"),
+        ("dom_input_2", "Q1"),
+    ]
+
+
+def test_explicit_form_compiler_falls_through_when_values_are_not_field_bound() -> None:
+    context = _form_context('Enter "Ada" and "s3cret" into the fields.')
+
+    assert _explicit_form_field_obligations(context) == ()
+
+    click_only = _form_context('Click the button named "Submit".')
+    assert _explicit_form_field_obligations(click_only) == ()
 
 
 def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability() -> None:

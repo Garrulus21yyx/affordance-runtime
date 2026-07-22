@@ -1451,6 +1451,87 @@ def _compiled_copy_operation(
     return None
 
 
+@dataclass(frozen=True)
+class _FormFieldObligation:
+    target_id: str
+    value: str
+
+
+def _explicit_form_field_obligations(context: PlannerContext) -> tuple[_FormFieldObligation, ...]:
+    """Resolve only explicit, unambiguous field/value obligations."""
+
+    writable = [
+        item
+        for item in context.affordances
+        if item.action in {"fill", "type", "type_text"}
+        and item.state.get("element_tag") in {"input", "select", "textarea"}
+    ]
+    objective = str(context.task_spec.get("objective") or "")
+    if not _semantic_tokens(objective).intersection({"enter", "type", "fill", "input", "write"}):
+        return ()
+    quoted = list(re.finditer(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective))
+    if not writable or not quoted:
+        return ()
+    if (
+        len(quoted) == 1
+        and len(writable) >= 2
+        and re.search(
+            r"\bboth(?:\s+\w+){0,2}\s+(?:fields?|textboxes?|inputs?)\b",
+            objective,
+            re.IGNORECASE,
+        )
+    ):
+        return tuple(_FormFieldObligation(item.id, quoted[0].group(1)) for item in writable)
+    if len(writable) == 1 and len(quoted) == 1:
+        return (_FormFieldObligation(writable[0].id, quoted[0].group(1)),)
+
+    obligations: list[_FormFieldObligation] = []
+    used_targets: set[str] = set()
+    for match in quoted:
+        preceding = re.sub(r"[^a-z0-9]+", " ", objective[max(0, match.start() - 96) : match.start()].casefold())
+        candidates: list[tuple[int, AffordanceSummary]] = []
+        for target in writable:
+            if target.id in used_targets:
+                continue
+            label = re.sub(r"[^a-z0-9]+", " ", target.label.casefold()).strip()
+            if not label:
+                continue
+            position = preceding.rfind(label)
+            if position >= 0:
+                candidates.append((position, target))
+        if not candidates:
+            return ()
+        best_position = max(position for position, _ in candidates)
+        best = [target for position, target in candidates if position == best_position]
+        if len(best) != 1:
+            return ()
+        target = best[0]
+        used_targets.add(target.id)
+        obligations.append(_FormFieldObligation(target.id, match.group(1)))
+    return tuple(obligations) if len(obligations) == len(quoted) else ()
+
+
+def _form_field_obligation_satisfied(
+    context: PlannerContext,
+    obligation: _FormFieldObligation,
+) -> bool:
+    if obligation.target_id in context.satisfied_action_targets.get("type_text", ()):
+        return True
+    target = next((item for item in context.affordances if item.id == obligation.target_id), None)
+    return bool(target is not None and str(target.state.get("control_value") or "") == obligation.value)
+
+
+def _compiled_form_field_operation(
+    context: PlannerContext,
+) -> tuple[PlannerActionKind, str, dict[str, Any]] | None:
+    """Emit the next verified field obligation without exposing hidden values."""
+
+    for obligation in _explicit_form_field_obligations(context):
+        if not _form_field_obligation_satisfied(context, obligation):
+            return PlannerActionKind.TYPE_TEXT, obligation.target_id, {"text": obligation.value}
+    return None
+
+
 def _table_value_entry_constraints(
     context: PlannerContext,
     permitted_action_kinds: list[str],
@@ -1983,6 +2064,10 @@ def _completed_text_terminal_ids(
     requested_text = re.findall(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective)
     if not requested_text:
         return []
+    obligations = _explicit_form_field_obligations(context)
+    if obligations and not all(_form_field_obligation_satisfied(context, item) for item in obligations):
+        return []
+    obligations_satisfied = bool(obligations)
     if any(item.state.get("autocomplete") is True for item in context.affordances) and any(
         item.state.get("programmatic_option") is True for item in context.affordances
     ):
@@ -1998,7 +2083,7 @@ def _completed_text_terminal_ids(
         for item in context.affordances
         if item.action in {"fill", "type", "type_text"}
     }
-    if not current_values.intersection(requested_text):
+    if not obligations_satisfied and not current_values.intersection(requested_text):
         return []
     terminal_words = {"submit", "save", "done", "confirm", "send", "create", "continue", "next", "ok"}
     by_id = {item.id: item for item in context.affordances}
@@ -2013,6 +2098,9 @@ def _requested_text_is_current(context: PlannerContext) -> bool:
     """Treat a current control value as stronger evidence than stale action history."""
 
     objective = str(context.task_spec.get("objective") or "")
+    obligations = _explicit_form_field_obligations(context)
+    if obligations:
+        return all(_form_field_obligation_satisfied(context, item) for item in obligations)
     requested_text = {
         item for item in re.findall(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective) if item
     }
@@ -2179,6 +2267,7 @@ def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
     return build_default_semantic_compiler_registry(
         DefaultSemanticCompilerCallbacks(
             calendar_event=_registry_calendar_event,
+            form_field=_registry_form_field,
             copy_operation=_registry_copy_operation,
             incremental_control=_registry_incremental_control,
             semantic_operation=_registry_semantic_operation,
@@ -2193,6 +2282,14 @@ def _registry_calendar_event(context: Any) -> SemanticCompilation | None:
         return None
     action, target, destination, parameters = compiled
     return SemanticCompilation(action.value, target, destination, parameters)
+
+
+def _registry_form_field(context: Any) -> SemanticCompilation | None:
+    compiled = _compiled_form_field_operation(context)
+    if compiled is None:
+        return None
+    action, target, parameters = compiled
+    return SemanticCompilation(action.value, target, parameters=parameters)
 
 
 def _registry_copy_operation(context: Any) -> SemanticCompilation | None:

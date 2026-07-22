@@ -42,6 +42,21 @@ elements and explicit roles, then the original failures, corresponding generic
 form family, PR 18, and a new diagnostic sweep. Do not add task-name, URL,
 benchmark-family, Prompt, or model-specific branches.
 
+The clean `4c66648` two-task reproduction confirms the observation half of the
+slice but does not close the failure: descriptive labels disappear and the two
+typed controls receive `Password` / `Verify password` or `Username` /
+`Password`, yet both episodes terminate at reward 0. Their new traces retain
+the verified first-field target in `satisfied_action_targets`; the remaining
+defect is generic completion cardinality. Current text completion treats any
+one observed/verified quoted value as sufficient and exposes a submit-like
+terminal while other explicitly requested writable fields remain unsatisfied.
+Add a typed form-field obligation compiler for unambiguous label-to-quoted-value
+relations and explicit `both fields` cardinality. It must bind one current
+semantic target/value at a time, use verified target progress rather than
+password value disclosure, and expose a terminal only after every obligation
+is satisfied. Ambiguous values or fields must fall through to System 2; no
+guessing and no task-name branch.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is

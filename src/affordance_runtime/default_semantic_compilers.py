@@ -30,6 +30,7 @@ class DefaultSemanticCompilerCallbacks:
     """Semantic algorithms injected into the declarative default profile."""
 
     calendar_event: SemanticCompileFn
+    form_field: SemanticCompileFn
     copy_operation: SemanticCompileFn
     incremental_control: SemanticCompileFn
     semantic_operation: SemanticCompileFn
@@ -61,6 +62,28 @@ def build_default_semantic_compiler_registry(
                         "ambiguous or non-half-hour event windows",
                     ),
                     source="runtime-generic-calendar-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="explicit-form-field-binding-v1",
+                supported_intents=("fill explicitly labelled form fields with explicit values",),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective and current writable inventory expose unambiguous labelled values or explicit field cardinality"
+                ),
+                applicability=_has_writable_affordance,
+                compile=callbacks.form_field,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("label_source",),
+                    output_action_kinds=("type_text",),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "unquoted or ambiguous values without a unique labelled target",
+                        "multiple writable fields without explicit label/value or cardinality evidence",
+                        "terminal submission while any requested field remains unverified",
+                    ),
+                    source="runtime-generic-form-field-conformance",
                     version="1",
                 ),
             ),
