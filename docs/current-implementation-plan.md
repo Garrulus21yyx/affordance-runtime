@@ -11,10 +11,9 @@ restart/waiting evidence; production-scale options remain non-blocking.
 Current M8.2B diagnostic position (2026-07-22): v155 records targeted
 `social-media*`, PR, and breadth success, but it is repair-ladder evidence, not
 an immutable nightly or release promotion. Do not add further benchmark-family
-repairs before the remaining Runtime-first R4-R5 gates close. After generic
-perception/routing and de-specialized
-module ownership are proven, rerun the residual release scan as external
-confirmation.
+repairs before the remaining Runtime-first R5 gate closes. Generic perception
+and verifier-calibrated routing are now proven; after de-specialized module
+ownership is proven, rerun the residual release scan as external confirmation.
 
 ## 1. Authority
 
@@ -690,8 +689,8 @@ Before scaling public suites, complete this bounded consolidation gate:
 - keep `RunCoordinator` free of benchmark-specific branches. External suites
   provide task sources, environment adapters, artifacts, and official
   evaluators;
-- pause new task-family semantic compilers until the remaining R4-R5 gates move benchmark
-  attributes and authored family logic out of shared DOM/planner modules and
+- pause new task-family semantic compilers until the remaining R5 gate moves
+  benchmark attributes and authored family logic out of shared DOM/planner modules and
   prove the replacement capability in a non-BrowserGym environment;
 - retain the implemented screenshot-capable `VisualGrounderPort` before
   claiming an official ScreenSpot prediction result; it accepts immutable
@@ -998,10 +997,11 @@ with multiple typed, provenance-preserving ways to perceive, ground, execute,
 and verify it.
 
 The existing local code, tests, ablation, and Chromium diagnostics prove
-important M8.5 components, not the complete generic main path. Remaining gates
-are task-to-perception wiring, ordinary source assertions/active perception,
-target-specific evidence, verifier-backed route calibration, geometry-aware
-fusion, canonical trace mining, and normal-entrypoint skill loading. The prior
+important M8.5 components, not the complete generic main path. Runtime-first R3
+now closes task-aware perception, ordinary assertions and active perception;
+R4 closes target-specific evidence, verifier-backed scoped calibration, and
+geometry-aware conservative fusion. Remaining gates are R5 de-specialization,
+canonical trace mining, and normal-entrypoint skill loading. The prior
 completion audit is retained as component evidence, not milestone closure.
 
 #### M8.5A: Unified Target and Route Contracts

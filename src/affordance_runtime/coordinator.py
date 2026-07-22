@@ -40,6 +40,12 @@ from affordance_runtime.recovery import (
     RecoveryDecision,
     RecoveryIncident,
 )
+from affordance_runtime.route_calibration import (
+    RouteCalibrator,
+    RouteOutcome,
+    RouteOutcomeStatus,
+    RouteScope,
+)
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
@@ -166,6 +172,15 @@ class RunCoordinator:
     task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
+    route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.contract_builder, ContractBuilder):
+            router = self.contract_builder.unified_resolver.router
+            self.contract_builder.unified_resolver.router = replace(
+                router,
+                calibrator=self.route_calibrator,
+            )
 
     async def run(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Async-compatible entry point for framework and service adapters."""
@@ -840,6 +855,7 @@ class RunCoordinator:
                                     "confidence_component": item.confidence_component,
                                     "latency_component": item.latency_component,
                                     "cost_component": item.cost_component,
+                                    "verification_component": item.verification_component,
                                 }
                                 for item in route_plan.scores
                             ]
@@ -1221,6 +1237,15 @@ class RunCoordinator:
                     "artifact_refs": [verification_ref.path] if verification_ref else [],
                 },
                 parents=[parent.id],
+            )
+            parent = self._record_route_outcome(
+                trace,
+                parent,
+                contract,
+                receipt,
+                latest_verification,
+                post_snapshot,
+                state.phase,
             )
             if latest_verification.passed:
                 if skill_step_id and self.task_skill_runtime is not None:
@@ -1875,6 +1900,65 @@ class RunCoordinator:
             parent = self._trace_source_arbitration(trace, parent, targeted, state.phase)
             snapshot = targeted
         return snapshot, parent
+
+    def _record_route_outcome(
+        self,
+        trace: TraceDag,
+        parent: TraceNode,
+        contract: ActionContract,
+        receipt: ExecutionReceipt,
+        report: VerificationReport,
+        snapshot: BrowserSnapshot,
+        state_phase: str,
+    ) -> TraceNode:
+        candidate = contract.grounding_candidate
+        route_plan = contract.route_plan
+        if candidate is None or route_plan is None or not route_plan.verifier_kinds:
+            return parent
+        scope = RouteScope(
+            environment_family=route_plan.environment_scope,
+            action_kind=route_plan.action_kind or contract.action,
+            source=candidate.source,
+            executor=candidate.compatible_executor,
+            verifier_kinds=route_plan.verifier_kinds,
+        )
+        outcome = RouteOutcome.from_verification(
+            outcome_id=f"route-outcome:{contract.id}:{snapshot.observation.snapshot_id}",
+            scope=scope,
+            semantic_target_id=candidate.semantic_target_id,
+            candidate_id=candidate.candidate_id,
+            contract_id=contract.id,
+            report=report,
+            post_snapshot_id=snapshot.observation.snapshot_id,
+            latency_ms=receipt.latency_ms,
+            expected_cost=candidate.expected_cost,
+        )
+        self.route_calibrator.record(outcome)
+        return trace.add(
+            "RouteOutcomeRecorded",
+            {
+                "state": state_phase,
+                "outcome_id": outcome.outcome_id,
+                "status": outcome.status.value,
+                "verification_status": outcome.verification_status.value,
+                "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE,
+                "semantic_target_id": outcome.semantic_target_id,
+                "candidate_id": outcome.candidate_id,
+                "contract_id": outcome.contract_id,
+                "post_snapshot_id": outcome.post_snapshot_id,
+                "evidence_ids": list(outcome.evidence_ids),
+                "scope": {
+                    "environment_family": scope.environment_family,
+                    "action_kind": scope.action_kind,
+                    "source": scope.source.value,
+                    "executor": scope.executor,
+                    "verifier_kinds": list(scope.verifier_kinds),
+                },
+                "latency_ms": outcome.latency_ms,
+                "expected_cost": outcome.expected_cost,
+            },
+            parents=[parent.id],
+        )
 
     @staticmethod
     def _trace_task_skill_fallthrough(

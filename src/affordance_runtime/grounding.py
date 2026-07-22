@@ -303,6 +303,7 @@ class RouteScore:
     confidence_component: float
     latency_component: float
     cost_component: float
+    verification_component: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -314,6 +315,8 @@ class RoutePlan:
     hard_gate_results: tuple[RouteGateResult, ...] = ()
     scores: tuple[RouteScore, ...] = ()
     decision_reason: str = ""
+    environment_scope: str = "generic"
+    action_kind: str = ""
 
     def __post_init__(self) -> None:
         candidates = (self.selected_candidate, *self.viable_alternatives)

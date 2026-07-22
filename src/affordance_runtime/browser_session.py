@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol, cast
+from urllib.parse import urlsplit
 
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
@@ -112,6 +113,22 @@ def _image_size(
         except Exception:
             return None
     return None
+
+
+def _environment_family(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme in {"http", "https"} and parsed.hostname:
+        hostname = parsed.hostname.lower()
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        authority = f"{host}:{port}" if port is not None else host
+        return f"web:{parsed.scheme}://{authority}"
+    if parsed.scheme:
+        return f"web:{parsed.scheme.lower()}"
+    return "web:unknown"
 
 
 def _bounded_accessibility_tree(page: PageDriver, *, max_nodes: int = 256) -> dict[str, Any] | None:
@@ -682,6 +699,7 @@ class BrowserSession:
                 "control_states": control_states,
                 "active_bid": active_bid,
                 "visible_text": visible_text,
+                "environment_family": _environment_family(url),
                 "observation_epoch_id": snapshot_id,
                 "svg_geometry_count": len(svg_geometry.elements) if svg_geometry is not None else 0,
                 "viewport_size": list(image_size) if image_size is not None else None,

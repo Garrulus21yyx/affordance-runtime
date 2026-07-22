@@ -25,14 +25,19 @@ def test_router_prefers_low_cost_reliable_backend() -> None:
     assert decision.candidate_backends == ["wot", "dom"]
 
 
-def test_router_learns_to_avoid_failing_backend() -> None:
-    router = CostAwareRouter()
-    for _ in range(3):
-        router.tracker.update("wot", success=False, latency_ms=500)
+def test_static_backend_router_has_no_receipt_success_learning_channel() -> None:
+    router = CostAwareRouter(
+        costs={"dom": 0.3, "wot": 0.1},
+        expected_latency_ms={"dom": 100, "wot": 2_000},
+        cost_weight=0.2,
+        latency_weight=0.8,
+    )
 
     decision = router.route({"dom": _affordance("dom"), "wot": _affordance("wot")})
 
     assert decision.selected_backend == "dom"
+    assert not hasattr(router, "observe")
+    assert not hasattr(router, "tracker")
 
 
 def test_router_honors_allowed_and_excluded_backends() -> None:

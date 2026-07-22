@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from time import time
 from typing import Iterable
 
@@ -23,6 +23,7 @@ from affordance_runtime.grounding import (
     VisualGroundingPayload,
     WoTGroundingPayload,
 )
+from affordance_runtime.route_calibration import RouteCalibrator, RouteScope
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ def source_affordance_for_candidate(
 
 @dataclass(frozen=True)
 class SemanticEntityResolver:
-    """Merge only descriptors with matching semantic and container evidence."""
+    """Merge only descriptors with compatible semantic, container, and geometry evidence."""
 
     def resolve(self, descriptors: Iterable[CandidateDescriptor]) -> tuple[UnifiedAffordance, ...]:
         groups: dict[tuple[str, str, str, str], list[CandidateDescriptor]] = {}
@@ -162,14 +163,14 @@ class SemanticEntityResolver:
             groups.setdefault(key, []).append(descriptor)
         unified: list[UnifiedAffordance] = []
         for key, items in groups.items():
-            source_counts: dict[GroundingSource, int] = {}
-            for item in items:
-                source_counts[item.candidate.source] = source_counts.get(item.candidate.source, 0) + 1
-            partitions = (
-                [(self._sibling_key(key, item), [item]) for item in items]
-                if any(count > 1 for count in source_counts.values())
-                else [(key, items)]
-            )
+            grouped = self._geometry_partitions(items)
+            partitions = [
+                (
+                    key if len(grouped) == 1 else self._partition_key(key, partition_items),
+                    partition_items,
+                )
+                for partition_items in grouped
+            ]
             for partition_key, partition_items in partitions:
                 semantic_target_id = _semantic_target_id(partition_key)
                 candidates = tuple(
@@ -191,13 +192,44 @@ class SemanticEntityResolver:
         return tuple(unified)
 
     @staticmethod
-    def _sibling_key(
+    def _partition_key(
         key: tuple[str, str, str, str],
-        item: CandidateDescriptor,
+        items: list[CandidateDescriptor],
     ) -> tuple[str, str, str, str]:
-        candidate = item.candidate
-        identity = candidate.source_affordance_id or candidate.candidate_id
-        return (*key[:3], f"{key[3]}|{candidate.source.value}|{identity}")
+        identities = sorted(
+            item.candidate.source_affordance_id or item.candidate.candidate_id
+            for item in items
+        )
+        return (*key[:3], f"{key[3]}|{'|'.join(identities)}")
+
+    @staticmethod
+    def _geometry_partitions(items: list[CandidateDescriptor]) -> list[list[CandidateDescriptor]]:
+        source_counts: dict[GroundingSource, int] = {}
+        for item in items:
+            source = item.candidate.source
+            source_counts[source] = source_counts.get(source, 0) + 1
+        if all(count == 1 for count in source_counts.values()):
+            # A unique semantic match across sources remains one target so a
+            # material geometry disagreement can enter source arbitration.
+            return [items]
+        partitions: list[list[CandidateDescriptor]] = []
+        for item in items:
+            compatible = [
+                partition
+                for partition in partitions
+                if all(existing.candidate.source != item.candidate.source for existing in partition)
+                and all(
+                    _geometry_compatible(existing.candidate, item.candidate)
+                    for existing in partition
+                )
+            ]
+            if len(compatible) == 1:
+                compatible[0].append(item)
+            else:
+                # Zero matches means the geometry contradicts every known target.
+                # Multiple matches are ambiguous and must not be guessed.
+                partitions.append([item])
+        return partitions
 
 
 @dataclass(frozen=True)
@@ -205,6 +237,8 @@ class UnifiedRoutePlanner:
     confidence_weight: float = 0.6
     latency_weight: float = 0.2
     cost_weight: float = 0.2
+    verification_weight: float = 0.4
+    calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
 
     def plan(
         self,
@@ -216,12 +250,10 @@ class UnifiedRoutePlanner:
         available_executors: frozenset[str],
         verifier_kinds: tuple[str, ...] = (),
         excluded_candidate_ids: frozenset[str] = frozenset(),
+        environment_scope: str = "generic",
     ) -> RoutePlan:
         if target.unresolved_conflicts:
             raise ValueError("cannot route a target with unresolved material conflicts")
-        target_evidence: frozenset[EvidenceKind] = frozenset().union(
-            *(item.evidence_kinds for item in target.grounding_candidates)
-        )
         gates = tuple(
             self._gate(
                 item,
@@ -229,7 +261,6 @@ class UnifiedRoutePlanner:
                 requirements=requirements,
                 observation=observation,
                 available_executors=available_executors,
-                target_evidence=target_evidence,
                 verifier_available=bool(verifier_kinds),
                 excluded=item.candidate_id in excluded_candidate_ids,
             )
@@ -240,7 +271,16 @@ class UnifiedRoutePlanner:
         if not viable:
             reasons = "; ".join(f"{item.candidate_id}: {', '.join(item.reasons)}" for item in gates)
             raise ValueError(f"no viable grounding route: {reasons}")
-        scores = tuple(self._score(item, requirements) for item in viable)
+        scores = tuple(
+            self._score(
+                item,
+                requirements,
+                action=action,
+                verifier_kinds=verifier_kinds,
+                environment_scope=environment_scope,
+            )
+            for item in viable
+        )
         score_by_id = {item.candidate_id: item.score for item in scores}
         ordered = sorted(viable, key=lambda item: (score_by_id[item.candidate_id], item.candidate_id))
         selected = ordered[0]
@@ -252,6 +292,8 @@ class UnifiedRoutePlanner:
             hard_gate_results=gates,
             scores=tuple(sorted(scores, key=lambda item: (item.score, item.candidate_id))),
             decision_reason=f"selected viable candidate {selected.candidate_id} after deterministic hard gates",
+            environment_scope=environment_scope,
+            action_kind=action,
         )
 
     def _gate(
@@ -262,7 +304,6 @@ class UnifiedRoutePlanner:
         requirements: PerceptionRequirements,
         observation: Observation,
         available_executors: frozenset[str],
-        target_evidence: frozenset[EvidenceKind],
         verifier_available: bool,
         excluded: bool,
     ) -> RouteGateResult:
@@ -281,15 +322,21 @@ class UnifiedRoutePlanner:
             reasons.append("candidate_expired")
         if candidate.confidence < requirements.minimum_confidence:
             reasons.append("confidence_below_requirement")
-        if not requirements.required_properties.issubset(
-            candidate.evidence_kinds | target_evidence
-        ):
+        if not requirements.required_properties.issubset(candidate.evidence_kinds):
             reasons.append("required_evidence_missing")
         if candidate.verifier_strength < requirements.minimum_verifier_strength and not verifier_available:
             reasons.append("verifier_unavailable")
         return RouteGateResult(candidate.candidate_id, not reasons, tuple(reasons))
 
-    def _score(self, candidate: GroundingCandidate, requirements: PerceptionRequirements) -> RouteScore:
+    def _score(
+        self,
+        candidate: GroundingCandidate,
+        requirements: PerceptionRequirements,
+        *,
+        action: str,
+        verifier_kinds: tuple[str, ...],
+        environment_scope: str,
+    ) -> RouteScore:
         preferred_rank = (
             requirements.preferred_sources.index(candidate.source)
             if candidate.source in requirements.preferred_sources
@@ -299,10 +346,22 @@ class UnifiedRoutePlanner:
         latency_component = min(candidate.expected_latency_ms / max(requirements.latency_budget_ms, 1), 1.0)
         cost_denominator = requirements.cost_budget if requirements.cost_budget > 0 else 1.0
         cost_component = min(candidate.expected_cost / cost_denominator, 1.0)
+        observed_failure = None
+        if verifier_kinds:
+            scope = RouteScope(
+                environment_family=environment_scope,
+                action_kind=action,
+                source=candidate.source,
+                executor=candidate.compatible_executor,
+                verifier_kinds=verifier_kinds,
+            )
+            observed_failure = self.calibrator.failure_component(scope)
+        verification_component = 0.5 if observed_failure is None else observed_failure
         score = (
             self.confidence_weight * confidence_component
             + self.latency_weight * latency_component
             + self.cost_weight * cost_component
+            + self.verification_weight * verification_component
             + preferred_rank * 0.01
         )
         return RouteScore(
@@ -311,6 +370,7 @@ class UnifiedRoutePlanner:
             round(confidence_component, 6),
             round(latency_component, 6),
             round(cost_component, 6),
+            round(verification_component, 6),
         )
 
 
@@ -348,6 +408,33 @@ def _semantic_action(action: str) -> str:
         "drop": "drag",
         "point_activate": "point_activate",
     }.get(action, action)
+
+
+def _candidate_bbox(candidate: GroundingCandidate) -> tuple[float, float, float, float] | None:
+    payload = candidate.payload
+    if isinstance(payload, DomGroundingPayload):
+        return payload.bbox_xywh
+    if isinstance(payload, VisualGroundingPayload):
+        if payload.bbox_xywh is not None:
+            return payload.bbox_xywh
+        if payload.point_xy is not None:
+            return payload.point_xy[0], payload.point_xy[1], 1.0, 1.0
+    if hasattr(payload, "viewport_bbox_xywh"):
+        value = getattr(payload, "viewport_bbox_xywh")
+        return _optional_box(value)
+    return None
+
+
+def _geometry_compatible(first: GroundingCandidate, second: GroundingCandidate) -> bool:
+    first_box = _candidate_bbox(first)
+    second_box = _candidate_bbox(second)
+    if first_box is None or second_box is None:
+        return True
+    first_x, first_y, first_width, first_height = first_box
+    second_x, second_y, second_width, second_height = second_box
+    overlap_width = min(first_x + first_width, second_x + second_width) - max(first_x, second_x)
+    overlap_height = min(first_y + first_height, second_y + second_height) - max(first_y, second_y)
+    return overlap_width > 0 and overlap_height > 0
 
 
 def _optional_box(value: object) -> tuple[float, float, float, float] | None:

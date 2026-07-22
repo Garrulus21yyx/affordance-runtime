@@ -224,6 +224,11 @@ class UnifiedTargetResolver:
             available_executors=available_executors,
             verifier_kinds=verifier_kinds,
             excluded_candidate_ids=excluded_candidate_ids,
+            environment_scope=str(
+                snapshot.observation.metadata.get("environment_family")
+                or snapshot.observation.metadata.get("environment_profile_id")
+                or "generic"
+            ),
         )
         source = source_affordance_for_candidate(
             route.selected_candidate,

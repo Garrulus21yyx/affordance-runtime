@@ -27,10 +27,10 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300; the complete release observes 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic evidence only | pause benchmark-family repair, close remaining Runtime-first R4-R5 and de-specialize shared modules, then run residual release scan; provisioned external suites remain separate gates |
+| M8.2B Public Benchmark Expansion | in_progress | v112 clean frozen nightly passes 300/300; the complete release observes 321/625 with 163 acceptance failures; later family/PR/breadth runs are diagnostic evidence only | pause benchmark-family repair, close Runtime-first R5 and de-specialize shared modules, then run residual release scan; provisioned external suites remain separate gates |
 | M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
 | M8.4 Adaptive Shallow Task Planning | done | criteria-bound progress, bounded TaskPlanningContext, evidence-aware replanning, monotonic lineage, verified-progress preservation, controlled ablation, and real Chromium reference entrypoint | none |
-| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | typed routes, Core gesture binding, generic task/subgoal-aware perception, coherent multimodal epochs, ordinary browser source assertions, bounded active perception, safe fallback, TaskSkill/RecoverySkill components, criteria-bound SkillStep checkpoints, and ablation exist | target-specific verifier-calibrated routing, canonical trace mining, explicit profile loading, and R5 de-specialization |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | typed routes, Core gesture binding, generic task/subgoal-aware perception, coherent multimodal epochs, ordinary browser source assertions, bounded active perception, safe fallback, target-specific verifier-calibrated routing, TaskSkill/RecoverySkill components, criteria-bound SkillStep checkpoints, and ablation exist | canonical trace mining, explicit profile loading, and R5 de-specialization |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -242,12 +242,14 @@ Typed candidates, unified routes, Core dual-target gesture contracts, fresh
 fallback contracts, inspect-before-repeat, visual/DOM/WoT component proofs,
 source-conflict extension points, and TaskSkill/RecoverySkill models exist.
 
-Milestone completion still requires generic TaskSpec/SubgoalSpec-to-perception
+Runtime-first R3 and R4 now cover generic TaskSpec/SubgoalSpec-to-perception
 wiring, ordinary BrowserSession visual candidates and sourced assertions,
-target-specific evidence gates, verifier-backed route calibration,
-geometry-aware fusion, canonical trace-to-TaskSkill extraction, strict
-SkillStep verification, explicit accepted-profile loading, and removal of
-benchmark-family semantics from shared modules.
+target-specific evidence gates, verifier-backed scoped route calibration, and
+geometry-aware conservative fusion. Milestone completion still requires
+canonical trace-to-TaskSkill extraction, explicit accepted-profile loading,
+and removal of benchmark-family semantics from shared modules.
+
+R4 evidence: `evidence/runtime-r4-verifier-calibrated-routing-20260722.md`.
 
 Follow M8.5R in `current-implementation-plan.md` and the normative
 `runtime-first-boundary.md`. The prior completion audit is component evidence,
@@ -303,6 +305,7 @@ Clean-checkout M0-M8 gate:
 | --- | --- | --- | --- | --- |
 | 2026-07-22 | Runtime-first R2 / M8.4 | Added bounded TaskPlanningContext, evidence-aware replanning, monotonic plan lineage, verified-progress preservation, forbidden plan-content validation, and optional real Chromium pricing entrypoint | task planning, StateKernel, Coordinator, reference planners/CLI, tests, plans/status | fixed Python 3.12: 423 tests pass; Ruff passes; mypy with optional imports ignored passes all 73 source files; Flat/Always-plan/Adaptive semantic ablation acceptance passes |
 | 2026-07-22 | Runtime-first R3 / generic perception | Wired TaskSpec/SubgoalSpec requirements through Coordinator and BrowserSession; added coherent DOM/A11Y/SVG/screenshot/visual candidates, ordinary source assertions, fresh targeted perception, trusted visual binding, and evidence-driven DOM-to-visual escalation | perception, BrowserSession, Coordinator, ContractBuilder, recovery, BrowserGym point-region reuse, tests, plans/status | fixed Python 3.12: 433 tests pass; Ruff passes; mypy with optional imports ignored passes all 73 source files; 59 BrowserGym adapter regressions pass; public BrowserSession.launch Chromium 125 visual route passes an independent DOM-state verifier |
+| 2026-07-22 | Runtime-first R4 / verifier-calibrated routing | Made candidate evidence gates target-specific, added geometry-aware conservative sibling fusion, typed post-verification RouteOutcome, strong-evidence-only scoped calibration, origin-level browser environment family, and removed receipt learning from the static backend selector | grounding, unified routing, Coordinator, BrowserSession, routing, tests, plans/status | fixed Python 3.12: 442 tests pass; Ruff passes; mypy passes all 74 source files; shifted-layout candidate ids switch to the verified source without cross-environment leakage; six-profile ablation has zero unsafe effects, false accepts, and duplicate risk |
 | 2026-07-22 | Runtime-first R1 | Added shared criteria/evidence matching, explicit verifier evidence identity and obligation links, fresh strong-evidence gates for Subgoal and TaskSkill checkpoints, and structured trace reports | criteria, contracts, verifier, task planning/skills, Coordinator, controlled benchmark fixtures, tests, plans/status | fixed Python 3.12: 412 tests pass; Ruff passes; mypy with optional imports ignored passes all 73 source files; unrelated, partial, stale-revision, stale-snapshot, weak/self-declared receipt, state-delta weakness, mandatory-coverage, multi-criterion, and unbound SkillStep cases covered |
 | 2026-07-22 | Architecture audit | Adopted Runtime-first boundary, prohibited benchmark specialization in shared architecture, corrected M8.4/M8.5 status, and added ordered remediation gates | boundary, audit, README, project/current plans, status ledger | reviewed `0272765`; 401 tests pass, Ruff passes, full mypy has four optional-integration errors |
 | 2026-07-20 | M0-M4 | Created milestone implementation ledger from the authoritative plan and current source audit | `docs/implementation-status.md` | baseline: 27 tests, Ruff, and mypy passing before implementation changes |

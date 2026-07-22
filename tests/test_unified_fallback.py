@@ -192,7 +192,7 @@ class FallbackPlanner:
         )
 
 
-def test_coordinator_recovers_from_dom_failure_through_fresh_visual_contract() -> None:
+def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     world = FallbackWorld()
     observer = CrossSurfaceObserver(world)
     dom = FailBeforeDispatchDomExecutor()
@@ -227,36 +227,28 @@ def test_coordinator_recovers_from_dom_failure_through_fresh_visual_contract() -
 
     assert result.status == RuntimeStep.DONE
     assert result.result == {"saved": True}
-    assert dom.calls == 1
+    assert dom.calls == 0
     assert world.visual_clicks == 1
     assert result.verification is not None and result.verification.passed
     route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]
-    assert [node.payload["source"] for node in route_nodes] == ["dom", "visual"]
+    assert [node.payload["source"] for node in route_nodes] == ["visual"]
     rejected_dom_gate = next(
         gate
-        for gate in route_nodes[1].payload["hard_gates"]
+        for gate in route_nodes[0].payload["hard_gates"]
         if gate["candidate_id"] == "candidate:dom:dom_button_1"
     )
     assert rejected_dom_gate == {
         "candidate_id": "candidate:dom:dom_button_1",
         "passed": False,
-        "reasons": ["candidate_excluded"],
+        "reasons": ["required_evidence_missing"],
     }
     contract_nodes = [node for node in result.trace.nodes if node.kind == "ContractBuilt"]
-    assert len(contract_nodes) == 2
-    assert contract_nodes[0].payload["contract_id"] != contract_nodes[1].payload["contract_id"]
-    assert (
-        contract_nodes[1].payload["supersedes_contract_id"]
-        == contract_nodes[0].payload["contract_id"]
-    )
-    recovery = next(node for node in result.trace.nodes if node.kind == "RecoveryStarted")
-    assert recovery.payload["action"] == "reroute"
+    assert len(contract_nodes) == 1
+    assert not any(node.kind == "RecoveryStarted" for node in result.trace.nodes)
     assert not result.state.excluded_grounding_candidates
-    assert result.state.recovery_incident is not None
-    assert result.state.recovery_incident.terminal_outcome == "recovered"
-    assert result.state.effectful_action_count == 2
-    assert all(receipt.evidence.get("dispatched") is not True for receipt in result.state.receipts[:1])
-    assert [receipt.success for receipt in result.state.receipts] == [False, True]
+    assert result.state.recovery_incident is None
+    assert result.state.effectful_action_count == 1
+    assert [receipt.success for receipt in result.state.receipts] == [True]
 
 
 def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:

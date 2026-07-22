@@ -19,6 +19,7 @@ from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposal,
 )
+from affordance_runtime.route_calibration import RouteOutcomeStatus
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -154,13 +155,14 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         source_request_ref="test-request",
     )
 
-    result = RunCoordinator(
+    coordinator = RunCoordinator(
         observer=observer,
         planner=VisualSemanticPlanner(),
         executor=VisualExecutor(pointer),
         contract_builder=VerifiedVisualContractBuilder(),  # type: ignore[arg-type]
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-    ).run_sync(TaskEnvelope(task_spec=task))
+    )
+    result = coordinator.run_sync(TaskEnvelope(task_spec=task))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
     assert result.result == {"activated": True}
@@ -182,6 +184,12 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     )
     assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
     assert "PostconditionPassed" in [node.kind for node in result.trace.nodes]
+    outcomes = [node for node in result.trace.nodes if node.kind == "RouteOutcomeRecorded"]
+    assert len(outcomes) == 1
+    assert outcomes[0].payload["status"] == RouteOutcomeStatus.VERIFIED_SUCCESS.value
+    assert outcomes[0].payload["trainable"] is True
+    assert outcomes[0].payload["evidence_ids"]
+    assert len(coordinator.route_calibrator.outcomes) == 1
 
 
 class DomFallbackPage(CanvasPage):

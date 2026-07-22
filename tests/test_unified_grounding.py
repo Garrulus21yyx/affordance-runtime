@@ -85,6 +85,66 @@ def test_semantic_resolver_does_not_merge_same_label_across_containers() -> None
     assert len(targets) == 2
 
 
+def test_semantic_resolver_keeps_geometry_conflicts_as_distinct_targets() -> None:
+    observation = _observation()
+    first_dom = candidate_from_affordance(
+        _affordance("save-first", Surface.DOM, "dom"), observation, semantic_target_id="pending"
+    )
+    first_dom = replace(first_dom, payload=replace(first_dom.payload, bbox_xywh=(10, 10, 80, 30)))
+    second_dom = candidate_from_affordance(
+        _affordance("save-second", Surface.DOM, "dom"), observation, semantic_target_id="pending"
+    )
+    second_dom = replace(second_dom, payload=replace(second_dom.payload, bbox_xywh=(500, 400, 80, 30)))
+    visual = candidate_from_affordance(
+        _affordance("mark-save", Surface.VISUAL, "visual"),
+        observation,
+        semantic_target_id="pending",
+        image_size=(800, 600),
+    )
+    visual = replace(visual, payload=replace(visual.payload, bbox_xywh=(505, 405, 70, 20)))
+
+    targets = SemanticEntityResolver().resolve(
+        (
+            CandidateDescriptor("button", "Save", "click", "settings", first_dom),
+            CandidateDescriptor("button", "Save", "click", "settings", second_dom),
+            CandidateDescriptor("button", "Save", "click", "settings", visual),
+        )
+    )
+
+    assert len(targets) == 2
+    assert sorted(len(target.grounding_candidates) for target in targets) == [1, 2]
+    paired = next(target for target in targets if len(target.grounding_candidates) == 2)
+    assert {item.source_affordance_id for item in paired.grounding_candidates} == {
+        "save-second",
+        "mark-save",
+    }
+
+
+def test_semantic_resolver_merges_cross_source_candidates_with_overlapping_geometry() -> None:
+    observation = _observation()
+    dom = candidate_from_affordance(
+        _affordance("save", Surface.DOM, "dom"), observation, semantic_target_id="pending"
+    )
+    dom = replace(dom, payload=replace(dom.payload, bbox_xywh=(10, 10, 80, 30)))
+    visual = candidate_from_affordance(
+        _affordance("mark-save", Surface.VISUAL, "visual"),
+        observation,
+        semantic_target_id="pending",
+        image_size=(800, 600),
+    )
+    visual = replace(visual, payload=replace(visual.payload, bbox_xywh=(20, 15, 60, 20)))
+
+    targets = SemanticEntityResolver().resolve(
+        (
+            CandidateDescriptor("button", "Save", "click", "settings", dom),
+            CandidateDescriptor("button", "Save", "click", "settings", visual),
+        )
+    )
+
+    assert len(targets) == 1
+    assert len(targets[0].grounding_candidates) == 2
+
+
 def test_semantic_resolver_keeps_indistinguishable_same_source_siblings_ordered() -> None:
     observation = _observation()
     first = candidate_from_affordance(
@@ -148,8 +208,49 @@ def test_route_planner_applies_hard_gates_before_preferring_cheaper_dom() -> Non
     )
 
     assert route.selected_candidate.source == GroundingSource.DOM
-    assert [item.source for item in route.viable_alternatives] == [GroundingSource.SOM]
-    assert all(item.passed for item in route.hard_gate_results)
+    assert route.viable_alternatives == ()
+    visual_gate = next(
+        item for item in route.hard_gate_results if item.candidate_id == visual.candidate_id
+    )
+    assert visual_gate.reasons == ("required_evidence_missing",)
+
+
+def test_candidate_evidence_cannot_be_borrowed_from_another_candidate_on_same_target() -> None:
+    base_observation = _observation()
+    dom = candidate_from_affordance(
+        _affordance("save", Surface.DOM, "dom"),
+        base_observation,
+        semantic_target_id="pending",
+    )
+    visual = candidate_from_affordance(
+        _affordance("mark-save", Surface.VISUAL, "visual"),
+        base_observation,
+        semantic_target_id="pending",
+        image_size=(800, 600),
+    )
+    target = SemanticEntityResolver().resolve(
+        (
+            CandidateDescriptor("button", "Save", "click", "settings", dom),
+            CandidateDescriptor("button", "Save", "click", "settings", visual),
+        )
+    )[0]
+    observation = replace(base_observation, target_fingerprints=candidate_fingerprints((target,)))
+
+    route = UnifiedRoutePlanner().plan(
+        target,
+        action="activate",
+        requirements=PerceptionRequirements(
+            required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+            acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.SOM}),
+        ),
+        observation=observation,
+        available_executors=frozenset({"dom", "visual"}),
+        verifier_kinds=("dom_contains",),
+    )
+
+    assert route.selected_candidate.source == GroundingSource.SOM
+    dom_gate = next(item for item in route.hard_gate_results if item.candidate_id == dom.candidate_id)
+    assert dom_gate.reasons == ("required_evidence_missing",)
 
 
 def test_unrelated_page_visual_evidence_cannot_satisfy_dom_candidate_gate() -> None:

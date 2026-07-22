@@ -105,8 +105,8 @@ Resolution (2026-07-22): the shared matcher, typed identities, current-epoch
 and strong-evidence gates, structured reports, and trace links close F-01/R1.
 Generic negative controls cover unrelated, partial, stale, weak, unbound, and
 explicitly multi-linked evidence. F-02/R2 is also closed by context-rich
-planning evidence; Runtime-first R3 has since closed with generic and real
-Chromium evidence, while R4-R5 remain open.
+planning evidence; Runtime-first R3 and R4 have since closed with generic,
+verifier-backed evidence, while R5 remains open.
 
 ### F-02 - Task-level planning is a controlled component, not a real main path
 
@@ -500,7 +500,7 @@ All four exit cases are covered by generic unit/integration tests plus a public
 observer removal remains an R5 de-specialization item rather than a reason to
 keep the generic Runtime path open.
 
-### Phase R4 - Target-Specific Unified Routing
+### Phase R4 - Target-Specific Unified Routing — Runtime exit complete
 
 Deliverables:
 
@@ -517,6 +517,19 @@ Exit:
 - unrelated global evidence cannot satisfy a candidate gate;
 - routing improves cost or success on held-out non-BrowserGym variants;
 - safety and false-accept rates do not regress.
+
+Resolution (2026-07-22): candidate gates no longer borrow evidence from sibling
+candidates; duplicate semantic siblings use conservative geometry pairing;
+Coordinator emits post-verification `RouteOutcome`; and a session-scoped
+calibrator uses only strong, current, independent evidence under exact
+environment/action/source/executor/verifier scope. Receipt-only and weak
+state-delta evidence remain inconclusive, and the legacy static backend selector
+has no receipt-learning API. Shifted-layout non-BrowserGym candidates improve
+from the failing source to the verified source without cross-environment
+transfer. The six-profile safety ablation retains zero unsafe effects, verifier
+false accepts, and duplicate-effect risk.
+
+Evidence: `evidence/runtime-r4-verifier-calibrated-routing-20260722.md`.
 
 ### Phase R5 - De-Specialize Planner and DOM
 
@@ -608,10 +621,10 @@ Benchmark task-family pass rate alone cannot close an architecture milestone.
 1. **Complete:** implement CriteriaEvidenceMatcher and repair Subgoal and
    SkillStep progress.
 2. **Complete:** define and wire TaskPlanningContext plus plan lineage.
-3. **Next:** pass PerceptionRequirements through generic Coordinator and BrowserSession.
-4. Create executable generic visual candidates outside BrowserGym.
-5. Move benchmark semantics out of shared DOM and planner modules.
-6. Add verifier-backed route outcomes and target-specific evidence gates.
+3. **Complete:** pass PerceptionRequirements through generic Coordinator and BrowserSession.
+4. **Complete:** create executable generic visual candidates outside BrowserGym.
+5. **Next:** move benchmark semantics out of shared DOM and planner modules.
+6. **Complete:** add verifier-backed route outcomes and target-specific evidence gates.
 7. Connect canonical traces to TaskSkill mining and explicit profile loading.
 8. Resolve Playwright profile incompatibility and freeze current-HEAD evidence.
 9. Split oversized modules after semantic behavior is protected by tests.

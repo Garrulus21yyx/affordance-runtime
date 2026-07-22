@@ -42,11 +42,21 @@ def test_browser_session_captures_observation_and_affordances() -> None:
     snapshot = BrowserSession(FakePage()).capture(page_id="settings")
 
     assert snapshot.observation.url == "http://fixture/settings"
+    assert snapshot.observation.metadata["environment_family"] == "web:http://fixture"
     assert snapshot.observation.dom_hash
     assert snapshot.affordance_model.environment_revision == snapshot.observation.environment_revision
     assert snapshot.affordance_model.affordances[0].label == "Save"
     assert len(snapshot.unified_affordances) == 1
     assert snapshot.grounding_candidates[0].is_current(snapshot.observation)
+
+
+def test_browser_environment_family_uses_origin_without_url_credentials_or_path() -> None:
+    page = FakePage()
+    page.url = "https://user:secret@example.test:8443/private?token=hidden"
+
+    snapshot = BrowserSession(page).capture(page_id="settings")
+
+    assert snapshot.observation.metadata["environment_family"] == "web:https://example.test:8443"
 
 
 def test_browser_session_bundles_browser_accessibility_tree_in_same_epoch() -> None:

@@ -108,8 +108,8 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 433 current unit/integration tests pass with Ruff in the provisioned
-  BrowserGym environment; mypy with optional imports ignored passes all 73
+- all 442 current unit/integration tests pass with Ruff in the provisioned
+  BrowserGym environment; mypy with optional imports ignored passes all 74
   source files
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
@@ -130,10 +130,9 @@ Verified evidence:
   unrelated, partial, stale, weak, or unbound evidence cannot advance generic
   Subgoal or TaskSkill progress
 
-Next architecture gate: complete generic task-aware multimodal perception and
-target-specific calibrated routing before adding further
-benchmark-family rules. Then remove benchmark semantics from shared modules,
-freeze the current immutable revision, and rerun BrowserGym smoke, PR, nightly,
+Next architecture gate: remove benchmark semantics from shared modules under
+R5, then complete canonical trace mining/profile loading. After those generic
+gates, freeze the immutable revision and rerun BrowserGym smoke, PR, nightly,
 and residual release matrices. M9 remains conditional on restart/waiting
 evidence.
 
