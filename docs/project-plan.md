@@ -662,7 +662,8 @@ The prior `evidence/m8.5-completion-audit-20260722.md` remains component and
 perturbation evidence rather than the closure proof. Runtime-first R1-R7 are
 complete; R8 module containment is in progress with TaskPlanLifecycle,
 PerceptionSession, ContractExecutionLoop, and read-only RecoveryHandler
-collaborators plus a separated generalist PlannerContextBuilder in
+collaborators plus a separated generalist PlannerContextBuilder and typed
+default SemanticCompiler registry factory in
 `current-implementation-plan.md`, with findings in
 `current-architecture-audit-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.

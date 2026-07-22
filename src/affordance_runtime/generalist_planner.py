@@ -12,6 +12,10 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.coordinator import PlannerDecision
+from affordance_runtime.default_semantic_compilers import (
+    DefaultSemanticCompilerCallbacks,
+    build_default_semantic_compiler_registry,
+)
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
     AffordanceSummary,
@@ -23,10 +27,7 @@ from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import (
     SemanticCompilation,
-    SemanticCompilerEvidence,
     SemanticCompilerRegistry,
-    SemanticCompilerRule,
-    SemanticConstraintRule,
     SemanticConstraints,
 )
 from affordance_runtime.state_kernel import StateKernel
@@ -2365,154 +2366,17 @@ def _unique_compatible_target_id(action_kind: PlannerActionKind, affordances: tu
     return candidates[0] if len(candidates) == 1 else ""
 
 
-_COMPILER_OPERATION_CLASSES = (
-    "read_only",
-    "navigation",
-    "reversible_write",
-    "external_side_effect",
-    "irreversible",
-)
-
-
 def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
-    """Return generic System-1 rules with explicit applicability/evidence metadata."""
+    """Return the generic default profile backed by Generalist algorithms."""
 
-    postcondition = ("fresh independent postcondition evidence bound by ContractBuilder",)
-    return SemanticCompilerRegistry(
-        rules=(
-            SemanticCompilerRule(
-                compiler_id="authored-calendar-range-v1",
-                supported_intents=("create bounded calendar event",),
-                operation_classes=_COMPILER_OPERATION_CLASSES,
-                applicability_description=(
-                    "objective describes an event range and current affordances expose typed range_selectable state"
-                ),
-                applicability=lambda context: any(
-                    item.state.get("range_selectable") is True for item in context.affordances
-                ),
-                compile=_registry_calendar_event,
-                evidence=SemanticCompilerEvidence(
-                    required_state_keys=("range_selectable",),
-                    output_action_kinds=("drag", "type_text", "activate"),
-                    verifier_requirements=postcondition,
-                    negative_examples=(
-                        "ordinary lists with time-like text but no range_selectable state",
-                        "ambiguous or non-half-hour event windows",
-                    ),
-                    source="runtime-generic-calendar-conformance",
-                    version="1",
-                ),
-            ),
-            SemanticCompilerRule(
-                compiler_id="bounded-text-transform-v1",
-                supported_intents=("copy or transform explicitly observed text",),
-                operation_classes=_COMPILER_OPERATION_CLASSES,
-                applicability_description=(
-                    "objective requests a bounded text copy/transform and the current inventory has a writable target"
-                ),
-                applicability=lambda context: any(
-                    item.action in {"fill", "type", "type_text"} for item in context.affordances
-                ),
-                compile=_registry_copy_operation,
-                evidence=SemanticCompilerEvidence(
-                    required_state_keys=(),
-                    output_action_kinds=("type_text", "activate"),
-                    verifier_requirements=postcondition,
-                    negative_examples=(
-                        "page text not explicitly named by the task",
-                        "password or truncated content without an exact observed boundary",
-                    ),
-                    source="runtime-generic-text-transform-conformance",
-                    version="1",
-                ),
-            ),
-            SemanticCompilerRule(
-                compiler_id="typed-incremental-control-v1",
-                supported_intents=("move a typed incremental control toward an explicit value",),
-                operation_classes=_COMPILER_OPERATION_CLASSES,
-                applicability_description=(
-                    "objective names one slider value and one current typed slider exposes its observed value"
-                ),
-                applicability=lambda context: len(
-                    [
-                        item
-                        for item in context.affordances
-                        if item.role == "slider" and item.action in {"press", "press_key"}
-                    ]
-                )
-                == 1,
-                compile=_registry_incremental_control,
-                evidence=SemanticCompilerEvidence(
-                    required_state_keys=("context_text",),
-                    output_action_kinds=("press_key",),
-                    verifier_requirements=(
-                        "fresh control-state evidence must show one value transition",
-                    ),
-                    negative_examples=(
-                        "multiple sliders without a uniquely named target",
-                        "missing, nonnumeric, or already-satisfied target value",
-                    ),
-                    source="runtime-generic-incremental-control-conformance",
-                    version="1",
-                ),
-            ),
-            SemanticCompilerRule(
-                compiler_id="typed-affordance-semantics-v1",
-                supported_intents=(
-                    "owner-scoped collection action",
-                    "typed quantity adjustment",
-                    "observed visual or SVG target",
-                    "selection, hierarchy, relation, discovery, or semantic drag",
-                ),
-                operation_classes=_COMPILER_OPERATION_CLASSES,
-                applicability_description=(
-                    "current typed affordance state and objective jointly identify one bounded semantic operation"
-                ),
-                applicability=lambda context: bool(context.affordances),
-                compile=_registry_semantic_operation,
-                evidence=SemanticCompilerEvidence(
-                    required_state_keys=(),
-                    output_action_kinds=(
-                        "activate",
-                        "point_activate",
-                        "select_option",
-                        "drag",
-                        "finish",
-                    ),
-                    verifier_requirements=postcondition,
-                    negative_examples=(
-                        "same labels without owner/container/geometry evidence",
-                        "objective values absent from the current typed inventory",
-                        "ambiguous source or destination candidates",
-                    ),
-                    source="runtime-generic-affordance-conformance",
-                    version="1",
-                ),
-            ),
-        ),
-        constraint_rules=(
-            SemanticConstraintRule(
-                compiler_id="typed-planner-constraints-v1",
-                applicability_description=(
-                    "current semantic inventory can safely narrow targets, exact observed values, "
-                    "or one-step keyboard transitions without creating backend authority"
-                ),
-                applicability=lambda context: bool(context.affordances),
-                constrain=_registry_planner_constraints,
-                evidence=SemanticCompilerEvidence(
-                    required_state_keys=(),
-                    output_action_kinds=tuple(item.value for item in PlannerActionKind),
-                    verifier_requirements=postcondition,
-                    negative_examples=(
-                        "ambiguous labels without a unique typed target",
-                        "unobserved source values or backend-derived execution fields",
-                        "already satisfied or progress-blocked action signatures",
-                    ),
-                    source="runtime-generic-planner-constraint-conformance",
-                    version="1",
-                ),
-            ),
-        ),
+    return build_default_semantic_compiler_registry(
+        DefaultSemanticCompilerCallbacks(
+            calendar_event=_registry_calendar_event,
+            copy_operation=_registry_copy_operation,
+            incremental_control=_registry_incremental_control,
+            semantic_operation=_registry_semantic_operation,
+            planner_constraints=_registry_planner_constraints,
+        )
     )
 
 

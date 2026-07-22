@@ -1419,15 +1419,28 @@ as architecture work. The detailed findings and gates are maintained in
    recovery assessment respectively, while Coordinator and StateKernel retain
    all authoritative mutation, budgets, approval consumption, incident updates,
    and trace order. Generalist PlannerContextBuilder is now separate with its
-   context-policy version and public compatibility function unchanged. Next
-   split generalist LM/schema repair from rule registration and BrowserGym
+   context-policy version and public compatibility function unchanged. The
+   ordered default SemanticCompiler profile now has a typed declarative factory
+   outside the planner; Generalist injects the existing semantic algorithms
+   through a callback bundle and retains its compatible public entrypoint. Next
+   split generalist LM/schema repair, then BrowserGym
    observer/encoder/runner/reporting internals without adding services or
    another authoritative state writer. See
    `evidence/runtime-r8-task-plan-lifecycle-20260722.md`,
    `evidence/runtime-r8-perception-session-20260722.md`,
    `evidence/runtime-r8-contract-execution-loop-20260722.md`,
-   `evidence/runtime-r8-recovery-handler-20260722.md`, and
-   `evidence/runtime-r8-planner-context-builder-20260722.md`.
+   `evidence/runtime-r8-recovery-handler-20260722.md`,
+   `evidence/runtime-r8-planner-context-builder-20260722.md`, and
+   `evidence/runtime-r8-default-semantic-registry-20260722.md`.
+
+   **Completed R8 registry slice:** moved only the declarative default
+   semantic-compiler registry assembly (rule order, applicability declarations,
+   evidence, operation classes, output kinds, and negative examples) behind a
+   typed factory. Semantic compilation algorithms and LM/schema repair remain
+   in the Generalist planner for later containment, and its public registry
+   entrypoint remains compatible. Direct generic tests freeze rule precedence
+   and metadata, reject empty/unsupported contexts, and retain the existing
+   non-BrowserGym DOM integration proof without invoking a benchmark adapter.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 

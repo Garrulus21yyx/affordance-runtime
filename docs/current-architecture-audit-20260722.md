@@ -640,9 +640,13 @@ consumption, recovery-incident application, and all trace/state transitions. See
 `evidence/runtime-r8-recovery-handler-20260722.md`.
 
 The generalist-planner stream has also extracted `PlannerContextBuilder` and
-its bounded input models without changing the Prompt or context-policy version;
-LM/schema repair and default compiler rule registration remain to be split. See
-`evidence/runtime-r8-planner-context-builder-20260722.md`.
+its bounded input models without changing the Prompt or context-policy version.
+Default compiler rule order, applicability, evidence metadata, operation
+classes, output kinds, and negative examples now live in a typed declarative
+factory; Generalist injects the unchanged semantic algorithms and preserves its
+public registry entrypoint. LM/schema repair remains to be split. See
+`evidence/runtime-r8-planner-context-builder-20260722.md` and
+`evidence/runtime-r8-default-semantic-registry-20260722.md`.
 
 Deliverables:
 
