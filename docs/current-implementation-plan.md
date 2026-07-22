@@ -4,21 +4,22 @@ Implementation status: M0-M8.1, M8.2A, M8.3, M8.4, and M8.5 are complete for
 the controlled web profile. M8.2B remains in progress. See
 [Implementation Status and Forward Gates](implementation-status.md) and the
 [Current Architecture Audit](current-architecture-audit-20260722.md). The
-Runtime-first R1-R6 sequence is complete. The next required increment is R7
-clean-revision environment and public-evaluation reproduction. M9 remains conditional on
-measured restart/waiting evidence; production-scale options remain non-blocking.
+Runtime-first R1-R7 sequence is complete. The next required increment is R8
+module containment after semantic stabilization. M8.2B remains open for
+release capability and separately provisioned public suites. M9 remains
+conditional on measured restart/waiting evidence; production-scale options
+remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-22): clean `f8001d9` passed smoke
-6/6, PR 18/18, and the seed-major 30-task diagnostic 30/30. Its complete frozen
-nightly observed all 300 episodes and retained two `use-slider` budget failures,
-for 298/300 and mean reward 0.993333; the other 29 tasks were 10/10 and provider,
-retry, schema, artifact, and version-drift failures were zero. Unified trace
-analysis found a generic incremental-control granularity mismatch: the compiler
-used one arrow action per unit even though the shared constraint path already
-supported verified Page steps. The shared bounded-step repair passes 471 tests,
-dirty failure reproduction 7/7, and family 10/10, but these dirty runs are not
-score eligible. Freeze it in a new revision and restart the complete clean
-ladder; never resume the old nightly or add benchmark-family repairs.
+Current M8.2B diagnostic position (2026-07-22): clean `7e1c7db` passes smoke
+6/6, PR 18/18, diagnostic 30/30, and frozen nightly 300/300 at reward 1.0.
+The complete 125-task x 5-seed residual release observed 625/625 and measured
+402/625 success (0.6432) without provider, retry, missing-artifact, drift, or
+batch-circuit failures. Its 223 residual failures span observation, planning,
+contract/field binding, execution, verification, and official-zero outcomes;
+they are retained as capability evidence, not a passing score. Do not resume or
+patch this frozen batch. Improve generic trace-derived family attribution,
+select architecture work from cross-task clusters, and keep task-specific
+solvers out of shared Runtime code.
 
 ## 1. Authority
 
@@ -1403,10 +1404,11 @@ as architecture work. The detailed findings and gates are maintained in
    report, and payload digests; accepted TaskSkill and RecoverySkill profiles
    load explicitly in normal entrypoints. See
    `evidence/runtime-r6-canonical-harness-learning-20260722.md`.
-7. **Reproducible public evaluation:** separate compatible Web and BrowserGym
-   dependency profiles, add BrowserGym container or isolated-environment
-   reproduction, clear full static checks, and freeze current-HEAD smoke, PR,
-   nightly, and residual release evidence.
+7. **Reproducible public evaluation — complete:** separate compatible Web and
+   BrowserGym dependency profiles use the fixed Python 3.12 environment;
+   current-HEAD smoke, PR, diagnostic, nightly, and residual release evidence
+   is frozen at clean `7e1c7db`. See
+   `evidence/runtime-r7-clean-public-evaluation-20260722.md`.
 8. **Contain modules after semantics stabilize:** extract TaskPlanLifecycle,
    PerceptionSession, ContractExecutionLoop, RecoveryHandler,
    SemanticCompilerRegistry, and BrowserGym observer/encoder/runner internals

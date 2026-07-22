@@ -163,7 +163,7 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Generalist Planner | done | typed compiler, TaskSpec revision, semantic proposal binding, provider-neutral planner, and cross-surface/BrowserGym evidence |
-| M8.2B Public Benchmark Expansion | in progress | R7 clean `f8001d9` passed smoke/PR/30-task breadth, then completed a frozen nightly at 298/300; two long-distance incremental controls exhausted the 50-effect budget while all actions verified. A generic verified Page/Arrow step repair passes dirty reproduction 7/7 and family 10/10. Freeze and rerun the clean ladder from a new output directory, then residual release and provisioned public suites. |
+| M8.2B Public Benchmark Expansion | in progress | R7 clean `7e1c7db` passes smoke/PR/diagnostic and frozen nightly 300/300; the complete 125x5 residual release observes all 625 at 402/625 success with 223 retained cross-layer envelopes and zero provider/retry/drift/circuit failures. Select generic capability work from these clusters; provisioned public suites remain separate. |
 | M8.3 Recovery-Cascade Evolution | done | repeated-error incidents, online loop abort, executable recovery artifacts, fresh replay and rollback at `07e406f` |
 | M8.4 Adaptive Shallow Task Planning | done | criteria-bound progress, context-rich replanning, monotonic lineage, flat routing, and a real non-BrowserGym reference entrypoint are proven |
 | M8.5 Unified Adaptive Routing and Skill Internalization | done | Runtime-first R1-R6 prove criteria-bound progress, context-rich planning, generic perception, verifier-calibrated routing, de-specialization, canonical trace mining, digest-bound replay, safe fallthrough, and explicit accepted-profile loading |
@@ -659,9 +659,9 @@ metrics, and acceptance criteria are authoritative in
 `current-implementation-plan.md`.
 
 The prior `evidence/m8.5-completion-audit-20260722.md` remains component and
-perturbation evidence rather than the closure proof. Runtime-first R1-R6 are
-complete; the authoritative remaining sequence begins with reproducible public
-evaluation R7 in `current-implementation-plan.md`, with findings in
+perturbation evidence rather than the closure proof. Runtime-first R1-R7 are
+complete; the authoritative remaining sequence begins with R8 module
+containment in `current-implementation-plan.md`, with findings in
 `current-architecture-audit-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
