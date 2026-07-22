@@ -8,7 +8,9 @@ Runtime-first R1-R7 sequence is complete. R8 module containment after semantic
 stabilization is in progress; stateless TaskPlanLifecycle, PerceptionSession,
 ContractExecutionLoop, and RecoveryHandler collaborators are now extracted.
 The generalist PlannerContextBuilder is also separated from LM and compiler
-logic. M8.2B remains open for release capability and separately provisioned
+logic. BrowserGym observation, encoding, and one-episode/process-isolation
+components are now separated from suite/report orchestration. M8.2B remains
+open for release capability and separately provisioned
 public suites. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
@@ -1477,6 +1479,17 @@ as architecture work. The detailed findings and gates are maintained in
    leases/fingerprints, route/policy/capability decisions, and preflight;
    BrowserGym retains `bid`, coordinate, and action-string translation. Bridge
    imports remain compatible and incomplete backend bindings fail closed.
+
+   **Completed R8 BrowserGym episode-runner slice:** extracted one-episode setup,
+   Coordinator traversal, backend execution, external-policy lifecycle, and
+   killable child-process timeout/exit/cleanup handling into an adapter-owned
+   runner module. Keep breadth-first suite scheduling, frozen-run identity,
+   checkpoints, circuit breaking, FailureEnvelope aggregation, and report
+   publication outside this component. Preserve the bridge facade and all
+   typed result fields; add no task/family dispatch and no second Runtime state
+   owner. The facade retains compatible exports; direct tests prove timeout
+   termination, queue cleanup, and worker-exit diagnostics. See
+   `evidence/runtime-r8-browsergym-episode-runner-20260722.md`.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 

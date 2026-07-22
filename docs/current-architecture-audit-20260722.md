@@ -655,9 +655,13 @@ assembly. See `evidence/runtime-r8-planner-context-builder-20260722.md`,
 The BrowserGym stream has extracted `BrowserGymObserver` with coherent capture,
 metadata normalization, drag geometry/fingerprint enrichment, DOM grounding
 refresh, screenshot fallback, and visual candidate fusion. The public bridge
-continues to re-export the existing class and helper names; episode runner and
-reporting remain in the bridge. See
-`evidence/runtime-r8-browsergym-observer-20260722.md`.
+continues to re-export the existing class and helper names. One-episode setup,
+Coordinator traversal, backend execution, external-policy lifecycle, and
+killable process timeout/exit/cleanup now live in
+`browsergym_episode_runner.py`; breadth-first suite scheduling, frozen identity,
+checkpointing, circuit breaking, and reporting remain in the bridge pending the
+report split. See `evidence/runtime-r8-browsergym-observer-20260722.md` and
+`evidence/runtime-r8-browsergym-episode-runner-20260722.md`.
 
 `BrowserGymContractBuilder`, `GeneralistBrowserGymContractBuilder`,
 `BrowserGymGestureEncoder`, and `BrowserGymPointEncoder` now live with native
