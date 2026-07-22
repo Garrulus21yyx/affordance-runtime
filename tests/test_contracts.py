@@ -106,6 +106,61 @@ def test_gesture_contract_binds_and_preflights_both_endpoints() -> None:
     ) == RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
 
 
+def test_core_gesture_binder_rejects_same_or_semantically_incompatible_endpoints() -> None:
+    source_lease = AffordanceLease.issue(
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+        target_fingerprint="source-1",
+    )
+    destination_lease = AffordanceLease.issue(
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+        target_fingerprint="destination-1",
+    )
+    source = Affordance(
+        "source",
+        Surface.DOM,
+        "item",
+        "Source",
+        "drag",
+        {},
+        source_lease,
+        backend_candidates=["dom"],
+    )
+    destination = Affordance(
+        "destination",
+        Surface.DOM,
+        "region",
+        "Destination",
+        "drop",
+        {},
+        destination_lease,
+        backend_candidates=["dom"],
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+        target_fingerprints={"source": "source-1", "destination": "destination-1"},
+    )
+
+    for invalid_source, invalid_destination in (
+        (source, source),
+        (replace(source, action="activate"), destination),
+        (source, replace(destination, action="activate")),
+    ):
+        with pytest.raises(GestureBindingError) as caught:
+            GestureContractBinder().bind(
+                invalid_source,
+                invalid_destination,
+                selected_route="dom",
+                observation=observation,
+            )
+        assert caught.value.code == RuntimeErrorCode.PRECONDITION_FAILED
+
+
 def test_gesture_preflight_rechecks_blocking_overlays_for_both_endpoints() -> None:
     source_lease = AffordanceLease.issue(
         environment_revision="rev-1",

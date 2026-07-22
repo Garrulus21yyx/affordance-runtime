@@ -5,12 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import multiprocessing as mp
-import re
 import shlex
 import subprocess
 import threading
-from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime
+from dataclasses import asdict, dataclass, field
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Empty
@@ -18,6 +16,7 @@ from time import perf_counter
 from typing import Any, Callable, Sequence, cast
 
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.benchmarks import browsergym_encoder as _browsergym_encoder
 from affordance_runtime.benchmarks import browsergym_observer as _browsergym_observer
 from affordance_runtime.benchmarks.browsergym_action_schema import (
     BROWSERGYM_ACTION_ARGUMENTS as _BROWSERGYM_ACTION_ARGUMENTS,
@@ -26,6 +25,10 @@ from affordance_runtime.benchmarks.browsergym_action_schema import (
     BrowserGymAction,
 )
 from affordance_runtime.benchmarks.browsergym_dom import browsergym_dom_adapter, browsergym_svg_observer
+from affordance_runtime.benchmarks.browsergym_encoder import (
+    BrowserGymContractBuilder,
+    GeneralistBrowserGymContractBuilder,
+)
 from affordance_runtime.benchmarks.browsergym_matrix import (
     BROWSERGYM_VERSION,
     NIGHTLY_ACTION_FAMILY_MANIFEST,
@@ -77,12 +80,10 @@ from affordance_runtime.contracts import (
     Affordance,
     AffordanceLease,
     ExecutionReceipt,
-    GestureBinding,
     Observation,
     RiskLevel,
     RuntimeErrorCode,
     Surface,
-    VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
 from affordance_runtime.generalist_planner import (
@@ -100,15 +101,12 @@ from affordance_runtime.perception import (
     perception_task_terms,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     PlannerActionKind,
     PlannerProposal,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.unified_grounding import source_affordance_for_candidate
-from affordance_runtime.visual_contracts import VisualContractBinder
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -128,6 +126,13 @@ _fuse_visual_candidates = _browsergym_observer.fuse_visual_candidates
 _json_safe = _browsergym_observer.json_safe
 _refresh_dom_grounding_candidates = _browsergym_observer.refresh_dom_grounding_candidates
 _visual_fallback_affordance = _browsergym_observer.visual_fallback_affordance
+BrowserGymGestureEncoder = _browsergym_encoder.BrowserGymGestureEncoder
+BrowserGymPointEncoder = _browsergym_encoder.BrowserGymPointEncoder
+_browsergym_action_verifiers = _browsergym_encoder.browsergym_action_verifiers
+_browsergym_fill_value = _browsergym_encoder.browsergym_fill_value
+_browsergym_requires_keyboard_events = _browsergym_encoder.browsergym_requires_keyboard_events
+_is_sortable_list_binding = _browsergym_encoder.is_sortable_list_binding
+_viewport_box = _browsergym_encoder.viewport_box
 
 BROWSERGYM_TERMINAL_COMPLETION_POLICY = "official-terminal-v1"
 # BrowserGym defaults Playwright actions to 500ms.  Locally served controls can
@@ -137,18 +142,6 @@ BROWSERGYM_PAGE_ACTION_TIMEOUT_MS = 1_500
 # Planner proposals are compact semantic candidates, not long-form answers.
 # Keep local single-slot models responsive after a timed-out episode.
 BROWSERGYM_PLANNER_MAX_TOKENS = 384
-
-
-def _viewport_box(value: Any) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    try:
-        x, y, width, height = (float(item) for item in value)
-    except (TypeError, ValueError):
-        return None
-    if x < 0 or y < 0 or width <= 0 or height <= 0:
-        return None
-    return x, y, width, height
 
 
 @dataclass
@@ -276,258 +269,6 @@ class AgentLabPlannerAdapter(BrowserGymPlanner):
     """Named AgentLab/BrowserGym action adapter at the semantic planner boundary."""
 
 
-@dataclass
-class BrowserGymContractBuilder(ContractBuilder):
-    bindings: dict[str, BrowserGymAction] = field(default_factory=dict)
-
-    def build(
-        self,
-        proposal: PlannerProposal,
-        task_spec: TaskSpec,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> ActionContract:
-        contract = super().build(proposal, task_spec, state, snapshot)
-        action = self.bindings.get(proposal.proposal_id)
-        if action is None:
-            raise ValueError(f"BrowserGym action binding is missing: {proposal.proposal_id}")
-        return replace(
-            contract,
-            action=action.name,
-            backend=BROWSERGYM_BACKEND,
-            parameters={"action": asdict(action)},
-            verifier_plan=_browsergym_action_verifiers(action, snapshot),
-            contract_hash="",
-        )
-
-
-@dataclass(frozen=True)
-class BrowserGymGestureEncoder:
-    """Translate a validated core gesture binding to BrowserGym actions only."""
-
-    def encode(self, binding: GestureBinding) -> BrowserGymAction:
-        source_locator = binding.source.locator
-        destination_locator = binding.destination.locator
-        source_bid = str(source_locator.get("backend_handle") or "")
-        destination_bid = str(destination_locator.get("backend_handle") or "")
-        sortable = _is_sortable_list_binding(binding)
-        calendar_range = (
-            source_locator.get("calendar_endpoint") == "start"
-            and destination_locator.get("calendar_endpoint") == "end"
-        )
-        same_calendar_slot = bool(calendar_range and source_bid and source_bid == destination_bid)
-        if source_bid and destination_bid and not sortable and not calendar_range:
-            return BrowserGymAction(
-                "drag_and_drop",
-                {"from_bid": source_bid, "to_bid": destination_bid},
-            )
-        source_box = _viewport_box(source_locator.get("bbox"))
-        destination_box = _viewport_box(destination_locator.get("bbox"))
-        if source_box is not None and destination_box is not None:
-            to_x = destination_box[0] + destination_box[2] / 2
-            to_y = destination_box[1] + destination_box[3] / 2
-            from_y = source_box[1] + source_box[3] / 2
-            if same_calendar_slot:
-                # A one-slot range still has two semantic boundaries. Move
-                # within the authored cell so its mousedown/mousemove/mouseup
-                # lifecycle fires without violating Core's distinct-endpoint
-                # invariant.
-                from_y = source_box[1] + source_box[3] * 0.25
-                to_y = destination_box[1] + destination_box[3] * 0.75
-            if sortable:
-                # jQuery sortable inserts before/after its hovered item based
-                # on pointer position. A center drop is ambiguous; select the
-                # semantic insertion half from the relative list direction.
-                if destination_box[1] > source_box[1]:
-                    to_y = destination_box[1] + destination_box[3] * 0.75
-                elif destination_box[1] < source_box[1]:
-                    to_y = destination_box[1] + destination_box[3] * 0.25
-            arguments: dict[str, Any] = {
-                "from_x": source_box[0] + source_box[2] / 2,
-                "from_y": from_y,
-                "to_x": to_x,
-                "to_y": to_y,
-            }
-            if calendar_range and source_bid and destination_bid:
-                arguments.update({"from_bid": source_bid, "to_bid": destination_bid})
-            return BrowserGymAction(
-                "mouse_drag_and_drop",
-                arguments,
-            )
-        if source_bid and destination_bid:
-            return BrowserGymAction(
-                "drag_and_drop",
-                {"from_bid": source_bid, "to_bid": destination_bid},
-            )
-        raise ValueError("BrowserGym drag encoding requires bids or viewport geometry")
-
-
-def _is_sortable_list_binding(binding: GestureBinding) -> bool:
-    """Recognize the reusable DOM list-item gesture shape without task IDs."""
-
-    source_selector = str(binding.source.locator.get("selector") or "").lower()
-    destination_selector = str(binding.destination.locator.get("selector") or "").lower()
-    source_id = str(
-        getattr(binding.source, "candidate_id", "")
-        or getattr(binding.source, "semantic_target_id", "")
-        or getattr(binding.source, "id", "")
-    ).lower()
-    destination_id = str(
-        getattr(binding.destination, "candidate_id", "")
-        or getattr(binding.destination, "semantic_target_id", "")
-        or getattr(binding.destination, "id", "")
-    ).lower()
-    return (source_selector.startswith("li") and destination_selector.startswith("li")) or (
-        "dom_li_" in source_id and "dom_li_" in destination_id
-    )
-
-
-@dataclass(frozen=True)
-class BrowserGymPointEncoder:
-    """Translate one current semantic point target to a BrowserGym action."""
-
-    def encode(self, affordance: Affordance) -> BrowserGymAction:
-        bid = str(affordance.locator.get("backend_handle") or "")
-        if bid:
-            return BrowserGymAction("click", {"bid": bid})
-        box = _viewport_box(affordance.locator.get("bbox"))
-        if box is None:
-            raise ValueError("BrowserGym point encoding requires a bid or viewport geometry")
-        return BrowserGymAction(
-            "mouse_click",
-            {"x": box[0] + box[2] / 2, "y": box[1] + box[3] / 2},
-        )
-
-    def encode_contract(self, contract: ActionContract) -> BrowserGymAction:
-        candidate = contract.grounding_candidate
-        if candidate is None:
-            raise ValueError("BrowserGym point contract requires a selected grounding candidate")
-        bid = str(getattr(candidate.payload, "backend_handle", "") or "")
-        if bid:
-            return BrowserGymAction("click", {"bid": bid})
-        point = contract.locator.get("point")
-        if not isinstance(point, list) or len(point) != 2:
-            raise ValueError("BrowserGym point contract requires trusted viewport coordinates")
-        return BrowserGymAction("mouse_click", {"x": float(point[0]), "y": float(point[1])})
-
-
-@dataclass
-class GeneralistBrowserGymContractBuilder(ContractBuilder):
-    """Bind the common semantic vocabulary to typed BrowserGym actions."""
-
-    gesture_encoder: BrowserGymGestureEncoder = field(default_factory=BrowserGymGestureEncoder)
-    point_encoder: BrowserGymPointEncoder = field(default_factory=BrowserGymPointEncoder)
-    visual_contract_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
-
-    def build(
-        self,
-        proposal: PlannerProposal,
-        task_spec: TaskSpec,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> ActionContract:
-        contract = super().build(proposal, task_spec, state, snapshot)
-        affordance = (
-            source_affordance_for_candidate(
-                contract.grounding_candidate,
-                snapshot.affordance_model.affordances,
-            )
-            if contract.grounding_candidate is not None
-            else next(
-                item for item in snapshot.affordance_model.affordances if item.id == proposal.target_affordance_id
-            )
-        )
-        if proposal.action_kind == PlannerActionKind.ACTIVATE:
-            bid = str(affordance.locator.get("backend_handle") or "")
-            if not bid:
-                raise ValueError("Generalist BrowserGym binding requires an affordance bid")
-            select_owner_bid = str(affordance.locator.get("select_owner_backend_handle") or "")
-            select_option = str(affordance.locator.get("select_option") or "")
-            if select_owner_bid and select_option:
-                action = BrowserGymAction("select_option", {"bid": select_owner_bid, "options": select_option})
-            else:
-                # BrowserGym's ordinary locator click can stop after bringing
-                # an authored, off-screen collection control into view.  These
-                # controls are DOM-owned buttons (not links), so dispatch their
-                # current bid through the navigation-safe DOM click lifecycle.
-                # The planner still selects only the semantic affordance; this
-                # route choice remains a BrowserGym encoder concern.
-                direct_dom_control = bool(affordance.state.get("collection_action"))
-                action = BrowserGymAction(
-                    "click_no_navigation"
-                    if affordance.state.get("href") == "#" or direct_dom_control
-                    else "click",
-                    {"bid": bid},
-                )
-        elif proposal.action_kind == PlannerActionKind.POINT_ACTIVATE:
-            if contract.route_plan is None:
-                raise ValueError("BrowserGym point target requires a unified grounding candidate")
-            point_contract = self.visual_contract_binder.bind_point_activate(
-                contract.route_plan,
-                snapshot.observation,
-                intent=proposal.subgoal or task_spec.objective,
-                verifier_plan=(VerifierSpec("state_delta_or_terminal", "", True),),
-                required_capabilities=contract.required_capabilities,
-                risk=contract.risk,
-                supersedes_contract_id=contract.supersedes_contract_id,
-                source_contract_id=contract.source_contract_id,
-                fallback_reason=contract.fallback_reason,
-            )
-            contract = replace(
-                point_contract,
-                expected_effects=contract.expected_effects,
-                idempotency_key=contract.idempotency_key,
-                compensation=contract.compensation,
-                timeout_ms=contract.timeout_ms,
-                contract_hash="",
-            )
-            action = self.point_encoder.encode_contract(contract)
-        elif proposal.action_kind == PlannerActionKind.TYPE_TEXT:
-            bid = str(affordance.locator.get("backend_handle") or "")
-            if not bid:
-                raise ValueError("Generalist BrowserGym binding requires an affordance bid")
-            value = _browsergym_fill_value(affordance.state, str(proposal.parameters["text"]))
-            action = (
-                BrowserGymAction("type_text_with_events", {"bid": bid, "text": value})
-                if _browsergym_requires_keyboard_events(affordance)
-                else BrowserGymAction("fill", {"bid": bid, "value": value})
-            )
-        elif proposal.action_kind == PlannerActionKind.SELECT_OPTION:
-            bid = str(affordance.locator.get("backend_handle") or "")
-            if not bid:
-                raise ValueError("Generalist BrowserGym binding requires an affordance bid")
-            option = proposal.parameters["option"]
-            action = BrowserGymAction("select_option", {"bid": bid, "options": option})
-        elif proposal.action_kind == PlannerActionKind.PRESS_KEY:
-            bid = str(affordance.locator.get("backend_handle") or "")
-            if not bid:
-                raise ValueError("Generalist BrowserGym binding requires an affordance bid")
-            action = BrowserGymAction("press", {"bid": bid, "key_comb": str(proposal.parameters["key"])})
-        elif proposal.action_kind == PlannerActionKind.DRAG:
-            drag_binding = contract.gesture_binding
-            if drag_binding is None:
-                raise ValueError("Generalist BrowserGym drag requires a core gesture binding")
-            action = self.gesture_encoder.encode(drag_binding)
-        else:
-            raise ValueError(f"unsupported generalist BrowserGym semantic action: {proposal.action_kind.value}")
-        action.render()
-        return replace(
-            contract,
-            action=action.name,
-            backend=BROWSERGYM_BACKEND,
-            parameters={"action": asdict(action)},
-            verifier_plan=_browsergym_action_verifiers(action, snapshot),
-            contract_hash="",
-        )
-
-    def _available_executors(self, snapshot: BrowserSnapshot) -> frozenset[str]:
-        del snapshot
-        return frozenset({BROWSERGYM_BACKEND})
-
-    def _route_verifier_kinds(self, semantic_target_id: str) -> tuple[str, ...]:
-        return tuple(dict.fromkeys([*super()._route_verifier_kinds(semantic_target_id), "state_delta_or_terminal"]))
-
-
 def _browser_snapshot_evidence(snapshot: BrowserSnapshot) -> frozenset[EvidenceKind]:
     evidence: set[EvidenceKind] = set()
     for source in snapshot.source_observations:
@@ -538,100 +279,6 @@ def _browser_snapshot_evidence(snapshot: BrowserSnapshot) -> frozenset[EvidenceK
         elif source.source in {GroundingSource.SOM, GroundingSource.VISUAL}:
             evidence.add(EvidenceKind.VISUAL_APPEARANCE)
     return frozenset(evidence)
-
-
-def _browsergym_fill_value(affordance_state: dict[str, Any], semantic_value: str) -> str:
-    """Translate semantic text to the value format required by native controls."""
-
-    input_type = affordance_state.get("input_type")
-    if input_type == "time":
-        for time_format in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M:%S %p"):
-            try:
-                return datetime.strptime(semantic_value.strip(), time_format).strftime("%H:%M")
-            except ValueError:
-                continue
-        return semantic_value
-    if input_type != "date":
-        return semantic_value
-    for date_format in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-        try:
-            return datetime.strptime(semantic_value, date_format).date().isoformat()
-        except ValueError:
-            continue
-    return semantic_value
-
-
-def _browsergym_requires_keyboard_events(affordance: Affordance) -> bool:
-    """Use physical typing for a search control whose results depend on key events."""
-
-    return (
-        affordance.state.get("focused") is True
-        and affordance.state.get("element_tag") == "input"
-        and bool(re.search(r"\bsearch\b", affordance.label, re.IGNORECASE))
-    )
-
-
-def _browsergym_action_verifiers(
-    action: BrowserGymAction,
-    snapshot: BrowserSnapshot,
-) -> list[VerifierSpec]:
-    verifier_plan = [VerifierSpec("evidence", "last_action_error", "")]
-    action_bid = str(action.arguments.get("bid") or "")
-    if action.name in {"fill", "type_text_with_events"}:
-        verifier_plan.append(
-            VerifierSpec(
-                "dom_attribute",
-                action_bid,
-                {
-                    "target_attribute": "bid",
-                    "attribute": "value",
-                    "value": str(action.arguments.get("value", action.arguments.get("text", ""))),
-                },
-            )
-        )
-    elif action.name == "select_option":
-        selected_options = action.arguments["options"]
-        verifier_plan.append(
-            VerifierSpec(
-                "control_state",
-                action_bid,
-                (
-                    {"field": "selected_options", "value": selected_options}
-                    if isinstance(selected_options, list)
-                    else {"field": "value", "value": str(selected_options)}
-                ),
-            )
-        )
-    elif action.name == "press":
-        previous = snapshot.observation.metadata.get("control_states", {})
-        previous_state = previous.get(action_bid, {}) if isinstance(previous, dict) else {}
-        is_scroll_region = (
-            isinstance(previous_state, dict)
-            and isinstance(previous_state.get("scroll_height"), (int, float))
-            and isinstance(previous_state.get("client_height"), (int, float))
-            and previous_state["scroll_height"] > previous_state["client_height"]
-        )
-        field_name = "scroll_top" if is_scroll_region else "aria_valuenow"
-        previous_value = previous_state.get(field_name, "") if isinstance(previous_state, dict) else ""
-        if previous_value in {None, ""} and isinstance(previous_state, dict):
-            field_name = "context_text"
-            previous_value = previous_state.get(field_name, "")
-        verifier_plan.append(
-            VerifierSpec(
-                "control_state",
-                action_bid,
-                {"field": field_name, "changed_from": previous_value},
-            )
-        )
-    elif action.name in {"click", "click_no_navigation"}:
-        previous = snapshot.observation.metadata.get("control_states", {})
-        previous_state = previous.get(action_bid, {}) if isinstance(previous, dict) else {}
-        checked = previous_state.get("checked") if isinstance(previous_state, dict) else None
-        expected = {"field": "checked", "changed_from": checked} if checked is not None else True
-        verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, expected))
-    elif action.name == "mouse_click":
-        verifier_plan.append(VerifierSpec("state_delta_or_terminal", "", True))
-    return verifier_plan
 
 
 @dataclass

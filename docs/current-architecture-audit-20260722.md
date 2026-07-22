@@ -655,9 +655,17 @@ assembly. See `evidence/runtime-r8-planner-context-builder-20260722.md`,
 The BrowserGym stream has extracted `BrowserGymObserver` with coherent capture,
 metadata normalization, drag geometry/fingerprint enrichment, DOM grounding
 refresh, screenshot fallback, and visual candidate fusion. The public bridge
-continues to re-export the existing class and helper names; encoders, episode
-runner, and reporting remain in the bridge. See
+continues to re-export the existing class and helper names; episode runner and
+reporting remain in the bridge. See
 `evidence/runtime-r8-browsergym-observer-20260722.md`.
+
+`BrowserGymContractBuilder`, `GeneralistBrowserGymContractBuilder`,
+`BrowserGymGestureEncoder`, and `BrowserGymPointEncoder` now live with native
+value conversion and verifier mapping in `browsergym_encoder.py`. Core still
+creates and preflights the dual-target `GestureBinding`; the adapter only
+translates current handles/geometry into BrowserGym action schema. The bridge
+re-exports the previous entrypoints. See
+`evidence/runtime-r8-browsergym-encoder-20260722.md`.
 
 Deliverables:
 

@@ -1429,25 +1429,28 @@ as architecture work. The detailed findings and gates are maintained in
    policy, proposal binding, fallback order, and trace assembly. BrowserGym
    observation capture, metadata normalization, drag-geometry enrichment, DOM
    candidate refresh, and visual candidate fusion now live in an adapter-owned
-   observer module while the bridge facade preserves its imports. Next split
-   the BrowserGym encoder, runner, and reporting internals without adding
-   services or another authoritative state writer. See
+   observer module while the bridge facade preserves its imports. BrowserGym
+   contract/action, gesture, point, native-value, and verifier encoding now
+   also live in an adapter-owned encoder module; Core still owns semantic
+   gesture binding and preflight. Next split the BrowserGym runner and reporting
+   internals without adding services or another authoritative state writer. See
    `evidence/runtime-r8-task-plan-lifecycle-20260722.md`,
    `evidence/runtime-r8-perception-session-20260722.md`,
    `evidence/runtime-r8-contract-execution-loop-20260722.md`,
    `evidence/runtime-r8-recovery-handler-20260722.md`,
    `evidence/runtime-r8-planner-context-builder-20260722.md`,
-   `evidence/runtime-r8-default-semantic-registry-20260722.md`, and
-   `evidence/runtime-r8-planner-model-orchestrator-20260722.md`, and
-   `evidence/runtime-r8-browsergym-observer-20260722.md`.
+   `evidence/runtime-r8-default-semantic-registry-20260722.md`,
+   `evidence/runtime-r8-planner-model-orchestrator-20260722.md`,
+   `evidence/runtime-r8-browsergym-observer-20260722.md`, and
+   `evidence/runtime-r8-browsergym-encoder-20260722.md`.
 
    **Completed R8 registry slice:** moved only the declarative default
    semantic-compiler registry assembly (rule order, applicability declarations,
    evidence, operation classes, output kinds, and negative examples) behind a
    typed factory. Semantic compilation algorithms remain in the Generalist
    planner pending an ownership review, and its public registry entrypoint
-   remains compatible. Direct generic tests freeze rule precedence
-   and metadata, reject empty/unsupported contexts, and retain the existing
+   remains compatible. Direct generic tests freeze rule precedence and
+   metadata, reject empty/unsupported contexts, and retain the existing
    non-BrowserGym DOM integration proof without invoking a benchmark adapter.
 
    **Completed R8 model-orchestration slice:** isolated provider-neutral model
@@ -1466,6 +1469,14 @@ as architecture work. The detailed findings and gates are maintained in
    fingerprints, unified candidates, and visual fallback semantics remain
    compatible. Scheduling, circuit-break, resume, CLI/report, executor, and
    shared Runtime code were not changed.
+
+   **Completed R8 BrowserGym encoder slice:** moved backend contract/action
+   encoding, semantic gesture-to-`drag_and_drop`, current-viewport point
+   conversion, native date/time value conversion, and action verifier mapping
+   into an adapter-owned module. Core retains dual-target gesture validation,
+   leases/fingerprints, route/policy/capability decisions, and preflight;
+   BrowserGym retains `bid`, coordinate, and action-string translation. Bridge
+   imports remain compatible and incomplete backend bindings fail closed.
 
 Runtime-first acceptance requires, for every benchmark-discovered repair:
 
