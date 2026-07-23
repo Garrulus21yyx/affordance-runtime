@@ -140,6 +140,18 @@ whose semantic label overlaps the explicit objective vocabulary; retain
 fallthrough when zero or multiple disclosures match. This is label-based typed
 scope resolution, not DOM-parent, generated-id, page, or task recognition.
 
+The complete clean family sweep at `29d4d01` is 38/40: both single-control
+families pass 10/10, while both multi-control families fail only seed 3. The
+paired traces request quoted lowercase `"proin"`; an earlier panel exposes the
+different label `Proin`, and the current case-folded descendant stop condition
+binds it before reaching the later exact target. Preserve quoted actionable
+labels as exact, case-sensitive semantic values inside disclosure traversal.
+Continue ordered disclosure search past case-insensitive near matches, and
+bind a descendant deterministically only when one unique current label exactly
+matches. Multiple exact matches or no remaining disclosure retain System 2
+fallthrough. Add generic near-match, exact-match, and ambiguity controls before
+repeating the failed seeds and full family.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is

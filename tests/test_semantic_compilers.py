@@ -481,7 +481,41 @@ def test_disclosure_compiler_scans_ordered_controls_until_named_target_is_visibl
 
     assert first == (PlannerActionKind.ACTIVATE, "dom_h3_1", {})
     assert second == (PlannerActionKind.ACTIVATE, "dom_h3_2", {})
-    assert _compiled_disclosure_operation(found) is None
+    assert _compiled_disclosure_operation(found) == (
+        PlannerActionKind.ACTIVATE,
+        "dom_button_1",
+        {},
+    )
+
+
+def test_disclosure_compiler_continues_past_case_only_quoted_near_match() -> None:
+    context = _disclosure_context(
+        'Expand the sections to find and click "proin".',
+        expanded=(True, False, False),
+        visible_target="Proin",
+    )
+
+    assert _compiled_disclosure_operation(context) == (
+        PlannerActionKind.ACTIVATE,
+        "dom_h3_2",
+        {},
+    )
+
+
+def test_disclosure_compiler_does_not_choose_between_duplicate_exact_descendants() -> None:
+    context = _disclosure_context(
+        'Expand the sections to find and click "Needle".',
+        expanded=(True, False),
+        visible_target="Needle",
+    )
+    target = next(item for item in context.affordances if item.label == "Needle")
+    context = context.model_copy(
+        update={
+            "affordances": (*context.affordances, target.model_copy(update={"id": "duplicate-target"}))
+        }
+    )
+
+    assert _compiled_disclosure_operation(context) is None
 
 
 def test_disclosure_compiler_falls_through_for_ambiguous_multi_control_request() -> None:

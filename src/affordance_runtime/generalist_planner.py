@@ -1451,24 +1451,22 @@ def _compiled_copy_operation(
     return None
 
 
-def _visible_requested_descendant(context: PlannerContext) -> bool:
-    """Return whether one explicitly quoted non-disclosure target is currently actionable."""
+def _visible_requested_descendant_ids(context: PlannerContext) -> tuple[str, ...]:
+    """Return current non-disclosure targets that exactly preserve a quoted label."""
 
     objective = str(context.task_spec.get("objective") or "")
     requested = {
-        " ".join(item.split()).casefold()
+        " ".join(item.split())
         for item in re.findall(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective)
         if item.strip()
     }
-    return bool(
-        requested
-        and any(
-            " ".join(item.label.split()).casefold() in requested
-            and item.action in {"activate", "click"}
-            and item.state.get("disclosure") is not True
-            and item.state.get("visible") is not False
-            for item in context.affordances
-        )
+    return tuple(
+        item.id
+        for item in context.affordances
+        if " ".join(item.label.split()) in requested
+        and item.action in {"activate", "click"}
+        and item.state.get("disclosure") is not True
+        and item.state.get("visible") is not False
     )
 
 
@@ -1481,6 +1479,11 @@ def _compiled_disclosure_operation(
     objective_tokens = _semantic_tokens(objective)
     if not objective_tokens.intersection({"expand", "open", "reveal"}):
         return None
+    requested_descendant_ids = _visible_requested_descendant_ids(context)
+    if len(requested_descendant_ids) == 1:
+        return PlannerActionKind.ACTIVATE, requested_descendant_ids[0], {}
+    if requested_descendant_ids:
+        return None
     disclosures = [
         item
         for item in context.affordances
@@ -1489,7 +1492,7 @@ def _compiled_disclosure_operation(
         and isinstance(item.state.get("expanded"), bool)
         and item.state.get("visible") is not False
     ]
-    if not disclosures or _visible_requested_descendant(context):
+    if not disclosures:
         return None
     collapsed = [item for item in disclosures if item.state.get("expanded") is False]
     if not collapsed:
