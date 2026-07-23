@@ -94,6 +94,23 @@ FailureEnvelope, provider/retry failure, or batch circuit. Do not rerun the
 capability boundary from its already frozen cross-task clusters. See
 [typed suggestion evidence](evidence/m8.2b-r9-suggestion-selection-20260723.md).
 
+Current post-R9 diagnostic slice: the next frozen release cluster is the four
+collapsible-control variants (20/20 failed episodes): two families finish with
+official reward zero after selecting a submit terminal before expansion, while
+two families issue `press_key` to section headers and fail the generated
+`control_state` verifier before they can search the newly exposed content.
+Treat these as one generic stateful-disclosure cluster until trace and current
+reproduction evidence disproves that grouping. Audit typed observation of
+expanded/collapsed state, semantic action compatibility for disclosure
+controls, terminal deferral, postcondition generation, and fresh-child
+discovery. The intended Runtime capability is a generic disclosure obligation:
+open the uniquely scoped collapsed control, verify its current expanded state,
+reobserve the new inventory, and only then bind a requested descendant or
+terminal. Do not recognize accordion markup, task ids, section numbers, page
+URLs, or benchmark families in Core. Before implementation, reproduce all four
+seed-0 cases on one clean current SHA and compare their inventories, contracts,
+executor encodings, and post-action observations.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
