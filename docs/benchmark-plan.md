@@ -5,6 +5,17 @@ a browser task solver. The benchmark asks whether the runtime can bind actions
 to current environment state, avoid unsafe side effects, verify effects, recover
 from drift, and turn failures into regression-gated harness improvements.
 
+The [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md)
+is normative. Benchmark is an auditor of the Runtime architecture, not the
+product objective, planner specification, or repair target. Historical scores
+remain evidence only for their immutable revision and active profile.
+
+The default scored profile must be strict-generalist. Results from historical
+compatibility rules, accepted skills, and ablations are reported separately.
+No targeted family pass can establish a generalization claim without
+non-benchmark conformance, paraphrase or distractor controls, safety evidence,
+and breadth replay.
+
 ## Evaluation Layers
 
 The generalist path is evaluated in three separable layers:
@@ -211,6 +222,39 @@ The `generalization-v1` gate complements the 63-run local matrix with:
 The official MiniWoB result is reported as a curated runtime subset. It is not
 presented as a full-suite MiniWoB++ score.
 
+## M8.6 Active-Perception and Online-Recovery Gate
+
+M8.6 is evaluated against the normative
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md)
+before public benchmark score promotion resumes.
+
+The generic non-BrowserGym matrix must include:
+
+| Case | Required evidence |
+| --- | --- |
+| ordinary form | DOM/accessibility accepted with no unnecessary visual probe |
+| visual or spatial target | screenshot/SVG/SoM/visual evidence requested before action failure |
+| stale or conflicting source | one bounded targeted probe creates a new coherent epoch |
+| irreducible safety conflict | safe inconclusive result; no effectful contract |
+| planner/schema/context failure | typed recovery changes context, provider policy, or plan |
+| no affordance or binding failure | active perception, new-epoch reground, or safe ask/abort |
+| action timeout | post-state inspection before repeat |
+| inconclusive verifier | stronger evidence without repeating the effect |
+| varied repeated failure | semantic cascade stops or changes strategy |
+| accepted policy | fresh held-out replay improves cost or success without safety regression |
+
+Required active-perception metrics are evidence-gap resolution, probe precision,
+unnecessary-probe rate, probe/model cost, irreducible-conflict handling, and
+stale cross-epoch reuse. Required recovery metrics are changed-strategy rate,
+success by phase and strategy, semantic cascade depth, inspect-before-repeat
+coverage, no-op recovery rejection, and duplicate-effect count.
+
+Run strict-generalist, strict plus accepted artifacts, compatibility, and
+ablation profiles separately. Complete each diagnostic matrix before selecting
+a repair. BrowserGym, ScreenSpot, WebArena-Verified, WASP, and WorkArena confirm
+transfer only after these generic controls pass; they may not supply the
+planner rule, probe policy, or recovery branch being evaluated.
+
 ## Public Benchmark Ladder
 
 The 18-episode M8 result is a compatibility smoke test. It is not sufficient as
@@ -223,7 +267,10 @@ templates and its solver contains task-specific parsing and selectors.
 | Nightly | `miniwob-action-family-v1`: 30 task types x 10 seeds | task-family variance and unsupported actions |
 | Release | every task supported by pinned BrowserGym x 5 seeds | broad reproducible coverage |
 
-The scored path must not use per-task regexes or hardcoded selectors. Every
+The scored path must not use per-task regexes, hardcoded selectors, or
+behaviorally equivalent task-family semantic compilers. Moving a benchmark
+program into a shared planner module or removing suite ids does not make it
+general. Every
 episode must traverse:
 
 ```text
@@ -269,6 +316,11 @@ repair decision. The only batch circuit
 breakers are provider-wide/continuous throttling, MiniWoB source or oracle
 failure, schema-wide incompatibility, artifact/checkpoint failure, safety
 violation, or immutable-version drift. A reward-zero task, local grounding
+
+Task id, family, seed, suite version, and official reward belong to external
+audit metadata. They must not enter planner-visible targets, prompts, memory,
+skill triggers, or recovery policy. The Runtime sees only normalized task
+semantics, constraints, capabilities, budgets, observations, and evidence.
 failure, or insufficient context remains a recorded episode failure.
 
 Checkpoint metadata binds provider/model, git identity, prompt, planner schema

@@ -64,6 +64,8 @@ def test_builder_bounds_untrusted_context_and_exposes_only_semantic_inventory() 
     assert {"activate", "type_text"}.issubset(context.permitted_action_kinds)
     assert "selector" not in context.model_dump_json()
     assert "backend_handle" not in context.model_dump_json()
+    assert "task_id" not in context.task_spec
+    assert "context-task" not in context.model_dump_json()
 
 
 def test_compatibility_function_matches_explicit_builder() -> None:

@@ -9,58 +9,68 @@ they do not own task semantics, perception orchestration, routing, contracts,
 verification, recovery, or learning. Benchmark-specific task logic is
 prohibited in the generic path.
 
+The operational design for evidence-gap-driven observation and phase-spanning
+recovery is defined in
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
+It is part of the current M8.6 skeleton, not a future distributed-service
+option.
+
 ## 1. High-Level System
 
-```text
-User Request or Parent TaskSpec
-    |
-    v
-Intent Compiler / TaskSpec Validator
-    |
-    v
-State Kernel
-    |
-    v
-Budgeted Observer
-    |
-    v
-Versioned Affordance Snapshot
-    |
-    v
-Planner Port
-    |
-    v
-Planner Proposal
-    |
-    v
-Grounder / ContractBuilder
-    |
-    v
-Action Contract
-    |
-    v
-Capability Gate / Preflight
-    |
-    v
-Executor
-    |
-    v
-Execution Receipt
-    |
-    v
-Post-Action Observation
-    |
-    v
-Verifier Ladder
-    |
-    +--> Recovery / Replan / Ask / Abort
-    |
-    v
-Trace Events
-    |
-    v
-Evaluator / Assisted Evolution Loop
-```
+~~~text
+User Request / Parent TaskSpec
+  -> IntentCompiler / TaskSpecValidator
+  -> TaskPlanRouter
+       -> one flat subgoal
+       -> accepted TaskSkill
+       -> validated shallow TaskPlan
+  -> RunCoordinator (single authoritative state writer)
+
+For each active subgoal:
+
+  PerceptionRequirements
+    -> PerceptionSession base coherent epoch
+    -> SourceAssertions and unified candidates
+    -> rule-first arbitration
+         -> accepted snapshot
+         or ActivePerceptionController
+              -> ProbePlan / ProbeCommand
+              -> new coherent epoch
+              -> re-arbitrate
+         or safe inconclusive FailureEnvelope
+
+  accepted snapshot
+    -> GeneralistStepPlanner
+    -> PlanValidator
+    -> semantic target resolution and route selection
+    -> ContractBuilder
+    -> ActionContract
+    -> capability / approval / preflight
+    -> execute
+    -> post-action observation
+    -> criteria-bound verification
+         -> continue / complete
+
+Any phase may emit:
+
+  FailureEnvelope
+    -> RecoveryCoordinator
+    -> RecoveryPlanValidator
+    -> one typed RecoveryCommand
+    -> owning Runtime port
+    -> RecoveryReceipt + non-empty RecoveryDelta
+    -> re-enter changed phase
+         or wait for approval/user
+         or abort/fail
+
+All paths
+  -> canonical Trace Events and Artifacts
+  -> Evaluator
+  -> offline quarantined proposal
+  -> regression replay
+  -> accept / reject / rollback
+~~~
+
 
 The online runtime is bounded. It is not an unconstrained ReAct loop. It follows
 a stateful workflow with explicit transitions, stale-state rejection, scoped
@@ -86,38 +96,53 @@ migration scaffolding, not the final intent/planner contract.
 | INV-08 | Recovery is bounded by step, retry, time, cost, and side-effect budgets. |
 | INV-09 | Approval is bound to run id, contract hash, environment state, capability, approver, and expiration. |
 | INV-10 | The acting model cannot be the sole authority for benchmark success. |
+| INV-11 | RunCoordinator is the only authoritative RunState writer. |
+| INV-12 | Observation probes are read-only; any environment-changing inspection uses an ActionContract. |
+| INV-13 | Active perception produces a new coherent epoch and preserves source provenance. |
+| INV-14 | Another attempt requires a non-empty RecoveryDelta over evidence, assumption, plan, route, verifier, context, authority, or user input. |
+| INV-15 | An uncertain effect is inspected before retry, reroute, or compensation. |
+| INV-16 | Failures from every Runtime phase use one FailureEnvelope and bounded RecoveryCoordinator protocol. |
+| INV-17 | Benchmark identity and external reward never enter generic perception or recovery decisions. |
 
 ## 1.2 Task State Machine
 
-The first task-level runtime should make transitions explicit:
+The top-level state machine stays small:
 
-```text
+~~~text
 CREATED
   -> OBSERVING
   -> PLANNING
   -> PREFLIGHT
   -> ACTING
   -> VERIFYING
-  -> DONE
-```
+  -> PLANNING or DONE
+~~~
 
-Failure and control transitions:
+Affordance building, arbitration, active perception, proposal validation, and
+binding remain traced activities inside these phases. They do not require new
+public states.
 
-```text
-PREFLIGHT -> OBSERVING       when stale or expired
-PREFLIGHT -> WAITING_APPROVAL when required capability lacks approval
-PREFLIGHT -> ABORTED         when policy denies the action
-ACTING -> VERIFYING | RECOVERING | FAILED
-VERIFYING -> OBSERVING | PLANNING | RECOVERING | DONE | FAILED
-RECOVERING -> OBSERVING | WAITING_APPROVAL | ABORTED | FAILED
-```
+Any phase may emit FailureEnvelope and enter RECOVERING:
 
-Affordance modeling occurs within `OBSERVING`. Post-action observation occurs
-at the start of `VERIFYING`. They remain traced activities without requiring
-additional top-level states in the current runtime.
+~~~text
+INTAKE / OBSERVING / PLANNING / PREFLIGHT / ACTING / VERIFYING
+  -> RECOVERING
+       -> OBSERVING
+       -> PLANNING
+       -> PREFLIGHT
+       -> VERIFYING
+       -> WAITING_APPROVAL
+       -> WAITING_USER
+       -> ABORTED / FAILED
+~~~
 
-`run_contract()` may remain as an internal/debug API, but the public runtime
-should be task-level and hold a `RunContext` across steps.
+The RecoveryReceipt declares the re-entry phase. Coordinator accepts it only
+when RecoveryDelta proves a meaningful change. Stale or no-op recovery is
+rejected.
+
+run_contract may remain an internal/debug API, but the public runtime is
+task-level and holds one RunContext across steps.
+
 
 ## 1.3 Run State / State Kernel
 
@@ -209,9 +234,46 @@ inputs. Raw assertions and conflict decisions remain in trace artifacts.
 
 Current status: immutable sourced assertions, rule-first arbitration,
 property-specific authority, unresolved-conflict route blocking, and a bounded
-coherent `capture_targeted()` observation port are implemented. Assertion and
-active-perception decisions are separately traced. Live cross-source conflict
-families and calibration remain part of M8.5 evaluation.
+coherent capture_targeted observation port are implemented. Source-arbitration
+and bounded ActivePerceptionRequest decisions can be traced at the foundation
+level. The complete EvidenceGap-to-ProbePlan controller, shared call-site
+integration, live conflict families, and calibration remain M8.6 work.
+
+#### 2.1.2 Active Perception Control
+
+Active perception converts a decision-relevant evidence gap into one bounded,
+read-only probe plan. It is used both in normal observation and as a recovery
+strategy.
+
+~~~text
+PerceptionRequirements
+  -> base coherent epoch
+  -> SourceAssertions
+  -> rule-first arbitration
+  -> EvidenceGap
+  -> ActivePerceptionController
+  -> ProbePlan / ProbeCommand
+  -> PerceptionSession.capture_targeted
+  -> new coherent epoch
+  -> re-arbitrate
+  -> accepted state or safe inconclusive
+~~~
+
+The controller selects probes only after hard gates for relevance, source
+authority, availability, coherence, risk, and budget. It prefers the cheapest
+probe that can close a blocking gap and uses an independent source for material
+conflict. It does not compare numeric confidence across sources without
+calibration.
+
+A probe transport receipt cannot resolve a gap; a new arbitration decision is
+required. Any inspection that changes environment state uses a normal
+ActionContract rather than hiding inside the observer.
+
+The current SourceAssertion, arbiter, ActivePerceptionRequest, and
+capture_targeted path are the foundation. EvidenceGap, probe capability
+registry, ProbePlan/Receipt, normal-path integration, and policy learning are
+M8.6 AR0-AR2 work in
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
 
 ### 2.2 Affordance Layer
 
@@ -400,7 +462,7 @@ Migration status:
 | LM/action and shallow task planning | implemented through PlannerPort and TaskPlannerPort |
 | System1ReflexLibrary grounding cache | grounding cache not migrated; accepted TaskSkill System 1 path implemented |
 | StateAssertion/FusedAssertion conflict gate | implemented as SourceAssertion arbitration |
-| active perception for cross-source conflict | implemented with bounded targeted perception |
+| active perception for cross-source conflict | SourceAssertion request and targeted-capture foundation implemented; complete M8.6 controller/integration planned |
 | explicit System 1 latency/cache metrics | TaskSkill activation/fallthrough/model-call/latency replay metrics implemented; grounding-cache metrics not migrated |
 | regression-gated skills and policies | implemented with stricter acceptance than the old proposal-only path |
 
@@ -445,19 +507,84 @@ Verifier ladder, strongest to weakest:
 Benchmark grading should prefer independent fixture oracles and should not use
 the acting model as the sole authority for success.
 
-### 2.9 Recovery Layer
+### 2.9 Online Recovery Layer
 
-Handles failures through a bounded decision matrix:
+Recovery is a phase-spanning control protocol, not a contract retry helper. Any
+Runtime phase may emit a FailureEnvelope, including phases where proposal,
+snapshot, or ActionContract does not yet exist.
+
+~~~text
+FailureEnvelope
+  -> RecoveryCoordinator
+  -> semantic cascade and effect-status assessment
+  -> RecoveryPlanValidator
+  -> one typed RecoveryCommand
+  -> owning Runtime port
+  -> RecoveryReceipt
+  -> non-empty RecoveryDelta
+  -> Coordinator re-entry
+       or wait / ask / abort
+~~~
+
+Recovery follows this safety-first order:
+
+1. determine whether an external effect may have occurred;
+2. stop on authority violation or duplicate-effect risk;
+3. inspect post-state when effect status is uncertain;
+4. acquire missing facts through reobserve or active perception;
+5. repair intent, context, task plan, or step plan;
+6. reground or reroute using a fresh current candidate;
+7. retry only after confirmed non-dispatch or missing effect and idempotency;
+8. compensate only through a separately authorized and verified contract;
+9. request approval or user information;
+10. abort when no safe changed strategy exists.
+
+| Failure phase | Primary recovery |
+| --- | --- |
+| intake | clarification or new TaskSpec revision |
+| observation / fusion | reobserve, active perception, safe inconclusive |
+| task / step planning | compact context, schema repair, provider policy, replan |
+| proposal validation | bounded repair or replan |
+| grounding / binding | new-epoch reground or reroute |
+| preflight | reobserve and build a new contract |
+| execution not dispatched | fresh reroute or idempotent retry |
+| execution uncertain | inspect post-state before any repeat |
+| verification | stronger evidence, replan, or explicit compensation |
+| skill activation | invalidate and fall through to System 2 |
+
+RecoveryCoordinator chooses but never executes. RunCoordinator applies one
+validated command through PerceptionSession, PlannerContextBuilder, ModelPort,
+IntentCompiler, TaskPlanLifecycle, GeneralistStepPlanner, router,
+ContractBuilder, contract execution, verifier, or parent/user boundary.
+
+Another attempt is accepted only when RecoveryDelta changes evidence,
+assumption, plan, candidate, route, verifier, provider/context, skill use,
+authority, or user input. Exact signatures remain for debugging; semantic
+cascade keys exclude volatile selector, coordinate, mark, target, and backend
+values.
+
+The current RecoveryHandler, FailureSignature, RecoveryIncident,
+RecoveryCascadeDetector, BoundedRecoveryPolicy, inspect-before-repeat, and
+replay-gated artifacts form the lower-half foundation. Phase-general
+FailureEnvelope, RecoveryCommand/Delta/Receipt, pre-contract strategies,
+changed-strategy validation, and unified accepted-profile loading are M8.6
+AR3-AR6 work in
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
+
+The initial recovery matrix remains:
 
 | Failure Class | First Response | Max Attempts | Escalation | Side-Effect Rule |
 | --- | --- | ---: | --- | --- |
 | stale observation | re-observe | 2 | replan | no execution |
-| locator missing | rebuild affordances | 2 | backend fallback | no duplicate side effect |
-| blocking modal | classify modal | 1 | ask or abort | modal action must satisfy policy |
-| timeout | inspect current state | 2 | retry or replan | require idempotency |
-| verifier inconclusive | gather stronger evidence | 2 | ask parent or fail | do not repeat effectful action |
-| capability denied | request approval | 1 | abort | no automatic downgrade |
+| missing/ambiguous evidence | active perception | bounded by probe budget | ask or safe inconclusive | read-only probes only |
+| planner/context failure | compact, repair, or replan | bounded by planning budget | configured provider or ask | no authority change |
+| locator/grounding missing | rebuild candidates | 2 | alternate source/route | fresh contract |
+| blocking modal | classify modal | 1 | ask or abort | modal action passes policy |
+| timeout | inspect current state | 2 | retry or replan | require absent effect and idempotency |
+| verifier inconclusive | gather stronger evidence | 2 | ask or fail | do not repeat effectful action |
+| capability denied | request approval | 1 | abort | no backend bypass |
 | partial side effect | verify current state | 1 | compensate or abort | no blind retry |
+
 
 ### 2.10 Trace and Evaluation Layer
 
@@ -491,6 +618,10 @@ src/affordance_runtime/
   executors.py
   routing.py
   recovery.py
+  active_perception.py        # planned M8.6 bounded probe selection
+  failure_envelope.py         # planned M8.6 phase-general failure contract
+  recovery_coordinator.py     # planned M8.6 changed-strategy decision
+  recovery_commands.py        # planned M8.6 typed command/receipt/delta
   safety.py
   verification.py
   trace.py
@@ -515,6 +646,11 @@ src/affordance_runtime/
 tests/
 docs/
 ```
+
+The four M8.6 files above are planned internal collaborators, not services.
+They reuse the current PerceptionSession, source arbitration, planners, router,
+verifiers, RecoveryHandler, and Coordinator-owned state. They may not create a
+second mutable world model, browser owner, or execution authority.
 
 Possible production expansion, still deferred:
 

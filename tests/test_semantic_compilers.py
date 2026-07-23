@@ -2,11 +2,14 @@ import asyncio
 from dataclasses import dataclass, replace
 from typing import Any
 
+import pytest
+
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
+    GeneralistPlannerProfile,
     _compiled_disclosure_operation,
     _explicit_form_field_obligations,
     _suggestion_selection_obligation,
@@ -527,21 +530,19 @@ def test_disclosure_compiler_falls_through_for_ambiguous_multi_control_request()
     assert _compiled_disclosure_operation(context) is None
 
 
-def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability() -> None:
+def test_strict_default_disables_compatibility_compilers_without_removing_drag() -> None:
     envelope, enabled_state, snapshot = _drag_fixture("Drag Beta down by one position")
     enabled_model = DragProposalModel()
     enabled = asyncio.run(
-        GeneralistLMPlanner(enabled_model).propose(envelope, enabled_state, snapshot)
+        GeneralistLMPlanner(
+            enabled_model,
+            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
+        ).propose(envelope, enabled_state, snapshot)
     )
 
     _, disabled_state, _ = _drag_fixture("Drag Beta down by one position")
     disabled_model = DragProposalModel()
-    disabled = asyncio.run(
-        GeneralistLMPlanner(
-            disabled_model,
-            semantic_compilers=SemanticCompilerRegistry.disabled(),
-        ).propose(envelope, disabled_state, snapshot)
-    )
+    disabled = asyncio.run(GeneralistLMPlanner(disabled_model).propose(envelope, disabled_state, snapshot))
 
     assert enabled.proposal is not None and disabled.proposal is not None
     assert enabled.proposal.action_kind == disabled.proposal.action_kind == PlannerActionKind.DRAG
@@ -549,6 +550,27 @@ def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability()
     assert enabled.proposal.destination_affordance_id == disabled.proposal.destination_affordance_id == "dom_li_3"
     assert enabled_model.calls == 0
     assert disabled_model.calls == 1
+    assert enabled.planner_context["planner_profile"] == "historical-compatibility"
     assert enabled.planner_context["semantic_compiler"]["compiler_id"] == "typed-affordance-semantics-v1"
+    assert disabled.planner_context["planner_profile"] == "strict-generalist"
     assert "semantic_compiler" not in disabled.planner_context
     assert "semantic_constraints" not in disabled.planner_context
+
+
+def test_strict_profile_rejects_a_nonempty_compatibility_registry() -> None:
+    with pytest.raises(ValueError, match="strict-generalist"):
+        GeneralistLMPlanner(
+            DragProposalModel(),
+            semantic_compilers=default_semantic_compiler_registry(),
+        )
+
+
+def test_semantic_registry_digest_is_stable_and_profile_sensitive() -> None:
+    first = default_semantic_compiler_registry()
+    second = default_semantic_compiler_registry()
+    strict = SemanticCompilerRegistry.disabled()
+
+    assert first.digest == second.digest
+    assert first.compiler_ids == second.compiler_ids
+    assert first.digest != strict.digest
+    assert strict.compiler_ids == ()

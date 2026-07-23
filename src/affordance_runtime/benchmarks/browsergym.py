@@ -63,10 +63,13 @@ from affordance_runtime.benchmarks.browsergym_types import (
 from affordance_runtime.generalist_planner import (
     GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
     GENERALIST_PLANNER_PROMPT_VERSION,
+    GeneralistPlannerProfile,
     PlannerProposalCandidate,
+    historical_compatibility_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.runtime import RuntimeStep
+from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -201,6 +204,7 @@ def run_browsergym_miniwob_generalist_suite(
     model_call_timeout_s: float = 10.0,
     max_model_calls: int = 15,
     execution_reserve_s: float = 15.0,
+    planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST,
 ) -> dict[str, Any]:
     """Run the standard MiniWoB matrix through the common GeneralistLMPlanner.
 
@@ -257,6 +261,12 @@ def run_browsergym_miniwob_generalist_suite(
         "schema_version": "browsergym-generalist-checkpoint-v5",
         "run_identity": run_identity,
         "profile": profile,
+        "planner_profile": planner_profile.value,
+        "semantic_compiler_registry_digest": (
+            historical_compatibility_semantic_compiler_registry().digest
+            if planner_profile == GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY
+            else SemanticCompilerRegistry.disabled().digest
+        ),
         "selected_task_ids": list(selected),
         "seeds": list(seeds),
         "model_provider": model.provider,
@@ -315,6 +325,7 @@ def run_browsergym_miniwob_generalist_suite(
                 timeout_s=episode_timeout_s,
                 model_timeout_s=model_call_timeout_s,
                 max_model_calls=max_model_calls,
+                planner_profile=planner_profile,
                 visual_grounder=visual_grounder,
                 visual_region_proposer=visual_region_proposer,
             )
@@ -350,6 +361,7 @@ def run_browsergym_miniwob_generalist_suite(
     report.update(
         {
             "planner_boundary": "GeneralistLMPlanner",
+            "planner_profile": planner_profile.value,
             "model_provider": model.provider,
             "model_name": model.model,
             "model_endpoint_class": model.endpoint_class,
@@ -364,9 +376,11 @@ def run_browsergym_miniwob_generalist_suite(
             ),
         }
     )
-    report["official_score_claimed"] = bool(
-        profile == "nightly" and report["run_complete"] and not report["acceptance_errors"]
-    )
+    # M8.2B score promotion is paused behind M8.6. Keep the external reward in
+    # the report, but do not turn even a complete strict nightly into a product
+    # capability claim while governance/generalization gates remain open.
+    report["official_score_claimed"] = False
+    report["score_promotion_gate"] = "m8.6-open"
     report["batch_status"] = (
         "complete" if report["run_complete"] else ("incomplete_diagnostic" if profile == "diagnostic" else "incomplete")
     )

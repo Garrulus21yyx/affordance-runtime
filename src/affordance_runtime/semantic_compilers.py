@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
@@ -158,6 +160,23 @@ class SemanticCompilerRegistry:
             )
         return None
 
+    @property
+    def digest(self) -> str:
+        """Return a stable identity for reporting and immutable-run checks."""
+
+        payload = {
+            "rules": [_rule_identity(item) for item in self.rules],
+            "constraint_rules": [_rule_identity(item) for item in self.constraint_rules],
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+    @property
+    def compiler_ids(self) -> tuple[str, ...]:
+        return tuple(item.compiler_id for item in self.rules) + tuple(
+            item.compiler_id for item in self.constraint_rules
+        )
+
     @classmethod
     def disabled(cls) -> "SemanticCompilerRegistry":
         return cls()
@@ -173,3 +192,26 @@ def _required_state_present(
         for key in getattr(affordance, "state", {})
     }
     return set(required_state_keys).issubset(available)
+
+
+def _rule_identity(rule: SemanticCompilerRule | SemanticConstraintRule) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "compiler_id": rule.compiler_id,
+        "applicability_description": rule.applicability_description,
+        "evidence": {
+            "required_state_keys": rule.evidence.required_state_keys,
+            "output_action_kinds": rule.evidence.output_action_kinds,
+            "verifier_requirements": rule.evidence.verifier_requirements,
+            "negative_examples": rule.evidence.negative_examples,
+            "source": rule.evidence.source,
+            "version": rule.evidence.version,
+        },
+    }
+    if isinstance(rule, SemanticCompilerRule):
+        payload.update(
+            {
+                "supported_intents": rule.supported_intents,
+                "operation_classes": rule.operation_classes,
+            }
+        )
+    return payload

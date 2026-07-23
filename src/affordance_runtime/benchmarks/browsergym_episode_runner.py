@@ -47,6 +47,7 @@ from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordi
 from affordance_runtime.generalist_planner import (
     GENERALIST_PLANNER_PROMPT_VERSION,
     GeneralistLMPlanner,
+    GeneralistPlannerProfile,
     PlannerLimits,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
@@ -146,6 +147,7 @@ class BrowserGymGeneralistPlanner:
     config: ModelConfig
     limits: PlannerLimits = field(default_factory=PlannerLimits)
     max_model_calls: int = 15
+    planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST
     _planner: GeneralistLMPlanner = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -155,6 +157,7 @@ class BrowserGymGeneralistPlanner:
             config=self.config,
             max_model_calls=self.max_model_calls,
             allow_finish=False,
+            planner_profile=self.planner_profile,
         )
 
     @property
@@ -577,6 +580,7 @@ def run_browsergym_generalist_episode(
     max_steps: int = 50,
     model_timeout_s: float = 10.0,
     max_model_calls: int = 15,
+    planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST,
     visual_grounder: VisualGrounderPort | None = None,
     visual_region_proposer: VisualRegionProposerPort | None = None,
 ) -> BrowserGymEpisodeResult:
@@ -611,10 +615,14 @@ def run_browsergym_generalist_episode(
             task_id=run_id,
             revision=1,
             objective=goal,
+            # Operation classification is still an open G2 intent-boundary
+            # item. Preserve the historical sandbox classification until the
+            # runner consumes a validated IntentDraft; do not infer authority
+            # from benchmark identity or task grammar here.
             operation_class=OperationClass.READ_ONLY,
-            targets=(task_id,),
-            success_criteria=("official BrowserGym environment terminates with positive reward",),
-            evidence_requirements=("official reward and termination",),
+            targets=(),
+            success_criteria=("the requested effect is observed in the current environment",),
+            evidence_requirements=("fresh post-action environment state",),
             source_request_ref=f"browsergym:{task_id}:seed:{seed}",
         )
         perception_requirements = derive_perception_requirements(task_spec)
@@ -634,6 +642,7 @@ def run_browsergym_generalist_episode(
             ),
             limits=planner_limits,
             max_model_calls=max_model_calls,
+            planner_profile=planner_profile,
         )
         result = RunCoordinator(
             observer=BrowserGymObserver(
@@ -717,6 +726,7 @@ def _generalist_episode_worker(
     artifact_root: str,
     model_timeout_s: float,
     max_model_calls: int,
+    planner_profile: GeneralistPlannerProfile,
     visual_grounder: VisualGrounderPort | None,
     visual_region_proposer: VisualRegionProposerPort | None,
 ) -> None:
@@ -745,6 +755,7 @@ def _generalist_episode_worker(
             artifact_root=Path(artifact_root),
             model_timeout_s=model_timeout_s,
             max_model_calls=max_model_calls,
+            planner_profile=planner_profile,
             visual_grounder=visual_grounder,
             visual_region_proposer=visual_region_proposer,
         )
@@ -789,6 +800,7 @@ def run_browsergym_generalist_episode_isolated(
     timeout_s: float,
     model_timeout_s: float,
     max_model_calls: int,
+    planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST,
     visual_grounder: VisualGrounderPort | None = None,
     visual_region_proposer: VisualRegionProposerPort | None = None,
 ) -> BrowserGymEpisodeResult:
@@ -807,6 +819,7 @@ def run_browsergym_generalist_episode_isolated(
             "artifact_root": str(artifact_root),
             "model_timeout_s": model_timeout_s,
             "max_model_calls": max_model_calls,
+            "planner_profile": planner_profile,
             "visual_grounder": visual_grounder,
             "visual_region_proposer": visual_region_proposer,
         },

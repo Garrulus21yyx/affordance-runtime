@@ -5,6 +5,18 @@ milestone claims, and benchmark-driven repair work. When another current-plan
 document is ambiguous, this boundary takes precedence. It does not override the
 explicitly deferred production blueprint.
 
+The [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md)
+is jointly normative. It extends this file from source-level restrictions to
+behavioral restrictions on prompts, semantic compilers, skills, planner
+profiles, and benchmark-driven repair. A benchmark is an architecture auditor,
+not the product objective.
+
+The
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md)
+is also normative for M8.6. It defines how missing evidence is repaired before
+effects, how phase-general failures become typed recovery commands, and how the
+single Coordinator retains authority.
+
 ## 1. Decision
 
 Affordance Runtime is the product. BrowserGym, MiniWoB++, WorkArena, ScreenSpot,
@@ -43,14 +55,17 @@ The following responsibilities belong to Runtime core or generic Runtime ports:
 
 - task and subgoal semantics;
 - perception requirements and observation orchestration;
-- source provenance, freshness, conflict, and active-perception requests;
+- source provenance, freshness, conflict, typed evidence gaps, and bounded
+  active-perception probes;
 - semantic target identity and multi-source candidate alignment;
 - typed DOM, accessibility, SVG, SoM, pure-visual, WoT, and API candidates;
 - route hard gates, verifier-backed calibration, and safe fallback;
 - gesture invariants and candidate-to-contract binding;
 - capability, approval, preflight, and uncertain-effect inspection;
 - criteria-bound postcondition verification;
-- recovery incidents, bounded cascade decisions, and System 1/2 fallthrough;
+- phase-general FailureEnvelope, changed-strategy RecoveryCommand,
+  RecoveryReceipt, RecoveryDelta, bounded cascade decisions, and System 1/2
+  fallthrough;
 - canonical trace, trace-to-skill normalization, replay, and acceptance.
 
 BrowserGym-specific code is limited to:
@@ -87,6 +102,19 @@ DOM/visual/WoT adapters:
 Rule-first behavior is allowed only when it expresses an environment-independent
 semantic capability, is registered through a generic rule interface, declares
 its applicability and evidence, and passes non-benchmark negative controls.
+
+This prohibition is behavioral. A shared or generalist module still violates
+the boundary when it recognizes benchmark-shaped instruction grammar and emits
+the task family's expected action sequence. Calendar, autocomplete, quantity,
+sorting, hierarchy, disclosure, form, copy, social, or drag programs are not
+general merely because they omit suite ids.
+
+Rules must prove typed applicability with paraphrases, distractors, ambiguity,
+and unrelated-interface negative controls. They must not expand requested
+scope, expose an unrequested terminal, or complete an obligation from task
+shape rather than current verifier evidence. Renaming a solver as a semantic
+compiler, heuristic, System 1 rule, or skill does not exempt it from this
+boundary.
 
 ## 4. Benchmark Failure Promotion Protocol
 
@@ -150,6 +178,16 @@ semantic compiler interface and declare:
 Rules that mention benchmark families remain in benchmark profiles and do not
 count as Runtime capability.
 
+The default product and scored profile is strict-generalist. Its deterministic
+registry is limited to protocol/schema normalization, standards-based control
+semantics, safety/authority rules, and accepted regression-gated skills.
+Benchmark-shaped compilers must be absent.
+
+Historical compatibility behavior may remain only in an explicitly named
+compatibility profile. Its results are reported separately and cannot support a
+generalist claim. Static source scans are insufficient; behavioral
+anti-specialization tests are required.
+
 ## 7. Perception and Routing Boundary
 
 TaskSpec or active SubgoalSpec derives PerceptionRequirements. The Coordinator
@@ -194,12 +232,13 @@ post-observation, and verification.
 | --- | --- | --- |
 | Core contracts | typed invariants and immutable attempt state | benchmark package types or action syntax |
 | Generic adapters | standards-based source normalization | MiniWoB task-family solvers |
-| Perception | task-aware source acquisition and provenance | task completion decisions |
+| Perception | task-aware source acquisition, evidence-gap repair, and provenance | task completion decisions or hidden effectful probes |
+| Active perception | cheapest permitted read-only probe and new coherent epoch | action planning, authority changes, or mutation of an old snapshot |
 | Planner | semantic intent and outcome proposals | selectors, coordinates, authority, or execution |
 | ContractBuilder | candidate binding and fresh attempt contract | free-form task reasoning |
 | Coordinator | authoritative serial state transitions | benchmark episode policy |
 | Verifier | criteria-bound independent evidence | official reward as sole truth |
-| Recovery | bounded inspect/reobserve/reroute/replan/abort | benchmark-family retries |
+| Recovery | phase-general changed-strategy inspect/reobserve/replan/reground/reroute/verify/ask/abort | benchmark-family retries, direct execution, or blind effectful repeat |
 | Evolution | trace-derived proposals and regression gate | immediate online self-modification |
 | BrowserGym adapter | observation/action/reward translation | replacement Runtime architecture |
 
@@ -215,6 +254,9 @@ Every pull request touching benchmark reliability must answer:
 6. Does the patch preserve contract, policy, preflight, verification, and trace?
 7. Is the benchmark result diagnostic, targeted, nightly, or release evidence?
 
+8. Would the behavior remain correct under paraphrase, distractors, and extra controls?
+9. Does the rule encode a task grammar or expose an effect the user did not request?
+10. Is the benchmark being used as an auditor rather than the repair objective?
 A milestone may be marked done only when its declared generic Runtime path is
 wired into a normal entrypoint and has reproducible evidence from the current
 immutable revision.

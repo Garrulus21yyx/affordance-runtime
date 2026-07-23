@@ -1,17 +1,22 @@
 # Current Implementation Plan
 
-Implementation status: M0-M8.1, M8.2A, M8.3, M8.4, and M8.5 are complete for
-the controlled web profile. M8.2B remains in progress. See
-[Implementation Status and Forward Gates](implementation-status.md) and the
-[Current Architecture Audit](current-architecture-audit-20260722.md). The
-Runtime-first R1-R8 sequence is complete. R8 module containment after semantic
-stabilization is closed; stateless TaskPlanLifecycle, PerceptionSession,
-ContractExecutionLoop, and RecoveryHandler collaborators are now extracted.
-The generalist PlannerContextBuilder is also separated from LM and compiler
-logic. BrowserGym observation, encoding, and one-episode/process-isolation
-components are now separated from suite/report orchestration. M8.2B remains
-open for release capability and separately provisioned
-public suites. M9 remains
+Implementation status: the controlled harness components through M8.5 exist,
+but default-planner generalization, active-perception control, and full-phase
+online recovery are reopened under M8.6. M8.2B score promotion is paused. See
+[Implementation Status and Forward Gates](implementation-status.md),
+[Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
+and the [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
+
+Runtime-first R1-R8 remains valid component and containment evidence.
+TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
+PlannerContextBuilder, and BrowserGym adapter splits are retained. They do not
+prove that the default planner is strict-generalist or that all pre-contract
+failures enter Recovery Cascade.
+
+The historical R9 and post-R9 slices below are preserved as diagnosis and
+revision evidence only. Their task-family repair instructions are superseded by
+M8.6 and must not authorize additional default semantic compilers. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
@@ -152,6 +157,178 @@ matches. Multiple exact matches or no remaining disclosure retain System 2
 fallthrough. Add generic near-match, exact-match, and ambiguity controls before
 repeating the failed seeds and full family.
 
+## 0. M8.6 Governance Correction Gate - in progress
+
+This section overrides the historical task-family repair narrative above. The
+current implementation objective is not another BrowserGym family pass. It is
+to make the default Runtime path general, behaviorally bounded, and recoverable
+from every phase.
+
+### 0.1 Current diagnosis
+
+- the default GeneralistLMPlanner invokes task-shaped semantic compilers before
+  the model and can behave as a benchmark task-family dispatcher;
+- source scans for task ids do not catch this soft specialization;
+- planner-facing BrowserGym tasks can contain audit identity and an incorrect
+  blanket read-only operation class;
+- the normal BrowserGym path does not instantiate the optional task planner;
+- planner exception, invalid proposal, binding failure, context degradation, and
+  no-affordance states do not consistently enter Recovery Cascade;
+- the existing cascade and evolution path is strongest after a contract exists;
+- ordinary benchmark failure is repaired too early instead of completing the
+  matrix, clustering failures, and selecting an architecture-level fix.
+
+### 0.2 Mandatory boundary
+
+Benchmark is an architecture auditor. It is not the planner specification,
+product objective, or first-order repair target.
+
+A strict-generalist default profile may contain only standards-based semantics,
+protocol/schema normalization, safety and authority policy, and accepted
+regression-gated skills. Benchmark-shaped task grammar belongs in an explicitly
+named compatibility profile or is removed.
+
+No rule, prompt, compiler, skill, or planner branch is accepted merely because
+it omits task ids. Behavioral paraphrase, distractor, ambiguity, scope, and
+unrequested-effect tests are mandatory.
+
+### 0.3 Ordered implementation
+
+#### G0: Freeze evidence and profile identity
+
+1. preserve current score reports with immutable revision and active profile;
+2. inventory compiler, prompt, model, skill, policy, and recovery digests;
+3. label each rule as standards, safety, accepted skill, compatibility, or
+   suspected task grammar;
+4. stop score promotion and new family-specific repair.
+
+Status on 2026-07-23: **in progress**. The clean R10 300-episode report at
+`bb65ac6` is frozen and retrospectively classified as historical compatibility
+evidence in
+`evidence/m8.6-g0-r10-compatibility-freeze-20260723.md`; it is not a current
+generalist score. New checkpoints bind explicit planner profile and compiler
+registry digest, and all score claims remain disabled while M8.6 is open. Older
+reports still require inventory/classification before G0 closes.
+
+#### G1: Strict-generalist planner
+
+1. create explicit strict-generalist and compatibility profiles;
+2. remove task-family compilers from the strict registry;
+3. enforce typed compiler applicability metadata;
+4. apply one PlanValidator to deterministic, LM, parent-agent, skill, and
+   recovery proposals;
+5. add failing governance probes before implementation;
+6. prove non-BrowserGym Web, visual, and WoT behavior.
+
+Status on 2026-07-23: **in progress**. `strict-generalist` is now the default;
+the task-shaped compiler registry requires explicit
+`historical-compatibility`, and a strict planner rejects a non-empty
+compatibility registry. Governance tests cover default isolation, profile
+identity, registry digests, and task-id removal from planner context. G1 remains
+open for the mandatory shared PlanValidator boundary, the full behavioral
+anti-cheating matrix, physical containment/removal of dormant compatibility
+algorithms, and non-BrowserGym Web/visual/WoT proof.
+
+#### G2: Honest intent and task planning
+
+1. keep IntentCompiler, TaskPlanRouter, GeneralistStepPlanner, grounding, and
+   contract binding as separate responsibilities;
+2. derive operation class, constraints, and capabilities from typed intent;
+3. keep simple tasks flat;
+4. use an accepted TaskSkill or validated shallow LM plan only for real
+   multi-stage work;
+5. wire the same router into reference, parent-agent, and benchmark entrypoints;
+6. remove suite identity and reward from planner context.
+
+Status on 2026-07-23: **started, not closed**. Planner-facing summaries no
+longer contain `task_id`, and the BrowserGym Runtime TaskSpec no longer uses a
+suite task id as a semantic target or official reward wording as success
+evidence. The runner deliberately retains its historical blanket read-only
+classification until a validated IntentDraft owns operation/capability
+derivation; substituting another blanket class would not satisfy G2. TaskPlan
+router integration and typed intent derivation remain pending.
+
+#### G2.5: Active perception and evidence repair
+
+1. freeze typed EvidenceGap, ProbeCapability, ProbePlan, ProbeReceipt, and
+   PerceptionResolution contracts;
+2. add one ActivePerceptionController above the existing PerceptionSession,
+   SourceAssertion arbitration, and targeted capture primitives;
+3. derive the gap from TaskSpec/SubgoalSpec evidence requirements, conflict,
+   freshness, uniqueness, verifier needs, and action risk;
+4. select the minimum-cost permitted read-only probe across DOM, accessibility,
+   SVG, screenshot, OCR, SoM, pure visual, WoT, API, wait, and refresh;
+5. place probe output into a new coherent observation epoch and rerun
+   arbitration; never mutate an old snapshot in place;
+6. integrate the controller into normal observation, high-risk preflight,
+   inconclusive verification, and recovery commands;
+7. stop safely when the evidence remains insufficient or a safety-relevant
+   conflict survives the probe budget.
+
+Exit when a structural task stays on the cheap DOM/accessibility path, a
+visual/spatial task requests visual evidence without first failing an action, an
+injected source conflict is resolved by a bounded targeted probe, and an
+irreducible conflict blocks an effectful contract.
+
+#### G3: Full-phase Recovery Coordinator
+
+G3 begins after G2.5 contracts and normal-path integration are stable. Recovery
+may request active perception for a typed evidence gap, but it does not own
+observation, infer missing facts, or execute the resulting action directly.
+
+1. define one FailureEnvelope for intake, observation, fusion, task planning,
+   step planning, proposal validation, grounding/binding, preflight, execution,
+   verification, provider/context, and skill activation;
+2. add semantic cascade matching in addition to exact debug signatures;
+3. require every retry to change observation, assumption, subgoal, candidate,
+   route, verifier, provider/context, skill use, or user information;
+4. load accepted recovery profiles explicitly;
+5. preserve inspect-before-repeat and effect uncertainty;
+6. ask the user or abort when no safe change exists.
+
+#### G4: Complete-run benchmark audit
+
+1. continue after ordinary task failures;
+2. fail fast only for safety, result corruption, non-comparable environment,
+   profile-wide infrastructure/provider invalidation, or isolation failure;
+3. persist partial results and resume only unobserved cases;
+4. cluster by Runtime phase and semantic failure family before repair;
+5. reproduce and fix outside the benchmark first;
+6. use targeted and breadth replay only as confirmation.
+
+#### G5: Generalization evidence
+
+Report strict-generalist, strict-generalist plus accepted skills, historical
+compatibility, and ablation profiles separately. Required controls include
+unseen local interfaces, paraphrases, distractors, ambiguity, extra controls,
+DOM/accessibility/SVG/visual/WoT sources, provider/context stress, recovery
+injection, and external suites after independent provisioning.
+
+### 0.4 Exit criteria
+
+M8.6 closes only when:
+
+- benchmark identity leak into planner context is zero;
+- known negative probes do not trigger unrequested actions or scope expansion;
+- the strict profile contains no benchmark task grammar;
+- every proposal source passes PlanValidator;
+- simple and multi-stage local tasks use the declared task-plan chain;
+- every targeted probe is read-only, budgeted, task-relevant, and produces a
+  new coherent observation epoch;
+- normal, preflight, verification, and recovery paths share one active
+  perception controller rather than hidden source-specific retries;
+- representative failures from every Runtime phase enter one Recovery
+  Coordinator;
+- repeated equivalent failure changes strategy or stops before budget
+  exhaustion;
+- uncertain effects are inspected before repeat and duplicate effect count is
+  zero;
+- one complete diagnostic matrix is clustered before any repair;
+- non-benchmark conformance and safety evidence precede benchmark replay;
+- README, status, and reports identify exact revision and active profile.
+
+M8.2B remains paused until these criteria are met.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is
@@ -163,11 +340,16 @@ release requirements. When the two documents differ, this implementation plan
 wins until a production feature is explicitly promoted through the decision
 gate in the main [Project Plan](project-plan.md).
 
-The [Runtime-First Architecture Boundary](runtime-first-boundary.md) is
-normative for module ownership and benchmark-driven work. BrowserGym is an
-external adapter and evaluation consumer. No benchmark task family, selector,
-coordinate, authored answer, or fixture-specific semantic solver may enter the
-generic Runtime core, shared adapters, or generalist planner.
+The [Runtime-First Architecture Boundary](runtime-first-boundary.md) and
+[Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md)
+are jointly normative. BrowserGym is an external adapter and evaluation
+consumer.
+
+No benchmark task family, selector, coordinate, authored answer,
+fixture-specific semantic solver, or behaviorally equivalent task-grammar
+compiler may enter the strict-generalist Runtime path. Static source scans are
+not sufficient. Planner behavior must pass paraphrase, distractor, ambiguity,
+scope, and unrequested-effect controls before benchmark confirmation.
 
 The governing strategy is:
 
@@ -774,9 +956,16 @@ benchmark matching the host report on every stable outcome/oracle field, and
 DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Generalist Planning and Public Benchmark Expansion - in progress
+### M8.2: Planner Contracts and Public Benchmark Audit - paused behind M8.6
 
-#### M8.2A: Task Intake and Generalist Planner - done
+#### M8.2A: Task Intake and Planner Contracts - component done; behavior reopened
+
+The schemas and contract boundaries below are retained. The default
+GeneralistLMPlanner and compiler registry are not accepted as generalization
+proof until M8.6 isolates task-family behavior and passes behavioral controls.
+All later task-family narratives in this M8.2 section are historical evidence,
+not authorized current work. The current implementation order is Section 0
+G0-G5.
 
 Implement the schemas and gates in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -1010,7 +1199,7 @@ semantic verification, no-progress guard, and provider preflight
   -> WorkArena when authorized access is available
 ```
 
-### M8.3: Recovery-Cascade Evolution - done
+### M8.3: Recovery-Cascade Components - partial; full-phase integration in M8.6
 
 - normalize a `FailureSignature` from phase, error, action/backend, target,
   verifier, and relevant state revision
@@ -1035,7 +1224,7 @@ cascades to depth one, preserves the successful global path, explicitly
 observes uncertain effect before failing safe, persists acceptance, and is
 removed by a verified rollback. See `evidence/m8.3-07e406f.md`.
 
-### M8.4: Adaptive Shallow Task Planning - done
+### M8.4: Adaptive Shallow Task Planning - component done
 
 Implement the bounded design in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -1082,7 +1271,7 @@ This milestone does not add recursive hierarchy, parallel effectful subgoals, a
 generic DAG scheduler, one agent per node, continuous watching, or a runtime
 framework dependency.
 
-### M8.5: Unified Adaptive Routing and Skill Internalization - done
+### M8.5: Unified Adaptive Routing and Skill Internalization - component done
 
 Objective: promote the current shared execution shell into one adaptive decision
 plane. The same semantic target may have DOM, accessibility, SoM, pure-visual,
@@ -1500,8 +1689,12 @@ distributed workflow engine, or simultaneous effectful control of one session.
 ### M8.5R: Runtime-First Completion Sequence
 
 This sequence is mandatory before further benchmark-family repair is promoted
-as architecture work. The detailed findings and gates are maintained in
-`current-architecture-audit-20260722.md`.
+as architecture work. The detailed historical findings and gates are maintained
+in `current-architecture-audit-20260722.md`.
+
+R1-R8 remain component evidence. M8.6 supersedes this sequence for default
+planner governance, benchmark identity isolation, normal TaskPlan wiring, and
+full-phase Recovery Coordinator integration.
 
 1. **Criteria-bound progress — complete:** one CriteriaEvidenceMatcher now
    governs SubgoalSpec, SkillStep, and plan/skill completion; it rejects
@@ -1649,6 +1842,15 @@ BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
 milestone. The benchmark remains an external pressure test of the Runtime main
 path.
 
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - in progress
+
+The authoritative execution sequence and exit gates are in Section 0,
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
+and the
+[Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
+This milestone supersedes benchmark-family repair as the current work order.
+M8.2B score promotion remains paused until G0-G5 close.
+
 ### M9: Durable Single-Run Recovery - conditional
 
 Promote only after restart, approval-wait, or uncertain-effect tests expose a
@@ -1790,6 +1992,11 @@ authority is introduced.
 
 #### G2: Environment Truth and Transition Evidence
 
+This historical governance section is now governed by
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
+Its foundations are retained, but M8.6 G2.5 defines the completion boundary and
+execution order.
+
 - add sourced assertions with provenance, timestamp, confidence, and artifact
   references where multi-source reasoning is needed;
 - add rule-first conflict arbitration and targeted active perception;
@@ -1799,9 +2006,13 @@ authority is introduced.
 - extend real WoT discovery without making it the primary product line.
 
 Current status: DOM, visual, and WoT adapters already share the Affordance,
-Action Contract, Coordinator, verifier, and trace path. The explicit
-SourceAssertion/FusedAssertion conflict gate, active perception, reflex cache,
-and dual-process escalation policy are not currently implemented.
+Action Contract, Coordinator, verifier, and trace path. SourceAssertion,
+FusedAssertion, rule-first arbitration, ActivePerceptionRequest, and targeted
+capture foundations are implemented. The missing current layer is one complete
+ActivePerceptionController with typed probe plan/receipt, coherent-epoch
+replacement, normal/preflight/verification/recovery integration, and shared
+budget/trace policy. The gated reflex cache exists as a component; strict
+profile integration and held-out calibration remain M8.6 evidence work.
 
 ##### G2A: Sourced Assertions and Rule-First Arbitration
 

@@ -20,15 +20,26 @@ observations, encode validated Runtime actions, and collect official results; it
 must not become a replacement planner, perception stack, verifier, recovery
 engine, or learning system.
 
-The repository implements M0-M8.1, M8.2A, M8.3, and M8.4 of the controlled web
-profile. M8.2B public benchmark expansion is in progress. M8.4 includes
-criteria-bound progress, context-rich replanning, monotonic plan lineage, and
-an optional real reference-app entrypoint.
-M8.5 route, gesture, fallback, and skill components exist. Runtime-first R3 now
-provides generic task/subgoal-aware multimodal perception, coherent epochs,
-ordinary sourced assertions, targeted reobservation, and verified
-DOM-to-visual escalation. Verifier-calibrated routing, canonical trace-to-skill
-mining, and broader de-specialization remain in progress.
+The stricter
+[Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)
+also governs planner rules, prompts, semantic compilers, skills, tests, and
+benchmark-driven repair work. A benchmark is an auditor of Runtime robustness
+and generalization, not the product objective. Behavioral task-template solvers
+are prohibited even when they avoid benchmark ids and are placed in a shared
+generalist module.
+
+The repository implements the controlled harness components through M8.5, but
+the behavior of the default generalist planner, active-perception control, and
+the phase coverage of online recovery are reopened under M8.6. Existing M8.2A,
+M8.3, and M8.5 evidence proves typed boundaries, source-arbitration foundations,
+and lower-half recovery components; it does not yet prove a robust open-world
+planner, complete evidence-gap controller, or full-phase Recovery Coordinator.
+
+M8.2B public benchmark score promotion is paused behind M8.6. Historical smoke,
+PR, nightly, and release reports remain evidence for their exact revisions and
+profiles, but they are not proof of strict-generalist capability. Benchmark work
+must audit Runtime generalization rather than add task-family behavior to the
+default planner.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -130,11 +141,15 @@ Verified evidence:
   unrelated, partial, stale, weak, or unbound evidence cannot advance generic
   Subgoal or TaskSkill progress
 
-Next architecture gate: remove benchmark semantics from shared modules under
-R5, then complete canonical trace mining/profile loading. After those generic
-gates, freeze the immutable revision and rerun BrowserGym smoke, PR, nightly,
-and residual release matrices. M9 remains conditional on restart/waiting
-evidence.
+Next architecture gate: complete M8.6. Introduce a strict-generalist default
+profile, isolate historical task-family compatibility logic, remove benchmark
+identity from planner context, wire the shallow TaskPlan router into normal
+entrypoints, complete bounded active perception over typed evidence gaps, and
+extend Recovery Cascade across intake, observation, planning, binding,
+provider/context, execution, and verification failures. Only after
+non-benchmark behavioral and safety gates pass may BrowserGym and public suites
+resume as architecture audits. M9 remains conditional on measured
+restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -146,6 +161,8 @@ Explicitly deferred beyond the current profile:
 ## Documents
 
 - [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md)
+- [Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)
+- [Planner, Recovery, and Benchmark Governance Audit - 2026-07-23](docs/planner-recovery-governance-audit-20260723.md)
 - [Current Architecture Audit - 2026-07-22](docs/current-architecture-audit-20260722.md)
 - [Project Plan](docs/project-plan.md)
 - [Implementation Status and Forward Gates](docs/implementation-status.md)
@@ -153,6 +170,7 @@ Explicitly deferred beyond the current profile:
 - [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
 - [Design Freeze and Implementation Gates](docs/design-freeze.md)
 - [Architecture](docs/architecture.md)
+- [Active Perception and Online Recovery Architecture](docs/active-perception-and-online-recovery.md)
 - [Task Intake and Generalist Planner](docs/task-intake-and-planner.md)
 - [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)
 - [Harness Evolution](docs/harness-evolution.md)

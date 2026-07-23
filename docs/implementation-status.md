@@ -26,11 +26,12 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Generalist Planner | done | typed intake/revision, semantic proposal boundary, Mistral controlled compiler + local SaaS gates, common cross-surface planner tests, and official BrowserGym smoke at `7edaa97`/`508486b` | none; M8.2B remains separate |
-| M8.2B Public Benchmark Expansion | in_progress | clean `7e1c7db` passes smoke 6/6, PR 18/18, diagnostic 30/30, and frozen nightly 300/300; its complete residual release observes 625/625 at 402/625 success and retains 223 cross-layer failure envelopes. R9 clean `7d0ada0` closes native-label, multi-field exact-value, and typed prefix/suggestion residuals through family 10/10, PR 18/18, diagnostic 30/30, and a replacement frozen nightly 300/300 | select the next cross-task generic capability boundary from the frozen residual release; improve trace-derived family taxonomy; provisioned ScreenSpot/WebArena/WASP/WorkArena remain separate gates |
-| M8.3 Recovery-Cascade Evolution | done | online incident/loop detection plus quarantined, replayed, accepted, persisted, and rolled-back recovery policy at `07e406f` | none |
-| M8.4 Adaptive Shallow Task Planning | done | criteria-bound progress, bounded TaskPlanningContext, evidence-aware replanning, monotonic lineage, verified-progress preservation, controlled ablation, and real Chromium reference entrypoint | none |
-| M8.5 Unified Adaptive Routing and Skill Internalization | done | Runtime-first R1-R6 cover criteria-bound progress, task-aware perception, target-specific routing, Core gesture binding, safe fallback, R5 de-specialization, canonical cross-run TaskSkill mining, digest-bound replay, accepted TaskSkill/RecoverySkill loading, fallthrough, and rollback | none; public benchmark promotion remains M8.2B/R7 evidence |
+| M8.2A Task Intake and Planner Contracts | partial | typed intake/revision, semantic proposal boundary, provider-neutral ports, local SaaS and cross-surface evidence | strict-generalist behavior, compiler isolation, behavioral controls, and normal task-plan wiring move to M8.6 |
+| M8.2B Public Benchmark Audit | paused | historical smoke, PR, nightly 300/300, and residual release reports remain exact revision/profile evidence | no score promotion until M8.6; provisioned public suites remain later audit gates |
+| M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
+| M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
+| M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | normative anti-specialization boundary, active-perception/recovery architecture, and 2026-07-23 audit | G0-G5: profile isolation, planner repair, evidence-gap control, full-phase recovery, complete-run audit, generalization proof |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -144,12 +145,12 @@ evidence, and traces. See `evidence/m8.1-40fd93b.md`.
 
 ### M8.2A Task Intake and Generalist Planner
 
-Done. `UserRequest` compiles through a sourced `IntentDraft` and deterministic
-policy gate into immutable versioned `TaskSpec`; `GeneralistLMPlanner` emits a
-semantic `PlannerProposal`, and `ContractBuilder` is the sole executable
-binding boundary. Provider-neutral local/remote profiles, fallback-safe model
-manifests, compiler/planner/runtime failure attribution, clarification
-revisions, and full trace lineage are implemented.
+Contract boundary done; default behavior reopened. UserRequest, IntentDraft,
+immutable TaskSpec, semantic PlannerProposal, ContractBuilder, provider-neutral
+ports, clarification revisions, and trace lineage exist. The 2026-07-23 audit
+shows that the default compiler registry can still behave as task-family
+programs and therefore does not yet prove strict-generalist planning. Profile
+isolation and behavioral controls move to M8.6.
 
 At `7edaa97`, Mistral completed controlled intent compilation plus verified
 pricing read-only, settings reversible-write, and approval-gated report export
@@ -157,7 +158,7 @@ paths. The same planner class is tested across DOM/SoM/WoT affordances and
 passed an official BrowserGym `click-button` smoke through typed action binding.
 See `evidence/m8.2a-7edaa97.md`.
 
-### M8.2B Public Benchmark Expansion
+### M8.2B Public Benchmark Audit - paused behind M8.6
 
 The isolated BrowserGym 0.14.3 adapter routes every supported action through
 `RunCoordinator`, exposes a typed action whitelist, discovers 125 registered
@@ -198,13 +199,13 @@ gates, not zero-score results; no dependency install, credential lookup, or
 remote benchmark request was made.
 
 The v109 clean immutable 30x10 nightly completed 300/300 and exposed one
-acceptance error plus two execution failures. Trace-derived generic repairs and
-the hierarchy-scope follow-up passed their family, PR, and breadth ladders. The
-replacement clean v112 nightly then passed 300/300 at official success/reward
-1.0 with `official_score_claimed=true` and no error/failure cluster. The local
-frozen nightly gate is closed; release and provisioned external suites remain.
+acceptance error plus two execution failures. The replacement v112 nightly
+passed 300/300 for its exact revision and active compiler profile. These are
+historical compatibility and diagnostic results, not proof of a
+strict-generalist planner. New score promotion is paused until M8.6 closes;
+release and provisioned external suites remain later audit gates.
 
-### M8.3 Recovery-Cascade Evolution — done
+### M8.3 Recovery-Cascade Components - partial
 
 Clean commit `07e406f` groups attempts under normalized failure signatures,
 preserves root failure and symptoms, and detects repeated signatures,
@@ -219,7 +220,7 @@ original/family replays to depth one, passed global and uncertain-effect safety
 smoke with no blind retry, persisted acceptance, and proved rollback. See
 `evidence/m8.3-07e406f.md`.
 
-### M8.4 Adaptive Shallow Task Planning - done
+### M8.4 Adaptive Shallow Task Planning - component done
 
 `TaskPlan`/`SubgoalSpec`, `PlanProgress`, deterministic validation, the
 rule/LLM planner router, Coordinator sequencing, and controlled
@@ -236,7 +237,7 @@ Chromium. See `evidence/runtime-r2-task-planning-context-20260722.md`,
 `evidence/m8.4-task-planning-ablation.md`, and
 `current-architecture-audit-20260722.md` for the remaining completion gates.
 
-### M8.5 Unified Adaptive Routing and Skill Internalization - done
+### M8.5 Unified Adaptive Routing and Skill Internalization - component done
 
 Typed candidates, unified routes, Core dual-target gesture contracts, fresh
 fallback contracts, inspect-before-repeat, visual/DOM/WoT component proofs,
@@ -254,6 +255,45 @@ R4 evidence: `evidence/runtime-r4-verifier-calibrated-routing-20260722.md`.
 Follow M8.5R in `current-implementation-plan.md` and the normative
 `runtime-first-boundary.md`. The prior completion audit is component evidence,
 not milestone closure.
+
+### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - in progress
+
+M8.6 is the hard gate before any M8.2B score promotion. The governing documents
+are:
+
+- [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md);
+- [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md);
+- [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
+
+| Gate | Status | Required evidence |
+| --- | --- | --- |
+| G0 Freeze and classify | in_progress | R10 frozen as historical compatibility evidence; new profile/registry digests implemented; older report inventories remain |
+| G1 Strict-generalist profile | in_progress | strict default and compatibility isolation implemented; mandatory PlanValidator, behavioral controls, and cross-surface proof remain |
+| G2 Intent and TaskPlan integration | in_progress | task identity/reward wording removed from planner context; typed operation/capability derivation and common TaskPlan entrypoint remain |
+| G2.5 Active perception and evidence repair | pending | typed evidence gaps and probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery integration |
+| G3 Full-phase Recovery Coordinator | pending | FailureEnvelope, validated commands, receipts, non-empty RecoveryDelta, and changed-strategy recovery across intake through verification and provider/context |
+| G4 Complete-run audit | pending | ordinary failures collected to completion, resumable partial results, cluster-first repair selection, external reward separated |
+| G5 Generalization proof | pending | strict, strict plus accepted skills, compatibility, and ablation profiles reported separately |
+
+Current hard findings:
+
+- the default planner can run benchmark-shaped task programs before the LM;
+- planner-visible benchmark identity and blanket read-only classification must
+  be removed;
+- BrowserGym does not currently exercise the optional TaskPlanner;
+- source arbitration and targeted-capture foundations exist, but one complete
+  ActivePerceptionController and shared probe contract are not integrated;
+- planner and binding failures do not consistently enter Recovery Cascade;
+- exact failure signatures need a semantic family key for varied repeated errors;
+- current M8.3 evidence proves lower-half recovery and offline evolution, not
+  phase-spanning online autonomy.
+
+Exit requires zero benchmark identity leakage, zero unrequested-action or
+scope-expansion regression on governance controls, one validated proposal
+boundary, one normal TaskPlan router, bounded evidence-gap repair through new
+coherent observation epochs, changed-strategy recovery across all phases,
+inspect-before-repeat for uncertain effects, complete clustered
+diagnostics, and non-benchmark evidence before benchmark replay.
 
 ## Verification Commands
 

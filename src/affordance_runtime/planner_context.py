@@ -173,8 +173,10 @@ def build_planner_context(
 
 
 def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
+    # Run/task identifiers are trace and audit metadata. The step planner gets
+    # local revision/state identities separately and must not learn suite,
+    # manifest, seed, or caller naming conventions through task_id.
     keys = (
-        "task_id",
         "revision",
         "objective",
         "operation_class",

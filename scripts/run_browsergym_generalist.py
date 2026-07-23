@@ -109,6 +109,11 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--profile", choices=("smoke", "pr", "diagnostic", "nightly", "release"), default="smoke")
+    parser.add_argument(
+        "--planner-profile",
+        choices=("strict-generalist", "historical-compatibility"),
+        default="strict-generalist",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--task", action="append", default=[])
     parser.add_argument("--seed-count", type=int)
@@ -173,6 +178,8 @@ def main() -> int:
                 str(args.output),
                 "--profile",
                 args.profile,
+                "--planner-profile",
+                args.planner_profile,
                 "--episode-timeout-s",
                 str(args.episode_timeout_s),
                 "--model-call-timeout-s",

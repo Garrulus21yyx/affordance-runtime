@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from enum import StrEnum
 from typing import Any, Sequence
 
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -47,6 +48,13 @@ GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
 # Bumped whenever the bounded observation/history construction changes. It is
 # part of a frozen evaluation identity, not a free-form prompt label.
 GENERALIST_PLANNER_CONTEXT_POLICY_VERSION = "bounded-current-v1"
+
+
+class GeneralistPlannerProfile(StrEnum):
+    """Behavioral identity of the step planner, separate from run size."""
+
+    STRICT_GENERALIST = "strict-generalist"
+    HISTORICAL_COMPATIBILITY = "historical-compatibility"
 
 _SYSTEM_PROMPT = """You are an environment-general GUI planner. Return exactly one semantic PlannerProposalCandidate under the strict schema.
 You may choose only an affordance id from the supplied inventory. Never output a selector, backend handle, coordinate, backend, capability, approval, credential, cookie, or executable code.
@@ -172,9 +180,8 @@ class GeneralistLMPlanner:
     max_model_calls: int | None = None
     max_candidate_repairs: int = 2
     allow_finish: bool = True
-    semantic_compilers: SemanticCompilerRegistry = field(
-        default_factory=lambda: default_semantic_compiler_registry()
-    )
+    planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST
+    semantic_compilers: SemanticCompilerRegistry | None = None
     model_orchestrator: PlannerModelOrchestrator = field(
         default_factory=PlannerModelOrchestrator,
         repr=False,
@@ -188,6 +195,19 @@ class GeneralistLMPlanner:
         )
     )
 
+    def __post_init__(self) -> None:
+        if self.semantic_compilers is None:
+            self.semantic_compilers = (
+                historical_compatibility_semantic_compiler_registry()
+                if self.planner_profile == GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY
+                else SemanticCompilerRegistry.disabled()
+            )
+        if (
+            self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST
+            and self.semantic_compilers.compiler_ids
+        ):
+            raise ValueError("strict-generalist profile cannot load compatibility semantic compilers")
+
     async def propose(
         self,
         envelope: TaskEnvelope,
@@ -197,7 +217,10 @@ class GeneralistLMPlanner:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
         context = self.build_context(envelope, state, snapshot)
-        compiled = self.semantic_compilers.compile(context)
+        semantic_compilers = self.semantic_compilers
+        if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
+            raise RuntimeError("planner semantic compiler profile was not initialized")
+        compiled = semantic_compilers.compile(context)
         if compiled is not None:
             compiled_proposal = PlannerProposalCandidate(
                 action_kind=PlannerActionKind(compiled.action_kind),
@@ -214,6 +237,8 @@ class GeneralistLMPlanner:
                     "snapshot_id": context.snapshot_id,
                     "affordance_count": len(context.affordances),
                     "permitted_action_kinds": list(context.permitted_action_kinds),
+                    "planner_profile": self.planner_profile.value,
+                    "semantic_compiler_registry_digest": semantic_compilers.digest,
                     "semantic_compiler": {
                         "compiler_id": compiled.compiler_id,
                         "evidence_ref": compiled.evidence_ref,
@@ -231,7 +256,7 @@ class GeneralistLMPlanner:
             initial_permitted,
             initial_targets,
         )
-        constraints = self.semantic_compilers.constrain(
+        constraints = semantic_compilers.constrain(
             context,
             initial_permitted,
             initial_targets,
@@ -308,6 +333,8 @@ class GeneralistLMPlanner:
                 "remaining_budgets": context.remaining_budgets,
                 "context": json.loads(context.model_dump_json()),
                 "prompt_version": self.config.prompt_version,
+                "planner_profile": self.planner_profile.value,
+                "semantic_compiler_registry_digest": semantic_compilers.digest,
                 **(
                     {
                         "semantic_constraints": {
@@ -2447,8 +2474,8 @@ def _unique_compatible_target_id(action_kind: PlannerActionKind, affordances: tu
     return candidates[0] if len(candidates) == 1 else ""
 
 
-def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
-    """Return the generic default profile backed by Generalist algorithms."""
+def historical_compatibility_semantic_compiler_registry() -> SemanticCompilerRegistry:
+    """Return the quarantined task-grammar profile retained for old evidence."""
 
     return build_default_semantic_compiler_registry(
         DefaultSemanticCompilerCallbacks(
@@ -2462,6 +2489,12 @@ def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
             planner_constraints=_registry_planner_constraints,
         )
     )
+
+
+def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
+    """Deprecated compatibility alias; strict planners do not call this registry."""
+
+    return historical_compatibility_semantic_compiler_registry()
 
 
 def _registry_calendar_event(context: Any) -> SemanticCompilation | None:

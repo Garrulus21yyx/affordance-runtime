@@ -94,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     browsergym_generalist.add_argument(
         "--profile", choices=("smoke", "pr", "diagnostic", "nightly", "release"), default="pr"
     )
+    browsergym_generalist.add_argument(
+        "--planner-profile",
+        choices=("strict-generalist", "historical-compatibility"),
+        default="strict-generalist",
+        help="behavioral planner identity; compatibility results cannot support generalist claims",
+    )
     browsergym_generalist.add_argument("--headed", action="store_true")
     browsergym_generalist.add_argument(
         "--visual-grounding",
@@ -243,6 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if not browsergym_report["acceptance_errors"] else 1
     if args.command == "benchmark-browsergym-generalist":
         from affordance_runtime.benchmarks.browsergym import run_browsergym_miniwob_generalist_suite
+        from affordance_runtime.generalist_planner import GeneralistPlannerProfile
         from affordance_runtime.model_port import model_port_from_environment
         from affordance_runtime.visual_grounding import (
             visual_grounder_from_environment,
@@ -263,6 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_call_timeout_s=args.model_call_timeout_s,
             max_model_calls=args.max_model_calls,
             execution_reserve_s=args.execution_reserve_s,
+            planner_profile=GeneralistPlannerProfile(args.planner_profile),
         )
         print(json.dumps(browsergym_report, indent=2, sort_keys=True))
         return 0 if not browsergym_report["acceptance_errors"] else 1
