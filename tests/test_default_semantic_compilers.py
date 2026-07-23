@@ -52,6 +52,7 @@ def _callbacks(calls: list[str]) -> DefaultSemanticCompilerCallbacks:
 
     return DefaultSemanticCompilerCallbacks(
         calendar_event=_compile_as(calls, "calendar", "drag"),
+        suggestion_selection=_compile_as(calls, "suggestion", "type_text"),
         form_field=_compile_as(calls, "form", "type_text"),
         copy_operation=_compile_as(calls, "copy", "type_text"),
         incremental_control=_compile_as(calls, "incremental", "press_key"),
@@ -66,6 +67,7 @@ def test_default_registry_factory_preserves_declared_rule_precedence() -> None:
 
     assert [rule.compiler_id for rule in registry.rules] == [
         "authored-calendar-range-v1",
+        "typed-suggestion-selection-v1",
         "explicit-form-field-binding-v1",
         "bounded-text-transform-v1",
         "typed-incremental-control-v1",
@@ -96,6 +98,7 @@ def test_default_registry_factory_keeps_evidence_and_operation_scope_explicit() 
 
     expected_sources = (
         "runtime-generic-calendar-conformance",
+        "runtime-generic-suggestion-selection-conformance",
         "runtime-generic-form-field-conformance",
         "runtime-generic-text-transform-conformance",
         "runtime-generic-incremental-control-conformance",

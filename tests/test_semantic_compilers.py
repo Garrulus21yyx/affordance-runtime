@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from affordance_runtime.adapters.dom import DomAdapter
@@ -8,6 +8,7 @@ from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
     _explicit_form_field_obligations,
+    _suggestion_selection_obligation,
     build_planner_context,
     default_semantic_compiler_registry,
 )
@@ -211,6 +212,54 @@ def _form_context(objective: str):
     return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
+def _suggestion_context(
+    objective: str,
+    *,
+    current_value: str = "",
+    options: tuple[str, ...] = (),
+    second_control: bool = False,
+):
+    option_html = "".join(
+        f'<div role="option" tabindex="0">{value}</div>' for value in options
+    )
+    second_html = '<label>Country</label><input id="country">' if second_control else ""
+    model = DomAdapter().transduce(
+        f'<label>Tags</label><input id="tags" value="{current_value}">'
+        f"{second_html}{option_html}<button>Submit</button>",
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    affordances = []
+    for item in model.affordances:
+        if item.state.get("element_tag") == "input":
+            affordances.append(replace(item, state={**item.state, "autocomplete": True}))
+        elif item.state.get("element_tag") == "div":
+            affordances.append(
+                replace(
+                    item,
+                    role="option",
+                    action="activate",
+                    state={**item.state, "programmatic_option": True},
+                )
+            )
+        else:
+            affordances.append(item)
+    model = replace(model, affordances=affordances)
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    task = TaskSpec(
+        task_id="portable-suggestion",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.READ_ONLY,
+        targets=("suggestion value",),
+        success_criteria=("a matching suggestion is submitted",),
+        source_request_ref="test",
+    )
+    state = StateKernel(task.task_id, task.objective)
+    state.remember_observation(observation)
+    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+
+
 def test_explicit_form_compiler_binds_each_labelled_value_before_terminal() -> None:
     context = _form_context('Enter the username "Ada" and the password "s3cret" and press Submit.')
     registry = default_semantic_compiler_registry()
@@ -261,6 +310,85 @@ def test_explicit_form_compiler_falls_through_when_values_are_not_field_bound() 
 
     click_only = _form_context('Click the button named "Submit".')
     assert _explicit_form_field_obligations(click_only) == ()
+
+
+def test_suggestion_compiler_types_prefix_then_activates_one_matching_option() -> None:
+    initial = _suggestion_context('Enter an item that starts with "Mo" and ends with "va".')
+
+    first = default_semantic_compiler_registry().compile(initial)
+
+    assert first is not None
+    assert first.compiler_id == "typed-suggestion-selection-v1"
+    assert (first.action_kind, first.target_affordance_id, first.parameters) == (
+        "type_text",
+        "dom_input_1",
+        {"text": "Mo"},
+    )
+
+    with_options = _suggestion_context(
+        'Enter an item that starts with "Mo" and ends with "va".',
+        current_value="Mo",
+        options=("Moldova", "Monaco"),
+    )
+    second = default_semantic_compiler_registry().compile(with_options)
+
+    assert second is not None
+    assert second.compiler_id == "typed-suggestion-selection-v1"
+    assert (second.action_kind, second.target_affordance_id, second.parameters) == (
+        "activate",
+        "dom_div_1",
+        {},
+    )
+
+
+def test_suggestion_compiler_submits_matching_current_value_without_refilling_prefix() -> None:
+    context = _suggestion_context(
+        'Enter an item that starts with "Com".',
+        current_value="Comoros",
+    )
+
+    compiled = default_semantic_compiler_registry().compile(context)
+
+    assert compiled is not None
+    assert compiled.compiler_id == "typed-suggestion-selection-v1"
+    assert (compiled.action_kind, compiled.target_affordance_id, compiled.parameters) == (
+        "activate",
+        "dom_button_1",
+        {},
+    )
+    assert _explicit_form_field_obligations(context) == ()
+
+
+def test_suggestion_compiler_falls_through_for_ambiguous_targets_or_options() -> None:
+    ambiguous_options = _suggestion_context(
+        'Enter an item that starts with "Com".',
+        current_value="Com",
+        options=("Comoros", "Computer"),
+    )
+    ambiguous_targets = _suggestion_context(
+        'Enter an item that starts with "Com".',
+        second_control=True,
+    )
+
+    assert _suggestion_selection_obligation(ambiguous_targets) is None
+    assert default_semantic_compiler_registry().compile(ambiguous_options) is None
+    assert default_semantic_compiler_registry().compile(ambiguous_targets) is None
+
+
+def test_suggestion_compiler_binds_one_explicitly_named_control() -> None:
+    context = _suggestion_context(
+        'In Tags, enter an item that starts with "Com".',
+        second_control=True,
+    )
+
+    obligation = _suggestion_selection_obligation(context)
+
+    assert obligation is not None
+    assert (obligation.target_id, obligation.prefix, obligation.suffix) == (
+        "dom_input_1",
+        "Com",
+        "",
+    )
 
 
 def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability() -> None:

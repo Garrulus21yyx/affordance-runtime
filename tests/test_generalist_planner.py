@@ -46,6 +46,7 @@ from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMes
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -2348,7 +2349,7 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
     assert decision.proposal.target_affordance_id == "dom_button_1"
 
 
-def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix() -> None:
+def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix_when_system1_is_disabled() -> None:
     model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input">',
         environment_revision="rev-1",
@@ -2396,7 +2397,10 @@ def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix() -> None:
 
     repair_model = AutocompleteRepairModel()
     decision = asyncio.run(
-        GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(
+            repair_model,
+            semantic_compilers=SemanticCompilerRegistry.disabled(),
+        ).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 2

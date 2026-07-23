@@ -30,6 +30,7 @@ class DefaultSemanticCompilerCallbacks:
     """Semantic algorithms injected into the declarative default profile."""
 
     calendar_event: SemanticCompileFn
+    suggestion_selection: SemanticCompileFn
     form_field: SemanticCompileFn
     copy_operation: SemanticCompileFn
     incremental_control: SemanticCompileFn
@@ -62,6 +63,32 @@ def build_default_semantic_compiler_registry(
                         "ambiguous or non-half-hour event windows",
                     ),
                     source="runtime-generic-calendar-conformance",
+                    version="1",
+                ),
+            ),
+            SemanticCompilerRule(
+                compiler_id="typed-suggestion-selection-v1",
+                supported_intents=(
+                    "enter a value satisfying an explicit prefix and optional suffix through a suggestion control",
+                ),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective declares a prefix constraint and the current inventory exposes a uniquely bindable "
+                    "typed autocomplete control"
+                ),
+                applicability=_has_autocomplete_affordance,
+                compile=callbacks.suggestion_selection,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("autocomplete",),
+                    output_action_kinds=("type_text", "activate"),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "quoted exact field values without starts-with grammar",
+                        "multiple autocomplete fields without one objective-bound label",
+                        "multiple observed suggestions satisfying the same underconstrained relation",
+                        "a current matching value treated as a request to refill the prefix",
+                    ),
+                    source="runtime-generic-suggestion-selection-conformance",
                     version="1",
                 ),
             ),
@@ -197,6 +224,13 @@ def _has_range_selectable_affordance(context: SemanticCompilerContext) -> bool:
 
 def _has_writable_affordance(context: SemanticCompilerContext) -> bool:
     return any(item.action in {"fill", "type", "type_text"} for item in context.affordances)
+
+
+def _has_autocomplete_affordance(context: SemanticCompilerContext) -> bool:
+    return any(
+        item.action in {"fill", "type", "type_text"} and item.state.get("autocomplete") is True
+        for item in context.affordances
+    )
 
 
 def _has_one_incremental_control(context: SemanticCompilerContext) -> bool:

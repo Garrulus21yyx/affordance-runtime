@@ -70,6 +70,23 @@ raise budgets, change Prompt/model, or add task/benchmark dispatch. M8.2B
 therefore remains in progress. See
 [R9 evidence](evidence/m8.2b-r9-form-obligations-20260723.md).
 
+Current R9 follow-up implementation slice: replace the accidental
+quote-equals-exact-value assumption with typed text obligations. Exact field
+assignments remain eligible only when grammar binds a literal to a writable
+field (or explicitly declares shared field cardinality). A `starts with` /
+optional `ends with` request over a typed autocomplete control is a separate
+prefix/suggestion obligation: first establish the required prefix, then bind a
+currently observed matching semantic option, and regard a longer current value
+that satisfies the declared prefix/suffix as progress rather than a reason to
+refill. Multiple autocomplete controls or multiple matching options without a
+unique semantic binding must fall through to System 2. Required proof: generic
+DOM contexts for empty, prefix-current, matching-value-current, ambiguous
+target/option, and ordinary exact multi-field cases; declarative compiler
+evidence and action declarations; focused tests; full Ruff/mypy/pytest gate;
+then the frozen failure reproduction, selection/form family, PR 18, and a new
+diagnostic. Do not use task ids, URLs, suite names, model/Prompt branches, raw
+DOM handles, or a larger call budget.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is

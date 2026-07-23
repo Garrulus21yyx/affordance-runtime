@@ -1457,6 +1457,112 @@ class _FormFieldObligation:
     value: str
 
 
+@dataclass(frozen=True)
+class _SuggestionSelectionObligation:
+    target_id: str
+    prefix: str
+    suffix: str = ""
+
+
+def _quoted_constraint_relations(objective: str) -> tuple[str, str]:
+    """Return explicit prefix/suffix relations without treating them as exact values."""
+
+    prefix_match = re.search(
+        r'\bstarts?\s+with\s+["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']',
+        objective,
+        re.IGNORECASE,
+    )
+    suffix_match = re.search(
+        r'\bends?\s+with\s+["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']',
+        objective,
+        re.IGNORECASE,
+    )
+    return (
+        prefix_match.group(1) if prefix_match else "",
+        suffix_match.group(1) if suffix_match else "",
+    )
+
+
+def _suggestion_selection_obligation(
+    context: PlannerContext,
+) -> _SuggestionSelectionObligation | None:
+    """Bind one typed autocomplete field to an explicit prefix/suffix relation."""
+
+    objective = str(context.task_spec.get("objective") or "")
+    prefix, suffix = _quoted_constraint_relations(objective)
+    if not prefix:
+        return None
+    targets = [
+        item
+        for item in context.affordances
+        if item.action in {"fill", "type", "type_text"}
+        and item.state.get("autocomplete") is True
+    ]
+    if len(targets) > 1:
+        objective_tokens = _semantic_tokens(objective)
+        explicitly_named = [
+            item
+            for item in targets
+            if _semantic_tokens(item.label)
+            and _semantic_tokens(item.label).issubset(objective_tokens)
+        ]
+        targets = explicitly_named
+    if len(targets) != 1:
+        return None
+    return _SuggestionSelectionObligation(targets[0].id, prefix, suffix)
+
+
+def _suggestion_value_satisfies(value: str, obligation: _SuggestionSelectionObligation) -> bool:
+    normalized = value.casefold()
+    return bool(
+        value
+        and normalized.startswith(obligation.prefix.casefold())
+        and (not obligation.suffix or normalized.endswith(obligation.suffix.casefold()))
+    )
+
+
+def _compiled_suggestion_selection_operation(
+    context: PlannerContext,
+) -> tuple[PlannerActionKind, str, dict[str, Any]] | None:
+    """Advance one observed suggestion relation without confusing its prefix with a final value."""
+
+    obligation = _suggestion_selection_obligation(context)
+    if obligation is None:
+        return None
+    target = next(item for item in context.affordances if item.id == obligation.target_id)
+    current_value = str(target.state.get("control_value") or "")
+    if not current_value.casefold().startswith(obligation.prefix.casefold()):
+        return PlannerActionKind.TYPE_TEXT, target.id, {"text": obligation.prefix}
+
+    matching_options = [
+        item
+        for item in context.affordances
+        if item.state.get("programmatic_option") is True
+        and item.action in {"activate", "click"}
+        and _suggestion_value_satisfies(item.label, obligation)
+    ]
+    if len(matching_options) == 1:
+        return PlannerActionKind.ACTIVATE, matching_options[0].id, {}
+    if matching_options:
+        return None
+
+    if current_value.casefold() == obligation.prefix.casefold() or not _suggestion_value_satisfies(
+        current_value,
+        obligation,
+    ):
+        return None
+    terminal_words = {"submit", "save", "done", "confirm", "send", "continue", "next", "ok"}
+    terminals = [
+        item
+        for item in context.affordances
+        if item.action in {"activate", "click"}
+        and _label_contains_any_word(item.label, terminal_words)
+    ]
+    if len(terminals) == 1:
+        return PlannerActionKind.ACTIVATE, terminals[0].id, {}
+    return None
+
+
 def _explicit_form_field_obligations(context: PlannerContext) -> tuple[_FormFieldObligation, ...]:
     """Resolve only explicit, unambiguous field/value obligations."""
 
@@ -1468,6 +1574,8 @@ def _explicit_form_field_obligations(context: PlannerContext) -> tuple[_FormFiel
     ]
     objective = str(context.task_spec.get("objective") or "")
     if not _semantic_tokens(objective).intersection({"enter", "type", "fill", "input", "write"}):
+        return ()
+    if any(_quoted_constraint_relations(objective)):
         return ()
     quoted = list(re.finditer(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective))
     if not writable or not quoted:
@@ -2267,6 +2375,7 @@ def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
     return build_default_semantic_compiler_registry(
         DefaultSemanticCompilerCallbacks(
             calendar_event=_registry_calendar_event,
+            suggestion_selection=_registry_suggestion_selection,
             form_field=_registry_form_field,
             copy_operation=_registry_copy_operation,
             incremental_control=_registry_incremental_control,
@@ -2282,6 +2391,14 @@ def _registry_calendar_event(context: Any) -> SemanticCompilation | None:
         return None
     action, target, destination, parameters = compiled
     return SemanticCompilation(action.value, target, destination, parameters)
+
+
+def _registry_suggestion_selection(context: Any) -> SemanticCompilation | None:
+    compiled = _compiled_suggestion_selection_operation(context)
+    if compiled is None:
+        return None
+    action, target, parameters = compiled
+    return SemanticCompilation(action.value, target, parameters=parameters)
 
 
 def _registry_form_field(context: Any) -> SemanticCompilation | None:
