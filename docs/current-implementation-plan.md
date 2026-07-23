@@ -130,6 +130,16 @@ through. Add generic ARIA tab/disclosure, ambiguity, ordering, terminal
 deferral, live-state capture, and BrowserGym encoder verifier tests before any
 benchmark rerun.
 
+The first clean implementation reproduction at `1713859` closes both
+multi-disclosure search cases but leaves both single-section cases at reward
+zero. Their bounded context contains two standards-valid disclosure roles: the
+named section header and a weak generated-label sibling around the terminal.
+The conservative multi-control ambiguity gate therefore falls through to the
+model. Resolve this generically by preferring a unique collapsed disclosure
+whose semantic label overlaps the explicit objective vocabulary; retain
+fallthrough when zero or multiple disclosures match. This is label-based typed
+scope resolution, not DOM-parent, generated-id, page, or task recognition.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is

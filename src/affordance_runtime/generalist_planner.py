@@ -1494,6 +1494,13 @@ def _compiled_disclosure_operation(
     collapsed = [item for item in disclosures if item.state.get("expanded") is False]
     if not collapsed:
         return None
+    named_collapsed = [
+        item
+        for item in collapsed
+        if _semantic_tokens(item.label).intersection(objective_tokens)
+    ]
+    if len(named_collapsed) == 1:
+        return PlannerActionKind.ACTIVATE, named_collapsed[0].id, {}
     if len(disclosures) == 1:
         return PlannerActionKind.ACTIVATE, collapsed[0].id, {}
 

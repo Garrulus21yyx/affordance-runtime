@@ -441,6 +441,26 @@ def test_disclosure_compiler_opens_one_control_before_terminal_binding() -> None
     )
 
 
+def test_disclosure_compiler_prefers_one_objective_named_control_over_weak_sibling() -> None:
+    context = _disclosure_context(
+        "Expand the section below and click Submit.",
+        expanded=(False, False),
+    )
+    affordances = tuple(
+        item.model_copy(update={"label": "generated-control"})
+        if item.id == "dom_h3_2"
+        else item
+        for item in context.affordances
+    )
+    context = context.model_copy(update={"affordances": affordances})
+
+    assert _compiled_disclosure_operation(context) == (
+        PlannerActionKind.ACTIVATE,
+        "dom_h3_1",
+        {},
+    )
+
+
 def test_disclosure_compiler_scans_ordered_controls_until_named_target_is_visible() -> None:
     initial = _disclosure_context(
         'Expand the sections to find and click "Needle".',
