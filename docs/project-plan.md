@@ -773,9 +773,11 @@ cannot claim a generalist score. One shared PlannerProposalValidator now gates
 all proposal sources, initial task-shape controls pass, and the same strict
 planner passes non-BrowserGym DOM/visual/WoT conformance. Strict uses a separate
 Prompt and protocol/current-state-only candidate policy; task-shaped rewrites
-remain compatibility-only. The complete
-behavioral control matrix and physical compatibility-algorithm containment
-remain open.
+remain compatibility-only. Historical objective parsers, terminal exposure,
+repair recipes, semantic rewrites, and registry callbacks are now physically
+isolated in `compatibility_planner_algorithms.py`; strict import/construction
+does not load that module. The complete behavioral control matrix and explicit
+proposal-source provenance remain open.
 
 #### G2: Intent and task-planning integration
 

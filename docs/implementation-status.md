@@ -268,7 +268,7 @@ are:
 | Gate | Status | Required evidence |
 | --- | --- | --- |
 | G0 Freeze and classify | in_progress | R10 frozen as historical compatibility evidence; new profile/registry digests implemented; older report inventories remain |
-| G1 Strict-generalist profile | in_progress | strict default, separate strict Prompt/candidate policy, explicit compatibility registry, shared PlannerProposalValidator, initial task-shape controls, and DOM/visual/WoT proof implemented; broader behavior matrix and physical algorithm containment remain |
+| G1 Strict-generalist profile | in_progress | strict default, separate strict Prompt/candidate policy, explicit compatibility registry, shared PlannerProposalValidator, physical task-grammar isolation, initial task-shape controls, and DOM/visual/WoT proof implemented; broader behavior matrix and proposal-source provenance remain |
 | G2 Intent and TaskPlan integration | in_progress | task identity/reward wording removed from planner context; typed operation/capability derivation and common TaskPlan entrypoint remain |
 | G2.5 Active perception and evidence repair | pending | typed evidence gaps and probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery integration |
 | G3 Full-phase Recovery Coordinator | pending | FailureEnvelope, validated commands, receipts, non-empty RecoveryDelta, and changed-strategy recovery across intake through verification and provider/context |
@@ -277,9 +277,8 @@ are:
 
 Current hard findings:
 
-- strict mode no longer runs the historical compiler registry before the LM,
-  but compatibility-only algorithms remain physically mixed into the large
-  Generalist module and require extraction or deletion;
+- strict mode neither defines nor loads the historical task-grammar algorithms;
+  they are physically isolated behind the explicit compatibility profile;
 - planner-visible benchmark identity and blanket read-only classification must
   be removed;
 - BrowserGym does not currently exercise the optional TaskPlanner;
@@ -345,6 +344,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-23 | M8.6 G1 / physical compatibility containment | Moved historical objective parsers, terminal exposure, repair recipes, semantic rewrites, and compiler callback assembly out of the strict Planner module; retained only a lazy explicit replay entrypoint and reverse dependency on shared proposal contracts | `compatibility_planner_algorithms.py`, strict Planner lazy boundary, architecture controls, plans/evidence | 557 tests; 95 focused tests; Ruff; mypy with optional imports across 90 source files; subprocess proof that strict import/construction does not load compatibility while the historical profile does; `m8.6-g1-physical-containment-20260723.md`; G1 remains open for broader behavioral controls and proposal provenance |
 | 2026-07-22 | Runtime-first R8 / module containment closure | Audited extracted Core collaborators, typed boundaries, authoritative state/trace ownership, benchmark-vocabulary isolation, and BrowserGym facade compatibility; documented the legacy one-contract conformance harness as non-authoritative | executable R8 architecture boundary test, plans/audit/evidence | 522 tests; Ruff; mypy with optional imports across 89 source files; no Core benchmark vocabulary/adapter import; no collaborator `StateKernel` construction; observer/encoder/runner/protocol/report facade identity checks; `runtime-r8-closure-20260722.md` |
 | 2026-07-23 | M8.2B R9 / native labels and explicit form obligations | Kept descriptive native labels out of the action inventory, associated explicit/nested/adjacent labels with controls, and compiled multi-field exact-value obligations with verified-target progress and ambiguity fallthrough | generic DOM observation, semantic compiler/planner, non-BrowserGym controls, clean bounded BrowserGym ladder | clean `b4e596e`: original failures 2/2, form family 20/20, PR 18/18; complete diagnostic 29/30 with one retained planning-budget envelope caused by exact-value versus prefix/suggestion semantics; 528 tests, Ruff, mypy 89 source files; `m8.2b-r9-form-obligations-20260723.md` |
 | 2026-07-23 | M8.2B R9 / typed suggestion selection | Separated exact form literals from prefix/suffix suggestion relations; compiled prefix entry, uniquely observed option activation, matching-current progress, and unique terminal exposure with ambiguity fallthrough | default semantic registry, Generalist typed obligations, generic DOM controls, clean immutable BrowserGym ladder | clean `7d0ada0`: original failure 1/1, task family 10/10, PR 18/18, diagnostic 30/30, frozen nightly 300/300 reward 1.0; zero missing/runtime/envelope/provider/retry/circuit failures; 532 tests, Ruff, mypy 89 source files; `m8.2b-r9-suggestion-selection-20260723.md` |

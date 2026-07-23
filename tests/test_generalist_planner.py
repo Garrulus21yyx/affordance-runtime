@@ -7,6 +7,32 @@ from pydantic import BaseModel, ValidationError
 
 from affordance_runtime.adapters.dom import AuthoredInteractiveExtension, DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot, _bounded_control_value
+from affordance_runtime.compatibility_planner_algorithms import (
+    _ascending_numeric_item_operation,
+    _calendar_date_operation,
+    _calendar_event_gesture_operation,
+    _compiled_calendar_event_operation,
+    _copy_text_constraints,
+    _explicit_observed_color_operation,
+    _explicit_observed_svg_item_operation,
+    _explicit_point_target_operation,
+    _forward_recipient_constraints,
+    _hierarchical_target_operation,
+    _ordinal_collection_operation,
+    _owned_collection_action_operation,
+    _partitioned_drag_operation,
+    _quantity_order_operation,
+    _remaining_requested_selection_values,
+    _restrict_action_kinds_to_objective,
+    _restrict_targets_to_objective,
+    _scroll_progress_constraints,
+    _slider_progress_constraints,
+    _table_value_entry_constraints,
+    _target_discovery_constraints,
+)
+from affordance_runtime.compatibility_planner_algorithms import (
+    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
+)
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     COMPATIBILITY_PLANNER_PROMPT_VERSION,
@@ -16,35 +42,11 @@ from affordance_runtime.generalist_planner import (
     GeneralistPlannerProfile,
     PlannerContext,
     PlannerProposalCandidate,
-    _ascending_numeric_item_operation,
-    _calendar_date_operation,
-    _calendar_event_gesture_operation,
     _candidate_prebind_issue,
-    _compiled_calendar_event_operation,
-    _copy_text_constraints,
-    _explicit_observed_color_operation,
-    _explicit_observed_svg_item_operation,
-    _explicit_point_target_operation,
-    _forward_recipient_constraints,
-    _hierarchical_target_operation,
     _initial_candidate_schema,
-    _ordinal_collection_operation,
-    _owned_collection_action_operation,
-    _partitioned_drag_operation,
-    _quantity_order_operation,
-    _remaining_requested_selection_values,
     _repair_candidate_schema,
     _repair_constraints,
-    _restrict_action_kinds_to_objective,
-    _restrict_targets_to_objective,
-    _scroll_progress_constraints,
-    _slider_progress_constraints,
-    _table_value_entry_constraints,
-    _target_discovery_constraints,
     build_planner_context,
-)
-from affordance_runtime.generalist_planner import (
-    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
@@ -63,6 +65,7 @@ def _compatibility_planner(model: Any, **kwargs: Any) -> GeneralistLMPlanner:
         planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
         **kwargs,
     )
+
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
     marker_attribute="data-runtime-interactive",
@@ -204,9 +207,12 @@ def test_generalist_binds_rendered_svg_item_from_size_colour_and_type() -> None:
     )
 
     assert _explicit_observed_svg_item_operation(context) == "semantic:small-black-8"
-    assert _explicit_observed_svg_item_operation(
-        context.model_copy(update={"task_spec": {"objective": "Click on a large digit"}})
-    ) == "semantic:large-black-8"
+    assert (
+        _explicit_observed_svg_item_operation(
+            context.model_copy(update={"task_spec": {"objective": "Click on a large digit"}})
+        )
+        == "semantic:large-black-8"
+    )
 
 
 def test_generalist_selects_lowest_current_svg_number_for_ascending_sequence() -> None:
@@ -277,9 +283,7 @@ def test_generalist_compiles_named_and_typed_item_quantities() -> None:
         ),
     )
     context = PlannerContext(
-        task_spec={
-            "objective": "Order one of each item: Spicy Thai Peanut Chicken, Ice cream sundae"
-        },
+        task_spec={"objective": "Order one of each item: Spicy Thai Peanut Chicken, Ice cream sundae"},
         active_subgoal="",
         observed_text="",
         affordances=affordances,
@@ -302,12 +306,12 @@ def test_generalist_compiles_named_and_typed_item_quantities() -> None:
 
     assert _quantity_order_operation(context) == "ice"
     complete = context.model_copy(
-        update={"affordances": (affordances[0], quantity("ice", "Ice cream sundae", 1, "dairy", "peanuts"), affordances[2])}
+        update={
+            "affordances": (affordances[0], quantity("ice", "Ice cream sundae", 1, "dairy", "peanuts"), affordances[2])
+        }
     )
     assert _quantity_order_operation(complete) == "order"
-    typed = context.model_copy(
-        update={"task_spec": {"objective": "Order 2 items that are peanuts"}}
-    )
+    typed = context.model_copy(update={"task_spec": {"objective": "Order 2 items that are peanuts"}})
     assert _quantity_order_operation(typed) == "thai"
 
 
@@ -359,11 +363,7 @@ def test_generalist_compiles_calendar_duration_into_distinct_semantic_range_endp
         {},
     )
     ninety_minutes = context.model_copy(
-        update={
-            "task_spec": {
-                "objective": 'Create a 1.5 hours event named "Gym", between 12PM and 4PM.'
-            }
-        }
+        update={"task_spec": {"objective": 'Create a 1.5 hours event named "Gym", between 12PM and 4PM.'}}
     )
     assert _calendar_event_gesture_operation(ninety_minutes) == (
         "slot-24-start",
@@ -543,9 +543,7 @@ def test_generalist_compiles_bounded_owner_collection_toggles_before_submit() ->
         state={},
     )
     base = PlannerContext(
-        task_spec={
-            "objective": 'Click the "Like" button on 2 posts by @alice and then click Submit.'
-        },
+        task_spec={"objective": 'Click the "Like" button on 2 posts by @alice and then click Submit.'},
         active_subgoal="",
         observed_text="",
         affordances=(
@@ -640,11 +638,7 @@ def test_bounded_affordances_do_not_let_repeated_container_prose_hide_dynamic_co
             },
         )
 
-    slots = [
-        calendar_endpoint(index, endpoint)
-        for index in range(48)
-        for endpoint in ("start", "end")
-    ]
+    slots = [calendar_endpoint(index, endpoint) for index in range(48) for endpoint in ("start", "end")]
     event_name = AffordanceSummary(
         id="event-name",
         surface="dom",
@@ -692,9 +686,7 @@ def test_generalist_compiles_labelled_items_into_explicit_left_and_right_drop_bi
         )
 
     context = PlannerContext(
-        task_spec={
-            "objective": "Drag all circles into the left box, and everything else into the right box."
-        },
+        task_spec={"objective": "Drag all circles into the left box, and everything else into the right box."},
         active_subgoal="",
         observed_text="",
         affordances=(
@@ -730,9 +722,7 @@ def test_generalist_compiles_labelled_items_into_explicit_left_and_right_drop_bi
         context.model_copy(update={"satisfied_action_targets": {"drag": ("green-triangle",)}})
     ) == (PlannerActionKind.DRAG, "black-circle", "left")
     assert _partitioned_drag_operation(
-        context.model_copy(
-            update={"satisfied_action_targets": {"drag": ("green-triangle", "black-circle")}}
-        )
+        context.model_copy(update={"satisfied_action_targets": {"drag": ("green-triangle", "black-circle")}})
     ) == (PlannerActionKind.ACTIVATE, "submit", "")
 
 
@@ -1431,7 +1421,9 @@ def test_generalist_derives_terminal_flags_from_action_kind_at_binding() -> None
 
 
 def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_exists() -> None:
-    model = _authored_dom_adapter().transduce('<input id="name">', environment_revision="rev-1", snapshot_id="snapshot-1")
+    model = _authored_dom_adapter().transduce(
+        '<input id="name">', environment_revision="rev-1", snapshot_id="snapshot-1"
+    )
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
     snapshot = BrowserSnapshot(observation, model)
     state = StateKernel("task-1", "Enter name")
@@ -1918,9 +1910,7 @@ def test_generalist_binds_ordinal_copy_source_and_exposes_only_submit_after_dest
         success_criteria=("submitted",),
         source_request_ref="test",
     )
-    context = build_planner_context(
-        TaskEnvelope(task_spec=task_spec), state, BrowserSnapshot(observation, model)
-    )
+    context = build_planner_context(TaskEnvelope(task_spec=task_spec), state, BrowserSnapshot(observation, model))
     permitted, targets, value = _copy_text_constraints(
         context,
         ["activate", "press_key", "type_text"],
@@ -2427,9 +2417,7 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
             return output_schema.model_validate(candidate)
 
     repair_model = AutocompleteRepairModel()
-    strict = asyncio.run(
-        GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
-    )
+    strict = asyncio.run(GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot))
 
     assert repair_model.calls == 1
     assert strict.proposal is not None
@@ -2904,9 +2892,7 @@ def test_generalist_binds_only_remaining_requested_multi_select_value() -> None:
         parameters={"option": "Brittne"},
     )
     assert candidate.bind(context).parameters == {"option": "Brittne"}
-    assert candidate.bind(context, compatibility_rewrites=True).parameters == {
-        "option": ["Ertha", "Aurel"]
-    }
+    assert candidate.bind(context, compatibility_rewrites=True).parameters == {"option": ["Ertha", "Aurel"]}
 
 
 def test_generalist_keeps_only_autocomplete_option_matching_prefix_and_suffix() -> None:

@@ -233,15 +233,28 @@ conformance pass. Strict and compatibility now have distinct frozen Prompts;
 strict candidate binding/repair uses only protocol, current-target,
 verifier-backed progress, and exact blocked-signature facts, while task-shaped
 rewrites remain compatibility-only. G1 remains open for the full behavioral anti-cheating matrix,
-physical containment/removal of dormant compatibility algorithms, explicit
-proposal-source provenance, and broader unseen-interface proof. See
-`evidence/m8.6-g1-proposal-validation-20260723.md`.
+explicit proposal-source provenance, and broader unseen-interface proof. The
+physical-containment slice is complete: historical task grammar now resides in
+`compatibility_planner_algorithms.py`, strict import/construction does not load
+that module, and only the explicit historical profile loads it. See
+`evidence/m8.6-g1-proposal-validation-20260723.md` and
+`evidence/m8.6-g1-physical-containment-20260723.md`.
 
-Completed implementation step: `PlannerProposalValidator` is the first
-context-bound semantic gate in Coordinator; ContractBuilder retains defense in
-depth. Current next step: expand behavioral controls and extract or delete the
-compatibility-only algorithms still physically present in the Generalist
-module.
+Completed implementation steps: `PlannerProposalValidator` is the first
+context-bound semantic gate in Coordinator, ContractBuilder retains defense in
+depth, and compatibility task grammar is physically isolated from the strict
+Planner module. Current next step: expand the behavioral anti-specialization
+controls and proposal-source provenance.
+
+Completed physical-containment work: the reviewed call graph moved the
+compatibility-only objective parsers, terminal exposure, prefix/direction
+repair, semantic rewrites, and compiler callback assembly into a dedicated
+compatibility module. Keep strict proposal data, protocol/current-target
+validation, verifier-backed progress exclusion, schema construction, and model
+orchestration in `generalist_planner.py`. Compatibility imports the shared
+proposal contracts in the reverse direction; strict uses a lazy boundary and
+does not import or execute task-grammar algorithms. An explicit compatibility
+profile and replay entrypoint preserve historical evidence.
 
 #### G2: Honest intent and task planning
 

@@ -6,17 +6,19 @@ import pytest
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.compatibility_planner_algorithms import (
+    _compiled_disclosure_operation,
+    _explicit_form_field_obligations,
+    _suggestion_selection_obligation,
+)
+from affordance_runtime.compatibility_planner_algorithms import (
+    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
+)
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
     GeneralistPlannerProfile,
-    _compiled_disclosure_operation,
-    _explicit_form_field_obligations,
-    _suggestion_selection_obligation,
     build_planner_context,
-)
-from affordance_runtime.generalist_planner import (
-    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerActionKind
@@ -106,10 +108,7 @@ def _drag_fixture(objective: str) -> tuple[TaskEnvelope, StateKernel, BrowserSna
 def _governance_fixture(kind: str) -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
     if kind == "form":
         objective = 'Enter "Q1" into both text fields and press Submit.'
-        markup = (
-            '<label>First</label><input id="first">'
-            '<label>Second</label><input id="second"><button>Submit</button>'
-        )
+        markup = '<label>First</label><input id="first"><label>Second</label><input id="second"><button>Submit</button>'
     elif kind == "suggestion":
         objective = 'Enter an item that starts with "Com".'
         markup = '<label>Tags</label><input id="tags"><button>Submit</button>'
@@ -172,9 +171,7 @@ def test_constraint_registry_is_explicit_and_disabled_registry_is_neutral() -> N
     envelope, state, snapshot = _drag_fixture("Review the current list without changing it")
     context = build_planner_context(envelope, state, snapshot)
     permitted = list(context.permitted_action_kinds)
-    compatible = {
-        "drag": [item.id for item in context.affordances if item.action == "drag"]
-    }
+    compatible = {"drag": [item.id for item in context.affordances if item.action == "drag"]}
 
     constrained = default_semantic_compiler_registry().constrain(
         context,
@@ -296,9 +293,7 @@ def _suggestion_context(
     options: tuple[str, ...] = (),
     second_control: bool = False,
 ):
-    option_html = "".join(
-        f'<div role="option" tabindex="0">{value}</div>' for value in options
-    )
+    option_html = "".join(f'<div role="option" tabindex="0">{value}</div>' for value in options)
     second_html = '<label>Country</label><input id="country">' if second_control else ""
     model = DomAdapter().transduce(
         f'<label>Tags</label><input id="tags" value="{current_value}">'
@@ -382,9 +377,7 @@ def test_explicit_form_compiler_binds_each_labelled_value_before_terminal() -> N
         {"text": "Ada"},
     )
 
-    after_username = context.model_copy(
-        update={"satisfied_action_targets": {"type_text": ("dom_input_1",)}}
-    )
+    after_username = context.model_copy(update={"satisfied_action_targets": {"type_text": ("dom_input_1",)}})
     second = registry.compile(after_username)
     assert second is not None
     assert (second.action_kind, second.target_affordance_id, second.parameters) == (
@@ -523,9 +516,7 @@ def test_disclosure_compiler_prefers_one_objective_named_control_over_weak_sibli
         expanded=(False, False),
     )
     affordances = tuple(
-        item.model_copy(update={"label": "generated-control"})
-        if item.id == "dom_h3_2"
-        else item
+        item.model_copy(update={"label": "generated-control"}) if item.id == "dom_h3_2" else item
         for item in context.affordances
     )
     context = context.model_copy(update={"affordances": affordances})
@@ -586,9 +577,7 @@ def test_disclosure_compiler_does_not_choose_between_duplicate_exact_descendants
     )
     target = next(item for item in context.affordances if item.label == "Needle")
     context = context.model_copy(
-        update={
-            "affordances": (*context.affordances, target.model_copy(update={"id": "duplicate-target"}))
-        }
+        update={"affordances": (*context.affordances, target.model_copy(update={"id": "duplicate-target"}))}
     )
 
     assert _compiled_disclosure_operation(context) is None
