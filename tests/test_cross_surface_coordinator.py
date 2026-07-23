@@ -203,9 +203,10 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
             RunCoordinator(
                 StaticObserver(affordance),
                 GeneralistLMPlanner(model),
-                executor,
-                contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
-            ).run(TaskEnvelope(task_spec=task, capabilities=["shared.write"]))
+                    executor,
+                    contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
+                    task_planner=None,
+                ).run(TaskEnvelope(task_spec=task, capabilities=["shared.write"]))
         )
         events = [node.kind for node in result.trace.nodes]
         assert "PlannerProposalValidated" in events

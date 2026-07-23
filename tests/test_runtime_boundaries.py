@@ -46,11 +46,14 @@ def test_generic_terminal_verifier_accepts_only_adapter_declared_terminal_succes
         _receipt(terminated=True, official_reward=1.0),
         unchanged,
     ).passed
-    assert VerifierLadder().verify_report(
+    terminal_report = VerifierLadder().verify_report(
         [spec],
         _receipt(terminal_success=True),
         unchanged,
-    ).passed
+    )
+    assert terminal_report.passed
+    assert terminal_report.evidence[0].source == "external_evaluator"
+    assert terminal_report.evidence[0].strength == "strong"
     changed = Observation(
         "rev-1",
         metadata={"control_states": {"target": {"checked": True}}},

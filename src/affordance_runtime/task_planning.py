@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Awaitable, Protocol
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import Field
@@ -24,7 +25,7 @@ from affordance_runtime.criteria import (
     evidence_requirements_from_descriptions,
 )
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
-from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec
+from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec, TaskStructure
 from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
@@ -359,9 +360,11 @@ class LLMTaskPlanner:
 
     async def plan(self, context: TaskPlanningContext) -> TaskPlan:
         task_spec = context.task_spec
+        planner_context = context.model_dump(mode="json", exclude={"task_spec"})
+        planner_context["task_spec"] = task_spec_planning_summary(task_spec)
         prompt_context = {
-            "task_spec": task_spec.model_dump(mode="json"),
-            "planning_context": context.model_dump(mode="json"),
+            "task_spec": task_spec_planning_summary(task_spec),
+            "planning_context": planner_context,
             "constraints": list(task_spec.constraints),
             "forbidden_effects": list(task_spec.forbidden_effects),
         }
@@ -418,12 +421,59 @@ class PlanningRouter:
     rule_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
     complex_planner: TaskPlannerPort | None = None
 
-    def plan(self, context: TaskPlanningContext, *, complex_task: bool = False) -> TaskPlan | Awaitable[TaskPlan]:
+    def plan(
+        self,
+        context: TaskPlanningContext,
+        *,
+        complex_task: bool | None = None,
+    ) -> TaskPlan | Awaitable[TaskPlan]:
+        if complex_task is None:
+            complex_task = context.task_spec.task_structure == TaskStructure.MULTI_STAGE
         if not complex_task:
             return self.rule_planner.plan(context)
         if self.complex_planner is None:
             raise ValueError("complex task requires an LLMTaskPlanner or accepted task planner")
         return self.complex_planner.plan(context)
+
+
+def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
+    """Return task authority without runtime or source identity fields."""
+
+    return {
+        "schema_version": task_spec.schema_version,
+        "revision": task_spec.revision,
+        "objective": task_spec.objective,
+        "operation_class": task_spec.operation_class.value,
+        "task_structure": task_spec.task_structure.value,
+        "targets": list(task_spec.targets),
+        "entities": [{"name": item.name, "value": item.value} for item in task_spec.entities],
+        "preferences": list(task_spec.preferences),
+        "desired_outputs": list(task_spec.desired_outputs),
+        "success_criteria": list(task_spec.success_criteria),
+        "constraints": list(task_spec.constraints),
+        "forbidden_effects": list(task_spec.forbidden_effects),
+        "evidence_requirements": list(task_spec.evidence_requirements),
+        "requested_capabilities": list(task_spec.requested_capabilities),
+        "ambiguity_status": task_spec.ambiguity_status,
+    }
+
+
+def task_planning_context_summary(context: TaskPlanningContext) -> dict[str, object]:
+    """Serialize a planning context without suite/run identity leakage."""
+
+    summary = context.model_dump(mode="json", exclude={"task_spec"})
+    summary["task_spec"] = task_spec_planning_summary(context.task_spec)
+    environment = summary.get("environment")
+    if isinstance(environment, dict):
+        environment["url"] = _planning_url_origin(str(environment.get("url") or ""))
+    return summary
+
+
+def _planning_url_origin(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return parsed.scheme or ""
 
 
 def synthetic_task_plan(

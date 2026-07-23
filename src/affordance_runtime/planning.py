@@ -21,6 +21,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
@@ -397,6 +398,55 @@ class ContractRequirements:
     idempotency_key: str = ""
     compensation: str | None = None
     timeout_ms: int = 5_000
+
+
+def bind_active_subgoal_verifiers(
+    verifier_plan: tuple[VerifierSpec, ...],
+    state: StateKernel,
+) -> tuple[VerifierSpec, ...]:
+    """Bind trusted verifier specs to the active validated plan obligations."""
+
+    if state.task_plan is None or state.plan_progress is None:
+        return verifier_plan
+    active_id = state.plan_progress.active_subgoal_id
+    subgoal = next(
+        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+        None,
+    )
+    if subgoal is None:
+        return verifier_plan
+    criterion_ids = tuple(
+        criterion_id("subgoal", subgoal.subgoal_id, index)
+        for index, _description in enumerate(subgoal.success_criteria)
+    )
+    requirement_ids = tuple(
+        evidence_requirement_id("subgoal", subgoal.subgoal_id, index)
+        for index, _description in enumerate(subgoal.evidence_requirements)
+    )
+    return tuple(
+        replace(
+            item,
+            criterion_ids=tuple(
+                dict.fromkeys(
+                    (
+                        item.criterion_ids
+                        if any(value.startswith("subgoal:") for value in item.criterion_ids)
+                        else (*item.criterion_ids, *criterion_ids)
+                    )
+                )
+            ),
+            requirement_ids=tuple(
+                dict.fromkeys(
+                    (
+                        item.requirement_ids
+                        if any(value.startswith("subgoal:") for value in item.requirement_ids)
+                        else (*item.requirement_ids, *requirement_ids)
+                    )
+                )
+            ),
+        )
+        for item in verifier_plan
+    )
 
 
 @dataclass(frozen=True)

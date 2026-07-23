@@ -95,3 +95,18 @@ def test_task_constraint_can_require_approval_for_medium_risk_capability() -> No
     )
 
     assert gate.check(contract) == RuntimeErrorCode.APPROVAL_REQUIRED
+
+
+def test_first_requested_effect_does_not_require_a_retry_mechanism() -> None:
+    contract = ActionContract(
+        id="activate",
+        intent="activate target",
+        affordance_id="target",
+        action="click",
+        backend="dom",
+        environment_revision="rev-1",
+        locator={"selector": "#target"},
+        risk=RiskLevel.MEDIUM,
+    )
+
+    assert TaskConstraintPolicy().check(contract, {}) is None

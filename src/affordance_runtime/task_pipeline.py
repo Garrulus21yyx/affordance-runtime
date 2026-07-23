@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.coordinator import CoordinatorResult, RunCoordinator
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.runtime import TaskEnvelope
-from affordance_runtime.task_intake import CompilationResult, CompilationStatus, UserRequest
+from affordance_runtime.task_intake import CompilationResult, CompilationStatus, TaskStructure, UserRequest
+from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
 from affordance_runtime.trace import TraceDag
 
 
@@ -50,7 +51,21 @@ class GeneralistTaskPipeline:
                 trace=trace,
             )
         task_spec = compilation.task_spec
-        coordinator_result = self.coordinator.run_sync(
+        coordinator = self.coordinator
+        task_planner = coordinator.task_planner
+        if (
+            task_spec.task_structure == TaskStructure.MULTI_STAGE
+            and isinstance(task_planner, PlanningRouter)
+            and task_planner.complex_planner is None
+        ):
+            coordinator = replace(
+                coordinator,
+                task_planner=replace(
+                    task_planner,
+                    complex_planner=LLMTaskPlanner(self.compiler.model),
+                ),
+            )
+        coordinator_result = coordinator.run_sync(
             TaskEnvelope(
                 task_spec=task_spec,
                 constraints=dict(self.constraints),

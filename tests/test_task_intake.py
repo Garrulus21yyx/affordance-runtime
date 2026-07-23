@@ -13,6 +13,7 @@ from affordance_runtime.task_intake import (
     IntentEntity,
     OperationClass,
     RequestedEffect,
+    TaskStructure,
     UserRequest,
 )
 
@@ -52,12 +53,25 @@ def test_ready_compilation_creates_immutable_versioned_task_spec_without_grantin
     assert result.task_spec is not None
     assert result.task_spec.revision == 2
     assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
+    assert result.task_spec.task_structure == TaskStructure.FLAT
     assert result.task_spec.requested_capabilities == ("settings.write",)
     assert result.task_spec.entities == (entity,)
     assert result.task_spec.evidence_requirements == ("settings API confirms dark",)
     assert "granted" not in result.task_spec.model_dump()
     with pytest.raises(ValidationError):
         result.task_spec.revision = 3  # type: ignore[misc]
+
+
+def test_validated_intent_carries_explicit_multi_stage_routing_without_granting_authority() -> None:
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(task_structure=TaskStructure.MULTI_STAGE),
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.task_structure == TaskStructure.MULTI_STAGE
+    assert result.task_spec.requested_capabilities == ("settings.write",)
 
 
 def test_blocking_or_high_risk_ambiguity_stops_before_task_spec() -> None:

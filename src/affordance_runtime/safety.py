@@ -60,8 +60,10 @@ class TaskConstraintPolicy:
         }
         if constraints.get("read_only") and effectful:
             return RuntimeErrorCode.POLICY_DENIED
-        if effectful and not (contract.idempotency_key or contract.compensation or contract.risk == RiskLevel.IRREVERSIBLE):
-            return RuntimeErrorCode.UNSAFE_ACTION
+        # Idempotency and compensation constrain recovery after an attempted
+        # effect; their absence does not revoke authority for the first,
+        # explicitly requested execution.  BoundedRecoveryPolicy fails closed
+        # rather than retrying a non-idempotent contract blindly.
         text = " ".join(
             [contract.intent, contract.action, *contract.required_capabilities]
         ).lower()

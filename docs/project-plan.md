@@ -801,6 +801,18 @@ Exit when raw natural language reaches a validated TaskSpec, simple and
 multi-stage local tasks use the declared chain, plan lineage and evidence-bound
 progress are traceable, and planner context has zero benchmark identity leakage.
 
+Status on 2026-07-23: **complete**. Typed intent now derives operation class,
+requested capabilities, constraints, and flat/multi-stage structure. One
+PlanningRouter is installed at the Coordinator boundary and used by the raw
+pipeline, reference/parent paths, and BrowserGym generalist runner. The
+benchmark runner compiles its raw goal instead of assigning a blanket operation
+class. Coordinator binds verifier evidence to TaskPlan obligations across
+ordinary, SkillStep, adapter, and preflight-rebound contracts. Planner-facing
+contexts omit task/run/source identity, full URL paths, opaque artifact paths,
+suite names, and official reward wording. A normal non-BrowserGym raw
+multi-stage integration test completes two serial, independently verified
+subgoals. Evidence: `evidence/m8.6-g2-intent-task-planning-20260723.md`.
+
 #### G2.5: Active perception and evidence repair
 
 Active perception is shared Runtime infrastructure, not a planner trick and not

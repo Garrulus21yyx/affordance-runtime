@@ -14,6 +14,7 @@ from time import perf_counter
 from typing import Any, Callable, Sequence, cast
 
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.benchmarks import browsergym_observer as _browsergym_observer
 from affordance_runtime.benchmarks.browsergym_action_schema import (
     BrowserGymAction,
@@ -51,6 +52,7 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
+from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.perception import (
     GenericPerceptionOrchestrator,
@@ -65,7 +67,9 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
+from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
+from affordance_runtime.trace import TraceDag
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -122,6 +126,7 @@ class BrowserGymPlanner:
                     action_kind=PlannerActionKind.FINISH,
                     done=True,
                     result={
+                        "status": "incomplete",
                         "official_success": False,
                         "official_reward": self.episode.reward,
                         "terminated": False,
@@ -628,20 +633,22 @@ def run_browsergym_generalist_episode(
             visual_executor=BROWSERGYM_BACKEND,
         )
         run_id = f"browsergym-generalist-{task_id}-seed-{seed}"
-        task_spec = TaskSpec(
-            task_id=run_id,
-            revision=1,
-            objective=goal,
-            # Operation classification is still an open G2 intent-boundary
-            # item. Preserve the historical sandbox classification until the
-            # runner consumes a validated IntentDraft; do not infer authority
-            # from benchmark identity or task grammar here.
-            operation_class=OperationClass.READ_ONLY,
-            targets=(),
-            success_criteria=("the requested effect is observed in the current environment",),
-            evidence_requirements=("fresh post-action environment state",),
-            source_request_ref=f"browsergym:{task_id}:seed:{seed}",
+        intake_trace = TraceDag(run_id=run_id)
+        compilation = resolve_awaitable(
+            LLMIntentCompiler(model).compile(
+                UserRequest(
+                    request_id=run_id,
+                    raw_text=goal,
+                    channel="browser-runtime",
+                ),
+                task_id=run_id,
+                trace=intake_trace,
+            )
         )
+        if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
+            issue_codes = ",".join(item.code for item in compilation.issues)
+            raise ValueError(f"intent compilation {compilation.status.value}: {issue_codes}")
+        task_spec = compilation.task_spec
         perception_requirements = derive_perception_requirements(task_spec)
         planner_limits = PlannerLimits(
             max_steps=max_steps,
@@ -658,7 +665,10 @@ def run_browsergym_generalist_episode(
                 prompt_version=planner_prompt_version(planner_profile),
             ),
             limits=planner_limits,
-            max_model_calls=max_model_calls,
+            max_model_calls=max(
+                0,
+                max_model_calls - (3 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 1),
+            ),
             planner_profile=planner_profile,
         )
         result = RunCoordinator(
@@ -680,7 +690,8 @@ def run_browsergym_generalist_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
-        ).run_sync(TaskEnvelope(task_spec=task_spec))
+            task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
+        ).run_sync(TaskEnvelope(task_spec=task_spec), intake_trace)
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -691,7 +702,7 @@ def run_browsergym_generalist_episode(
         )
         trace_path = next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), "")
         model_stats = {
-            **_browsergym_model_stats(result.trace.nodes, planner.model_call_count),
+            **_browsergym_model_stats(result.trace.nodes, planner.model_call_count + 1),
             **_browsergym_context_stats(result.trace.nodes, planner_limits.max_affordances),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),
             "last_verified_step": result.state.step_count,
@@ -937,7 +948,8 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
     records = [
         node.payload.get("model_call")
         for node in nodes
-        if node.kind == "PlannerProposalProduced" and isinstance(node.payload.get("model_call"), dict)
+        if node.kind in {"IntentDraftProduced", "PlannerProposalProduced"}
+        and isinstance(node.payload.get("model_call"), dict)
     ]
     provider_failures = [
         str(node.payload.get("provider_failure") or "")

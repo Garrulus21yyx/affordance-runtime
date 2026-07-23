@@ -436,6 +436,7 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=_accepted_runtime(_payload()),
+        task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -458,6 +459,7 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=_accepted_runtime(_payload()),
+        task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
@@ -490,6 +492,7 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
             }
         ),
         task_skill_runtime=_accepted_runtime(payload),
+        task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -672,6 +675,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(proposal.payload),
+            task_planner=None,
         ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
@@ -833,6 +837,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(payload),
+            task_planner=None,
         ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         no_effect = world == ProfileWorld() and not result.state.receipts

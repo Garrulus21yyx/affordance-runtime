@@ -251,6 +251,10 @@ class VerifierLadder:
                     )
                 continue
             passed = verifier.verify(spec, receipt, observation)
+            adapter_terminal_success = (
+                spec.kind == "state_delta_or_terminal"
+                and receipt.evidence.get("terminal_success") is True
+            )
             if spec.kind == "evidence":
                 observed = receipt.evidence.get(spec.target)
             elif spec.kind == "dom_contains":
@@ -271,6 +275,8 @@ class VerifierLadder:
                     source=(
                         "execution_receipt"
                         if spec.kind == "evidence"
+                        else "external_evaluator"
+                        if adapter_terminal_success
                         else "independent_http_json"
                         if spec.kind == "http_json"
                         else "post_action_observation"
@@ -289,6 +295,7 @@ class VerifierLadder:
                     strength=(
                         "weak"
                         if spec.kind in {"evidence", "state_delta_or_terminal"}
+                        and not adapter_terminal_success
                         else "strong"
                     ),
                 )

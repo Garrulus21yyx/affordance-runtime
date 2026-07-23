@@ -23,6 +23,11 @@ class OperationClass(StrEnum):
     IRREVERSIBLE = "irreversible"
 
 
+class TaskStructure(StrEnum):
+    FLAT = "flat"
+    MULTI_STAGE = "multi_stage"
+
+
 class CompilationStatus(StrEnum):
     READY = "ready"
     NEEDS_CLARIFICATION = "needs_clarification"
@@ -94,6 +99,7 @@ class IntentDraft(StrictModel):
     ambiguities: tuple[IntentAmbiguity, ...] = ()
     source_map: tuple[FieldProvenance, ...] = ()
     confidence_by_field: tuple[FieldConfidence, ...] = ()
+    task_structure: TaskStructure = TaskStructure.FLAT
 
 
 class TaskSpec(StrictModel):
@@ -102,6 +108,7 @@ class TaskSpec(StrictModel):
     revision: int = Field(ge=1)
     objective: str = Field(min_length=1)
     operation_class: OperationClass
+    task_structure: TaskStructure = TaskStructure.FLAT
     targets: tuple[str, ...]
     entities: tuple[IntentEntity, ...] = ()
     preferences: tuple[str, ...] = ()
@@ -249,6 +256,7 @@ class IntentDraftValidator:
             revision=revision,
             objective=draft.objective.strip(),
             operation_class=operation,
+            task_structure=draft.task_structure,
             targets=_ordered_unique(effect.target for effect in draft.requested_effects),
             entities=draft.entities,
             preferences=draft.preferences,

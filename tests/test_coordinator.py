@@ -817,6 +817,7 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
         planner=RepeatingSemanticPlanner(),
         executor=executor,
         contract_builder=_semantic_guard_builder(),
+        task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -833,6 +834,7 @@ def test_progress_guard_blocks_failed_action_when_state_did_not_change() -> None
         planner=RepeatingSemanticPlanner(),
         executor=executor,
         contract_builder=_semantic_guard_builder(),
+        task_planner=None,
         recovery=BoundedRecoveryPolicy(
             decision_override=lambda contract, receipt, context, error: RecoveryDecision(
                 RecoveryAction.REOBSERVE, "replan after failed verification"

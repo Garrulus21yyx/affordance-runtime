@@ -56,7 +56,9 @@ def test_builder_bounds_untrusted_context_and_exposes_only_semantic_inventory() 
 
     assert len(context.observed_text) == 2_000
     assert len(context.affordances) == 2
-    assert context.selected_artifact_refs == ("artifact:last",)
+    assert len(context.selected_artifact_refs) == 1
+    assert context.selected_artifact_refs[0].startswith("artifact:sha256:")
+    assert "artifact:last" not in context.model_dump_json()
     assert context.accepted_knowledge == ("current-a", "current-b")
     assert context.granted_capabilities == ("settings.write",)
     assert "finish" not in context.permitted_action_kinds

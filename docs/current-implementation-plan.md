@@ -250,8 +250,9 @@ that module, and only the explicit historical profile loads it. See
 Completed implementation steps: `PlannerProposalValidator` is the first
 context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
-Planner module. The current next gate is G2: typed intent/capability derivation
-and the common TaskPlan entrypoint. Recovery-produced proposals remain a G3
+Planner module. G2 now owns typed intent/capability derivation and the common
+TaskPlan entrypoint. The current next gate is G2.5 active perception and
+evidence repair. Recovery-produced proposals remain a G3
 integration site, but the Validator already fails closed unless they carry the
 reserved typed `recovery` provenance.
 
@@ -276,13 +277,29 @@ profile and replay entrypoint preserve historical evidence.
 5. wire the same router into reference, parent-agent, and benchmark entrypoints;
 6. remove suite identity and reward from planner context.
 
-Status on 2026-07-23: **started, not closed**. Planner-facing summaries no
-longer contain `task_id`, and the BrowserGym Runtime TaskSpec no longer uses a
-suite task id as a semantic target or official reward wording as success
-evidence. The runner deliberately retains its historical blanket read-only
-classification until a validated IntentDraft owns operation/capability
-derivation; substituting another blanket class would not satisfy G2. TaskPlan
-router integration and typed intent derivation remain pending.
+Status on 2026-07-23: **complete**. Raw requests enter `LLMIntentCompiler` and
+the deterministic `IntentDraftValidator`; `TaskSpec.task_structure` selects the
+flat rule plan or a declared shallow complex planner without granting action
+authority. Coordinator installs `PlanningRouter` as the common TaskSpec path,
+and the reference, parent/Coordinator, raw pipeline, and BrowserGym generalist
+entrypoints use that boundary. BrowserGym no longer creates a blanket
+read-only TaskSpec: its raw goal is compiled before perception and planning.
+
+Coordinator, rather than an individual adapter builder, binds trusted verifier
+evidence to the active TaskPlan obligations. Existing SkillStep identities are
+preserved and may also satisfy the current subgoal; evidence already bound to a
+different subgoal is never rebound. Rebuilt preflight contracts receive the
+same binding. A normal non-BrowserGym raw multi-stage test passes through
+IntentCompiler -> LLM TaskPlan -> two serial verifier-backed subgoals.
+
+Planner-facing TaskSpec summaries omit task/run/source identities; task-plan
+context exposes only URL origin, and step-planner artifact paths are replaced
+with opaque digests. The benchmark test asserts that suite identity and
+official reward wording are absent. External-evaluator terminal success is
+strong independent evidence, while ordinary state-delta-or-terminal evidence
+remains weak. First explicitly requested medium-risk execution no longer
+requires a retry mechanism; recovery still refuses blind non-idempotent retry.
+See `evidence/m8.6-g2-intent-task-planning-20260723.md`.
 
 #### G2.5: Active perception and evidence repair
 

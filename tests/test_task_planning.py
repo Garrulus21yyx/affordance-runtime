@@ -3,7 +3,7 @@ import pytest
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_planning import (
     LLMTaskPlanner,
     PlanningRouter,
@@ -55,6 +55,44 @@ def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> N
     assert len(plan.subgoals) == 1
     assert plan.subgoals[0].objective == _task().objective
     assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
+
+
+class RecordingComplexPlanner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        self.calls += 1
+        return synthetic_task_plan(context, generated_by=TaskPlanSource.PARENT)
+
+
+def test_multi_stage_router_uses_only_the_declared_complex_planner() -> None:
+    complex_planner = RecordingComplexPlanner()
+    context = _context().model_copy(
+        update={
+            "task_spec": _task().model_copy(
+                update={"task_structure": TaskStructure.MULTI_STAGE}
+            )
+        }
+    )
+
+    plan = PlanningRouter(complex_planner=complex_planner).plan(context)
+
+    assert complex_planner.calls == 1
+    assert plan.generated_by == TaskPlanSource.PARENT
+
+
+def test_multi_stage_router_fails_closed_without_a_declared_complex_planner() -> None:
+    context = _context().model_copy(
+        update={
+            "task_spec": _task().model_copy(
+                update={"task_structure": TaskStructure.MULTI_STAGE}
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="complex task requires"):
+        PlanningRouter().plan(context)
 
 
 def test_validator_rejects_stale_escalating_and_cyclic_plans() -> None:
@@ -287,6 +325,9 @@ class RepairingTaskPlanModel:
         self.calls += 1
         if self.calls == 1:
             assert len(messages) == 2
+            assert '"task_id"' not in messages[-1].content
+            assert '"source_request_ref"' not in messages[-1].content
+            assert '"created_at_s"' not in messages[-1].content
             return output_schema.model_validate(
                 {
                     "subgoals": [

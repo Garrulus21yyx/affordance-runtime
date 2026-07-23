@@ -73,14 +73,16 @@ class PerceptionSession:
             ),
             task_instruction=(
                 " ".join(
-                    item
-                    for item in (
-                        envelope.task_spec.objective,
-                        active_subgoal.objective
-                        if isinstance(active_subgoal, SubgoalSpec)
-                        else active_subgoal or "",
+                    dict.fromkeys(
+                        item
+                        for item in (
+                            envelope.task_spec.objective,
+                            active_subgoal.objective
+                            if isinstance(active_subgoal, SubgoalSpec)
+                            else active_subgoal or "",
+                        )
+                        if item
                     )
-                    if item
                 )
                 if envelope.task_spec is not None
                 else envelope.goal

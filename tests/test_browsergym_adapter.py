@@ -170,6 +170,7 @@ class GeneralistClickModel:
     last_call: ModelCallRecord | None = None
     calls: int = 0
     first_target_id: str = ""
+    planner_calls: int = 0
 
     async def generate_structured(
         self,
@@ -178,8 +179,26 @@ class GeneralistClickModel:
         config: ModelConfig,
     ) -> T:
         del config
+        if output_schema.__name__ == "IntentDraft":
+            request = json.loads(messages[-1].content)
+            self.calls += 1
+            return output_schema.model_validate(
+                {
+                    "objective": request["raw_text"],
+                    "requested_effects": [
+                        {
+                            "operation_class": "reversible_write",
+                            "target": "target",
+                            "source_ref": request["request_id"],
+                        }
+                    ],
+                    "candidate_success_criteria": ["the target is activated"],
+                    "candidate_evidence_requirements": ["fresh post-action state"],
+                    "task_structure": "flat",
+                }
+            )
         context = json.loads(messages[-1].content)
-        if self.calls == 0:
+        if self.planner_calls == 0:
             self.first_target_id = context["affordances"][0]["id"]
             payload = {
                 "action_kind": PlannerActionKind.ACTIVATE,
@@ -193,6 +212,7 @@ class GeneralistClickModel:
                 "result": {"official_success": True, "official_reward": 1.0},
             }
         self.calls += 1
+        self.planner_calls += 1
         return output_schema.model_validate(payload)
 
 
@@ -263,9 +283,11 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     assert events == [
         "TaskCreated",
         "ObservationCaptured",
-        "SourceAssertionsCollected",
-        "SourceAssertionsArbitrated",
-        "PlanProposed",
+            "SourceAssertionsCollected",
+            "SourceAssertionsArbitrated",
+            "TaskPlanProposed",
+            "TaskPlanAccepted",
+            "PlanProposed",
         "PlannerProposalValidated",
         "PlannerProposalProduced",
         "ContractBuilt",
@@ -277,9 +299,11 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "ActionCompleted",
         "PostActionObservationCaptured",
         "SourceAssertionsCollected",
-        "SourceAssertionsArbitrated",
-        "PostconditionPassed",
-        "ObservationCaptured",
+            "SourceAssertionsArbitrated",
+            "PostconditionPassed",
+            "SubgoalCompleted",
+            "TaskPlanCompleted",
+            "ObservationCaptured",
         "SourceAssertionsCollected",
         "SourceAssertionsArbitrated",
         "PlanProposed",
@@ -337,18 +361,40 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 1
+    assert model.calls == 2
+    assert result.model_call_count == 2
     assert environment.page.default_timeout_ms == 1_500
     assert model.first_target_id.startswith("semantic:")
     assert model.first_target_id != "dom_button_1"
     trace_rows = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
     events = [row["event_type"] for row in trace_rows]
     assert "PlannerContextBuilt" in events
+    assert "IntentDraftProduced" in events
+    assert "TaskSpecCreated" in events
+    assert "TaskPlanProposed" in events
     assert "PlannerProposalProduced" in events
     assert "ContractBuilt" in events
     route = next(row["payload"] for row in trace_rows if row["event_type"] == "RouteSelected")
     assert route["semantic_target_id"] == model.first_target_id
     assert route["candidate_id"].startswith("candidate:dom:")
+    planner_context = next(
+        row["payload"]["context"]
+        for row in trace_rows
+        if row["event_type"] == "PlannerContextBuilt"
+    )
+    assert planner_context["task_spec"]["operation_class"] == "reversible_write"
+    assert planner_context["task_spec"]["targets"] == ["target"]
+    assert planner_context["task_spec"]["task_structure"] == "flat"
+    assert "task_id" not in planner_context["task_spec"]
+    assert "click-button" not in json.dumps(planner_context)
+    assert "official_reward" not in json.dumps(planner_context)
+    task_plan_context = next(
+        row["payload"]["planning_context"]
+        for row in trace_rows
+        if row["event_type"] == "TaskPlanProposed"
+    )
+    assert "task_id" not in task_plan_context["task_spec"]
+    assert "click-button" not in json.dumps(task_plan_context)
     assert route["hard_gates"] and route["hard_gates"][0]["passed"] is True
     assert route["scores"] and route["decision_reason"]
 

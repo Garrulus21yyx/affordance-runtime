@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, replace
 from typing import Any
@@ -128,7 +129,8 @@ class PlannerContextBuilder:
                 allow_finish=self.allow_finish,
             ),
             selected_artifact_refs=tuple(
-                snapshot.observation.artifact_refs[-limits.max_artifact_refs :]
+                _opaque_artifact_ref(item)
+                for item in snapshot.observation.artifact_refs[-limits.max_artifact_refs :]
             ),
             granted_capabilities=tuple(sorted(set(envelope.capabilities))),
             approval_handling="coordinator_managed",
@@ -180,6 +182,7 @@ def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
         "revision",
         "objective",
         "operation_class",
+        "task_structure",
         "targets",
         "success_criteria",
         "constraints",
@@ -189,6 +192,12 @@ def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
         "ambiguity_status",
     )
     return {key: task_spec[key] for key in keys if key in task_spec}
+
+
+def _opaque_artifact_ref(value: str) -> str:
+    """Keep planner correlation without exposing run or suite names in paths."""
+
+    return f"artifact:sha256:{hashlib.sha256(value.encode()).hexdigest()}"
 
 
 def _planner_affordance_inventory(snapshot: BrowserSnapshot) -> list[Affordance]:

@@ -28,6 +28,7 @@ from affordance_runtime.planning import (
     PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
+    bind_active_subgoal_verifiers,
 )
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
@@ -49,11 +50,13 @@ from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planning import (
+    PlanningRouter,
     SubgoalVerifierPort,
     TaskPlannerPort,
     TaskPlanValidationStatus,
     TaskPlanValidator,
     VerifierBackedSubgoalVerifier,
+    task_planning_context_summary,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
@@ -140,6 +143,17 @@ class CoordinatorResult:
     artifacts: list[ArtifactRef] = field(default_factory=list)
 
 
+def _is_safe_incomplete_terminal(decision: PlannerDecision, state: StateKernel) -> bool:
+    """Allow an evidence-explicit non-success stop without claiming plan completion."""
+
+    status = str(decision.result.get("status") or "").casefold()
+    return (
+        status in {"blocked", "incomplete", "inconclusive", "unsupported"}
+        and not state.receipts
+        and state.effectful_action_count == 0
+    )
+
+
 @dataclass
 class RunCoordinator:
     observer: ObservationSource
@@ -156,7 +170,7 @@ class RunCoordinator:
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
     contract_builder: ContractBuilder | None = None
     proposal_validator: PlannerProposalValidator = field(default_factory=PlannerProposalValidator)
-    task_planner: TaskPlannerPort | None = None
+    task_planner: TaskPlannerPort | None = field(default_factory=PlanningRouter)
     task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
@@ -328,32 +342,12 @@ class RunCoordinator:
                         "plan_version": task_plan.plan_version,
                         "preserved_subgoal_ids": preserved_subgoal_ids,
                         "active_subgoal": state.active_subgoal(),
-                        "planning_context": transition.context.model_dump(mode="json"),
+                        "planning_context": task_planning_context_summary(transition.context),
                     },
                     parents=[parent.id],
                 )
 
-            if self.task_plan_lifecycle is not None and state.task_plan is None:
-                if envelope.task_spec is None:
-                    state.transition(RuntimeStep.FAILED.value)
-                    parent = trace.add(
-                        "TaskPlanRejected",
-                        {
-                            "state": state.phase,
-                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                            "reason": "task planning requires a validated TaskSpec",
-                        },
-                        parents=[parent.id],
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.FAILED,
-                        parent,
-                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        latest_verification,
-                    )
+            if self.task_plan_lifecycle is not None and state.task_plan is None and envelope.task_spec is not None:
                 try:
                     transition = self.task_plan_lifecycle.propose_initial(
                         envelope.task_spec,
@@ -392,7 +386,7 @@ class RunCoordinator:
                         "generated_by": task_plan.generated_by.value,
                         "subgoal_count": len(task_plan.subgoals),
                         "supersedes_plan_id": task_plan.supersedes_plan_id,
-                        "planning_context": transition.context.model_dump(mode="json"),
+                        "planning_context": task_planning_context_summary(transition.context),
                         "validation": report.status.value,
                         "issues": [item.model_dump(mode="json") for item in report.issues],
                     },
@@ -707,26 +701,38 @@ class RunCoordinator:
                         latest_verification,
                     )
             if decision.done:
-                if self.task_plan_lifecycle is not None and not self.task_plan_lifecycle.completed(state):
-                    state.transition(RuntimeStep.ABORTED.value)
-                    parent = trace.add(
-                        "PlannerProposalRejected",
-                        {
-                            "state": state.phase,
-                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                            "reason": "planner cannot finish before verifier-backed subgoal completion",
-                        },
-                        parents=[parent.id],
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.ABORTED,
-                        parent,
-                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        latest_verification,
-                    )
+                if state.task_plan is not None and not TaskPlanLifecycle.completed(state):
+                    if _is_safe_incomplete_terminal(decision, state):
+                        parent = trace.add(
+                            "TaskPlanStoppedIncomplete",
+                            {
+                                "state": state.phase,
+                                "task_plan_id": state.task_plan.plan_id,
+                                "result_status": str(decision.result.get("status") or ""),
+                                "reason": decision.reason,
+                            },
+                            parents=[parent.id],
+                        )
+                    else:
+                        state.transition(RuntimeStep.ABORTED.value)
+                        parent = trace.add(
+                            "PlannerProposalRejected",
+                            {
+                                "state": state.phase,
+                                "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                                "reason": "planner cannot finish before verifier-backed subgoal completion",
+                            },
+                            parents=[parent.id],
+                        )
+                        return self._finish(
+                            envelope,
+                            state,
+                            trace,
+                            RuntimeStep.ABORTED,
+                            parent,
+                            RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                            latest_verification,
+                        )
                 state.final_result = dict(decision.result)
                 state.transition(RuntimeStep.DONE.value)
                 parent = trace.add(
@@ -832,6 +838,13 @@ class RunCoordinator:
                 contract,
                 envelope,
                 snapshot.observation,
+            )
+            contract = replace(
+                contract,
+                verifier_plan=list(
+                    bind_active_subgoal_verifiers(tuple(contract.verifier_plan), state)
+                ),
+                contract_hash="",
             )
             if skill_step_id and self.task_skill_runtime is not None:
                 requirement_error = self.task_skill_runtime.contract_requirement_error(
@@ -1077,6 +1090,16 @@ class RunCoordinator:
                             rebound_contract,
                             envelope,
                             preflight_snapshot.observation,
+                        )
+                        rebound_contract = replace(
+                            rebound_contract,
+                            verifier_plan=list(
+                                bind_active_subgoal_verifiers(
+                                    tuple(rebound_contract.verifier_plan),
+                                    state,
+                                )
+                            ),
+                            contract_hash="",
                         )
                         rebound_error = self.contract_execution_loop.revalidate(
                             rebound_contract,
@@ -1407,9 +1430,9 @@ class RunCoordinator:
                 post_snapshot,
                 state.phase,
             )
+            skill_complete = False
             if latest_verification.passed:
                 if skill_step_id and self.task_skill_runtime is not None:
-                    skill_complete = False
                     skill_report = self.task_skill_runtime.verify_active_step(
                         state,
                         step_id=skill_step_id,
@@ -1546,25 +1569,51 @@ class RunCoordinator:
                             parents=[parent.id],
                         )
                         if TaskPlanLifecycle.completed(state):
-                            state.final_result = {
-                                "task_plan_id": state.task_plan.plan_id,
-                                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
-                            }
-                            state.transition(RuntimeStep.DONE.value)
                             parent = trace.add(
-                                "TaskCompleted",
-                                {"state": state.phase, "result": state.final_result},
+                                "TaskPlanCompleted",
+                                {
+                                    "state": state.phase,
+                                    "task_plan_id": state.task_plan.plan_id,
+                                    "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                                },
                                 parents=[parent.id],
                             )
-                            return self._finish(
-                                envelope,
-                                state,
-                                trace,
-                                RuntimeStep.DONE,
-                                parent,
-                                None,
-                                latest_verification,
-                            )
+                            if (
+                                len(state.task_plan.subgoals) > 1
+                                or not isinstance(self.task_planner, PlanningRouter)
+                                or skill_complete
+                            ):
+                                if skill_complete and state.task_skill is not None:
+                                    state.final_result = {
+                                        "task_skill_id": state.task_skill.skill_id,
+                                        "task_skill_version": state.task_skill.version,
+                                        "completed_step_ids": list(state.task_skill.completed_step_ids),
+                                    }
+                                    parent = trace.add(
+                                        "TaskSkillCompleted",
+                                        {"state": state.phase, **state.final_result},
+                                        parents=[parent.id],
+                                    )
+                                else:
+                                    state.final_result = {
+                                        "task_plan_id": state.task_plan.plan_id,
+                                        "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                                    }
+                                state.transition(RuntimeStep.DONE.value)
+                                parent = trace.add(
+                                    "TaskCompleted",
+                                    {"state": state.phase, "result": state.final_result},
+                                    parents=[parent.id],
+                                )
+                                return self._finish(
+                                    envelope,
+                                    state,
+                                    trace,
+                                    RuntimeStep.DONE,
+                                    parent,
+                                    None,
+                                    latest_verification,
+                                )
                     elif progress_report is not None and subgoal is not None:
                         parent = trace.add(
                             "SubgoalEvidenceRejected",

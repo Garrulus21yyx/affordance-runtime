@@ -20,6 +20,7 @@ INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v3"
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
 Return only the requested strict schema. Never grant capability or approval, choose a selector/coordinate, or claim execution.
 Use operation_class values read_only, navigation, reversible_write, external_side_effect, or irreversible.
+Use task_structure=flat for one directly verifiable outcome. Use multi_stage only for genuinely sequential, cross-application, data-dependent, or independently verifiable intermediate outcomes; never split a simple form or one direct effect merely because it has multiple fields.
 Classify sending/posting/submitting externally, booking/reserving, purchasing, and other effects visible outside a local draft as external_side_effect even when they may later be cancellable.
 Every requested effect and entity needs a source_ref pointing to the request or an explicitly supplied context reference.
 Each requested_effect.target must name the concrete semantic resource and preserve any explicit identifier needed to distinguish it; do not leave the identifier only in entities.
