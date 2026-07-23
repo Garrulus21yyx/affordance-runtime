@@ -14,6 +14,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
     PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
@@ -25,6 +27,11 @@ from affordance_runtime.unified_grounding import (
     SemanticEntityResolver,
     candidate_fingerprints,
     candidate_from_affordance,
+)
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="planning-test-fixture",
 )
 
 
@@ -434,7 +441,13 @@ def test_proposal_validator_is_the_source_neutral_prebinding_gate(
     candidate = proposal(state)
 
     with pytest.raises(ProposalRejected) as caught:
-        PlannerProposalValidator().validate(candidate, spec, state, snapshot)
+        PlannerProposalValidator().validate(
+            candidate,
+            TEST_PROPOSAL_PROVENANCE,
+            spec,
+            state,
+            snapshot,
+        )
 
     assert caught.value.code == code
 
@@ -442,7 +455,22 @@ def test_proposal_validator_is_the_source_neutral_prebinding_gate(
 def test_proposal_validator_accepts_a_current_semantic_proposal() -> None:
     spec, state, snapshot = _fixture()
 
-    PlannerProposalValidator().validate(_proposal(state), spec, state, snapshot)
+    PlannerProposalValidator().validate(
+        _proposal(state),
+        TEST_PROPOSAL_PROVENANCE,
+        spec,
+        state,
+        snapshot,
+    )
+
+
+def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
+    spec, state, snapshot = _fixture()
+
+    with pytest.raises(ProposalRejected) as caught:
+        PlannerProposalValidator().validate(_proposal(state), None, spec, state, snapshot)
+
+    assert caught.value.code == ProposalRejectionCode.MISSING_PROVENANCE
 
 
 def test_proposal_schema_rejects_surface_and_authority_fields() -> None:

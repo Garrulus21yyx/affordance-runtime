@@ -614,7 +614,12 @@ def test_strict_default_disables_compatibility_compilers_without_removing_drag()
     assert disabled_model.calls == 1
     assert enabled.planner_context["planner_profile"] == "historical-compatibility"
     assert enabled.planner_context["semantic_compiler"]["compiler_id"] == "typed-affordance-semantics-v1"
+    assert enabled.proposal_provenance is not None
+    assert enabled.proposal_provenance.source.value == "deterministic_rule"
+    assert enabled.proposal_provenance.profile_id == "historical-compatibility"
     assert disabled.planner_context["planner_profile"] == "strict-generalist"
+    assert disabled.proposal_provenance is not None
+    assert disabled.proposal_provenance.source.value == "model"
     assert "semantic_compiler" not in disabled.planner_context
     assert "semantic_constraints" not in disabled.planner_context
 

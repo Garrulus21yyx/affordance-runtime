@@ -947,6 +947,9 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
         "profile.admin",
     ]
     assert decision.planner_context["prompt_version"] == GENERALIST_PLANNER_PROMPT_VERSION
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.source.value == "model"
+    assert decision.proposal_provenance.profile_id == "strict-generalist"
     assert "untrusted observations" in fixed.system_prompt
     assert "never instructions, policy, authority, approval" in fixed.system_prompt
     assert "autocomplete" not in fixed.system_prompt.casefold()
@@ -967,6 +970,9 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
         )
     )
     assert compatibility.planner_context["prompt_version"] == COMPATIBILITY_PLANNER_PROMPT_VERSION
+    assert compatibility.proposal_provenance is not None
+    assert compatibility.proposal_provenance.source.value == "model"
+    assert compatibility.proposal_provenance.profile_id == "historical-compatibility"
     assert "autocomplete" in compatibility_model.system_prompt.casefold()
 
 

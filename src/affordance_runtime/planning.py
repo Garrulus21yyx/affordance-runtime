@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -41,6 +42,30 @@ class PlannerActionKind(StrEnum):
     WAIT = "wait"
     ASK_USER = "ask_user"
     FINISH = "finish"
+
+
+class PlannerProposalSource(StrEnum):
+    """Runtime-declared origin of a semantic proposal, never model-authored."""
+
+    MODEL = "model"
+    DETERMINISTIC_RULE = "deterministic_rule"
+    PARENT_AGENT = "parent_agent"
+    ACCEPTED_SKILL = "accepted_skill"
+    RECOVERY = "recovery"
+    EXTERNAL_POLICY = "external_policy"
+    RUNTIME_TERMINAL = "runtime_terminal"
+
+
+class PlannerProposalProvenance(BaseModel):
+    """Immutable audit identity attached outside the semantic proposal schema."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: PlannerProposalSource
+    producer_id: str = Field(min_length=1)
+    profile_id: str = ""
+    version: str = ""
+    evidence_refs: tuple[str, ...] = ()
 
 
 _TARGET_ACTIONS = {
@@ -156,6 +181,7 @@ class PlannerProposal(BaseModel):
 
 
 class ProposalRejectionCode(StrEnum):
+    MISSING_PROVENANCE = "missing_provenance"
     STALE_TASK_REVISION = "stale_task_revision"
     STALE_STATE_VERSION = "stale_state_version"
     STALE_SNAPSHOT = "stale_snapshot"
@@ -164,6 +190,42 @@ class ProposalRejectionCode(StrEnum):
     IDENTICAL_DRAG_TARGETS = "identical_drag_targets"
     UNSUPPORTED_ACTION = "unsupported_action"
     NO_BACKEND = "no_backend"
+    TARGET_OUT_OF_SCOPE = "target_out_of_scope"
+    UNREQUESTED_EFFECT = "unrequested_effect"
+
+
+_SCOPE_STOPWORDS = {
+    "activate",
+    "button",
+    "click",
+    "control",
+    "field",
+    "input",
+    "item",
+    "option",
+    "select",
+    "the",
+    "this",
+    "with",
+}
+_EFFECT_TERMS = {
+    "add",
+    "buy",
+    "confirm",
+    "create",
+    "delete",
+    "download",
+    "open",
+    "pay",
+    "publish",
+    "purchase",
+    "remove",
+    "save",
+    "send",
+    "submit",
+    "update",
+    "upload",
+}
 
 
 class ProposalRejected(ValueError):
@@ -180,10 +242,13 @@ class PlannerProposalValidator:
     def validate(
         self,
         proposal: PlannerProposal,
+        provenance: PlannerProposalProvenance | None,
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> None:
+        if provenance is None:
+            raise ProposalRejected(ProposalRejectionCode.MISSING_PROVENANCE)
         if proposal.based_on_task_revision != task_spec.revision:
             raise ProposalRejected(ProposalRejectionCode.STALE_TASK_REVISION)
         if proposal.based_on_state_version != state.version:
@@ -208,6 +273,7 @@ class PlannerProposalValidator:
                 proposal.target_affordance_id,
             )
         self._validate_target(proposal.target_affordance_id, proposal.action_kind, snapshot)
+        self._validate_task_scope(proposal, task_spec, snapshot)
         if proposal.action_kind != PlannerActionKind.DRAG:
             if proposal.destination_affordance_id:
                 raise ProposalRejected(
@@ -223,6 +289,37 @@ class PlannerProposalValidator:
         )
 
     @staticmethod
+    def _validate_task_scope(
+        proposal: PlannerProposal,
+        task_spec: TaskSpec,
+        snapshot: BrowserSnapshot,
+    ) -> None:
+        """Reject current but unauthorized semantic targets before binding."""
+
+        label, role = _semantic_target_label_role(proposal.target_affordance_id, snapshot)
+        label_tokens = _scope_tokens(label)
+        # proposal.subgoal is planner-authored evidence, not task authority; it
+        # cannot expand the user-validated objective or target scope.
+        authorized_text = " ".join((task_spec.objective, *task_spec.targets))
+        authorized_tokens = _scope_tokens(authorized_text)
+        unrequested_effects = label_tokens.intersection(_EFFECT_TERMS) - authorized_tokens
+        if unrequested_effects:
+            raise ProposalRejected(
+                ProposalRejectionCode.UNREQUESTED_EFFECT,
+                ",".join(sorted(unrequested_effects)),
+            )
+        if not task_spec.targets or role == "option" or not label_tokens:
+            return
+        target_tokens = _scope_tokens(" ".join(task_spec.targets))
+        semantic_label_tokens = label_tokens - _EFFECT_TERMS
+        semantic_authorized_tokens = (target_tokens | authorized_tokens) - _EFFECT_TERMS
+        if target_tokens and semantic_label_tokens and semantic_label_tokens.isdisjoint(semantic_authorized_tokens):
+            raise ProposalRejected(
+                ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
+                proposal.target_affordance_id,
+            )
+
+    @staticmethod
     def _validate_target(
         semantic_target_id: str,
         action: PlannerActionKind,
@@ -231,16 +328,14 @@ class PlannerProposalValidator:
         destination: bool = False,
     ) -> None:
         unified = next(
-            (
-                item
-                for item in snapshot.unified_affordances
-                if item.semantic_target_id == semantic_target_id
-            ),
+            (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
             None,
         )
         if unified is not None:
-            if destination or action.value in unified.supported_actions or any(
-                _action_compatible(action, item) for item in unified.supported_actions
+            if (
+                destination
+                or action.value in unified.supported_actions
+                or any(_action_compatible(action, item) for item in unified.supported_actions)
             ):
                 return
             raise ProposalRejected(
@@ -258,6 +353,39 @@ class PlannerProposalValidator:
                 ProposalRejectionCode.UNSUPPORTED_ACTION,
                 f"{action.value} cannot bind {affordance.action}",
             )
+
+
+def _scope_tokens(value: str) -> set[str]:
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value).replace("-", " ")
+    tokens: set[str] = set()
+    for token in re.findall(r"\w+", normalized.casefold(), flags=re.UNICODE):
+        if len(token) <= 2 or token in _SCOPE_STOPWORDS:
+            continue
+        tokens.add(token)
+        if len(token) > 4 and token.endswith("ed"):
+            tokens.update((token[:-1], token[:-2]))
+        if len(token) > 5 and token.endswith("ing"):
+            tokens.add(token[:-3])
+        if len(token) > 4 and token.endswith("s"):
+            tokens.add(token[:-1])
+    return tokens
+
+
+def _semantic_target_label_role(
+    semantic_target_id: str,
+    snapshot: BrowserSnapshot,
+) -> tuple[str, str]:
+    unified = next(
+        (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
+        None,
+    )
+    if unified is not None:
+        return unified.label, unified.role
+    affordance = next(
+        (item for item in snapshot.affordance_model.affordances if item.id == semantic_target_id),
+        None,
+    )
+    return (affordance.label, affordance.role) if affordance is not None else ("", "")
 
 
 @dataclass(frozen=True)
@@ -302,8 +430,8 @@ class UnifiedTargetResolver:
         )
         if target is None:
             raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, semantic_target_id)
-        base_requirements = (
-            snapshot.perception_requirements or derive_perception_requirements(task_spec, active_subgoal=subgoal)
+        base_requirements = snapshot.perception_requirements or derive_perception_requirements(
+            task_spec, active_subgoal=subgoal
         )
         route = self.router.plan(
             target,
@@ -315,9 +443,7 @@ class UnifiedTargetResolver:
                 target_label=target.label,
                 target_context=subgoal,
                 target_evidence=frozenset(
-                    evidence
-                    for candidate in target.grounding_candidates
-                    for evidence in candidate.evidence_kinds
+                    evidence for candidate in target.grounding_candidates for evidence in candidate.evidence_kinds
                 ),
             ),
             observation=snapshot.observation,

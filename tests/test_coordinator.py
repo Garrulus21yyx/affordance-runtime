@@ -24,6 +24,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryDecision
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
@@ -38,6 +40,11 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.trace import TraceDag
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="coordinator-test-planner",
+)
 
 
 def _snapshot(sequence: int, *, saved: bool = False) -> BrowserSnapshot:
@@ -675,6 +682,7 @@ class AsyncSemanticSavePlanner:
         del envelope
         if state.receipts:
             return PlannerDecision(
+                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
                 proposal=PlannerProposal(
                     proposal_id="proposal-finish",
                     based_on_task_revision=self.revision,
@@ -683,9 +691,10 @@ class AsyncSemanticSavePlanner:
                     action_kind=PlannerActionKind.FINISH,
                     done=True,
                     result={"saved": True},
-                )
+                ),
             )
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id="proposal-save",
                 based_on_task_revision=self.revision,
@@ -696,7 +705,7 @@ class AsyncSemanticSavePlanner:
                 target_affordance_id=snapshot.affordance_model.affordances[0].id,
                 expected_effects=("settings are saved",),
                 evidence_requirements=("saved observation",),
-            )
+            ),
         )
 
 
@@ -738,6 +747,10 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     assert result.result == {"saved": True}
     events = [node.kind for node in result.trace.nodes]
     assert events.count("PlannerProposalProduced") == 2
+    assert result.state.planner_history
+    assert all(item["provenance"]["producer_id"] == "coordinator-test-planner" for item in result.state.planner_history)
+    produced = next(node for node in result.trace.nodes if node.kind == "PlannerProposalProduced")
+    assert produced.payload["provenance"]["source"] == "deterministic_rule"
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
     assert contract_event.payload["proposal_id"] == "proposal-save"
 
@@ -754,6 +767,7 @@ class RepeatingSemanticPlanner:
         if state.progress_guard_events:
             return PlannerDecision(done=True, result={"guarded": True})
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"proposal-repeat-{len(state.planner_history)}",
                 based_on_task_revision=1,
@@ -763,7 +777,7 @@ class RepeatingSemanticPlanner:
                 target_affordance_id=snapshot.affordance_model.affordances[0].id,
                 expected_effects=("settings are saved",),
                 evidence_requirements=("saved observation",),
-            )
+            ),
         )
 
 
@@ -965,6 +979,36 @@ def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
     assert result.state.receipts == []
 
 
+class MissingProvenancePlanner(AsyncSemanticSavePlanner):
+    async def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        decision = await super().propose(envelope, state, snapshot)
+        return replace(decision, proposal_provenance=None)
+
+
+def test_coordinator_rejects_missing_proposal_provenance_before_execution() -> None:
+    result = asyncio.run(
+        RunCoordinator(
+            observer=StableObserver(),
+            planner=MissingProvenancePlanner(),
+            executor=FakeExecutor(),
+            contract_builder=ContractBuilder(),
+        ).run(TaskEnvelope(task_spec=_semantic_task()))
+    )
+
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
+    rejected = next(node for node in result.trace.nodes if node.kind == "PlannerProposalRejected")
+    assert rejected.payload["rejection_code"] == "missing_provenance"
+    assert rejected.payload["provenance"] is None
+    assert "PlannerProposalValidated" not in [node.kind for node in result.trace.nodes]
+    assert result.state.receipts == []
+
+
 class ClarifyingPlanner(AsyncSemanticSavePlanner):
     async def propose(
         self,
@@ -974,6 +1018,7 @@ class ClarifyingPlanner(AsyncSemanticSavePlanner):
     ) -> PlannerDecision:
         del envelope
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id="proposal-clarify",
                 based_on_task_revision=1,
@@ -983,7 +1028,7 @@ class ClarifyingPlanner(AsyncSemanticSavePlanner):
                 action_kind=PlannerActionKind.ASK_USER,
                 requires_clarification=True,
                 uncertainty=1.0,
-            )
+            ),
         )
 
 

@@ -767,7 +767,7 @@ Exit when known negative probes defer, clarify, or act only on authorized
 targets, and strict-generalist passes non-BrowserGym Web, visual, and WoT
 conformance.
 
-Current implementation: strict-generalist is the default and cannot load the
+Current implementation: **G1 complete on 2026-07-23**. Strict-generalist is the default and cannot load the
 non-empty historical compatibility registry. Compatibility is explicit and
 cannot claim a generalist score. One shared PlannerProposalValidator now gates
 all proposal sources, initial task-shape controls pass, and the same strict
@@ -776,8 +776,12 @@ Prompt and protocol/current-state-only candidate policy; task-shaped rewrites
 remain compatibility-only. Historical objective parsers, terminal exposure,
 repair recipes, semantic rewrites, and registry callbacks are now physically
 isolated in `compatibility_planner_algorithms.py`; strict import/construction
-does not load that module. The complete behavioral control matrix and explicit
-proposal-source provenance remain open.
+does not load that module. The executable behavior matrix covers paraphrase,
+distractor, extra-control, ambiguity, unrelated-interface, unrequested-effect,
+and scope-expansion controls. Every current semantic proposal carries typed,
+runtime-authored provenance through validation, trace, and state; missing
+provenance is rejected before binding. Recovery uses the same reserved source
+type when its G3 production path is integrated.
 
 #### G2: Intent and task-planning integration
 

@@ -31,7 +31,12 @@ from affordance_runtime.planner_model_orchestrator import (
 from affordance_runtime.planner_model_orchestrator import (
     compatible_target_ids as _compatible_target_ids,
 )
-from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.planning import (
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
@@ -262,6 +267,12 @@ class GeneralistLMPlanner:
             ).bind(context, compilation=compiled)
             return PlannerDecision(
                 proposal=compiled_proposal,
+                proposal_provenance=PlannerProposalProvenance(
+                    source=PlannerProposalSource.DETERMINISTIC_RULE,
+                    producer_id=compiled.compiler_id,
+                    profile_id=self.planner_profile.value,
+                    evidence_refs=(compiled.evidence_ref,),
+                ),
                 reason=compiled_proposal.reason,
                 planner_context={
                     "task_revision": context.task_revision,
@@ -390,6 +401,12 @@ class GeneralistLMPlanner:
         )
         return PlannerDecision(
             proposal=proposal,
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.MODEL,
+                producer_id=f"{self.model.provider}:{self.model.model}",
+                profile_id=self.planner_profile.value,
+                version=self.config.prompt_version,
+            ),
             reason=proposal.reason,
             planner_context={
                 "task_revision": context.task_revision,

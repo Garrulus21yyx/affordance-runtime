@@ -60,6 +60,8 @@ from affordance_runtime.perception import (
 from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -127,6 +129,11 @@ class BrowserGymPlanner:
                         "policy_stopped": True,
                     },
                 ),
+                proposal_provenance=PlannerProposalProvenance(
+                    source=PlannerProposalSource.EXTERNAL_POLICY,
+                    producer_id=type(self.policy).__name__,
+                    profile_id="browsergym-policy-compatibility",
+                ),
                 reason="policy stopped before official termination",
             )
         action.render()  # validate before constructing a contract
@@ -134,6 +141,11 @@ class BrowserGymPlanner:
         self.bindings[proposal.proposal_id] = action
         return PlannerDecision(
             proposal=proposal,
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.EXTERNAL_POLICY,
+                producer_id=type(self.policy).__name__,
+                profile_id="browsergym-policy-compatibility",
+            ),
             reason="benchmark action translated to semantic proposal",
         )
 
@@ -198,7 +210,12 @@ def _browsergym_terminal_decision(
                 "truncated": episode.truncated,
                 "completion_policy": BROWSERGYM_TERMINAL_COMPLETION_POLICY,
             },
-        )
+        ),
+        proposal_provenance=PlannerProposalProvenance(
+            source=PlannerProposalSource.RUNTIME_TERMINAL,
+            producer_id="browsergym-episode-terminal",
+            profile_id="external-evaluator",
+        ),
     )
 
 

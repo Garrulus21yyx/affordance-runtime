@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Mapping, Protocol
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.coordinator import PlannerDecision
 from affordance_runtime.generalist_planner import PlannerLimits, build_planner_context
-from affordance_runtime.planning import PlannerProposal
+from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
@@ -47,6 +47,11 @@ class ParentAgentPlannerAdapter:
         proposal = PlannerProposal.model_validate(payload)
         return PlannerDecision(
             proposal=proposal,
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.PARENT_AGENT,
+                producer_id=type(self.source).__name__,
+                profile_id="parent-agent-adapter",
+            ),
             reason=proposal.reason,
             planner_context={
                 "adapter": "parent_agent",

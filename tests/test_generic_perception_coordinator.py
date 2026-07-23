@@ -18,12 +18,19 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.route_calibration import RouteOutcomeStatus
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.visual_grounding import VisualRegion
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="generic-perception-test-planner",
+)
 
 
 class CanvasPage:
@@ -99,6 +106,7 @@ class VisualSemanticPlanner:
             return PlannerDecision(done=True, result={"activated": True})
         target = next(item for item in snapshot.unified_affordances if "point_activate" in item.supported_actions)
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"activate-{state.step_count}",
                 based_on_task_revision=1,
@@ -106,7 +114,7 @@ class VisualSemanticPlanner:
                 snapshot_id=snapshot.observation.snapshot_id,
                 action_kind=PlannerActionKind.POINT_ACTIVATE,
                 target_affordance_id=target.semantic_target_id,
-            )
+            ),
         )
 
 
@@ -238,6 +246,7 @@ class ActivateSemanticPlanner:
             return PlannerDecision(done=True, result={"saved": True})
         target = next(item for item in snapshot.unified_affordances if "activate" in item.supported_actions)
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"save-{state.step_count}",
                 based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
@@ -245,7 +254,7 @@ class ActivateSemanticPlanner:
                 snapshot_id=snapshot.observation.snapshot_id,
                 action_kind=PlannerActionKind.ACTIVATE,
                 target_affordance_id=target.semantic_target_id,
-            )
+            ),
         )
 
 

@@ -23,6 +23,8 @@ from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
     PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
@@ -62,6 +64,7 @@ from affordance_runtime.verification import VerificationReport, VerifierLadder
 class PlannerDecision:
     contract: ActionContract | None = None
     proposal: PlannerProposal | None = None
+    proposal_provenance: PlannerProposalProvenance | None = None
     done: bool = False
     result: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
@@ -246,9 +249,7 @@ class RunCoordinator:
                     "url": snapshot.observation.url,
                     "artifact_refs": ([observation_ref.path] if observation_ref else [])
                     + snapshot.observation.artifact_refs,
-                    "perception_requirements": snapshot.observation.metadata.get(
-                        "perception_requirements"
-                    ),
+                    "perception_requirements": snapshot.observation.metadata.get("perception_requirements"),
                     "source_observations": [
                         {
                             "source": item.source.value,
@@ -484,6 +485,12 @@ class RunCoordinator:
                         skill_step_id = exposure.step_id
                         decision = PlannerDecision(
                             proposal=exposure.proposal,
+                            proposal_provenance=PlannerProposalProvenance(
+                                source=PlannerProposalSource.ACCEPTED_SKILL,
+                                producer_id=skill_payload.skill_id,
+                                version=skill_payload.version,
+                                evidence_refs=tuple(state.task_skill.evidence) if state.task_skill else (),
+                            ),
                             reason="accepted TaskSkill exposed one semantic step",
                         )
                         parent = trace.add(
@@ -581,6 +588,7 @@ class RunCoordinator:
             )
             if decision.proposal is not None:
                 proposal = decision.proposal
+                provenance = decision.proposal_provenance
                 try:
                     if envelope.task_spec is None:
                         raise ProposalRejected(
@@ -589,6 +597,7 @@ class RunCoordinator:
                         )
                     self.proposal_validator.validate(
                         proposal,
+                        provenance,
                         envelope.task_spec,
                         state,
                         snapshot,
@@ -604,6 +613,7 @@ class RunCoordinator:
                             "rejection_code": exc.code.value,
                             "reason": exc.detail,
                             "validation_boundary": "PlannerProposalValidator",
+                            "provenance": (provenance.model_dump(mode="json") if provenance is not None else None),
                         },
                         parents=[parent.id],
                     )
@@ -630,13 +640,16 @@ class RunCoordinator:
                         error_code,
                         latest_verification,
                     )
+                if provenance is None:  # narrowed after source-neutral validation
+                    raise RuntimeError("validated proposal is missing provenance")
                 parent = trace.add(
                     "PlannerProposalValidated",
                     {
                         "state": state.phase,
                         "proposal_id": proposal.proposal_id,
                         "validation_boundary": "PlannerProposalValidator",
-                        "source": "accepted_skill" if skill_step_id else "planner_port",
+                        "source": provenance.source.value,
+                        "provenance": provenance.model_dump(mode="json"),
                     },
                     parents=[parent.id],
                 )
@@ -661,6 +674,7 @@ class RunCoordinator:
                         "uncertainty": proposal.uncertainty,
                         "requires_clarification": proposal.requires_clarification,
                         "proposal": proposal.model_dump(mode="json"),
+                        "provenance": provenance.model_dump(mode="json"),
                         "model_call": (
                             decision.model_call.model_dump(mode="json") if decision.model_call is not None else None
                         ),
@@ -668,10 +682,10 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 if proposal.done:
-                    state.record_planner_proposal(proposal.model_dump(mode="json"))
+                    state.record_planner_proposal(_proposal_record(proposal, provenance))
                     decision = replace(decision, done=True, result=dict(proposal.result))
                 elif proposal.requires_clarification:
-                    state.record_planner_proposal(proposal.model_dump(mode="json"))
+                    state.record_planner_proposal(_proposal_record(proposal, provenance))
                     state.final_result = {
                         "clarification": proposal.subgoal or proposal.reason,
                         "proposal_id": proposal.proposal_id,
@@ -794,7 +808,9 @@ class RunCoordinator:
                         error_code,
                         latest_verification,
                     )
-                state.record_planner_proposal(decision.proposal.model_dump(mode="json"))
+                if decision.proposal_provenance is None:  # validated above
+                    raise RuntimeError("validated proposal is missing provenance")
+                state.record_planner_proposal(_proposal_record(decision.proposal, decision.proposal_provenance))
             if contract is None:
                 state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(
@@ -2071,6 +2087,16 @@ def _proposal_error_code(code: ProposalRejectionCode) -> RuntimeErrorCode:
     if code == ProposalRejectionCode.STALE_SNAPSHOT:
         return RuntimeErrorCode.SNAPSHOT_MISMATCH
     return RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
+
+
+def _proposal_record(
+    proposal: PlannerProposal,
+    provenance: PlannerProposalProvenance,
+) -> dict[str, Any]:
+    return {
+        **proposal.model_dump(mode="json"),
+        "provenance": provenance.model_dump(mode="json"),
+    }
 
 
 def _provider_runtime_error(kind: ProviderFailureKind) -> RuntimeErrorCode:

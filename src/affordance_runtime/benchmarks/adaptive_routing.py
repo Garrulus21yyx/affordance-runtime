@@ -44,6 +44,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -297,7 +299,12 @@ class _CountingSystem2Planner:
                 ),
                 action_kind=PlannerActionKind.ACTIVATE,
                 target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
-            )
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="adaptive-routing-ablation-system2",
+                profile_id="controlled-ablation",
+            ),
         )
 
 

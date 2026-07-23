@@ -12,6 +12,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -21,6 +23,11 @@ from affordance_runtime.unified_grounding import (
     SemanticEntityResolver,
     candidate_fingerprints,
     candidate_from_affordance,
+)
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="authoritative-device-test-planner",
 )
 
 
@@ -137,6 +144,7 @@ class DevicePlanner:
         if snapshot.observation.metadata["power"] is True:
             return PlannerDecision(done=True, result={"power": True})
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"device-{state.version}",
                 based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
@@ -145,7 +153,7 @@ class DevicePlanner:
                 subgoal="Turn on the authoritative device property",
                 action_kind=PlannerActionKind.ACTIVATE,
                 target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
-            )
+            ),
         )
 
 

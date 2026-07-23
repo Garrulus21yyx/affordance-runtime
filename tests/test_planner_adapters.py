@@ -9,6 +9,7 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.planner_adapters import ParentAgentPlannerAdapter
+from affordance_runtime.planning import PlannerProposalSource
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -74,6 +75,9 @@ def test_parent_adapter_receives_bounded_context_and_returns_semantic_proposal()
     assert "private-bid" not in str(source.seen)
     assert source.seen["granted_capabilities"] == ["settings.write"]
     assert decision.planner_context["adapter"] == "parent_agent"
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.source == PlannerProposalSource.PARENT_AGENT
+    assert decision.proposal_provenance.producer_id == "ParentSource"
 
 
 def test_parent_adapter_rejects_primitive_locator_payload() -> None:

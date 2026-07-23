@@ -138,6 +138,13 @@ PlannerProposalValidator is mandatory for rule, LM, parent-agent,
 accepted-skill, and recovery-produced proposals. It runs before completion,
 clarification, contract binding, approval, or execution handling.
 
+Each proposal carries separate runtime-authored `PlannerProposalProvenance`.
+The semantic proposal producer cannot author authority through this field. The
+provenance names the typed source, producer identity, profile/version, and
+evidence references; it is validated, traced, and persisted with proposal
+history. Missing provenance is a proposal rejection. A planner-authored
+subgoal never expands TaskSpec target scope.
+
 ### 5.1 Default and compatibility profiles
 
 The strict-generalist profile is the default scored and product profile.

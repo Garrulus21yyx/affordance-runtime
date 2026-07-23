@@ -19,6 +19,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -28,6 +30,11 @@ from affordance_runtime.unified_grounding import (
     SemanticEntityResolver,
     candidate_fingerprints,
     candidate_from_affordance,
+)
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="unified-fallback-test-planner",
 )
 
 
@@ -180,6 +187,7 @@ class FallbackPlanner:
         if any(receipt.success for receipt in state.receipts):
             return PlannerDecision(done=True, result={"saved": True})
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"proposal-{state.version}",
                 based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
@@ -188,7 +196,7 @@ class FallbackPlanner:
                 action_kind=PlannerActionKind.ACTIVATE,
                 target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
                 subgoal="Activate the visual save control at the current position",
-            )
+            ),
         )
 
 
@@ -344,6 +352,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
             if world.saved:
                 return PlannerDecision(done=True, result={"saved": True})
             return PlannerDecision(
+                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
                 proposal=PlannerProposal(
                     proposal_id=f"moving-proposal-{state.version}",
                     based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
@@ -351,7 +360,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
                     snapshot_id=snapshot.observation.snapshot_id,
                     action_kind=PlannerActionKind.POINT_ACTIVATE,
                     target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
-                )
+                ),
             )
 
     observer = MovingPointObserver()

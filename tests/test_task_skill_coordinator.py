@@ -32,6 +32,8 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
 )
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -54,6 +56,11 @@ from affordance_runtime.unified_grounding import (
     SemanticEntityResolver,
     candidate_fingerprints,
     candidate_from_affordance,
+)
+
+TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
+    source=PlannerProposalSource.DETERMINISTIC_RULE,
+    producer_id="task-skill-test-system2",
 )
 
 
@@ -192,6 +199,7 @@ class CountingSystem2Planner:
         self.calls += 1
         if self.ask_on_call:
             return PlannerDecision(
+                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
                 proposal=PlannerProposal(
                     proposal_id=f"system2-ask-{self.calls}",
                     based_on_task_revision=1,
@@ -201,7 +209,7 @@ class CountingSystem2Planner:
                     action_kind=PlannerActionKind.ASK_USER,
                     requires_clarification=True,
                     reason="TaskSkill postcondition failed after verified prior progress",
-                )
+                ),
             )
         return PlannerDecision(done=True, result={"system2": True})
 
@@ -222,6 +230,7 @@ class ProfileTrainingPlanner:
             return PlannerDecision(done=True, result={"profile_name": value})
         target = next(item for item in snapshot.unified_affordances if item.label == "Name")
         return PlannerDecision(
+            proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
                 proposal_id=f"system2-profile-{state.version}",
                 based_on_task_revision=task.revision,
@@ -233,7 +242,7 @@ class ProfileTrainingPlanner:
                 parameters={"text": value},
                 expected_effects=("profile name changed",),
                 evidence_requirements=("independent profile state",),
-            )
+            ),
         )
 
 
@@ -364,6 +373,8 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
     assert "TaskSkillStepExposed" in events
     validated = next(node for node in result.trace.nodes if node.kind == "PlannerProposalValidated")
     assert validated.payload["source"] == "accepted_skill"
+    assert validated.payload["provenance"]["producer_id"] == payload.skill_id
+    assert validated.payload["provenance"]["version"] == payload.version
     assert "ContractBuilt" in events
     assert "RouteSelected" in events
     assert "TaskSkillStepCompleted" in events
