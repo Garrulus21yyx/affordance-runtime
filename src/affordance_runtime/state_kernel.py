@@ -18,20 +18,31 @@ from affordance_runtime.active_perception import (
     ProbeReceipt,
 )
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
+from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.recovery import RecoveryIncident
+from affordance_runtime.recovery_commands import RecoveryDelta, RecoveryPlan, RecoveryReceipt
+from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
 from affordance_runtime.task_planning import PlanProgress, TaskPlan
 from affordance_runtime.verification import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "created": {"observing", "aborted"},
-    "observing": {"planning", "failed", "aborted"},
-    "planning": {"observing", "preflight", "waiting_clarification", "deferred", "done", "failed", "aborted"},
+    "observing": {"planning", "recovering", "failed", "aborted"},
+    "planning": {"observing", "preflight", "recovering", "waiting_clarification", "deferred", "done", "failed", "aborted"},
     "waiting_clarification": {"observing", "aborted"},
     "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
     "waiting_approval": {"preflight", "aborted"},
     "acting": {"verifying", "recovering", "failed"},
     "verifying": {"planning", "observing", "recovering", "done", "failed"},
-    "recovering": {"observing", "waiting_approval", "aborted", "failed"},
+    "recovering": {
+        "observing",
+        "planning",
+        "waiting_approval",
+        "waiting_clarification",
+        "deferred",
+        "aborted",
+        "failed",
+    },
     "done": set(),
     "failed": set(),
     "aborted": set(),
@@ -102,6 +113,12 @@ class StateKernel:
     perception_resolution: PerceptionResolution | None = None
     attempted_probe_fingerprints: set[str] = field(default_factory=set)
     recovery_incident: RecoveryIncident | None = None
+    current_failure: FailureEnvelope | None = None
+    current_recovery_plan: RecoveryPlan | None = None
+    recovery_receipts: list[RecoveryReceipt] = field(default_factory=list)
+    recovery_deltas: list[RecoveryDelta] = field(default_factory=list)
+    recovery_history: list[RecoveryHistoryItem] = field(default_factory=list)
+    attempted_recovery_strategy_ids: set[str] = field(default_factory=set)
     recovery_diagnostics: dict[str, Any] = field(default_factory=dict)
     effectful_action_count: int = 0
     transitions: list[tuple[str, str]] = field(default_factory=list)

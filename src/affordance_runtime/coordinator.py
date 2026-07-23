@@ -25,7 +25,20 @@ from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
-from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
+from affordance_runtime.contracts import (
+    ActionContract,
+    ApprovalToken,
+    ExecutionReceipt,
+    Observation,
+    RuntimeErrorCode,
+)
+from affordance_runtime.failure_envelope import (
+    EffectStatus,
+    FailureClass,
+    FailurePhase,
+    RemainingRecoveryBudgets,
+    make_failure_envelope,
+)
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
@@ -47,6 +60,19 @@ from affordance_runtime.recovery import (
     RecoveryAttemptOutcome,
     RecoveryCascadeDetector,
     RecoveryIncident,
+)
+from affordance_runtime.recovery_commands import (
+    RecoveryCommandKind,
+    RecoveryDelta,
+    RecoveryReentryPhase,
+)
+from affordance_runtime.recovery_commands import (
+    RecoveryReceipt as RecoveryCommandReceipt,
+)
+from affordance_runtime.recovery_coordinator import (
+    RecoveryCoordinator,
+    RecoveryHistoryItem,
+    RecoverySelectionContext,
 )
 from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
 from affordance_runtime.route_calibration import (
@@ -192,6 +218,7 @@ class RunCoordinator:
     active_perception_controller: ActivePerceptionController = field(
         default_factory=ActivePerceptionController
     )
+    recovery_coordinator: RecoveryCoordinator = field(default_factory=RecoveryCoordinator)
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
@@ -265,7 +292,62 @@ class RunCoordinator:
             if state.phase in {RuntimeStep.CREATED.value, RuntimeStep.RECOVERING.value}:
                 state.transition(RuntimeStep.OBSERVING.value)
 
-            snapshot = self.perception_session.capture(envelope, state, state.observation_count + 1)
+            try:
+                snapshot = self.perception_session.capture(
+                    envelope,
+                    state,
+                    state.observation_count + 1,
+                )
+            except Exception as exc:
+                if not self.features.recovery:
+                    state.transition(RuntimeStep.FAILED.value)
+                    parent = trace.add(
+                        "ObservationFailed",
+                        {
+                            "state": state.phase,
+                            "error_code": RuntimeErrorCode.PRECONDITION_FAILED.value,
+                            "reason": f"{type(exc).__name__}: {exc}"[:500],
+                        },
+                        parents=[parent.id] if parent else None,
+                    )
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.FAILED,
+                        parent,
+                        RuntimeErrorCode.PRECONDITION_FAILED,
+                        latest_verification,
+                    )
+                if parent is None:
+                    raise ValueError("observation recovery requires a trace parent")
+                recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.OBSERVATION,
+                    failure_class=FailureClass.INTERNAL,
+                    error_code=RuntimeErrorCode.PRECONDITION_FAILED,
+                    message=f"{type(exc).__name__}: {exc}"[:500],
+                    available_commands=frozenset(
+                        {
+                            RecoveryCommandKind.REOBSERVE,
+                            RecoveryCommandKind.ABORT,
+                        }
+                    ),
+                )
+                if recovery_command == RecoveryCommandKind.REOBSERVE:
+                    continue
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep(state.phase),
+                    parent,
+                    RuntimeErrorCode.PRECONDITION_FAILED,
+                    latest_verification,
+                )
             state.remember_observation(snapshot.observation)
             observation_ref = self._write_observation(envelope.task_id, state.observation_count, snapshot)
             parent = trace.add(
@@ -301,11 +383,44 @@ class RunCoordinator:
                 parent,
                 snapshot,
             )
+            parent, recovered_verification, recovery_must_stop = (
+                self._complete_pending_recovery_observation(
+                    state,
+                    trace,
+                    parent,
+                    snapshot,
+                )
+            )
+            if recovered_verification is not None:
+                latest_verification = recovered_verification
+            if recovery_must_stop:
+                state.transition(RuntimeStep.ABORTED.value)
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.ABORTED,
+                    parent,
+                    RuntimeErrorCode.PRECONDITION_FAILED,
+                    latest_verification,
+                )
             if (
                 state.perception_resolution is not None
                 and state.perception_resolution.blocks_effectful_action
             ):
-                state.transition(RuntimeStep.ABORTED.value)
+                _recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.FUSION,
+                    failure_class=FailureClass.SOURCE_CONFLICT,
+                    error_code=RuntimeErrorCode.PRECONDITION_FAILED,
+                    message=state.perception_resolution.reason,
+                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    snapshot=snapshot,
+                    recoverable=False,
+                )
                 parent = trace.add(
                     (
                         "PerceptionBlockedEffectfulRepeat"
@@ -353,7 +468,6 @@ class RunCoordinator:
                         raise ValueError("task replan did not install progress state")
                     preserved_subgoal_ids = list(state.plan_progress.completed_subgoal_ids)
                 except Exception as exc:
-                    state.transition(RuntimeStep.FAILED.value)
                     parent = trace.add(
                         "TaskReplanRejected",
                         {
@@ -363,11 +477,41 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        == RecoveryCommandKind.REPLAN_TASK
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                        )
+                    recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.TASK_PLANNING,
+                        failure_class=FailureClass.PLANNING,
+                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        message=f"{type(exc).__name__}: {exc}"[:500],
+                        available_commands=frozenset(
+                            {
+                                RecoveryCommandKind.REPLAN_TASK,
+                                RecoveryCommandKind.ABORT,
+                            }
+                        ),
+                        snapshot=snapshot,
+                    )
+                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                        continue
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep.FAILED,
+                        RuntimeStep(state.phase),
                         parent,
                         RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                         latest_verification,
@@ -387,6 +531,13 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
+                parent = self._complete_pending_recovery_plan_change(
+                    state,
+                    trace,
+                    parent,
+                    kind=RecoveryCommandKind.REPLAN_TASK,
+                    plan_or_route_ref=task_plan.plan_id,
+                )
 
             if self.task_plan_lifecycle is not None and state.task_plan is None and envelope.task_spec is not None:
                 try:
@@ -398,7 +549,6 @@ class RunCoordinator:
                     )
                     task_plan = transition.plan
                 except Exception as exc:
-                    state.transition(RuntimeStep.FAILED.value)
                     parent = trace.add(
                         "TaskPlanRejected",
                         {
@@ -408,11 +558,41 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        == RecoveryCommandKind.REPLAN_TASK
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_FAILED.value,
+                        )
+                    recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.TASK_PLANNING,
+                        failure_class=FailureClass.PLANNING,
+                        error_code=RuntimeErrorCode.PLANNER_FAILED,
+                        message=f"{type(exc).__name__}: {exc}"[:500],
+                        available_commands=frozenset(
+                            {
+                                RecoveryCommandKind.REPLAN_TASK,
+                                RecoveryCommandKind.ABORT,
+                            }
+                        ),
+                        snapshot=snapshot,
+                    )
+                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                        continue
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep.FAILED,
+                        RuntimeStep(state.phase),
                         parent,
                         RuntimeErrorCode.PLANNER_FAILED,
                         latest_verification,
@@ -434,7 +614,6 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 if report.status != TaskPlanValidationStatus.ACCEPT:
-                    state.transition(RuntimeStep.FAILED.value)
                     parent = trace.add(
                         "TaskPlanRejected",
                         {
@@ -444,11 +623,41 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        == RecoveryCommandKind.REPLAN_TASK
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                        )
+                    recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.TASK_PLANNING,
+                        failure_class=FailureClass.VALIDATION,
+                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        message=f"task plan validation: {report.status.value}",
+                        available_commands=frozenset(
+                            {
+                                RecoveryCommandKind.REPLAN_TASK,
+                                RecoveryCommandKind.ABORT,
+                            }
+                        ),
+                        snapshot=snapshot,
+                    )
+                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                        continue
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep.FAILED,
+                        RuntimeStep(state.phase),
                         parent,
                         RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                         latest_verification,
@@ -464,6 +673,13 @@ class RunCoordinator:
                         "active_subgoal": state.active_subgoal(),
                     },
                     parents=[parent.id],
+                )
+                parent = self._complete_pending_recovery_plan_change(
+                    state,
+                    trace,
+                    parent,
+                    kind=RecoveryCommandKind.REPLAN_TASK,
+                    plan_or_route_ref=task_plan.plan_id,
                 )
 
             state.transition(RuntimeStep.PLANNING.value)
@@ -501,6 +717,49 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        skill_decision.attempted
+                        and skill_decision.reason.startswith("TaskSkill runtime error:")
+                    ):
+                        if (
+                            state.current_recovery_plan is not None
+                            and state.current_recovery_plan.commands[0].kind
+                            == RecoveryCommandKind.REPLAN_STEP
+                        ):
+                            parent = self._fail_pending_recovery_command(
+                                state,
+                                trace,
+                                parent,
+                                error_code=RuntimeErrorCode.PLANNER_FAILED.value,
+                            )
+                        recovery_command, parent = self._recover_phase_failure(
+                            envelope,
+                            state,
+                            trace,
+                            parent,
+                            phase=FailurePhase.SKILL_ACTIVATION,
+                            failure_class=FailureClass.SKILL,
+                            error_code=RuntimeErrorCode.PLANNER_FAILED,
+                            message=skill_decision.reason,
+                            available_commands=frozenset(
+                                {
+                                    RecoveryCommandKind.REPLAN_STEP,
+                                    RecoveryCommandKind.ABORT,
+                                }
+                            ),
+                            snapshot=snapshot,
+                        )
+                        if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                            continue
+                        return self._finish(
+                            envelope,
+                            state,
+                            trace,
+                            RuntimeStep(state.phase),
+                            parent,
+                            RuntimeErrorCode.PLANNER_FAILED,
+                            latest_verification,
+                        )
                     if skill_decision.newly_activated and skill_decision.payload is not None:
                         parent = trace.add(
                             "TaskSkillActivated",
@@ -554,13 +813,36 @@ class RunCoordinator:
                     decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
             except ProviderModelError as exc:
                 error_code = _provider_runtime_error(exc.kind)
+                if (
+                    state.current_recovery_plan is not None
+                    and state.current_recovery_plan.commands[0].kind
+                    == RecoveryCommandKind.REPLAN_STEP
+                ):
+                    parent = self._fail_pending_recovery_command(
+                        state,
+                        trace,
+                        parent,
+                        error_code=error_code.value,
+                    )
                 state.final_result = {
                     "deferred": True,
                     "provider_failure": exc.kind.value,
                     "retry_after_s": exc.retry_after_s,
                     "resumable": exc.resumable,
                 }
-                state.transition(RuntimeStep.DEFERRED.value)
+                _recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.PROVIDER_CONTEXT,
+                    failure_class=FailureClass.PROVIDER,
+                    error_code=error_code,
+                    message=f"provider failure: {exc.kind.value}",
+                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    snapshot=snapshot,
+                    abort_reentry_phase=RecoveryReentryPhase.DEFERRED,
+                )
                 parent = trace.add(
                     "PlannerDeferred",
                     {
@@ -585,7 +867,6 @@ class RunCoordinator:
             except Exception as exc:
                 planner_error = f"{type(exc).__name__}: {exc}"
                 model = getattr(self.planner, "model", None)
-                state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(
                     "PlannerProposalRejected",
                     {
@@ -596,11 +877,41 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
+                if (
+                    state.current_recovery_plan is not None
+                    and state.current_recovery_plan.commands[0].kind
+                    == RecoveryCommandKind.REPLAN_STEP
+                ):
+                    parent = self._fail_pending_recovery_command(
+                        state,
+                        trace,
+                        parent,
+                        error_code=RuntimeErrorCode.PLANNER_FAILED.value,
+                    )
+                recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.STEP_PLANNING,
+                    failure_class=FailureClass.PLANNING,
+                    error_code=RuntimeErrorCode.PLANNER_FAILED,
+                    message=planner_error[:500],
+                    available_commands=frozenset(
+                        {
+                            RecoveryCommandKind.REPLAN_STEP,
+                            RecoveryCommandKind.ABORT,
+                        }
+                    ),
+                    snapshot=snapshot,
+                )
+                if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                    continue
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.FAILED,
+                    RuntimeStep(state.phase),
                     parent,
                     RuntimeErrorCode.PLANNER_FAILED,
                     latest_verification,
@@ -652,6 +963,28 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                        )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        == RecoveryCommandKind.REPLAN_STEP
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                        )
                     if skill_step_id and self.task_skill_runtime is not None:
                         reason = f"TaskSkill proposal validation rejected: {exc.detail or exc.code.value}"
                         self.task_skill_runtime.fallthrough(state, reason)
@@ -665,7 +998,21 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    state.transition(RuntimeStep.ABORTED.value)
+                    _recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.PROPOSAL_VALIDATION,
+                        failure_class=FailureClass.VALIDATION,
+                        error_code=error_code,
+                        message=exc.detail or exc.code.value,
+                        available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                        snapshot=snapshot,
+                        proposal_id=proposal.proposal_id,
+                        expected_effect="; ".join(proposal.expected_effects),
+                        recoverable=False,
+                    )
                     return self._finish(
                         envelope,
                         state,
@@ -716,6 +1063,13 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
+                parent = self._complete_pending_recovery_plan_change(
+                    state,
+                    trace,
+                    parent,
+                    kind=RecoveryCommandKind.REPLAN_STEP,
+                    plan_or_route_ref=proposal.proposal_id,
+                )
                 if proposal.done:
                     state.record_planner_proposal(_proposal_record(proposal, provenance))
                     decision = replace(decision, done=True, result=dict(proposal.result))
@@ -741,6 +1095,14 @@ class RunCoordinator:
                         None,
                         latest_verification,
                     )
+            else:
+                parent = self._complete_pending_recovery_plan_change(
+                    state,
+                    trace,
+                    parent,
+                    kind=RecoveryCommandKind.REPLAN_STEP,
+                    plan_or_route_ref=f"planner-decision:state:{state.version}",
+                )
             if decision.done:
                 if state.task_plan is not None and not TaskPlanLifecycle.completed(state):
                     if _is_safe_incomplete_terminal(decision, state):
@@ -755,7 +1117,6 @@ class RunCoordinator:
                             parents=[parent.id],
                         )
                     else:
-                        state.transition(RuntimeStep.ABORTED.value)
                         parent = trace.add(
                             "PlannerProposalRejected",
                             {
@@ -764,6 +1125,19 @@ class RunCoordinator:
                                 "reason": "planner cannot finish before verifier-backed subgoal completion",
                             },
                             parents=[parent.id],
+                        )
+                        _recovery_command, parent = self._recover_phase_failure(
+                            envelope,
+                            state,
+                            trace,
+                            parent,
+                            phase=FailurePhase.PROPOSAL_VALIDATION,
+                            failure_class=FailureClass.VALIDATION,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                            message="planner cannot finish before verifier-backed subgoal completion",
+                            available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                            snapshot=snapshot,
+                            recoverable=False,
                         )
                         return self._finish(
                             envelope,
@@ -795,6 +1169,17 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                        )
                     if skill_step_id and self.task_skill_runtime is not None:
                         reason = "TaskSkill requires the normal semantic ContractBuilder"
                         self.task_skill_runtime.fallthrough(state, reason)
@@ -808,12 +1193,26 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    state.transition(RuntimeStep.FAILED.value)
+                    _recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.GROUNDING_BINDING,
+                        failure_class=FailureClass.GROUNDING,
+                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        message="semantic proposal requires TaskSpec and ContractBuilder",
+                        available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                        snapshot=snapshot,
+                        proposal_id=decision.proposal.proposal_id,
+                        expected_effect="; ".join(decision.proposal.expected_effects),
+                        recoverable=False,
+                    )
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep.FAILED,
+                        RuntimeStep.ABORTED,
                         parent,
                         RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                         latest_verification,
@@ -832,6 +1231,17 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
+                    ):
+                        parent = self._fail_pending_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                            error_code=error_code.value,
+                        )
                     if skill_step_id and self.task_skill_runtime is not None:
                         reason = f"TaskSkill contract binding rejected: {exc.detail}"
                         self.task_skill_runtime.fallthrough(state, reason)
@@ -845,7 +1255,27 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    state.transition(RuntimeStep.ABORTED.value)
+                    recovery_command, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.GROUNDING_BINDING,
+                        failure_class=FailureClass.GROUNDING,
+                        error_code=error_code,
+                        message=exc.detail or exc.code.value,
+                        available_commands=frozenset(
+                            {
+                                RecoveryCommandKind.REGROUND,
+                                RecoveryCommandKind.ABORT,
+                            }
+                        ),
+                        snapshot=snapshot,
+                        proposal_id=decision.proposal.proposal_id,
+                        expected_effect="; ".join(decision.proposal.expected_effects),
+                    )
+                    if recovery_command == RecoveryCommandKind.REGROUND:
+                        continue
                     return self._finish(
                         envelope,
                         state,
@@ -859,19 +1289,37 @@ class RunCoordinator:
                     raise RuntimeError("validated proposal is missing provenance")
                 state.record_planner_proposal(_proposal_record(decision.proposal, decision.proposal_provenance))
             if contract is None:
-                state.transition(RuntimeStep.FAILED.value)
                 parent = trace.add(
                     "TaskFailed",
                     {"state": state.phase, "reason": "planner returned neither a contract nor a result"},
                     parents=[parent.id],
                 )
+                recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.STEP_PLANNING,
+                    failure_class=FailureClass.VALIDATION,
+                    error_code=RuntimeErrorCode.PLANNER_FAILED,
+                    message="planner returned neither a contract nor a result",
+                    available_commands=frozenset(
+                        {
+                            RecoveryCommandKind.REPLAN_STEP,
+                            RecoveryCommandKind.ABORT,
+                        }
+                    ),
+                    snapshot=snapshot,
+                )
+                if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                    continue
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.FAILED,
+                    RuntimeStep(state.phase),
                     parent,
-                    RuntimeErrorCode.EXECUTION_FAILED,
+                    RuntimeErrorCode.PLANNER_FAILED,
                     latest_verification,
                 )
 
@@ -1053,6 +1501,23 @@ class RunCoordinator:
                         "contract_hash": contract.contract_hash,
                     },
                     parents=[parent.id],
+                )
+            parent, binding_recovery_failed = self._complete_pending_recovery_binding(
+                state,
+                trace,
+                parent,
+                contract,
+            )
+            if binding_recovery_failed:
+                state.transition(RuntimeStep.ABORTED.value)
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.ABORTED,
+                    parent,
+                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    latest_verification,
                 )
             contract_check = self.contract_execution_loop.initial_check(
                 contract,
@@ -1274,6 +1739,7 @@ class RunCoordinator:
                         parents=[parent.id],
                     )
                     recovery_result = self._recover(state, contract, None, error)
+                    parent = self._trace_recovery_protocol(trace, parent, state)
                     parent = trace.add(
                         "RecoveryStarted",
                         {
@@ -1286,6 +1752,16 @@ class RunCoordinator:
                     if recovery_result == RecoveryAction.REOBSERVE:
                         continue
                     state.transition(RuntimeStep.ABORTED.value)
+                    if (
+                        state.current_recovery_plan is not None
+                        and state.current_recovery_plan.commands[0].kind
+                        == RecoveryCommandKind.ABORT
+                    ):
+                        parent = self._complete_immediate_recovery_command(
+                            state,
+                            trace,
+                            parent,
+                        )
                     return self._finish(
                         envelope,
                         state,
@@ -1295,7 +1771,35 @@ class RunCoordinator:
                         error,
                         latest_verification,
                     )
-                state.transition(RuntimeStep.ABORTED.value)
+                _recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.PREFLIGHT,
+                    failure_class=(
+                        FailureClass.SOURCE_CONFLICT
+                        if perception_error is not None
+                        else FailureClass.AUTHORITY
+                        if error
+                        in {
+                            RuntimeErrorCode.CAPABILITY_DENIED,
+                            RuntimeErrorCode.UNSAFE_ACTION,
+                        }
+                        else FailureClass.VALIDATION
+                    ),
+                    error_code=error,
+                    message=(
+                        state.perception_resolution.reason
+                        if perception_error is not None
+                        and state.perception_resolution is not None
+                        else f"preflight rejected contract: {error.value}"
+                    ),
+                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    snapshot=preflight_snapshot if self.features.preflight else snapshot,
+                    expected_effect=contract.intent,
+                    recoverable=False,
+                )
                 parent = trace.add(
                     "PreflightBlocked",
                     {"state": state.phase, "error_code": error.value},
@@ -1305,7 +1809,20 @@ class RunCoordinator:
 
             authorization_error = effective_gate.authorize(contract) if self.features.capability_gate else None
             if authorization_error is not None:
-                state.transition(RuntimeStep.ABORTED.value)
+                _recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.PREFLIGHT,
+                    failure_class=FailureClass.AUTHORITY,
+                    error_code=authorization_error,
+                    message=f"contract authorization rejected: {authorization_error.value}",
+                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    snapshot=snapshot,
+                    expected_effect=contract.intent,
+                    recoverable=False,
+                )
                 return self._finish(
                     envelope,
                     state,
@@ -1316,6 +1833,33 @@ class RunCoordinator:
                     latest_verification,
                 )
             parent = trace.add("PreflightPassed", {"state": state.phase}, parents=[parent.id])
+
+            retry_error = self._pending_retry_contract_error(state, contract)
+            if retry_error is not None:
+                parent = self._fail_pending_recovery_command(
+                    state,
+                    trace,
+                    parent,
+                    error_code=retry_error.value,
+                )
+                state.transition(RuntimeStep.ABORTED.value)
+                parent = trace.add(
+                    "RecoveryAborted",
+                    {
+                        "state": state.phase,
+                        "reason": "retry contract did not retain validated idempotency and effect scope",
+                    },
+                    parents=[parent.id],
+                )
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.ABORTED,
+                    parent,
+                    retry_error,
+                    latest_verification,
+                )
 
             state.transition(RuntimeStep.ACTING.value)
             parent = trace.add("ActionStarted", {"state": state.phase, "contract_id": contract.id}, parents=[parent.id])
@@ -1337,6 +1881,14 @@ class RunCoordinator:
                 },
                 parents=[parent.id],
             )
+            parent = self._complete_pending_recovery_execution(
+                state,
+                trace,
+                parent,
+                contract,
+                receipt,
+                execution_observation,
+            )
             if not receipt.success:
                 if not self.features.recovery:
                     state.transition(RuntimeStep.FAILED.value)
@@ -1355,6 +1907,7 @@ class RunCoordinator:
                         latest_verification,
                     )
                 recovery_result = self._recover(state, contract, receipt, receipt.error_code)
+                parent = self._trace_recovery_protocol(trace, parent, state)
                 parent = trace.add(
                     "RecoveryStarted",
                     {
@@ -1412,6 +1965,15 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    parent, _completed_verification, _recovery_must_stop = (
+                        self._complete_pending_recovery_observation(
+                            state,
+                            trace,
+                            parent,
+                            inspection,
+                            verification=latest_verification,
+                        )
+                    )
                     if latest_verification.passed:
                         incident = state.recovery_incident
                         if incident is not None:
@@ -1431,6 +1993,16 @@ class RunCoordinator:
                         incident.terminal_outcome = "effect_unconfirmed"
                         state.recovery_diagnostics = incident.diagnostics()
                 state.transition(RuntimeStep.FAILED.value)
+                if (
+                    state.current_recovery_plan is not None
+                    and state.current_recovery_plan.commands[0].kind
+                    == RecoveryCommandKind.ABORT
+                ):
+                    parent = self._complete_immediate_recovery_command(
+                        state,
+                        trace,
+                        parent,
+                    )
                 return self._finish(
                     envelope,
                     state,
@@ -1816,6 +2388,7 @@ class RunCoordinator:
                 RuntimeErrorCode.VERIFICATION_FAILED,
                 failure_context=skill_failure_context,
             )
+            parent = self._trace_recovery_protocol(trace, parent, state)
             parent = trace.add(
                 "RecoveryStarted",
                 {
@@ -1829,6 +2402,16 @@ class RunCoordinator:
             if recovery_result in {RecoveryAction.REOBSERVE, RecoveryAction.VERIFY_STATE}:
                 continue
             state.transition(RuntimeStep.FAILED.value)
+            if (
+                state.current_recovery_plan is not None
+                and state.current_recovery_plan.commands[0].kind
+                == RecoveryCommandKind.ABORT
+            ):
+                parent = self._complete_immediate_recovery_command(
+                    state,
+                    trace,
+                    parent,
+                )
             return self._finish(
                 envelope,
                 state,
@@ -1861,12 +2444,25 @@ class RunCoordinator:
                 recovery_count=state.recovery_count,
                 tried_backends=tuple(item.backend for item in state.receipts),
                 incident=state.recovery_incident,
+                state_version=state.version,
+                progress_fingerprint=_semantic_progress_fingerprint(state),
+                accepted_profile_digest=self.runtime_profile_digest,
+                accepted_profile_artifact_ids=self.loaded_profile_artifact_ids,
+                attempted_strategy_ids=tuple(
+                    sorted(state.attempted_recovery_strategy_ids)
+                ),
+                recovery_history=tuple(state.recovery_history),
             )
         )
         signature = evaluation.signature
         assessment = evaluation.assessment
         decision = evaluation.decision
         effect_may_have_occurred = evaluation.effect_may_have_occurred
+        state.current_failure = evaluation.failure
+        state.current_recovery_plan = evaluation.plan
+        state.attempted_recovery_strategy_ids.add(
+            evaluation.plan.commands[0].strategy_id
+        )
         incident = state.recovery_incident
         if not evaluation.continues_open_incident:
             incident = RecoveryIncident(
@@ -1928,6 +2524,654 @@ class RunCoordinator:
         }:
             state.transition(RuntimeStep.OBSERVING.value)
         return decision.action
+
+    @staticmethod
+    def _trace_recovery_protocol(
+        trace: TraceDag,
+        parent: TraceNode,
+        state: StateKernel,
+    ) -> TraceNode:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None:
+            return parent
+        command = plan.commands[0]
+        parent = trace.add(
+            "FailureDetected",
+            {
+                "state": state.phase,
+                "failure": failure.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryStrategySelected",
+            {
+                "state": state.phase,
+                "plan": plan.model_dump(mode="json"),
+                "strategy_id": command.strategy_id,
+                "changed_dimensions": [item.value for item in command.changed_dimensions],
+            },
+            parents=[parent.id],
+        )
+        return trace.add(
+            "RecoveryCommandStarted",
+            {
+                "state": state.phase,
+                "command": command.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+
+    def _recover_phase_failure(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        *,
+        phase: FailurePhase,
+        failure_class: FailureClass,
+        error_code: RuntimeErrorCode | str,
+        message: str,
+        available_commands: frozenset[RecoveryCommandKind],
+        snapshot: BrowserSnapshot | None = None,
+        proposal_id: str = "",
+        expected_effect: str = "",
+        recoverable: bool = True,
+        abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
+    ) -> tuple[RecoveryCommandKind, TraceNode]:
+        task_plan = state.task_plan
+        failure = make_failure_envelope(
+            run_id=envelope.task_id,
+            phase=phase,
+            failure_class=failure_class,
+            error_code=error_code,
+            message=message,
+            state_version=state.version,
+            task_revision=(
+                task_plan.task_revision
+                if task_plan is not None
+                else envelope.task_spec.revision
+                if envelope.task_spec is not None
+                else 1
+            ),
+            plan_version=task_plan.plan_version if task_plan is not None else 0,
+            active_subgoal_id=(
+                state.plan_progress.active_subgoal_id
+                if state.plan_progress is not None
+                else ""
+            ),
+            observation_epoch_id=(
+                snapshot.observation.snapshot_id if snapshot is not None else state.current_snapshot_id
+            ),
+            snapshot_id=(
+                snapshot.observation.snapshot_id if snapshot is not None else state.current_snapshot_id
+            ),
+            proposal_id=proposal_id,
+            expected_effect=expected_effect or envelope.goal,
+            effect_status=EffectStatus.NOT_DISPATCHED,
+            attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),
+            rejected_assumptions=tuple(state.disproved_assumptions),
+            remaining_budgets=self._remaining_recovery_budgets(state),
+            recoverable=recoverable,
+            progress_fingerprint=_semantic_progress_fingerprint(state),
+        )
+        state.transition(RuntimeStep.RECOVERING.value)
+        plan = self.recovery_coordinator.plan(
+            failure,
+            RecoverySelectionContext(
+                available_commands=available_commands,
+                current_attempt_fingerprint=failure.progress_fingerprint,
+                gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
+                accepted_profile_digest=self.runtime_profile_digest,
+                accepted_profile_artifact_ids=frozenset(self.loaded_profile_artifact_ids),
+                history=tuple(state.recovery_history),
+                abort_reentry_phase=abort_reentry_phase,
+            ),
+            current_state_version=state.version,
+        )
+        state.current_failure = failure
+        state.current_recovery_plan = plan
+        command = plan.commands[0]
+        state.attempted_recovery_strategy_ids.add(command.strategy_id)
+        state.recovery_count += 1
+        parent = self._trace_recovery_protocol(trace, parent, state)
+        if command.kind in {
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+        }:
+            state.transition(RuntimeStep.OBSERVING.value)
+            return command.kind, parent
+        if command.kind in {
+            RecoveryCommandKind.REPLAN_STEP,
+            RecoveryCommandKind.REPLAN_TASK,
+        }:
+            state.replan_count += 1
+            state.record_disproved_assumption(f"{phase.value}:{failure.error_code}:{failure.message}")
+            state.transition(RuntimeStep.OBSERVING.value)
+            return command.kind, parent
+        if command.kind in {
+            RecoveryCommandKind.COMPACT_CONTEXT,
+            RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+            RecoveryCommandKind.SWITCH_PROVIDER,
+        }:
+            state.replan_count += 1
+            state.record_disproved_assumption(f"{phase.value}:{failure.error_code}:{failure.message}")
+            state.transition(RuntimeStep.OBSERVING.value)
+            parent = self._complete_immediate_recovery_command(state, trace, parent)
+            return command.kind, parent
+        terminal_phase = {
+            RecoveryReentryPhase.WAITING_USER: RuntimeStep.WAITING_CLARIFICATION.value,
+            RecoveryReentryPhase.WAITING_APPROVAL: RuntimeStep.WAITING_APPROVAL.value,
+            RecoveryReentryPhase.DEFERRED: RuntimeStep.DEFERRED.value,
+            RecoveryReentryPhase.FAILED: RuntimeStep.FAILED.value,
+            RecoveryReentryPhase.ABORTED: RuntimeStep.ABORTED.value,
+        }.get(command.reentry_phase)
+        if terminal_phase is None:
+            raise ValueError(f"unsupported immediate recovery re-entry: {command.reentry_phase.value}")
+        state.transition(terminal_phase)
+        parent = self._complete_immediate_recovery_command(state, trace, parent)
+        return command.kind, parent
+
+    @staticmethod
+    def _complete_immediate_recovery_command(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+    ) -> TraceNode:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None:
+            raise ValueError("immediate recovery completion requires failure and plan")
+        command = plan.commands[0]
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"{state.phase}:state:{state.version}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            retired_assumptions=tuple(state.disproved_assumptions[-1:]),
+            new_plan_or_route_ref=command.provider_id,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            plan_refs=(command.provider_id,) if command.provider_id else (),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_plan = None
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return trace.add(
+            "RecoveryReenteredPhase",
+            {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+            parents=[parent.id],
+        )
+
+    @staticmethod
+    def _complete_pending_recovery_plan_change(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        *,
+        kind: RecoveryCommandKind,
+        plan_or_route_ref: str,
+    ) -> TraceNode:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None or plan.commands[0].kind != kind:
+            return parent
+        command = plan.commands[0]
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"{plan_or_route_ref}:state:{state.version}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            retired_assumptions=tuple(state.disproved_assumptions[-1:]),
+            new_plan_or_route_ref=plan_or_route_ref,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            plan_refs=(plan_or_route_ref,),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_plan = None
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return trace.add(
+            "RecoveryReenteredPhase",
+            {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+            parents=[parent.id],
+        )
+
+    def _remaining_recovery_budgets(self, state: StateKernel) -> RemainingRecoveryBudgets:
+        return RemainingRecoveryBudgets(
+            recoveries=max(0, self.budget.max_recoveries - state.recovery_count),
+            observations=max(0, self.budget.max_observations - state.observation_count),
+            replans=max(0, self.budget.max_replans - state.replan_count),
+            provider_switches=1,
+            user_escalations=1,
+            timeout_ms=120_000,
+            model_calls=max(0, self.budget.max_replans - state.replan_count),
+            estimated_cost=10.0,
+        )
+
+    def _complete_pending_recovery_observation(
+        self,
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        snapshot: BrowserSnapshot,
+        *,
+        verification: VerificationReport | None = None,
+    ) -> tuple[TraceNode, VerificationReport | None, bool]:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None:
+            return parent, verification, False
+        command = plan.commands[0]
+        observation_commands = {
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.INSPECT_POST_STATE,
+        }
+        if command.kind not in observation_commands:
+            return parent, verification, False
+        if command.kind == RecoveryCommandKind.INSPECT_POST_STATE:
+            contract = state.current_contract
+            execution_receipt = state.receipts[-1] if state.receipts else None
+            if contract is None or execution_receipt is None:
+                raise ValueError("post-state recovery inspection requires contract and receipt lineage")
+            if verification is None:
+                verification = self.contract_execution_loop.verify(
+                    contract,
+                    execution_receipt,
+                    snapshot.observation,
+                    structural_verification_enabled=True,
+                    disabled_reason="",
+                )
+                state.latest_verification = verification
+                parent = trace.add(
+                    "RecoveryStateInspected",
+                    {
+                        "state": state.phase,
+                        "verification": verification.status.value,
+                        "snapshot_id": snapshot.observation.snapshot_id,
+                        "artifact_refs": snapshot.observation.artifact_refs,
+                    },
+                    parents=[parent.id],
+                )
+            changed_skill_fallthrough = bool(
+                _verification_confirms_effect_absent(verification)
+                and state.task_skill is not None
+                and not state.task_skill.active
+            )
+            if not verification.passed and not changed_skill_fallthrough:
+                failed_receipt = RecoveryCommandReceipt(
+                    command_id=command.command_id,
+                    success=False,
+                    state_before=f"state:{failure.state_version}",
+                    state_after=f"state:{state.version}",
+                    error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
+                )
+                state.recovery_receipts.append(failed_receipt)
+                state.current_recovery_plan = None
+                parent = trace.add(
+                    "RecoveryCommandCompleted",
+                    {
+                        "state": state.phase,
+                        "receipt": failed_receipt.model_dump(mode="json"),
+                    },
+                    parents=[parent.id],
+                )
+                parent = trace.add(
+                    "RecoveryAborted",
+                    {
+                        "state": state.phase,
+                        "reason": "post-state inspection did not establish a safe changed effect status",
+                    },
+                    parents=[parent.id],
+                )
+                return parent, verification, True
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"{snapshot.observation.snapshot_id}:state:{state.version}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            new_evidence_refs=tuple(snapshot.observation.artifact_refs),
+            new_plan_or_route_ref=command.route_ref or command.candidate_id,
+            explanation=command.expected_change,
+        )
+        recovery_receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            artifact_refs=tuple(snapshot.observation.artifact_refs),
+            observation_refs=(snapshot.observation.snapshot_id,),
+            route_refs=tuple(
+                item for item in (command.route_ref, command.candidate_id) if item
+            ),
+            verification_refs=(verification.status.value,) if verification is not None else (),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(recovery_receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_plan = None
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {
+                "state": state.phase,
+                "receipt": recovery_receipt.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {
+                "state": state.phase,
+                "delta": delta.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryReenteredPhase",
+            {
+                "state": state.phase,
+                "reentry_phase": command.reentry_phase.value,
+            },
+            parents=[parent.id],
+        )
+        return parent, verification, False
+
+    @staticmethod
+    def _complete_pending_recovery_binding(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        contract: ActionContract,
+    ) -> tuple[TraceNode, bool]:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None:
+            return parent, False
+        command = plan.commands[0]
+        if command.kind not in {
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.REROUTE,
+        }:
+            return parent, False
+        candidate_id = (
+            contract.grounding_candidate.candidate_id
+            if contract.grounding_candidate is not None
+            else ""
+        )
+        fresh_epoch = bool(contract.snapshot_id and contract.snapshot_id != failure.snapshot_id)
+        route_matches = bool(
+            command.kind == RecoveryCommandKind.REGROUND
+            or (command.candidate_id and candidate_id == command.candidate_id)
+            or (command.route_ref and contract.backend == command.route_ref)
+        )
+        if not fresh_epoch or not route_matches:
+            parent = RunCoordinator._fail_pending_recovery_command(
+                state,
+                trace,
+                parent,
+                error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+            )
+            return parent, True
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"contract:{contract.contract_hash or contract.id}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            new_plan_or_route_ref=candidate_id or contract.id,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            route_refs=tuple(item for item in (candidate_id, contract.id) if item),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_plan = None
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return (
+            trace.add(
+                "RecoveryReenteredPhase",
+                {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+                parents=[parent.id],
+            ),
+            False,
+        )
+
+    @staticmethod
+    def _fail_pending_recovery_command(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        *,
+        error_code: str,
+    ) -> TraceNode:
+        plan = state.current_recovery_plan
+        if plan is None:
+            return parent
+        command = plan.commands[0]
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=False,
+            state_before=f"state:{command.based_on_state_version}",
+            state_after=f"state:{state.version}",
+            error_code=error_code,
+        )
+        state.recovery_receipts.append(receipt)
+        state.current_recovery_plan = None
+        return trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+
+    @staticmethod
+    def _pending_retry_contract_error(
+        state: StateKernel,
+        contract: ActionContract,
+    ) -> RuntimeErrorCode | None:
+        plan = state.current_recovery_plan
+        if plan is None or plan.commands[0].kind != RecoveryCommandKind.RETRY_IDEMPOTENT:
+            return None
+        command = plan.commands[0]
+        if (
+            not contract.idempotency_key
+            or contract.idempotency_key != command.idempotency_key
+            or command.effect_status
+            not in {EffectStatus.NOT_DISPATCHED, EffectStatus.CONFIRMED_NOT_OCCURRED}
+        ):
+            return RuntimeErrorCode.UNSAFE_ACTION
+        return None
+
+    @staticmethod
+    def _complete_pending_recovery_execution(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        contract: ActionContract,
+        execution_receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> TraceNode:
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if (
+            failure is None
+            or plan is None
+            or plan.commands[0].kind != RecoveryCommandKind.RETRY_IDEMPOTENT
+        ):
+            return parent
+        command = plan.commands[0]
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"contract:{contract.contract_hash or contract.id}:snapshot:{observation.snapshot_id}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            new_evidence_refs=tuple(
+                item
+                for item in execution_receipt.evidence.values()
+                if isinstance(item, str)
+            ),
+            new_plan_or_route_ref=contract.id,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=execution_receipt.success,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            observation_refs=(observation.snapshot_id,) if observation.snapshot_id else (),
+            plan_refs=(contract.id,),
+            error_code=(
+                ""
+                if execution_receipt.success
+                else (
+                    execution_receipt.error_code.value
+                    if execution_receipt.error_code is not None
+                    else RuntimeErrorCode.EXECUTION_FAILED.value
+                )
+            ),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_plan = None
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
 
     def _budget_error(self, state: StateKernel) -> RuntimeErrorCode | None:
         if state.step_count >= self.budget.max_steps:
@@ -2521,6 +3765,36 @@ def _verification_satisfies_effect(report: VerificationReport) -> bool:
         item.verifier_kind == "control_state" and isinstance(item.expected, dict) and "changed_from" in item.expected
         for item in report.evidence
     )
+
+
+def _verification_confirms_effect_absent(report: VerificationReport) -> bool:
+    return (
+        report.status == VerificationStatus.FAILED
+        and bool(report.evidence)
+        and any(not item.passed and item.strength == "strong" for item in report.evidence)
+    )
+
+
+def _semantic_progress_fingerprint(state: StateKernel) -> str:
+    progress = {
+        "completed_subgoals": (
+            list(state.plan_progress.completed_subgoal_ids)
+            if state.plan_progress is not None
+            else []
+        ),
+        "completed_skill_steps": (
+            list(state.task_skill.completed_step_ids)
+            if state.task_skill is not None
+            else []
+        ),
+        "satisfied_effects": [
+            item.signature
+            for item in state.action_progress
+            if item.verification_passed and item.effect_satisfied
+        ],
+        "pending_obligations": sorted(state.pending_obligations),
+    }
+    return json.dumps(progress, sort_keys=True, separators=(",", ":"))
 
 
 def _semantic_target_descriptor(snapshot: BrowserSnapshot, semantic_target_id: str) -> dict[str, str] | None:

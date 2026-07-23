@@ -102,6 +102,7 @@ class RecoveryFixtureExecutor:
             observation.environment_revision,
             observation.environment_revision,
             1.0,
+            evidence={"dispatched": False},
             error_code=code,
             message=(
                 "Timeout 5000 after dispatch; effect outcome unknown"
@@ -258,7 +259,15 @@ def _run_candidate_fixture(
 ):
     profile = CandidateRuntimeProfile()
     profile.load(artifact, allow_candidate=True)
-    return _run_fixture(task_id, mode=mode, idempotent=idempotent, recovery=profile.recovery_policy(), artifact_root=artifact_root)
+    return _run_fixture(
+        task_id,
+        mode=mode,
+        idempotent=idempotent,
+        recovery=profile.recovery_policy(),
+        artifact_root=artifact_root,
+        runtime_profile_digest=f"candidate:{artifact.payload_digest}",
+        loaded_profile_artifact_ids=(artifact.id,),
+    )
 
 
 def _run_fixture(
@@ -268,6 +277,8 @@ def _run_fixture(
     idempotent: bool,
     recovery: BoundedRecoveryPolicy,
     artifact_root: Path,
+    runtime_profile_digest: str = "",
+    loaded_profile_artifact_ids: tuple[str, ...] = (),
 ):
     return RunCoordinator(
         observer=StableRecoveryObserver(),
@@ -275,6 +286,8 @@ def _run_fixture(
         executor=RecoveryFixtureExecutor(mode),
         recovery=recovery,
         artifacts=ArtifactStore(artifact_root),
+        runtime_profile_digest=runtime_profile_digest,
+        loaded_profile_artifact_ids=loaded_profile_artifact_ids,
     ).run_sync(TaskEnvelope(task_id, "exercise recovery cascade"))
 
 

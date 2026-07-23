@@ -248,6 +248,9 @@ def test_material_preflight_conflict_surviving_probe_blocks_effectful_execution(
     assert "PreflightBlocked" in events
     assert result.state.perception_resolution is not None
     assert result.state.perception_resolution.blocks_effectful_action
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.phase.value == "preflight"
+    assert "FailureDetected" in events
 
 
 class VerificationRepairObserver:
@@ -368,3 +371,8 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     assert "RecoveryActivePerceptionRequested" in events
     assert "EvidenceGapResolved" in events
     assert "RecoveryStateInspected" in events
+    assert "FailureDetected" in events
+    assert "RecoveryCommandCompleted" in events
+    assert "RecoveryDeltaValidated" in events
+    assert result.state.recovery_receipts[-1].success
+    assert result.state.recovery_deltas[-1].changed_dimensions[0].value == "effect_status"

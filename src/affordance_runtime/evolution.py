@@ -419,7 +419,11 @@ class CandidateRuntimeProfile:
                 action = RecoveryAction(payload.response)
             else:
                 action = RecoveryAction(payload.steps[min(applied, len(payload.steps) - 1)])
-            return RecoveryDecision(action, f"declarative recovery artifact {artifact_id}")
+            return RecoveryDecision(
+                action,
+                f"declarative recovery artifact {artifact_id}",
+                profile_artifact_id=artifact_id,
+            )
         return None
 
     def rollback(self, artifact_id: str) -> None:

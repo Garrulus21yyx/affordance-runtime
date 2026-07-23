@@ -1,8 +1,9 @@
 # Current Implementation Plan
 
 Implementation status: the controlled harness components through M8.5 exist,
-but default-planner generalization, active-perception control, and full-phase
-online recovery are reopened under M8.6. M8.2B score promotion is paused. See
+and M8.6 G1-G3 now close strict-planner containment, active-perception control,
+and full-phase online recovery. G4 complete-run audit and G5 generalization
+proof remain open. M8.2B score promotion is paused. See
 [Implementation Status and Forward Gates](implementation-status.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
@@ -251,10 +252,10 @@ Completed implementation steps: `PlannerProposalValidator` is the first
 context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
 Planner module. G2 now owns typed intent/capability derivation and the common
-TaskPlan entrypoint. G2.5 active perception and evidence repair is now closed;
-the current next gate is G3 full-phase recovery. Recovery-produced proposals
-remain a G3 integration site, but the Validator already fails closed unless
-they carry the reserved typed `recovery` provenance.
+TaskPlan entrypoint. G2.5 active perception and evidence repair and G3
+full-phase recovery are now closed; the current next gate is G4 complete-run
+audit. Recovery-produced proposals remain subject to the same Validator and
+fail closed unless they carry the reserved typed `recovery` provenance.
 
 Completed physical-containment work: the reviewed call graph moved the
 compatibility-only objective parsers, terminal exposure, prefix/direction
@@ -337,10 +338,10 @@ evidence blocks effectful execution; verification repair never repeats the
 effect. Structural paths with sufficient evidence produce no probe. Evidence:
 `evidence/m8.6-g2.5-active-perception-20260723.md`.
 
-This closes G2.5 infrastructure and integration, not G3. Recovery still uses
-the existing lower-half adapter and does not yet normalize every phase through
-one `FailureEnvelope`, command validator, changed-strategy guard, and
-phase-general `RecoveryCoordinator`.
+This closes G2.5 infrastructure and integration. G3 subsequently reused those
+ports through one `FailureEnvelope`, command validator, changed-strategy guard,
+and phase-general `RecoveryCoordinator`; active perception remains owned by its
+controller rather than by recovery.
 
 #### G3: Full-phase Recovery Coordinator
 
@@ -357,6 +358,22 @@ observation, infer missing facts, or execute the resulting action directly.
 4. load accepted recovery profiles explicitly;
 5. preserve inspect-before-repeat and effect uncertainty;
 6. ask the user or abort when no safe change exists.
+
+Status on 2026-07-23: **complete**. One strict `FailureEnvelope`, typed command
+union, plan validator, receipts, non-empty deltas, semantic cascade key, and
+pure `RecoveryCoordinator` now cover representative failures from intake
+through provider/context, skill activation, preflight, execution, and
+verification. `RunCoordinator` remains the only phase writer and applies each
+command through the owning port. Uncertain effects are inspected before repeat;
+retry requires effect-status and idempotency proof. Replan commands complete
+only after an accepted TaskPlan or validated proposal exists, and an equivalent
+failure changes strategy or terminates before budget exhaustion. Accepted
+profile provenance requires an explicitly loaded artifact and digest. Evidence:
+`evidence/m8.6-g3-full-phase-recovery-20260723.md`.
+
+This closes G3 only. It does not claim complete-run accounting, generalization
+proof, external-suite readiness, or benchmark score promotion; G4 and G5 remain
+pending.
 
 #### G4: Complete-run benchmark audit
 

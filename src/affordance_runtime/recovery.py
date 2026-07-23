@@ -91,6 +91,18 @@ class FailureSignature:
             value["state_revision"] = self.state_revision
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
+    def semantic_key(self) -> str:
+        """Cascade key excluding target, backend, and revision debug identity."""
+
+        value = {
+            "phase": self.phase,
+            "error_code": self.error_code,
+            "action": self.action,
+            "verifier_kind": self.verifier_kind,
+            "normalized_error": self.normalized_error,
+        }
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
 
 @dataclass
 class RecoveryAttempt:
@@ -167,9 +179,9 @@ class RecoveryCascadeDetector:
         idempotency_key: str,
     ) -> RecoveryCascadeAssessment:
         previous_signatures = [item.signature for item in incident.attempts]
-        keys = [item.key() for item in previous_signatures] + [current.key()]
+        keys = [item.semantic_key() for item in previous_signatures] + [current.semantic_key()]
         findings: list[RecoveryLoopKind] = []
-        if current.key() in keys[:-1]:
+        if current.semantic_key() in keys[:-1]:
             findings.append(RecoveryLoopKind.REPEATED_SIGNATURE)
         completed = [item for item in incident.attempts if item.outcome != RecoveryAttemptOutcome.PENDING]
         if completed and completed[-1].state_before == completed[-1].state_after:
@@ -229,6 +241,7 @@ class RecoveryDecision:
     action: RecoveryAction
     reason: str
     backend: str | None = None
+    profile_artifact_id: str = ""
 
 
 @dataclass

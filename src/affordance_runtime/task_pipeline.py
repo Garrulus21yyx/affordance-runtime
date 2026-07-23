@@ -7,7 +7,20 @@ from typing import Any
 
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.coordinator import CoordinatorResult, RunCoordinator
+from affordance_runtime.failure_envelope import (
+    FailureClass,
+    FailurePhase,
+    RemainingRecoveryBudgets,
+    make_failure_envelope,
+)
 from affordance_runtime.intent_compiler import LLMIntentCompiler
+from affordance_runtime.recovery_commands import (
+    RecoveryChangeDimension,
+    RecoveryCommandKind,
+    RecoveryDelta,
+    RecoveryReceipt,
+)
+from affordance_runtime.recovery_coordinator import RecoverySelectionContext
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import CompilationResult, CompilationStatus, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
@@ -45,6 +58,7 @@ class GeneralistTaskPipeline:
 
     def _run_compiled(self, compilation: CompilationResult, trace: TraceDag) -> TaskPipelineResult:
         if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
+            self._trace_intake_recovery(compilation, trace)
             return TaskPipelineResult(
                 status=compilation.status.value,
                 compilation=compilation,
@@ -82,4 +96,115 @@ class GeneralistTaskPipeline:
             compilation=compilation,
             trace=coordinator_result.trace,
             coordinator=coordinator_result,
+        )
+
+    def _trace_intake_recovery(
+        self,
+        compilation: CompilationResult,
+        trace: TraceDag,
+    ) -> None:
+        clarification = compilation.status == CompilationStatus.NEEDS_CLARIFICATION
+        message = "; ".join(
+            f"{item.code}:{item.field}:{item.detail}" for item in compilation.issues
+        ) or compilation.status.value
+        failure = make_failure_envelope(
+            run_id=compilation.request_id,
+            phase=FailurePhase.INTAKE,
+            failure_class=(
+                FailureClass.INVALID_INPUT
+                if clarification
+                else FailureClass.AUTHORITY
+                if compilation.status == CompilationStatus.POLICY_CONFLICT
+                else FailureClass.VALIDATION
+            ),
+            error_code=compilation.status.value,
+            message=message,
+            state_version=0,
+            expected_effect=compilation.draft.objective,
+            remaining_budgets=RemainingRecoveryBudgets(
+                recoveries=1,
+                user_escalations=1,
+                timeout_ms=5_000,
+            ),
+            recoverable=clarification,
+            progress_fingerprint="intake:uncompiled",
+        )
+        plan = self.coordinator.recovery_coordinator.plan(
+            failure,
+            RecoverySelectionContext(
+                available_commands=(
+                    frozenset(
+                        {
+                            RecoveryCommandKind.CLARIFY_INTENT,
+                            RecoveryCommandKind.ASK_USER,
+                            RecoveryCommandKind.ABORT,
+                        }
+                    )
+                    if clarification
+                    else frozenset({RecoveryCommandKind.ABORT})
+                ),
+                current_attempt_fingerprint=failure.progress_fingerprint,
+                user_question=message,
+                accepted_profile_digest=self.coordinator.runtime_profile_digest,
+                accepted_profile_artifact_ids=frozenset(
+                    self.coordinator.loaded_profile_artifact_ids
+                ),
+            ),
+            current_state_version=0,
+        )
+        command = plan.commands[0]
+        parent = trace.nodes[-1] if trace.nodes else None
+        parent = trace.add(
+            "FailureDetected",
+            {"state": "intake", "failure": failure.model_dump(mode="json")},
+            parents=[parent.id] if parent is not None else None,
+        )
+        parent = trace.add(
+            "RecoveryStrategySelected",
+            {"state": "intake", "plan": plan.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryCommandStarted",
+            {"state": "intake", "command": command.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        next_state = (
+            "waiting_clarification"
+            if command.kind
+            in {RecoveryCommandKind.CLARIFY_INTENT, RecoveryCommandKind.ASK_USER}
+            else "aborted"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=failure.progress_fingerprint,
+            next_attempt_fingerprint=f"{command.strategy_id}:{next_state}",
+            changed_dimensions=command.changed_dimensions,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before="intake:0",
+            state_after=next_state,
+            changed_dimensions=command.changed_dimensions,
+            delta=delta,
+        )
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": next_state, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": next_state, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        trace.add(
+            (
+                "RecoveryEscalatedToUser"
+                if RecoveryChangeDimension.USER_INFORMATION in command.changed_dimensions
+                else "RecoveryAborted"
+            ),
+            {"state": next_state, "reentry_phase": command.reentry_phase.value},
+            parents=[parent.id],
         )

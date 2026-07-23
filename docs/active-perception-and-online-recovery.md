@@ -683,13 +683,18 @@ evidence, and post-action verification.
 Exit: normal Coordinator traces gap, probe, new epoch, arbitration, and
 continuation with no second state writer.
 
-Implementation status on 2026-07-23: **AR0-AR2 complete for G2.5**. The Runtime
+Implementation status on 2026-07-23: **AR0-AR2 complete for G2.5; the
+G3-required AR3-AR5 production slice and accepted recovery-profile provenance
+are complete**. The Runtime
 has strict evidence-gap/probe/receipt/resolution contracts, one minimum-cost
 read-only controller, coherent targeted capture, and normal, preflight,
 verification-repair, and lower-half recovery-inspection call sites. It stops
 safely on surviving material gaps and never treats a transport receipt alone as
-resolution. AR3-AR6 remain planned; in particular, the recovery call site does
-not yet constitute the full-phase RecoveryCoordinator.
+resolution. One phase-general FailureEnvelope/RecoveryCoordinator now covers
+representative pre-contract and lower-half failures through typed commands,
+receipts, non-empty deltas, and changed-strategy validation. Optional
+capability-specific commands execute only when their owning port is configured;
+perception-policy learning and the broader AR6/AR7 evaluation work remain later.
 
 ### AR3: Introduce full-phase recovery contracts
 
@@ -700,6 +705,8 @@ temporary lower-half adapter.
 Exit: planner exception, invalid proposal, no-affordance, binding rejection,
 stale contract, execution uncertainty, and verifier failure share one envelope.
 
+Status: **complete for G3**.
+
 ### AR4: Recover pre-contract phases
 
 Implement reobserve, active perception, context compaction, configured provider
@@ -707,6 +714,10 @@ defer/switch, schema repair, intent clarification, task/step replan, and regroun
 
 Exit: one observation failure changes source, one planning failure changes
 context/plan, one ambiguity asks the user, and equivalent planning loops stop.
+
+Status: **complete for the configured G3 production paths**. Provider switch,
+context compaction, or schema repair remains unavailable unless the respective
+owning port/capability is configured; recovery cannot simulate those changes.
 
 ### AR5: Unify contract and effect recovery
 
@@ -717,6 +728,9 @@ compensation contract, approval/abort, and changed-strategy guard.
 Exit: not-dispatched reroute, uncertain-effect inspection, duplicate avoidance,
 verified compensation, and zero blind retry are proven.
 
+Status: **complete for G3**. Unsupported compensation or reroute safely falls
+through or terminates instead of inventing a backend capability.
+
 ### AR6: Load accepted policies and close trace
 
 Load accepted PerceptionPolicyPatch, RecoveryPolicyPatch, and RecoverySkill
@@ -724,6 +738,11 @@ profiles with digests, fallthrough, rollback, and fresh replay.
 
 Exit: perception cost or cascade depth improves without safety regression;
 stale/mismatched artifacts fall through.
+
+Status: **partial**. Explicit recovery artifact identity/digest, provenance,
+fallthrough, rollback, and fresh candidate replay are enforced. Learned
+perception-policy integration and broader generalization evidence remain later
+work and are not part of G3 closure.
 
 ### AR7: Generalization and benchmark audit
 

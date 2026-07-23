@@ -271,7 +271,7 @@ are:
 | G1 Strict-generalist profile | complete | strict default and Prompt/candidate policy; explicit compatibility registry and physical task-grammar isolation; mandatory typed proposal provenance; shared PlannerProposalValidator; paraphrase/distractor/extra-control/ambiguity/unrelated/unrequested-effect/scope controls; DOM/visual/WoT proof |
 | G2 Intent and TaskPlan integration | complete | typed intent/capability derivation; common TaskPlan entrypoint; verifier-bound subgoal progress; planner context excludes benchmark identity/reward wording |
 | G2.5 Active perception and evidence repair | complete | typed evidence gaps/probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery-inspection integration; safe unresolved blocking |
-| G3 Full-phase Recovery Coordinator | pending | FailureEnvelope, validated commands, receipts, non-empty RecoveryDelta, and changed-strategy recovery across intake through verification and provider/context |
+| G3 Full-phase Recovery Coordinator | complete | strict phase-general FailureEnvelope; validated typed commands; semantic cascade guard; receipts and non-empty RecoveryDelta; inspect-before-repeat; explicit profile provenance; representative intake-through-verification/provider integration |
 | G4 Complete-run audit | pending | ordinary failures collected to completion, resumable partial results, cluster-first repair selection, external reward separated |
 | G5 Generalization proof | pending | strict, strict plus accepted skills, compatibility, and ablation profiles reported separately |
 
@@ -284,12 +284,14 @@ Current hard findings:
 - BrowserGym compiles the raw goal and enters the common PlanningRouter path;
 - source arbitration, typed active-perception contracts, one controller, and
   normal/preflight/verification/recovery-inspection integration are complete;
-- recovery inspection still enters through the lower-half adapter rather than
-  a phase-general FailureEnvelope and RecoveryCoordinator;
-- planner and binding failures do not consistently enter Recovery Cascade;
-- exact failure signatures need a semantic family key for varied repeated errors;
-- current M8.3 evidence proves lower-half recovery and offline evolution, not
-  phase-spanning online autonomy.
+- recovery inspection and the adapted lower-half path now enter the same
+  phase-general FailureEnvelope and RecoveryCoordinator protocol;
+- representative planner and binding failures produce typed recovery commands,
+  and a replan is credited only after a validated replacement exists;
+- exact debug signatures coexist with a semantic family key that detects varied
+  equivalent failures without target/backend identity;
+- G3 proves bounded phase-spanning online recovery; G4 complete-run accounting
+  and G5 generalization/profile evidence remain open.
 
 Exit requires zero benchmark identity leakage, zero unrequested-action or
 scope-expansion regression on governance controls, one validated proposal

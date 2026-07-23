@@ -28,12 +28,12 @@ and generalization, not the product objective. Behavioral task-template solvers
 are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
-The repository implements the controlled harness components through M8.5, but
-the behavior of the default generalist planner, active-perception control, and
-the phase coverage of online recovery are reopened under M8.6. Existing M8.2A,
-M8.3, and M8.5 evidence proves typed boundaries, source-arbitration foundations,
-and lower-half recovery components; it does not yet prove a robust open-world
-planner, complete evidence-gap controller, or full-phase Recovery Coordinator.
+The repository implements the controlled harness components through M8.5 and
+the M8.6 G1-G3 governance slices: strict-planner containment, typed intent and
+TaskPlan routing, bounded active perception, and a phase-general online
+Recovery Coordinator. Existing evidence proves those typed boundaries and
+representative production integrations; it does not yet prove G4 complete-run
+accounting or G5 open-world generalization.
 
 M8.2B public benchmark score promotion is paused behind M8.6. Historical smoke,
 PR, nightly, and release reports remain evidence for their exact revisions and

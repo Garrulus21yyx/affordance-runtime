@@ -327,6 +327,9 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
     assert result.state.step_count == 1
     assert result.state.recovery_count == 1
     assert "EnvironmentDriftDetected" in [node.kind for node in result.trace.nodes]
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.phase.value == "preflight"
+    assert result.state.recovery_deltas
 
 
 class StableObserver:
@@ -491,7 +494,7 @@ class ReplanningTaskPlanner:
         )
 
 
-def test_coordinator_replans_only_after_active_subgoal_action_budget_is_exhausted() -> None:
+def test_coordinator_does_not_replan_into_an_unverified_non_idempotent_repeat() -> None:
     planner = ReplanningTaskPlanner()
     result = RunCoordinator(
         observer=ReplanObserver(),
@@ -505,23 +508,19 @@ def test_coordinator_replans_only_after_active_subgoal_action_budget_is_exhauste
         ),
     ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
 
-    assert result.status == RuntimeStep.DONE
-    assert planner.calls == 2
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
+    assert planner.calls == 1
     assert result.state.plan_progress is not None
-    assert result.state.plan_progress.task_replan_count == 1
-    assert "TaskReplanned" in [node.kind for node in result.trace.nodes]
-    initial, replacement = planner.contexts
+    assert result.state.plan_progress.task_replan_count == 0
+    events = [node.kind for node in result.trace.nodes]
+    assert "RecoveryStateInspected" in events
+    assert "RecoveryAborted" in events
+    assert "TaskReplanned" not in events
+    (initial,) = planner.contexts
     assert initial.reason == "initial"
     assert initial.environment.affordances[0].label == "Save"
     assert initial.current_plan_version == 0
-    assert replacement.reason == "subgoal_action_budget_exhausted"
-    assert replacement.current_plan_id == "plan-replanned-1"
-    assert replacement.current_plan_version == 1
-    assert replacement.failures[0].error_code == "failed"
-    assert replacement.recovery_summary
-    assert replacement.remaining_budget.steps_remaining < initial.remaining_budget.steps_remaining
-    replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
-    assert replanned.payload["supersedes_plan_id"] == "plan-replanned-1"
 
 
 class EvidencePreservingObserver:
@@ -671,10 +670,13 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
     assert result.status == RuntimeStep.FAILED
     assert result.state.recovery_incident is not None
     assert result.state.recovery_incident.root_failure.normalized_error == "timeout <n> while saving record <n>"
-    assert len(result.state.recovery_incident.symptom_chain) == 1
-    assert result.state.recovery_diagnostics["cascade_depth"] == 2
-    assert result.state.recovery_diagnostics["loop_aborts"] == 1
-    assert "repeated_signature" in result.state.recovery_diagnostics["findings"]
+    assert len(result.state.recovery_incident.symptom_chain) == 0
+    assert result.state.recovery_diagnostics["cascade_depth"] == 1
+    assert result.state.recovery_diagnostics["duplicate_effect_risk_count"] == 0
+    assert len(result.state.receipts) == 1
+    events = [node.kind for node in result.trace.nodes]
+    assert "RecoveryStateInspected" in events
+    assert "RecoveryAborted" in events
 
 
 @dataclass
@@ -835,7 +837,7 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
     assert blocked[-1].payload["error_code"] == RuntimeErrorCode.EFFECT_ALREADY_SATISFIED.value
 
 
-def test_progress_guard_blocks_failed_action_when_state_did_not_change() -> None:
+def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta() -> None:
     executor = CountingExecutor()
     result = RunCoordinator(
         observer=StableSavedObserver(saved=False),
@@ -850,11 +852,13 @@ def test_progress_guard_blocks_failed_action_when_state_did_not_change() -> None
         ),
     ).run_sync(TaskEnvelope(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
     assert executor.calls == 1
-    assert result.state.progress_guard_events[-1]["reason"] == "no_progress_repeat"
-    blocked = [node for node in result.trace.nodes if node.kind == "PlannerProgressBlocked"]
-    assert blocked[-1].payload["error_code"] == RuntimeErrorCode.NO_PROGRESS_REPEAT.value
+    assert not result.state.progress_guard_events
+    events = [node.kind for node in result.trace.nodes]
+    assert "RecoveryStateInspected" in events
+    assert "RecoveryAborted" in events
 
 
 def test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied() -> None:
@@ -1017,6 +1021,9 @@ def test_coordinator_rejects_missing_proposal_provenance_before_execution() -> N
     assert rejected.payload["provenance"] is None
     assert "PlannerProposalValidated" not in [node.kind for node in result.trace.nodes]
     assert result.state.receipts == []
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.phase.value == "proposal_validation"
+    assert result.state.recovery_deltas[-1].changed_dimensions[0].value == "terminal"
 
 
 class ClarifyingPlanner(AsyncSemanticSavePlanner):
@@ -1082,4 +1089,8 @@ def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tm
     }
     event = next(node for node in result.trace.nodes if node.kind == "PlannerDeferred")
     assert event.payload["resumable"] is True
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.phase.value == "provider_context"
+    assert result.state.recovery_deltas[-1].changed_dimensions[0].value == "terminal"
+    assert "FailureDetected" in [node.kind for node in result.trace.nodes]
     assert (tmp_path / "artifacts/provider-defer/run.json").exists()

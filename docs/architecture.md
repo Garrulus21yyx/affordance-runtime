@@ -275,7 +275,9 @@ probe capability, ProbePlan/Receipt, and PerceptionResolution contracts plus a
 single ActivePerceptionController. Normal observation, preflight,
 verification-evidence repair, and lower-half recovery inspection use the same
 bounded read-only protocol and new coherent epochs. Accepted perception-policy
-learning remains later work, and phase-general recovery remains G3. See
+learning remains later work. Phase-general recovery is complete under G3 and
+requests this controller through typed commands without acquiring observation
+authority. See
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
 
 ### 2.2 Affordance Layer
@@ -461,11 +463,11 @@ Migration status:
 | --- | --- |
 | DOM/visual/WoT executors | migrated behind Action Contract |
 | backend confidence and cost routing | migrated |
-| bounded recovery and escalation reasons | partially migrated and extended; explicit recovery execution remains a governance gate |
+| bounded recovery and escalation reasons | migrated through the phase-general typed RecoveryCoordinator protocol; execution remains with owning Runtime ports |
 | LM/action and shallow task planning | implemented through PlannerPort and TaskPlannerPort |
 | System1ReflexLibrary grounding cache | grounding cache not migrated; accepted TaskSkill System 1 path implemented |
 | StateAssertion/FusedAssertion conflict gate | implemented as SourceAssertion arbitration |
-| active perception for cross-source conflict | typed controller and bounded targeted-capture integration complete; phase-general recovery remains G3 |
+| active perception for cross-source conflict | typed controller and bounded targeted-capture integration complete; G3 recovery requests it through typed evidence-gap commands |
 | explicit System 1 latency/cache metrics | TaskSkill activation/fallthrough/model-call/latency replay metrics implemented; grounding-cache metrics not migrated |
 | regression-gated skills and policies | implemented with stricter acceptance than the old proposal-only path |
 
@@ -566,12 +568,13 @@ authority, or user input. Exact signatures remain for debugging; semantic
 cascade keys exclude volatile selector, coordinate, mark, target, and backend
 values.
 
-The current RecoveryHandler, FailureSignature, RecoveryIncident,
+The prior RecoveryHandler, FailureSignature, RecoveryIncident,
 RecoveryCascadeDetector, BoundedRecoveryPolicy, inspect-before-repeat, and
-replay-gated artifacts form the lower-half foundation. Phase-general
-FailureEnvelope, RecoveryCommand/Delta/Receipt, pre-contract strategies,
-changed-strategy validation, and unified accepted-profile loading are M8.6
-AR3-AR6 work in
+replay-gated artifacts remain the lower-half foundation. G3 now adds the
+phase-general FailureEnvelope, RecoveryCommand/Delta/Receipt, representative
+pre-contract strategies, changed-strategy validation, and explicit accepted
+recovery-profile loading. Capability-specific transports remain available only
+when their owning Runtime port is configured. See
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
 
 The initial recovery matrix remains:

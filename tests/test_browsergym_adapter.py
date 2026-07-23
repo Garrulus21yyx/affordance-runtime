@@ -2063,7 +2063,7 @@ def test_browsergym_episode_reports_unsupported_policy_action(tmp_path: Path) ->
         seed=4,
         artifact_root=tmp_path,
     )
-    assert result.runtime_status == "failed"
+    assert result.runtime_status == "aborted"
     assert result.unsupported_actions == ["page.evaluate"]
 
 
@@ -2075,7 +2075,7 @@ def test_browsergym_episode_reports_action_outside_semantic_vocabulary(tmp_path:
         seed=4,
         artifact_root=tmp_path,
     )
-    assert result.runtime_status == "failed"
+    assert result.runtime_status == "aborted"
     assert result.unsupported_actions == ["scroll"]
 
 

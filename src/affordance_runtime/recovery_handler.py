@@ -6,6 +6,14 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RuntimeErrorCode
+from affordance_runtime.failure_envelope import (
+    EffectStatus,
+    FailureClass,
+    FailureEnvelope,
+    FailurePhase,
+    RemainingRecoveryBudgets,
+    make_failure_envelope,
+)
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
     FailureSignature,
@@ -16,6 +24,12 @@ from affordance_runtime.recovery import (
     RecoveryContext,
     RecoveryDecision,
     RecoveryIncident,
+)
+from affordance_runtime.recovery_commands import RecoveryCommandKind, RecoveryPlan
+from affordance_runtime.recovery_coordinator import (
+    RecoveryCoordinator,
+    RecoveryHistoryItem,
+    RecoverySelectionContext,
 )
 
 
@@ -32,6 +46,12 @@ class RecoveryRequest:
     recovery_count: int
     tried_backends: tuple[str, ...]
     incident: RecoveryIncident | None = None
+    state_version: int = 0
+    progress_fingerprint: str = ""
+    accepted_profile_digest: str = ""
+    accepted_profile_artifact_ids: tuple[str, ...] = ()
+    attempted_strategy_ids: tuple[str, ...] = ()
+    recovery_history: tuple[RecoveryHistoryItem, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,6 +64,8 @@ class RecoveryEvaluation:
     decision: RecoveryDecision
     effect_may_have_occurred: bool
     continues_open_incident: bool
+    failure: FailureEnvelope
+    plan: RecoveryPlan
 
 
 @dataclass(frozen=True)
@@ -56,7 +78,7 @@ class RecoveryHandler:
     def evaluate(self, request: RecoveryRequest) -> RecoveryEvaluation:
         effect_may_have_occurred = bool(
             request.receipt
-            and request.receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT
+            and request.receipt.evidence.get("dispatched") is not False
         )
         signature = FailureSignature.from_failure(
             request.contract,
@@ -103,7 +125,7 @@ class RecoveryHandler:
             failure_signature=signature,
             task_id=request.task_id,
         )
-        decision = (
+        legacy_decision = (
             RecoveryDecision(
                 RecoveryAction.ABORT,
                 "recovery cascade detector stopped a repeated or unsafe loop",
@@ -116,6 +138,105 @@ class RecoveryHandler:
                 error_code=request.error,
             )
         )
+        failure_phase = _failure_phase(
+            request.failure_phase,
+            effect_may_have_occurred=effect_may_have_occurred,
+        )
+        effect_status = (
+            EffectStatus.MAY_HAVE_OCCURRED
+            if effect_may_have_occurred
+            else EffectStatus.NOT_DISPATCHED
+        )
+        failure = make_failure_envelope(
+            run_id=request.task_id,
+            phase=failure_phase,
+            failure_class=_failure_class(request.error, request.receipt),
+            error_code=request.error or (request.receipt.error_code if request.receipt else None) or "unknown",
+            message=(
+                request.receipt.message
+                if request.receipt is not None and request.receipt.message
+                else signature.normalized_error
+            ),
+            state_version=request.state_version,
+            observation_epoch_id=request.contract.snapshot_id,
+            snapshot_id=request.contract.snapshot_id,
+            contract=request.contract,
+            receipt=request.receipt,
+            expected_effect=request.contract.expected_effects[0].description
+            if request.contract.expected_effects
+            else request.contract.intent,
+            effect_status=effect_status,
+            attempted_strategy_ids=request.attempted_strategy_ids,
+            remaining_budgets=RemainingRecoveryBudgets(
+                recoveries=max(0, self.policy.max_recoveries - request.recovery_count),
+                observations=8,
+                replans=8,
+                provider_switches=1,
+                user_escalations=1,
+                timeout_ms=120_000,
+                model_calls=8,
+                estimated_cost=10.0,
+            ),
+            recoverable=not assessment.should_abort,
+            progress_fingerprint=request.progress_fingerprint or request.state_revision,
+        )
+        available = {
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.INSPECT_POST_STATE,
+            RecoveryCommandKind.ABORT,
+        }
+        alternative_id = ""
+        route_ref = ""
+        if request.contract.route_plan is not None and request.contract.route_plan.viable_alternatives:
+            alternative_id = request.contract.route_plan.viable_alternatives[0].candidate_id
+            available.add(RecoveryCommandKind.REROUTE)
+        elif request.contract.fallback_backends:
+            route_ref = next(
+                (
+                    item
+                    for item in request.contract.fallback_backends
+                    if item not in request.tried_backends
+                ),
+                "",
+            )
+            if route_ref:
+                available.add(RecoveryCommandKind.REROUTE)
+        if request.contract.idempotency_key:
+            available.add(RecoveryCommandKind.RETRY_IDEMPOTENT)
+        if request.contract.compensation:
+            available.add(RecoveryCommandKind.COMPENSATE)
+        if legacy_decision.action == RecoveryAction.REQUEST_APPROVAL:
+            available.add(RecoveryCommandKind.REQUEST_APPROVAL)
+        preferred = (_command_kind_for_legacy(legacy_decision.action),)
+        plan = RecoveryCoordinator().plan(
+            failure,
+            RecoverySelectionContext(
+                available_commands=frozenset(available),
+                current_attempt_fingerprint=request.state_revision,
+                fresh_candidate_id=alternative_id,
+                fresh_route_ref=route_ref,
+                idempotency_key=request.contract.idempotency_key,
+                compensation_contract_id=(
+                    f"compensation:{request.contract.id}"
+                    if request.contract.compensation
+                    else ""
+                ),
+                preferred_profile_commands=preferred,
+                preferred_profile_artifact_id=legacy_decision.profile_artifact_id,
+                accepted_profile_digest=request.accepted_profile_digest,
+                accepted_profile_artifact_ids=frozenset(
+                    request.accepted_profile_artifact_ids
+                ),
+                history=request.recovery_history,
+            ),
+            current_state_version=request.state_version,
+        )
+        decision = RecoveryDecision(
+            _legacy_action_for_command(plan.commands[0].kind),
+            plan.commands[0].expected_change,
+            legacy_decision.backend,
+            plan.commands[0].profile_artifact_id,
+        )
         return RecoveryEvaluation(
             signature=signature,
             assessment=assessment,
@@ -123,4 +244,69 @@ class RecoveryHandler:
             decision=decision,
             effect_may_have_occurred=effect_may_have_occurred,
             continues_open_incident=continues_open_incident,
+            failure=failure,
+            plan=plan,
         )
+
+
+def _failure_phase(value: str, *, effect_may_have_occurred: bool) -> FailurePhase:
+    normalized = value.casefold()
+    if normalized == "preflight":
+        return FailurePhase.PREFLIGHT
+    if normalized == "verifying":
+        return FailurePhase.VERIFICATION
+    if normalized == "acting":
+        return (
+            FailurePhase.EXECUTION_UNCERTAIN
+            if effect_may_have_occurred
+            else FailurePhase.EXECUTION_NOT_DISPATCHED
+        )
+    return FailurePhase.EXECUTION_NOT_DISPATCHED
+
+
+def _failure_class(
+    error: RuntimeErrorCode | None,
+    receipt: ExecutionReceipt | None,
+) -> FailureClass:
+    code = error or (receipt.error_code if receipt is not None else None)
+    if code in {
+        RuntimeErrorCode.STALE_OBSERVATION,
+        RuntimeErrorCode.STALE_PAGE_REVISION,
+        RuntimeErrorCode.SNAPSHOT_MISMATCH,
+        RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
+        RuntimeErrorCode.LEASE_EXPIRED,
+    }:
+        return FailureClass.STALE_STATE
+    if code in {
+        RuntimeErrorCode.CAPABILITY_DENIED,
+        RuntimeErrorCode.APPROVAL_REQUIRED,
+        RuntimeErrorCode.UNSAFE_ACTION,
+    }:
+        return FailureClass.AUTHORITY
+    if code == RuntimeErrorCode.VERIFICATION_FAILED:
+        return FailureClass.VERIFICATION
+    return FailureClass.EXECUTION
+
+
+def _command_kind_for_legacy(action: RecoveryAction) -> RecoveryCommandKind:
+    return {
+        RecoveryAction.REOBSERVE: RecoveryCommandKind.REOBSERVE,
+        RecoveryAction.VERIFY_STATE: RecoveryCommandKind.INSPECT_POST_STATE,
+        RecoveryAction.RETRY: RecoveryCommandKind.RETRY_IDEMPOTENT,
+        RecoveryAction.REROUTE: RecoveryCommandKind.REROUTE,
+        RecoveryAction.COMPENSATE: RecoveryCommandKind.COMPENSATE,
+        RecoveryAction.REQUEST_APPROVAL: RecoveryCommandKind.REQUEST_APPROVAL,
+        RecoveryAction.ABORT: RecoveryCommandKind.ABORT,
+    }[action]
+
+
+def _legacy_action_for_command(kind: RecoveryCommandKind) -> RecoveryAction:
+    return {
+        RecoveryCommandKind.REOBSERVE: RecoveryAction.REOBSERVE,
+        RecoveryCommandKind.INSPECT_POST_STATE: RecoveryAction.VERIFY_STATE,
+        RecoveryCommandKind.RETRY_IDEMPOTENT: RecoveryAction.RETRY,
+        RecoveryCommandKind.REROUTE: RecoveryAction.REROUTE,
+        RecoveryCommandKind.COMPENSATE: RecoveryAction.COMPENSATE,
+        RecoveryCommandKind.REQUEST_APPROVAL: RecoveryAction.REQUEST_APPROVAL,
+        RecoveryCommandKind.ABORT: RecoveryAction.ABORT,
+    }[kind]

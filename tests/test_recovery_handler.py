@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RuntimeErrorCode
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
@@ -6,9 +8,11 @@ from affordance_runtime.recovery import (
     RecoveryAttempt,
     RecoveryAttemptOutcome,
     RecoveryCascadeDetector,
+    RecoveryDecision,
     RecoveryIncident,
     RecoveryLoopKind,
 )
+from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
 
 
@@ -83,6 +87,92 @@ def test_handler_returns_reobserve_for_stale_contract() -> None:
 
     assert evaluation.decision.action == RecoveryAction.REOBSERVE
     assert not evaluation.assessment.should_abort
+
+
+def test_handler_adapts_confirmed_nondispatch_to_typed_reroute_plan() -> None:
+    contract = _contract(fallback_backends=["visual"])
+    receipt = ExecutionReceipt(
+        contract.id,
+        contract.backend,
+        False,
+        "environment-1",
+        "environment-1",
+        1.0,
+        evidence={"dispatched": False},
+        error_code=RuntimeErrorCode.EXECUTION_FAILED,
+        message="route rejected before dispatch",
+    )
+
+    evaluation = _handler().evaluate(
+        RecoveryRequest(
+            contract=contract,
+            receipt=receipt,
+            error=RuntimeErrorCode.EXECUTION_FAILED,
+            failure_phase="acting",
+            state_revision="environment-1",
+            task_id="recovery-reroute",
+            recovery_count=0,
+            tried_backends=(contract.backend,),
+        )
+    )
+
+    assert evaluation.decision.action == RecoveryAction.REROUTE
+    assert evaluation.plan.commands[0].kind == RecoveryCommandKind.REROUTE
+    assert evaluation.plan.commands[0].route_ref == "visual"
+
+
+def test_handler_binds_explicit_accepted_profile_digest_without_forging_strategy_source() -> None:
+    request = _request(error=RuntimeErrorCode.STALE_OBSERVATION)
+    request = replace(
+        request,
+        accepted_profile_digest="sha256:accepted-profile",
+        accepted_profile_artifact_ids=("artifact-accepted",),
+    )
+
+    evaluation = _handler().evaluate(request)
+
+    assert evaluation.plan.profile_digest == "sha256:accepted-profile"
+    assert evaluation.plan.commands[0].profile_artifact_id == ""
+
+
+def test_handler_accepts_only_explicitly_loaded_profile_strategy_provenance() -> None:
+    policy = BoundedRecoveryPolicy(
+        decision_override=lambda contract, receipt, context, error: RecoveryDecision(
+            RecoveryAction.REOBSERVE,
+            "accepted generic stale-state policy",
+            profile_artifact_id="artifact-accepted",
+        )
+    )
+    request = replace(
+        _request(error=RuntimeErrorCode.STALE_OBSERVATION),
+        accepted_profile_digest="sha256:accepted-profile",
+        accepted_profile_artifact_ids=("artifact-accepted",),
+    )
+
+    evaluation = RecoveryHandler(policy, RecoveryCascadeDetector()).evaluate(request)
+
+    assert evaluation.plan.commands[0].profile_artifact_id == "artifact-accepted"
+    assert evaluation.decision.profile_artifact_id == "artifact-accepted"
+
+
+def test_handler_rejects_profile_strategy_provenance_not_in_loaded_profile() -> None:
+    policy = BoundedRecoveryPolicy(
+        decision_override=lambda contract, receipt, context, error: RecoveryDecision(
+            RecoveryAction.REOBSERVE,
+            "forged profile strategy",
+            profile_artifact_id="artifact-forged",
+        )
+    )
+    request = replace(
+        _request(error=RuntimeErrorCode.STALE_OBSERVATION),
+        accepted_profile_digest="sha256:accepted-profile",
+        accepted_profile_artifact_ids=("artifact-accepted",),
+    )
+
+    evaluation = RecoveryHandler(policy, RecoveryCascadeDetector()).evaluate(request)
+
+    assert evaluation.plan.commands[0].kind != RecoveryCommandKind.REOBSERVE
+    assert evaluation.plan.commands[0].profile_artifact_id == ""
 
 
 def test_handler_assesses_copy_and_leaves_authoritative_incident_unchanged() -> None:

@@ -873,6 +873,20 @@ path, equivalent loops stop before budget exhaustion, no blind duplicate effect
 occurs, and recovery proves reobserve, replan, reroute or stronger verify, and
 safe ask/abort outcomes.
 
+Status on 2026-07-23: **complete**. The production Runtime now uses one strict
+`FailureEnvelope`, typed and validated recovery commands, semantic cascade
+matching, explicit accepted-profile provenance, command receipts, non-empty
+recovery deltas, and declared re-entry. `RecoveryCoordinator` selects but never
+executes; `RunCoordinator` and the existing owning ports retain all mutation and
+effect authority. Replanning is credited only after an accepted replacement
+TaskPlan or validated proposal, uncertain effects are inspected before repeat,
+and equivalent failures change strategy or safely terminate before budget
+exhaustion. See
+`evidence/m8.6-g3-full-phase-recovery-20260723.md`.
+
+G4 and G5 remain pending; this status does not promote a benchmark score or
+claim complete-run/generalization evidence.
+
 #### G4: Complete-run result audit
 
 Ordinary episode failures do not stop a diagnostic matrix. Preserve every result,
