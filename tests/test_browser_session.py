@@ -231,6 +231,39 @@ def test_browser_session_uses_runtime_visibility_for_current_affordances() -> No
     assert states["#hidden"]["visible"] is False
 
 
+def test_browser_session_refreshes_live_disclosure_state() -> None:
+    class DisclosurePage(FakePage):
+        def content(self) -> str:
+            return (
+                '<h3 id="section" role="tab" aria-expanded="false" aria-controls="panel">Section</h3>'
+            )
+
+        def evaluate(self, expression: str) -> object:
+            if "document.activeElement" in expression:
+                return ""
+            if "innerText" in expression:
+                return "Section"
+            return {
+                "#section": {
+                    "value": "",
+                    "checked": None,
+                    "aria_expanded": "true",
+                    "aria_controls": "panel",
+                    "visible": True,
+                }
+            }
+
+    snapshot = BrowserSession(DisclosurePage()).capture(page_id="disclosure")
+    affordance = snapshot.affordance_model.affordances[0]
+
+    assert affordance.action == "click"
+    assert affordance.state["disclosure"] is True
+    assert affordance.state["expanded"] is True
+    assert affordance.state["aria_expanded"] == "true"
+    assert affordance.state["aria_controls"] == "panel"
+    assert snapshot.observation.metadata["control_states"]["#section"]["aria_expanded"] == "true"
+
+
 def test_browser_session_derives_scroll_region_with_live_control_state() -> None:
     class ScrollPage(FakePage):
         def content(self) -> str:

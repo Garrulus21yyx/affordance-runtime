@@ -111,6 +111,25 @@ URLs, or benchmark families in Core. Before implementation, reproduce all four
 seed-0 cases on one clean current SHA and compare their inventories, contracts,
 executor encodings, and post-action observations.
 
+Clean `406d53e` reproduces all four seed-0 cases with the same split. Real
+rendered-DOM inspection shows a generic ARIA gap: every header is a standard
+`role=tab` with a backend handle, `aria-expanded`, and `aria-controls`, but the
+DOM Adapter's incomplete ARIA action map admits only the roving `tabindex=0`
+header and classifies it as generic `press`; sibling tabs with `tabindex=-1`
+are omitted. The model consequently emits `ArrowDown`, which changes focus but
+does not disclose content, while BrowserSession omits `aria-expanded` and the
+press verifier falls back to unrelated `context_text`. Implement this slice by
+recognizing standard ARIA tab actions independently of current roving focus,
+normalizing disclosure/expanded/controls state, compiling one semantic
+`ACTIVATE` over a collapsed disclosure when the objective explicitly requires
+expansion, and strongly verifying the expected expanded toggle. For a named
+descendant search, traverse current disclosure siblings in observation order,
+reobserving after each verified activation and stopping as soon as the named
+semantic target is visible; ambiguous non-search multi-control requests fall
+through. Add generic ARIA tab/disclosure, ambiguity, ordering, terminal
+deferral, live-state capture, and BrowserGym encoder verifier tests before any
+benchmark rerun.
+
 ## 1. Authority
 
 This document is the implementation profile for the current repository. It is

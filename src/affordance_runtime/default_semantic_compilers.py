@@ -30,6 +30,7 @@ class DefaultSemanticCompilerCallbacks:
     """Semantic algorithms injected into the declarative default profile."""
 
     calendar_event: SemanticCompileFn
+    disclosure_control: SemanticCompileFn
     suggestion_selection: SemanticCompileFn
     form_field: SemanticCompileFn
     copy_operation: SemanticCompileFn
@@ -45,6 +46,32 @@ def build_default_semantic_compiler_registry(
 
     return SemanticCompilerRegistry(
         rules=(
+            SemanticCompilerRule(
+                compiler_id="typed-disclosure-control-v1",
+                supported_intents=(
+                    "expand one disclosure before a terminal action",
+                    "search ordered disclosures for an explicitly named descendant",
+                ),
+                operation_classes=_OPERATION_CLASSES,
+                applicability_description=(
+                    "objective explicitly requests expansion and the current inventory exposes typed disclosure state"
+                ),
+                applicability=_has_disclosure_affordance,
+                compile=callbacks.disclosure_control,
+                evidence=SemanticCompilerEvidence(
+                    required_state_keys=("disclosure", "expanded"),
+                    output_action_kinds=("activate",),
+                    verifier_requirements=_POSTCONDITION,
+                    negative_examples=(
+                        "ordinary buttons without typed expanded state",
+                        "multiple unnamed disclosures without a bounded descendant search",
+                        "a requested descendant already visible in the current inventory",
+                        "backend handles, focus-navigation keys, or surface-specific widget markup",
+                    ),
+                    source="runtime-generic-disclosure-conformance",
+                    version="1",
+                ),
+            ),
             SemanticCompilerRule(
                 compiler_id="authored-calendar-range-v1",
                 supported_intents=("create bounded calendar event",),
@@ -220,6 +247,15 @@ def build_default_semantic_compiler_registry(
 
 def _has_range_selectable_affordance(context: SemanticCompilerContext) -> bool:
     return any(item.state.get("range_selectable") is True for item in context.affordances)
+
+
+def _has_disclosure_affordance(context: SemanticCompilerContext) -> bool:
+    return any(
+        item.action in {"activate", "click"}
+        and item.state.get("disclosure") is True
+        and isinstance(item.state.get("expanded"), bool)
+        for item in context.affordances
+    )
 
 
 def _has_writable_affordance(context: SemanticCompilerContext) -> bool:

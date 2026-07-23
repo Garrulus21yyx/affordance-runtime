@@ -459,7 +459,7 @@ class BrowserSession:
                 captured = evaluator(
                     """() => Object.fromEntries("""
                     + serialized_bindings
-                    + """.flatMap(({key, selector}) => { const element = document.querySelector(selector); if (!key || !element) return []; const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [[key, {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]]; }))"""
+                    + """.flatMap(({key, selector}) => { const element = document.querySelector(selector); if (!key || !element) return []; const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [[key, {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', aria_expanded: element.getAttribute('aria-expanded') || '', aria_controls: element.getAttribute('aria-controls') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]]; }))"""
                 )
                 if isinstance(captured, dict):
                     control_states = captured
@@ -544,6 +544,14 @@ class BrowserSession:
             aria_selected = control_state.get("aria_selected") if isinstance(control_state, dict) else None
             if isinstance(aria_selected, str) and aria_selected:
                 state["aria_selected"] = aria_selected
+            aria_expanded = control_state.get("aria_expanded") if isinstance(control_state, dict) else None
+            if isinstance(aria_expanded, str) and aria_expanded in {"true", "false"}:
+                state["disclosure"] = True
+                state["expanded"] = aria_expanded == "true"
+                state["aria_expanded"] = aria_expanded
+            aria_controls = control_state.get("aria_controls") if isinstance(control_state, dict) else None
+            if isinstance(aria_controls, str) and aria_controls:
+                state["aria_controls"] = aria_controls
             value = control_state.get("value") if isinstance(control_state, dict) else None
             element_tag = str(state.get("element_tag") or "")
             input_type = str(state.get("input_type") or "")

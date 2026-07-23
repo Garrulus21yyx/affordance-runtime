@@ -20,6 +20,7 @@ from affordance_runtime.benchmarks.browsergym_encoder import (
 )
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Affordance, AffordanceLease, GestureBinding, Observation, Surface
+from affordance_runtime.verification import VerifierSpec
 
 
 def _affordance(
@@ -133,3 +134,26 @@ def test_press_verifier_binds_the_pre_action_scroll_state() -> None:
 
     assert verifiers[-1].target == "region"
     assert verifiers[-1].expected == {"field": "scroll_top", "changed_from": 25}
+
+
+def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
+    model = DomAdapter().transduce("<main></main>", environment_revision="rev-1")
+    snapshot = BrowserSnapshot(
+        Observation(
+            "rev-1",
+            page_revision=model.page_revision,
+            metadata={"control_states": {"section": {"aria_expanded": "false"}}},
+        ),
+        model,
+    )
+
+    verifiers = browsergym_action_verifiers(
+        BrowserGymAction("click", {"bid": "section"}),
+        snapshot,
+    )
+
+    assert verifiers[-1] == VerifierSpec(
+        "control_state",
+        "section",
+        {"field": "aria_expanded", "value": "true"},
+    )

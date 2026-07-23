@@ -22,6 +22,7 @@ _VOID_TAGS = frozenset(["area", "base", "br", "col", "embed", "hr", "img", "inpu
 _ARIA_ACTION_MAP = {
     "button": "click",
     "link": "click",
+    "tab": "click",
     "textbox": "type",
     "combobox": "select",
     "checkbox": "click",
@@ -719,6 +720,8 @@ class DomAdapter:
                 ),
                 "collection_owner": node.get("collection_owner"),
                 "toggle_selected": node.get("toggle_selected"),
+                "aria_expanded": node["attr"].get("aria-expanded", ""),
+                "aria_controls": node["attr"].get("aria-controls", ""),
             }
             for node in planner_nodes
         ]
@@ -862,6 +865,20 @@ class DomAdapter:
                         **({"context_text": context_text} if action == "press" and context_text else {}),
                         **({"container_context": context_text} if context_text else {}),
                         **({"group_context": group_context} if group_context else {}),
+                        **(
+                            {
+                                "disclosure": True,
+                                "expanded": attr["aria-expanded"] == "true",
+                                "aria_expanded": attr["aria-expanded"],
+                                **(
+                                    {"aria_controls": attr["aria-controls"]}
+                                    if attr.get("aria-controls")
+                                    else {}
+                                ),
+                            }
+                            if attr.get("aria-expanded") in {"true", "false"}
+                            else {}
+                        ),
                         **({"collection_position": collection_position} if collection_position is not None else {}),
                         **({"href": attr["href"]} if node["tag"] == "a" and "href" in attr else {}),
                         **({"observed_color": attr["data-color"]} if attr.get("data-color") else {}),

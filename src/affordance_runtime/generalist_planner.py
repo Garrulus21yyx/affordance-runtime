@@ -1451,6 +1451,74 @@ def _compiled_copy_operation(
     return None
 
 
+def _visible_requested_descendant(context: PlannerContext) -> bool:
+    """Return whether one explicitly quoted non-disclosure target is currently actionable."""
+
+    objective = str(context.task_spec.get("objective") or "")
+    requested = {
+        " ".join(item.split()).casefold()
+        for item in re.findall(r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']', objective)
+        if item.strip()
+    }
+    return bool(
+        requested
+        and any(
+            " ".join(item.label.split()).casefold() in requested
+            and item.action in {"activate", "click"}
+            and item.state.get("disclosure") is not True
+            and item.state.get("visible") is not False
+            for item in context.affordances
+        )
+    )
+
+
+def _compiled_disclosure_operation(
+    context: PlannerContext,
+) -> tuple[PlannerActionKind, str, dict[str, Any]] | None:
+    """Activate one typed disclosure, reobserving before descendant or terminal binding."""
+
+    objective = str(context.task_spec.get("objective") or "")
+    objective_tokens = _semantic_tokens(objective)
+    if not objective_tokens.intersection({"expand", "open", "reveal"}):
+        return None
+    disclosures = [
+        item
+        for item in context.affordances
+        if item.action in {"activate", "click"}
+        and item.state.get("disclosure") is True
+        and isinstance(item.state.get("expanded"), bool)
+        and item.state.get("visible") is not False
+    ]
+    if not disclosures or _visible_requested_descendant(context):
+        return None
+    collapsed = [item for item in disclosures if item.state.get("expanded") is False]
+    if not collapsed:
+        return None
+    if len(disclosures) == 1:
+        return PlannerActionKind.ACTIVATE, collapsed[0].id, {}
+
+    requested_literals = re.findall(
+        r'["\u201c\u201d\']([^"\u201c\u201d\']+)["\u201c\u201d\']',
+        objective,
+    )
+    bounded_search = bool(
+        requested_literals and objective_tokens.intersection({"find", "search", "locate"})
+    )
+    if not bounded_search:
+        return None
+    expanded_positions = [
+        index for index, item in enumerate(disclosures) if item.state.get("expanded") is True
+    ]
+    start = max(expanded_positions) + 1 if expanded_positions else 0
+    next_disclosure = next(
+        (item for item in disclosures[start:] if item.state.get("expanded") is False),
+        None,
+    )
+    if next_disclosure is None:
+        return None
+    return PlannerActionKind.ACTIVATE, next_disclosure.id, {}
+
+
 @dataclass(frozen=True)
 class _FormFieldObligation:
     target_id: str
@@ -2375,6 +2443,7 @@ def default_semantic_compiler_registry() -> SemanticCompilerRegistry:
     return build_default_semantic_compiler_registry(
         DefaultSemanticCompilerCallbacks(
             calendar_event=_registry_calendar_event,
+            disclosure_control=_registry_disclosure_control,
             suggestion_selection=_registry_suggestion_selection,
             form_field=_registry_form_field,
             copy_operation=_registry_copy_operation,
@@ -2391,6 +2460,14 @@ def _registry_calendar_event(context: Any) -> SemanticCompilation | None:
         return None
     action, target, destination, parameters = compiled
     return SemanticCompilation(action.value, target, destination, parameters)
+
+
+def _registry_disclosure_control(context: Any) -> SemanticCompilation | None:
+    compiled = _compiled_disclosure_operation(context)
+    if compiled is None:
+        return None
+    action, target, parameters = compiled
+    return SemanticCompilation(action.value, target, parameters=parameters)
 
 
 def _registry_suggestion_selection(context: Any) -> SemanticCompilation | None:

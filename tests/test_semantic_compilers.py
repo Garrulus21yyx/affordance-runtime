@@ -7,6 +7,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
+    _compiled_disclosure_operation,
     _explicit_form_field_obligations,
     _suggestion_selection_obligation,
     build_planner_context,
@@ -260,6 +261,38 @@ def _suggestion_context(
     return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
+def _disclosure_context(
+    objective: str,
+    *,
+    expanded: tuple[bool, ...],
+    visible_target: str = "",
+):
+    controls = "".join(
+        f'<h3 id="section-{index}" role="tab" aria-expanded="{str(is_expanded).lower()}" '
+        f'aria-controls="panel-{index}">Section {index}</h3>'
+        for index, is_expanded in enumerate(expanded, start=1)
+    )
+    target = f"<button>{visible_target}</button>" if visible_target else ""
+    model = DomAdapter().transduce(
+        controls + target + "<button>Submit</button>",
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    task = TaskSpec(
+        task_id="portable-disclosure",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.READ_ONLY,
+        targets=("disclosed content",),
+        success_criteria=("requested disclosed action is complete",),
+        source_request_ref="test",
+    )
+    state = StateKernel(task.task_id, task.objective)
+    state.remember_observation(observation)
+    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+
+
 def test_explicit_form_compiler_binds_each_labelled_value_before_terminal() -> None:
     context = _form_context('Enter the username "Ada" and the password "s3cret" and press Submit.')
     registry = default_semantic_compiler_registry()
@@ -389,6 +422,55 @@ def test_suggestion_compiler_binds_one_explicitly_named_control() -> None:
         "Com",
         "",
     )
+
+
+def test_disclosure_compiler_opens_one_control_before_terminal_binding() -> None:
+    context = _disclosure_context(
+        "Expand the section below and click Submit.",
+        expanded=(False,),
+    )
+
+    compiled = default_semantic_compiler_registry().compile(context)
+
+    assert compiled is not None
+    assert compiled.compiler_id == "typed-disclosure-control-v1"
+    assert (compiled.action_kind, compiled.target_affordance_id, compiled.parameters) == (
+        "activate",
+        "dom_h3_1",
+        {},
+    )
+
+
+def test_disclosure_compiler_scans_ordered_controls_until_named_target_is_visible() -> None:
+    initial = _disclosure_context(
+        'Expand the sections to find and click "Needle".',
+        expanded=(False, False, False),
+    )
+    after_first = _disclosure_context(
+        'Expand the sections to find and click "Needle".',
+        expanded=(True, False, False),
+    )
+    found = _disclosure_context(
+        'Expand the sections to find and click "Needle".',
+        expanded=(False, True, False),
+        visible_target="Needle",
+    )
+
+    first = _compiled_disclosure_operation(initial)
+    second = _compiled_disclosure_operation(after_first)
+
+    assert first == (PlannerActionKind.ACTIVATE, "dom_h3_1", {})
+    assert second == (PlannerActionKind.ACTIVATE, "dom_h3_2", {})
+    assert _compiled_disclosure_operation(found) is None
+
+
+def test_disclosure_compiler_falls_through_for_ambiguous_multi_control_request() -> None:
+    context = _disclosure_context(
+        "Open a section and continue.",
+        expanded=(False, False),
+    )
+
+    assert _compiled_disclosure_operation(context) is None
 
 
 def test_disabling_semantic_compiler_profile_preserves_runtime_drag_capability() -> None:

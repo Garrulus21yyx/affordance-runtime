@@ -149,6 +149,32 @@ def test_dom_adapter_exposes_focusable_controls_as_keyboard_affordances() -> Non
     assert affordance.locator["backend_handle"] == "slider"
 
 
+def test_dom_adapter_exposes_all_aria_tabs_as_typed_disclosures_independent_of_roving_focus() -> None:
+    model = _authored_adapter().transduce(
+        '<h3 id="first" role="tab" tabindex="0" aria-expanded="false" aria-controls="panel-1" '
+        'data-runtime-handle="first">First</h3>'
+        '<h3 id="second" role="tab" tabindex="-1" aria-expanded="true" aria-controls="panel-2" '
+        'data-runtime-handle="second">Second</h3>',
+        environment_revision="rev-1",
+    )
+
+    assert [(item.label, item.action) for item in model.affordances] == [
+        ("First", "click"),
+        ("Second", "click"),
+    ]
+    assert model.affordances[0].state | {"visible": True} == {
+        "enabled": True,
+        "visible": True,
+        "element_tag": "h3",
+        "disclosure": True,
+        "expanded": False,
+        "aria_expanded": "false",
+        "aria_controls": "panel-1",
+    }
+    assert model.affordances[1].state["expanded"] is True
+    assert [item.locator["backend_handle"] for item in model.affordances] == ["first", "second"]
+
+
 def test_dom_adapter_preserves_concise_nearby_visible_text_for_focusable_controls() -> None:
     model = _authored_adapter().transduce(
         '<div><div id="slider"><span data-runtime-handle="slider" tabindex="0"></span></div><div>-1</div></div>',

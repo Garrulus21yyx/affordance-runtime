@@ -374,9 +374,19 @@ def browsergym_action_verifiers(
     elif action.name in {"click", "click_no_navigation"}:
         previous = snapshot.observation.metadata.get("control_states", {})
         previous_state = previous.get(action_bid, {}) if isinstance(previous, dict) else {}
+        expanded = previous_state.get("aria_expanded") if isinstance(previous_state, dict) else None
         checked = previous_state.get("checked") if isinstance(previous_state, dict) else None
-        expected = {"field": "checked", "changed_from": checked} if checked is not None else True
-        verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, expected))
+        if expanded in {"true", "false"}:
+            verifier_plan.append(
+                VerifierSpec(
+                    "control_state",
+                    action_bid,
+                    {"field": "aria_expanded", "value": "false" if expanded == "true" else "true"},
+                )
+            )
+        else:
+            expected = {"field": "checked", "changed_from": checked} if checked is not None else True
+            verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, expected))
     elif action.name == "mouse_click":
         verifier_plan.append(VerifierSpec("state_delta_or_terminal", "", True))
     return verifier_plan
