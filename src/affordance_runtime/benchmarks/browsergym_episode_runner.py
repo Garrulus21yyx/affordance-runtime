@@ -45,10 +45,10 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
 from affordance_runtime.generalist_planner import (
-    GENERALIST_PLANNER_PROMPT_VERSION,
     GeneralistLMPlanner,
     GeneralistPlannerProfile,
     PlannerLimits,
+    planner_prompt_version,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
 from affordance_runtime.model_port import ModelConfig, ModelPort
@@ -638,7 +638,7 @@ def run_browsergym_generalist_episode(
             config=ModelConfig(
                 max_tokens=BROWSERGYM_PLANNER_MAX_TOKENS,
                 timeout_s=model_timeout_s,
-                prompt_version=GENERALIST_PLANNER_PROMPT_VERSION,
+                prompt_version=planner_prompt_version(planner_profile),
             ),
             limits=planner_limits,
             max_model_calls=max_model_calls,

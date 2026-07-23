@@ -1,5 +1,6 @@
 import time
 from dataclasses import replace
+from typing import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
 )
@@ -374,6 +376,73 @@ def test_contract_builder_rejects_stale_missing_or_incompatible_proposal(
     with pytest.raises(ProposalRejected) as caught:
         ContractBuilder().build(_proposal(state, **changes), spec, state, snapshot)
     assert caught.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("proposal", "code"),
+    [
+        (
+            lambda state: _proposal(state, based_on_task_revision=1),
+            ProposalRejectionCode.STALE_TASK_REVISION,
+        ),
+        (
+            lambda state: _proposal(state, based_on_state_version=99),
+            ProposalRejectionCode.STALE_STATE_VERSION,
+        ),
+        (
+            lambda state: _proposal(state, snapshot_id="old"),
+            ProposalRejectionCode.STALE_SNAPSHOT,
+        ),
+        (
+            lambda state: _proposal(state, target_affordance_id="missing"),
+            ProposalRejectionCode.MISSING_TARGET,
+        ),
+        (
+            lambda state: _proposal(
+                state,
+                action_kind=PlannerActionKind.ACTIVATE,
+                parameters={},
+            ),
+            ProposalRejectionCode.UNSUPPORTED_ACTION,
+        ),
+        (
+            lambda state: _proposal(
+                state,
+                action_kind=PlannerActionKind.FINISH,
+                target_affordance_id="dom_input_1",
+                parameters={},
+            ),
+            ProposalRejectionCode.UNEXPECTED_TARGET,
+        ),
+        (
+            lambda state: _proposal(
+                state,
+                action_kind=PlannerActionKind.DRAG,
+                target_affordance_id="dom_input_1",
+                destination_affordance_id="dom_input_1",
+                parameters={},
+            ),
+            ProposalRejectionCode.IDENTICAL_DRAG_TARGETS,
+        ),
+    ],
+)
+def test_proposal_validator_is_the_source_neutral_prebinding_gate(
+    proposal: Callable[[StateKernel], PlannerProposal],
+    code: ProposalRejectionCode,
+) -> None:
+    spec, state, snapshot = _fixture()
+    candidate = proposal(state)
+
+    with pytest.raises(ProposalRejected) as caught:
+        PlannerProposalValidator().validate(candidate, spec, state, snapshot)
+
+    assert caught.value.code == code
+
+
+def test_proposal_validator_accepts_a_current_semantic_proposal() -> None:
+    spec, state, snapshot = _fixture()
+
+    PlannerProposalValidator().validate(_proposal(state), spec, state, snapshot)
 
 
 def test_proposal_schema_rejects_surface_and_authority_fields() -> None:

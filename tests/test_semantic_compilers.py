@@ -14,7 +14,9 @@ from affordance_runtime.generalist_planner import (
     _explicit_form_field_obligations,
     _suggestion_selection_obligation,
     build_planner_context,
-    default_semantic_compiler_registry,
+)
+from affordance_runtime.generalist_planner import (
+    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerActionKind
@@ -49,6 +51,30 @@ class DragProposalModel:
         )
 
 
+@dataclass
+class GovernanceClarificationModel:
+    provider: str = "fixture"
+    model: str = "governance-clarification"
+    endpoint_class: str = "test"
+    last_call: ModelCallRecord | None = None
+    calls: int = 0
+
+    async def generate_structured(
+        self,
+        messages: list[Any],
+        output_schema: type[Any],
+        config: Any,
+    ) -> Any:
+        del messages, config
+        self.calls += 1
+        return output_schema.model_validate(
+            {
+                "action_kind": "ask_user",
+                "reason": "current evidence does not authorize one scoped next action",
+            }
+        )
+
+
 def _drag_fixture(objective: str) -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
     model = DomAdapter().transduce(
         '<li class="ui-sortable-handle">Alpha</li>'
@@ -77,7 +103,54 @@ def _drag_fixture(objective: str) -> tuple[TaskEnvelope, StateKernel, BrowserSna
     return TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model)
 
 
-def test_default_semantic_compilers_declare_applicability_evidence_and_negative_examples() -> None:
+def _governance_fixture(kind: str) -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+    if kind == "form":
+        objective = 'Enter "Q1" into both text fields and press Submit.'
+        markup = (
+            '<label>First</label><input id="first">'
+            '<label>Second</label><input id="second"><button>Submit</button>'
+        )
+    elif kind == "suggestion":
+        objective = 'Enter an item that starts with "Com".'
+        markup = '<label>Tags</label><input id="tags"><button>Submit</button>'
+    else:
+        objective = "Expand the section below and click Submit."
+        markup = '<h3 role="tab" aria-expanded="false" aria-controls="panel">Section</h3><button>Submit</button>'
+    model = DomAdapter().transduce(
+        markup,
+        environment_revision="governance-rev",
+        snapshot_id="governance-snapshot",
+    )
+    if kind == "suggestion":
+        model = replace(
+            model,
+            affordances=[
+                replace(item, state={**item.state, "autocomplete": True})
+                if item.state.get("element_tag") == "input"
+                else item
+                for item in model.affordances
+            ],
+        )
+    observation = Observation(
+        "governance-rev",
+        snapshot_id="governance-snapshot",
+        page_revision=model.page_revision,
+    )
+    task = TaskSpec(
+        task_id=f"governance-{kind}",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.READ_ONLY,
+        targets=(),
+        success_criteria=("the explicitly requested effect is observed",),
+        source_request_ref="governance-fixture",
+    )
+    state = StateKernel(task.task_id, task.objective)
+    state.remember_observation(observation)
+    return TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model)
+
+
+def test_compatibility_compilers_declare_applicability_evidence_and_negative_examples() -> None:
     registry = default_semantic_compiler_registry()
 
     assert registry.rules
@@ -555,6 +628,34 @@ def test_strict_default_disables_compatibility_compilers_without_removing_drag()
     assert disabled.planner_context["planner_profile"] == "strict-generalist"
     assert "semantic_compiler" not in disabled.planner_context
     assert "semantic_constraints" not in disabled.planner_context
+
+
+@pytest.mark.parametrize("kind", ["form", "suggestion", "disclosure"])
+def test_strict_profile_does_not_execute_task_grammar_before_model_authority(kind: str) -> None:
+    envelope, state, snapshot = _governance_fixture(kind)
+    strict_model = GovernanceClarificationModel()
+
+    strict = asyncio.run(GeneralistLMPlanner(strict_model).propose(envelope, state, snapshot))
+
+    assert strict_model.calls == 1
+    assert strict.proposal is not None
+    assert strict.proposal.action_kind == PlannerActionKind.ASK_USER
+    assert strict.planner_context["planner_profile"] == "strict-generalist"
+    assert "semantic_compiler" not in strict.planner_context
+
+    compatibility_model = GovernanceClarificationModel()
+    compatibility = asyncio.run(
+        GeneralistLMPlanner(
+            compatibility_model,
+            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
+        ).propose(envelope, state, snapshot)
+    )
+
+    assert compatibility_model.calls == 0
+    assert compatibility.proposal is not None
+    assert compatibility.proposal.action_kind != PlannerActionKind.ASK_USER
+    assert compatibility.planner_context["planner_profile"] == "historical-compatibility"
+    assert "semantic_compiler" in compatibility.planner_context
 
 
 def test_strict_profile_rejects_a_nonempty_compatibility_registry() -> None:

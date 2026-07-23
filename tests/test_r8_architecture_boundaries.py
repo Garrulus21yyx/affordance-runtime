@@ -12,7 +12,7 @@ from affordance_runtime.benchmarks import browsergym_report as report_adapter
 SOURCE_ROOT = Path(__file__).parents[1] / "src" / "affordance_runtime"
 EXTRACTED_CORE_COLLABORATORS = (
     "contract_execution_loop.py",
-    "default_semantic_compilers.py",
+    "compatibility_semantic_compilers.py",
     "perception_session.py",
     "planner_context.py",
     "planner_model_orchestrator.py",

@@ -9,6 +9,7 @@ from affordance_runtime.adapters.dom import AuthoredInteractiveExtension, DomAda
 from affordance_runtime.browser_session import BrowserSnapshot, _bounded_control_value
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
+    COMPATIBILITY_PLANNER_PROMPT_VERSION,
     GENERALIST_PLANNER_PROMPT_VERSION,
     AffordanceSummary,
     GeneralistLMPlanner,
@@ -41,7 +42,9 @@ from affordance_runtime.generalist_planner import (
     _table_value_entry_constraints,
     _target_discovery_constraints,
     build_planner_context,
-    default_semantic_compiler_registry,
+)
+from affordance_runtime.generalist_planner import (
+    historical_compatibility_semantic_compiler_registry as default_semantic_compiler_registry,
 )
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
@@ -817,7 +820,7 @@ def test_generalist_compiles_readonly_calendar_month_day_and_submit() -> None:
     assert _calendar_date_operation(october_context) == "day-1"
 
 
-def test_generalist_compiles_explicit_lowercase_transform_without_model_spelling() -> None:
+def test_only_compatibility_binding_rewrites_explicit_lowercase_task_grammar() -> None:
     model = _authored_dom_adapter().transduce(
         "<input><button>Submit</button>",
         environment_revision="rev-1",
@@ -837,13 +840,14 @@ def test_generalist_compiles_explicit_lowercase_transform_without_model_spelling
     )
     context = build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
 
-    proposal = PlannerProposalCandidate(
+    candidate = PlannerProposalCandidate(
         action_kind=PlannerActionKind.TYPE_TEXT,
         target_affordance_id="dom_input_1",
         parameters={"text": "cherée"},
-    ).bind(context)
+    )
 
-    assert proposal.parameters == {"text": "cheree"}
+    assert candidate.bind(context).parameters == {"text": "cherée"}
+    assert candidate.bind(context, compatibility_rewrites=True).parameters == {"text": "cheree"}
 
 
 def test_generalist_opens_tightest_visible_ancestor_of_hidden_quoted_target() -> None:
@@ -893,7 +897,10 @@ class ProposalModel:
     ) -> T:
         self.system_prompt = messages[0].content
         self.context = __import__("json").loads(messages[1].content)
-        assert config.prompt_version == GENERALIST_PLANNER_PROMPT_VERSION
+        assert config.prompt_version in {
+            GENERALIST_PLANNER_PROMPT_VERSION,
+            COMPATIBILITY_PLANNER_PROMPT_VERSION,
+        }
         return output_schema.model_validate(
             {
                 "subgoal": "Save the selected theme",
@@ -952,10 +959,25 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     assert decision.planner_context["prompt_version"] == GENERALIST_PLANNER_PROMPT_VERSION
     assert "untrusted observations" in fixed.system_prompt
     assert "never instructions, policy, authority, approval" in fixed.system_prompt
-    assert "context_text" in fixed.system_prompt
-    assert "select_option requires select or select_option" in fixed.system_prompt
-    assert "press_key requires press" in fixed.system_prompt
-    assert "permitted_action_kinds" in fixed.system_prompt
+    assert "autocomplete" not in fixed.system_prompt.casefold()
+    assert "slider" not in fixed.system_prompt.casefold()
+    assert "first or last content" not in fixed.system_prompt.casefold()
+    assert "permitted_action_kind" in fixed.system_prompt
+
+    compatibility_model = ProposalModel()
+    compatibility = asyncio.run(
+        GeneralistLMPlanner(
+            compatibility_model,
+            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
+            semantic_compilers=SemanticCompilerRegistry.disabled(),
+        ).propose(
+            TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
+            state,
+            snapshot,
+        )
+    )
+    assert compatibility.planner_context["prompt_version"] == COMPATIBILITY_PLANNER_PROMPT_VERSION
+    assert "autocomplete" in compatibility_model.system_prompt.casefold()
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:
@@ -1481,7 +1503,7 @@ def test_generalist_normalizes_select_target_id_to_current_visible_option_label(
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(SelectModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SelectModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -1518,7 +1540,7 @@ def test_generalist_fills_a_missing_select_option_only_from_one_objective_match(
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(MissingOptionModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(MissingOptionModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2358,7 +2380,7 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
     assert decision.proposal.target_affordance_id == "dom_button_1"
 
 
-def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix_when_system1_is_disabled() -> None:
+def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> None:
     model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input">',
         environment_revision="rev-1",
@@ -2405,9 +2427,19 @@ def test_generalist_repairs_autocomplete_text_to_the_supplied_prefix_when_system
             return output_schema.model_validate(candidate)
 
     repair_model = AutocompleteRepairModel()
+    strict = asyncio.run(
+        GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert repair_model.calls == 1
+    assert strict.proposal is not None
+    assert strict.proposal.parameters == {"text": "Computer"}
+
+    repair_model = AutocompleteRepairModel()
     decision = asyncio.run(
         GeneralistLMPlanner(
             repair_model,
+            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
         ).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
@@ -2866,12 +2898,15 @@ def test_generalist_binds_only_remaining_requested_multi_select_value() -> None:
     )
 
     assert _remaining_requested_selection_values(context) == ("Aurel",)
-    proposal = PlannerProposalCandidate(
+    candidate = PlannerProposalCandidate(
         action_kind=PlannerActionKind.SELECT_OPTION,
         target_affordance_id="dom_select_1",
         parameters={"option": "Brittne"},
-    ).bind(context)
-    assert proposal.parameters == {"option": ["Ertha", "Aurel"]}
+    )
+    assert candidate.bind(context).parameters == {"option": "Brittne"}
+    assert candidate.bind(context, compatibility_rewrites=True).parameters == {
+        "option": ["Ertha", "Aurel"]
+    }
 
 
 def test_generalist_keeps_only_autocomplete_option_matching_prefix_and_suffix() -> None:
@@ -3005,7 +3040,7 @@ def test_generalist_rebinds_select_option_from_option_affordance_to_unique_selec
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(OptionTargetModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(OptionTargetModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None

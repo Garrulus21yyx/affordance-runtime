@@ -33,7 +33,8 @@ TaskSpec / active Subgoal
             -> re-arbitrate
        or safe inconclusive
   -> task/action planning
-  -> PlanValidator
+  -> semantic PlannerProposal
+  -> PlannerProposalValidator
   -> candidate binding and ActionContract
   -> policy / preflight / execution
   -> post-state inspection and verification
@@ -143,7 +144,7 @@ Missing integration:
 | ActivePerceptionController | ProbePlan | execute or mutate state |
 | TaskPlanner | TaskPlan proposal | grant authority |
 | StepPlanner | semantic PlannerProposal | emit selectors or execute |
-| PlanValidator | validation result | hide repairs or effects |
+| PlannerProposalValidator | validation result | hide repairs or effects |
 | ContractBuilder | ActionContract | reinterpret user intent |
 | RecoveryCoordinator | RecoveryPlan | execute or mutate state |
 | RecoveryExecutor | RecoveryReceipt | choose strategy |
@@ -529,7 +530,7 @@ CREATED
        -> accepted snapshot or FailureEnvelope
   -> PLANNING
        -> semantic proposal
-       -> PlanValidator
+       -> PlannerProposalValidator
   -> BINDING
        -> current unified candidate and route
        -> ActionContract

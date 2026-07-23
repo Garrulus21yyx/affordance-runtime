@@ -16,7 +16,8 @@ task / active subgoal
   -> if evidence is insufficient:
        EvidenceGap -> ActivePerceptionController -> bounded read-only probe
        -> new observation epoch -> re-arbitrate
-  -> plan -> PlanValidator -> bind -> ActionContract
+  -> plan -> semantic PlannerProposal -> PlannerProposalValidator
+  -> bind -> ActionContract
   -> policy / preflight -> act
   -> observe post-state -> verify
   -> continue / complete

@@ -106,7 +106,8 @@ UserRequest
   -> task-aware observation
   -> unified affordances and grounding candidates
   -> Generalist Step Planner
-  -> PlanValidator
+  -> semantic PlannerProposal
+  -> PlannerProposalValidator
   -> ContractBuilder
   -> ActionContract
   -> policy and preflight
@@ -233,7 +234,7 @@ compatibility behavior may remain behind an explicitly named profile whose
 results cannot support generalist claims.
 
 Every planner source must emit the same PlannerProposal and pass one
-PlanValidator.
+PlannerProposalValidator.
 
 ## 6. Critical Finding: Benchmark Identity Leaks Into Planning
 
@@ -421,7 +422,7 @@ small internal collaborators at real ownership boundaries:
 - IntentCompiler;
 - TaskPlanRouter;
 - GeneralistStepPlanner;
-- PlanValidator;
+- PlannerProposalValidator;
 - PlannerContextBuilder;
 - PerceptionSession;
 - ContractBindingService;
@@ -517,7 +518,8 @@ UserRequest
        -> WoT / API
   -> semantic entity resolution
   -> GeneralistStepPlanner
-  -> PlanValidator
+  -> semantic PlannerProposal
+  -> PlannerProposalValidator
   -> route and candidate binding
   -> fresh ActionContract
   -> policy and preflight
@@ -598,7 +600,7 @@ Exit:
 - make strict-generalist the default;
 - remove benchmark-shaped compilers from the default registry;
 - isolate historical compatibility rules;
-- enforce compiler metadata and PlanValidator for all proposal sources;
+- enforce compiler metadata and PlannerProposalValidator for all proposal sources;
 - add behavioral anti-cheating tests;
 - add real local paraphrase, distractor, ambiguity, and unrelated-interface
   scenarios.

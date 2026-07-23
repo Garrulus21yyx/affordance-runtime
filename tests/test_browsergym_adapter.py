@@ -266,6 +266,7 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "SourceAssertionsCollected",
         "SourceAssertionsArbitrated",
         "PlanProposed",
+        "PlannerProposalValidated",
         "PlannerProposalProduced",
         "ContractBuilt",
         "PreflightObservationCaptured",
@@ -282,6 +283,7 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "SourceAssertionsCollected",
         "SourceAssertionsArbitrated",
         "PlanProposed",
+        "PlannerProposalValidated",
         "PlannerProposalProduced",
         "TaskCompleted",
     ]

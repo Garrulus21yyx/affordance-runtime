@@ -160,6 +160,8 @@ class ProposalRejectionCode(StrEnum):
     STALE_STATE_VERSION = "stale_state_version"
     STALE_SNAPSHOT = "stale_snapshot"
     MISSING_TARGET = "missing_target"
+    UNEXPECTED_TARGET = "unexpected_target"
+    IDENTICAL_DRAG_TARGETS = "identical_drag_targets"
     UNSUPPORTED_ACTION = "unsupported_action"
     NO_BACKEND = "no_backend"
 
@@ -169,6 +171,93 @@ class ProposalRejected(ValueError):
         self.code = code
         self.detail = detail
         super().__init__(f"{code.value}: {detail}" if detail else code.value)
+
+
+@dataclass(frozen=True)
+class PlannerProposalValidator:
+    """One source-neutral semantic proposal gate before contract binding."""
+
+    def validate(
+        self,
+        proposal: PlannerProposal,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> None:
+        if proposal.based_on_task_revision != task_spec.revision:
+            raise ProposalRejected(ProposalRejectionCode.STALE_TASK_REVISION)
+        if proposal.based_on_state_version != state.version:
+            raise ProposalRejected(ProposalRejectionCode.STALE_STATE_VERSION)
+        if proposal.snapshot_id != snapshot.observation.snapshot_id:
+            raise ProposalRejected(ProposalRejectionCode.STALE_SNAPSHOT)
+
+        if proposal.action_kind not in _TARGET_ACTIONS:
+            if proposal.target_affordance_id or proposal.destination_affordance_id:
+                raise ProposalRejected(
+                    ProposalRejectionCode.UNEXPECTED_TARGET,
+                    proposal.action_kind.value,
+                )
+            return
+
+        if (
+            proposal.action_kind == PlannerActionKind.DRAG
+            and proposal.target_affordance_id == proposal.destination_affordance_id
+        ):
+            raise ProposalRejected(
+                ProposalRejectionCode.IDENTICAL_DRAG_TARGETS,
+                proposal.target_affordance_id,
+            )
+        self._validate_target(proposal.target_affordance_id, proposal.action_kind, snapshot)
+        if proposal.action_kind != PlannerActionKind.DRAG:
+            if proposal.destination_affordance_id:
+                raise ProposalRejected(
+                    ProposalRejectionCode.UNEXPECTED_TARGET,
+                    proposal.destination_affordance_id,
+                )
+            return
+        self._validate_target(
+            proposal.destination_affordance_id,
+            PlannerActionKind.DRAG,
+            snapshot,
+            destination=True,
+        )
+
+    @staticmethod
+    def _validate_target(
+        semantic_target_id: str,
+        action: PlannerActionKind,
+        snapshot: BrowserSnapshot,
+        *,
+        destination: bool = False,
+    ) -> None:
+        unified = next(
+            (
+                item
+                for item in snapshot.unified_affordances
+                if item.semantic_target_id == semantic_target_id
+            ),
+            None,
+        )
+        if unified is not None:
+            if destination or action.value in unified.supported_actions or any(
+                _action_compatible(action, item) for item in unified.supported_actions
+            ):
+                return
+            raise ProposalRejected(
+                ProposalRejectionCode.UNSUPPORTED_ACTION,
+                f"{action.value} cannot bind {semantic_target_id}",
+            )
+        affordance = next(
+            (item for item in snapshot.affordance_model.affordances if item.id == semantic_target_id),
+            None,
+        )
+        if affordance is None:
+            raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, semantic_target_id)
+        if not destination and not _action_compatible(action, affordance.action):
+            raise ProposalRejected(
+                ProposalRejectionCode.UNSUPPORTED_ACTION,
+                f"{action.value} cannot bind {affordance.action}",
+            )
 
 
 @dataclass(frozen=True)

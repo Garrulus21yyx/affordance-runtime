@@ -709,7 +709,7 @@ UserRequest
   -> coherent multi-source observation and assertion arbitration
   -> bounded active perception when evidence is insufficient
   -> generalist semantic proposal
-  -> PlanValidator
+  -> PlannerProposalValidator
   -> unified candidate binding
   -> ActionContract
   -> policy / preflight / execute / post-observe / verify
@@ -769,8 +769,13 @@ conformance.
 
 Current implementation: strict-generalist is the default and cannot load the
 non-empty historical compatibility registry. Compatibility is explicit and
-cannot claim a generalist score. Shared proposal validation, the complete
-behavioral control matrix, and cross-surface conformance remain open.
+cannot claim a generalist score. One shared PlannerProposalValidator now gates
+all proposal sources, initial task-shape controls pass, and the same strict
+planner passes non-BrowserGym DOM/visual/WoT conformance. Strict uses a separate
+Prompt and protocol/current-state-only candidate policy; task-shaped rewrites
+remain compatibility-only. The complete
+behavioral control matrix and physical compatibility-algorithm containment
+remain open.
 
 #### G2: Intent and task-planning integration
 
@@ -780,7 +785,7 @@ suite defaults.
 
 Use one flat subgoal for simple tasks, accepted semantic skills when applicable,
 and a validated shallow LM TaskPlan only for genuinely multi-stage work.
-PlanValidator applies to deterministic, LM, parent-agent, skill, and recovery
+PlannerProposalValidator applies to deterministic, LM, parent-agent, skill, and recovery
 proposals. Effectful actions remain serial.
 
 Wire the same task-plan router into reference, parent-agent, and benchmark
@@ -876,7 +881,7 @@ hidden, and no benchmark score is the sole evidence for a generalization claim.
 - unrequested-action and task-scope-expansion regressions: zero on governance
   controls;
 - uncertain effects inspected before repeat: 100 percent;
-- every proposal source passes PlanValidator;
+- every proposal source passes PlannerProposalValidator;
 - all active-perception probes are read-only, budgeted, task-relevant, and
   create a new coherent observation epoch;
 - unresolved safety-relevant evidence conflict cannot reach an effectful

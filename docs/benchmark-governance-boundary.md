@@ -57,7 +57,7 @@ planner, and accepted skills:
 - fixed benchmark selectors, bids, coordinates, mark ids, labels, answers, or
   action sequences;
 - reading official evaluator state as planning or Runtime success evidence;
-- bypassing TaskSpec, PlanValidator, ActionContract, policy, preflight,
+- bypassing TaskSpec, PlannerProposalValidator, ActionContract, policy, preflight,
   post-observation, verification, recovery, or trace;
 - moving benchmark logic into a shared filename merely to pass source scans;
 - increasing timeout, retry, or model budget to hide a semantic loop.
@@ -119,8 +119,8 @@ UserRequest
   -> optional TaskPlanner
   -> active SubgoalSpec
   -> Generalist Step Planner
-  -> PlanValidator
   -> semantic PlannerProposal
+  -> PlannerProposalValidator
 ~~~
 
 The Intent Compiler may infer a typed draft and identify ambiguity. It may not
@@ -134,8 +134,9 @@ The Generalist Step Planner selects one semantic next action from the current
 TaskSpec, active subgoal, bounded history, current observation, and available
 affordances. It may not be a registry of benchmark task-family programs.
 
-PlanValidator is mandatory for rule, LM, parent-agent, accepted-skill, and
-recovery-produced proposals.
+PlannerProposalValidator is mandatory for rule, LM, parent-agent,
+accepted-skill, and recovery-produced proposals. It runs before completion,
+clarification, contract binding, approval, or execution handling.
 
 ### 5.1 Default and compatibility profiles
 
@@ -307,7 +308,7 @@ Every benchmark-related pull request must answer:
 5. Which paraphrase and distractor tests prevent task-grammar overfitting?
 6. Could this rule take an action the user did not request?
 7. Does planner-visible context contain benchmark identity?
-8. Does the change preserve PlanValidator, ActionContract, policy, preflight,
+8. Does the change preserve PlannerProposalValidator, ActionContract, policy, preflight,
    post-observation, verification, recovery, and trace?
 9. Is an accepted skill involved, and is applicability regression-gated?
 10. Is the benchmark result being used as audit evidence rather than product

@@ -362,6 +362,8 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
     events = [node.kind for node in result.trace.nodes]
     assert "TaskSkillActivated" in events
     assert "TaskSkillStepExposed" in events
+    validated = next(node for node in result.trace.nodes if node.kind == "PlannerProposalValidated")
+    assert validated.payload["source"] == "accepted_skill"
     assert "ContractBuilt" in events
     assert "RouteSelected" in events
     assert "TaskSkillStepCompleted" in events

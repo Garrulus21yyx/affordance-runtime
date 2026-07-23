@@ -41,7 +41,8 @@ For each active subgoal:
 
   accepted snapshot
     -> GeneralistStepPlanner
-    -> PlanValidator
+    -> semantic PlannerProposal
+    -> PlannerProposalValidator
     -> semantic target resolution and route selection
     -> ContractBuilder
     -> ActionContract

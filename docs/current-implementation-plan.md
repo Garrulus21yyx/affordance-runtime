@@ -215,7 +215,7 @@ reports still require inventory/classification before G0 closes.
 1. create explicit strict-generalist and compatibility profiles;
 2. remove task-family compilers from the strict registry;
 3. enforce typed compiler applicability metadata;
-4. apply one PlanValidator to deterministic, LM, parent-agent, skill, and
+4. apply one PlannerProposalValidator to deterministic, LM, parent-agent, skill, and
    recovery proposals;
 5. add failing governance probes before implementation;
 6. prove non-BrowserGym Web, visual, and WoT behavior.
@@ -224,10 +224,24 @@ Status on 2026-07-23: **in progress**. `strict-generalist` is now the default;
 the task-shaped compiler registry requires explicit
 `historical-compatibility`, and a strict planner rejects a non-empty
 compatibility registry. Governance tests cover default isolation, profile
-identity, registry digests, and task-id removal from planner context. G1 remains
-open for the mandatory shared PlanValidator boundary, the full behavioral
-anti-cheating matrix, physical containment/removal of dormant compatibility
-algorithms, and non-BrowserGym Web/visual/WoT proof.
+identity, registry digests, and task-id removal from planner context. One
+Coordinator-owned `PlannerProposalValidator` now gates strict LM,
+compatibility, parent-adapter, accepted-skill, and future recovery proposals
+before completion, clarification, binding, approval, or execution. Initial
+form/suggestion/disclosure task-shape controls and strict DOM/visual/WoT
+conformance pass. Strict and compatibility now have distinct frozen Prompts;
+strict candidate binding/repair uses only protocol, current-target,
+verifier-backed progress, and exact blocked-signature facts, while task-shaped
+rewrites remain compatibility-only. G1 remains open for the full behavioral anti-cheating matrix,
+physical containment/removal of dormant compatibility algorithms, explicit
+proposal-source provenance, and broader unseen-interface proof. See
+`evidence/m8.6-g1-proposal-validation-20260723.md`.
+
+Completed implementation step: `PlannerProposalValidator` is the first
+context-bound semantic gate in Coordinator; ContractBuilder retains defense in
+depth. Current next step: expand behavioral controls and extract or delete the
+compatibility-only algorithms still physically present in the Generalist
+module.
 
 #### G2: Honest intent and task planning
 
@@ -311,7 +325,7 @@ M8.6 closes only when:
 - benchmark identity leak into planner context is zero;
 - known negative probes do not trigger unrequested actions or scope expansion;
 - the strict profile contains no benchmark task grammar;
-- every proposal source passes PlanValidator;
+- every proposal source passes PlannerProposalValidator;
 - simple and multi-stage local tasks use the declared task-plan chain;
 - every targeted probe is read-only, budgeted, task-relevant, and produces a
   new coherent observation epoch;

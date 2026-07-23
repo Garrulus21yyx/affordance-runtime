@@ -62,10 +62,10 @@ from affordance_runtime.benchmarks.browsergym_types import (
 )
 from affordance_runtime.generalist_planner import (
     GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
-    GENERALIST_PLANNER_PROMPT_VERSION,
     GeneralistPlannerProfile,
     PlannerProposalCandidate,
     historical_compatibility_semantic_compiler_registry,
+    planner_prompt_version,
 )
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.runtime import RuntimeStep
@@ -282,7 +282,7 @@ def run_browsergym_miniwob_generalist_suite(
         "visual_region_proposer_prompt_version": visual_region_proposer.prompt_version
         if visual_region_proposer is not None
         else "",
-        "planner_prompt_version": GENERALIST_PLANNER_PROMPT_VERSION,
+        "planner_prompt_version": planner_prompt_version(planner_profile),
         "planner_context_policy_version": GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
         "planner_schema_sha256": _planner_schema_sha256(),
         "model_max_tokens": BROWSERGYM_PLANNER_MAX_TOKENS,

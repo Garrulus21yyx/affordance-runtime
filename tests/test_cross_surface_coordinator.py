@@ -207,8 +207,13 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
                 contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
             ).run(TaskEnvelope(task_spec=task, capabilities=["shared.write"]))
         )
-        assert "PlannerProposalProduced" in [node.kind for node in result.trace.nodes]
-        assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
+        events = [node.kind for node in result.trace.nodes]
+        assert "PlannerProposalValidated" in events
+        assert "PlannerProposalProduced" in events
+        assert "ContractBuilt" in events
+        planner_context = next(node for node in result.trace.nodes if node.kind == "PlannerContextBuilt")
+        assert planner_context.payload["planner_profile"] == "strict-generalist"
+        assert "semantic_compiler" not in planner_context.payload
         assert result.status == RuntimeStep.DONE, result.error_code
         return result.status
 

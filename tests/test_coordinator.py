@@ -960,6 +960,8 @@ def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
     assert result.status == RuntimeStep.ABORTED
     assert result.error_code == RuntimeErrorCode.STALE_TASK_REVISION
     assert "PlannerProposalRejected" in [node.kind for node in result.trace.nodes]
+    assert "PlannerProposalValidated" not in [node.kind for node in result.trace.nodes]
+    assert "PlannerProposalProduced" not in [node.kind for node in result.trace.nodes]
     assert result.state.receipts == []
 
 

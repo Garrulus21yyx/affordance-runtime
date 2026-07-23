@@ -1,4 +1,4 @@
-"""Declarative assembly for the runtime's default semantic compiler profile."""
+"""Quarantined declarative assembly for historical task-grammar compatibility."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ _POSTCONDITION = ("fresh independent postcondition evidence bound by ContractBui
 
 
 @dataclass(frozen=True)
-class DefaultSemanticCompilerCallbacks:
-    """Semantic algorithms injected into the declarative default profile."""
+class CompatibilitySemanticCompilerCallbacks:
+    """Historical semantic algorithms injected only by compatibility mode."""
 
     calendar_event: SemanticCompileFn
     disclosure_control: SemanticCompileFn
@@ -39,10 +39,10 @@ class DefaultSemanticCompilerCallbacks:
     planner_constraints: SemanticConstraintFn
 
 
-def build_default_semantic_compiler_registry(
-    callbacks: DefaultSemanticCompilerCallbacks,
+def build_historical_compatibility_registry(
+    callbacks: CompatibilitySemanticCompilerCallbacks,
 ) -> SemanticCompilerRegistry:
-    """Build the ordered, evidence-declared default System-1 profile."""
+    """Build the ordered compatibility profile excluded from strict mode."""
 
     return SemanticCompilerRegistry(
         rules=(

@@ -23,6 +23,7 @@ from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
     PlannerProposal,
+    PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
 )
@@ -151,6 +152,7 @@ class RunCoordinator:
     budget: RunBudget = field(default_factory=RunBudget)
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
     contract_builder: ContractBuilder | None = None
+    proposal_validator: PlannerProposalValidator = field(default_factory=PlannerProposalValidator)
     task_planner: TaskPlannerPort | None = None
     task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
@@ -579,6 +581,65 @@ class RunCoordinator:
             )
             if decision.proposal is not None:
                 proposal = decision.proposal
+                try:
+                    if envelope.task_spec is None:
+                        raise ProposalRejected(
+                            ProposalRejectionCode.UNSUPPORTED_ACTION,
+                            "semantic proposal requires a validated TaskSpec",
+                        )
+                    self.proposal_validator.validate(
+                        proposal,
+                        envelope.task_spec,
+                        state,
+                        snapshot,
+                    )
+                except ProposalRejected as exc:
+                    error_code = _proposal_error_code(exc.code)
+                    parent = trace.add(
+                        "PlannerProposalRejected",
+                        {
+                            "state": state.phase,
+                            "proposal_id": proposal.proposal_id,
+                            "error_code": error_code.value,
+                            "rejection_code": exc.code.value,
+                            "reason": exc.detail,
+                            "validation_boundary": "PlannerProposalValidator",
+                        },
+                        parents=[parent.id],
+                    )
+                    if skill_step_id and self.task_skill_runtime is not None:
+                        reason = f"TaskSkill proposal validation rejected: {exc.detail or exc.code.value}"
+                        self.task_skill_runtime.fallthrough(state, reason)
+                        parent = self._trace_task_skill_fallthrough(
+                            trace,
+                            parent,
+                            state,
+                            reason,
+                            step_id=skill_step_id,
+                        )
+                        state.replan_count += 1
+                        state.transition(RuntimeStep.OBSERVING.value)
+                        continue
+                    state.transition(RuntimeStep.ABORTED.value)
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.ABORTED,
+                        parent,
+                        error_code,
+                        latest_verification,
+                    )
+                parent = trace.add(
+                    "PlannerProposalValidated",
+                    {
+                        "state": state.phase,
+                        "proposal_id": proposal.proposal_id,
+                        "validation_boundary": "PlannerProposalValidator",
+                        "source": "accepted_skill" if skill_step_id else "planner_port",
+                    },
+                    parents=[parent.id],
+                )
                 parent = trace.add(
                     "PlannerProposalProduced",
                     {

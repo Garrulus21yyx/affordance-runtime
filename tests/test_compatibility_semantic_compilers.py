@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from affordance_runtime.default_semantic_compilers import (
-    DefaultSemanticCompilerCallbacks,
-    build_default_semantic_compiler_registry,
+from affordance_runtime.compatibility_semantic_compilers import (
+    CompatibilitySemanticCompilerCallbacks,
+    build_historical_compatibility_registry,
 )
 from affordance_runtime.semantic_compilers import (
     SemanticCompilation,
@@ -40,7 +40,7 @@ def _compile_as(
     return compile
 
 
-def _callbacks(calls: list[str]) -> DefaultSemanticCompilerCallbacks:
+def _callbacks(calls: list[str]) -> CompatibilitySemanticCompilerCallbacks:
     def constrain(
         context: SemanticCompilerContext,
         permitted: list[str],
@@ -50,7 +50,7 @@ def _callbacks(calls: list[str]) -> DefaultSemanticCompilerCallbacks:
         calls.append("constraints")
         return SemanticConstraints(tuple(permitted), {key: tuple(value) for key, value in targets.items()})
 
-    return DefaultSemanticCompilerCallbacks(
+    return CompatibilitySemanticCompilerCallbacks(
         calendar_event=_compile_as(calls, "calendar", "drag"),
         disclosure_control=_compile_as(calls, "disclosure", "activate"),
         suggestion_selection=_compile_as(calls, "suggestion", "type_text"),
@@ -62,9 +62,9 @@ def _callbacks(calls: list[str]) -> DefaultSemanticCompilerCallbacks:
     )
 
 
-def test_default_registry_factory_preserves_declared_rule_precedence() -> None:
+def test_compatibility_registry_factory_preserves_declared_rule_precedence() -> None:
     calls: list[str] = []
-    registry = build_default_semantic_compiler_registry(_callbacks(calls))
+    registry = build_historical_compatibility_registry(_callbacks(calls))
 
     assert [rule.compiler_id for rule in registry.rules] == [
         "typed-disclosure-control-v1",
@@ -95,8 +95,8 @@ def test_default_registry_factory_preserves_declared_rule_precedence() -> None:
     assert calls == ["calendar"]
 
 
-def test_default_registry_factory_keeps_evidence_and_operation_scope_explicit() -> None:
-    registry = build_default_semantic_compiler_registry(_callbacks([]))
+def test_compatibility_registry_factory_keeps_evidence_and_operation_scope_explicit() -> None:
+    registry = build_historical_compatibility_registry(_callbacks([]))
 
     expected_sources = (
         "runtime-generic-disclosure-conformance",
@@ -123,9 +123,9 @@ def test_default_registry_factory_keeps_evidence_and_operation_scope_explicit() 
     )
 
 
-def test_default_registry_factory_rejects_inapplicable_and_unsupported_contexts() -> None:
+def test_compatibility_registry_factory_rejects_inapplicable_and_unsupported_contexts() -> None:
     calls: list[str] = []
-    registry = build_default_semantic_compiler_registry(_callbacks(calls))
+    registry = build_historical_compatibility_registry(_callbacks(calls))
     empty = FixtureContext(task_spec={"operation_class": "read_only"}, affordances=())
     unsupported = FixtureContext(
         task_spec={"operation_class": "undeclared"},
