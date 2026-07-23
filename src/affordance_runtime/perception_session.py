@@ -110,6 +110,15 @@ class PerceptionSession:
             snapshot = resolve_awaitable(snapshot)
         if not isinstance(snapshot, BrowserSnapshot):
             raise TypeError("capture_targeted must return one coherent BrowserSnapshot")
+        epoch_id = snapshot.observation.snapshot_id
+        if not epoch_id:
+            raise ValueError("targeted perception requires a non-empty observation epoch")
+        if any(item.observation_epoch_id != epoch_id for item in snapshot.source_observations):
+            raise ValueError("targeted source observations must share one coherent epoch")
+        if any(item.observation_epoch_id != epoch_id for item in snapshot.source_assertions):
+            raise ValueError("targeted source assertions must share one coherent epoch")
+        if any(item.observation_epoch_id != epoch_id for item in snapshot.grounding_candidates):
+            raise ValueError("targeted grounding candidates must share one coherent epoch")
         return snapshot
 
     @staticmethod

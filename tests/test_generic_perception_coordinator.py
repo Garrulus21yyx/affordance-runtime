@@ -429,6 +429,10 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TargetedPerceptionCaptured") == 1
     assert "TargetedPerceptionBudgetExhausted" in events
+    assert "EvidenceGapDetected" in events
+    assert "ActivePerceptionPlanned" in events
+    assert "ProbeCompleted" in events
+    assert "EvidenceGapUnresolved" in events
     assert "ActionStarted" not in events
     assert all(
         {source.observation_epoch_id for source in snapshot.source_observations}

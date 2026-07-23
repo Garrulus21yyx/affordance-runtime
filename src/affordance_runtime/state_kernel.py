@@ -11,6 +11,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from affordance_runtime.active_perception import (
+    EvidenceGap,
+    PerceptionResolution,
+    ProbePlan,
+    ProbeReceipt,
+)
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.recovery import RecoveryIncident
 from affordance_runtime.task_planning import PlanProgress, TaskPlan
@@ -90,6 +96,11 @@ class StateKernel:
     replan_count: int = 0
     recovery_count: int = 0
     active_perception_count: int = 0
+    evidence_gaps: tuple[EvidenceGap, ...] = ()
+    active_probe_plan: ProbePlan | None = None
+    probe_receipts: list[ProbeReceipt] = field(default_factory=list)
+    perception_resolution: PerceptionResolution | None = None
+    attempted_probe_fingerprints: set[str] = field(default_factory=set)
     recovery_incident: RecoveryIncident | None = None
     recovery_diagnostics: dict[str, Any] = field(default_factory=dict)
     effectful_action_count: int = 0

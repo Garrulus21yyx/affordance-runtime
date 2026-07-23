@@ -270,10 +270,12 @@ A probe transport receipt cannot resolve a gap; a new arbitration decision is
 required. Any inspection that changes environment state uses a normal
 ActionContract rather than hiding inside the observer.
 
-The current SourceAssertion, arbiter, ActivePerceptionRequest, and
-capture_targeted path are the foundation. EvidenceGap, probe capability
-registry, ProbePlan/Receipt, normal-path integration, and policy learning are
-M8.6 AR0-AR2 work in
+The SourceAssertion/arbiter foundation is now joined by typed EvidenceGap,
+probe capability, ProbePlan/Receipt, and PerceptionResolution contracts plus a
+single ActivePerceptionController. Normal observation, preflight,
+verification-evidence repair, and lower-half recovery inspection use the same
+bounded read-only protocol and new coherent epochs. Accepted perception-policy
+learning remains later work, and phase-general recovery remains G3. See
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
 
 ### 2.2 Affordance Layer
@@ -463,7 +465,7 @@ Migration status:
 | LM/action and shallow task planning | implemented through PlannerPort and TaskPlannerPort |
 | System1ReflexLibrary grounding cache | grounding cache not migrated; accepted TaskSkill System 1 path implemented |
 | StateAssertion/FusedAssertion conflict gate | implemented as SourceAssertion arbitration |
-| active perception for cross-source conflict | SourceAssertion request and targeted-capture foundation implemented; complete M8.6 controller/integration planned |
+| active perception for cross-source conflict | typed controller and bounded targeted-capture integration complete; phase-general recovery remains G3 |
 | explicit System 1 latency/cache metrics | TaskSkill activation/fallthrough/model-call/latency replay metrics implemented; grounding-cache metrics not migrated |
 | regression-gated skills and policies | implemented with stricter acceptance than the old proposal-only path |
 

@@ -683,6 +683,14 @@ evidence, and post-action verification.
 Exit: normal Coordinator traces gap, probe, new epoch, arbitration, and
 continuation with no second state writer.
 
+Implementation status on 2026-07-23: **AR0-AR2 complete for G2.5**. The Runtime
+has strict evidence-gap/probe/receipt/resolution contracts, one minimum-cost
+read-only controller, coherent targeted capture, and normal, preflight,
+verification-repair, and lower-half recovery-inspection call sites. It stops
+safely on surviving material gaps and never treats a transport receipt alone as
+resolution. AR3-AR6 remain planned; in particular, the recovery call site does
+not yet constitute the full-phase RecoveryCoordinator.
+
 ### AR3: Introduce full-phase recovery contracts
 
 Adapt current FailureSignature/RecoveryIncident into FailureEnvelope. Add

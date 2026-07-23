@@ -189,7 +189,13 @@ def test_coordinator_traces_source_assertion_decisions_and_targeted_perception()
             )
 
         def capture_targeted(self, requests: object) -> BrowserSnapshot:
-            assert requests == arbitration.active_perception_requests
+            assert isinstance(requests, tuple) and len(requests) == 1
+            assert requests[0].entity_key == "semantic:save"
+            assert requests[0].property_key == "visible"
+            assert requests[0].requested_sources[0] in {
+                GroundingSource.DOM,
+                GroundingSource.ACCESSIBILITY,
+            }
             self.targeted_calls += 1
             return _snapshot(2)
 
@@ -265,7 +271,9 @@ def test_coordinator_bounds_repeated_targeted_perception_requests() -> None:
             return unresolved
 
         def capture_targeted(self, requests: object) -> BrowserSnapshot:
-            assert requests == arbitration.active_perception_requests
+            assert isinstance(requests, tuple) and len(requests) == 1
+            assert requests[0].entity_key == "semantic:save"
+            assert requests[0].property_key == "checked"
             self.targeted_calls += 1
             return unresolved
 

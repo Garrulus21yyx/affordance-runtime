@@ -837,6 +837,19 @@ Exit when cheap structural paths remain cheap, visual/spatial tasks acquire the
 right evidence proactively, bounded probes resolve injected stale/conflicting
 sources, and irreducible conflicts end as safe inconclusive results.
 
+Status on 2026-07-23: **complete**. One typed controller now serves ordinary
+observation, preflight, inconclusive-verification evidence repair, and the
+existing recovery inspection path. Probes are read-only and capability/budget
+gated, output a fresh coherent epoch, and require re-arbitration. Independent
+sources are preferred for conflicts, equivalent same-gap probes are not
+repeated, and surviving material gaps block effectful actions. Cheap structural
+tasks do not invoke active perception. See
+`evidence/m8.6-g2.5-active-perception-20260723.md`.
+
+The recovery call site here remains an integration adapter. Full-phase failure
+normalization and changed-strategy recovery belong to G3 and are not implied by
+this status.
+
 #### G3: Full-phase Recovery Coordinator
 
 G3 follows G2.5. Recovery first determines effect status and evidence gaps; it

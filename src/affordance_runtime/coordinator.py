@@ -11,12 +11,22 @@ from time import time
 from typing import Any, Awaitable, Protocol
 from uuid import uuid4
 
+from affordance_runtime.active_perception import (
+    ActivePerceptionController,
+    EvidenceGapExtractor,
+    PerceptionResolutionStatus,
+    ProbeBudget,
+    ProbeReceipt,
+    probe_capabilities_for_requests,
+    probe_fingerprint,
+    request_for_command,
+)
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import ActionContract, ApprovalToken, ExecutionReceipt, RuntimeErrorCode
-from affordance_runtime.grounding import GroundingSource
+from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planning import (
@@ -48,6 +58,7 @@ from affordance_runtime.route_calibration import (
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planning import (
     PlanningRouter,
@@ -60,7 +71,7 @@ from affordance_runtime.task_planning import (
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport, VerifierLadder
+from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
 
 
 @dataclass(frozen=True)
@@ -177,6 +188,10 @@ class RunCoordinator:
     runtime_profile_digest: str = ""
     loaded_profile_artifact_ids: tuple[str, ...] = ()
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
+    evidence_gap_extractor: EvidenceGapExtractor = field(default_factory=EvidenceGapExtractor)
+    active_perception_controller: ActivePerceptionController = field(
+        default_factory=ActivePerceptionController
+    )
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
@@ -280,12 +295,38 @@ class RunCoordinator:
             self._index_paths(trace, snapshot.observation.artifact_refs)
             parent = self._trace_source_arbitration(trace, parent, snapshot, state.phase)
             snapshot, parent = self._fulfill_targeted_perception(
-                envelope.task_id,
+                envelope,
                 state,
                 trace,
                 parent,
                 snapshot,
             )
+            if (
+                state.perception_resolution is not None
+                and state.perception_resolution.blocks_effectful_action
+            ):
+                state.transition(RuntimeStep.ABORTED.value)
+                parent = trace.add(
+                    (
+                        "PerceptionBlockedEffectfulRepeat"
+                        if state.receipts
+                        else "PerceptionBlockedEffectfulAction"
+                    ),
+                    {
+                        "state": state.phase,
+                        "resolution": state.perception_resolution.model_dump(mode="json"),
+                    },
+                    parents=[parent.id],
+                )
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.ABORTED,
+                    parent,
+                    RuntimeErrorCode.PRECONDITION_FAILED,
+                    latest_verification,
+                )
 
             if (
                 self.task_plan_lifecycle is not None
@@ -1045,7 +1086,20 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 parent = self._trace_source_arbitration(trace, parent, preflight_snapshot, state.phase)
-                error = self.contract_execution_loop.revalidate(
+                preflight_snapshot, parent = self._fulfill_targeted_perception(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    preflight_snapshot,
+                )
+                perception_error = None
+                if (
+                    state.perception_resolution is not None
+                    and state.perception_resolution.blocks_effectful_action
+                ):
+                    perception_error = RuntimeErrorCode.PRECONDITION_FAILED
+                revalidation_error = self.contract_execution_loop.revalidate(
                     contract,
                     envelope,
                     preflight_snapshot.observation,
@@ -1055,6 +1109,7 @@ class RunCoordinator:
                     require_snapshot_identity=False,
                     require_environment_revision=False,
                 )
+                error = perception_error or revalidation_error
                 if (
                     error == RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
                     and decision.proposal is not None
@@ -1321,6 +1376,23 @@ class RunCoordinator:
                     inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
                     self._index(trace, inspection_ref)
                     self._index_paths(trace, inspection.observation.artifact_refs)
+                    parent = self._trace_source_arbitration(trace, parent, inspection, state.phase)
+                    if inspection.active_perception_requests:
+                        parent = trace.add(
+                            "RecoveryActivePerceptionRequested",
+                            {
+                                "state": state.phase,
+                                "reason": "post-action effect status requires additional current evidence",
+                            },
+                            parents=[parent.id],
+                        )
+                        inspection, parent = self._fulfill_targeted_perception(
+                            envelope,
+                            state,
+                            trace,
+                            parent,
+                            inspection,
+                        )
                     latest_verification = self.contract_execution_loop.verify(
                         contract,
                         receipt,
@@ -1340,7 +1412,6 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    parent = self._trace_source_arbitration(trace, parent, inspection, state.phase)
                     if latest_verification.passed:
                         incident = state.recovery_incident
                         if incident is not None:
@@ -1398,6 +1469,63 @@ class RunCoordinator:
                 structural_verification_enabled=self.features.structural_verification,
                 disabled_reason="structural verification disabled by benchmark ablation",
             )
+            if (
+                latest_verification.status == VerificationStatus.INCONCLUSIVE
+                and self.features.structural_verification
+            ):
+                requested_sources = tuple(
+                    dict.fromkeys(
+                        item.source
+                        for item in post_snapshot.source_observations
+                        if item.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.API}
+                    )
+                ) or (GroundingSource.DOM, GroundingSource.ACCESSIBILITY)
+                repair_request = ActivePerceptionRequest(
+                    entity_key=contract.affordance_id,
+                    property_key="verification",
+                    requested_sources=requested_sources,
+                    reason="verifier is inconclusive and requires fresh independent structural evidence",
+                    max_observations=1,
+                )
+                repair_snapshot = replace(
+                    post_snapshot,
+                    active_perception_requests=(repair_request,),
+                )
+                parent = trace.add(
+                    "VerificationEvidenceRepairRequested",
+                    {
+                        "state": state.phase,
+                        "contract_id": contract.id,
+                        "verification_status": latest_verification.status.value,
+                    },
+                    parents=[parent.id],
+                )
+                repair_snapshot, parent = self._fulfill_targeted_perception(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    repair_snapshot,
+                )
+                if repair_snapshot.observation.snapshot_id != post_snapshot.observation.snapshot_id:
+                    post_snapshot = repair_snapshot
+                    latest_verification = self.contract_execution_loop.verify(
+                        contract,
+                        receipt,
+                        post_snapshot.observation,
+                        structural_verification_enabled=True,
+                        disabled_reason="",
+                    )
+                    parent = trace.add(
+                        "VerificationEvidenceReevaluated",
+                        {
+                            "state": state.phase,
+                            "contract_id": contract.id,
+                            "verification_status": latest_verification.status.value,
+                            "snapshot_id": post_snapshot.observation.snapshot_id,
+                        },
+                        parents=[parent.id],
+                    )
             state.latest_verification = latest_verification
             if decision.proposal is not None:
                 state.record_action_progress(
@@ -1819,16 +1947,56 @@ class RunCoordinator:
 
     def _fulfill_targeted_perception(
         self,
-        run_id: str,
+        envelope: TaskEnvelope,
         state: StateKernel,
         trace: TraceDag,
         parent: TraceNode,
         snapshot: BrowserSnapshot,
     ) -> tuple[BrowserSnapshot, TraceNode]:
-        """Acquire bounded coherent snapshots when arbitration requests them."""
+        """Plan and execute bounded read-only probes through one state authority."""
 
-        while snapshot.active_perception_requests:
+        while True:
+            run_id = envelope.task_id
+            task_plan = state.task_plan
+            plan_version = task_plan.plan_version if task_plan is not None else 0
+            gaps = self.evidence_gap_extractor.extract(
+                snapshot,
+                run_id=run_id,
+                task_revision=(
+                    task_plan.task_revision
+                    if task_plan is not None
+                    else envelope.task_spec.revision
+                    if envelope.task_spec is not None
+                    else 1
+                ),
+                plan_version=plan_version,
+                active_subgoal_id=(
+                    state.plan_progress.active_subgoal_id
+                    if state.plan_progress is not None
+                    else ""
+                ),
+            )
+            state.evidence_gaps = gaps
+            if not gaps:
+                break
+            parent = trace.add(
+                "EvidenceGapDetected",
+                {
+                    "state": state.phase,
+                    "snapshot_id": snapshot.observation.snapshot_id,
+                    "gaps": [item.model_dump(mode="json") for item in gaps],
+                },
+                parents=[parent.id],
+            )
             if not self.perception_session.supports_targeted_capture:
+                decision = self.active_perception_controller.decide(
+                    gaps,
+                    (),
+                    based_on_state_version=state.version,
+                    based_on_snapshot_id=snapshot.observation.snapshot_id,
+                    budget=ProbeBudget(observations=0, timeout_ms=0, artifacts=0),
+                )
+                state.perception_resolution = decision.resolution
                 parent = trace.add(
                     "TargetedPerceptionUnavailable",
                     {
@@ -1837,24 +2005,169 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
+                parent = self._trace_perception_resolution(
+                    trace,
+                    parent,
+                    state,
+                    decision.resolution,
+                )
                 break
-            if (
-                state.active_perception_count >= self.budget.max_active_perception_observations
-                or state.observation_count >= self.budget.max_observations
-            ):
+            remaining_observations = min(
+                self.budget.max_active_perception_observations - state.active_perception_count,
+                self.budget.max_observations - state.observation_count,
+            )
+            requirements = snapshot.perception_requirements
+            requests = snapshot.active_perception_requests or tuple(
+                ActivePerceptionRequest(
+                    entity_key=item.entity_key,
+                    property_key=item.property_key,
+                    requested_sources=item.preferred_sources,
+                    reason=item.reason,
+                    max_observations=1,
+                )
+                for item in gaps
+                if item.preferred_sources
+            )
+            capabilities = probe_capabilities_for_requests(requests)
+            budget = ProbeBudget(
+                observations=max(0, min(1, remaining_observations)),
+                timeout_ms=max(
+                    requirements.latency_budget_ms if requirements is not None else 5_000,
+                    *(item.expected_latency_ms for item in capabilities),
+                ),
+                model_calls=max(
+                    requirements.model_call_budget if requirements is not None else 0,
+                    *(item.model_calls for item in capabilities),
+                ),
+                estimated_cost=max(
+                    requirements.cost_budget if requirements is not None else 0.0,
+                    *(item.estimated_cost for item in capabilities),
+                ),
+                artifacts=1 if remaining_observations > 0 else 0,
+            )
+            effectful_action = (
+                envelope.task_spec is not None
+                and envelope.task_spec.operation_class
+                not in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            )
+            decision = self.active_perception_controller.decide(
+                gaps,
+                capabilities,
+                based_on_state_version=state.version,
+                based_on_snapshot_id=snapshot.observation.snapshot_id,
+                budget=budget,
+                attempted_probe_fingerprints=frozenset(state.attempted_probe_fingerprints),
+                effectful_action=effectful_action,
+            )
+            if decision.plan is None:
+                state.perception_resolution = decision.resolution
                 parent = trace.add(
                     "TargetedPerceptionBudgetExhausted",
                     {
                         "state": state.phase,
                         "active_perception_count": state.active_perception_count,
                         "max_active_perception_observations": (self.budget.max_active_perception_observations),
+                        "reason": decision.resolution.reason if decision.resolution is not None else "",
                     },
                     parents=[parent.id],
                 )
+                parent = self._trace_perception_resolution(
+                    trace,
+                    parent,
+                    state,
+                    decision.resolution,
+                )
                 break
-            targeted = self.perception_session.capture_targeted(snapshot.active_perception_requests)
+            plan = decision.plan
+            state.active_probe_plan = plan
+            command = plan.commands[0]
+            capability = next(
+                item for item in capabilities if item.capability_id == command.capability_id
+            )
+            state.attempted_probe_fingerprints.add(
+                probe_fingerprint(
+                    capability,
+                    next(item for item in gaps if item.gap_id in command.gap_ids),
+                )
+            )
+            parent = trace.add(
+                "ActivePerceptionPlanned",
+                {
+                    "state": state.phase,
+                    "plan": plan.model_dump(mode="json"),
+                    "remaining_budget": budget.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
+            parent = trace.add(
+                "ProbeStarted",
+                {
+                    "state": state.phase,
+                    "command": command.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
+            started_at_s = time()
+            try:
+                targeted = self.perception_session.capture_targeted(
+                    (request_for_command(command),)
+                )
+            except Exception as exc:
+                completed_at_s = time()
+                receipt = ProbeReceipt(
+                    command_id=command.command_id,
+                    started_at_s=started_at_s,
+                    completed_at_s=completed_at_s,
+                    observation_epoch_id=snapshot.observation.snapshot_id,
+                    source=command.source,
+                    success=False,
+                    error_code=type(exc).__name__,
+                    latency_ms=(completed_at_s - started_at_s) * 1_000,
+                    model_calls=command.budget.model_calls,
+                    estimated_cost=command.budget.estimated_cost,
+                )
+                state.active_perception_count += 1
+                state.probe_receipts.append(receipt)
+                resolution = self.active_perception_controller.resolve(
+                    gaps,
+                    snapshot,
+                    based_on_snapshot_id=plan.based_on_snapshot_id,
+                    receipts=(receipt,),
+                    effectful_action=effectful_action,
+                )
+                state.perception_resolution = resolution
+                parent = trace.add(
+                    "ProbeCompleted",
+                    {
+                        "state": state.phase,
+                        "receipt": receipt.model_dump(mode="json"),
+                    },
+                    parents=[parent.id],
+                )
+                parent = self._trace_perception_resolution(
+                    trace,
+                    parent,
+                    state,
+                    resolution,
+                )
+                break
+            completed_at_s = time()
             state.active_perception_count += 1
             state.remember_observation(targeted.observation)
+            receipt = ProbeReceipt(
+                command_id=command.command_id,
+                started_at_s=started_at_s,
+                completed_at_s=completed_at_s,
+                observation_epoch_id=targeted.observation.snapshot_id,
+                source=command.source,
+                success=True,
+                artifact_refs=tuple(targeted.observation.artifact_refs),
+                assertion_refs=tuple(item.assertion_id for item in targeted.source_assertions),
+                estimated_cost=command.budget.estimated_cost,
+                latency_ms=(completed_at_s - started_at_s) * 1_000,
+                model_calls=command.budget.model_calls,
+            )
+            state.probe_receipts.append(receipt)
             targeted_ref = self._write_observation(run_id, state.observation_count, targeted)
             self._index(trace, targeted_ref)
             self._index_paths(trace, targeted.observation.artifact_refs)
@@ -1877,9 +2190,54 @@ class RunCoordinator:
                 },
                 parents=[parent.id],
             )
+            parent = trace.add(
+                "ProbeCompleted",
+                {
+                    "state": state.phase,
+                    "receipt": receipt.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
             parent = self._trace_source_arbitration(trace, parent, targeted, state.phase)
+            resolution = self.active_perception_controller.resolve(
+                gaps,
+                targeted,
+                based_on_snapshot_id=plan.based_on_snapshot_id,
+                receipts=(receipt,),
+                effectful_action=effectful_action,
+            )
+            state.perception_resolution = resolution
+            parent = self._trace_perception_resolution(
+                trace,
+                parent,
+                state,
+                resolution,
+            )
             snapshot = targeted
         return snapshot, parent
+
+    @staticmethod
+    def _trace_perception_resolution(
+        trace: TraceDag,
+        parent: TraceNode,
+        state: StateKernel,
+        resolution: Any,
+    ) -> TraceNode:
+        if resolution is None:
+            return parent
+        event = (
+            "EvidenceGapResolved"
+            if resolution.status == PerceptionResolutionStatus.RESOLVED
+            else "EvidenceGapUnresolved"
+        )
+        return trace.add(
+            event,
+            {
+                "state": state.phase,
+                "resolution": resolution.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
 
     def _record_route_outcome(
         self,

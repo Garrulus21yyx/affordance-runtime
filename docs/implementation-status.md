@@ -269,8 +269,8 @@ are:
 | --- | --- | --- |
 | G0 Freeze and classify | in_progress | R10 frozen as historical compatibility evidence; new profile/registry digests implemented; older report inventories remain |
 | G1 Strict-generalist profile | complete | strict default and Prompt/candidate policy; explicit compatibility registry and physical task-grammar isolation; mandatory typed proposal provenance; shared PlannerProposalValidator; paraphrase/distractor/extra-control/ambiguity/unrelated/unrequested-effect/scope controls; DOM/visual/WoT proof |
-| G2 Intent and TaskPlan integration | in_progress | task identity/reward wording removed from planner context; typed operation/capability derivation and common TaskPlan entrypoint remain |
-| G2.5 Active perception and evidence repair | pending | typed evidence gaps and probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery integration |
+| G2 Intent and TaskPlan integration | complete | typed intent/capability derivation; common TaskPlan entrypoint; verifier-bound subgoal progress; planner context excludes benchmark identity/reward wording |
+| G2.5 Active perception and evidence repair | complete | typed evidence gaps/probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery-inspection integration; safe unresolved blocking |
 | G3 Full-phase Recovery Coordinator | pending | FailureEnvelope, validated commands, receipts, non-empty RecoveryDelta, and changed-strategy recovery across intake through verification and provider/context |
 | G4 Complete-run audit | pending | ordinary failures collected to completion, resumable partial results, cluster-first repair selection, external reward separated |
 | G5 Generalization proof | pending | strict, strict plus accepted skills, compatibility, and ablation profiles reported separately |
@@ -279,11 +279,13 @@ Current hard findings:
 
 - strict mode neither defines nor loads the historical task-grammar algorithms;
   they are physically isolated behind the explicit compatibility profile;
-- planner-visible benchmark identity and blanket read-only classification must
-  be removed;
-- BrowserGym does not currently exercise the optional TaskPlanner;
-- source arbitration and targeted-capture foundations exist, but one complete
-  ActivePerceptionController and shared probe contract are not integrated;
+- planner-visible benchmark identity and blanket read-only classification are
+  removed and covered by governance regressions;
+- BrowserGym compiles the raw goal and enters the common PlanningRouter path;
+- source arbitration, typed active-perception contracts, one controller, and
+  normal/preflight/verification/recovery-inspection integration are complete;
+- recovery inspection still enters through the lower-half adapter rather than
+  a phase-general FailureEnvelope and RecoveryCoordinator;
 - planner and binding failures do not consistently enter Recovery Cascade;
 - exact failure signatures need a semantic family key for varied repeated errors;
 - current M8.3 evidence proves lower-half recovery and offline evolution, not

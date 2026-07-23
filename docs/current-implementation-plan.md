@@ -251,10 +251,10 @@ Completed implementation steps: `PlannerProposalValidator` is the first
 context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
 Planner module. G2 now owns typed intent/capability derivation and the common
-TaskPlan entrypoint. The current next gate is G2.5 active perception and
-evidence repair. Recovery-produced proposals remain a G3
-integration site, but the Validator already fails closed unless they carry the
-reserved typed `recovery` provenance.
+TaskPlan entrypoint. G2.5 active perception and evidence repair is now closed;
+the current next gate is G3 full-phase recovery. Recovery-produced proposals
+remain a G3 integration site, but the Validator already fails closed unless
+they carry the reserved typed `recovery` provenance.
 
 Completed physical-containment work: the reviewed call graph moved the
 compatibility-only objective parsers, terminal exposure, prefix/direction
@@ -322,6 +322,25 @@ Exit when a structural task stays on the cheap DOM/accessibility path, a
 visual/spatial task requests visual evidence without first failing an action, an
 injected source conflict is resolved by a bounded targeted probe, and an
 irreducible conflict blocks an effectful contract.
+
+Status on 2026-07-23: **complete**. Core now owns strict `EvidenceGap`,
+`ProbeCapability`, `ProbeCommand`, `ProbePlan`, `ProbeReceipt`, and
+`PerceptionResolution` contracts plus one deterministic
+`ActivePerceptionController`. Coordinator derives gaps after ordinary
+observation and at preflight, verification-evidence repair, and lower-half
+recovery inspection call sites. Each successful probe passes through
+`PerceptionSession.capture_targeted`, must create one fresh coherent epoch, and
+is re-arbitrated before it can resolve a gap. Probe selection is read-only,
+relevance/capability/budget gated, prefers an independent source for conflicts,
+and prevents an equivalent retry within the same gap epoch. Material unresolved
+evidence blocks effectful execution; verification repair never repeats the
+effect. Structural paths with sufficient evidence produce no probe. Evidence:
+`evidence/m8.6-g2.5-active-perception-20260723.md`.
+
+This closes G2.5 infrastructure and integration, not G3. Recovery still uses
+the existing lower-half adapter and does not yet normalize every phase through
+one `FailureEnvelope`, command validator, changed-strategy guard, and
+phase-general `RecoveryCoordinator`.
 
 #### G3: Full-phase Recovery Coordinator
 
