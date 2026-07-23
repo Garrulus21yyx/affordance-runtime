@@ -70,7 +70,7 @@ raise budgets, change Prompt/model, or add task/benchmark dispatch. M8.2B
 therefore remains in progress. See
 [R9 evidence](evidence/m8.2b-r9-form-obligations-20260723.md).
 
-Current R9 follow-up implementation slice: replace the accidental
+Completed R9 follow-up implementation slice (clean `7d0ada0`): replaced the accidental
 quote-equals-exact-value assumption with typed text obligations. Exact field
 assignments remain eligible only when grammar binds a literal to a writable
 field (or explicitly declares shared field cardinality). A `starts with` /
@@ -85,7 +85,14 @@ target/option, and ordinary exact multi-field cases; declarative compiler
 evidence and action declarations; focused tests; full Ruff/mypy/pytest gate;
 then the frozen failure reproduction, selection/form family, PR 18, and a new
 diagnostic. Do not use task ids, URLs, suite names, model/Prompt branches, raw
-DOM handles, or a larger call budget.
+DOM handles, or a larger call budget. The generic gate passes 532 tests, Ruff,
+and mypy across 89 source files. The clean benchmark ladder passes the original
+failure 1/1, corresponding task family 10/10, PR 18/18, diagnostic 30/30, and
+frozen nightly 300/300 at reward 1.0, with no missing episode,
+FailureEnvelope, provider/retry failure, or batch circuit. Do not rerun the
+625-episode residual release for this isolated repair; select the next generic
+capability boundary from its already frozen cross-task clusters. See
+[typed suggestion evidence](evidence/m8.2b-r9-suggestion-selection-20260723.md).
 
 ## 1. Authority
 
