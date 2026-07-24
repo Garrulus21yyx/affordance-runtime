@@ -58,6 +58,71 @@ def test_failure_family_retains_evidence_gap_when_no_action_was_observed() -> No
     assert envelope["family"] == "unresolved:no_action_evidence"
 
 
+def test_runtime_failure_gets_envelope_even_when_external_evaluator_passes() -> None:
+    episode = BrowserGymEpisodeResult(
+        task_id="case-a",
+        seed=0,
+        runtime_status="aborted",
+        official_success=True,
+        official_reward=1.0,
+        terminated=True,
+        truncated=False,
+        action_count=1,
+        action_families=["click"],
+        unsupported_actions=[],
+        runtime_error="planner cannot finish before verifier-backed subgoal completion",
+        policy_stopped=False,
+        trace_path="trace.jsonl",
+        runtime_failure=BrowserGymRuntimeFailure(
+            phase="proposal_validation",
+            failure_class="validation",
+            error_code="planner_proposal_rejected",
+            effect_status="not_dispatched",
+            message="planner cannot finish before verifier-backed subgoal completion",
+        ),
+    )
+
+    envelope = report_adapter.browsergym_failure_envelope(episode)
+
+    assert envelope is not None
+    assert envelope["failure_signature"].startswith("proposal_validation:")
+    assert envelope["root_layer"] == "CONTRACT / FIELD_BINDING"
+
+
+def test_report_accounts_runtime_failure_envelope_independently_of_official_success(
+    tmp_path: Path,
+) -> None:
+    episode = BrowserGymEpisodeResult(
+        task_id="case-a",
+        seed=0,
+        runtime_status="aborted",
+        official_success=True,
+        official_reward=1.0,
+        terminated=True,
+        truncated=False,
+        action_count=1,
+        action_families=["click"],
+        unsupported_actions=[],
+        runtime_error="planner rejected finish",
+        policy_stopped=False,
+        trace_path="trace.jsonl",
+    )
+
+    report = report_adapter.write_browsergym_report(
+        tmp_path,
+        profile="diagnostic",
+        registered_tasks=("case-a",),
+        selected_tasks=("case-a",),
+        seeds=(0,),
+        episodes=(episode,),
+    )
+
+    assert report["official_success_rate"] == 1.0
+    assert report["runtime_failure_count"] == 1
+    assert len(report["failure_envelopes"]) == 1
+    assert report["failure_envelopes"][0]["task"] == "case-a"
+
+
 def test_intent_compilation_rejection_is_attributed_to_intent_planning() -> None:
     episode = _failed_episode(task_id="case-a", actions=[])
     episode = replace(

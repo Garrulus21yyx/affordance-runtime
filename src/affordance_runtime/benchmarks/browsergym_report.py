@@ -38,7 +38,11 @@ def browsergym_failure_envelope(
 ) -> dict[str, Any] | None:
     """Return the redacted, clusterable diagnosis for an ordinary failure."""
 
-    if episode.official_success:
+    if (
+        episode.official_success
+        and episode.runtime_status == RuntimeStep.DONE.value
+        and not episode.policy_stopped
+    ):
         return None
     signature = _failure_signature(episode)
     root_layer = _failure_root_layer(episode, signature)
@@ -518,6 +522,13 @@ def validate_browsergym_report(report: dict[str, Any]) -> None:
     ]
     if envelopes != expected_envelopes:
         raise ValueError("BrowserGym failure envelopes disagree with episode evidence")
+    envelope_case_ids = {
+        _case_id(str(envelope.get("task") or ""), int(envelope.get("seed", -1)))
+        for envelope in envelopes
+    }
+    failed_case_ids = {item.case_id for item in audit.cases if item.failed}
+    if envelope_case_ids != failed_case_ids or len(envelopes) != len(failed_case_ids):
+        raise ValueError("BrowserGym failure envelopes do not cover every failed case exactly once")
     if audit.repair_selection_ready:
         if report.get("failure_clusters") != cluster_browsergym_failure_envelopes(envelopes):
             raise ValueError("BrowserGym failure clusters do not match closed collection evidence")
