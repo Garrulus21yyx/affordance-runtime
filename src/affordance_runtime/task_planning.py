@@ -338,6 +338,20 @@ class TaskPlanValidator:
                 repairable.append(
                     TaskPlanValidationIssue(code="missing_evidence_requirements", detail=subgoal.subgoal_id)
                 )
+            if (
+                subgoal.outcome is not None
+                and subgoal.action_family is not None
+                and _is_precondition_only_action_outcome(
+                    subgoal.action_family,
+                    subgoal.outcome.relation,
+                )
+            ):
+                repairable.append(
+                    TaskPlanValidationIssue(
+                        code="precondition_only_outcome",
+                        detail=subgoal.subgoal_id,
+                    )
+                )
             if subgoal.max_actions > self.max_actions_per_subgoal:
                 fatal.append(TaskPlanValidationIssue(code="action_budget_out_of_bounds", detail=subgoal.subgoal_id))
             if subgoal.max_recoveries > self.max_recoveries_per_subgoal:
@@ -380,6 +394,27 @@ class TaskPlanValidator:
         if repairable:
             return TaskPlanValidationReport(status=TaskPlanValidationStatus.REPAIRABLE, issues=tuple(repairable))
         return TaskPlanValidationReport(status=TaskPlanValidationStatus.ACCEPT)
+
+
+def _is_precondition_only_action_outcome(
+    action_family: TaskPlanActionFamily,
+    relation: SubgoalOutcomeRelation,
+) -> bool:
+    """Reject outcomes that merely restate availability of an action target."""
+
+    requires_current_target = {
+        TaskPlanActionFamily.ACTIVATE,
+        TaskPlanActionFamily.POINT_ACTIVATE,
+        TaskPlanActionFamily.TYPE_TEXT,
+        TaskPlanActionFamily.SELECT_OPTION,
+        TaskPlanActionFamily.PRESS_KEY,
+        TaskPlanActionFamily.DRAG,
+        TaskPlanActionFamily.SCROLL,
+    }
+    return (
+        action_family in requires_current_target
+        and relation == SubgoalOutcomeRelation.IS_AVAILABLE
+    )
 
 
 class TaskPlannerPort(Protocol):

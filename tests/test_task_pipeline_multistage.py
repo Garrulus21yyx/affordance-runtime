@@ -150,7 +150,7 @@ class MultiStageIntentAndPlanModel:
                             "subgoal_id": "discover",
                             "outcome": {
                                 "subject": "current state",
-                                "relation": "is_available",
+                                "relation": "is_visible",
                             },
                             "evidence_requirements": ["fresh discovered-state observation"],
                             "operation_class": "read_only",

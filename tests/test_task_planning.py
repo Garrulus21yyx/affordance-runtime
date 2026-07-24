@@ -8,8 +8,11 @@ from affordance_runtime.task_planning import (
     LLMTaskPlanner,
     PlanningRouter,
     PlanProgress,
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
     SubgoalSpec,
     TaskPlan,
+    TaskPlanActionFamily,
     TaskPlanCandidate,
     TaskPlanningBudgetSummary,
     TaskPlanningContext,
@@ -230,6 +233,73 @@ def test_validator_accepts_observable_multistage_outcome() -> None:
     assert report.status == TaskPlanValidationStatus.ACCEPT
 
 
+@pytest.mark.parametrize(
+    "action_family",
+    (
+        TaskPlanActionFamily.ACTIVATE,
+        TaskPlanActionFamily.POINT_ACTIVATE,
+        TaskPlanActionFamily.TYPE_TEXT,
+        TaskPlanActionFamily.SELECT_OPTION,
+        TaskPlanActionFamily.PRESS_KEY,
+        TaskPlanActionFamily.DRAG,
+        TaskPlanActionFamily.SCROLL,
+    ),
+)
+def test_validator_marks_current_target_availability_as_precondition_only(
+    action_family: TaskPlanActionFamily,
+) -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    incompatible = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "objective": "setting control is available",
+                        "success_criteria": ("setting control is available",),
+                        "action_family": action_family,
+                        "outcome": SubgoalOutcome(
+                            subject="setting control",
+                            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(incompatible, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert "precondition_only_outcome" in {item.code for item in report.issues}
+
+
+def test_validator_allows_availability_as_navigation_outcome() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    navigated = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "objective": "settings page is available",
+                        "success_criteria": ("settings page is available",),
+                        "action_family": TaskPlanActionFamily.NAVIGATE,
+                        "outcome": SubgoalOutcome(
+                            subject="settings page",
+                            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(navigated, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
 def test_validator_rejects_non_monotonic_replacement_lineage() -> None:
     previous = synthetic_task_plan(_context())
     replacement = previous.model_copy(
@@ -425,7 +495,7 @@ class RepairingTaskPlanModel:
                             "subgoal_id": "discover",
                             "outcome": {
                                 "subject": "current setting",
-                                "relation": "is_available",
+                                "relation": "is_visible",
                             },
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
