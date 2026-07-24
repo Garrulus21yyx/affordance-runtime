@@ -100,6 +100,88 @@ class SubgoalOutcomeRelation(StrEnum):
     HAS_CHANGED = "has_changed"
 
 
+_ACTION_OUTCOME_RELATIONS: dict[TaskPlanActionFamily, frozenset[SubgoalOutcomeRelation]] = {
+    TaskPlanActionFamily.ACTIVATE: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            SubgoalOutcomeRelation.IS_ABSENT,
+            SubgoalOutcomeRelation.IS_CHECKED,
+            SubgoalOutcomeRelation.IS_EXPANDED,
+            SubgoalOutcomeRelation.IS_COMPLETED,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.POINT_ACTIVATE: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            SubgoalOutcomeRelation.IS_ABSENT,
+            SubgoalOutcomeRelation.IS_CHECKED,
+            SubgoalOutcomeRelation.IS_EXPANDED,
+            SubgoalOutcomeRelation.IS_COMPLETED,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.TYPE_TEXT: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.SELECT_OPTION: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.IS_SELECTED,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.PRESS_KEY: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            SubgoalOutcomeRelation.IS_ABSENT,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.DRAG: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.IS_ORDERED_AS,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.NAVIGATE: frozenset(
+        {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            SubgoalOutcomeRelation.IS_AVAILABLE,
+            SubgoalOutcomeRelation.IS_COMPLETED,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.SCROLL: frozenset(
+        {
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            SubgoalOutcomeRelation.HAS_CHANGED,
+        }
+    ),
+    TaskPlanActionFamily.WAIT: frozenset(SubgoalOutcomeRelation),
+}
+
+
 class SubgoalOutcome(StrictModel):
     """Provider-authored state predicate, never an executable instruction."""
 
@@ -272,6 +354,9 @@ class PlanProgress:
 class TaskPlanValidationIssue(StrictModel):
     code: str = Field(min_length=1)
     detail: str = ""
+    field: str = ""
+    disallowed_values: tuple[str, ...] = ()
+    required_semantics: str = ""
 
 
 class TaskPlanRepairDirective(StrictModel):
@@ -350,15 +435,25 @@ class TaskPlanValidator:
             if (
                 subgoal.outcome is not None
                 and subgoal.action_family is not None
-                and _is_precondition_only_action_outcome(
+                and not _action_outcome_relation_compatible(
                     subgoal.action_family,
                     subgoal.outcome.relation,
                 )
             ):
+                precondition_only = (
+                    subgoal.outcome.relation == SubgoalOutcomeRelation.IS_AVAILABLE
+                )
                 repairable.append(
                     TaskPlanValidationIssue(
-                        code="precondition_only_outcome",
+                        code=(
+                            "precondition_only_outcome"
+                            if precondition_only
+                            else "incompatible_action_outcome"
+                        ),
                         detail=subgoal.subgoal_id,
+                        field="outcome.relation",
+                        disallowed_values=(subgoal.outcome.relation.value,),
+                        required_semantics="post_action_state",
                     )
                 )
             if subgoal.max_actions > self.max_actions_per_subgoal:
@@ -405,25 +500,13 @@ class TaskPlanValidator:
         return TaskPlanValidationReport(status=TaskPlanValidationStatus.ACCEPT)
 
 
-def _is_precondition_only_action_outcome(
+def _action_outcome_relation_compatible(
     action_family: TaskPlanActionFamily,
     relation: SubgoalOutcomeRelation,
 ) -> bool:
-    """Reject outcomes that merely restate availability of an action target."""
+    """Enforce the provider-neutral semantic action/outcome relation matrix."""
 
-    requires_current_target = {
-        TaskPlanActionFamily.ACTIVATE,
-        TaskPlanActionFamily.POINT_ACTIVATE,
-        TaskPlanActionFamily.TYPE_TEXT,
-        TaskPlanActionFamily.SELECT_OPTION,
-        TaskPlanActionFamily.PRESS_KEY,
-        TaskPlanActionFamily.DRAG,
-        TaskPlanActionFamily.SCROLL,
-    }
-    return (
-        action_family in requires_current_target
-        and relation == SubgoalOutcomeRelation.IS_AVAILABLE
-    )
+    return relation in _ACTION_OUTCOME_RELATIONS[action_family]
 
 
 def task_plan_repair_directives(
@@ -434,12 +517,12 @@ def task_plan_repair_directives(
     return tuple(
         TaskPlanRepairDirective(
             subgoal_id=issue.detail,
-            field="outcome.relation",
-            disallowed_values=(SubgoalOutcomeRelation.IS_AVAILABLE.value,),
-            required_semantics="post_action_state",
+            field=issue.field,
+            disallowed_values=issue.disallowed_values,
+            required_semantics=issue.required_semantics,
         )
         for issue in issues
-        if issue.code == "precondition_only_outcome"
+        if issue.field and issue.required_semantics
     )
 
 
@@ -487,10 +570,10 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v4"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v5"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
-Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. For an action family that requires a current target, is_available is only a precondition and cannot be its outcome; describe the independently verifiable post-action state instead. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
 
 def task_planner_model_config() -> ModelConfig:

@@ -81,7 +81,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v4"
+    assert task_planner_model_config().prompt_version == "task-planner-v5"
 
 
 class RecordingComplexPlanner:
@@ -299,6 +299,70 @@ def test_validator_allows_availability_as_navigation_outcome() -> None:
     report = TaskPlanValidator().validate(navigated, task, state_version=4)
 
     assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
+@pytest.mark.parametrize(
+    ("action_family", "relation", "expected_status"),
+    (
+        (
+            TaskPlanActionFamily.ACTIVATE,
+            SubgoalOutcomeRelation.IS_SELECTED,
+            TaskPlanValidationStatus.REPAIRABLE,
+        ),
+        (
+            TaskPlanActionFamily.SELECT_OPTION,
+            SubgoalOutcomeRelation.IS_SELECTED,
+            TaskPlanValidationStatus.ACCEPT,
+        ),
+        (
+            TaskPlanActionFamily.TYPE_TEXT,
+            SubgoalOutcomeRelation.EQUALS,
+            TaskPlanValidationStatus.ACCEPT,
+        ),
+        (
+            TaskPlanActionFamily.TYPE_TEXT,
+            SubgoalOutcomeRelation.IS_CHECKED,
+            TaskPlanValidationStatus.REPAIRABLE,
+        ),
+        (
+            TaskPlanActionFamily.DRAG,
+            SubgoalOutcomeRelation.IS_ORDERED_AS,
+            TaskPlanValidationStatus.ACCEPT,
+        ),
+    ),
+)
+def test_validator_enforces_semantic_action_outcome_matrix(
+    action_family: TaskPlanActionFamily,
+    relation: SubgoalOutcomeRelation,
+    expected_status: TaskPlanValidationStatus,
+) -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    candidate = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "objective": f"setting {relation.value} dark",
+                        "success_criteria": (f"setting {relation.value} dark",),
+                        "action_family": action_family,
+                        "outcome": SubgoalOutcome(
+                            subject="setting",
+                            relation=relation,
+                            value="dark",
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(candidate, task, state_version=4)
+
+    assert report.status == expected_status
+    issue_codes = {item.code for item in report.issues}
+    if expected_status == TaskPlanValidationStatus.REPAIRABLE:
+        assert "incompatible_action_outcome" in issue_codes
 
 
 def test_precondition_issue_projects_to_typed_repair_directive() -> None:
@@ -556,7 +620,7 @@ class RepairingTaskPlanModel:
                             "depends_on": ["discover"],
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
-                            "action_family": "activate",
+                            "action_family": "select_option",
                         },
                         {
                             "subgoal_id": "confirm",
@@ -568,7 +632,7 @@ class RepairingTaskPlanModel:
                             "depends_on": ["write"],
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
-                            "action_family": "activate",
+                            "action_family": "wait",
                     },
                 ]
             }
