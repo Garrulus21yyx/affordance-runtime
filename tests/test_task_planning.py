@@ -106,7 +106,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v8"
+    assert task_planner_model_config().prompt_version == "task-planner-v9"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
@@ -180,7 +180,10 @@ def test_context_schema_constrains_only_first_subgoal_to_current_actions() -> No
     }
     assert schema["properties"]["remaining_subgoals"]["minItems"] == 1
     assert schema["properties"]["remaining_subgoals"]["maxItems"] == 7
-    assert TASK_PLAN_CARDINALITY_POLICY_VERSION == "flat-1-multistage-2-to-8-v1"
+    assert (
+        TASK_PLAN_CARDINALITY_POLICY_VERSION
+        == "flat-1-multistage-initial-2-replacement-1-to-8-v2"
+    )
 
 
 def test_context_schema_parser_preserves_future_family_and_public_shape() -> None:
@@ -238,6 +241,14 @@ def test_context_schema_parser_preserves_future_family_and_public_shape() -> Non
 
 def test_context_schema_stays_generic_when_environment_is_unknown() -> None:
     assert task_plan_provider_model_for_context(_context()) is TaskPlanProviderEnvelope
+
+
+def test_replacement_schema_allows_one_unfinished_entry_after_verified_progress() -> None:
+    context = _context().model_copy(update={"completed_subgoal_ids": ("done",)})
+
+    schema = task_plan_provider_model_for_context(context).model_json_schema()
+
+    assert schema["properties"]["remaining_subgoals"]["minItems"] == 0
 
 
 def test_provider_envelope_rejects_legacy_positional_candidate_shape() -> None:
@@ -870,6 +881,120 @@ def test_replan_cannot_redefine_a_verified_subgoal() -> None:
 
     with pytest.raises(ValueError, match="cannot redefine"):
         state.replace_task_plan(replacement)
+
+
+def _verified_replacement_fixture() -> tuple[
+    TaskPlan,
+    TaskPlanningContext,
+    SubgoalSpec,
+]:
+    first = synthetic_task_plan(_context(state_version=0)).subgoals[0].model_copy(
+        update={"subgoal_id": "first"}
+    )
+    second = first.model_copy(
+        update={
+            "subgoal_id": "second",
+            "objective": "Theme update is confirmed",
+            "depends_on": ("first",),
+            "success_criteria": ("theme update is confirmed",),
+            "evidence_requirements": ("current theme confirmation",),
+        }
+    )
+    previous = TaskPlan(
+        plan_id="plan-previous",
+        task_id=_task().task_id,
+        task_revision=_task().revision,
+        plan_version=1,
+        based_on_state_version=0,
+        generated_by=TaskPlanSource.LLM,
+        subgoals=(first, second),
+    )
+    context = _context(state_version=7).model_copy(
+        update={
+            "current_plan_id": previous.plan_id,
+            "current_plan_version": previous.plan_version,
+            "completed_subgoal_ids": ("first",),
+            "criteria_evidence_ledger": (),
+        }
+    )
+    return previous, context, second
+
+
+def test_validator_rejects_replacement_missing_verified_subgoal() -> None:
+    previous, context, second = _verified_replacement_fixture()
+    replacement = previous.model_copy(
+        update={
+            "plan_id": "plan-replacement",
+            "plan_version": 2,
+            "supersedes_plan_id": previous.plan_id,
+            "based_on_state_version": context.state_version,
+            "subgoals": (second,),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        replacement,
+        _task(),
+        state_version=context.state_version,
+        previous_plan=previous,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REJECT
+    assert "verified_subgoal_missing" in {item.code for item in report.issues}
+
+
+def test_validator_rejects_replacement_redefining_verified_subgoal() -> None:
+    previous, context, second = _verified_replacement_fixture()
+    changed = previous.subgoals[0].model_copy(
+        update={"success_criteria": ("different verified state",)}
+    )
+    replacement = previous.model_copy(
+        update={
+            "plan_id": "plan-replacement",
+            "plan_version": 2,
+            "supersedes_plan_id": previous.plan_id,
+            "based_on_state_version": context.state_version,
+            "subgoals": (changed, second),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        replacement,
+        _task(),
+        state_version=context.state_version,
+        previous_plan=previous,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REJECT
+    assert "verified_subgoal_redefined" in {item.code for item in report.issues}
+
+
+def test_validator_requires_unfinished_unit_after_verified_progress() -> None:
+    previous, context, _ = _verified_replacement_fixture()
+    replacement = previous.model_copy(
+        update={
+            "plan_id": "plan-replacement",
+            "plan_version": 2,
+            "supersedes_plan_id": previous.plan_id,
+            "based_on_state_version": context.state_version,
+            "subgoals": (previous.subgoals[0],),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        replacement,
+        _task(),
+        state_version=context.state_version,
+        previous_plan=previous,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in report.issues} == {
+        "replacement_missing_unfinished_subgoal"
+    }
 
 
 def test_subgoal_verifier_requires_independent_passed_evidence() -> None:

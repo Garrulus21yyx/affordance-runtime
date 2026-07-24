@@ -118,6 +118,11 @@ class TaskPlanLifecycle:
             raise ValueError("cannot replan without an active TaskPlan")
         context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
         plan = _resolve_task_plan(self.planner.plan(context))
+        plan = _carry_forward_completed_subgoals(
+            plan,
+            previous_plan,
+            tuple(state.plan_progress.completed_subgoal_ids),
+        )
         validation = self.validator.validate(
             plan,
             task_spec,
@@ -307,3 +312,26 @@ def _resolve_task_plan(value: TaskPlan | Awaitable[TaskPlan]) -> TaskPlan:
     if not inspect.isawaitable(value):
         return value
     return cast(TaskPlan, resolve_awaitable(value))
+
+
+def _carry_forward_completed_subgoals(
+    replacement: TaskPlan,
+    previous: TaskPlan,
+    completed_subgoal_ids: tuple[str, ...],
+) -> TaskPlan:
+    """Restore exact completed authority while retaining model-owned unfinished units."""
+
+    if not completed_subgoal_ids:
+        return replacement
+    completed = set(completed_subgoal_ids)
+    previous_by_id = {item.subgoal_id: item for item in previous.subgoals}
+    missing_authority = completed - previous_by_id.keys()
+    if missing_authority:
+        raise ValueError("completed subgoal is missing from the previous TaskPlan")
+    preserved = tuple(
+        item for item in previous.subgoals if item.subgoal_id in completed
+    )
+    unfinished = tuple(
+        item for item in replacement.subgoals if item.subgoal_id not in completed
+    )
+    return replacement.model_copy(update={"subgoals": (*preserved, *unfinished)})

@@ -17,6 +17,7 @@ from affordance_runtime.task_planning import (
     TaskPlan,
     TaskPlanActionFamily,
     TaskPlanningContext,
+    TaskPlanSource,
     TaskPlanValidationStatus,
 )
 
@@ -214,3 +215,121 @@ def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replannin
     assert not compatible.required
     assert not unknown.required
     assert not completed.required
+
+
+class ReplacementPlanner:
+    def __init__(self, *, redefine_completed: bool = False, omit_unfinished: bool = False) -> None:
+        self.redefine_completed = redefine_completed
+        self.omit_unfinished = omit_unfinished
+
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        completed = SubgoalSpec(
+            subgoal_id="first",
+            objective="model-authored replacement of verified state",
+            outcome=SubgoalOutcome(
+                subject="different setting",
+                relation=SubgoalOutcomeRelation.HAS_CHANGED,
+            ),
+            success_criteria=("different setting changed",),
+            evidence_requirements=("different evidence",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            action_family=TaskPlanActionFamily.ACTIVATE,
+        )
+        unfinished = SubgoalSpec(
+            subgoal_id="replacement",
+            objective="setting control is saved",
+            outcome=SubgoalOutcome(
+                subject="setting control",
+                relation=SubgoalOutcomeRelation.IS_COMPLETED,
+            ),
+            depends_on=("first",),
+            success_criteria=("setting control is saved",),
+            evidence_requirements=("current saved state",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            action_family=TaskPlanActionFamily.ACTIVATE,
+        )
+        subgoals = (() if self.omit_unfinished else (unfinished,))
+        if self.redefine_completed:
+            subgoals = (completed, *subgoals)
+        return TaskPlan(
+            plan_id="replacement-plan",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.LLM,
+            subgoals=subgoals or (completed,),
+        )
+
+
+def test_replacement_carries_forward_exact_completed_spec_without_mutating_state() -> None:
+    task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
+    previous = state.task_plan
+    assert previous is not None
+    previous_version = state.version
+
+    transition = TaskPlanLifecycle(ReplacementPlanner()).propose_replacement(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+        reason="subgoal_action_budget_exhausted",
+    )
+
+    assert transition.validation.status == TaskPlanValidationStatus.ACCEPT
+    assert transition.plan.subgoals[0] == previous.subgoals[0]
+    assert tuple(item.subgoal_id for item in transition.plan.subgoals) == (
+        "first",
+        "replacement",
+    )
+    assert state.task_plan == previous
+    assert state.version == previous_version
+
+    state.replace_task_plan(transition.plan)
+    assert state.plan_progress is not None
+    assert state.plan_progress.completed_subgoal_ids == ["first"]
+    assert state.plan_progress.evidence_by_subgoal == {"first": ["evidence:first"]}
+    assert state.active_subgoal() == "setting control is saved"
+
+
+def test_replacement_discards_model_redefinition_of_completed_spec() -> None:
+    task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
+    previous = state.task_plan
+    assert previous is not None
+
+    transition = TaskPlanLifecycle(
+        ReplacementPlanner(redefine_completed=True)
+    ).propose_replacement(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+        reason="subgoal_action_budget_exhausted",
+    )
+
+    assert transition.validation.status == TaskPlanValidationStatus.ACCEPT
+    assert transition.plan.subgoals[0] == previous.subgoals[0]
+    assert all(
+        item.objective != "model-authored replacement of verified state"
+        for item in transition.plan.subgoals
+    )
+
+
+def test_replacement_without_unfinished_work_is_repairable() -> None:
+    task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
+
+    transition = TaskPlanLifecycle(
+        ReplacementPlanner(redefine_completed=True, omit_unfinished=True)
+    ).propose_replacement(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+        reason="subgoal_action_budget_exhausted",
+    )
+
+    assert transition.validation.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in transition.validation.issues} == {
+        "replacement_missing_unfinished_subgoal"
+    }

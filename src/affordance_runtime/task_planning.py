@@ -47,7 +47,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
 
 TASK_PLAN_SCHEMA_VERSION = "1.1"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
-TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-2-to-8-v1"
+TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 
 
 class TaskPlanSource(StrEnum):
@@ -403,10 +403,16 @@ def task_plan_provider_model_for_context(
 ) -> type[TaskPlanProviderEnvelope]:
     """Constrain the explicit provider entry while leaving future items generic."""
 
-    if not context.environment.affordances:
-        return TaskPlanProviderEnvelope
-    allowed_families = _context_action_families(context)
-    if not allowed_families or allowed_families == frozenset(TaskPlanActionFamily):
+    allowed_families = (
+        _context_action_families(context)
+        if context.environment.affordances
+        else frozenset()
+    )
+    constrain_entry = bool(
+        allowed_families and allowed_families != frozenset(TaskPlanActionFamily)
+    )
+    relax_replacement_cardinality = bool(context.completed_subgoal_ids)
+    if not constrain_entry and not relax_replacement_cardinality:
         return TaskPlanProviderEnvelope
     allowed_values = tuple(sorted(item.value for item in allowed_families))
 
@@ -428,18 +434,21 @@ def task_plan_provider_model_for_context(
                 mode=mode,
                 union_format=union_format,
             )
-            entry_schema = schema["properties"]["entry_subgoal"]
-            mapping = entry_schema["discriminator"]["mapping"]
-            entry_mapping = {value: mapping[value] for value in allowed_values}
-            entry_refs = tuple(dict.fromkeys(entry_mapping.values()))
-            schema["properties"]["entry_subgoal"] = {
-                "discriminator": {
-                    "propertyName": "action_family",
-                    "mapping": entry_mapping,
-                },
-                "oneOf": [{"$ref": value} for value in entry_refs],
-                "title": "Entry Subgoal",
-            }
+            if constrain_entry:
+                entry_schema = schema["properties"]["entry_subgoal"]
+                mapping = entry_schema["discriminator"]["mapping"]
+                entry_mapping = {value: mapping[value] for value in allowed_values}
+                entry_refs = tuple(dict.fromkeys(entry_mapping.values()))
+                schema["properties"]["entry_subgoal"] = {
+                    "discriminator": {
+                        "propertyName": "action_family",
+                        "mapping": entry_mapping,
+                    },
+                    "oneOf": [{"$ref": value} for value in entry_refs],
+                    "title": "Entry Subgoal",
+                }
+            if relax_replacement_cardinality:
+                schema["properties"]["remaining_subgoals"]["minItems"] = 0
             schema["title"] = TaskPlanProviderEnvelope.__name__
             return schema
 
@@ -615,20 +624,63 @@ class TaskPlanValidator:
             fatal.append(TaskPlanValidationIssue(code="invalid_replacement_plan_lineage"))
         if not 1 <= len(plan.subgoals) <= self.max_subgoals:
             fatal.append(TaskPlanValidationIssue(code="subgoal_count_out_of_bounds"))
+        completed_ids = (
+            set(planning_context.completed_subgoal_ids)
+            if planning_context is not None
+            else set()
+        )
+        effective_subgoal_count = len(
+            {item.subgoal_id for item in plan.subgoals} | completed_ids
+        )
         if (
             task_spec.task_structure == TaskStructure.MULTI_STAGE
             and plan.generated_by in {TaskPlanSource.LLM, TaskPlanSource.PARENT}
-            and len(plan.subgoals) < 2
+            and effective_subgoal_count < 2
         ):
             repairable.append(
                 TaskPlanValidationIssue(
                     code="multi_stage_plan_not_decomposed",
-                    detail=str(len(plan.subgoals)),
+                    detail=str(effective_subgoal_count),
                     field="subgoals",
-                    disallowed_values=(str(len(plan.subgoals)),),
+                    disallowed_values=(str(effective_subgoal_count),),
                     required_semantics="at_least_two_outcome_subgoals",
                 )
             )
+        if previous_plan is not None and completed_ids:
+            previous_by_id = {item.subgoal_id: item for item in previous_plan.subgoals}
+            replacement_by_id = {item.subgoal_id: item for item in plan.subgoals}
+            missing = completed_ids - replacement_by_id.keys()
+            redefined = {
+                subgoal_id
+                for subgoal_id in completed_ids & replacement_by_id.keys()
+                if previous_by_id.get(subgoal_id) != replacement_by_id[subgoal_id]
+            }
+            if missing:
+                fatal.append(
+                    TaskPlanValidationIssue(
+                        code="verified_subgoal_missing",
+                        detail=",".join(sorted(missing)),
+                    )
+                )
+            if redefined:
+                fatal.append(
+                    TaskPlanValidationIssue(
+                        code="verified_subgoal_redefined",
+                        detail=",".join(sorted(redefined)),
+                    )
+                )
+            previous_unfinished = {
+                item.subgoal_id for item in previous_plan.subgoals
+            } - completed_ids
+            replacement_unfinished = replacement_by_id.keys() - completed_ids
+            if previous_unfinished and not replacement_unfinished:
+                repairable.append(
+                    TaskPlanValidationIssue(
+                        code="replacement_missing_unfinished_subgoal",
+                        field="subgoals",
+                        required_semantics="at_least_one_unfinished_outcome_subgoal",
+                    )
+                )
 
         identifiers = [item.subgoal_id for item in plan.subgoals]
         if len(identifiers) != len(set(identifiers)):
@@ -871,8 +923,8 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v8"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals.
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v9"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
