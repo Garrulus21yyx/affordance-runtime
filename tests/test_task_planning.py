@@ -10,12 +10,14 @@ from affordance_runtime.task_planning import (
     PlanProgress,
     SubgoalSpec,
     TaskPlan,
+    TaskPlanCandidate,
     TaskPlanningBudgetSummary,
     TaskPlanningContext,
     TaskPlanSource,
     TaskPlanValidationStatus,
     TaskPlanValidator,
     synthetic_task_plan,
+    task_planner_model_config,
 )
 from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
 
@@ -55,6 +57,26 @@ def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> N
     assert len(plan.subgoals) == 1
     assert plan.subgoals[0].objective == _task().objective
     assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
+
+
+def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None:
+    schema = TaskPlanCandidate.model_json_schema()
+    subgoal_schema = schema["$defs"]["TaskPlanSubgoalCandidate"]
+
+    assert set(subgoal_schema["required"]) >= {
+        "subgoal_id",
+        "outcome",
+        "evidence_requirements",
+        "operation_class",
+    }
+    assert subgoal_schema["properties"]["evidence_requirements"]["minItems"] == 1
+    assert "success_criteria" not in subgoal_schema["properties"]
+    assert set(SubgoalSpec.model_json_schema()["required"]) == {
+        "subgoal_id",
+        "objective",
+        "operation_class",
+    }
+    assert task_planner_model_config().prompt_version == "task-planner-v2"
 
 
 class RecordingComplexPlanner:
@@ -383,7 +405,11 @@ class RepairingTaskPlanModel:
                     "subgoals": [
                         {
                             "subgoal_id": "discover",
-                            "objective": "Discover current setting",
+                            "outcome": {
+                                "subject": "Press the setting control",
+                                "relation": "is_completed",
+                            },
+                            "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
                         }
                     ]
@@ -393,27 +419,35 @@ class RepairingTaskPlanModel:
         return output_schema.model_validate(
             {
                 "subgoals": [
-                    {
-                        "subgoal_id": "discover",
-                        "objective": "Discover current setting",
-                        "success_criteria": ["setting is known"],
-                        "evidence_requirements": ["settings API"],
-                        "operation_class": "reversible_write",
-                    },
-                    {
-                        "subgoal_id": "write",
-                        "objective": "Write desired setting",
-                        "depends_on": ["discover"],
-                        "success_criteria": ["setting is dark"],
-                        "evidence_requirements": ["settings API"],
-                        "operation_class": "reversible_write",
-                    },
-                    {
-                        "subgoal_id": "confirm",
-                        "objective": "Confirm desired setting",
-                        "depends_on": ["write"],
-                        "success_criteria": ["setting remains dark"],
-                        "evidence_requirements": ["settings API"],
+                        {
+                            "subgoal_id": "discover",
+                            "outcome": {
+                                "subject": "current setting",
+                                "relation": "is_available",
+                            },
+                            "evidence_requirements": ["settings API"],
+                            "operation_class": "reversible_write",
+                        },
+                        {
+                            "subgoal_id": "write",
+                            "outcome": {
+                                "subject": "setting",
+                                "relation": "equals",
+                                "value": "dark",
+                            },
+                            "depends_on": ["discover"],
+                            "evidence_requirements": ["settings API"],
+                            "operation_class": "reversible_write",
+                        },
+                        {
+                            "subgoal_id": "confirm",
+                            "outcome": {
+                                "subject": "confirmed setting",
+                                "relation": "equals",
+                                "value": "dark",
+                            },
+                            "depends_on": ["write"],
+                            "evidence_requirements": ["settings API"],
                         "operation_class": "reversible_write",
                     },
                 ]
@@ -425,13 +459,19 @@ def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None
     import asyncio
 
     model = RepairingTaskPlanModel()
-    plan = asyncio.run(LLMTaskPlanner(model).plan(_context()))
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = asyncio.run(
+        LLMTaskPlanner(model).plan(_context().model_copy(update={"task_spec": task}))
+    )
 
     assert model.calls == 2
     assert plan.generated_by == TaskPlanSource.LLM
     assert plan.task_id == _task().task_id
     assert len(plan.subgoals) == 3
-    assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
+    assert (
+        TaskPlanValidator().validate(plan, task, state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
 
 
 class ActionInstructionRepairModel:
@@ -446,11 +486,6 @@ class ActionInstructionRepairModel:
     async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
         del config
         self.calls += 1
-        objective = (
-            "Press the Search button"
-            if self.calls == 1
-            else "Search results for Myron are visible"
-        )
         if self.calls == 2:
             assert "action_instruction_subgoal" in messages[-1].content
         return output_schema.model_validate(
@@ -458,8 +493,17 @@ class ActionInstructionRepairModel:
                 "subgoals": [
                     {
                         "subgoal_id": "results-visible",
-                        "objective": objective,
-                        "success_criteria": ["results for Myron are visible"],
+                        "outcome": (
+                            {
+                                "subject": "Press the Search button",
+                                "relation": "is_completed",
+                            }
+                            if self.calls == 1
+                            else {
+                                "subject": "Search results for Myron",
+                                "relation": "is_visible",
+                            }
+                        ),
                         "evidence_requirements": ["post-action results observation"],
                         "operation_class": "reversible_write",
                     }
@@ -478,7 +522,7 @@ def test_llm_task_planner_repairs_action_instruction_into_outcome() -> None:
     plan = asyncio.run(LLMTaskPlanner(model).plan(context))
 
     assert model.calls == 2
-    assert plan.subgoals[0].objective == "Search results for Myron are visible"
+    assert plan.subgoals[0].objective == "Search results for Myron is visible"
     assert (
         TaskPlanValidator().validate(plan, task, state_version=4).status
         == TaskPlanValidationStatus.ACCEPT

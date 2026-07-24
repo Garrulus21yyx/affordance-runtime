@@ -26,7 +26,6 @@ from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
     LLMTaskPlanner,
     RuleTaskPlanner,
-    SubgoalSpec,
     TaskPlanCandidate,
     TaskPlannerPort,
     TaskPlanningContext,
@@ -216,18 +215,23 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
 def _profile_planner(profile: str, target_stage: int) -> tuple[TaskPlannerPort, _FixedTaskPlanModel | None]:
     if profile == "flat":
         return RuleTaskPlanner(), None
-    candidate = TaskPlanCandidate(
-        subgoals=tuple(
-            SubgoalSpec(
-                subgoal_id=f"stage-{index}",
-                objective=f"Reach stage {index}",
-                depends_on=(f"stage-{index - 1}",) if index > 1 else (),
-                success_criteria=(f"stage equals {index}",),
-                evidence_requirements=("stage observation",),
-                operation_class=OperationClass.READ_ONLY,
-            )
-            for index in range(1, 4)
-        )
+    candidate = TaskPlanCandidate.model_validate(
+        {
+            "subgoals": [
+                {
+                    "subgoal_id": f"stage-{index}",
+                    "outcome": {
+                        "subject": "stage",
+                        "relation": "equals",
+                        "value": str(index),
+                    },
+                    "depends_on": [f"stage-{index - 1}"] if index > 1 else [],
+                    "evidence_requirements": ["stage observation"],
+                    "operation_class": "read_only",
+                }
+                for index in range(1, 4)
+            ]
+        }
     )
     model = _FixedTaskPlanModel(candidate)
     llm = LLMTaskPlanner(model)

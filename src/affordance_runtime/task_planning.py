@@ -69,6 +69,59 @@ class SubgoalSpec(StrictModel):
     max_recoveries: int = Field(default=2, ge=0, le=10)
 
 
+class SubgoalOutcomeRelation(StrEnum):
+    EQUALS = "equals"
+    CONTAINS = "contains"
+    MATCHES = "matches"
+    IS_VISIBLE = "is_visible"
+    IS_ABSENT = "is_absent"
+    IS_AVAILABLE = "is_available"
+    IS_SELECTED = "is_selected"
+    IS_CHECKED = "is_checked"
+    IS_EXPANDED = "is_expanded"
+    IS_COMPLETED = "is_completed"
+    IS_ORDERED_AS = "is_ordered_as"
+    HAS_CHANGED = "has_changed"
+
+
+class SubgoalOutcome(StrictModel):
+    """Provider-authored state predicate, never an executable instruction."""
+
+    subject: str = Field(min_length=1)
+    relation: SubgoalOutcomeRelation
+    value: str = ""
+
+    def description(self) -> str:
+        phrase = {
+            SubgoalOutcomeRelation.EQUALS: "equals",
+            SubgoalOutcomeRelation.CONTAINS: "contains",
+            SubgoalOutcomeRelation.MATCHES: "matches",
+            SubgoalOutcomeRelation.IS_VISIBLE: "is visible",
+            SubgoalOutcomeRelation.IS_ABSENT: "is absent",
+            SubgoalOutcomeRelation.IS_AVAILABLE: "is available",
+            SubgoalOutcomeRelation.IS_SELECTED: "is selected",
+            SubgoalOutcomeRelation.IS_CHECKED: "is checked",
+            SubgoalOutcomeRelation.IS_EXPANDED: "is expanded",
+            SubgoalOutcomeRelation.IS_COMPLETED: "is completed",
+            SubgoalOutcomeRelation.IS_ORDERED_AS: "is ordered as",
+            SubgoalOutcomeRelation.HAS_CHANGED: "has changed",
+        }[self.relation]
+        value = self.value.strip()
+        return " ".join(part for part in (self.subject.strip(), phrase, value) if part)
+
+
+class TaskPlanSubgoalCandidate(StrictModel):
+    """LLM-facing verifier-ready subgoal without runtime authority fields."""
+
+    subgoal_id: str = Field(min_length=1)
+    outcome: SubgoalOutcome
+    depends_on: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = Field(min_length=1)
+    operation_class: OperationClass
+    max_actions: int = Field(default=10, ge=1, le=50)
+    max_recoveries: int = Field(default=2, ge=0, le=10)
+
+
 class TaskPlan(StrictModel):
     schema_version: str = "1.0"
     plan_id: str = Field(min_length=1)
@@ -85,7 +138,7 @@ class TaskPlan(StrictModel):
 class TaskPlanCandidate(StrictModel):
     """The model-controlled portion of a task plan, without authority fields."""
 
-    subgoals: tuple[SubgoalSpec, ...] = Field(min_length=1, max_length=8)
+    subgoals: tuple[TaskPlanSubgoalCandidate, ...] = Field(min_length=1, max_length=8)
     assumptions: tuple[str, ...] = ()
 
 
@@ -353,10 +406,20 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v1"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v2"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
-Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Each subgoal needs verifiable success criteria and independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
-Subgoals are desired environment states, never UI scripts. Do not output selectors, coordinates, backend handles, executable code, capabilities, approval tokens, or action instructions. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
+Subgoals are desired environment states, never UI scripts. Do not output selectors, coordinates, backend handles, executable code, capabilities, approval tokens, action instructions, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+
+
+def task_planner_model_config() -> ModelConfig:
+    """Return the versioned decoding contract used by TaskPlan generation."""
+
+    return ModelConfig(
+        temperature=0.0,
+        max_tokens=1_024,
+        prompt_version=TASK_PLANNER_PROMPT_VERSION,
+    )
 
 
 @dataclass
@@ -365,13 +428,7 @@ class LLMTaskPlanner:
 
     model: ModelPort
     validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
-    config: ModelConfig = field(
-        default_factory=lambda: ModelConfig(
-            temperature=0.0,
-            max_tokens=1_024,
-            prompt_version=TASK_PLANNER_PROMPT_VERSION,
-        )
-    )
+    config: ModelConfig = field(default_factory=task_planner_model_config)
 
     async def plan(self, context: TaskPlanningContext) -> TaskPlan:
         task_spec = context.task_spec
@@ -424,7 +481,19 @@ class LLMTaskPlanner:
             supersedes_plan_id=context.current_plan_id,
             based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.LLM,
-            subgoals=candidate.subgoals,
+            subgoals=tuple(
+                SubgoalSpec(
+                    subgoal_id=item.subgoal_id,
+                    objective=item.outcome.description(),
+                    depends_on=item.depends_on,
+                    success_criteria=(item.outcome.description(),),
+                    evidence_requirements=item.evidence_requirements,
+                    operation_class=item.operation_class,
+                    max_actions=item.max_actions,
+                    max_recoveries=item.max_recoveries,
+                )
+                for item in candidate.subgoals
+            ),
             assumptions=candidate.assumptions,
         )
 

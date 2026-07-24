@@ -148,16 +148,20 @@ class MultiStageIntentAndPlanModel:
                     "subgoals": [
                         {
                             "subgoal_id": "discover",
-                            "objective": "Discover the current state",
-                            "success_criteria": ["the state is discovered"],
+                            "outcome": {
+                                "subject": "current state",
+                                "relation": "is_available",
+                            },
                             "evidence_requirements": ["fresh discovered-state observation"],
                             "operation_class": "read_only",
                         },
                         {
                             "subgoal_id": "confirm",
-                            "objective": "Confirm the discovered state",
+                            "outcome": {
+                                "subject": "discovered state",
+                                "relation": "is_completed",
+                            },
                             "depends_on": ["discover"],
-                            "success_criteria": ["the state is confirmed"],
                             "evidence_requirements": ["fresh confirmed-state observation"],
                             "operation_class": "read_only",
                         },

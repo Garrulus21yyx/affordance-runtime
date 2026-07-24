@@ -81,6 +81,11 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.intent_compiler import LLMIntentDraft, intent_compiler_model_config
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
+from affordance_runtime.task_planning import (
+    TASK_PLANNER_PROMPT_VERSION,
+    TaskPlanCandidate,
+    task_planner_model_config,
+)
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -270,7 +275,7 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v9",
+        "schema_version": "browsergym-generalist-checkpoint-v10",
         "action_contract_schema_version": ACTION_CONTRACT_SCHEMA_VERSION,
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
@@ -314,6 +319,9 @@ def run_browsergym_miniwob_generalist_suite(
         ).model_dump(mode="json"),
         "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
         "intent_compiler_schema_sha256": _intent_compiler_schema_sha256(),
+        "task_planner_prompt_version": TASK_PLANNER_PROMPT_VERSION,
+        "task_planner_model_config": task_planner_model_config().model_dump(mode="json"),
+        "task_planner_schema_sha256": _task_planner_schema_sha256(),
         "episode_timeout_s": episode_timeout_s,
         "model_call_timeout_s": model_call_timeout_s,
         "max_model_calls": max_model_calls,
@@ -484,6 +492,12 @@ def _planner_schema_sha256() -> str:
 
 def _intent_compiler_schema_sha256() -> str:
     payload = LLMIntentDraft.model_json_schema()
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _task_planner_schema_sha256() -> str:
+    payload = TaskPlanCandidate.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
