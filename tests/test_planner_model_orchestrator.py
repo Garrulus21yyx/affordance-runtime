@@ -309,7 +309,7 @@ def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
     assert constraint.satisfied is False
 
 
-def test_active_subgoal_restricts_only_ordinary_activation_targets() -> None:
+def test_active_subgoal_restricts_targets_by_semantic_phase_and_label() -> None:
     base = _context()
     context = base.model_copy(
         update={
@@ -344,11 +344,23 @@ def test_active_subgoal_restricts_only_ordinary_activation_targets() -> None:
     restricted = restrict_targets_to_active_subgoal(context, targets)
 
     assert restricted["activate"] == ["search"]
-    assert restricted["type_text"] == ["field-1"]
+    assert restricted["type_text"] == []
     assert restrict_targets_to_active_subgoal(
         context.model_copy(update={"active_subgoal": context.task_spec["objective"]}),
         targets,
     ) == targets
+    entry_context = context.model_copy(
+        update={
+            "active_subgoal": "Enter Myron into the search textbox",
+            "affordances": (
+                context.affordances[0].model_copy(update={"label": "search-text"}),
+                *context.affordances[1:],
+            ),
+        }
+    )
+    entry = restrict_targets_to_active_subgoal(entry_context, targets)
+    assert entry["type_text"] == ["field-1"]
+    assert entry["activate"] == []
 
 
 @pytest.mark.parametrize(

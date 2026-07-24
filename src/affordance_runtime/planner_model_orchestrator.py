@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, Literal, TypeVar, cast
 
@@ -276,24 +277,78 @@ def restrict_targets_to_active_subgoal(
     context: PlannerContext,
     compatible_targets: dict[str, list[str]],
 ) -> dict[str, list[str]]:
-    """Prevent ordinary activation targets from crossing a real active subgoal."""
+    """Keep every target action within a real active subgoal's semantic phase."""
 
     objective = str(context.task_spec.get("objective") or "").strip().casefold()
     active_subgoal = context.active_subgoal.strip().casefold()
     if not active_subgoal or active_subgoal == objective:
         return {key: list(value) for key, value in compatible_targets.items()}
     affordance_by_id = {item.id: item for item in context.affordances}
-    restricted = {key: list(value) for key, value in compatible_targets.items()}
-    restricted[PlannerActionKind.ACTIVATE.value] = [
-        target_id
-        for target_id in restricted.get(PlannerActionKind.ACTIVATE.value, [])
-        if (
-            (target := affordance_by_id.get(target_id)) is not None
-            and target.label.strip()
-            and target.label.strip().casefold() in active_subgoal
+    active_tokens = _semantic_target_tokens(active_subgoal)
+    active_action_kinds = _active_subgoal_action_kinds(active_subgoal)
+    return {
+        action_kind: [
+            target_id
+            for target_id in target_ids
+            if (
+                (not active_action_kinds or action_kind in active_action_kinds)
+                and (target := affordance_by_id.get(target_id)) is not None
+                and _target_tokens_match_active_subgoal(
+                    _semantic_target_tokens(target.label),
+                    active_tokens,
+                )
+            )
+        ]
+        for action_kind, target_ids in compatible_targets.items()
+    }
+
+
+def _active_subgoal_action_kinds(active_subgoal: str) -> frozenset[str]:
+    """Return only action families stated unambiguously by the active step."""
+
+    tokens = set(_semantic_target_tokens(active_subgoal))
+    if tokens.intersection({"type", "fill", "input", "write"}) or (
+        "enter" in tokens and "press" not in tokens
+    ):
+        return frozenset({PlannerActionKind.TYPE_TEXT.value})
+    if tokens.intersection({"drag", "drop"}):
+        return frozenset({PlannerActionKind.DRAG.value})
+    if tokens.intersection({"select", "choose"}):
+        return frozenset(
+            {PlannerActionKind.SELECT_OPTION.value, PlannerActionKind.ACTIVATE.value}
         )
-    ]
-    return restricted
+    if tokens.intersection({"click", "press", "open", "activate"}):
+        return frozenset(
+            {
+                PlannerActionKind.ACTIVATE.value,
+                PlannerActionKind.POINT_ACTIVATE.value,
+                PlannerActionKind.PRESS_KEY.value,
+            }
+        )
+    return frozenset()
+
+
+def _semantic_target_tokens(value: str) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in re.findall(r"[\w]+", value.casefold(), flags=re.UNICODE)
+        if len(token) >= 3
+    )
+
+
+def _target_tokens_match_active_subgoal(
+    target_tokens: tuple[str, ...],
+    active_tokens: tuple[str, ...],
+) -> bool:
+    return bool(target_tokens) and all(
+        any(
+            target == active
+            or (len(target) >= 4 and active.startswith(target))
+            or (len(active) >= 4 and target.startswith(active))
+            for active in active_tokens
+        )
+        for target in target_tokens
+    )
 
 
 def compatible_drag_destination_ids(context: PlannerContext) -> list[str]:
