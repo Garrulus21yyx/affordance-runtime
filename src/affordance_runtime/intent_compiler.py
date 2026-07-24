@@ -18,7 +18,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.trace import TraceDag, TraceNode
 
-INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v4"
+INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v5"
 
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
 Return only the requested strict schema. Never grant capability or approval, choose a selector/coordinate, or claim execution.
@@ -28,7 +28,7 @@ Classify sending/posting/submitting externally, booking/reserving, purchasing, a
 Every requested effect and entity needs a source_ref pointing to the request or an explicitly supplied context reference.
 Each requested_effect.target must name the concrete semantic resource and preserve any explicit identifier needed to distinguish it; do not leave the identifier only in entities.
 Preserve explicit constraints, forbidden effects, desired outputs, success criteria, evidence requirements, and preferences.
-Extract only explicit semantic value constraints into candidate_semantic_value_constraints. Use relation=prefix for “starts with”, suffix for “ends with”, and exact only when the exact value itself is requested. Preserve the literal user-supplied value and its source_ref; never invent a completion or infer a value from page content.
+Extract only explicit semantic value constraints into candidate_semantic_value_constraints. Use relation=prefix for “starts with”, suffix for “ends with”, and exact only when the exact value itself is requested. Preserve the literal user-supplied value; use source_ref=raw_text only for content explicitly present in the supplied raw_text field. Runtime binds that alias to the current request lineage. Never invent a completion or infer a value from page content.
 For every well-formed requested effect, always provide at least one observable candidate_success_criteria that directly restates the user's requested outcome and cites no new authority.
 Mark unresolved target, recipient, amount, destructive scope, credential/payment boundary, or communication channel as blocking high-risk ambiguity.
 Do not treat a discoverable page, app, URL, selector, runtime surface, or the caller's use of "my" as a blocking ambiguity; grounding those details belongs to planning and observation.
@@ -93,7 +93,10 @@ class LLMIntentCompiler:
                     parents=[parent.id] if parent else None,
                 )
             raise
-        draft = IntentDraft.model_validate(model_draft.model_dump())
+        draft = _bind_draft_source_lineage(
+            IntentDraft.model_validate(model_draft.model_dump()),
+            request,
+        )
         if trace is not None:
             parent = trace.add(
                 "IntentDraftProduced",
@@ -132,6 +135,37 @@ def _bounded_request(request: UserRequest) -> dict[str, object]:
         "locale": request.locale,
         "time_context": request.time_context,
     }
+
+
+def _bind_draft_source_lineage(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Resolve only compiler-owned bounded-input aliases to canonical lineage."""
+
+    def source_ref(value: str) -> str:
+        return request.request_id if value == "raw_text" else value
+
+    return draft.model_copy(
+        update={
+            "entities": tuple(
+                item.model_copy(update={"source_ref": source_ref(item.source_ref)})
+                for item in draft.entities
+            ),
+            "requested_effects": tuple(
+                item.model_copy(update={"source_ref": source_ref(item.source_ref)})
+                for item in draft.requested_effects
+            ),
+            "candidate_semantic_value_constraints": tuple(
+                item.model_copy(update={"source_ref": source_ref(item.source_ref)})
+                for item in draft.candidate_semantic_value_constraints
+            ),
+            "source_map": tuple(
+                item.model_copy(update={"source_ref": source_ref(item.source_ref)})
+                for item in draft.source_map
+            ),
+        }
+    )
 
 
 def _record_request(trace: TraceDag | None, request: UserRequest) -> TraceNode | None:

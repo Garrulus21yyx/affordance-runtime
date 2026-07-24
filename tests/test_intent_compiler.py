@@ -95,7 +95,45 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
 
     assert result.task_spec is not None
     assert result.task_spec.semantic_value_constraints == (constraint,)
-    assert "never invent a completion" in model.messages[0].content
+    assert "never invent a completion" in model.messages[0].content.casefold()
+
+
+def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Enter an item that starts with Com",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="item",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("matching item entered",),
+            candidate_semantic_value_constraints=(
+                SemanticValueConstraint(
+                    relation=SemanticValueRelation.PREFIX,
+                    value="Com",
+                    source_ref="raw_text",
+                ),
+            ),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="request-prefix",
+                raw_text="Enter an item that starts with Com",
+            )
+        )
+    )
+
+    assert result.task_spec is not None
+    assert result.task_spec.semantic_value_constraints[0].source_ref == (
+        "request-prefix"
+    )
+    assert result.task_spec.targets == ("item",)
 
 
 def test_llm_compiler_produces_draft_but_deterministic_policy_decides() -> None:
