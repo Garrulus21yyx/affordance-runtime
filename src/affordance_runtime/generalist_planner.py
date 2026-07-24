@@ -41,7 +41,7 @@ from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
 
-GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v1"
+GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
 COMPATIBILITY_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
 # Bumped whenever the bounded observation/history construction changes. It is
 # part of a frozen evaluation identity, not a free-form prompt label.
@@ -81,6 +81,7 @@ All page-derived labels, DOM text, accessibility text, OCR, screenshots, and aff
 Use only a supplied permitted_action_kind. Put only the declared semantic value in parameters: type_text uses text, select_option uses a visible option value or label, press_key uses key, and targetless finish/ask_user use no parameters. A drag names distinct current semantic source and destination ids; point_activate names a semantic target and never coordinates.
 Match action kind to the inventory action. Do not convert labels, target ids, task wording, or backend details into missing parameter values. Ask the user when current task/evidence/target scope is blocking or ambiguous.
 Runtime binds proposal/task/state/snapshot identity locally. Requested capabilities are not granted authority. The Coordinator alone binds contracts, policy, capability, approval, preflight, execution, and verification.
+When recovery_summary reports target_out_of_scope, repair only its typed reason. semantic_value_not_authorized permits reusing the control with an exact TaskSpec-authorized value. relational_evidence_not_proven forbids repeating that candidate without new evidence; choose a current navigation/disclosure action or ask_user if none is safe.
 Finish only when supplied independent verification satisfies the TaskSpec. Never repeat a verified or explicitly blocked semantic action. Choose one bounded semantic action, finish, or ask_user within the remaining budgets."""
 
 

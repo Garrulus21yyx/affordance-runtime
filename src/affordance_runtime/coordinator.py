@@ -991,7 +991,9 @@ class RunCoordinator:
                     )
                 except ProposalRejected as exc:
                     error_code = proposal_error_code(exc.code)
-                    recovery_decision = self.proposal_recovery_policy.decide(exc.code, exc.detail)
+                    recovery_decision = self.proposal_recovery_policy.decide(
+                        exc.code, exc.detail, exc.reason_code
+                    )
                     parent = trace.add(
                         "PlannerProposalRejected",
                         {
@@ -999,6 +1001,7 @@ class RunCoordinator:
                             "proposal_id": proposal.proposal_id,
                             "error_code": error_code.value,
                             "rejection_code": exc.code.value,
+                            "rejection_reason_code": exc.reason_code,
                             "reason": exc.detail,
                             "validation_boundary": "PlannerProposalValidator",
                             "provenance": (provenance.model_dump(mode="json") if provenance is not None else None),

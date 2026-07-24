@@ -220,9 +220,16 @@ def proposal_record(
 
 
 class ProposalRejected(ValueError):
-    def __init__(self, code: ProposalRejectionCode, detail: str = "") -> None:
+    def __init__(
+        self,
+        code: ProposalRejectionCode,
+        detail: str = "",
+        *,
+        reason_code: str = "",
+    ) -> None:
         self.code = code
         self.detail = detail
+        self.reason_code = reason_code
         super().__init__(f"{code.value}: {detail}" if detail else code.value)
 
 
@@ -306,7 +313,11 @@ class PlannerProposalValidator:
             if decision.rejection == ScopeRejectionKind.UNREQUESTED_EFFECT
             else ProposalRejectionCode.TARGET_OUT_OF_SCOPE
         )
-        raise ProposalRejected(rejection, decision.detail)
+        raise ProposalRejected(
+            rejection,
+            decision.detail,
+            reason_code=decision.reason.value if decision.reason is not None else "",
+        )
 
     @staticmethod
     def _validate_target(
@@ -727,7 +738,15 @@ class ContractBuilder:
                     if scope_decision.rejection == ScopeRejectionKind.UNREQUESTED_EFFECT
                     else ProposalRejectionCode.TARGET_OUT_OF_SCOPE
                 )
-                raise ProposalRejected(rejection, scope_decision.detail)
+                raise ProposalRejected(
+                    rejection,
+                    scope_decision.detail,
+                    reason_code=(
+                        scope_decision.reason.value
+                        if scope_decision.reason is not None
+                        else ""
+                    ),
+                )
             scope_authorization = scope_decision.authorization
         return replace(
             contract,

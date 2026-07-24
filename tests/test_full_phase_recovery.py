@@ -178,6 +178,7 @@ class RejectTargetScopeOnceValidator:
             raise ProposalRejected(
                 ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
                 "semantic:wrong-target",
+                reason_code="relational_evidence_not_proven",
             )
         PlannerProposalValidator().validate(*args, **kwargs)  # type: ignore[arg-type]
 
@@ -441,9 +442,15 @@ def test_target_scope_rejection_replans_without_weakening_validation() -> None:
     assert result.state.current_failure is not None
     assert result.state.current_failure.recoverable
     assert result.state.current_failure.message == (
-        "target_out_of_scope:semantic:wrong-target"
+        "target_out_of_scope:relational_evidence_not_proven:semantic:wrong-target"
     )
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
+    rejected = next(
+        node for node in result.trace.nodes if node.kind == "PlannerProposalRejected"
+    )
+    assert rejected.payload["rejection_reason_code"] == (
+        "relational_evidence_not_proven"
+    )
 
 
 def test_provider_failure_invokes_real_owner_before_reentering_planning() -> None:

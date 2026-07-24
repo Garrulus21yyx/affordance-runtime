@@ -7,13 +7,16 @@ def test_target_scope_rejection_allows_only_bounded_step_replan() -> None:
     decision = ProposalRejectionRecoveryPolicy().decide(
         ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
         "semantic:wrong-target",
+        "relational_evidence_not_proven",
     )
 
     assert decision.recoverable
     assert decision.available_commands == frozenset(
         {RecoveryCommandKind.REPLAN_STEP, RecoveryCommandKind.ABORT}
     )
-    assert decision.planner_feedback == "target_out_of_scope:semantic:wrong-target"
+    assert decision.planner_feedback == (
+        "target_out_of_scope:relational_evidence_not_proven:semantic:wrong-target"
+    )
 
 
 def test_authority_and_structural_rejections_remain_terminal() -> None:

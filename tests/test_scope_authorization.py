@@ -25,7 +25,11 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
 )
-from affordance_runtime.scope_authorization import ProposalScopeEvaluator, ScopeRejectionKind
+from affordance_runtime.scope_authorization import (
+    ProposalScopeEvaluator,
+    ScopeRejectionKind,
+    ScopeRejectionReason,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -134,6 +138,8 @@ def test_entity_property_relation_requires_entity_and_requested_property() -> No
     assert accepted.authorization.relation == ScopeRelationKind.ENTITY_PROPERTY
     assert wrong_property.rejection == ScopeRejectionKind.TARGET_OUT_OF_SCOPE
     assert wrong_entity.rejection == ScopeRejectionKind.TARGET_OUT_OF_SCOPE
+    assert wrong_property.reason == ScopeRejectionReason.RELATIONAL_EVIDENCE_NOT_PROVEN
+    assert wrong_entity.reason == ScopeRejectionReason.RELATIONAL_EVIDENCE_NOT_PROVEN
 
 
 def test_ordinal_relation_requires_the_requested_collection_position() -> None:
@@ -259,6 +265,7 @@ def test_value_does_not_authorize_an_arbitrary_control_or_mixed_option_list() ->
         PlannerProposalValidator().validate(proposal, PROVENANCE, _autocomplete_task(), state, snapshot)
 
     assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+    assert caught.value.reason_code == ScopeRejectionReason.RELATIONAL_EVIDENCE_NOT_PROVEN
 
     candidate, observation = _candidate(
         candidate_id="candidate:select",
@@ -279,3 +286,4 @@ def test_value_does_not_authorize_an_arbitrary_control_or_mixed_option_list() ->
         selected_candidate=candidate,
     )
     assert decision.rejection == ScopeRejectionKind.TARGET_OUT_OF_SCOPE
+    assert decision.reason == ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED

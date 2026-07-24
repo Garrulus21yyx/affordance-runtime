@@ -23,8 +23,9 @@ class ProposalRejectionRecoveryPolicy:
         self,
         code: ProposalRejectionCode,
         detail: str = "",
+        reason_code: str = "",
     ) -> ProposalRejectionRecoveryDecision:
-        feedback = code.value + (f":{detail}" if detail else "")
+        feedback = ":".join(item for item in (code.value, reason_code, detail) if item)
         if code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE:
             return ProposalRejectionRecoveryDecision(
                 available_commands=frozenset(

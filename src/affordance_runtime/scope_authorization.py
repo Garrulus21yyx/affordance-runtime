@@ -18,11 +18,18 @@ class ScopeRejectionKind(StrEnum):
     UNREQUESTED_EFFECT = "unrequested_effect"
 
 
+class ScopeRejectionReason(StrEnum):
+    UNREQUESTED_EFFECT = "unrequested_effect"
+    SEMANTIC_VALUE_NOT_AUTHORIZED = "semantic_value_not_authorized"
+    RELATIONAL_EVIDENCE_NOT_PROVEN = "relational_evidence_not_proven"
+
+
 @dataclass(frozen=True)
 class ProposalScopeDecision:
     authorized: bool
     rejection: ScopeRejectionKind | None = None
     detail: str = ""
+    reason: ScopeRejectionReason | None = None
     authorization: ScopeAuthorization | None = None
 
 
@@ -111,6 +118,7 @@ class ProposalScopeEvaluator:
                 False,
                 ScopeRejectionKind.UNREQUESTED_EFFECT,
                 ",".join(sorted(unrequested_effects)),
+                ScopeRejectionReason.UNREQUESTED_EFFECT,
             )
         if not targets or target_role == "option" or not label_tokens:
             return ProposalScopeDecision(True)
@@ -149,6 +157,16 @@ class ProposalScopeEvaluator:
             False,
             ScopeRejectionKind.TARGET_OUT_OF_SCOPE,
             target_id,
+            (
+                ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED
+                if action_kind in {"type_text", "select_option"}
+                and not self._semantic_values_are_authorized(
+                    action_kind,
+                    parameters,
+                    authorized_text,
+                )
+                else ScopeRejectionReason.RELATIONAL_EVIDENCE_NOT_PROVEN
+            ),
         )
 
     @staticmethod
