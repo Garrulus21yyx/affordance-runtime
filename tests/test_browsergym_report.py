@@ -8,7 +8,10 @@ import pytest
 
 from affordance_runtime.benchmarks import browsergym_matrix as matrix
 from affordance_runtime.benchmarks import browsergym_report as report_adapter
-from affordance_runtime.benchmarks.browsergym_types import BrowserGymEpisodeResult
+from affordance_runtime.benchmarks.browsergym_types import (
+    BrowserGymEpisodeResult,
+    BrowserGymRuntimeFailure,
+)
 from affordance_runtime.evaluation_audit import EvaluationRunIdentity
 
 
@@ -70,6 +73,97 @@ def test_intent_compilation_rejection_is_attributed_to_intent_planning() -> None
     assert envelope["failure_signature"] == "intent_compilation_rejected"
     assert envelope["root_layer"] == "INTENT / PLANNING"
     assert envelope["phase"] == "planning"
+
+
+@pytest.mark.parametrize(
+    ("phase", "failure_class", "error_code", "root_layer"),
+    [
+        ("fusion", "source_conflict", "precondition_failed", "OBSERVATION / CONTEXT"),
+        ("preflight", "authority", "approval_required", "SAFETY"),
+        ("step_planning", "planning", "planner_failed", "INTENT / PLANNING"),
+        ("proposal_validation", "validation", "planner_proposal_rejected", "CONTRACT / FIELD_BINDING"),
+        ("grounding_binding", "grounding", "stale_target", "GROUNDING / ROUTING"),
+        ("execution_uncertain", "execution", "execution_failed", "EXECUTION"),
+        ("verification", "verification", "verification_failed", "VERIFICATION"),
+    ],
+)
+def test_runtime_failure_projection_drives_exact_owner_attribution(
+    phase: str,
+    failure_class: str,
+    error_code: str,
+    root_layer: str,
+) -> None:
+    episode = replace(
+        _failed_episode(task_id="case-a", actions=[]),
+        runtime_status="failed",
+        terminated=False,
+        runtime_failure=BrowserGymRuntimeFailure(
+            phase=phase,
+            failure_class=failure_class,
+            error_code=error_code,
+            effect_status="not_dispatched",
+            detail_code="",
+            message="typed failure",
+            evidence_refs=["artifact:evidence"],
+        ),
+    )
+
+    envelope = report_adapter.browsergym_failure_envelope(episode)
+
+    assert envelope is not None
+    assert envelope["failure_signature"] == f"{phase}:{failure_class}:{error_code}"
+    assert envelope["root_layer"] == root_layer
+    assert envelope["phase"] == phase
+    assert envelope["required_evidence_present"] is True
+    assert envelope["runtime_failure"] == {
+        "phase": phase,
+        "failure_class": failure_class,
+        "error_code": error_code,
+        "effect_status": "not_dispatched",
+        "detail_code": "",
+        "message": "typed failure",
+        "evidence_refs": ["artifact:evidence"],
+    }
+
+
+def test_episode_result_rehydrates_nested_runtime_failure_from_checkpoint() -> None:
+    episode = BrowserGymEpisodeResult(
+        **{
+            **_failed_episode(task_id="case-a", actions=[]).__dict__,
+            "runtime_failure": {
+                "phase": "fusion",
+                "failure_class": "missing_evidence",
+                "error_code": "precondition_failed",
+                "effect_status": "not_dispatched",
+                "detail_code": "",
+                "message": "evidence absent",
+                "evidence_refs": [],
+            },
+        }
+    )
+
+    assert isinstance(episode.runtime_failure, BrowserGymRuntimeFailure)
+    report_adapter.validate_browsergym_episode_result(episode)
+
+
+def test_runtime_failure_signature_preserves_owner_detail_code() -> None:
+    episode = replace(
+        _failed_episode(task_id="case-a", actions=[]),
+        runtime_failure=BrowserGymRuntimeFailure(
+            phase="proposal_validation",
+            failure_class="validation",
+            error_code="planner_proposal_rejected",
+            effect_status="not_dispatched",
+            detail_code="unrequested_effect",
+        ),
+    )
+
+    envelope = report_adapter.browsergym_failure_envelope(episode)
+
+    assert envelope is not None
+    assert envelope["failure_signature"] == (
+        "proposal_validation:validation:planner_proposal_rejected:unrequested_effect"
+    )
 
 
 def test_declared_protocol_family_precedes_observed_action() -> None:

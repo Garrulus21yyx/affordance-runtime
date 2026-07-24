@@ -32,6 +32,7 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymEpisodeState,
     BrowserGymPolicy,
     BrowserGymPolicyRequest,
+    BrowserGymRuntimeFailure,
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
@@ -731,6 +732,7 @@ def run_browsergym_generalist_episode(
             **_browsergym_model_stats(result.trace.nodes, planner.model_call_count + 1),
             **_browsergym_context_stats(result.trace.nodes, planner_limits.max_affordances),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),
+            **_browsergym_failure_stats(result.trace.nodes),
             "last_verified_step": result.state.step_count,
         }
         return BrowserGymEpisodeResult(
@@ -1024,6 +1026,63 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
         "transient_retry_count": sum(int(item.get("transient_retry_count") or 0) for item in records),
         "provider_failures": provider_failures,
     }
+
+
+def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
+    """Project the last Runtime-owned failure or explicit safety stop."""
+
+    for index in range(len(nodes) - 1, -1, -1):
+        node = nodes[index]
+        if node.kind != "FailureDetected":
+            continue
+        failure = node.payload.get("failure")
+        if not isinstance(failure, dict):
+            continue
+        phase = str(failure.get("phase") or "")
+        failure_class = str(failure.get("failure_class") or "")
+        error_code = str(failure.get("error_code") or "")
+        effect_status = str(failure.get("effect_status") or "")
+        if not all((phase, failure_class, error_code, effect_status)):
+            continue
+        detail_code = ""
+        if phase == "proposal_validation":
+            rejected = next(
+                (
+                    previous
+                    for previous in reversed(nodes[:index])
+                    if previous.kind == "PlannerProposalRejected"
+                ),
+                None,
+            )
+            if rejected is not None:
+                detail_code = str(rejected.payload.get("rejection_code") or "")
+        evidence_refs = failure.get("evidence_refs")
+        return {
+            "runtime_failure": BrowserGymRuntimeFailure(
+                phase=phase,
+                failure_class=failure_class,
+                error_code=error_code,
+                effect_status=effect_status,
+                detail_code=detail_code,
+                message=str(failure.get("message") or ""),
+                evidence_refs=(
+                    [str(item) for item in evidence_refs]
+                    if isinstance(evidence_refs, list)
+                    else []
+                ),
+            )
+        }
+    if any(node.kind == "HumanApprovalRequested" for node in nodes):
+        return {
+            "runtime_failure": BrowserGymRuntimeFailure(
+                phase="preflight",
+                failure_class="authority",
+                error_code="approval_required",
+                effect_status="not_dispatched",
+                message="human approval is required before dispatch",
+            )
+        }
+    return {"runtime_failure": None}
 
 
 def _browsergym_adaptive_runtime_stats(nodes: Sequence[Any]) -> dict[str, Any]:

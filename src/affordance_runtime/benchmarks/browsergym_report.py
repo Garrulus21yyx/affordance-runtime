@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
@@ -26,6 +27,7 @@ from affordance_runtime.evaluation_audit import (
     EvaluationRunIdentity,
     build_evaluation_run_audit,
 )
+from affordance_runtime.failure_envelope import EffectStatus, FailureClass, FailurePhase
 from affordance_runtime.runtime import RuntimeStep
 
 
@@ -40,11 +42,12 @@ def browsergym_failure_envelope(
         return None
     signature = _failure_signature(episode)
     root_layer = _failure_root_layer(episode, signature)
+    runtime_failure = episode.runtime_failure
     return {
         "task": episode.task_id,
         "family": _failure_family(episode, task_family_map or {}),
         "seed": episode.seed,
-        "phase": _failure_phase(root_layer),
+        "phase": runtime_failure.phase if runtime_failure is not None else _failure_phase(root_layer),
         "failure_signature": signature,
         "root_layer": root_layer,
         "action_kind": episode.action_families[-1] if episode.action_families else "",
@@ -52,7 +55,11 @@ def browsergym_failure_envelope(
         "context_truncation": episode.planner_context_truncation,
         "affordance_count": episode.planner_affordance_count,
         "permitted_action_kinds": list(episode.planner_permitted_action_kinds),
-        "required_evidence_present": episode.terminated,
+        "required_evidence_present": (
+            bool(runtime_failure.evidence_refs)
+            if runtime_failure is not None
+            else episode.terminated
+        ),
         "last_verified_step": episode.last_verified_step,
         "provider_runtime_status": {
             "runtime_status": episode.runtime_status,
@@ -61,6 +68,7 @@ def browsergym_failure_envelope(
             "transient_retry_count": episode.transient_retry_count,
         },
         "artifact_refs": [episode.trace_path] if episode.trace_path else [],
+        "runtime_failure": asdict(runtime_failure) if runtime_failure is not None else None,
     }
 
 
@@ -224,7 +232,7 @@ def write_browsergym_report(
         else []
     )
     report = {
-        "schema_version": "browsergym-full-path-v3",
+        "schema_version": "browsergym-full-path-v4",
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "browsergym_version": BROWSERGYM_VERSION,
         "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
@@ -342,6 +350,16 @@ def validate_browsergym_episode_result(
         raise ValueError("BrowserGym episode counters must be non-negative")
     if episode.rate_limit_retry_count < 0 or episode.transient_retry_count < 0:
         raise ValueError("BrowserGym retry counters must be non-negative")
+    if episode.runtime_failure is not None:
+        failure = episode.runtime_failure
+        if failure.phase not in {item.value for item in FailurePhase}:
+            raise ValueError("BrowserGym Runtime failure phase is invalid")
+        if failure.failure_class not in {item.value for item in FailureClass}:
+            raise ValueError("BrowserGym Runtime failure class is invalid")
+        if failure.effect_status not in {item.value for item in EffectStatus}:
+            raise ValueError("BrowserGym Runtime failure effect status is invalid")
+        if not failure.error_code:
+            raise ValueError("BrowserGym Runtime failure error code is required")
 
 
 def publish_browsergym_report(output_dir: Path, report: dict[str, Any]) -> None:
@@ -366,7 +384,7 @@ def publish_browsergym_report(output_dir: Path, report: dict[str, Any]) -> None:
 def validate_browsergym_report(report: dict[str, Any]) -> None:
     """Fail closed when aggregate claims diverge from the typed case ledger."""
 
-    if report.get("schema_version") != "browsergym-full-path-v3":
+    if report.get("schema_version") != "browsergym-full-path-v4":
         raise ValueError("unsupported BrowserGym G4 report schema")
     try:
         identity = EvaluationRunIdentity.model_validate_json(
@@ -566,12 +584,8 @@ def _failure_signature(episode: BrowserGymEpisodeResult) -> str:
         return "safety_violation"
     if any(marker in details for marker in ("namespace", "source server", "miniwob", "oracle")):
         return "source_or_oracle_unavailable"
-    if "model call budget exhausted" in details:
-        return "model_call_budget_exhausted"
     if "intent compilation " in details:
         return "intent_compilation_rejected"
-    if any(marker in details for marker in ("schema", "validation", "structuredmodelerror")):
-        return "schema_incompatible"
     if any(marker in details for marker in ("artifact", "checkpoint")):
         return "artifact_checkpoint_failure"
     if any(marker in details for marker in ("version drift", "metadata does not match")):
@@ -580,6 +594,12 @@ def _failure_signature(episode: BrowserGymEpisodeResult) -> str:
         marker in details for marker in ("provider failure", "429", "quota", "rate_limit")
     ):
         return "provider_failure"
+    if episode.runtime_failure is not None:
+        return _runtime_failure_signature(episode)
+    if "model call budget exhausted" in details:
+        return "model_call_budget_exhausted"
+    if any(marker in details for marker in ("schema", "validation", "structuredmodelerror")):
+        return "schema_incompatible"
     if (
         episode.runtime_status == "waiting_clarification"
         and "mouse_click" in episode.action_families
@@ -606,8 +626,24 @@ def _failure_signature(episode: BrowserGymEpisodeResult) -> str:
     return "official_reward_zero"
 
 
+def _runtime_failure_signature(episode: BrowserGymEpisodeResult) -> str:
+    failure = episode.runtime_failure
+    if failure is None:
+        raise ValueError("Runtime failure signature requires a typed projection")
+    details = f"{failure.message} {episode.runtime_error}".casefold()
+    if "model call budget exhausted" in details:
+        return f"{failure.phase}:budget:model_call_budget_exhausted"
+    parameter_error = re.search(r"proposal_unsupported_parameters:([a-z_]+)", details)
+    if parameter_error is not None:
+        return f"{failure.phase}:validation:proposal_unsupported_parameters:{parameter_error.group(1)}"
+    if failure.detail_code:
+        return f"{failure.phase}:{failure.failure_class}:{failure.error_code}:{failure.detail_code}"
+    return f"{failure.phase}:{failure.failure_class}:{failure.error_code}"
+
+
 def _failure_root_layer(episode: BrowserGymEpisodeResult, signature: str) -> str:
-    del episode
+    if episode.runtime_failure is not None:
+        return _runtime_failure_root_layer(episode.runtime_failure.phase, episode.runtime_failure.failure_class)
     if signature in {
         "provider_failure",
         "source_or_oracle_unavailable",
@@ -639,6 +675,40 @@ def _failure_root_layer(episode: BrowserGymEpisodeResult, signature: str) -> str
         return "VERIFICATION"
     if signature == "official_reward_zero":
         return "EXECUTION"
+    return "RECOVERY"
+
+
+def _runtime_failure_root_layer(phase: str, failure_class: str) -> str:
+    if failure_class == FailureClass.PROVIDER.value or phase == FailurePhase.PROVIDER_CONTEXT.value:
+        return "PROVIDER / INFRA"
+    if failure_class == FailureClass.AUTHORITY.value:
+        return "SAFETY"
+    if failure_class in {
+        FailureClass.MISSING_EVIDENCE.value,
+        FailureClass.SOURCE_CONFLICT.value,
+        FailureClass.CONTEXT.value,
+    } or phase in {FailurePhase.OBSERVATION.value, FailurePhase.FUSION.value}:
+        return "OBSERVATION / CONTEXT"
+    if failure_class in {FailureClass.STALE_STATE.value, FailureClass.GROUNDING.value}:
+        return "GROUNDING / ROUTING"
+    if failure_class in {
+        FailureClass.INVALID_INPUT.value,
+        FailureClass.PLANNING.value,
+        FailureClass.BUDGET.value,
+        FailureClass.SKILL.value,
+    } or phase in {FailurePhase.TASK_PLANNING.value, FailurePhase.STEP_PLANNING.value}:
+        return "INTENT / PLANNING"
+    if failure_class == FailureClass.VALIDATION.value or phase in {
+        FailurePhase.PROPOSAL_VALIDATION.value,
+        FailurePhase.GROUNDING_BINDING.value,
+        FailurePhase.PREFLIGHT.value,
+        FailurePhase.EXECUTION_NOT_DISPATCHED.value,
+    }:
+        return "CONTRACT / FIELD_BINDING"
+    if failure_class == FailureClass.EXECUTION.value or phase == FailurePhase.EXECUTION_UNCERTAIN.value:
+        return "EXECUTION"
+    if failure_class == FailureClass.VERIFICATION.value or phase == FailurePhase.VERIFICATION.value:
+        return "VERIFICATION"
     return "RECOVERY"
 
 

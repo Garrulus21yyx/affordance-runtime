@@ -52,6 +52,19 @@ class BrowserGymEpisodeState:
 
 
 @dataclass(frozen=True)
+class BrowserGymRuntimeFailure:
+    """Projection of a Runtime-owned failure or safety-stop fact."""
+
+    phase: str
+    failure_class: str
+    error_code: str
+    effect_status: str
+    detail_code: str = ""
+    message: str = ""
+    evidence_refs: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class BrowserGymEpisodeResult:
     task_id: str
     seed: int
@@ -86,3 +99,12 @@ class BrowserGymEpisodeResult:
     task_skill_completed_count: int = 0
     task_skill_fallthrough_count: int = 0
     browser_version: str = ""
+    runtime_failure: BrowserGymRuntimeFailure | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.runtime_failure, dict):
+            object.__setattr__(
+                self,
+                "runtime_failure",
+                BrowserGymRuntimeFailure(**self.runtime_failure),
+            )

@@ -51,6 +51,7 @@ from affordance_runtime.benchmarks.browsergym_dom import (
     browsergym_dom_adapter,
     browsergym_svg_observer,
 )
+from affordance_runtime.benchmarks.browsergym_episode_runner import _browsergym_failure_stats
 from affordance_runtime.benchmarks.browsergym_matrix import checkpoint_filename
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
@@ -82,10 +83,79 @@ from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, TaskSpec
+from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def test_browsergym_projects_runtime_owned_failure_event_without_reclassification() -> None:
+    trace = TraceDag("run")
+    trace.add(
+        "FailureDetected",
+        {
+            "failure": {
+                "phase": "fusion",
+                "failure_class": "source_conflict",
+                "error_code": "precondition_failed",
+                "effect_status": "not_dispatched",
+                "message": "required spatial evidence is absent",
+                "evidence_refs": ["artifact:source"],
+            }
+        },
+    )
+
+    projected = _browsergym_failure_stats(trace.nodes)["runtime_failure"]
+
+    assert projected is not None
+    assert projected.phase == "fusion"
+    assert projected.failure_class == "source_conflict"
+    assert projected.error_code == "precondition_failed"
+    assert projected.message == "required spatial evidence is absent"
+    assert projected.evidence_refs == ["artifact:source"]
+
+
+def test_browsergym_preserves_proposal_validator_detail_code() -> None:
+    trace = TraceDag("run")
+    trace.add(
+        "PlannerProposalRejected",
+        {
+            "error_code": "planner_proposal_rejected",
+            "rejection_code": "target_out_of_scope",
+            "reason": "semantic:target",
+        },
+    )
+    trace.add(
+        "FailureDetected",
+        {
+            "failure": {
+                "phase": "proposal_validation",
+                "failure_class": "validation",
+                "error_code": "planner_proposal_rejected",
+                "effect_status": "not_dispatched",
+                "message": "semantic:target",
+                "evidence_refs": [],
+            }
+        },
+    )
+
+    projected = _browsergym_failure_stats(trace.nodes)["runtime_failure"]
+
+    assert projected is not None
+    assert projected.detail_code == "target_out_of_scope"
+
+
+def test_browsergym_projects_approval_pause_without_fabricating_recovery() -> None:
+    trace = TraceDag("run")
+    trace.add("HumanApprovalRequested", {"state": "waiting_approval"})
+
+    projected = _browsergym_failure_stats(trace.nodes)["runtime_failure"]
+
+    assert projected is not None
+    assert projected.phase == "preflight"
+    assert projected.failure_class == "authority"
+    assert projected.error_code == "approval_required"
 
 
 def _browsergym_session(page: Any, **kwargs: Any) -> BrowserSession:

@@ -269,7 +269,7 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v7",
+        "schema_version": "browsergym-generalist-checkpoint-v8",
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,
