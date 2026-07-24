@@ -31,7 +31,7 @@ Status values:
 | M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
-| M8.6 Planner, Active Perception, and Recovery Governance | done | G0-G5: historical profile inventory, strict isolation, bounded active perception, phase-general recovery, complete-run audit, and internal four-profile evidence | external confirmation remains separately provisioned; historical scores are not promoted |
+| M8.6 Planner, Active Perception, and Recovery Governance | done | `4e7d116`: G0-G5 historical profile inventory, strict isolation, bounded active perception, phase-general recovery, complete-run audit, and internal four-profile evidence | external confirmation remains separately provisioned; historical scores are not promoted |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment

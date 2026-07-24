@@ -34,6 +34,9 @@ strict-planner containment, typed intent and TaskPlan routing, bounded active
 perception, a phase-general online Recovery Coordinator, complete-run
 evaluation accounting, and internal four-profile generalization evidence.
 External-suite confirmation remains independently provisioned.
+The tested M8.6 implementation freeze is commit `4e7d116` with active default
+profile `strict-generalist`; each future result must still record its full
+immutable run identity rather than inheriting this label.
 
 M8.2B now requires a new strict-generalist frozen evaluation before any score
 review. Historical smoke, PR, nightly, and release reports remain legacy or
