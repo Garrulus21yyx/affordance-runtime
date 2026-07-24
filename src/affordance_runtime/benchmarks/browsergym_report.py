@@ -229,6 +229,14 @@ def write_browsergym_report(
         "browsergym_version": BROWSERGYM_VERSION,
         "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
         "profile": profile,
+        "task_manifest_version": (
+            NIGHTLY_TASK_MANIFEST_VERSION if profile in {"diagnostic", "nightly"} else ""
+        ),
+        "task_action_families": (
+            {family: list(tasks) for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items()}
+            if profile in {"diagnostic", "nightly"}
+            else {}
+        ),
         "nightly_manifest_version": NIGHTLY_TASK_MANIFEST_VERSION if profile == "nightly" else "",
         "nightly_action_families": (
             {family: list(tasks) for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items()}
@@ -446,7 +454,7 @@ def validate_browsergym_report(report: dict[str, Any]) -> None:
     if report.get("coverage_rate") != expected_coverage:
         raise ValueError("BrowserGym coverage aggregate disagrees with evaluation ledger")
     if report.get("official_score_claimed") is not False:
-        raise ValueError("BrowserGym score promotion remains closed while M8.6 G5 is open")
+        raise ValueError("BrowserGym evidence reports cannot claim an official promoted score")
     browser_versions = report.get("observed_browser_versions")
     if not isinstance(browser_versions, list) or not all(
         isinstance(item, str) and item for item in browser_versions

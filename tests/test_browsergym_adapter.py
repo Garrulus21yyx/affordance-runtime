@@ -1767,6 +1767,8 @@ def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(
     assert report["nightly_action_families"] == {
         family: list(family_tasks) for family, family_tasks in NIGHTLY_ACTION_FAMILIES.items()
     }
+    assert report["task_manifest_version"] == NIGHTLY_MANIFEST_VERSION
+    assert report["task_action_families"] == report["nightly_action_families"]
     assert BROWSERGYM_PLANNER_MAX_TOKENS == 384
     assert report["expected_episode_count"] == 30
     assert report["execution_order"][:3] == [

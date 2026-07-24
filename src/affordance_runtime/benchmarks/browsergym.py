@@ -23,6 +23,7 @@ from affordance_runtime.benchmarks.browsergym_action_schema import (
     BROWSERGYM_ACTION_ARGUMENTS as _BROWSERGYM_ACTION_ARGUMENTS,
 )
 from affordance_runtime.benchmarks.browsergym_matrix import (
+    BROWSERGYM_RUN_PROTOCOL_VERSION,
     BROWSERGYM_VERSION,
     NIGHTLY_ACTION_FAMILY_MANIFEST,
     NIGHTLY_TASK_MANIFEST_VERSION,
@@ -76,8 +77,10 @@ from affordance_runtime.generalist_planner import (
     historical_compatibility_semantic_compiler_registry,
     planner_prompt_version,
 )
+from affordance_runtime.intent_compiler import intent_compiler_model_config
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
+from affordance_runtime.task_intake import IntentDraft
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -267,7 +270,8 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v6",
+        "schema_version": "browsergym-generalist-checkpoint-v7",
+        "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,
         "planner_profile": planner_profile.value,
@@ -278,6 +282,15 @@ def run_browsergym_miniwob_generalist_suite(
         ),
         "selected_task_ids": list(selected),
         "seeds": list(seeds),
+        "task_manifest_version": (
+            NIGHTLY_TASK_MANIFEST_VERSION if profile in {"diagnostic", "nightly"} else ""
+        ),
+        "task_action_families": (
+            {family: list(tasks) for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items()}
+            if profile in {"diagnostic", "nightly"}
+            else {}
+        ),
+        "episode_schedule": [browsergym_case_id(task_id, seed) for task_id, seed in schedule],
         "model_provider": model.provider,
         "model_name": model.model,
         "model_endpoint_class": model.endpoint_class,
@@ -294,7 +307,12 @@ def run_browsergym_miniwob_generalist_suite(
         "planner_prompt_version": planner_prompt_version(planner_profile),
         "planner_context_policy_version": GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
         "planner_schema_sha256": _planner_schema_sha256(),
-        "model_max_tokens": BROWSERGYM_PLANNER_MAX_TOKENS,
+        "planner_model_config": _browsergym_episode_runner.browsergym_planner_model_config(
+            timeout_s=model_call_timeout_s,
+            planner_profile=planner_profile,
+        ).model_dump(mode="json"),
+        "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
+        "intent_compiler_schema_sha256": _intent_compiler_schema_sha256(),
         "episode_timeout_s": episode_timeout_s,
         "model_call_timeout_s": model_call_timeout_s,
         "max_model_calls": max_model_calls,
@@ -459,6 +477,12 @@ def _validate_browsergym_time_budgets(
 
 def _planner_schema_sha256() -> str:
     payload = PlannerProposalCandidate.model_json_schema()
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _intent_compiler_schema_sha256() -> str:
+    payload = IntentDraft.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 

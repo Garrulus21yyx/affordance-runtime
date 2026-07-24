@@ -118,6 +118,10 @@ def test_complete_report_is_repair_ready_despite_ordinary_failures(tmp_path: Pat
     assert report["run_complete"] is True
     assert report["repair_selection_ready"] is True
     assert report["observed_episode_count"] == 2
+    assert report["task_manifest_version"] == matrix.NIGHTLY_TASK_MANIFEST_VERSION
+    assert report["task_action_families"] == {
+        family: list(tasks) for family, tasks in matrix.NIGHTLY_ACTION_FAMILY_MANIFEST.items()
+    }
     assert report["failed_episode_count"] == 2
     assert report["runtime_verification_outcomes"] == {"passed": 1, "failed": 1}
     assert report["external_evaluator_outcomes"] == {"passed": 0, "failed": 2}

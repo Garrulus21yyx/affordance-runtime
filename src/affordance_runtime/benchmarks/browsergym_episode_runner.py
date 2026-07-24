@@ -85,6 +85,22 @@ BROWSERGYM_PAGE_ACTION_TIMEOUT_MS = 1_500
 BROWSERGYM_PLANNER_MAX_TOKENS = 384
 
 
+def browsergym_planner_model_config(
+    *,
+    timeout_s: float,
+    planner_profile: GeneralistPlannerProfile,
+) -> ModelConfig:
+    """Return the exact planner decoding contract bound into run identity."""
+
+    return ModelConfig(
+        temperature=0.0,
+        seed=None,
+        max_tokens=BROWSERGYM_PLANNER_MAX_TOKENS,
+        timeout_s=timeout_s,
+        prompt_version=planner_prompt_version(planner_profile),
+    )
+
+
 @dataclass
 class BrowserGymPlanner:
     policy: BrowserGymPolicy
@@ -664,10 +680,9 @@ def run_browsergym_generalist_episode(
         planner = BrowserGymGeneralistPlanner(
             model,
             episode,
-            config=ModelConfig(
-                max_tokens=BROWSERGYM_PLANNER_MAX_TOKENS,
+            config=browsergym_planner_model_config(
                 timeout_s=model_timeout_s,
-                prompt_version=planner_prompt_version(planner_profile),
+                planner_profile=planner_profile,
             ),
             limits=planner_limits,
             max_model_calls=max(
