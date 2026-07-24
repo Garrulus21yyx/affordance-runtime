@@ -27,11 +27,11 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Planner Contracts | partial | typed intake/revision, semantic proposal boundary, provider-neutral ports, local SaaS and cross-surface evidence | strict-generalist behavior, compiler isolation, behavioral controls, and normal task-plan wiring move to M8.6 |
-| M8.2B Public Benchmark Audit | paused | historical smoke, PR, nightly 300/300, and residual release reports remain exact revision/profile evidence | no score promotion until M8.6; provisioned public suites remain later audit gates |
+| M8.2B Public Benchmark Audit | strict reevaluation pending | historical smoke, PR, nightly 300/300, and residual release reports are classified legacy/compatibility evidence | run a new strict frozen ladder before any score review; provisioned public suites remain later audit gates |
 | M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | normative anti-specialization boundary, active-perception/recovery architecture, and 2026-07-23 audit | G0-G5: profile isolation, planner repair, evidence-gap control, full-phase recovery, complete-run audit, generalization proof |
+| M8.6 Planner, Active Perception, and Recovery Governance | done | G0-G5: historical profile inventory, strict isolation, bounded active perception, phase-general recovery, complete-run audit, and internal four-profile evidence | external confirmation remains separately provisioned; historical scores are not promoted |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -158,7 +158,7 @@ paths. The same planner class is tested across DOM/SoM/WoT affordances and
 passed an official BrowserGym `click-button` smoke through typed action binding.
 See `evidence/m8.2a-7edaa97.md`.
 
-### M8.2B Public Benchmark Audit - paused behind M8.6
+### M8.2B Public Benchmark Audit - strict reevaluation pending
 
 The isolated BrowserGym 0.14.3 adapter routes every supported action through
 `RunCoordinator`, exposes a typed action whitelist, discovers 125 registered
@@ -256,9 +256,10 @@ Follow M8.5R in `current-implementation-plan.md` and the normative
 `runtime-first-boundary.md`. The prior completion audit is component evidence,
 not milestone closure.
 
-### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - in progress
+### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - complete
 
-M8.6 is the hard gate before any M8.2B score promotion. The governing documents
+M8.6 G0-G5 are closed; M8.2B still requires a new strict frozen evaluation
+before any score review. The governing documents
 are:
 
 - [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md);
@@ -267,13 +268,13 @@ are:
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| G0 Freeze and classify | in_progress | R10 frozen as historical compatibility evidence; new profile/registry digests implemented; older report inventories remain |
+| G0 Freeze and classify | complete | all committed score-bearing/legacy-master summaries classified; current profile/registry/prompt/skill/recovery identities inventoried |
 | G1 Strict-generalist profile | complete | strict default and Prompt/candidate policy; explicit compatibility registry and physical task-grammar isolation; mandatory typed proposal provenance; shared PlannerProposalValidator; paraphrase/distractor/extra-control/ambiguity/unrelated/unrequested-effect/scope controls; DOM/visual/WoT proof |
 | G2 Intent and TaskPlan integration | complete | typed intent/capability derivation; common TaskPlan entrypoint; verifier-bound subgoal progress; planner context excludes benchmark identity/reward wording |
 | G2.5 Active perception and evidence repair | complete | typed evidence gaps/probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery-inspection integration; safe unresolved blocking |
 | G3 Full-phase Recovery Coordinator | complete | strict phase-general FailureEnvelope; validated typed commands; semantic cascade guard; receipts and non-empty RecoveryDelta; inspect-before-repeat; explicit profile provenance; representative intake-through-verification/provider integration |
 | G4 Complete-run audit | complete | immutable typed run identity and case ledger; atomic v6 checkpoints/report; allowlisted batch stops; exact unobserved-only resume; Runtime/external outcome split; post-closure family and Runtime-owner clustering |
-| G5 Generalization proof | pending | strict, strict plus accepted skills, compatibility, and ablation profiles reported separately |
+| G5 Generalization proof | complete (internal) | strict, accepted-skill, compatibility, and ablation identities/cases isolated; required controls and safety gates pass; external confirmation unprovisioned |
 
 Current hard findings:
 
@@ -290,9 +291,10 @@ Current hard findings:
   and a replan is credited only after a validated replacement exists;
 - exact debug signatures coexist with a semantic family key that detects varied
   equivalent failures without target/backend identity;
-- G3 proves bounded phase-spanning online recovery; G4 now proves complete-run
+- G3 proves bounded phase-spanning online recovery; G4 proves complete-run
   accounting, invalidation, exact resume, and post-closure cluster governance;
-  G5 generalization/profile evidence remains open.
+  G5 proves internal profile separation and non-benchmark conformance without
+  promoting historical scores.
 
 Exit requires zero benchmark identity leakage, zero unrequested-action or
 scope-expansion regression on governance controls, one validated proposal

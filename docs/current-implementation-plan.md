@@ -1,9 +1,11 @@
 # Current Implementation Plan
 
 Implementation status: the controlled harness components through M8.5 exist,
-and M8.6 G1-G4 now close strict-planner containment, active-perception control,
-full-phase online recovery, and G4 complete-run audit governance. G5
-generalization proof remains open. M8.2B score promotion is paused. See
+and M8.6 G0-G5 now close historical-profile classification, strict-planner
+containment, active-perception control, full-phase online recovery, complete-run
+audit governance, and internal four-profile generalization evidence. M8.2B is
+reopened only for a new strict frozen evaluation; historical scores are not
+promoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
@@ -158,7 +160,7 @@ matches. Multiple exact matches or no remaining disclosure retain System 2
 fallthrough. Add generic near-match, exact-match, and ambiguity controls before
 repeating the failed seeds and full family.
 
-## 0. M8.6 Governance Correction Gate - in progress
+## 0. M8.6 Governance Correction Gate - complete
 
 This section overrides the historical task-family repair narrative above. The
 current implementation objective is not another BrowserGym family pass. It is
@@ -203,13 +205,17 @@ unrequested-effect tests are mandatory.
    suspected task grammar;
 4. stop score promotion and new family-specific repair.
 
-Status on 2026-07-23: **in progress**. The clean R10 300-episode report at
+Status on 2026-07-24: **complete**. The clean R10 300-episode report at
 `bb65ac6` is frozen and retrospectively classified as historical compatibility
 evidence in
 `evidence/m8.6-g0-r10-compatibility-freeze-20260723.md`; it is not a current
 generalist score. New checkpoints bind explicit planner profile and compiler
-registry digest, and all score claims remain disabled while M8.6 is open. Older
-reports still require inventory/classification before G0 closes.
+registry digest. The only committed score-bearing or legacy-master claims have
+now been inventoried: `e463e16` is legacy unsegregated diagnostic evidence, and
+v112, Runtime R7, and R10 are historical compatibility evidence reconstructed
+from their immutable source paths. Current score claims remain false until a
+new strict frozen M8.2B evaluation is reviewed. Evidence:
+`evidence/m8.6-g0-profile-and-report-inventory-20260724.md`.
 
 #### G1: Strict-generalist planner
 
@@ -253,8 +259,8 @@ context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
 Planner module. G2 now owns typed intent/capability derivation and the common
 TaskPlan entrypoint. G2.5 active perception and evidence repair and G3
-full-phase recovery and G4 complete-run audit are now closed; the current next
-gate is G5 generalization evidence. Recovery-produced proposals remain subject to the same Validator and
+full-phase recovery, G4 complete-run audit, and G5 internal generalization
+evidence are now closed. Recovery-produced proposals remain subject to the same Validator and
 fail closed unless they carry the reserved typed `recovery` provenance.
 
 Completed physical-containment work: the reviewed call graph moved the
@@ -398,8 +404,9 @@ non-browser 30-case conformance collection accounts for every scheduled case
 before clustering. Evidence:
 `evidence/m8.6-g4-complete-run-audit-20260724.md`.
 
-This closes collection governance, not measured generalization or benchmark
-performance. G5 remains pending and M8.2B score promotion remains paused.
+This closes collection governance, not benchmark performance. G5 subsequently
+closes internal profile-separated generalization evidence; historical scores
+remain unpromoted.
 
 #### G5: Generalization evidence
 
@@ -408,6 +415,18 @@ compatibility, and ablation profiles separately. Required controls include
 unseen local interfaces, paraphrases, distractors, ambiguity, extra controls,
 DOM/accessibility/SVG/visual/WoT sources, provider/context stress, recovery
 injection, and external suites after independent provisioning.
+
+Status on 2026-07-24: **complete for internal conformance; external
+confirmation unprovisioned**. A strict typed report now isolates the four
+profile identities, recomputes case metrics and shared-case comparisons,
+requires all perturbation/source controls and zero safety regression, binds
+accepted skill digest/artifact identity through the real Coordinator, and
+rejects hidden compatibility, undeclared ablations, tampered aggregates, or a
+score-only claim. Provider-free Runtime conformance covered governance,
+unseen/variant controls, DOM/accessibility/SVG/visual/WoT, provider/context,
+active perception, full-phase recovery, and accepted-profile replay. The old
+`generalization-v1` aggregate is always incomplete and diagnostic. Evidence:
+`evidence/m8.6-g5-generalization-proof-20260724.md`.
 
 ### 0.4 Exit criteria
 
@@ -432,7 +451,9 @@ M8.6 closes only when:
 - non-benchmark conformance and safety evidence precede benchmark replay;
 - README, status, and reports identify exact revision and active profile.
 
-M8.2B remains paused until these criteria are met.
+These criteria are met by G0-G5. M8.2B may now collect a new strict frozen
+evaluation under the new protocols, but no historical result is promoted and
+`official_score_claimed` remains false until that distinct review completes.
 
 ## 1. Authority
 
@@ -1061,7 +1082,7 @@ benchmark matching the host report on every stable outcome/oracle field, and
 DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Planner Contracts and Public Benchmark Audit - paused behind M8.6
+### M8.2: Planner Contracts and Public Benchmark Audit - strict reevaluation pending
 
 #### M8.2A: Task Intake and Planner Contracts - component done; behavior reopened
 
@@ -1947,14 +1968,15 @@ BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
 milestone. The benchmark remains an external pressure test of the Runtime main
 path.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - in progress
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - complete
 
 The authoritative execution sequence and exit gates are in Section 0,
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
 and the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
 This milestone supersedes benchmark-family repair as the current work order.
-M8.2B score promotion remains paused until G0-G5 close.
+G0-G5 are closed. M8.2B now requires a new strict frozen evaluation before any
+score claim; prior compatibility/legacy results remain unpromoted.
 
 ### M9: Durable Single-Run Recovery - conditional
 

@@ -29,17 +29,18 @@ are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
 The repository implements the controlled harness components through M8.5 and
-the M8.6 G1-G4 governance slices: strict-planner containment, typed intent and
-TaskPlan routing, bounded active perception, a phase-general online Recovery
-Coordinator, and complete-run evaluation accounting. Existing evidence proves
-those typed boundaries and representative production integrations; it does not
-yet prove G5 open-world generalization or authorize benchmark score promotion.
+the M8.6 G0-G5 governance gate: historical profile classification,
+strict-planner containment, typed intent and TaskPlan routing, bounded active
+perception, a phase-general online Recovery Coordinator, complete-run
+evaluation accounting, and internal four-profile generalization evidence.
+External-suite confirmation remains independently provisioned.
 
-M8.2B public benchmark score promotion is paused behind M8.6. Historical smoke,
-PR, nightly, and release reports remain evidence for their exact revisions and
-profiles, but they are not proof of strict-generalist capability. Benchmark work
-must audit Runtime generalization rather than add task-family behavior to the
-default planner.
+M8.2B now requires a new strict-generalist frozen evaluation before any score
+review. Historical smoke, PR, nightly, and release reports remain legacy or
+compatibility evidence for their exact revisions, not proof of current strict
+capability. Benchmark work must audit Runtime generalization rather than add
+task-family behavior to the default planner. Current report code therefore
+keeps `official_score_claimed=false`.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -119,9 +120,9 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 442 current unit/integration tests pass with Ruff in the provisioned
-  BrowserGym environment; mypy with optional imports ignored passes all 74
-  source files
+- all 665 current unit/integration tests pass with Ruff in the fixed Python 3.12
+  BrowserGym environment; mypy with repository-governed optional imports passes
+  all 96 source files
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -141,15 +142,11 @@ Verified evidence:
   unrelated, partial, stale, weak, or unbound evidence cannot advance generic
   Subgoal or TaskSkill progress
 
-Next architecture gate: complete M8.6. Introduce a strict-generalist default
-profile, isolate historical task-family compatibility logic, remove benchmark
-identity from planner context, wire the shallow TaskPlan router into normal
-entrypoints, complete bounded active perception over typed evidence gaps, and
-extend Recovery Cascade across intake, observation, planning, binding,
-provider/context, execution, and verification failures. Only after
-non-benchmark behavioral and safety gates pass may BrowserGym and public suites
-resume as architecture audits. M9 remains conditional on measured
-restart/waiting evidence.
+Next evaluation gate: run a fresh immutable strict-generalist M8.2B ladder under
+the complete-run audit and four-profile evidence protocols. Do not resume or
+promote historical compatibility runs. Public suites remain architecture audits
+only after independent environment/asset provisioning. M9 remains conditional
+on measured restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 

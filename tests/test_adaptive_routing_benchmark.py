@@ -26,6 +26,16 @@ def test_six_profile_adaptive_routing_ablation_exposes_expected_tradeoffs(tmp_pa
     assert profiles["adaptive_unified"]["regression_delta"] == 0.0
     assert profiles["adaptive_plus_task_skill"]["skill_case_planner_calls"] == 0.0
     assert profiles["always_system2"]["skill_case_planner_calls"] == 2.0
+    skilled_runs = [
+        item for item in report["runs"] if item["profile"] == "adaptive_plus_task_skill"
+    ]
+    assert all(item["runtime_profile_digest"].startswith("sha256:") for item in skilled_runs)
+    assert all(item["loaded_profile_artifact_ids"] == ("profile.save",) for item in skilled_runs)
+    assert all(
+        not item["runtime_profile_digest"] and not item["loaded_profile_artifact_ids"]
+        for item in report["runs"]
+        if item["profile"] != "adaptive_plus_task_skill"
+    )
     assert all(
         metrics["unsafe_side_effect_rate"] == 0.0
         and metrics["verifier_false_accept_rate"] == 0.0

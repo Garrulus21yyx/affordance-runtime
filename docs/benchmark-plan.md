@@ -208,9 +208,9 @@ Each report should record:
 - mean and standard deviation where repeated runs are used
 - links to traces and artifacts
 
-## Current M8 Generalization Gate
+## Legacy M8 Generalization Diagnostic
 
-The `generalization-v1` gate complements the 63-run local matrix with:
+`generalization-v1` historically combined the 63-run local matrix with:
 
 - six held-out local scenario runs using unseen control IDs and distractors;
 - five real PNG screenshot-grounding runs over distinct training and held-out
@@ -219,8 +219,13 @@ The `generalization-v1` gate complements the 63-run local matrix with:
   `eb59fed60fabe8951350275ba8650633b740013b`, covering click, type, select,
   dialog, sequence, and form over seeds 0, 1, and 2.
 
-The official MiniWoB result is reported as a curated runtime subset. It is not
-presented as a full-suite MiniWoB++ score.
+The aggregate is now explicitly `legacy_unsegregated_diagnostic` and always
+reports G5 acceptance as `incomplete`. It cannot distinguish strict-generalist,
+accepted-skill, historical-compatibility, and declared-ablation profiles, so it
+is ineligible for score promotion or M8.6 closure. The official MiniWoB result
+remains a curated Runtime subset, not a full-suite MiniWoB++ score. New G5
+evidence uses `m8.6-generalization-evidence-v1` and retains each profile identity,
+case ledger, safety metric, and comparison separately.
 
 ## M8.6 Active-Perception and Online-Recovery Gate
 

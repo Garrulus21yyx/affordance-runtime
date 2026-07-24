@@ -428,11 +428,11 @@ def run_browsergym_miniwob_generalist_suite(
             "batch_collection_error": batch_collection_error,
         }
     )
-    # M8.2B score promotion is paused behind M8.6. Keep the external reward in
-    # the report, but do not turn even a complete strict nightly into a product
-    # capability claim while governance/generalization gates remain open.
+    # Governance closure does not retroactively promote historical evidence.
+    # Keep reward observations separate until a new strict frozen M8.2B run is
+    # reviewed under the complete-run and four-profile evidence protocols.
     report["official_score_claimed"] = False
-    report["score_promotion_gate"] = "m8.6-g5-open"
+    report["score_promotion_gate"] = "m8.2b-new-strict-frozen-evaluation-required"
     report["acceptance_errors"] = [
         *(f"registered task missing: {task}" for task in missing_tasks),
         *(["run interrupted; resume with --resume"] if interrupted else []),

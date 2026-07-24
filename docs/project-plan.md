@@ -168,11 +168,11 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Planner Contracts | partial / reopened | typed intake, TaskSpec revision, semantic proposal binding, and provider-neutral ports exist; default planner behavior is not yet strict-generalist |
-| M8.2B Public Benchmark Audit | paused | historical smoke, PR, nightly, and release reports remain revision/profile evidence; score promotion waits for M8.6 |
+| M8.2B Public Benchmark Audit | strict reevaluation pending | historical smoke, PR, nightly, and release reports remain legacy/compatibility evidence; a new strict frozen run is required before score review |
 | M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
-| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | in progress | strict-generalist separation, benchmark identity isolation, bounded evidence-gap repair, full-phase Recovery Coordinator, complete-run audit, and generalization proof are the current hard gate |
+| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | complete | G0-G5 close profile classification, strict isolation, active perception, phase-general recovery, complete-run audit, and internal four-profile evidence; external confirmation remains separately provisioned |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -492,7 +492,7 @@ reversible-write, approval-gated, and cross-surface cases; blocking ambiguity
 and policy conflict stop safely; TaskSpec revisions invalidate stale proposals;
 and all model/proposal/contract lineage is traceable.
 
-#### M8.2B: Public Benchmark Expansion - paused behind M8.6
+#### M8.2B: Public Benchmark Expansion - new strict frozen evaluation required
 
 First complete a bounded consolidation pass:
 
@@ -686,10 +686,11 @@ versioned protocol, and report/taxonomy modules, in
 `evidence/runtime-r8-closure-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - in progress
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - complete
 
-M8.6 is the current hard gate. M8.2B score promotion and new task-family repair
-are paused until it closes. The authoritative diagnosis is
+M8.6 G0-G5 are closed. Historical score promotion and task-family repair remain
+prohibited; M8.2B may proceed only with a new strict frozen evaluation. The
+authoritative diagnosis is
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md);
 the normative control design is
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
@@ -749,9 +750,11 @@ standards, safety, accepted skill, compatibility, or suspected task grammar.
 Exit when every report identifies its profile and registry, and no new
 task-family repair enters the default planner.
 
-Current evidence: the R10 clean nightly is frozen as historical compatibility
-evidence, and new runs bind planner profile plus compiler registry digest.
-Legacy report inventory remains open.
+Status on 2026-07-24: **complete**. The R10 clean nightly, v112, and Runtime R7
+are frozen as historical compatibility evidence; `e463e16` is legacy
+unsegregated diagnostic evidence. New runs bind planner profile plus compiler
+registry digest. See
+`evidence/m8.6-g0-profile-and-report-inventory-20260724.md`.
 
 #### G1: Strict-generalist profile
 
@@ -884,8 +887,8 @@ and equivalent failures change strategy or safely terminate before budget
 exhaustion. See
 `evidence/m8.6-g3-full-phase-recovery-20260723.md`.
 
-G4 subsequently closes complete-run accounting. G5 remains pending; neither G3
-nor G4 promotes a benchmark score or claims generalization evidence.
+G4 subsequently closes complete-run accounting and G5 closes internal
+profile-separated evidence. Neither promotes a historical benchmark score.
 
 #### G4: Complete-run result audit
 
@@ -913,7 +916,8 @@ explicit validity/resume semantics. A complete deterministic 30-case
 conformance collection proves the protocol without making a benchmark claim.
 See `evidence/m8.6-g4-complete-run-audit-20260724.md`.
 
-G5 generalization proof remains pending; `official_score_claimed` stays false.
+G5 internal generalization proof is complete; `official_score_claimed` stays
+false until a new strict frozen M8.2B evaluation receives separate review.
 
 #### G5: Generalization proof
 
@@ -931,6 +935,15 @@ stress, recovery injection, then targeted and breadth external audits.
 Exit when strict-generalist results stand alone, accepted skills improve cost or
 success without safety regression, compatibility uplift is visible rather than
 hidden, and no benchmark score is the sole evidence for a generalization claim.
+
+Status on 2026-07-24: **complete for internal conformance; external confirmation
+unprovisioned**. The four profiles have immutable separate identities and case
+ledgers; accepted skill efficiency, explicit compatibility uplift, and declared
+ablation loss remain visible with zero safety regression. Local conformance
+covers unseen/variant controls, governance negatives, DOM/accessibility/SVG/
+visual/WoT, provider/context, active perception, and recovery. External suites
+remain conditional on independent environment and asset digests. See
+`evidence/m8.6-g5-generalization-proof-20260724.md`.
 
 #### Hard acceptance gates
 

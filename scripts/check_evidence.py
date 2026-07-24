@@ -7,6 +7,31 @@ import json
 from pathlib import Path
 
 
+def validate_generalization_evidence(generalization: dict[str, object]) -> None:
+    if generalization.get("suite_version") == "generalization-v1":
+        if generalization.get("governance_status") != "legacy_unsegregated_diagnostic":
+            raise RuntimeError("legacy generalization evidence lacks its diagnostic classification")
+        if generalization.get("diagnostic_errors"):
+            raise RuntimeError(
+                f"legacy generalization diagnostics failed: {generalization['diagnostic_errors']}"
+            )
+        if (
+            generalization.get("acceptance") != "incomplete"
+            or generalization.get("g5_evidence_eligible") is not False
+            or generalization.get("official_score_claimed") is not False
+        ):
+            raise RuntimeError("legacy generalization evidence made an invalid G5 or score claim")
+        return
+    if (
+        generalization.get("schema_version") != "m8.6-generalization-evidence-v1"
+        or generalization.get("acceptance") != "passed"
+        or generalization.get("official_score_claimed") is not False
+    ):
+        raise RuntimeError(
+            f"four-profile generalization gate failed: {generalization.get('acceptance_errors')}"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--benchmark", type=Path, required=True)
@@ -52,8 +77,7 @@ def main() -> int:
             raise RuntimeError("external parent approved export failed")
     if args.generalization is not None:
         generalization = json.loads(args.generalization.read_text(encoding="utf-8"))
-        if generalization.get("acceptance") != "passed":
-            raise RuntimeError(f"generalization gate failed: {generalization.get('acceptance_errors')}")
+        validate_generalization_evidence(generalization)
     print("evidence_gate=passed")
     return 0
 

@@ -284,7 +284,7 @@ def write_browsergym_report(
         "external_metrics_scope": "observed_cases_only",
         "score_evidence_eligible": audit.status.value == "complete",
         "official_score_claimed": False,
-        "score_promotion_gate": "m8.6-g5-open",
+        "score_promotion_gate": "m8.2b-new-strict-frozen-evaluation-required",
         "evaluation_run_identity": identity.model_dump(mode="json"),
         "evaluation_audit": audit.model_dump(mode="json"),
         "observed_browser_versions": browser_versions,

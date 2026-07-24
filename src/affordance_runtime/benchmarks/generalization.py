@@ -82,8 +82,13 @@ def write_generalization_summary(
         errors.extend(visual["acceptance_errors"])
     if miniwob_report.get("acceptance_errors"):
         errors.extend(str(item) for item in miniwob_report["acceptance_errors"])
+    legacy_gate = (
+        "legacy generalization-v1 is unsegregated diagnostic evidence; "
+        "a four-profile m8.6-generalization-evidence report is required for G5"
+    )
     summary = {
         "suite_version": "generalization-v1",
+        "governance_status": "legacy_unsegregated_diagnostic",
         "training_seed_count": len(training_variants),
         "training_distinct_variants": len(set(training_variants.values())),
         "training_full_runtime": training_full,
@@ -91,8 +96,11 @@ def write_generalization_summary(
         "heldout_success_rate": sum(run.success for run in heldout.runs) / len(heldout.runs),
         "visual": visual,
         "miniwob": miniwob_report,
-        "acceptance_errors": errors,
-        "acceptance": "passed" if not errors else "failed",
+        "diagnostic_errors": errors,
+        "acceptance_errors": [*errors, legacy_gate],
+        "acceptance": "incomplete",
+        "official_score_claimed": False,
+        "g5_evidence_eligible": False,
     }
     (output_dir / "generalization-report.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True, default=str), encoding="utf-8"
@@ -105,7 +113,9 @@ def write_generalization_summary(
         f"- Held-out runs / success: `{summary['heldout_runs']}` / `{summary['heldout_success_rate']:.4f}`",
         f"- Visual runs / success: `{len(visual['runs'])}` / `{visual['success_rate']:.4f}`",
         f"- MiniWoB++ runs / raw-reward success: `{len(miniwob_report['episodes'])}` / `{miniwob_report['success_rate']:.4f}`",
-        f"- Acceptance: `{summary['acceptance'].upper()}`",
+        f"- Governance status: `{summary['governance_status']}`",
+        f"- G5 acceptance: `{summary['acceptance'].upper()}`",
+        "- This legacy aggregate is diagnostic only; use the four-profile G5 evidence report.",
         "",
     ]
     (output_dir / "generalization-report.md").write_text("\n".join(markdown), encoding="utf-8")

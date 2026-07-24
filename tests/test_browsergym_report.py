@@ -484,6 +484,7 @@ def test_complete_thirty_case_conformance_matrix_reconciles_before_clustering(
         report["failure_envelopes"]
     )
     assert report["official_score_claimed"] is False
+    assert report["score_promotion_gate"] == "m8.2b-new-strict-frozen-evaluation-required"
 
 
 def test_resume_validator_uses_published_audit_and_only_returns_unobserved_cases(

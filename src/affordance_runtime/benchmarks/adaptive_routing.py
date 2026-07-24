@@ -7,6 +7,7 @@ provider-free and does not claim remote-model quality.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -97,6 +98,8 @@ class AdaptiveRoutingAblationRun:
     recovery_count: int
     skill_activated: bool
     skill_fell_through: bool
+    runtime_profile_digest: str
+    loaded_profile_artifact_ids: tuple[str, ...]
     stale_blocked: bool
     constraint_violations: int
     verifier_false_accepts: int
@@ -111,6 +114,13 @@ class AdaptiveRoutingAblationRun:
 class _AblationWorld:
     saved: bool = False
     effects: int = 0
+
+
+@dataclass(frozen=True)
+class _AcceptedSkillBundle:
+    runtime: AcceptedTaskSkillRuntime
+    profile_digest: str
+    artifact_ids: tuple[str, ...]
 
 
 class _AblationObserver:
@@ -374,7 +384,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         requested_capabilities=("settings.write",),
         source_request_ref="m8.5-ablation",
     )
-    task_skill_runtime = _accepted_save_skill() if profile == "adaptive_plus_task_skill" else None
+    accepted_skill = _accepted_save_skill() if profile == "adaptive_plus_task_skill" else None
     skill_owner_id = skill_step_owner_id("profile.save", "1.0.0", "step-1")
     builder = ContractBuilder(
         requirements={
@@ -398,7 +408,11 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         planner,
         executors,
         contract_builder=builder,
-        task_skill_runtime=task_skill_runtime,
+        task_skill_runtime=accepted_skill.runtime if accepted_skill is not None else None,
+        runtime_profile_digest=accepted_skill.profile_digest if accepted_skill is not None else "",
+        loaded_profile_artifact_ids=(
+            accepted_skill.artifact_ids if accepted_skill is not None else ()
+        ),
     ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
@@ -426,6 +440,8 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         result.state.recovery_count,
         "TaskSkillActivated" in events,
         "TaskSkillFellThrough" in events,
+        accepted_skill.profile_digest if accepted_skill is not None else "",
+        accepted_skill.artifact_ids if accepted_skill is not None else (),
         case_id == "stale_candidates" and success,
         0,
         verifier_false_accepts,
@@ -437,7 +453,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
     )
 
 
-def _accepted_save_skill() -> AcceptedTaskSkillRuntime:
+def _accepted_save_skill() -> _AcceptedSkillBundle:
     payload = TaskSkillPayload(
         "1.0",
         "task_skill",
@@ -475,7 +491,18 @@ def _accepted_save_skill() -> AcceptedTaskSkillRuntime:
     )
     runtime_profile = CandidateRuntimeProfile()
     runtime_profile.load(artifact)
-    return AcceptedTaskSkillRuntime.from_profile(runtime_profile)
+    artifact_ids = (artifact.id,)
+    manifest = {
+        "artifact_ids": artifact_ids,
+        "payload_digests": {artifact.id: artifact.payload_digest},
+        "statuses": {artifact.id: artifact.status.value},
+    }
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    return _AcceptedSkillBundle(
+        AcceptedTaskSkillRuntime.from_profile(runtime_profile),
+        f"sha256:{hashlib.sha256(encoded).hexdigest()}",
+        artifact_ids,
+    )
 
 
 def _aggregate_profile(runs: list[AdaptiveRoutingAblationRun]) -> dict[str, float]:

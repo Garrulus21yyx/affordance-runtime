@@ -28,3 +28,10 @@ Milestone summaries name the exact clean commit they reproduce. Generated run
 artifacts remain ignored because browser timing fields vary; the committed
 summary preserves the stable environment identity, acceptance results, counts,
 and thresholds.
+
+Historical score interpretation is governed by
+`m8.6-g0-profile-and-report-inventory-20260724.md`. In particular, reports that
+predate explicit strict/compatibility profile and registry identity are legacy
+diagnostics or reconstructed historical-compatibility evidence, not current
+strict-generalist scores. New generalization evidence uses the four-profile G5
+contract and cannot promote a benchmark score as sole proof.
