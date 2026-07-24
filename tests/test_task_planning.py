@@ -5,6 +5,7 @@ from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_planning import (
+    TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
     LLMTaskPlanner,
     PlanningAffordanceSummary,
@@ -105,7 +106,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v7"
+    assert task_planner_model_config().prompt_version == "task-planner-v8"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
@@ -177,6 +178,9 @@ def test_context_schema_constrains_only_first_subgoal_to_current_actions() -> No
     assert set(remaining_items["discriminator"]["mapping"]) == {
         item.value for item in TaskPlanActionFamily
     }
+    assert schema["properties"]["remaining_subgoals"]["minItems"] == 1
+    assert schema["properties"]["remaining_subgoals"]["maxItems"] == 7
+    assert TASK_PLAN_CARDINALITY_POLICY_VERSION == "flat-1-multistage-2-to-8-v1"
 
 
 def test_context_schema_parser_preserves_future_family_and_public_shape() -> None:
@@ -339,6 +343,50 @@ def test_validator_marks_missing_verification_requirements_repairable() -> None:
 
     assert report.status == TaskPlanValidationStatus.REPAIRABLE
     assert {item.code for item in report.issues} == {"missing_success_criteria", "missing_evidence_requirements"}
+
+
+@pytest.mark.parametrize("source", (TaskPlanSource.LLM, TaskPlanSource.PARENT))
+def test_validator_requires_complex_multistage_plan_to_be_decomposed(
+    source: TaskPlanSource,
+) -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(
+        _context().model_copy(update={"task_spec": task}),
+        generated_by=source,
+    )
+
+    report = TaskPlanValidator().validate(plan, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    issue = next(item for item in report.issues if item.code == "multi_stage_plan_not_decomposed")
+    assert issue.field == "subgoals"
+    assert issue.disallowed_values == ("1",)
+    assert issue.required_semantics == "at_least_two_outcome_subgoals"
+
+
+def test_validator_preserves_flat_single_and_accepts_two_stage_llm_plan() -> None:
+    flat = synthetic_task_plan(_context(), generated_by=TaskPlanSource.LLM)
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    first = flat.subgoals[0].model_copy(update={"subgoal_id": "first"})
+    second = flat.subgoals[0].model_copy(
+        update={"subgoal_id": "second", "depends_on": ("first",)}
+    )
+    decomposed = flat.model_copy(
+        update={
+            "task_id": task.task_id,
+            "task_revision": task.revision,
+            "subgoals": (first, second),
+        }
+    )
+
+    assert (
+        TaskPlanValidator().validate(flat, _task(), state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
+    assert (
+        TaskPlanValidator().validate(decomposed, task, state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
 
 
 @pytest.mark.parametrize(
@@ -986,7 +1034,20 @@ class ActionInstructionRepairModel:
                     "evidence_requirements": ["post-action results observation"],
                     "operation_class": "reversible_write",
                     "action_family": "activate",
-                }
+                },
+                "remaining_subgoals": [
+                    {
+                        "subgoal_id": "confirmed",
+                        "outcome": {
+                            "subject": "task confirmation",
+                            "relation": "is_completed",
+                        },
+                        "depends_on": ["results-visible"],
+                        "evidence_requirements": ["fresh confirmation observation"],
+                        "operation_class": "reversible_write",
+                        "action_family": "activate",
+                    }
+                ],
             }
         )
 
@@ -1028,6 +1089,7 @@ class ContextualEntryRepairModel:
             assert '"field": "action_family"' in messages[-1].content
             assert '"disallowed_values": ["navigate"]' in messages[-1].content
             assert '"required_semantics": "currently_bindable_action_family"' in messages[-1].content
+            assert '"required_semantics": "at_least_two_outcome_subgoals"' in messages[-1].content
         return output_schema.model_validate(
             {
                 "entry_subgoal": {
@@ -1047,7 +1109,24 @@ class ContextualEntryRepairModel:
                     "evidence_requirements": ["fresh current-state observation"],
                     "operation_class": "reversible_write",
                     "action_family": "navigate" if self.calls == 1 else "type_text",
-                }
+                },
+                "remaining_subgoals": (
+                    []
+                    if self.calls == 1
+                    else [
+                        {
+                            "subgoal_id": "complete",
+                            "outcome": {
+                                "subject": "search submission",
+                                "relation": "is_completed",
+                            },
+                            "depends_on": ["entry"],
+                            "evidence_requirements": ["fresh submission observation"],
+                            "operation_class": "reversible_write",
+                            "action_family": "activate",
+                        }
+                    ]
+                ),
             }
         )
 

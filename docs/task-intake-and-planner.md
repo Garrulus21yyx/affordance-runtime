@@ -427,8 +427,8 @@ tokens, or granted capabilities.
 `depends_on` permits a bounded partial order and future-proofs the schema. The
 current runtime selects one ready subgoal at a time and executes serially. It
 does not implement parallel nodes, fan-out/fan-in, a DAG scheduler, or multiple
-agents controlling one session. Initial plans are limited to 3-8 subgoals;
-simple tasks use one.
+agents controlling one session. Initial multi-stage plans are limited to 2-8
+subgoals; simple rule plans use one.
 
 Mutable progress is separate from the immutable plan:
 
@@ -747,7 +747,7 @@ Deliverables:
 Exit:
 
 - simple tasks bypass LM task planning and retain their existing runtime path;
-- complex tasks execute 3-8 outcome subgoals through the same action planner,
+- complex tasks execute 2-8 outcome subgoals through the same action planner,
   contracts, preflight, verification, recovery, and trace;
 - invalid rule, LM, parent, and evolution plans fail the same validation gate;
 - no plan can grant authority or contain an executable GUI target;

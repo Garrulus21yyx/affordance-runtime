@@ -590,8 +590,9 @@ deterministic router keeps simple tasks flat, uses accepted rule/skill templates
 for exact cases, and calls an LM task planner only for open-world or multi-stage
 work.
 
-Every source produces the same immutable, versioned `TaskPlan` with 3-8
-outcome-oriented `SubgoalSpec` items and optional `depends_on`. A
+Every source produces the same immutable, versioned `TaskPlan`; simple rule
+plans contain one outcome, while multi-stage LM/parent plans contain 2-8
+outcome-oriented `SubgoalSpec` items with optional `depends_on`. A
 deterministic validator rejects cycles, stale revisions, unbounded plans,
 unverifiable outcomes, constraint loss, authority grants, selectors,
 coordinates, and executable actions. The Coordinator executes one ready

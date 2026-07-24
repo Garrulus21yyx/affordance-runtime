@@ -47,6 +47,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
 
 TASK_PLAN_SCHEMA_VERSION = "1.1"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
+TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-2-to-8-v1"
 
 
 class TaskPlanSource(StrEnum):
@@ -383,7 +384,11 @@ class TaskPlanProviderEnvelope(StrictModel):
     """Provider-only shape with an explicitly constrained entry field."""
 
     entry_subgoal: TaskPlanSubgoalCandidate
-    remaining_subgoals: tuple[TaskPlanSubgoalCandidate, ...] = Field(default=(), max_length=7)
+    remaining_subgoals: tuple[TaskPlanSubgoalCandidate, ...] = Field(
+        default=(),
+        max_length=7,
+        json_schema_extra={"minItems": 1},
+    )
     assumptions: tuple[str, ...] = ()
 
     def to_candidate(self) -> TaskPlanCandidate:
@@ -610,6 +615,20 @@ class TaskPlanValidator:
             fatal.append(TaskPlanValidationIssue(code="invalid_replacement_plan_lineage"))
         if not 1 <= len(plan.subgoals) <= self.max_subgoals:
             fatal.append(TaskPlanValidationIssue(code="subgoal_count_out_of_bounds"))
+        if (
+            task_spec.task_structure == TaskStructure.MULTI_STAGE
+            and plan.generated_by in {TaskPlanSource.LLM, TaskPlanSource.PARENT}
+            and len(plan.subgoals) < 2
+        ):
+            repairable.append(
+                TaskPlanValidationIssue(
+                    code="multi_stage_plan_not_decomposed",
+                    detail=str(len(plan.subgoals)),
+                    field="subgoals",
+                    disallowed_values=(str(len(plan.subgoals)),),
+                    required_semantics="at_least_two_outcome_subgoals",
+                )
+            )
 
         identifiers = [item.subgoal_id for item in plan.subgoals]
         if len(identifiers) != len(set(identifiers)):
@@ -852,9 +871,9 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v7"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v8"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals.
-Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
+Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
 

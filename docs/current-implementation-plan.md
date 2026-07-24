@@ -1433,8 +1433,9 @@ normal CLI entrypoint. See
   data-dependent tasks;
 - validate rule, LM, parent, and evolution plans through one deterministic
   `TaskPlanValidator`;
-- represent 3-8 outcome-oriented subgoals with optional `depends_on`, while
-  executing one ready subgoal at a time;
+- represent 2-8 outcome-oriented subgoals for multi-stage plans with optional
+  `depends_on`; simple rule plans retain one outcome, and Runtime executes one
+  ready subgoal at a time;
 - keep the existing `GeneralistLMPlanner` as the one-action planner inside each
   subgoal;
 - let verifier evidence, never planner self-report, advance plan progress;
