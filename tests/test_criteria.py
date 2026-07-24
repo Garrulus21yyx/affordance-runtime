@@ -1,6 +1,11 @@
 from dataclasses import replace
 
-from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
+from affordance_runtime.contracts import (
+    ExecutionReceipt,
+    Observation,
+    ProgressEvidenceScope,
+    VerifierSpec,
+)
 from affordance_runtime.criteria import (
     CriteriaEvidenceMatcher,
     criteria_from_descriptions,
@@ -231,3 +236,92 @@ def test_state_delta_or_terminal_is_weak_progress_evidence() -> None:
 
     assert report.passed
     assert report.evidence[0].strength == "weak"
+
+
+def test_task_terminal_scope_releases_links_only_for_external_terminal_success() -> None:
+    observation = Observation("revision-2", snapshot_id="snapshot-2", metadata={"saved": True})
+    criterion = criterion_id("subgoal", "profile", 0)
+    requirement = evidence_requirement_id("subgoal", "profile", 0)
+    spec = VerifierSpec(
+        "observation_metadata",
+        "saved",
+        True,
+        criterion_ids=(criterion,),
+        requirement_ids=(requirement,),
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+    )
+    ordinary = VerifierLadder().verify_report(
+        [spec],
+        ExecutionReceipt("contract", "test", True, "revision-1", "revision-2", 1.0),
+        observation,
+    )
+    terminal = VerifierLadder().verify_report(
+        [spec],
+        ExecutionReceipt(
+            "contract",
+            "test",
+            True,
+            "revision-1",
+            "revision-2",
+            1.0,
+            evidence={"terminal_success": True},
+        ),
+        observation,
+    )
+    failed_terminal = VerifierLadder().verify_report(
+        [spec],
+        ExecutionReceipt(
+            "contract",
+            "test",
+            True,
+            "revision-1",
+            "revision-2",
+            1.0,
+            evidence={"terminal_failure": True},
+        ),
+        observation,
+    )
+
+    assert ordinary.passed
+    assert ordinary.evidence[0].criterion_ids == ()
+    assert ordinary.evidence[0].requirement_ids == ()
+    assert terminal.passed
+    assert terminal.evidence[0].criterion_ids == (criterion,)
+    assert terminal.evidence[0].requirement_ids == (requirement,)
+    assert terminal.evidence[0].source == "external_evaluator"
+    assert failed_terminal.passed
+    assert failed_terminal.evidence[0].criterion_ids == ()
+    assert failed_terminal.evidence[0].requirement_ids == ()
+
+
+def test_external_terminal_success_outranks_receipt_verifier_provenance() -> None:
+    criterion = criterion_id("subgoal", "profile", 0)
+    requirement = evidence_requirement_id("subgoal", "profile", 0)
+    report = VerifierLadder().verify_report(
+        [
+            VerifierSpec(
+                "evidence",
+                "last_action_error",
+                "",
+                criterion_ids=(criterion,),
+                requirement_ids=(requirement,),
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+            )
+        ],
+        ExecutionReceipt(
+            "contract",
+            "browsergym",
+            True,
+            "revision-1",
+            "revision-2",
+            1.0,
+            evidence={"last_action_error": "", "terminal_success": True},
+        ),
+        Observation("revision-2", snapshot_id="snapshot-2"),
+    )
+
+    assert report.passed
+    assert report.evidence[0].source == "external_evaluator"
+    assert report.evidence[0].strength == "strong"
+    assert report.evidence[0].criterion_ids == (criterion,)
+    assert report.evidence[0].requirement_ids == (requirement,)

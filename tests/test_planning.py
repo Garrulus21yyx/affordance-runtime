@@ -7,7 +7,16 @@ from pydantic import ValidationError
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface, VerifierSpec
+from affordance_runtime.contracts import (
+    Affordance,
+    AffordanceLease,
+    Observation,
+    ProgressEvidenceScope,
+    RiskLevel,
+    Surface,
+    VerifierSpec,
+)
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import UnifiedAffordance
 from affordance_runtime.planning import (
     ContractBuilder,
@@ -19,9 +28,11 @@ from affordance_runtime.planning import (
     PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
+    SubgoalEvidenceBinder,
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -33,6 +44,128 @@ TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
     producer_id="planning-test-fixture",
 )
+
+
+def _active_plan_state() -> StateKernel:
+    state = StateKernel("task-plan", "Observe the saved state")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=0,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="observe",
+                    objective="The saved state is visible",
+                    success_criteria=("saved state is visible",),
+                    evidence_requirements=("fresh saved-state observation",),
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+            ),
+        )
+    )
+    state.active_subgoal()
+    return state
+
+
+def test_subgoal_evidence_binder_never_infers_links_from_active_timing() -> None:
+    state = _active_plan_state()
+    unbound = VerifierSpec("observation_metadata", "saved", True)
+
+    bound = SubgoalEvidenceBinder().bind((unbound,), state)
+
+    assert bound == (unbound,)
+
+
+def test_subgoal_evidence_binder_preserves_explicit_current_pairs() -> None:
+    state = _active_plan_state()
+    explicit = VerifierSpec(
+        "observation_metadata",
+        "saved",
+        True,
+        criterion_ids=(criterion_id("subgoal", "observe", 0),),
+        requirement_ids=(evidence_requirement_id("subgoal", "observe", 0),),
+    )
+
+    bound = SubgoalEvidenceBinder().bind((explicit,), state)
+
+    assert bound == (explicit,)
+
+
+@pytest.mark.parametrize(
+    ("kind", "scope", "expected_bound"),
+    (
+        ("observation_metadata", ProgressEvidenceScope.ACTIVE_SUBGOAL, True),
+        ("state_delta_or_terminal", ProgressEvidenceScope.TASK_TERMINAL, True),
+        ("observation_metadata", ProgressEvidenceScope.TASK_TERMINAL, True),
+    ),
+)
+def test_subgoal_evidence_binder_materializes_only_valid_owner_scopes(
+    kind: str,
+    scope: ProgressEvidenceScope,
+    expected_bound: bool,
+) -> None:
+    state = _active_plan_state()
+    declared = VerifierSpec(kind, "saved", True, progress_scope=scope)
+
+    (bound,) = SubgoalEvidenceBinder().bind((declared,), state)
+
+    assert bool(bound.criterion_ids) is expected_bound
+    assert bool(bound.requirement_ids) is expected_bound
+
+
+@pytest.mark.parametrize("foreign_side", ("criterion", "requirement", "both"))
+def test_subgoal_evidence_binder_removes_partial_or_foreign_subgoal_authority(
+    foreign_side: str,
+) -> None:
+    state = _active_plan_state()
+    criterion_owner = "other" if foreign_side in {"criterion", "both"} else "observe"
+    requirement_owner = "other" if foreign_side in {"requirement", "both"} else "observe"
+    invalid = VerifierSpec(
+        "observation_metadata",
+        "saved",
+        True,
+        criterion_ids=(criterion_id("subgoal", criterion_owner, 0), "skill:one:criterion:0"),
+        requirement_ids=(
+            evidence_requirement_id("subgoal", requirement_owner, 0),
+            "skill:one:evidence-requirement:0",
+        ),
+    )
+
+    (validated,) = SubgoalEvidenceBinder().bind((invalid,), state)
+
+    assert validated.criterion_ids == ("skill:one:criterion:0",)
+    assert validated.requirement_ids == ("skill:one:evidence-requirement:0",)
+
+
+@pytest.mark.parametrize("linked_side", ("criterion", "requirement"))
+def test_subgoal_evidence_binder_removes_one_sided_active_links(
+    linked_side: str,
+) -> None:
+    state = _active_plan_state()
+    partial = VerifierSpec(
+        "observation_metadata",
+        "saved",
+        True,
+        criterion_ids=(
+            (criterion_id("subgoal", "observe", 0),)
+            if linked_side == "criterion"
+            else ()
+        ),
+        requirement_ids=(
+            (evidence_requirement_id("subgoal", "observe", 0),)
+            if linked_side == "requirement"
+            else ()
+        ),
+    )
+
+    (validated,) = SubgoalEvidenceBinder().bind((partial,), state)
+
+    assert validated.criterion_ids == ()
+    assert validated.requirement_ids == ()
 
 
 def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:

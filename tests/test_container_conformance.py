@@ -93,7 +93,7 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
 
     assert [contract.backend for contract in contracts] == ["dom", "visual", "wot"]
     assert all(contract.required_capabilities == [CONFORMANCE_CAPABILITY] for contract in contracts)
-    assert all(contract.schema_version == "1.1" for contract in contracts)
+    assert all(contract.schema_version == "1.2" for contract in contracts)
     assert all(contract.verifier_plan[0].kind == "http_json" for contract in contracts)
     assert all(contract.verifier_plan[0].target == "http://oracle/state" for contract in contracts)
 

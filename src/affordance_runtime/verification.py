@@ -17,6 +17,7 @@ from affordance_runtime.contracts import (
     Condition,
     ExecutionReceipt,
     Observation,
+    ProgressEvidenceScope,
     RuntimeErrorCode,
     VerifierSpec,
     gesture_preflight,
@@ -255,6 +256,10 @@ class VerifierLadder:
                 spec.kind == "state_delta_or_terminal"
                 and receipt.evidence.get("terminal_success") is True
             )
+            terminal_progress = (
+                spec.progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+                and receipt.evidence.get("terminal_success") is True
+            )
             if spec.kind == "evidence":
                 observed = receipt.evidence.get(spec.target)
             elif spec.kind == "dom_contains":
@@ -273,10 +278,10 @@ class VerifierLadder:
                     target=spec.target,
                     passed=passed,
                     source=(
-                        "execution_receipt"
+                        "external_evaluator"
+                        if adapter_terminal_success or terminal_progress
+                        else "execution_receipt"
                         if spec.kind == "evidence"
-                        else "external_evaluator"
-                        if adapter_terminal_success
                         else "independent_http_json"
                         if spec.kind == "http_json"
                         else "post_action_observation"
@@ -287,15 +292,25 @@ class VerifierLadder:
                         f"verification:{observation.snapshot_id or observation.environment_revision}:"
                         f"{index}:{spec.evidence_key or f'{spec.kind}:{spec.target}'}"
                     ),
-                    criterion_ids=spec.criterion_ids,
-                    requirement_ids=spec.requirement_ids,
+                    criterion_ids=(
+                        spec.criterion_ids
+                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL
+                        or terminal_progress
+                        else ()
+                    ),
+                    requirement_ids=(
+                        spec.requirement_ids
+                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL
+                        or terminal_progress
+                        else ()
+                    ),
                     environment_revision=observation.environment_revision,
                     snapshot_id=observation.snapshot_id,
                     observed_at_s=observation.observed_at_s,
                     strength=(
                         "weak"
                         if spec.kind in {"evidence", "state_delta_or_terminal"}
-                        and not adapter_terminal_success
+                        and not (adapter_terminal_success or terminal_progress)
                         else "strong"
                     ),
                 )

@@ -20,11 +20,11 @@ from affordance_runtime.contracts import (
     Condition,
     GestureBindingError,
     GestureContractBinder,
+    ProgressEvidenceScope,
     RiskLevel,
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
@@ -393,53 +393,86 @@ class ContractRequirements:
     timeout_ms: int = 5_000
 
 
+@dataclass(frozen=True)
+class SubgoalEvidenceBinder:
+    """Validate explicit verifier-to-subgoal links without inferring by timing."""
+
+    def bind(
+        self,
+        verifier_plan: tuple[VerifierSpec, ...],
+        state: StateKernel,
+    ) -> tuple[VerifierSpec, ...]:
+        if state.task_plan is None or state.plan_progress is None:
+            return verifier_plan
+        active_id = state.plan_progress.active_subgoal_id
+        subgoal = next(
+            (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+            None,
+        )
+        if subgoal is None:
+            return verifier_plan
+        criterion_prefix = f"subgoal:{subgoal.subgoal_id}:criterion:"
+        requirement_prefix = f"subgoal:{subgoal.subgoal_id}:evidence-requirement:"
+        allowed_criteria = {
+            f"{criterion_prefix}{index}"
+            for index, _description in enumerate(subgoal.success_criteria)
+        }
+        allowed_requirements = {
+            f"{requirement_prefix}{index}"
+            for index, _description in enumerate(subgoal.evidence_requirements)
+        }
+        return tuple(
+            self._validate_spec(item, allowed_criteria, allowed_requirements)
+            for item in verifier_plan
+        )
+
+    @staticmethod
+    def _validate_spec(
+        spec: VerifierSpec,
+        allowed_criteria: set[str],
+        allowed_requirements: set[str],
+    ) -> VerifierSpec:
+        subgoal_criteria = {
+            value for value in spec.criterion_ids if value.startswith("subgoal:")
+        }
+        subgoal_requirements = {
+            value for value in spec.requirement_ids if value.startswith("subgoal:")
+        }
+        if not subgoal_criteria and not subgoal_requirements:
+            if spec.progress_scope == ProgressEvidenceScope.NONE:
+                return spec
+            return replace(
+                spec,
+                criterion_ids=tuple((*spec.criterion_ids, *sorted(allowed_criteria))),
+                requirement_ids=tuple(
+                    (*spec.requirement_ids, *sorted(allowed_requirements))
+                ),
+            )
+        if (
+            subgoal_criteria
+            and subgoal_requirements
+            and subgoal_criteria.issubset(allowed_criteria)
+            and subgoal_requirements.issubset(allowed_requirements)
+        ):
+            return spec
+        return replace(
+            spec,
+            criterion_ids=tuple(
+                value for value in spec.criterion_ids if not value.startswith("subgoal:")
+            ),
+            requirement_ids=tuple(
+                value for value in spec.requirement_ids if not value.startswith("subgoal:")
+            ),
+        )
+
+
 def bind_active_subgoal_verifiers(
     verifier_plan: tuple[VerifierSpec, ...],
     state: StateKernel,
 ) -> tuple[VerifierSpec, ...]:
-    """Bind trusted verifier specs to the active validated plan obligations."""
+    """Compatibility entrypoint for explicit subgoal evidence validation."""
 
-    if state.task_plan is None or state.plan_progress is None:
-        return verifier_plan
-    active_id = state.plan_progress.active_subgoal_id
-    subgoal = next(
-        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
-        None,
-    )
-    if subgoal is None:
-        return verifier_plan
-    criterion_ids = tuple(
-        criterion_id("subgoal", subgoal.subgoal_id, index)
-        for index, _description in enumerate(subgoal.success_criteria)
-    )
-    requirement_ids = tuple(
-        evidence_requirement_id("subgoal", subgoal.subgoal_id, index)
-        for index, _description in enumerate(subgoal.evidence_requirements)
-    )
-    return tuple(
-        replace(
-            item,
-            criterion_ids=tuple(
-                dict.fromkeys(
-                    (
-                        item.criterion_ids
-                        if any(value.startswith("subgoal:") for value in item.criterion_ids)
-                        else (*item.criterion_ids, *criterion_ids)
-                    )
-                )
-            ),
-            requirement_ids=tuple(
-                dict.fromkeys(
-                    (
-                        item.requirement_ids
-                        if any(value.startswith("subgoal:") for value in item.requirement_ids)
-                        else (*item.requirement_ids, *requirement_ids)
-                    )
-                )
-            ),
-        )
-        for item in verifier_plan
-    )
+    return SubgoalEvidenceBinder().bind(verifier_plan, state)
 
 
 @dataclass(frozen=True)

@@ -61,6 +61,7 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     GestureBinding,
     Observation,
+    ProgressEvidenceScope,
     Surface,
     VerifierSpec,
 )
@@ -544,7 +545,10 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         "arguments": {"bid": "select-bid", "options": "earth"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-        "control_state", "select-bid", {"field": "value", "value": "earth"}
+            "control_state",
+            "select-bid",
+            {"field": "value", "value": "earth"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 
@@ -1505,7 +1509,10 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
     )
 
     assert contract.verifier_plan[-1] == VerifierSpec(
-        "control_state", "slider", {"field": "aria_valuenow", "changed_from": "1"}
+            "control_state",
+            "slider",
+            {"field": "aria_valuenow", "changed_from": "1"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
     assert report.passed is True
 
@@ -1566,7 +1573,10 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
         "arguments": {"bid": "source", "key_comb": "Control+Home"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-        "control_state", "source", {"field": "scroll_top", "changed_from": 120}
+            "control_state",
+            "source",
+            {"field": "scroll_top", "changed_from": 120},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
     assert report.passed is True
 
@@ -1709,7 +1719,8 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
     assert contract.verifier_plan[-1] == VerifierSpec(
             "dom_attribute",
             "date-bid",
-            {"target_attribute": "bid", "attribute": "value", "value": "2012-02-04"},
+                {"target_attribute": "bid", "attribute": "value", "value": "2012-02-04"},
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 
@@ -1761,7 +1772,8 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
     assert contract.verifier_plan[-1] == VerifierSpec(
             "dom_attribute",
             "time-bid",
-            {"target_attribute": "bid", "attribute": "value", "value": "11:10"},
+                {"target_attribute": "bid", "attribute": "value", "value": "11:10"},
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
 

@@ -19,7 +19,14 @@ from affordance_runtime.benchmarks.browsergym_encoder import (
     viewport_box,
 )
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import Affordance, AffordanceLease, GestureBinding, Observation, Surface
+from affordance_runtime.contracts import (
+    Affordance,
+    AffordanceLease,
+    GestureBinding,
+    Observation,
+    ProgressEvidenceScope,
+    Surface,
+)
 from affordance_runtime.verification import VerifierSpec
 
 
@@ -156,4 +163,5 @@ def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
         "control_state",
         "section",
         {"field": "aria_expanded", "value": "true"},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )

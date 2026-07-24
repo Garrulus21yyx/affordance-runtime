@@ -743,7 +743,17 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
             contract_builder=ContractBuilder(
                 requirements={
                     "dom_button_1": ContractRequirements(
-                        verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                        verifier_plan=(
+                            VerifierSpec(
+                                "observation_metadata",
+                                "saved",
+                                True,
+                                criterion_ids=(criterion_id("subgoal", "subgoal-1", 0),),
+                                requirement_ids=(
+                                    evidence_requirement_id("subgoal", "subgoal-1", 0),
+                                ),
+                            ),
+                        ),
                         required_capabilities=("settings.write",),
                         idempotency_key="semantic-save-v1",
                         compensation="restore settings",
@@ -939,7 +949,17 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
             contract_builder=ContractBuilder(
                 requirements={
                     "dom_button_1": ContractRequirements(
-                        verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                        verifier_plan=(
+                            VerifierSpec(
+                                "observation_metadata",
+                                "saved",
+                                True,
+                                criterion_ids=(criterion_id("subgoal", "subgoal-1", 0),),
+                                requirement_ids=(
+                                    evidence_requirement_id("subgoal", "subgoal-1", 0),
+                                ),
+                            ),
+                        ),
                         required_capabilities=("settings.write",),
                         idempotency_key="semantic-save-v1",
                         compensation="restore settings",

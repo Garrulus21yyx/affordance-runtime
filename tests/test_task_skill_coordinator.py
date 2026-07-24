@@ -5,7 +5,12 @@ from typing import Any
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
+from affordance_runtime.contracts import (
+    ExecutionReceipt,
+    Observation,
+    ProgressEvidenceScope,
+    VerifierSpec,
+)
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import (
     criterion_id,
@@ -323,6 +328,7 @@ def _step_verifier(
         expected,
         criterion_ids=(criterion_id("skill-step", owner_id, 0),),
         requirement_ids=(evidence_requirement_id("skill-step", owner_id, 0),),
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
 
 
@@ -394,6 +400,7 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
                         "observation_metadata",
                         "profile_name",
                         "Margaret",
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 ),
                 idempotency_key="profile:name:unbound",
@@ -577,7 +584,14 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             contract_builder=ContractBuilder(
                 requirements={
                     observer.target_ids["Name"]: ContractRequirements(
-                        verifier_plan=(VerifierSpec("observation_metadata", "profile_name", value),),
+                        verifier_plan=(
+                            VerifierSpec(
+                                "observation_metadata",
+                                "profile_name",
+                                value,
+                                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                            ),
+                        ),
                         idempotency_key=f"profile:training:{index}",
                     )
                 }

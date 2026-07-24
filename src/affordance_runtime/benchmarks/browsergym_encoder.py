@@ -10,7 +10,13 @@ from typing import Any
 from affordance_runtime.benchmarks.browsergym_action_schema import BrowserGymAction
 from affordance_runtime.benchmarks.browsergym_types import BROWSERGYM_BACKEND
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, Affordance, GestureBinding, VerifierSpec
+from affordance_runtime.contracts import (
+    ActionContract,
+    Affordance,
+    GestureBinding,
+    ProgressEvidenceScope,
+    VerifierSpec,
+)
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
@@ -389,4 +395,8 @@ def browsergym_action_verifiers(
             verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, expected))
     elif action.name == "mouse_click":
         verifier_plan.append(VerifierSpec("state_delta_or_terminal", "", True))
+    verifier_plan[-1] = replace(
+        verifier_plan[-1],
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+    )
     return verifier_plan

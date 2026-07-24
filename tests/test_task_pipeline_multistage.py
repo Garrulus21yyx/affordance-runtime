@@ -8,6 +8,7 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.runtime import RuntimeStep
@@ -94,7 +95,17 @@ class MultiStageActionPlanner:
                 affordance,
                 intent=state.active_subgoal(),
                 backend="dom",
-                verifier_plan=[VerifierSpec("observation_metadata", evidence_key, True)],
+                verifier_plan=[
+                    VerifierSpec(
+                        "observation_metadata",
+                        evidence_key,
+                        True,
+                        criterion_ids=(criterion_id("subgoal", active, 0),),
+                        requirement_ids=(
+                            evidence_requirement_id("subgoal", active, 0),
+                        ),
+                    )
+                ],
             )
         )
 

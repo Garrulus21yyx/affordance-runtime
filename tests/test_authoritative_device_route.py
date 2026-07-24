@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import Observation, VerifierSpec
+from affordance_runtime.contracts import Observation, ProgressEvidenceScope, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import ExecutorRouter, WotExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
@@ -182,7 +182,14 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
         contract_builder=ContractBuilder(
             requirements={
                 observer.semantic_target_id: ContractRequirements(
-                    verifier_plan=(VerifierSpec("observation_metadata", "power", True),),
+                    verifier_plan=(
+                        VerifierSpec(
+                            "observation_metadata",
+                            "power",
+                            True,
+                            progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                        ),
+                    ),
                     idempotency_key="device:lamp:power:on",
                 )
             }

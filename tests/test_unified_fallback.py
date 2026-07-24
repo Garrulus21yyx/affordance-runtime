@@ -7,6 +7,7 @@ from affordance_runtime.contracts import (
     AffordanceLease,
     ExecutionReceipt,
     Observation,
+    ProgressEvidenceScope,
     RuntimeErrorCode,
     Surface,
     VerifierSpec,
@@ -220,7 +221,14 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     builder = ContractBuilder(
         requirements={
             observer.semantic_target_id: ContractRequirements(
-                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                    ),
+                ),
                 idempotency_key="fallback-task:save:v1",
             )
         }
@@ -376,7 +384,14 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
     builder = ContractBuilder(
         requirements={
             observer.semantic_target_id: ContractRequirements(
-                verifier_plan=(VerifierSpec("observation_metadata", "saved", True),),
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                    ),
+                ),
             )
         }
     )

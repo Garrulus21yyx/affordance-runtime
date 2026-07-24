@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from affordance_runtime.grounding import GroundingCandidate, RoutePlan
 
 
-ACTION_CONTRACT_SCHEMA_VERSION = "1.1"
+ACTION_CONTRACT_SCHEMA_VERSION = "1.2"
 
 
 class Surface(StrEnum):
@@ -35,6 +35,14 @@ class RiskLevel(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     IRREVERSIBLE = "irreversible"
+
+
+class ProgressEvidenceScope(StrEnum):
+    """Owner-declared scope for materializing task-progress evidence links."""
+
+    NONE = "none"
+    ACTIVE_SUBGOAL = "active_subgoal"
+    TASK_TERMINAL = "task_terminal"
 
 
 class ScopeRelationKind(StrEnum):
@@ -412,6 +420,7 @@ class VerifierSpec:
     evidence_key: str = ""
     criterion_ids: tuple[str, ...] = ()
     requirement_ids: tuple[str, ...] = ()
+    progress_scope: ProgressEvidenceScope = ProgressEvidenceScope.NONE
 
 
 @dataclass(frozen=True)

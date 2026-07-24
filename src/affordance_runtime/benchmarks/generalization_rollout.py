@@ -36,6 +36,7 @@ from affordance_runtime.contracts import (
     AffordanceLease,
     ExecutionReceipt,
     Observation,
+    ProgressEvidenceScope,
     Surface,
     VerifierSpec,
 )
@@ -678,7 +679,14 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
         contract_builder=ContractBuilder(
             requirements={
                 target_id: ContractRequirements(
-                    verifier_plan=(VerifierSpec("observation_metadata", "saved", True),)
+                    verifier_plan=(
+                        VerifierSpec(
+                            "observation_metadata",
+                            "saved",
+                            True,
+                            progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                        ),
+                    )
                 )
             }
         ),
@@ -727,7 +735,12 @@ def _run_compatibility_pair(
                 requirements={
                     "dom_h3_1": ContractRequirements(
                         verifier_plan=(
-                            VerifierSpec("observation_metadata", "expanded", True),
+                            VerifierSpec(
+                                "observation_metadata",
+                                "expanded",
+                                True,
+                                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                            ),
                         )
                     ),
                 }

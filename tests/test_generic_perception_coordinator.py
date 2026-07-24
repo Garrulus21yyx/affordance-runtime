@@ -6,6 +6,7 @@ from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
+    ProgressEvidenceScope,
     RuntimeErrorCode,
     VerifierSpec,
 )
@@ -126,7 +127,16 @@ class VerifiedVisualContractBuilder:
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ):
-        requirements = ContractRequirements(verifier_plan=(VerifierSpec("dom_contains", "page", "activated"),))
+        requirements = ContractRequirements(
+            verifier_plan=(
+                VerifierSpec(
+                    "dom_contains",
+                    "page",
+                    "activated",
+                    progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                ),
+            )
+        )
         return ContractBuilder(requirements={proposal.target_affordance_id: requirements}).build(
             proposal, task_spec, state, snapshot
         )
@@ -288,7 +298,14 @@ class VerifiedSaveContractBuilder:
         snapshot: BrowserSnapshot,
     ):
         requirements = ContractRequirements(
-            verifier_plan=(VerifierSpec("dom_contains", "page", "saved"),),
+            verifier_plan=(
+                VerifierSpec(
+                    "dom_contains",
+                    "page",
+                    "saved",
+                    progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                ),
+            ),
             idempotency_key="generic-settings-save-v1",
         )
         return ContractBuilder(requirements={proposal.target_affordance_id: requirements}).build(
