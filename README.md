@@ -29,11 +29,11 @@ are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
 The repository implements the controlled harness components through M8.5 and
-the M8.6 G1-G3 governance slices: strict-planner containment, typed intent and
-TaskPlan routing, bounded active perception, and a phase-general online
-Recovery Coordinator. Existing evidence proves those typed boundaries and
-representative production integrations; it does not yet prove G4 complete-run
-accounting or G5 open-world generalization.
+the M8.6 G1-G4 governance slices: strict-planner containment, typed intent and
+TaskPlan routing, bounded active perception, a phase-general online Recovery
+Coordinator, and complete-run evaluation accounting. Existing evidence proves
+those typed boundaries and representative production integrations; it does not
+yet prove G5 open-world generalization or authorize benchmark score promotion.
 
 M8.2B public benchmark score promotion is paused behind M8.6. Historical smoke,
 PR, nightly, and release reports remain evidence for their exact revisions and

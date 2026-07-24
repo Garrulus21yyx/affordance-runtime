@@ -884,8 +884,8 @@ and equivalent failures change strategy or safely terminate before budget
 exhaustion. See
 `evidence/m8.6-g3-full-phase-recovery-20260723.md`.
 
-G4 and G5 remain pending; this status does not promote a benchmark score or
-claim complete-run/generalization evidence.
+G4 subsequently closes complete-run accounting. G5 remains pending; neither G3
+nor G4 promotes a benchmark score or claims generalization evidence.
 
 #### G4: Complete-run result audit
 
@@ -901,6 +901,19 @@ failed, unrun, invalidated, and resumed counts.
 
 Exit when every scheduled case is accounted for and one complete report groups
 cross-task failure clusters by Runtime ownership before any repair is selected.
+
+Status on 2026-07-24: **complete**. One generic immutable run identity and typed
+case ledger reconcile observed, failed, Runtime-failed, external-failed, unrun,
+invalidated, and resumed cases. BrowserGym's audited breadth-first v2 protocol
+persists atomic v6 checkpoints, resumes only the same identity's unobserved
+prefix remainder, rejects foreign/corrupt evidence, separates Runtime from
+external outcomes, and emits formal family/Runtime-owner clusters only for a
+complete comparable collection. Batch stop reasons are allowlisted with
+explicit validity/resume semantics. A complete deterministic 30-case
+conformance collection proves the protocol without making a benchmark claim.
+See `evidence/m8.6-g4-complete-run-audit-20260724.md`.
+
+G5 generalization proof remains pending; `official_score_claimed` stays false.
 
 #### G5: Generalization proof
 

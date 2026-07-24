@@ -502,6 +502,7 @@ def run_browsergym_episode(
         raise
     goal = _goal_text(obs.get("goal", ""))
     episode = BrowserGymEpisodeState(task_id, seed, goal, obs, info)
+    browser_version = _browsergym_browser_version(environment)
     session = BrowserSession(
         environment.unwrapped.page,
         dom_adapter=browsergym_dom_adapter(),
@@ -567,6 +568,7 @@ def run_browsergym_episode(
             result_error or planner_error or (result.error_code.value if result.error_code else ""),
             bool(result.result.get("policy_stopped", False)),
             trace_path,
+            browser_version=browser_version,
         )
     except Exception as exc:
         result_error = f"{type(exc).__name__}: {exc}"
@@ -586,6 +588,7 @@ def run_browsergym_episode(
             result_error,
             False,
             "",
+            browser_version=browser_version,
         )
     finally:
         _close_quietly(policy)
@@ -608,8 +611,10 @@ def run_browsergym_generalist_episode(
 ) -> BrowserGymEpisodeResult:
     """Run the same GeneralistLMPlanner port through BrowserGym's typed executor."""
 
+    browser_version = ""
     try:
         obs, info = environment.reset(seed=seed)
+        browser_version = _browsergym_browser_version(environment)
         page = getattr(environment.unwrapped, "page", None)
         set_default_timeout = getattr(page, "set_default_timeout", None)
         if callable(set_default_timeout):
@@ -721,6 +726,7 @@ def run_browsergym_generalist_episode(
             planner_error or (result.error_code.value if result.error_code else ""),
             False,
             trace_path,
+            browser_version=browser_version,
             **model_stats,
         )
     except Exception as exc:
@@ -738,9 +744,17 @@ def run_browsergym_generalist_episode(
             f"{type(exc).__name__}: {exc}",
             False,
             "",
+            browser_version=browser_version,
         )
     finally:
         _close_quietly(environment)
+
+
+def _browsergym_browser_version(environment: BrowserGymEnvironment) -> str:
+    page = getattr(environment.unwrapped, "page", None)
+    context = getattr(page, "context", None)
+    browser = getattr(context, "browser", None)
+    return str(getattr(browser, "version", "") or "")
 
 
 def _generalist_episode_worker(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, Sequence
 
 BROWSERGYM_VERSION = "0.14.3"
-BROWSERGYM_RUN_PROTOCOL_VERSION = "three-layer-breadth-first-v1"
+BROWSERGYM_RUN_PROTOCOL_VERSION = "three-layer-breadth-first-audit-v2"
 BrowserGymProfile = Literal["smoke", "pr", "diagnostic", "nightly", "release"]
 
 PR_SMOKE_TASKS = (

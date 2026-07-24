@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import multiprocessing as mp
 import subprocess
+import sys
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -25,9 +27,15 @@ from affordance_runtime.benchmarks.browsergym_matrix import (
     NIGHTLY_ACTION_FAMILY_MANIFEST,
     NIGHTLY_TASK_MANIFEST_VERSION,
     BrowserGymProfile,
+    browsergym_batch_stop,
+    browsergym_case_id,
     browsergym_episode_schedule,
     browsergym_failure_envelope,
     browsergym_profile,
+    publish_browsergym_report,
+    restore_browsergym_batch_circuit_state,
+    validate_browsergym_episode_result,
+    validate_browsergym_resume,
     write_browsergym_report,
 )
 from affordance_runtime.benchmarks.browsergym_matrix import (
@@ -60,6 +68,7 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
 )
+from affordance_runtime.evaluation_audit import EvaluationRunIdentity
 from affordance_runtime.generalist_planner import (
     GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
     GeneralistPlannerProfile,
@@ -68,7 +77,6 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.model_port import ModelPort
-from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -185,7 +193,7 @@ def run_browsergym_miniwob_suite(
         *(f"registered task missing: {task}" for task in missing_tasks),
         *report["acceptance_errors"],
     ]
-    (output_dir / "browsergym-report.json").write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    publish_browsergym_report(output_dir, report)
     return report
 
 
@@ -253,12 +261,13 @@ def run_browsergym_miniwob_generalist_suite(
     if seed_count is not None and seed_count <= 0:
         raise ValueError("targeted BrowserGym seed count must be positive")
     seeds = tuple(range(seed_count)) if seed_count is not None else profile_seeds
+    schedule = browsergym_episode_schedule(selected, seeds)
     missing_tasks = sorted(set(selected) - set(registered))
     episodes: list[BrowserGymEpisodeResult] = []
-    expected = {(task_id, seed) for task_id in selected if task_id not in missing_tasks for seed in seeds}
+    expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v5",
+        "schema_version": "browsergym-generalist-checkpoint-v6",
         "run_identity": run_identity,
         "profile": profile,
         "planner_profile": planner_profile.value,
@@ -294,47 +303,87 @@ def run_browsergym_miniwob_generalist_suite(
         "browsergym_version": BROWSERGYM_VERSION,
         "miniwob_commit": BROWSERGYM_MINIWOB_COMMIT,
     }
+    evaluation_identity = EvaluationRunIdentity.from_dimensions(checkpoint_metadata)
+    checkpoint_metadata["evaluation_run_identity"] = evaluation_identity.model_dump(mode="json")
     _prepare_browsergym_checkpoint_metadata(checkpoint_dir, checkpoint_metadata, resume=resume)
     reused = _load_browsergym_checkpoints(checkpoint_dir, expected) if resume else {}
+    cases_to_run = (
+        validate_browsergym_resume(
+            output_dir / "browsergym-report.json",
+            identity=evaluation_identity,
+            expected_schedule=schedule,
+            checkpoints=reused,
+        )
+        if resume
+        else expected
+    )
     episodes.extend(reused.values())
     newly_completed = 0
     interrupted = False
     circuit_break_reason = ""
+    batch_collection_error = ""
     try:
         base_url = f"http://{server_name}:{server_port}/miniwob/"
         family_map = {task: family for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items() for task in tasks}
-        failure_envelopes = [
-            envelope
-            for episode in episodes
-            if (envelope := browsergym_failure_envelope(episode, task_family_map=family_map)) is not None
-        ]
-        consecutive_batch_failures: list[dict[str, Any]] = []
-        schema_compatible_episode_observed = any(
-            episode.runtime_status == RuntimeStep.DONE.value and not episode.policy_stopped for episode in episodes
+        ordered_reused = [reused[key] for key in schedule if key in reused]
+        observed_browser_versions = {
+            episode.browser_version for episode in ordered_reused if episode.browser_version
+        }
+        if len(observed_browser_versions) > 1:
+            raise ValueError("BrowserGym checkpoints contain browser version drift")
+        (
+            consecutive_batch_failures,
+            schema_compatible_episode_observed,
+            _restored_reason,
+        ) = restore_browsergym_batch_circuit_state(
+            ordered_reused,
+            task_family_map=family_map,
         )
-        for task_id, seed in browsergym_episode_schedule(selected, seeds):
-            if task_id in missing_tasks or (task_id, seed) in reused:
+        for task_id, seed in schedule:
+            if task_id in missing_tasks or (task_id, seed) not in cases_to_run:
                 continue
-            episode = run_browsergym_generalist_episode_isolated(
-                model,
-                task_id=task_id,
-                seed=seed,
-                base_url=base_url,
-                headless=headless,
-                artifact_root=output_dir / "artifacts",
-                timeout_s=episode_timeout_s,
-                model_timeout_s=model_call_timeout_s,
-                max_model_calls=max_model_calls,
-                planner_profile=planner_profile,
-                visual_grounder=visual_grounder,
-                visual_region_proposer=visual_region_proposer,
-            )
+            try:
+                episode = run_browsergym_generalist_episode_isolated(
+                    model,
+                    task_id=task_id,
+                    seed=seed,
+                    base_url=base_url,
+                    headless=headless,
+                    artifact_root=output_dir / "artifacts",
+                    timeout_s=episode_timeout_s,
+                    model_timeout_s=model_call_timeout_s,
+                    max_model_calls=max_model_calls,
+                    planner_profile=planner_profile,
+                    visual_grounder=visual_grounder,
+                    visual_region_proposer=visual_region_proposer,
+                )
+            except Exception as exc:
+                circuit_break_reason = "result_accounting_failure"
+                batch_collection_error = type(exc).__name__
+                break
+            try:
+                validate_browsergym_episode_result(
+                    episode,
+                    expected_case=(task_id, seed),
+                )
+            except ValueError as exc:
+                circuit_break_reason = "result_accounting_failure"
+                batch_collection_error = type(exc).__name__
+                break
             episodes.append(episode)
-            _write_browsergym_checkpoint(checkpoint_dir, episode)
+            try:
+                _write_browsergym_checkpoint(checkpoint_dir, episode)
+            except (OSError, ValueError) as exc:
+                circuit_break_reason = "artifact_checkpoint_failure"
+                batch_collection_error = type(exc).__name__
+                break
             newly_completed += 1
+            if episode.browser_version:
+                observed_browser_versions.add(episode.browser_version)
+            if len(observed_browser_versions) > 1:
+                circuit_break_reason = "version_drift"
+                break
             envelope = browsergym_failure_envelope(episode, task_family_map=family_map)
-            if envelope is not None:
-                failure_envelopes.append(envelope)
             schema_compatible_episode_observed, circuit_break_reason = update_browsergym_batch_circuit_state(
                 consecutive_batch_failures,
                 episode,
@@ -350,6 +399,7 @@ def run_browsergym_miniwob_generalist_suite(
             source_server.terminate()
         source_server.join(timeout=5)
     episodes.sort(key=lambda item: (item.task_id, item.seed))
+    batch_stop = browsergym_batch_stop(circuit_break_reason)
     report = write_browsergym_report(
         output_dir,
         profile=profile,
@@ -357,6 +407,12 @@ def run_browsergym_miniwob_generalist_suite(
         selected_tasks=selected,
         seeds=seeds,
         episodes=episodes,
+        evaluation_identity=evaluation_identity,
+        resumed_episode_ids=tuple(
+            browsergym_case_id(task_id, seed) for task_id, seed in reused
+        ),
+        batch_stop=batch_stop,
+        interrupted=interrupted,
     )
     report.update(
         {
@@ -369,28 +425,22 @@ def run_browsergym_miniwob_generalist_suite(
             "checkpoint_new_episode_count": newly_completed,
             "checkpoint_metadata": checkpoint_metadata,
             "batch_circuit_break_reason": circuit_break_reason,
-            "run_complete": (
-                not interrupted
-                and not circuit_break_reason
-                and len({(item.task_id, item.seed) for item in episodes}) == len(expected)
-            ),
+            "batch_collection_error": batch_collection_error,
         }
     )
     # M8.2B score promotion is paused behind M8.6. Keep the external reward in
     # the report, but do not turn even a complete strict nightly into a product
     # capability claim while governance/generalization gates remain open.
     report["official_score_claimed"] = False
-    report["score_promotion_gate"] = "m8.6-open"
-    report["batch_status"] = (
-        "complete" if report["run_complete"] else ("incomplete_diagnostic" if profile == "diagnostic" else "incomplete")
-    )
+    report["score_promotion_gate"] = "m8.6-g5-open"
     report["acceptance_errors"] = [
         *(f"registered task missing: {task}" for task in missing_tasks),
         *(["run interrupted; resume with --resume"] if interrupted else []),
         *([f"batch circuit breaker: {circuit_break_reason}"] if circuit_break_reason else []),
+        *([f"batch collection error: {batch_collection_error}"] if batch_collection_error else []),
         *report["acceptance_errors"],
     ]
-    (output_dir / "browsergym-report.json").write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    publish_browsergym_report(output_dir, report)
     return report
 
 
@@ -418,6 +468,12 @@ def _frozen_run_identity() -> dict[str, str | bool]:
 
     repository = Path(__file__).resolve().parents[3]
     source_tree_sha256 = _runtime_source_sha256(repository)
+    runtime_packages = {
+        "python_executable": sys.executable,
+        "python_version": ".".join(str(item) for item in sys.version_info[:3]),
+        "browsergym_miniwob_version": _installed_distribution_version("browsergym-miniwob"),
+        "playwright_version": _installed_distribution_version("playwright"),
+    }
     try:
         revision = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -440,12 +496,21 @@ def _frozen_run_identity() -> dict[str, str | bool]:
             "git_sha": "unavailable",
             "working_tree_clean": False,
             "source_tree_sha256": source_tree_sha256,
+            **runtime_packages,
         }
     return {
         "git_sha": revision,
         "working_tree_clean": not dirty,
         "source_tree_sha256": source_tree_sha256,
+        **runtime_packages,
     }
+
+
+def _installed_distribution_version(name: str) -> str:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "unavailable"
 
 
 def _runtime_source_sha256(repository: Path) -> str:

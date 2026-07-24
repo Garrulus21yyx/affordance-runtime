@@ -624,10 +624,11 @@ src/affordance_runtime/
   executors.py
   routing.py
   recovery.py
-  active_perception.py        # planned M8.6 bounded probe selection
-  failure_envelope.py         # planned M8.6 phase-general failure contract
-  recovery_coordinator.py     # planned M8.6 changed-strategy decision
-  recovery_commands.py        # planned M8.6 typed command/receipt/delta
+  active_perception.py        # bounded read-only probe selection
+  failure_envelope.py         # phase-general failure contract
+  recovery_coordinator.py     # pure changed-strategy decision
+  recovery_commands.py        # typed command/receipt/delta
+  evaluation_audit.py         # complete-run identity and case ledger
   safety.py
   verification.py
   trace.py
@@ -653,10 +654,18 @@ tests/
 docs/
 ```
 
-The four M8.6 files above are planned internal collaborators, not services.
-They reuse the current PerceptionSession, source arbitration, planners, router,
-verifiers, RecoveryHandler, and Coordinator-owned state. They may not create a
-second mutable world model, browser owner, or execution authority.
+The M8.6 collaborators above are implemented internal contracts, not services.
+Perception and recovery reuse the current PerceptionSession, source arbitration,
+planners, router, verifiers, RecoveryHandler, and Coordinator-owned state. They
+may not create a second mutable world model, browser owner, or execution
+authority. EvaluationAudit is outside the action loop: it reconciles immutable
+collection evidence and cannot influence a PlannerProposal or ActionContract.
+
+Complete-run consumers retain environment-specific scheduling and score
+translation. The generic audit layer knows only immutable identity, scheduled
+case ids, collection/outcome facts, validity, resume lineage, and batch-stop
+category. Formal repair clusters are consumer reports built only after the
+typed ledger is complete and comparable.
 
 Possible production expansion, still deferred:
 

@@ -51,6 +51,7 @@ from affordance_runtime.benchmarks.browsergym_dom import (
     browsergym_dom_adapter,
     browsergym_svg_observer,
 )
+from affordance_runtime.benchmarks.browsergym_matrix import checkpoint_filename
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
     ActionContract,
@@ -1760,7 +1761,7 @@ def test_browsergym_profiles_and_report_expose_coverage_without_silent_omission(
         episodes=[],
     )
     assert report["browsergym_version"] == BROWSERGYM_VERSION
-    assert report["run_protocol_version"] == "three-layer-breadth-first-v1"
+    assert report["run_protocol_version"] == "three-layer-breadth-first-audit-v2"
     assert report["miniwob_commit"] == BROWSERGYM_MINIWOB_COMMIT
     assert report["nightly_manifest_version"] == NIGHTLY_MANIFEST_VERSION
     assert report["nightly_action_families"] == {
@@ -1911,6 +1912,66 @@ def test_successful_episode_prevents_later_task_local_schema_circuit_break() -> 
     assert compatible is True
     assert reason == first_reason == second_reason == ""
     assert consecutive == []
+
+
+def test_task_local_schema_failure_breaks_provider_failure_consecutiveness() -> None:
+    provider = BrowserGymEpisodeResult(
+        "case-a",
+        0,
+        "failed",
+        False,
+        0.0,
+        False,
+        False,
+        0,
+        [],
+        [],
+        "provider failure: 429",
+        False,
+        "",
+        provider_failures=["rate_limit"],
+    )
+    local_schema = BrowserGymEpisodeResult(
+        "case-b",
+        0,
+        "failed",
+        False,
+        0.0,
+        False,
+        False,
+        0,
+        [],
+        [],
+        "StructuredModelError: task-local proposal validation",
+        False,
+        "",
+    )
+    provider_envelope = browsergym_failure_envelope(provider)
+    schema_envelope = browsergym_failure_envelope(local_schema)
+    assert provider_envelope is not None and schema_envelope is not None
+    consecutive: list[dict[str, object]] = []
+
+    compatible, _ = update_browsergym_batch_circuit_state(
+        consecutive,
+        provider,
+        provider_envelope,
+        schema_compatible_episode_observed=True,
+    )
+    compatible, _ = update_browsergym_batch_circuit_state(
+        consecutive,
+        local_schema,
+        schema_envelope,
+        schema_compatible_episode_observed=compatible,
+    )
+    _, reason = update_browsergym_batch_circuit_state(
+        consecutive,
+        provider,
+        provider_envelope,
+        schema_compatible_episode_observed=compatible,
+    )
+
+    assert reason == ""
+    assert [item["failure_signature"] for item in consecutive] == ["provider_failure"]
 
 
 def test_browsergym_context_stats_keep_only_size_and_limit_signal() -> None:
@@ -2107,7 +2168,8 @@ def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path:
     assert report["acceptance_errors"] == ["policy stopped: click-button:seed-4"]
 
 
-def test_browsergym_generalist_episode_checkpoints_are_atomic_and_resume_only_expected(tmp_path: Path) -> None:
+def test_browsergym_generalist_episode_checkpoints_are_atomic_and_reject_foreign_cases(tmp_path: Path) -> None:
+    assert checkpoint_filename("task/name", 0) != checkpoint_filename("task_name", 0)
     episode = BrowserGymEpisodeResult(
         task_id="click-button",
         seed=4,
@@ -2141,8 +2203,11 @@ def test_browsergym_generalist_episode_checkpoints_are_atomic_and_resume_only_ex
     )
     _write_browsergym_checkpoint(tmp_path, ignored)
 
+    with pytest.raises(ValueError, match="outside the requested matrix"):
+        _load_browsergym_checkpoints(tmp_path, {("click-button", 4)})
+    ignored_path = tmp_path / checkpoint_filename(ignored.task_id, ignored.seed)
+    ignored_path.unlink()
     checkpoints = _load_browsergym_checkpoints(tmp_path, {("click-button", 4)})
-
     assert checkpoints == {("click-button", 4): episode}
     assert not list(tmp_path.glob("*.tmp"))
 

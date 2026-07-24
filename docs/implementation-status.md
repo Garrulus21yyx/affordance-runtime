@@ -272,7 +272,7 @@ are:
 | G2 Intent and TaskPlan integration | complete | typed intent/capability derivation; common TaskPlan entrypoint; verifier-bound subgoal progress; planner context excludes benchmark identity/reward wording |
 | G2.5 Active perception and evidence repair | complete | typed evidence gaps/probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery-inspection integration; safe unresolved blocking |
 | G3 Full-phase Recovery Coordinator | complete | strict phase-general FailureEnvelope; validated typed commands; semantic cascade guard; receipts and non-empty RecoveryDelta; inspect-before-repeat; explicit profile provenance; representative intake-through-verification/provider integration |
-| G4 Complete-run audit | pending | ordinary failures collected to completion, resumable partial results, cluster-first repair selection, external reward separated |
+| G4 Complete-run audit | complete | immutable typed run identity and case ledger; atomic v6 checkpoints/report; allowlisted batch stops; exact unobserved-only resume; Runtime/external outcome split; post-closure family and Runtime-owner clustering |
 | G5 Generalization proof | pending | strict, strict plus accepted skills, compatibility, and ablation profiles reported separately |
 
 Current hard findings:
@@ -290,8 +290,9 @@ Current hard findings:
   and a replan is credited only after a validated replacement exists;
 - exact debug signatures coexist with a semantic family key that detects varied
   equivalent failures without target/backend identity;
-- G3 proves bounded phase-spanning online recovery; G4 complete-run accounting
-  and G5 generalization/profile evidence remain open.
+- G3 proves bounded phase-spanning online recovery; G4 now proves complete-run
+  accounting, invalidation, exact resume, and post-closure cluster governance;
+  G5 generalization/profile evidence remains open.
 
 Exit requires zero benchmark identity leakage, zero unrequested-action or
 scope-expansion regression on governance controls, one validated proposal

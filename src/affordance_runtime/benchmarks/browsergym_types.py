@@ -85,3 +85,4 @@ class BrowserGymEpisodeResult:
     task_skill_activated_count: int = 0
     task_skill_completed_count: int = 0
     task_skill_fallthrough_count: int = 0
+    browser_version: str = ""
