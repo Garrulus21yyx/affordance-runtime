@@ -354,7 +354,7 @@ class GeneralistLMPlanner:
         ordinal_constraint = None
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
             ordinal_constraint = resolve_global_ordinal_constraint(
-                objective=str(context.task_spec.get("objective") or ""),
+                objective=context.active_subgoal,
                 targets=tuple(str(item) for item in context.task_spec.get("targets", ())),
                 affordances=context.affordances,
             )

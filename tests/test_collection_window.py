@@ -72,3 +72,8 @@ def test_global_ordinal_falls_through_without_one_coherent_window() -> None:
         targets=("search result",),
         affordances=ambiguous_ordinal,
     ) is None
+    assert resolve_global_ordinal_constraint(
+        objective="Press Search and verify results are visible",
+        targets=("search result",),
+        affordances=ambiguous_ordinal,
+    ) is None
