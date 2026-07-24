@@ -1,0 +1,78 @@
+{
+  "artifacts": [
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/observations/observation_0001.json",
+      "sha256": "14c1ad3a236d8d90b9dd26d29fc1ab30302133d0a0f4731516f4f89e94a8c770"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/observations/observation_0002.json",
+      "sha256": "82373def9aab48be63fad0e4040f8f7bfef683a25e0fb4db3f8ba0d1b0026347"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/receipts/receipt_0001.json",
+      "sha256": "426bc448db616fb67db0165e509b402ddae0ab83c717d5dd0ee3d8dcce4963df"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/observations/observation_0003.json",
+      "sha256": "59c72f404b070dfa7c8db2ba3c743ef1d1229433877f37d5cb13097cd0ac3080"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/receipts/verification_0001.json",
+      "sha256": "37e7cfa848b2c952e209e7392762452e39158c1c03e60645b98d4a44f6448f78"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/observations/observation_0004.json",
+      "sha256": "09d931d53901bf832454e9ad27fe1eb46c7fbc6545904c9830ac682264c16e39"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/run.json",
+      "sha256": "1c1f5c38ab3d42b70221a8f7a0b0eee480f3464f315edcec0afc059d8a39b790"
+    },
+    {
+      "media_type": "application/x-ndjson",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-wot/events.jsonl",
+      "sha256": "c5c6385a0cf430dd729230637d44c9c9af6cad6830dfb560dca24b9cd6e3ac82"
+    }
+  ],
+  "contract_hash": "sha256:f1c5c3639d48608f6f8f68d54805c681f85d18bfa0360b03b95c72df7c92b3ce",
+  "observation_epochs": [
+    "wot-snapshot-2",
+    "wot-snapshot-3",
+    "wot-snapshot-4",
+    "wot-snapshot-5"
+  ],
+  "receipt_ids": [
+    "contract_candidate_wot_wot_g5-device_saved_wot-snapshot-2"
+  ],
+  "revision": "c9390517624eaf28a84aee9e77d0ba83ff533106",
+  "run_id": "g5-wot",
+  "schema_version": "m8.6-g5-runtime-case-v1",
+  "status": "done",
+  "trace_events": [
+    "TaskCreated",
+    "ObservationCaptured",
+    "PlanProposed",
+    "PlannerProposalValidated",
+    "PlannerProposalProduced",
+    "ContractBuilt",
+    "RouteSelected",
+    "PreflightObservationCaptured",
+    "PreflightPassed",
+    "ActionStarted",
+    "ActionCompleted",
+    "PostActionObservationCaptured",
+    "PostconditionPassed",
+    "RouteOutcomeRecorded",
+    "ObservationCaptured",
+    "PlanProposed",
+    "TaskCompleted"
+  ],
+  "verification_status": "passed"
+}

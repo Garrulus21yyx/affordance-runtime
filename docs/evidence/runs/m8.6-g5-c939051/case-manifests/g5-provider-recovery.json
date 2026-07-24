@@ -1,0 +1,48 @@
+{
+  "artifacts": [
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-provider-recovery/observations/observation_0001.json",
+      "sha256": "3c6332be9f6d94997af02d16346f6f47d5181f1ff5fdf70f8c792bcc85ab9eaf"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-provider-recovery/observations/observation_0002.json",
+      "sha256": "112824ad3905662b41a8844494dcef12d01f81ad62db7b7e3415bb25504cc3b4"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-provider-recovery/run.json",
+      "sha256": "ecf407c82195431c6064964f4f51524dae80f5ff09a74d19c1a9e7df2f4822ce"
+    },
+    {
+      "media_type": "application/x-ndjson",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-provider-recovery/events.jsonl",
+      "sha256": "d6e6979e112bb7682cff4c940ab9e32613d6729ade45f917750509f97c16bfb3"
+    }
+  ],
+  "contract_hash": "",
+  "observation_epochs": [
+    "disclosure-0",
+    "disclosure-0"
+  ],
+  "receipt_ids": [],
+  "revision": "c9390517624eaf28a84aee9e77d0ba83ff533106",
+  "run_id": "g5-provider-recovery",
+  "schema_version": "m8.6-g5-runtime-case-v1",
+  "status": "done",
+  "trace_events": [
+    "TaskCreated",
+    "ObservationCaptured",
+    "FailureDetected",
+    "RecoveryStrategySelected",
+    "RecoveryCommandStarted",
+    "RecoveryCommandCompleted",
+    "RecoveryDeltaValidated",
+    "RecoveryReenteredPhase",
+    "ObservationCaptured",
+    "PlanProposed",
+    "TaskCompleted"
+  ],
+  "verification_status": "none"
+}

@@ -1,0 +1,21 @@
+{
+  "evidence": [
+    {
+      "criterion_ids": [],
+      "environment_revision": "wot:saved:True",
+      "evidence_id": "verification:wot-snapshot-4:0:observation_metadata:saved",
+      "expected": true,
+      "observed": true,
+      "observed_at_s": 1784901351.726331,
+      "passed": true,
+      "requirement_ids": [],
+      "snapshot_id": "wot-snapshot-4",
+      "source": "post_action_observation",
+      "strength": "strong",
+      "target": "saved",
+      "verifier_kind": "observation_metadata"
+    }
+  ],
+  "reason": "",
+  "status": "passed"
+}

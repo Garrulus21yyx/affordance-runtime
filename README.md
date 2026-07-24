@@ -35,27 +35,29 @@ and generalization, not the product objective. Behavioral task-template solvers
 are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
-The repository implements the controlled harness components through M8.5 and
-substantial M8.6 components: historical profile classification,
+The repository implements the controlled harness components through M8.6:
+historical profile classification,
 strict-planner containment, typed intent and TaskPlan routing, bounded active
 perception, a phase-general online Recovery Coordinator, complete-run
 evaluation accounting, and a four-profile evidence contract. The
 [M8.6 Closure Audit](docs/current-closure-audit-20260724.md) reopened closure for
 active-perception budget/evidence semantics, real recovery command effects,
 responsibility containment, and empirical profile-separated Runtime evidence.
-The first three repair slices now pass the local quality gate: authority budgets
+All reopened repair slices now pass the local quality gate: authority budgets
 only narrow, semantic evidence requires a current relevant candidate, enabled
 recovery commands invoke typed owning ports, no-op recovery earns no delta, and
-the Coordinator ratchet decreased to 3732 lines / 26 methods. Fresh immutable
-four-profile Runtime rollout evidence remains the open closure gate.
+the Coordinator ratchet decreased to 3732 lines / 26 methods. The fresh
+four-profile Runtime rollout for immutable implementation revision
+`c9390517624eaf28a84aee9e77d0ba83ff533106` passes 11/11 expected outcomes with
+no safety regression and a complete artifact hash index.
 External-suite confirmation remains independently provisioned. Commit `4e7d116`
 is retained as the tested implementation freeze, not as proof that every G0-G5
 behavioral exit criterion is closed. The active default remains
 `strict-generalist`; each future result must record its full immutable run
 identity rather than inherit this label.
 
-M8.2B requires the remaining M8.6 empirical closure work before a new
-strict-generalist frozen evaluation. Historical smoke, PR, nightly, and release
+M8.2B is now eligible for a new strict-generalist frozen diagnostic evaluation.
+Historical smoke, PR, nightly, and release
 reports remain legacy or compatibility evidence for their exact revisions, not
 proof of current strict capability. Benchmark work must audit Runtime
 generalization rather than add task-family behavior to the default planner.

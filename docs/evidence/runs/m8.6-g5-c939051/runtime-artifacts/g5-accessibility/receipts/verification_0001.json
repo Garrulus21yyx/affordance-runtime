@@ -1,0 +1,21 @@
+{
+  "evidence": [
+    {
+      "criterion_ids": [],
+      "environment_revision": "accessibility:saved:True",
+      "evidence_id": "verification:accessibility-snapshot-4:0:observation_metadata:saved",
+      "expected": true,
+      "observed": true,
+      "observed_at_s": 1784901351.716634,
+      "passed": true,
+      "requirement_ids": [],
+      "snapshot_id": "accessibility-snapshot-4",
+      "source": "post_action_observation",
+      "strength": "strong",
+      "target": "saved",
+      "verifier_kind": "observation_metadata"
+    }
+  ],
+  "reason": "",
+  "status": "passed"
+}

@@ -1,13 +1,12 @@
 # Current Implementation Plan
 
-Implementation status: the controlled harness components through M8.5 exist,
-and substantial M8.6 implementation is present. The 2026-07-24 closure audit
+Implementation status: the controlled harness components through M8.6 exist.
+The 2026-07-24 closure audit
 reopened G2.5 budget/evidence semantics, G3 owning-port recovery effects, G5
 empirical profile evidence, and responsibility containment. The G2.5/G3/first
-containment repair slices now pass locally; G0, G1, G2, and G4 remain accepted
-component/integration evidence. M8.2B may not begin a new strict
-frozen score review until the reopened Runtime gates close; historical scores
-are not promoted. See
+containment repair slices and fresh four-profile rollout now pass; G0-G5 are
+closed for immutable implementation revision `c939051`. M8.2B may begin a new
+strict frozen diagnostic review; historical scores are not promoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
 [Responsibility Containment Boundary](responsibility-containment-boundary.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
@@ -460,12 +459,12 @@ M8.6 closes only when:
 - non-benchmark conformance and safety evidence precede benchmark replay;
 - README, status, and reports identify exact revision and active profile.
 
-These criteria are not yet all met. G2.5 budget/evidence truth, G3 real
-owning-port effects, and the first containment ratchet now pass locally; fresh
-G5 empirical rollout evidence remains open under the
-[M8.6 Closure Audit](current-closure-audit-20260724.md). M8.2B may collect a new
-strict frozen evaluation only after the closure sequence below passes. No
-historical result is promoted and `official_score_claimed` remains false.
+These criteria are now met for implementation revision
+`c9390517624eaf28a84aee9e77d0ba83ff533106`. G2.5 budget/evidence truth, G3 real
+owning-port effects, responsibility containment, and the fresh G5 rollout pass
+under the [M8.6 Closure Audit](current-closure-audit-20260724.md). M8.2B may now
+collect a new strict frozen diagnostic evaluation. No historical result is
+promoted and `official_score_claimed` remains false.
 
 ### 0.5 Reopened closure sequence
 
@@ -481,9 +480,9 @@ Execute in this order:
    flow, recovery command dispatch, and evidence projections while preserving
    one authoritative state writer; retain the Coordinator feature freeze and
    extract TaskPlan flow only if it remains an independent change axis;
-5. **current** - publish fresh four-profile non-BrowserGym Runtime runs with
+5. **completed** - publish fresh four-profile non-BrowserGym Runtime runs with
    trace, contract, receipt, verifier, environment, and artifact identities;
-6. **pending** - rerun all local gates, then run one new strict frozen diagnostic matrix,
+6. **current** - run one new strict frozen diagnostic matrix,
    collect ordinary failures to completion, cluster, repair Runtime-first, and
    confirm with targeted plus breadth replay.
 
@@ -2009,7 +2008,7 @@ BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
 milestone. The benchmark remains an external pressure test of the Runtime main
 path.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - reopened
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - done
 
 The implementation freeze remains valuable component evidence, but the closure
 audit found unmet behavioral and containment gates. The authoritative execution
@@ -2018,11 +2017,10 @@ sequence and exit gates are in Section 0,
 and the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
 This milestone supersedes benchmark-family repair as the current work order.
-G0, G1, G2, and G4 remain accepted. The reopened G2.5, G3, and responsibility
-containment repairs now pass the full local gate at the current working revision;
-G5 fresh immutable four-profile Runtime evidence remains open. M8.2B waits for
-closure before a new strict frozen evaluation or score claim; prior
-compatibility/legacy results remain unpromoted.
+G0-G4 remain accepted. The reopened G2.5, G3, responsibility containment, and
+G5 fresh immutable four-profile Runtime evidence pass for `c939051`. M8.2B may
+begin a new strict frozen diagnostic evaluation; prior compatibility/legacy
+results remain unpromoted.
 
 ### M9: Durable Single-Run Recovery - conditional
 

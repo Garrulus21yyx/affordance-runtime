@@ -1,0 +1,77 @@
+{
+  "artifacts": [
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/observations/observation_0001.json",
+      "sha256": "c41443a89a97c92cbb55611632116b7f891e9f57581ec1100122d4354ab85726"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/observations/observation_0002.json",
+      "sha256": "3961d54a2a3754d327a515bc8e85a3c259ee51cee631b8d528cc8ed0591a6616"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/receipts/receipt_0001.json",
+      "sha256": "efd913744b7506e1e8e5ac17b328b6ee6926cded7cf2dc8fec5dbe4b8eee3393"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/observations/observation_0003.json",
+      "sha256": "489a3e181c9586da92325536d3fb0bb08103a3bedc42d751b70176abb73baec5"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/receipts/verification_0001.json",
+      "sha256": "05dd5f25d35a79f014b26817c74759286963d957ffcc514a0be49becb4b325f8"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/observations/observation_0004.json",
+      "sha256": "1edca063ba801b94817f69cffe561149eb338eebe1c3ad0383230cb16e5a772b"
+    },
+    {
+      "media_type": "application/json",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/run.json",
+      "sha256": "21facebf0ee4429e3e486612b2d6558317ac82e28c199954a8af5e233dad641b"
+    },
+    {
+      "media_type": "application/x-ndjson",
+      "path": "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-historical-compatibility-disclosure/events.jsonl",
+      "sha256": "4bf8aeca654b2f21fbb6c6fad7c3a097ec57fafbe7421c8ed5b32e6e5cbb7ed5"
+    }
+  ],
+  "contract_hash": "sha256:edc3b495f1f4eee4dcbd341013ef17caae08143b3752724da60aaa743de0917f",
+  "observation_epochs": [
+    "disclosure-0",
+    "disclosure-0",
+    "disclosure-1",
+    "disclosure-1"
+  ],
+  "receipt_ids": [
+    "contract_dom_h3_1"
+  ],
+  "revision": "c9390517624eaf28a84aee9e77d0ba83ff533106",
+  "run_id": "g5-historical-compatibility-disclosure",
+  "schema_version": "m8.6-g5-runtime-case-v1",
+  "status": "done",
+  "trace_events": [
+    "TaskCreated",
+    "ObservationCaptured",
+    "PlannerContextBuilt",
+    "PlanProposed",
+    "PlannerProposalValidated",
+    "PlannerProposalProduced",
+    "ContractBuilt",
+    "PreflightObservationCaptured",
+    "PreflightPassed",
+    "ActionStarted",
+    "ActionCompleted",
+    "PostActionObservationCaptured",
+    "PostconditionPassed",
+    "ObservationCaptured",
+    "PlanProposed",
+    "TaskCompleted"
+  ],
+  "verification_status": "passed"
+}

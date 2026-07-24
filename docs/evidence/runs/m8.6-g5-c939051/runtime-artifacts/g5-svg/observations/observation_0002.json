@@ -1,0 +1,23 @@
+{
+  "accessibility_hash": "",
+  "artifact_refs": [
+    "fixture:svg:3"
+  ],
+  "dom_hash": "",
+  "environment_revision": "svg:saved:False",
+  "metadata": {
+    "saved": false,
+    "viewport_size": [
+      640,
+      480
+    ]
+  },
+  "observed_at_s": 1784901351.7214224,
+  "page_revision": "surface-page-v1",
+  "screenshot_ref": "",
+  "snapshot_id": "svg-snapshot-3",
+  "target_fingerprints": {
+    "candidate:svg:g5-save": "svg-save-v1"
+  },
+  "url": ""
+}

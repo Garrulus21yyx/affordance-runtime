@@ -1,0 +1,23 @@
+{
+  "accessibility_hash": "",
+  "artifact_refs": [
+    "fixture:wot:5"
+  ],
+  "dom_hash": "",
+  "environment_revision": "wot:saved:True",
+  "metadata": {
+    "saved": true,
+    "viewport_size": [
+      640,
+      480
+    ]
+  },
+  "observed_at_s": 1784901351.726676,
+  "page_revision": "surface-page-v1",
+  "screenshot_ref": "",
+  "snapshot_id": "wot-snapshot-5",
+  "target_fingerprints": {
+    "candidate:wot:wot_g5-device_saved": "wot-save-v1"
+  },
+  "url": ""
+}

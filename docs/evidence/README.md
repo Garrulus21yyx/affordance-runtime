@@ -24,10 +24,11 @@ M8.1 adds a digest-pinned non-root container profile, exact host/container
 outcome comparison, and an optional real node-wot cross-surface conformance
 gate. See `m8.1-40fd93b.md`.
 
-Milestone summaries name the exact clean commit they reproduce. Generated run
-artifacts remain ignored because browser timing fields vary; the committed
-summary preserves the stable environment identity, acceptance results, counts,
-and thresholds.
+Milestone summaries name the exact clean commit they reproduce. Timing-sensitive
+browser benchmark artifacts remain ignored. The provider-free M8.6 G5 rollout
+is the explicit exception: `runs/m8.6-g5-c939051` is a deterministic,
+non-overwritable Runtime evidence set with a complete SHA-256 index, bound to
+implementation revision `c9390517624eaf28a84aee9e77d0ba83ff533106`.
 
 Historical score interpretation is governed by
 `m8.6-g0-profile-and-report-inventory-20260724.md`. In particular, reports that

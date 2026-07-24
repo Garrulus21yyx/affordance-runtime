@@ -263,7 +263,11 @@ Local verification in the fixed Python 3.12 environment is 680 tests passed,
 Ruff passed, mypy passed over 100 source files, and `git diff --check` passed.
 This is working-tree repair evidence, not an immutable reviewed release.
 
-F-04 remains open. M8.6 therefore remains `in_progress`, M8.2B remains paused,
-and no strict score or milestone completion may be claimed until fresh
-profile-separated Runtime rollouts are generated from one immutable revision and
-the resulting artifacts are independently validated.
+F-04 was subsequently closed by the fresh provider-free rollout at
+`docs/evidence/runs/m8.6-g5-c939051`, bound to implementation revision
+`c9390517624eaf28a84aee9e77d0ba83ff533106`. Its 11 real Runtime cases cover all
+four isolated profiles, recompute to `passed`, retain 100% safe outcomes, and
+carry an independently revalidated 82-file artifact hash index. No benchmark
+score or external-suite claim is included. M8.6 may therefore return to `done`;
+M8.2B is unblocked for a new strict frozen diagnostic collection under its own
+identity.

@@ -1,0 +1,397 @@
+{
+  "error_code": null,
+  "goal": "save profile",
+  "result": {
+    "completed_step_ids": [
+      "step-1"
+    ],
+    "task_skill_id": "profile.save",
+    "task_skill_version": "1.0.0"
+  },
+  "run_id": "g5-skilled-adaptive_plus_task_skill-accepted_task_skill",
+  "state": {
+    "action_progress": [
+      {
+        "effect_satisfied": true,
+        "post_environment_revision": "saved:True",
+        "post_page_revision": "ablation-page-v1",
+        "signature": "{\"action_kind\":\"activate\",\"parameters\":{},\"target\":\"semantic:save:3b732c174472\"}",
+        "verification_passed": true
+      }
+    ],
+    "active_perception_count": 0,
+    "active_probe_plan": null,
+    "attempted_probe_fingerprints": "set()",
+    "attempted_recovery_strategy_ids": "set()",
+    "constraints": {},
+    "current_contract": {
+      "action": "click",
+      "affordance_id": "semantic:save:3b732c174472",
+      "backend": "dom",
+      "compensation": null,
+      "contract_hash": "sha256:832e4a2723c99454e1295163c05129c543cd5004647b55175d8cb625611bae91",
+      "environment_revision": "saved:False",
+      "expected_effects": [],
+      "expires_at_s": 1784901411.698805,
+      "fallback_backends": [],
+      "fallback_reason": "",
+      "gesture_binding": null,
+      "grounding_candidate": {
+        "candidate_id": "candidate:dom:dom_button_1",
+        "compatible_executor": "dom",
+        "confidence": 1.0,
+        "environment_revision": "saved:False",
+        "evidence_kinds": "frozenset({<EvidenceKind.STRUCTURAL: 'structural'>, <EvidenceKind.TEXTUAL: 'textual'>})",
+        "evidence_refs": [],
+        "expected_cost": 0.0,
+        "expected_latency_ms": 0.0,
+        "expires_at_s": 1784901411.698805,
+        "fingerprint_key": "candidate:dom:dom_button_1",
+        "observation_epoch_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+        "page_revision": "ablation-page-v1",
+        "payload": {
+          "backend_handle": "",
+          "bbox_xywh": null,
+          "selector": "#save"
+        },
+        "semantic_target_id": "semantic:save:3b732c174472",
+        "source": "dom",
+        "source_affordance_id": "dom_button_1",
+        "supported_actions": "frozenset({'activate'})",
+        "target_fingerprint": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163",
+        "verifier_strength": 0
+      },
+      "id": "contract_candidate_dom_dom_button_1_adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+      "idempotency_key": "m85:adaptive_plus_task_skill:accepted_task_skill:save",
+      "intent": "Activate Save",
+      "locator": {
+        "selector": "#save",
+        "strategy": "css"
+      },
+      "observed_at_s": 1784901351.698805,
+      "page_revision": "ablation-page-v1",
+      "parameters": {},
+      "preconditions": [],
+      "required_capabilities": [
+        "settings.write"
+      ],
+      "risk": "medium",
+      "route_plan": {
+        "action_kind": "activate",
+        "decision_reason": "selected viable candidate candidate:dom:dom_button_1 after deterministic hard gates",
+        "environment_scope": "generic",
+        "hard_gate_results": [
+          {
+            "candidate_id": "candidate:dom:dom_button_1",
+            "passed": true,
+            "reasons": []
+          }
+        ],
+        "scores": [
+          {
+            "candidate_id": "candidate:dom:dom_button_1",
+            "confidence_component": 0.0,
+            "cost_component": 0.0,
+            "latency_component": 0.0,
+            "score": 0.2,
+            "verification_component": 0.5
+          }
+        ],
+        "selected_candidate": {
+          "candidate_id": "candidate:dom:dom_button_1",
+          "compatible_executor": "dom",
+          "confidence": 1.0,
+          "environment_revision": "saved:False",
+          "evidence_kinds": "frozenset({<EvidenceKind.STRUCTURAL: 'structural'>, <EvidenceKind.TEXTUAL: 'textual'>})",
+          "evidence_refs": [],
+          "expected_cost": 0.0,
+          "expected_latency_ms": 0.0,
+          "expires_at_s": 1784901411.698805,
+          "fingerprint_key": "candidate:dom:dom_button_1",
+          "observation_epoch_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+          "page_revision": "ablation-page-v1",
+          "payload": {
+            "backend_handle": "",
+            "bbox_xywh": null,
+            "selector": "#save"
+          },
+          "semantic_target_id": "semantic:save:3b732c174472",
+          "source": "dom",
+          "source_affordance_id": "dom_button_1",
+          "supported_actions": "frozenset({'activate'})",
+          "target_fingerprint": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163",
+          "verifier_strength": 0
+        },
+        "semantic_target_id": "semantic:save:3b732c174472",
+        "verifier_kinds": [
+          "observation_metadata"
+        ],
+        "viable_alternatives": []
+      },
+      "run_id": "g5-skilled-adaptive_plus_task_skill-accepted_task_skill",
+      "schema_version": "1.0",
+      "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+      "source_contract_id": "",
+      "supersedes_contract_id": "",
+      "target_fingerprint": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163",
+      "target_fingerprint_key": "candidate:dom:dom_button_1",
+      "timeout_ms": 5000,
+      "validity_policy": "snapshot_page_target_ttl",
+      "verifier_plan": [
+        {
+          "criterion_ids": [
+            "skill-step:profile.save@1.0.0:step-1:criterion:0",
+            "subgoal:subgoal-1:criterion:0"
+          ],
+          "evidence_key": "",
+          "expected": true,
+          "kind": "observation_metadata",
+          "requirement_ids": [
+            "skill-step:profile.save@1.0.0:step-1:evidence-requirement:0",
+            "subgoal:subgoal-1:evidence-requirement:0"
+          ],
+          "strict": true,
+          "target": "saved"
+        }
+      ]
+    },
+    "current_failure": null,
+    "current_recovery_plan": null,
+    "current_snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-3",
+    "disproved_assumptions": [],
+    "effectful_action_count": 1,
+    "evidence": [
+      "click",
+      "verification:adaptive_plus_task_skill-accepted_task_skill-snapshot-3:0:observation_metadata:saved"
+    ],
+    "evidence_gaps": [],
+    "excluded_grounding_candidates": {},
+    "final_result": {
+      "completed_step_ids": [
+        "step-1"
+      ],
+      "task_skill_id": "profile.save",
+      "task_skill_version": "1.0.0"
+    },
+    "goal": "save profile",
+    "grounding_fallback_lineage": {},
+    "hidden_state_hypotheses": [],
+    "latest_verification": {
+      "evidence": [
+        {
+          "criterion_ids": [
+            "skill-step:profile.save@1.0.0:step-1:criterion:0",
+            "subgoal:subgoal-1:criterion:0"
+          ],
+          "environment_revision": "saved:True",
+          "evidence_id": "verification:adaptive_plus_task_skill-accepted_task_skill-snapshot-3:0:observation_metadata:saved",
+          "expected": true,
+          "observed": true,
+          "observed_at_s": 1784901351.7011023,
+          "passed": true,
+          "requirement_ids": [
+            "skill-step:profile.save@1.0.0:step-1:evidence-requirement:0",
+            "subgoal:subgoal-1:evidence-requirement:0"
+          ],
+          "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-3",
+          "source": "post_action_observation",
+          "strength": "strong",
+          "target": "saved",
+          "verifier_kind": "observation_metadata"
+        }
+      ],
+      "reason": "",
+      "status": "passed"
+    },
+    "observation_count": 3,
+    "observations": [
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [],
+        "dom_hash": "",
+        "environment_revision": "saved:False",
+        "metadata": {
+          "saved": false,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.6988316,
+        "page_revision": "ablation-page-v1",
+        "screenshot_ref": "screen-1.png",
+        "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+        "target_fingerprints": {
+          "candidate:dom:dom_button_1": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [],
+        "dom_hash": "",
+        "environment_revision": "saved:False",
+        "metadata": {
+          "saved": false,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.700575,
+        "page_revision": "ablation-page-v1",
+        "screenshot_ref": "screen-2.png",
+        "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-2",
+        "target_fingerprints": {
+          "candidate:dom:dom_button_1": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [],
+        "dom_hash": "",
+        "environment_revision": "saved:True",
+        "metadata": {
+          "saved": true,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.7011023,
+        "page_revision": "ablation-page-v1",
+        "screenshot_ref": "screen-3.png",
+        "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-3",
+        "target_fingerprints": {
+          "candidate:dom:dom_button_1": "sha256:7931bddfad2ca5a01c54242374e4e710733b86d5ebc33f810b2d04371750f163"
+        },
+        "url": ""
+      }
+    ],
+    "pending_obligations": [],
+    "perception_resolution": null,
+    "phase": "done",
+    "plan_progress": {
+      "action_count_by_subgoal": {
+        "subgoal-1": 1
+      },
+      "active_subgoal_id": "",
+      "completed_subgoal_ids": [
+        "subgoal-1"
+      ],
+      "evidence_by_subgoal": {
+        "subgoal-1": [
+          "verification:adaptive_plus_task_skill-accepted_task_skill-snapshot-3:0:observation_metadata:saved"
+        ]
+      },
+      "failed_subgoal_ids": [],
+      "task_replan_count": 0
+    },
+    "planner_history": [
+      {
+        "action_kind": "activate",
+        "based_on_state_version": 6,
+        "based_on_task_revision": 1,
+        "destination_affordance_id": "",
+        "done": false,
+        "evidence_requirements": [
+          "independent saved state"
+        ],
+        "expected_effects": [
+          "saved state is true"
+        ],
+        "parameters": {},
+        "proposal_id": "skill-profile.save-step-1-6",
+        "provenance": {
+          "evidence_refs": [],
+          "producer_id": "profile.save",
+          "profile_id": "",
+          "source": "accepted_skill",
+          "version": "1.0.0"
+        },
+        "reason": "",
+        "requires_clarification": false,
+        "result": {},
+        "snapshot_id": "adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+        "subgoal": "Activate Save",
+        "target_affordance_id": "semantic:save:3b732c174472",
+        "uncertainty": 0.0
+      }
+    ],
+    "probe_receipts": [],
+    "progress_guard_events": [],
+    "receipts": [
+      {
+        "backend": "dom",
+        "contract_id": "contract_candidate_dom_dom_button_1_adaptive_plus_task_skill-accepted_task_skill-snapshot-1",
+        "ended_revision": "saved:True",
+        "error_code": null,
+        "evidence": {
+          "action": "click",
+          "dispatched": true
+        },
+        "latency_ms": 1.0,
+        "message": "",
+        "started_revision": "saved:False",
+        "success": true
+      }
+    ],
+    "recovery_count": 0,
+    "recovery_deltas": [],
+    "recovery_diagnostics": {},
+    "recovery_history": [],
+    "recovery_incident": null,
+    "recovery_receipts": [],
+    "replan_count": 0,
+    "step_count": 1,
+    "subgoals": [
+      "save profile"
+    ],
+    "task_id": "g5-skilled-adaptive_plus_task_skill-accepted_task_skill",
+    "task_plan": "schema_version='1.0' plan_id='plan-9d750924d1fa464ba9db156a22cf1285' task_id='g5-skilled-adaptive_plus_task_skill-accepted_task_skill' task_revision=1 plan_version=1 supersedes_plan_id='' based_on_state_version=2 generated_by=<TaskPlanSource.RULE: 'rule'> subgoals=(SubgoalSpec(subgoal_id='subgoal-1', objective='save profile', depends_on=(), success_criteria=('saved state is true',), evidence_requirements=('independent saved state',), operation_class=<OperationClass.REVERSIBLE_WRITE: 'reversible_write'>, max_actions=10, max_recoveries=2),) assumptions=()",
+    "task_skill": {
+      "active_step_id": "",
+      "bindings": {},
+      "completed_step_ids": [
+        "step-1"
+      ],
+      "evidence": [
+        "verification:adaptive_plus_task_skill-accepted_task_skill-snapshot-3:0:observation_metadata:saved",
+        "docs/evidence/runs/m8.6-g5-c939051/runtime-artifacts/g5-skilled-adaptive_plus_task_skill-accepted_task_skill/receipts/verification_0001.json"
+      ],
+      "fallthrough_reason": "",
+      "next_step_index": 1,
+      "skill_id": "profile.save",
+      "version": "1.0.0"
+    },
+    "transitions": [
+      [
+        "created",
+        "observing"
+      ],
+      [
+        "observing",
+        "planning"
+      ],
+      [
+        "planning",
+        "preflight"
+      ],
+      [
+        "preflight",
+        "acting"
+      ],
+      [
+        "acting",
+        "verifying"
+      ],
+      [
+        "verifying",
+        "done"
+      ]
+    ],
+    "version": 18
+  },
+  "status": "done"
+}

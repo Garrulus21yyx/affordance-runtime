@@ -1,0 +1,382 @@
+{
+  "error_code": null,
+  "goal": "Save through the accessibility surface",
+  "result": {
+    "saved": true
+  },
+  "run_id": "g5-accessibility",
+  "state": {
+    "action_progress": [
+      {
+        "effect_satisfied": true,
+        "post_environment_revision": "accessibility:saved:True",
+        "post_page_revision": "surface-page-v1",
+        "signature": "{\"action_kind\":\"activate\",\"parameters\":{},\"target\":\"semantic:archive-record:768ec742cdfe\"}",
+        "verification_passed": true
+      }
+    ],
+    "active_perception_count": 0,
+    "active_probe_plan": null,
+    "attempted_probe_fingerprints": "set()",
+    "attempted_recovery_strategy_ids": "set()",
+    "constraints": {},
+    "current_contract": {
+      "action": "activate",
+      "affordance_id": "semantic:archive-record:768ec742cdfe",
+      "backend": "accessibility",
+      "compensation": null,
+      "contract_hash": "sha256:3751c552f50eee0d8baf7d457490a72d50a312fdd78a5419925ed849462931cb",
+      "environment_revision": "accessibility:saved:False",
+      "expected_effects": [],
+      "expires_at_s": 1784901411.7152345,
+      "fallback_backends": [],
+      "fallback_reason": "",
+      "gesture_binding": null,
+      "grounding_candidate": {
+        "candidate_id": "candidate:accessibility:accessibility_save",
+        "compatible_executor": "accessibility",
+        "confidence": 1.0,
+        "environment_revision": "accessibility:saved:False",
+        "evidence_kinds": "frozenset({<EvidenceKind.STRUCTURAL: 'structural'>, <EvidenceKind.TEXTUAL: 'textual'>})",
+        "evidence_refs": [
+          "fixture:accessibility"
+        ],
+        "expected_cost": 0.0,
+        "expected_latency_ms": 0.0,
+        "expires_at_s": 1784901411.7152345,
+        "fingerprint_key": "candidate:accessibility:accessibility_save",
+        "observation_epoch_id": "accessibility-snapshot-2",
+        "page_revision": "surface-page-v1",
+        "payload": {
+          "backend_handle": "",
+          "bbox_xywh": null,
+          "selector": ""
+        },
+        "semantic_target_id": "semantic:archive-record:768ec742cdfe",
+        "source": "accessibility",
+        "source_affordance_id": "accessibility_save",
+        "supported_actions": "frozenset({'activate'})",
+        "target_fingerprint": "accessibility-save-v1",
+        "verifier_strength": 0
+      },
+      "id": "contract_candidate_accessibility_accessibility_save_accessibility-snapshot-2",
+      "idempotency_key": "",
+      "intent": "Save through the accessibility surface",
+      "locator": {
+        "aria_label": "Archive record",
+        "aria_role": "button"
+      },
+      "observed_at_s": 1784901351.7152345,
+      "page_revision": "surface-page-v1",
+      "parameters": {},
+      "preconditions": [],
+      "required_capabilities": [],
+      "risk": "medium",
+      "route_plan": {
+        "action_kind": "activate",
+        "decision_reason": "selected viable candidate candidate:accessibility:accessibility_save after deterministic hard gates",
+        "environment_scope": "generic",
+        "hard_gate_results": [
+          {
+            "candidate_id": "candidate:accessibility:accessibility_save",
+            "passed": true,
+            "reasons": []
+          }
+        ],
+        "scores": [
+          {
+            "candidate_id": "candidate:accessibility:accessibility_save",
+            "confidence_component": 0.0,
+            "cost_component": 0.0,
+            "latency_component": 0.0,
+            "score": 0.21,
+            "verification_component": 0.5
+          }
+        ],
+        "selected_candidate": {
+          "candidate_id": "candidate:accessibility:accessibility_save",
+          "compatible_executor": "accessibility",
+          "confidence": 1.0,
+          "environment_revision": "accessibility:saved:False",
+          "evidence_kinds": "frozenset({<EvidenceKind.STRUCTURAL: 'structural'>, <EvidenceKind.TEXTUAL: 'textual'>})",
+          "evidence_refs": [
+            "fixture:accessibility"
+          ],
+          "expected_cost": 0.0,
+          "expected_latency_ms": 0.0,
+          "expires_at_s": 1784901411.7152345,
+          "fingerprint_key": "candidate:accessibility:accessibility_save",
+          "observation_epoch_id": "accessibility-snapshot-2",
+          "page_revision": "surface-page-v1",
+          "payload": {
+            "backend_handle": "",
+            "bbox_xywh": null,
+            "selector": ""
+          },
+          "semantic_target_id": "semantic:archive-record:768ec742cdfe",
+          "source": "accessibility",
+          "source_affordance_id": "accessibility_save",
+          "supported_actions": "frozenset({'activate'})",
+          "target_fingerprint": "accessibility-save-v1",
+          "verifier_strength": 0
+        },
+        "semantic_target_id": "semantic:archive-record:768ec742cdfe",
+        "verifier_kinds": [
+          "observation_metadata"
+        ],
+        "viable_alternatives": []
+      },
+      "run_id": "g5-accessibility",
+      "schema_version": "1.0",
+      "snapshot_id": "accessibility-snapshot-2",
+      "source_contract_id": "",
+      "supersedes_contract_id": "",
+      "target_fingerprint": "accessibility-save-v1",
+      "target_fingerprint_key": "candidate:accessibility:accessibility_save",
+      "timeout_ms": 5000,
+      "validity_policy": "snapshot_page_target_ttl",
+      "verifier_plan": [
+        {
+          "criterion_ids": [],
+          "evidence_key": "",
+          "expected": true,
+          "kind": "observation_metadata",
+          "requirement_ids": [],
+          "strict": true,
+          "target": "saved"
+        }
+      ]
+    },
+    "current_failure": null,
+    "current_recovery_plan": null,
+    "current_snapshot_id": "accessibility-snapshot-5",
+    "disproved_assumptions": [],
+    "effectful_action_count": 0,
+    "evidence": [],
+    "evidence_gaps": [],
+    "excluded_grounding_candidates": {},
+    "final_result": {
+      "saved": true
+    },
+    "goal": "Save through the accessibility surface",
+    "grounding_fallback_lineage": {},
+    "hidden_state_hypotheses": [],
+    "latest_verification": {
+      "evidence": [
+        {
+          "criterion_ids": [],
+          "environment_revision": "accessibility:saved:True",
+          "evidence_id": "verification:accessibility-snapshot-4:0:observation_metadata:saved",
+          "expected": true,
+          "observed": true,
+          "observed_at_s": 1784901351.716634,
+          "passed": true,
+          "requirement_ids": [],
+          "snapshot_id": "accessibility-snapshot-4",
+          "source": "post_action_observation",
+          "strength": "strong",
+          "target": "saved",
+          "verifier_kind": "observation_metadata"
+        }
+      ],
+      "reason": "",
+      "status": "passed"
+    },
+    "observation_count": 4,
+    "observations": [
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [
+          "fixture:accessibility:2"
+        ],
+        "dom_hash": "",
+        "environment_revision": "accessibility:saved:False",
+        "metadata": {
+          "saved": false,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.7152433,
+        "page_revision": "surface-page-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "accessibility-snapshot-2",
+        "target_fingerprints": {
+          "candidate:accessibility:accessibility_save": "accessibility-save-v1"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [
+          "fixture:accessibility:3"
+        ],
+        "dom_hash": "",
+        "environment_revision": "accessibility:saved:False",
+        "metadata": {
+          "saved": false,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.7162526,
+        "page_revision": "surface-page-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "accessibility-snapshot-3",
+        "target_fingerprints": {
+          "candidate:accessibility:accessibility_save": "accessibility-save-v1"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [
+          "fixture:accessibility:4"
+        ],
+        "dom_hash": "",
+        "environment_revision": "accessibility:saved:True",
+        "metadata": {
+          "saved": true,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.716634,
+        "page_revision": "surface-page-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "accessibility-snapshot-4",
+        "target_fingerprints": {
+          "candidate:accessibility:accessibility_save": "accessibility-save-v1"
+        },
+        "url": ""
+      },
+      {
+        "accessibility_hash": "",
+        "artifact_refs": [
+          "fixture:accessibility:5"
+        ],
+        "dom_hash": "",
+        "environment_revision": "accessibility:saved:True",
+        "metadata": {
+          "saved": true,
+          "viewport_size": [
+            640,
+            480
+          ]
+        },
+        "observed_at_s": 1784901351.7169795,
+        "page_revision": "surface-page-v1",
+        "screenshot_ref": "",
+        "snapshot_id": "accessibility-snapshot-5",
+        "target_fingerprints": {
+          "candidate:accessibility:accessibility_save": "accessibility-save-v1"
+        },
+        "url": ""
+      }
+    ],
+    "pending_obligations": [],
+    "perception_resolution": null,
+    "phase": "done",
+    "plan_progress": null,
+    "planner_history": [
+      {
+        "action_kind": "activate",
+        "based_on_state_version": 3,
+        "based_on_task_revision": 1,
+        "destination_affordance_id": "",
+        "done": false,
+        "evidence_requirements": [
+          "independent saved metadata"
+        ],
+        "expected_effects": [
+          "saved state becomes true"
+        ],
+        "parameters": {},
+        "proposal_id": "surface-3",
+        "provenance": {
+          "evidence_refs": [],
+          "producer_id": "g5-surface-planner",
+          "profile_id": "strict-generalist",
+          "source": "deterministic_rule",
+          "version": ""
+        },
+        "reason": "",
+        "requires_clarification": false,
+        "result": {},
+        "snapshot_id": "accessibility-snapshot-2",
+        "subgoal": "",
+        "target_affordance_id": "semantic:archive-record:768ec742cdfe",
+        "uncertainty": 0.0
+      }
+    ],
+    "probe_receipts": [],
+    "progress_guard_events": [],
+    "receipts": [
+      {
+        "backend": "accessibility",
+        "contract_id": "contract_candidate_accessibility_accessibility_save_accessibility-snapshot-2",
+        "ended_revision": "accessibility:saved:True",
+        "error_code": null,
+        "evidence": {
+          "dispatched": true,
+          "saved": true
+        },
+        "latency_ms": 0.0,
+        "message": "",
+        "started_revision": "accessibility:saved:False",
+        "success": true
+      }
+    ],
+    "recovery_count": 0,
+    "recovery_deltas": [],
+    "recovery_diagnostics": {},
+    "recovery_history": [],
+    "recovery_incident": null,
+    "recovery_receipts": [],
+    "replan_count": 1,
+    "step_count": 1,
+    "subgoals": [],
+    "task_id": "g5-accessibility",
+    "task_plan": null,
+    "task_skill": null,
+    "transitions": [
+      [
+        "created",
+        "observing"
+      ],
+      [
+        "observing",
+        "planning"
+      ],
+      [
+        "planning",
+        "preflight"
+      ],
+      [
+        "preflight",
+        "acting"
+      ],
+      [
+        "acting",
+        "verifying"
+      ],
+      [
+        "verifying",
+        "observing"
+      ],
+      [
+        "observing",
+        "planning"
+      ],
+      [
+        "planning",
+        "done"
+      ]
+    ],
+    "version": 15
+  },
+  "status": "done"
+}
