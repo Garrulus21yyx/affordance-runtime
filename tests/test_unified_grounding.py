@@ -85,6 +85,29 @@ def test_opaque_dom_drop_endpoint_provides_spatial_binding_without_visual_requir
     assert EvidenceKind.VISUAL_APPEARANCE not in candidate.evidence_kinds
 
 
+def test_candidate_retains_bounded_relational_scope_evidence() -> None:
+    observation = _observation()
+    source = replace(
+        _affordance("phone", Surface.DOM, "dom"),
+        state={
+            "container_context": "Phone: 358-832-9871",
+            "group_context": "Catherina Phone: 358-832-9871 Address: Main Street",
+            "collection_position": 4,
+        },
+    )
+
+    candidate = candidate_from_affordance(
+        source,
+        observation,
+        semantic_target_id="semantic:phone",
+    )
+
+    assert candidate.scope_evidence is not None
+    assert candidate.scope_evidence.container_context == "Phone: 358-832-9871"
+    assert candidate.scope_evidence.group_context.startswith("Catherina")
+    assert candidate.scope_evidence.collection_position == 4
+
+
 def test_semantic_resolver_does_not_merge_same_label_across_containers() -> None:
     observation = _observation()
     first = candidate_from_affordance(

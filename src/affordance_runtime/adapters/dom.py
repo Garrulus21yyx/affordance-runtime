@@ -563,17 +563,25 @@ def _group_context_text(node: dict[str, Any], container_context: str) -> str:
     return ""
 
 
-def _collection_position(attr: dict[str, str]) -> int | None:
+def _collection_position(
+    attr: dict[str, str],
+    ancestors: tuple[dict[str, Any], ...] = (),
+) -> int | None:
     """Normalize common DOM collection indices into a one-based position."""
 
-    raw = attr.get("aria-posinset")
+    raw: str | None = None
     zero_based = False
-    if raw is None:
-        for key in ("data-index", "data-result"):
-            if key in attr:
-                raw = attr[key]
-                zero_based = True
-                break
+    for candidate in (attr, *(item["attr"] for item in reversed(ancestors))):
+        raw = candidate.get("aria-posinset")
+        zero_based = False
+        if raw is None:
+            for key in ("data-index", "data-result"):
+                if key in candidate:
+                    raw = candidate[key]
+                    zero_based = True
+                    break
+        if raw is not None:
+            break
     if raw is None:
         return None
     try:
@@ -746,7 +754,10 @@ class DomAdapter:
                 if node["tag"] == "a" or node["tag"] not in _INTERACTIVE_TAGS or action in {"drag", "press"}
                 else ""
             )
-            collection_position = node.get("collection_position") or _collection_position(attr)
+            collection_position = node.get("collection_position") or _collection_position(
+                attr,
+                tuple(node.get("context_ancestors", ())),
+            )
             group_context = _group_context_text(node, context_text) if context_text else ""
             affordance_id = f"dom_{node['tag']}_{node['nth']}"
             target_fingerprint = (

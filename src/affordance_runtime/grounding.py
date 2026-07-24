@@ -234,6 +234,21 @@ GroundingPayload: TypeAlias = (
 
 
 @dataclass(frozen=True)
+class CandidateScopeEvidence:
+    """Bounded observed relations that may support, but never grant, task scope."""
+
+    container_context: str = ""
+    group_context: str = ""
+    collection_position: int | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.container_context) > 160 or len(self.group_context) > 240:
+            raise ValueError("candidate scope context exceeds the bounded observation contract")
+        if self.collection_position is not None and self.collection_position < 1:
+            raise ValueError("candidate collection position must be one-based")
+
+
+@dataclass(frozen=True)
 class GroundingCandidate:
     candidate_id: str
     semantic_target_id: str
@@ -254,6 +269,7 @@ class GroundingCandidate:
     expected_cost: float = 0.0
     verifier_strength: int = 0
     evidence_refs: tuple[str, ...] = ()
+    scope_evidence: CandidateScopeEvidence | None = None
 
     def __post_init__(self) -> None:
         if not self.candidate_id or not self.semantic_target_id:

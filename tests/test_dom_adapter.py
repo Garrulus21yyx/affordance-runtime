@@ -367,6 +367,15 @@ def test_dom_adapter_normalizes_collection_positions() -> None:
     assert [item.state["collection_position"] for item in model.affordances] == [3, 4]
 
 
+def test_dom_adapter_inherits_collection_position_from_structural_ancestor() -> None:
+    model = _authored_adapter().transduce(
+        '<div data-result="3"><a data-runtime-handle="result">Ashlea</a></div>',
+        environment_revision="rev-1",
+    )
+
+    assert model.affordances[0].state["collection_position"] == 4
+
+
 def test_dom_adapter_exposes_semantically_coloured_rendered_targets() -> None:
     model = _authored_adapter().transduce(
         '<div id="query-color" class="color"></div>'

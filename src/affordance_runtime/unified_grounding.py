@@ -11,6 +11,7 @@ from typing import Iterable
 from affordance_runtime.contracts import Affordance, Observation, Surface
 from affordance_runtime.grounding import (
     ApiGroundingPayload,
+    CandidateScopeEvidence,
     DomGroundingPayload,
     EvidenceKind,
     GroundingCandidate,
@@ -102,6 +103,19 @@ def candidate_from_affordance(
         evidence_kinds = frozenset({EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL})
     else:
         raise ValueError(f"unsupported grounding surface: {affordance.surface}")
+    container_context = str(affordance.state.get("container_context") or "")
+    group_context = str(affordance.state.get("group_context") or "")
+    raw_position = affordance.state.get("collection_position")
+    collection_position = raw_position if isinstance(raw_position, int) and raw_position > 0 else None
+    scope_evidence = (
+        CandidateScopeEvidence(
+            container_context=container_context,
+            group_context=group_context,
+            collection_position=collection_position,
+        )
+        if container_context or group_context or collection_position is not None
+        else None
+    )
     return GroundingCandidate(
         candidate_id=candidate_id,
         semantic_target_id=semantic_target_id,
@@ -121,6 +135,7 @@ def candidate_from_affordance(
         confidence=affordance.confidence,
         expires_at_s=affordance.lease.expires_at_s,
         evidence_refs=tuple(affordance.evidence),
+        scope_evidence=scope_evidence,
     )
 
 
