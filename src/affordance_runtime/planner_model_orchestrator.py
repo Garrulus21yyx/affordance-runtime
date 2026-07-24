@@ -285,7 +285,7 @@ def semantic_text_input_constraint(
     context: PlannerContext,
     compatible_targets: dict[str, list[str]],
 ) -> SemanticTextInputConstraint | None:
-    """Bind explicit TaskSpec value authority only to one enabled text target."""
+    """Bind one still-open explicit value obligation to one enabled text target."""
 
     target_ids = compatible_targets.get(PlannerActionKind.TYPE_TEXT.value, [])
     if len(target_ids) != 1:
@@ -309,10 +309,32 @@ def semantic_text_input_constraint(
             )
         )
         if len(values) == 1:
+            current_value = target.state.get("control_value")
+            if isinstance(current_value, str) and _semantic_value_is_present(
+                current_value,
+                relation=relation,
+                required_value=values[0],
+            ):
+                return None
             return SemanticTextInputConstraint(relation, target_id, values)
         if values:
             return None
     return None
+
+
+def _semantic_value_is_present(
+    current_value: str,
+    *,
+    relation: str,
+    required_value: str,
+) -> bool:
+    """Use only current observed control state to retire an input obligation."""
+
+    if relation == "prefix":
+        return current_value.startswith(required_value)
+    if relation == "exact":
+        return current_value == required_value
+    return False
 
 
 def build_repair_candidate_schema(

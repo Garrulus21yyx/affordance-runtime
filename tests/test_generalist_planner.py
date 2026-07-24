@@ -2514,6 +2514,65 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
     assert decision.planner_context["semantic_value_constraint"]["relation"] == "prefix"
 
 
+def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<input id="tags" class="ui-autocomplete-input" value="Comoros"><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Enter an item starting with Com")
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Enter an item starting with Com",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("item",),
+        semantic_value_constraints=(
+            SemanticValueConstraint(
+                relation=SemanticValueRelation.PREFIX,
+                value="Com",
+                target="item",
+                source_ref="request-1",
+            ),
+        ),
+        success_criteria=("matching item entered",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class SubmitModel:
+        provider: str = "fixed"
+        model: str = "submit-after-prefix"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate(
+                {
+                    "action_kind": "activate",
+                    "target_affordance_id": "dom_button_1",
+                    "parameters": {},
+                }
+            )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(SubmitModel()).propose(
+            TaskEnvelope(task_spec=task_spec), state, snapshot
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert decision.proposal.target_affordance_id == "dom_button_1"
+    assert "semantic_value_constraint" not in decision.planner_context
+
+
 def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:
     schema = _initial_candidate_schema(["activate"])
 

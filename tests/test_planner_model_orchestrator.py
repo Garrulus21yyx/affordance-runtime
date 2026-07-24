@@ -307,6 +307,49 @@ def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
     assert constraint.allowed_text_values == ("Com",)
 
 
+@pytest.mark.parametrize(
+    ("relation", "required_value", "current_value", "satisfied"),
+    (
+        ("prefix", "Com", "Comoros", True),
+        ("prefix", "Com", "Community", True),
+        ("prefix", "Com", "Computer", True),
+        ("prefix", "Com", "comoros", False),
+        ("exact", "Comoros", "Comoros", True),
+        ("exact", "Comoros", "Comoros ", False),
+    ),
+)
+def test_current_control_value_retires_only_the_satisfied_input_obligation(
+    relation: str,
+    required_value: str,
+    current_value: str,
+    satisfied: bool,
+) -> None:
+    base = _context()
+    context = base.model_copy(
+        update={
+            "task_spec": {
+                **base.task_spec,
+                "semantic_value_constraints": [
+                    {
+                        "relation": relation,
+                        "value": required_value,
+                        "source_ref": "request-1",
+                    }
+                ],
+            },
+            "affordances": (
+                base.affordances[0].model_copy(
+                    update={"state": {"enabled": True, "control_value": current_value}}
+                ),
+            ),
+        }
+    )
+
+    constraint = semantic_text_input_constraint(context, compatible_target_ids(context))
+
+    assert (constraint is None) is satisfied
+
+
 def test_suffix_only_multiple_values_or_multiple_controls_do_not_authorize_text() -> None:
     suffix = _context().model_copy(
         update={
