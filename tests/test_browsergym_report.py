@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,23 @@ def test_failure_family_retains_evidence_gap_when_no_action_was_observed() -> No
 
     assert envelope is not None
     assert envelope["family"] == "unresolved:no_action_evidence"
+
+
+def test_intent_compilation_rejection_is_attributed_to_intent_planning() -> None:
+    episode = _failed_episode(task_id="case-a", actions=[])
+    episode = replace(
+        episode,
+        runtime_status="failed",
+        runtime_error="ValueError: intent compilation unsupported: missing_objective",
+        terminated=False,
+    )
+
+    envelope = report_adapter.browsergym_failure_envelope(episode)
+
+    assert envelope is not None
+    assert envelope["failure_signature"] == "intent_compilation_rejected"
+    assert envelope["root_layer"] == "INTENT / PLANNING"
+    assert envelope["phase"] == "planning"
 
 
 def test_declared_protocol_family_precedes_observed_action() -> None:

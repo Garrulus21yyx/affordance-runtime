@@ -6,11 +6,14 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 
+from pydantic import Field
+
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.task_intake import (
     CompilationResult,
     IntentDraft,
     IntentDraftValidator,
+    RequestedEffect,
     UserRequest,
 )
 from affordance_runtime.trace import TraceDag, TraceNode
@@ -44,6 +47,14 @@ def intent_compiler_model_config() -> ModelConfig:
     )
 
 
+class LLMIntentDraft(IntentDraft):
+    """Provider schema whose deterministic-validator prerequisites are required."""
+
+    objective: str = Field(min_length=1)
+    requested_effects: tuple[RequestedEffect, ...] = Field(min_length=1)
+    candidate_success_criteria: tuple[str, ...] = Field(min_length=1)
+
+
 @dataclass
 class LLMIntentCompiler:
     model: ModelPort
@@ -60,12 +71,12 @@ class LLMIntentCompiler:
     ) -> CompilationResult:
         parent = _record_request(trace, request)
         try:
-            draft = await self.model.generate_structured(
+            model_draft = await self.model.generate_structured(
                 [
                     ModelMessage(role="system", content=_SYSTEM_PROMPT),
                     ModelMessage(role="user", content=json.dumps(_bounded_request(request), sort_keys=True)),
                 ],
-                IntentDraft,
+                LLMIntentDraft,
                 self.config,
             )
         except Exception as exc:
@@ -81,6 +92,7 @@ class LLMIntentCompiler:
                     parents=[parent.id] if parent else None,
                 )
             raise
+        draft = IntentDraft.model_validate(model_draft.model_dump())
         if trace is not None:
             parent = trace.add(
                 "IntentDraftProduced",

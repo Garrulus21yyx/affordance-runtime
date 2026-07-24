@@ -77,10 +77,9 @@ from affordance_runtime.generalist_planner import (
     historical_compatibility_semantic_compiler_registry,
     planner_prompt_version,
 )
-from affordance_runtime.intent_compiler import intent_compiler_model_config
+from affordance_runtime.intent_compiler import LLMIntentDraft, intent_compiler_model_config
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
-from affordance_runtime.task_intake import IntentDraft
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -482,7 +481,7 @@ def _planner_schema_sha256() -> str:
 
 
 def _intent_compiler_schema_sha256() -> str:
-    payload = IntentDraft.model_json_schema()
+    payload = LLMIntentDraft.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 

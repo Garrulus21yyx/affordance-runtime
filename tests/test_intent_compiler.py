@@ -4,7 +4,11 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
-from affordance_runtime.intent_compiler import INTENT_COMPILER_PROMPT_VERSION, LLMIntentCompiler
+from affordance_runtime.intent_compiler import (
+    INTENT_COMPILER_PROMPT_VERSION,
+    LLMIntentCompiler,
+    LLMIntentDraft,
+)
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.task_intake import (
     CompilationPolicy,
@@ -37,9 +41,22 @@ class FixedModel:
         config: ModelConfig,
     ) -> T:
         self.messages = messages
-        assert output_schema is IntentDraft
+        assert output_schema is LLMIntentDraft
         assert config.prompt_version == INTENT_COMPILER_PROMPT_VERSION
         return output_schema.model_validate(self.draft.model_dump())
+
+
+def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
+    schema = LLMIntentDraft.model_json_schema()
+
+    assert set(schema["required"]) == {
+        "objective",
+        "requested_effects",
+        "candidate_success_criteria",
+    }
+    assert schema["properties"]["objective"]["minLength"] == 1
+    assert schema["properties"]["requested_effects"]["minItems"] == 1
+    assert schema["properties"]["candidate_success_criteria"]["minItems"] == 1
 
 
 def test_llm_compiler_produces_draft_but_deterministic_policy_decides() -> None:

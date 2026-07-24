@@ -627,7 +627,11 @@ def run_browsergym_generalist_episode(
 ) -> BrowserGymEpisodeResult:
     """Run the same GeneralistLMPlanner port through BrowserGym's typed executor."""
 
+    run_id = f"browsergym-generalist-{task_id}-seed-{seed}"
     browser_version = ""
+    intake_trace: TraceDag | None = None
+    intent_call_attempted = False
+    episode_phase = "environment"
     try:
         obs, info = environment.reset(seed=seed)
         browser_version = _browsergym_browser_version(environment)
@@ -653,8 +657,9 @@ def run_browsergym_generalist_episode(
             ),
             visual_executor=BROWSERGYM_BACKEND,
         )
-        run_id = f"browsergym-generalist-{task_id}-seed-{seed}"
         intake_trace = TraceDag(run_id=run_id)
+        intent_call_attempted = True
+        episode_phase = "intent_compilation"
         compilation = resolve_awaitable(
             LLMIntentCompiler(model).compile(
                 UserRequest(
@@ -669,6 +674,7 @@ def run_browsergym_generalist_episode(
         if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
             issue_codes = ",".join(item.code for item in compilation.issues)
             raise ValueError(f"intent compilation {compilation.status.value}: {issue_codes}")
+        episode_phase = "runtime"
         task_spec = compilation.task_spec
         perception_requirements = derive_perception_requirements(task_spec)
         planner_limits = PlannerLimits(
@@ -745,6 +751,31 @@ def run_browsergym_generalist_episode(
             **model_stats,
         )
     except Exception as exc:
+        trace_path = ""
+        failure_model_stats: dict[str, Any] = {}
+        if intake_trace is not None:
+            intake_trace.add(
+                "BrowserGymEpisodeFailed",
+                {
+                    "phase": episode_phase,
+                    "error_type": type(exc).__name__,
+                },
+                parents=[intake_trace.nodes[-1].id] if intake_trace.nodes else None,
+            )
+            artifacts = ArtifactStore(artifact_root / "runs").finalize(
+                run_id,
+                intake_trace,
+                {
+                    "status": RuntimeStep.FAILED.value,
+                    "phase": episode_phase,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            trace_path = next((item.path for item in artifacts if item.path.endswith("events.jsonl")), "")
+            failure_model_stats = _browsergym_model_stats(
+                intake_trace.nodes,
+                int(intent_call_attempted),
+            )
         return BrowserGymEpisodeResult(
             task_id,
             seed,
@@ -758,8 +789,9 @@ def run_browsergym_generalist_episode(
             [],
             f"{type(exc).__name__}: {exc}",
             False,
-            "",
+            trace_path,
             browser_version=browser_version,
+            **failure_model_stats,
         )
     finally:
         _close_quietly(environment)

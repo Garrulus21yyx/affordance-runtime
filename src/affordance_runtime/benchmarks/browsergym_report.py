@@ -568,6 +568,8 @@ def _failure_signature(episode: BrowserGymEpisodeResult) -> str:
         return "source_or_oracle_unavailable"
     if "model call budget exhausted" in details:
         return "model_call_budget_exhausted"
+    if "intent compilation " in details:
+        return "intent_compilation_rejected"
     if any(marker in details for marker in ("schema", "validation", "structuredmodelerror")):
         return "schema_incompatible"
     if any(marker in details for marker in ("artifact", "checkpoint")):
@@ -615,7 +617,7 @@ def _failure_root_layer(episode: BrowserGymEpisodeResult, signature: str) -> str
         return "PROVIDER / INFRA"
     if signature == "schema_incompatible":
         return "CONTRACT / FIELD_BINDING"
-    if signature == "model_call_budget_exhausted":
+    if signature in {"model_call_budget_exhausted", "intent_compilation_rejected"}:
         return "INTENT / PLANNING"
     if signature == "observation_no_affordances":
         return "OBSERVATION / CONTEXT"

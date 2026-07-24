@@ -81,7 +81,7 @@ from affordance_runtime.model_port import (
 from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import IntentDraft, OperationClass, TaskSpec
 from affordance_runtime.verification import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 
@@ -180,7 +180,7 @@ class GeneralistClickModel:
         config: ModelConfig,
     ) -> T:
         del config
-        if output_schema.__name__ == "IntentDraft":
+        if output_schema.__name__ == "LLMIntentDraft":
             request = json.loads(messages[-1].content)
             self.calls += 1
             return output_schema.model_validate(
@@ -215,6 +215,22 @@ class GeneralistClickModel:
         self.calls += 1
         self.planner_calls += 1
         return output_schema.model_validate(payload)
+
+
+class InvalidIntentModel:
+    provider = "fixed"
+    model = "invalid-intent"
+    endpoint_class = "test"
+    last_call: ModelCallRecord | None = None
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del messages, output_schema, config
+        return cast(T, IntentDraft())
 
 
 class UnsupportedPolicy(OneClickPolicy):
@@ -398,6 +414,23 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert "click-button" not in json.dumps(task_plan_context)
     assert route["hard_gates"] and route["hard_gates"][0]["passed"] is True
     assert route["scores"] and route["decision_reason"]
+
+
+def test_generalist_intent_rejection_preserves_trace_and_model_attempt(tmp_path: Path) -> None:
+    result = run_browsergym_generalist_episode(
+        FakeBrowserGymEnvironment(),
+        InvalidIntentModel(),
+        task_id="click-button",
+        seed=4,
+        artifact_root=tmp_path,
+    )
+
+    assert result.runtime_status == "failed"
+    assert result.runtime_error.startswith("ValueError: intent compilation unsupported:")
+    assert result.model_call_count == 1
+    assert result.trace_path
+    events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
+    assert events[-2:] == ["IntentCompilationRejected", "BrowserGymEpisodeFailed"]
 
 
 def test_generalist_browsergym_adapter_binds_native_option_activation_as_select() -> None:

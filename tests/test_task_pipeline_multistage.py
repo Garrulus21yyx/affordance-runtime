@@ -115,7 +115,7 @@ class MultiStageIntentAndPlanModel:
     ) -> T:
         del messages, config
         self.calls += 1
-        if output_schema.__name__ == "IntentDraft":
+        if output_schema.__name__ == "LLMIntentDraft":
             return output_schema.model_validate(
                 {
                     "objective": "Discover the current state, then confirm it",
