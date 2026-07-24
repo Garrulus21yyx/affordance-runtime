@@ -233,7 +233,7 @@ def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
         "press_key": {"press", "press_key"},
         "drag": {"drag"},
     }
-    return {
+    targets = {
         action_kind: [
             item.id
             for item in context.affordances
@@ -247,6 +247,20 @@ def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
         ]
         for action_kind, actions in action_map.items()
         if action_kind in context.permitted_action_kinds
+    }
+    rejection = context.recovery_summary.get("proposal_rejection")
+    if not isinstance(rejection, dict):
+        return targets
+    if rejection.get("reason_code") != "relational_evidence_not_proven":
+        return targets
+    rejected_target_id = rejection.get("semantic_target_id")
+    if not isinstance(rejected_target_id, str) or not rejected_target_id:
+        return targets
+    return {
+        action_kind: [
+            target_id for target_id in target_ids if target_id != rejected_target_id
+        ]
+        for action_kind, target_ids in targets.items()
     }
 
 

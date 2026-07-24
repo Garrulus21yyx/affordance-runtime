@@ -68,6 +68,14 @@ class RemainingRecoveryBudgets(StrictModel):
     estimated_cost: float = Field(default=0.0, ge=0.0)
 
 
+class ProposalRejectionContext(StrictModel):
+    """Bounded validator-owned facts for one rejected semantic proposal."""
+
+    code: str = Field(min_length=1, max_length=80)
+    reason_code: str = Field(default="", max_length=80)
+    semantic_target_id: str = Field(default="", max_length=320)
+
+
 class FailureEnvelope(StrictModel):
     """One failure representation valid before or after contract creation."""
 
@@ -84,6 +92,7 @@ class FailureEnvelope(StrictModel):
     observation_epoch_id: str = ""
     snapshot_id: str = ""
     proposal_id: str = ""
+    proposal_rejection: ProposalRejectionContext | None = None
     contract_id: str = ""
     expected_effect: str = ""
     error_code: str = Field(min_length=1)
@@ -123,6 +132,11 @@ class FailureEnvelope(StrictModel):
             raise ValueError("a receipt reference requires contract lineage")
         if len(self.attempted_strategy_ids) != len(set(self.attempted_strategy_ids)):
             raise ValueError("attempted recovery strategy ids must be unique")
+        if (
+            self.proposal_rejection is not None
+            and self.phase != FailurePhase.PROPOSAL_VALIDATION
+        ):
+            raise ValueError("proposal rejection context requires proposal validation phase")
         return self
 
 
@@ -140,6 +154,7 @@ def make_failure_envelope(
     observation_epoch_id: str = "",
     snapshot_id: str = "",
     proposal_id: str = "",
+    proposal_rejection: ProposalRejectionContext | None = None,
     contract: ActionContract | None = None,
     receipt: ExecutionReceipt | None = None,
     expected_effect: str = "",
@@ -165,6 +180,12 @@ def make_failure_envelope(
         "expected_effect": _normalize_semantic_text(expected_effect),
         "effect_status": resolved_effect_status.value,
         "progress_fingerprint": progress_fingerprint,
+        "proposal_rejection_code": (
+            proposal_rejection.code if proposal_rejection is not None else ""
+        ),
+        "proposal_rejection_reason_code": (
+            proposal_rejection.reason_code if proposal_rejection is not None else ""
+        ),
     }
     exact_value = {
         **semantic_value,
@@ -173,6 +194,11 @@ def make_failure_envelope(
         "observation_epoch_id": observation_epoch_id,
         "snapshot_id": snapshot_id,
         "proposal_id": proposal_id,
+        "rejected_semantic_target_id": (
+            proposal_rejection.semantic_target_id
+            if proposal_rejection is not None
+            else ""
+        ),
         "contract_id": contract.id if contract is not None else "",
         "receipt_contract_id": receipt.contract_id if receipt is not None else "",
         "debug_context": _safe_debug_mapping(debug_context or {}),
@@ -191,6 +217,7 @@ def make_failure_envelope(
         observation_epoch_id=observation_epoch_id,
         snapshot_id=snapshot_id,
         proposal_id=proposal_id,
+        proposal_rejection=proposal_rejection,
         contract_id=contract.id if contract is not None else "",
         expected_effect=expected_effect,
         error_code=code,

@@ -32,6 +32,7 @@ from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -992,7 +993,7 @@ class RunCoordinator:
                 except ProposalRejected as exc:
                     error_code = proposal_error_code(exc.code)
                     recovery_decision = self.proposal_recovery_policy.decide(
-                        exc.code, exc.detail, exc.reason_code
+                        exc.code, exc.detail, exc.reason_code, proposal.target_affordance_id
                     )
                     parent = trace.add(
                         "PlannerProposalRejected",
@@ -1048,6 +1049,7 @@ class RunCoordinator:
                         available_commands=recovery_decision.available_commands,
                         snapshot=snapshot,
                         proposal_id=proposal.proposal_id,
+                        proposal_rejection=recovery_decision.rejection_context,
                         expected_effect="; ".join(proposal.expected_effects),
                         recoverable=recovery_decision.recoverable,
                     )
@@ -2615,6 +2617,7 @@ class RunCoordinator:
         available_commands: frozenset[RecoveryCommandKind],
         snapshot: BrowserSnapshot | None = None,
         proposal_id: str = "",
+        proposal_rejection: ProposalRejectionContext | None = None,
         expected_effect: str = "",
         recoverable: bool = True,
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
@@ -2653,6 +2656,7 @@ class RunCoordinator:
                 snapshot.observation.snapshot_id if snapshot is not None else state.current_snapshot_id
             ),
             proposal_id=proposal_id,
+            proposal_rejection=proposal_rejection,
             expected_effect=expected_effect or envelope.goal,
             effect_status=EffectStatus.NOT_DISPATCHED,
             attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),

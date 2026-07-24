@@ -6,6 +6,7 @@ from affordance_runtime.contracts import Observation
 from affordance_runtime.failure_envelope import (
     FailureClass,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -95,6 +96,11 @@ def test_builder_exposes_current_recoverable_proposal_rejection() -> None:
         error_code="planner_proposal_rejected",
         message="target_out_of_scope:semantic:wrong-target",
         state_version=state.version,
+        proposal_rejection=ProposalRejectionContext(
+            code="target_out_of_scope",
+            reason_code="relational_evidence_not_proven",
+            semantic_target_id="semantic:wrong-target",
+        ),
         recoverable=True,
         remaining_budgets=RemainingRecoveryBudgets(),
     )
@@ -106,6 +112,11 @@ def test_builder_exposes_current_recoverable_proposal_rejection() -> None:
         "error_code": "planner_proposal_rejected",
         "message": "target_out_of_scope:semantic:wrong-target",
         "recoverable": True,
+        "proposal_rejection": {
+            "code": "target_out_of_scope",
+            "reason_code": "relational_evidence_not_proven",
+            "semantic_target_id": "semantic:wrong-target",
+        },
     }
 
 

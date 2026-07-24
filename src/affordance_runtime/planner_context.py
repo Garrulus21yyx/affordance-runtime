@@ -353,6 +353,11 @@ def _one_relevant_failure(state: StateKernel) -> dict[str, Any]:
             "error_code": failure.error_code,
             "message": failure.message[:240],
             "recoverable": failure.recoverable,
+            "proposal_rejection": (
+                failure.proposal_rejection.model_dump(mode="json")
+                if failure.proposal_rejection is not None
+                else None
+            ),
         }
     return {}
 

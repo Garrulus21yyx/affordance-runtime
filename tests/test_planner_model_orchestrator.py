@@ -15,6 +15,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerModelOrchestrator,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
+    compatible_target_ids,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 
@@ -179,6 +180,99 @@ def test_orchestrator_returns_a_provider_neutral_structured_candidate() -> None:
     assert proposal.parameters == {"text": "Ada"}
     assert model.calls == 1
     assert len(reservations) == 1
+
+
+def test_relational_rejection_excludes_only_the_rejected_target() -> None:
+    context = _context().model_copy(
+        update={
+            "affordances": (
+                *_context().affordances,
+                AffordanceSummary(
+                    id="field-2",
+                    surface="dom",
+                    role="textbox",
+                    label="Alternate name",
+                    action="fill",
+                    confidence=1.0,
+                    state={},
+                ),
+            ),
+            "recovery_summary": {
+                "proposal_rejection": {
+                    "code": "target_out_of_scope",
+                    "reason_code": "relational_evidence_not_proven",
+                    "semantic_target_id": "field-1",
+                }
+            },
+        }
+    )
+
+    assert compatible_target_ids(context)["type_text"] == ["field-2"]
+
+
+def test_value_rejection_keeps_the_control_available() -> None:
+    context = _context().model_copy(
+        update={
+            "recovery_summary": {
+                "proposal_rejection": {
+                    "code": "target_out_of_scope",
+                    "reason_code": "semantic_value_not_authorized",
+                    "semantic_target_id": "field-1",
+                }
+            }
+        }
+    )
+
+    assert compatible_target_ids(context)["type_text"] == ["field-1"]
+
+
+def test_repair_schema_cannot_decode_a_relationally_rejected_target() -> None:
+    context = _context().model_copy(
+        update={
+            "affordances": (
+                *_context().affordances,
+                AffordanceSummary(
+                    id="field-2",
+                    surface="dom",
+                    role="textbox",
+                    label="Alternate name",
+                    action="fill",
+                    confidence=1.0,
+                    state={},
+                ),
+            ),
+            "recovery_summary": {
+                "proposal_rejection": {
+                    "code": "target_out_of_scope",
+                    "reason_code": "relational_evidence_not_proven",
+                    "semantic_target_id": "field-1",
+                }
+            },
+        }
+    )
+    targets = compatible_target_ids(context)
+    schema = build_repair_candidate_schema(
+        PlannerCandidateModel,
+        ["type_text"],
+        targets,
+    )
+
+    with pytest.raises(ValidationError):
+        schema.model_validate(
+            {
+                "action_kind": "type_text",
+                "target_affordance_id": "field-1",
+                "parameters": {"text": "Ada"},
+            }
+        )
+    accepted = schema.model_validate(
+        {
+            "action_kind": "type_text",
+            "target_affordance_id": "field-2",
+            "parameters": {"text": "Ada"},
+        }
+    )
+    assert accepted.target_affordance_id == "field-2"
 
 
 def test_orchestrator_repairs_once_using_a_narrowed_schema_on_the_same_context() -> None:

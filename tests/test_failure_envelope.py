@@ -7,6 +7,7 @@ from affordance_runtime.failure_envelope import (
     FailureClass,
     FailureEnvelope,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -146,3 +147,57 @@ def test_pre_execution_failure_cannot_claim_an_external_effect() -> None:
                 "effect_status": EffectStatus.MAY_HAVE_OCCURRED,
             }
         )
+
+
+def test_proposal_rejection_context_is_typed_and_phase_bound() -> None:
+    rejection = ProposalRejectionContext(
+        code="target_out_of_scope",
+        reason_code="relational_evidence_not_proven",
+        semantic_target_id="semantic:wrong-target",
+    )
+    failure = make_failure_envelope(
+        run_id="run-1",
+        phase=FailurePhase.PROPOSAL_VALIDATION,
+        failure_class=FailureClass.VALIDATION,
+        error_code="planner_proposal_rejected",
+        message="target rejected",
+        state_version=2,
+        proposal_id="proposal-1",
+        proposal_rejection=rejection,
+        remaining_budgets=_budgets(),
+    )
+
+    assert failure.proposal_rejection == rejection
+    with pytest.raises(ValidationError, match="proposal validation phase"):
+        FailureEnvelope.model_validate(
+            {
+                **failure.model_dump(),
+                "phase": FailurePhase.STEP_PLANNING,
+            }
+        )
+
+
+def test_rejection_family_uses_reason_but_not_dynamic_target() -> None:
+    def failure(reason_code: str, target_id: str) -> FailureEnvelope:
+        return make_failure_envelope(
+            run_id="run-1",
+            phase=FailurePhase.PROPOSAL_VALIDATION,
+            failure_class=FailureClass.VALIDATION,
+            error_code="planner_proposal_rejected",
+            message="target rejected",
+            state_version=2,
+            proposal_rejection=ProposalRejectionContext(
+                code="target_out_of_scope",
+                reason_code=reason_code,
+                semantic_target_id=target_id,
+            ),
+            remaining_budgets=_budgets(),
+        )
+
+    first = failure("relational_evidence_not_proven", "semantic:first")
+    second = failure("relational_evidence_not_proven", "semantic:second")
+    value = failure("semantic_value_not_authorized", "semantic:first")
+
+    assert first.semantic_family_key == second.semantic_family_key
+    assert first.exact_debug_key != second.exact_debug_key
+    assert first.semantic_family_key != value.semantic_family_key
