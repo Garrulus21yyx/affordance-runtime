@@ -25,6 +25,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerModelOrchestrator,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
+    restrict_targets_to_active_subgoal,
     semantic_text_input_constraint,
 )
 from affordance_runtime.planner_model_orchestrator import (
@@ -316,6 +317,10 @@ class GeneralistLMPlanner:
                 initial_permitted,
                 initial_targets,
             )
+            initial_targets = restrict_targets_to_active_subgoal(
+                context,
+                initial_targets,
+            )
         constraints = semantic_compilers.constrain(
             context,
             initial_permitted,
@@ -400,8 +405,8 @@ class GeneralistLMPlanner:
             context=context,
             candidate_type=PlannerProposalCandidate,
             initial_schema=initial_schema,
-            repair_permitted=list(context.permitted_action_kinds),
-            repair_targets=_compatible_target_ids(context),
+            repair_permitted=list(initial_permitted),
+            repair_targets={key: list(value) for key, value in initial_targets.items()},
             max_candidate_repairs=self.max_candidate_repairs,
             reserve_model_call=self._reserve_model_call,
             policy=PlannerCandidateRepairPolicy(

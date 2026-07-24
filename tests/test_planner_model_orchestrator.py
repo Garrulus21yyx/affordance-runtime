@@ -16,6 +16,7 @@ from affordance_runtime.planner_model_orchestrator import (
     build_initial_candidate_schema,
     build_repair_candidate_schema,
     compatible_target_ids,
+    restrict_targets_to_active_subgoal,
     semantic_text_input_constraint,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
@@ -306,6 +307,48 @@ def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
     assert constraint.target_id == "field-1"
     assert constraint.allowed_text_values == ("Com",)
     assert constraint.satisfied is False
+
+
+def test_active_subgoal_restricts_only_ordinary_activation_targets() -> None:
+    base = _context()
+    context = base.model_copy(
+        update={
+            "task_spec": {"objective": "Search, then click the 3rd result"},
+            "active_subgoal": "Press the Search button",
+            "affordances": (
+                base.affordances[0],
+                AffordanceSummary(
+                    id="search",
+                    surface="dom",
+                    role="button",
+                    label="Search",
+                    action="activate",
+                    confidence=1.0,
+                    state={},
+                ),
+                AffordanceSummary(
+                    id="result",
+                    surface="dom",
+                    role="link",
+                    label="Myron",
+                    action="activate",
+                    confidence=1.0,
+                    state={"collection_position": 3},
+                ),
+            ),
+            "permitted_action_kinds": ("activate", "type_text", "ask_user"),
+        }
+    )
+    targets = compatible_target_ids(context)
+
+    restricted = restrict_targets_to_active_subgoal(context, targets)
+
+    assert restricted["activate"] == ["search"]
+    assert restricted["type_text"] == ["field-1"]
+    assert restrict_targets_to_active_subgoal(
+        context.model_copy(update={"active_subgoal": context.task_spec["objective"]}),
+        targets,
+    ) == targets
 
 
 @pytest.mark.parametrize(

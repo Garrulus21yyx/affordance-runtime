@@ -272,6 +272,30 @@ def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
     }
 
 
+def restrict_targets_to_active_subgoal(
+    context: PlannerContext,
+    compatible_targets: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """Prevent ordinary activation targets from crossing a real active subgoal."""
+
+    objective = str(context.task_spec.get("objective") or "").strip().casefold()
+    active_subgoal = context.active_subgoal.strip().casefold()
+    if not active_subgoal or active_subgoal == objective:
+        return {key: list(value) for key, value in compatible_targets.items()}
+    affordance_by_id = {item.id: item for item in context.affordances}
+    restricted = {key: list(value) for key, value in compatible_targets.items()}
+    restricted[PlannerActionKind.ACTIVATE.value] = [
+        target_id
+        for target_id in restricted.get(PlannerActionKind.ACTIVATE.value, [])
+        if (
+            (target := affordance_by_id.get(target_id)) is not None
+            and target.label.strip()
+            and target.label.strip().casefold() in active_subgoal
+        )
+    ]
+    return restricted
+
+
 def compatible_drag_destination_ids(context: PlannerContext) -> list[str]:
     """Return endpoint targets that can receive a drag without making them sources."""
 
