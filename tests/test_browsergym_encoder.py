@@ -180,7 +180,11 @@ def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
     )
 
 
-def _active_typed_outcome_state(*, value: str = "Myron") -> StateKernel:
+def _active_typed_outcome_state(
+    *,
+    value: str = "Myron",
+    relation: SubgoalOutcomeRelation = SubgoalOutcomeRelation.EQUALS,
+) -> StateKernel:
     state = StateKernel("task-1", "Search for Myron")
     state.install_task_plan(
         TaskPlan(
@@ -193,14 +197,14 @@ def _active_typed_outcome_state(*, value: str = "Myron") -> StateKernel:
             subgoals=(
                 SubgoalSpec(
                     subgoal_id="enter-search",
-                    objective=f"search box value equals {value}",
-                    success_criteria=(f"search box value equals {value}",),
+                    objective=f"search box value {relation.value} {value}",
+                    success_criteria=(f"search box value {relation.value} {value}",),
                     evidence_requirements=("current search box value",),
                     operation_class=OperationClass.READ_ONLY,
                     action_family=TaskPlanActionFamily.TYPE_TEXT,
                     outcome=SubgoalOutcome(
                         subject="search box value",
-                        relation=SubgoalOutcomeRelation.EQUALS,
+                        relation=relation,
                         value=value,
                     ),
                 ),
@@ -249,6 +253,58 @@ def test_browsergym_exact_typed_value_declares_active_subgoal_evidence() -> None
 
     assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
     assert verifiers[-1].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+
+
+@pytest.mark.parametrize(
+    ("outcome_value", "expected_scope"),
+    (
+        ("Myron", ProgressEvidenceScope.ACTIVE_SUBGOAL),
+        ("Myr.*", ProgressEvidenceScope.TASK_TERMINAL),
+        ("myron", ProgressEvidenceScope.TASK_TERMINAL),
+    ),
+)
+def test_browsergym_typed_match_requires_exact_normalized_value(
+    outcome_value: str,
+    expected_scope: ProgressEvidenceScope,
+) -> None:
+    state = _active_typed_outcome_state(
+        value=outcome_value,
+        relation=SubgoalOutcomeRelation.MATCHES,
+    )
+    affordance = _affordance(
+        "search",
+        action="fill",
+        locator={"backend_handle": "search"},
+        role="textbox",
+        label="Search",
+    )
+    proposal = PlannerProposal(
+        proposal_id="fill-search",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=affordance.id,
+        parameters={"text": "Myron"},
+    )
+    verifiers = [
+        VerifierSpec(
+            "dom_attribute",
+            "search",
+            {"target_attribute": "bid", "attribute": "value", "value": "Myron"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        )
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("fill", {"bid": "search", "value": "Myron"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == expected_scope
 
 
 def test_generalist_builder_wires_exact_typed_value_scope() -> None:

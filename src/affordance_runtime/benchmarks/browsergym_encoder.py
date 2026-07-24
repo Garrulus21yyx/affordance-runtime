@@ -498,7 +498,11 @@ def _browsergym_postcondition_proves_outcome(
     if action.name in {"fill", "type_text_with_events"} and verifier.kind == "dom_attribute":
         actual = str(expected.get("value", ""))
         return (
-            relation == SubgoalOutcomeRelation.EQUALS
+            relation
+            in {
+                SubgoalOutcomeRelation.EQUALS,
+                SubgoalOutcomeRelation.MATCHES,
+            }
             and bool(normalized_outcome)
             and actual == normalized_outcome
         ) or (
