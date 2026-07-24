@@ -126,6 +126,22 @@ class PlannerModelOrchestrator:
                 repair_permitted,
                 repair_targets,
             )
+            validation_types = set(repair_issue.split(","))
+            if validation_types.intersection(
+                {
+                    "proposal_action_parameter_required",
+                    "proposal_forbidden_parameters",
+                    "proposal_unsupported_parameters",
+                }
+            ):
+                action_kind = candidate.action_kind.value
+                if action_kind in repair_permitted:
+                    repair_permitted = [action_kind]
+                    repair_targets = (
+                        {action_kind: list(repair_targets[action_kind])}
+                        if action_kind in repair_targets
+                        else {}
+                    )
             allowed_press_keys: tuple[str, ...] = ()
             allowed_text_values: tuple[str, ...] = ()
             require_drag_destination = False
@@ -309,6 +325,10 @@ def build_repair_candidate_schema(
             text=(Literal.__getitem__(allowed_text_values), ...),
         )
         fields["parameters"] = (parameters_type, ...)
+    else:
+        parameter_fields = _single_action_parameter_fields(permitted_action_kinds)
+        if parameter_fields is not None:
+            fields["parameters"] = parameter_fields
     return cast(
         type[CandidateT],
         create_model(
@@ -336,6 +356,42 @@ def build_initial_candidate_schema(
             action_kind=(Literal.__getitem__(allowed_actions), ...),
         ),
     )
+
+
+def _single_action_parameter_fields(
+    permitted_action_kinds: list[str],
+) -> tuple[type[BaseModel], Any] | None:
+    """Return a strict parameter object when decoding one semantic action."""
+
+    if len(permitted_action_kinds) != 1:
+        return None
+    action_kind = PlannerActionKind(permitted_action_kinds[0])
+    if action_kind in {
+        PlannerActionKind.ACTIVATE,
+        PlannerActionKind.POINT_ACTIVATE,
+        PlannerActionKind.DRAG,
+        PlannerActionKind.ASK_USER,
+        PlannerActionKind.FINISH,
+    }:
+        return EmptyPlannerParameters, Field(default_factory=EmptyPlannerParameters)
+    parameter_field: tuple[str, Any]
+    if action_kind == PlannerActionKind.TYPE_TEXT:
+        parameter_field = ("text", (str, ...))
+    elif action_kind == PlannerActionKind.SELECT_OPTION:
+        parameter_field = ("option", (str | list[str], ...))
+    elif action_kind == PlannerActionKind.PRESS_KEY:
+        parameter_field = ("key", (str, ...))
+    else:
+        return None
+    parameter_definitions: dict[str, Any] = {
+        parameter_field[0]: parameter_field[1],
+    }
+    parameter_type = create_model(
+        f"{action_kind.value.title().replace('_', '')}PlannerParameters",
+        __config__=ConfigDict(extra="forbid"),
+        **parameter_definitions,
+    )
+    return parameter_type, ...
 
 
 def _candidate_validation_types(error: ValidationError) -> str:

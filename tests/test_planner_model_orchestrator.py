@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence, TypeVar, cast
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import AffordanceSummary, PlannerContext
@@ -14,6 +14,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerCandidateRepairPolicy,
     PlannerModelOrchestrator,
     build_initial_candidate_schema,
+    build_repair_candidate_schema,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 
@@ -29,6 +30,7 @@ class SequenceModel:
     last_call: ModelCallRecord | None = None
     calls: int = 0
     messages: list[tuple[ModelMessage, ...]] = field(default_factory=list)
+    output_schemas: list[type[BaseModel]] = field(default_factory=list)
 
     async def generate_structured(
         self,
@@ -36,11 +38,12 @@ class SequenceModel:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        del output_schema, config
+        del config
         self.messages.append(tuple(messages))
+        self.output_schemas.append(output_schema)
         payload = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
-        return cast(T, PlannerCandidateModel.model_validate(payload))
+        return cast(T, output_schema.model_validate(payload))
 
 
 @dataclass
@@ -198,6 +201,87 @@ def test_orchestrator_repairs_once_using_a_narrowed_schema_on_the_same_context()
     assert len(reservations) == 2
     assert [message.role for message in model.messages[1]] == ["system", "user", "assistant", "user"]
     assert '"validation_error_types": ["proposal_target_required"]' in model.messages[1][-1].content
+
+
+def test_orchestrator_keeps_action_and_narrows_parameters_during_parameter_repair() -> None:
+    model = SequenceModel(
+        (
+            {
+                "action_kind": "type_text",
+                "target_affordance_id": "field-1",
+                "parameters": {"value": "Ada"},
+            },
+            {
+                "action_kind": "type_text",
+                "target_affordance_id": "field-1",
+                "parameters": {"text": "Ada"},
+            },
+        )
+    )
+
+    proposal = _run(model, max_candidate_repairs=1, reserve_model_call=lambda: None)
+
+    assert proposal.parameters == {"text": "Ada"}
+    assert model.calls == 2
+    repair_schema = model.output_schemas[1].model_json_schema()
+    assert repair_schema["properties"]["action_kind"]["const"] == "type_text"
+    parameter_ref = repair_schema["properties"]["parameters"]["$ref"].split("/")[-1]
+    parameter_schema = repair_schema["$defs"][parameter_ref]
+    assert parameter_schema["additionalProperties"] is False
+    assert parameter_schema["required"] == ["text"]
+
+
+def test_drag_repair_schema_requires_destination_and_rejects_parameters() -> None:
+    schema = build_repair_candidate_schema(
+        PlannerCandidateModel,
+        ["drag"],
+        {"drag": ["source"]},
+        drag_destination_ids=("destination",),
+    )
+
+    with pytest.raises(ValidationError):
+        schema.model_validate(
+            {
+                "action_kind": "drag",
+                "target_affordance_id": "source",
+                "destination_affordance_id": "destination",
+                "parameters": {"destination": "destination"},
+            }
+        )
+    valid = schema.model_validate(
+        {
+            "action_kind": "drag",
+            "target_affordance_id": "source",
+            "destination_affordance_id": "destination",
+            "parameters": {},
+        }
+    )
+    assert valid.destination_affordance_id == "destination"
+
+
+def test_select_option_repair_schema_requires_only_semantic_option() -> None:
+    schema = build_repair_candidate_schema(
+        PlannerCandidateModel,
+        ["select_option"],
+        {"select_option": ["select-1"]},
+    )
+
+    with pytest.raises(ValidationError):
+        schema.model_validate(
+            {
+                "action_kind": "select_option",
+                "target_affordance_id": "select-1",
+                "parameters": {"value": "Ada"},
+            }
+        )
+    valid = schema.model_validate(
+        {
+            "action_kind": "select_option",
+            "target_affordance_id": "select-1",
+            "parameters": {"option": "Ada"},
+        }
+    )
+    assert valid.model_dump()["parameters"]["option"] == "Ada"
 
 
 def test_orchestrator_exhaustion_is_redacted_and_does_not_return_an_invalid_proposal() -> None:
