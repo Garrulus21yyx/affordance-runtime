@@ -125,7 +125,14 @@ class _FixedTaskPlanModel:
     ) -> T:
         del messages, config
         self.calls += 1
-        return output_schema.model_validate(self.candidate.model_dump(mode="json"))
+        subgoals = self.candidate.subgoals
+        return output_schema.model_validate(
+            {
+                "entry_subgoal": subgoals[0].model_dump(mode="json"),
+                "remaining_subgoals": [item.model_dump(mode="json") for item in subgoals[1:]],
+                "assumptions": list(self.candidate.assumptions),
+            }
+        )
 
 
 @dataclass

@@ -46,7 +46,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
 )
 
 TASK_PLAN_SCHEMA_VERSION = "1.1"
-TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "current-entry-prefix-v1"
+TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 
 
 class TaskPlanSource(StrEnum):
@@ -379,19 +379,33 @@ class TaskPlanCandidate(StrictModel):
     assumptions: tuple[str, ...] = ()
 
 
-def task_plan_candidate_model_for_context(
+class TaskPlanProviderEnvelope(StrictModel):
+    """Provider-only shape with an explicitly constrained entry field."""
+
+    entry_subgoal: TaskPlanSubgoalCandidate
+    remaining_subgoals: tuple[TaskPlanSubgoalCandidate, ...] = Field(default=(), max_length=7)
+    assumptions: tuple[str, ...] = ()
+
+    def to_candidate(self) -> TaskPlanCandidate:
+        return TaskPlanCandidate(
+            subgoals=(self.entry_subgoal, *self.remaining_subgoals),
+            assumptions=self.assumptions,
+        )
+
+
+def task_plan_provider_model_for_context(
     context: TaskPlanningContext,
-) -> type[TaskPlanCandidate]:
-    """Constrain only the first provider-authored subgoal to current actions."""
+) -> type[TaskPlanProviderEnvelope]:
+    """Constrain the explicit provider entry while leaving future items generic."""
 
     if not context.environment.affordances:
-        return TaskPlanCandidate
+        return TaskPlanProviderEnvelope
     allowed_families = _context_action_families(context)
     if not allowed_families or allowed_families == frozenset(TaskPlanActionFamily):
-        return TaskPlanCandidate
+        return TaskPlanProviderEnvelope
     allowed_values = tuple(sorted(item.value for item in allowed_families))
 
-    class ContextualTaskPlanCandidate(TaskPlanCandidate):
+    class ContextualTaskPlanProviderEnvelope(TaskPlanProviderEnvelope):
         @classmethod
         def model_json_schema(
             cls,
@@ -409,26 +423,24 @@ def task_plan_candidate_model_for_context(
                 mode=mode,
                 union_format=union_format,
             )
-            subgoals_schema = schema["properties"]["subgoals"]
-            items = subgoals_schema["items"]
-            mapping = items["discriminator"]["mapping"]
+            entry_schema = schema["properties"]["entry_subgoal"]
+            mapping = entry_schema["discriminator"]["mapping"]
             entry_mapping = {value: mapping[value] for value in allowed_values}
             entry_refs = tuple(dict.fromkeys(entry_mapping.values()))
-            subgoals_schema["prefixItems"] = [
-                {
-                    "discriminator": {
-                        "propertyName": "action_family",
-                        "mapping": entry_mapping,
-                    },
-                    "oneOf": [{"$ref": value} for value in entry_refs],
-                }
-            ]
-            schema["title"] = TaskPlanCandidate.__name__
+            schema["properties"]["entry_subgoal"] = {
+                "discriminator": {
+                    "propertyName": "action_family",
+                    "mapping": entry_mapping,
+                },
+                "oneOf": [{"$ref": value} for value in entry_refs],
+                "title": "Entry Subgoal",
+            }
+            schema["title"] = TaskPlanProviderEnvelope.__name__
             return schema
 
-    ContextualTaskPlanCandidate.__name__ = TaskPlanCandidate.__name__
-    ContextualTaskPlanCandidate.__qualname__ = TaskPlanCandidate.__qualname__
-    return ContextualTaskPlanCandidate
+    ContextualTaskPlanProviderEnvelope.__name__ = TaskPlanProviderEnvelope.__name__
+    ContextualTaskPlanProviderEnvelope.__qualname__ = TaskPlanProviderEnvelope.__qualname__
+    return ContextualTaskPlanProviderEnvelope
 
 
 class PlanningAffordanceSummary(StrictModel):
@@ -840,8 +852,8 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v6"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v7"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
@@ -878,8 +890,9 @@ class LLMTaskPlanner:
             ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
             ModelMessage(role="user", content=json.dumps(prompt_context, sort_keys=True)),
         ]
-        candidate_model = task_plan_candidate_model_for_context(context)
-        candidate = await self.model.generate_structured(messages, candidate_model, self.config)
+        provider_model = task_plan_provider_model_for_context(context)
+        envelope = await self.model.generate_structured(messages, provider_model, self.config)
+        candidate = envelope.to_candidate()
         plan = self._bind_candidate(candidate, context)
         report = self.validator.validate(
             plan,
@@ -899,16 +912,16 @@ class LLMTaskPlanner:
             ],
             "instruction": "Repair only the reported plan fields; retain outcome-only semantics and constraints.",
         }
-        repaired = await self.model.generate_structured(
+        repaired_envelope = await self.model.generate_structured(
             [
                 *messages,
-                ModelMessage(role="assistant", content=candidate.model_dump_json()),
+                ModelMessage(role="assistant", content=envelope.model_dump_json()),
                 ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
             ],
-            candidate_model,
+            provider_model,
             self.config,
         )
-        return self._bind_candidate(repaired, context)
+        return self._bind_candidate(repaired_envelope.to_candidate(), context)
 
     @staticmethod
     def _bind_candidate(candidate: TaskPlanCandidate, context: TaskPlanningContext) -> TaskPlan:

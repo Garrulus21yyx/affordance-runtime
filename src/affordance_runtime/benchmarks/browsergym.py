@@ -85,7 +85,7 @@ from affordance_runtime.task_planning import (
     TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
     TASK_PLAN_SCHEMA_VERSION,
     TASK_PLANNER_PROMPT_VERSION,
-    TaskPlanCandidate,
+    TaskPlanProviderEnvelope,
     task_planner_model_config,
 )
 from affordance_runtime.visual_grounding import (
@@ -501,7 +501,7 @@ def _intent_compiler_schema_sha256() -> str:
 
 
 def _task_planner_schema_sha256() -> str:
-    payload = TaskPlanCandidate.model_json_schema()
+    payload = TaskPlanProviderEnvelope.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 

@@ -142,20 +142,20 @@ class MultiStageIntentAndPlanModel:
                     "task_structure": "multi_stage",
                 }
             )
-        if output_schema.__name__ == "TaskPlanCandidate":
+        if output_schema.__name__ == "TaskPlanProviderEnvelope":
             return output_schema.model_validate(
                 {
-                    "subgoals": [
-                        {
-                            "subgoal_id": "discover",
-                            "outcome": {
-                                "subject": "current state",
-                                "relation": "is_visible",
-                            },
-                            "evidence_requirements": ["fresh discovered-state observation"],
-                            "operation_class": "read_only",
-                            "action_family": "activate",
+                    "entry_subgoal": {
+                        "subgoal_id": "discover",
+                        "outcome": {
+                            "subject": "current state",
+                            "relation": "is_visible",
                         },
+                        "evidence_requirements": ["fresh discovered-state observation"],
+                        "operation_class": "read_only",
+                        "action_family": "activate",
+                    },
+                    "remaining_subgoals": [
                         {
                             "subgoal_id": "confirm",
                             "outcome": {

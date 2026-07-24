@@ -19,12 +19,13 @@ from affordance_runtime.task_planning import (
     TaskPlanCandidate,
     TaskPlanningBudgetSummary,
     TaskPlanningContext,
+    TaskPlanProviderEnvelope,
     TaskPlanSource,
     TaskPlanValidationStatus,
     TaskPlanValidator,
     synthetic_task_plan,
     task_plan_allowed_outcome_relations,
-    task_plan_candidate_model_for_context,
+    task_plan_provider_model_for_context,
     task_plan_repair_directives,
     task_planner_model_config,
 )
@@ -104,7 +105,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v6"
+    assert task_planner_model_config().prompt_version == "task-planner-v7"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
@@ -161,17 +162,19 @@ def test_context_schema_constrains_only_first_subgoal_to_current_actions() -> No
             )
         }
     )
-    candidate_model = task_plan_candidate_model_for_context(context)
-    schema = candidate_model.model_json_schema()
-    subgoals_schema = schema["properties"]["subgoals"]
-    items = subgoals_schema["items"]
+    provider_model = task_plan_provider_model_for_context(context)
+    schema = provider_model.model_json_schema()
+    entry_schema = schema["properties"]["entry_subgoal"]
+    remaining_items = schema["properties"]["remaining_subgoals"]["items"]
 
-    assert TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION == "current-entry-prefix-v1"
-    assert set(subgoals_schema["prefixItems"][0]["discriminator"]["mapping"]) == {
+    assert TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION == "explicit-entry-envelope-v1"
+    assert set(schema["required"]) == {"entry_subgoal"}
+    assert "subgoals" not in schema["properties"]
+    assert set(entry_schema["discriminator"]["mapping"]) == {
         "activate",
         "type_text",
     }
-    assert set(items["discriminator"]["mapping"]) == {
+    assert set(remaining_items["discriminator"]["mapping"]) == {
         item.value for item in TaskPlanActionFamily
     }
 
@@ -189,22 +192,22 @@ def test_context_schema_parser_preserves_future_family_and_public_shape() -> Non
             )
         }
     )
-    candidate_model = task_plan_candidate_model_for_context(context)
+    provider_model = task_plan_provider_model_for_context(context)
 
-    candidate = candidate_model.model_validate(
+    envelope = provider_model.model_validate(
         {
-            "subgoals": [
-                {
-                    "subgoal_id": "enter",
-                    "outcome": {
-                        "subject": "search text",
-                        "relation": "equals",
-                        "value": "Myron",
-                    },
-                    "evidence_requirements": ["current input value"],
-                    "operation_class": "reversible_write",
-                    "action_family": "type_text",
+            "entry_subgoal": {
+                "subgoal_id": "enter",
+                "outcome": {
+                    "subject": "search text",
+                    "relation": "equals",
+                    "value": "Myron",
                 },
+                "evidence_requirements": ["current input value"],
+                "operation_class": "reversible_write",
+                "action_family": "type_text",
+            },
+            "remaining_subgoals": [
                 {
                     "subgoal_id": "open",
                     "outcome": {
@@ -219,7 +222,9 @@ def test_context_schema_parser_preserves_future_family_and_public_shape() -> Non
             ]
         }
     )
+    candidate = envelope.to_candidate()
 
+    assert isinstance(envelope, TaskPlanProviderEnvelope)
     assert isinstance(candidate, TaskPlanCandidate)
     assert [item.action_family for item in candidate.subgoals] == [
         TaskPlanActionFamily.TYPE_TEXT,
@@ -228,7 +233,12 @@ def test_context_schema_parser_preserves_future_family_and_public_shape() -> Non
 
 
 def test_context_schema_stays_generic_when_environment_is_unknown() -> None:
-    assert task_plan_candidate_model_for_context(_context()) is TaskPlanCandidate
+    assert task_plan_provider_model_for_context(_context()) is TaskPlanProviderEnvelope
+
+
+def test_provider_envelope_rejects_legacy_positional_candidate_shape() -> None:
+    with pytest.raises(ValueError, match="entry_subgoal"):
+        TaskPlanProviderEnvelope.model_validate({"subgoals": []})
 
 
 class RecordingComplexPlanner:
@@ -869,57 +879,55 @@ class RepairingTaskPlanModel:
             assert '"created_at_s"' not in messages[-1].content
             return output_schema.model_validate(
                 {
-                    "subgoals": [
-                        {
-                            "subgoal_id": "discover",
-                            "outcome": {
-                                "subject": "Press the setting control",
-                                "relation": "is_completed",
-                            },
-                            "evidence_requirements": ["settings API"],
-                            "operation_class": "reversible_write",
-                            "action_family": "activate",
-                        }
-                    ]
+                    "entry_subgoal": {
+                        "subgoal_id": "discover",
+                        "outcome": {
+                            "subject": "Press the setting control",
+                            "relation": "is_completed",
+                        },
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                        "action_family": "activate",
+                    }
                 }
             )
         assert "validation_errors" in messages[-1].content
         return output_schema.model_validate(
             {
-                "subgoals": [
-                        {
-                            "subgoal_id": "discover",
-                            "outcome": {
-                                "subject": "current setting",
-                                "relation": "is_visible",
-                            },
-                            "evidence_requirements": ["settings API"],
-                            "operation_class": "reversible_write",
-                            "action_family": "activate",
+                "entry_subgoal": {
+                    "subgoal_id": "discover",
+                    "outcome": {
+                        "subject": "current setting",
+                        "relation": "is_visible",
+                    },
+                    "evidence_requirements": ["settings API"],
+                    "operation_class": "reversible_write",
+                    "action_family": "activate",
+                },
+                "remaining_subgoals": [
+                    {
+                        "subgoal_id": "write",
+                        "outcome": {
+                            "subject": "setting",
+                            "relation": "equals",
+                            "value": "dark",
                         },
-                        {
-                            "subgoal_id": "write",
-                            "outcome": {
-                                "subject": "setting",
-                                "relation": "equals",
-                                "value": "dark",
-                            },
-                            "depends_on": ["discover"],
-                            "evidence_requirements": ["settings API"],
-                            "operation_class": "reversible_write",
-                            "action_family": "select_option",
+                        "depends_on": ["discover"],
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                        "action_family": "select_option",
+                    },
+                    {
+                        "subgoal_id": "confirm",
+                        "outcome": {
+                            "subject": "confirmed setting",
+                            "relation": "equals",
+                            "value": "dark",
                         },
-                        {
-                            "subgoal_id": "confirm",
-                            "outcome": {
-                                "subject": "confirmed setting",
-                                "relation": "equals",
-                                "value": "dark",
-                            },
-                            "depends_on": ["write"],
-                            "evidence_requirements": ["settings API"],
-                            "operation_class": "reversible_write",
-                            "action_family": "wait",
+                        "depends_on": ["write"],
+                        "evidence_requirements": ["settings API"],
+                        "operation_class": "reversible_write",
+                        "action_family": "wait",
                     },
                 ]
             }
@@ -962,25 +970,23 @@ class ActionInstructionRepairModel:
             assert "action_instruction_subgoal" in messages[-1].content
         return output_schema.model_validate(
             {
-                "subgoals": [
-                    {
-                        "subgoal_id": "results-visible",
-                        "outcome": (
-                            {
-                                "subject": "Press the Search button",
-                                "relation": "is_completed",
-                            }
-                            if self.calls == 1
-                            else {
-                                "subject": "Search results for Myron",
-                                "relation": "is_visible",
-                            }
-                        ),
-                        "evidence_requirements": ["post-action results observation"],
-                        "operation_class": "reversible_write",
-                        "action_family": "activate",
-                    }
-                ]
+                "entry_subgoal": {
+                    "subgoal_id": "results-visible",
+                    "outcome": (
+                        {
+                            "subject": "Press the Search button",
+                            "relation": "is_completed",
+                        }
+                        if self.calls == 1
+                        else {
+                            "subject": "Search results for Myron",
+                            "relation": "is_visible",
+                        }
+                    ),
+                    "evidence_requirements": ["post-action results observation"],
+                    "operation_class": "reversible_write",
+                    "action_family": "activate",
+                }
             }
         )
 
@@ -1014,32 +1020,34 @@ class ContextualEntryRepairModel:
     async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
         del config
         self.calls += 1
+        entry_mapping = output_schema.model_json_schema()["properties"]["entry_subgoal"][
+            "discriminator"
+        ]["mapping"]
+        assert set(entry_mapping) == {"type_text"}
         if self.calls == 2:
             assert '"field": "action_family"' in messages[-1].content
             assert '"disallowed_values": ["navigate"]' in messages[-1].content
             assert '"required_semantics": "currently_bindable_action_family"' in messages[-1].content
         return output_schema.model_validate(
             {
-                "subgoals": [
-                    {
-                        "subgoal_id": "entry",
-                        "outcome": (
-                            {
-                                "subject": "search page",
-                                "relation": "is_available",
-                            }
-                            if self.calls == 1
-                            else {
-                                "subject": "search text",
-                                "relation": "equals",
-                                "value": "Myron",
-                            }
-                        ),
-                        "evidence_requirements": ["fresh current-state observation"],
-                        "operation_class": "reversible_write",
-                        "action_family": "navigate" if self.calls == 1 else "type_text",
-                    }
-                ]
+                "entry_subgoal": {
+                    "subgoal_id": "entry",
+                    "outcome": (
+                        {
+                            "subject": "search page",
+                            "relation": "is_available",
+                        }
+                        if self.calls == 1
+                        else {
+                            "subject": "search text",
+                            "relation": "equals",
+                            "value": "Myron",
+                        }
+                    ),
+                    "evidence_requirements": ["fresh current-state observation"],
+                    "operation_class": "reversible_write",
+                    "action_family": "navigate" if self.calls == 1 else "type_text",
+                }
             }
         )
 
