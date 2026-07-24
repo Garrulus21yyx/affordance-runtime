@@ -274,6 +274,15 @@ class TaskPlanValidationIssue(StrictModel):
     detail: str = ""
 
 
+class TaskPlanRepairDirective(StrictModel):
+    """Typed, authority-free correction derived from a validation issue."""
+
+    subgoal_id: str = ""
+    field: str = Field(min_length=1)
+    disallowed_values: tuple[str, ...] = ()
+    required_semantics: str = Field(min_length=1)
+
+
 class TaskPlanValidationReport(StrictModel):
     status: TaskPlanValidationStatus
     issues: tuple[TaskPlanValidationIssue, ...] = ()
@@ -417,6 +426,23 @@ def _is_precondition_only_action_outcome(
     )
 
 
+def task_plan_repair_directives(
+    issues: tuple[TaskPlanValidationIssue, ...],
+) -> tuple[TaskPlanRepairDirective, ...]:
+    """Project validator issues into bounded model-facing field constraints."""
+
+    return tuple(
+        TaskPlanRepairDirective(
+            subgoal_id=issue.detail,
+            field="outcome.relation",
+            disallowed_values=(SubgoalOutcomeRelation.IS_AVAILABLE.value,),
+            required_semantics="post_action_state",
+        )
+        for issue in issues
+        if issue.code == "precondition_only_outcome"
+    )
+
+
 class TaskPlannerPort(Protocol):
     def plan(self, context: TaskPlanningContext) -> TaskPlan | Awaitable[TaskPlan]: ...
 
@@ -461,10 +487,10 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v3"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v4"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
-Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. For an action family that requires a current target, is_available is only a precondition and cannot be its outcome; describe the independently verifiable post-action state instead. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
 
 def task_planner_model_config() -> ModelConfig:
@@ -512,6 +538,10 @@ class LLMTaskPlanner:
             return plan
         repair_context = {
             "validation_errors": [item.model_dump(mode="json") for item in report.issues],
+            "repair_directives": [
+                item.model_dump(mode="json")
+                for item in task_plan_repair_directives(report.issues)
+            ],
             "instruction": "Repair only the reported plan fields; retain outcome-only semantics and constraints.",
         }
         repaired = await self.model.generate_structured(

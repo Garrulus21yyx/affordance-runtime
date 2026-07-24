@@ -20,6 +20,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidationStatus,
     TaskPlanValidator,
     synthetic_task_plan,
+    task_plan_repair_directives,
     task_planner_model_config,
 )
 from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
@@ -80,7 +81,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v3"
+    assert task_planner_model_config().prompt_version == "task-planner-v4"
 
 
 class RecordingComplexPlanner:
@@ -298,6 +299,50 @@ def test_validator_allows_availability_as_navigation_outcome() -> None:
     report = TaskPlanValidator().validate(navigated, task, state_version=4)
 
     assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
+def test_precondition_issue_projects_to_typed_repair_directive() -> None:
+    directives = task_plan_repair_directives(
+        (
+            TaskPlanValidator()
+            .validate(
+                TaskPlan(
+                    plan_id="plan-1",
+                    task_id="task-1",
+                    task_revision=2,
+                    plan_version=1,
+                    based_on_state_version=4,
+                    generated_by=TaskPlanSource.LLM,
+                    subgoals=(
+                        SubgoalSpec(
+                            subgoal_id="activate-control",
+                            objective="setting control is available",
+                            success_criteria=("setting control is available",),
+                            evidence_requirements=("current control state",),
+                            operation_class=OperationClass.REVERSIBLE_WRITE,
+                            action_family=TaskPlanActionFamily.ACTIVATE,
+                            outcome=SubgoalOutcome(
+                                subject="setting control",
+                                relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                            ),
+                        ),
+                    ),
+                ),
+                _task(),
+                state_version=4,
+            )
+            .issues
+        )
+    )
+
+    assert [item.model_dump(mode="json") for item in directives] == [
+        {
+            "subgoal_id": "activate-control",
+            "field": "outcome.relation",
+            "disallowed_values": ["is_available"],
+            "required_semantics": "post_action_state",
+        }
+    ]
 
 
 def test_validator_rejects_non_monotonic_replacement_lineage() -> None:
@@ -599,6 +644,65 @@ def test_llm_task_planner_repairs_action_instruction_into_outcome() -> None:
 
     assert model.calls == 2
     assert plan.subgoals[0].objective == "Search results for Myron is visible"
+    assert (
+        TaskPlanValidator().validate(plan, task, state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
+
+
+class PreconditionOutcomeRepairModel:
+    provider = "fixed"
+    model = "fixed-task-planner"
+    endpoint_class = "test"
+    last_call = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
+        del config
+        self.calls += 1
+        if self.calls == 2:
+            assert '"field": "outcome.relation"' in messages[-1].content
+            assert '"disallowed_values": ["is_available"]' in messages[-1].content
+            assert '"required_semantics": "post_action_state"' in messages[-1].content
+        return output_schema.model_validate(
+            {
+                "subgoals": [
+                    {
+                        "subgoal_id": "activate-search",
+                        "outcome": (
+                            {
+                                "subject": "search button",
+                                "relation": "is_available",
+                            }
+                            if self.calls == 1
+                            else {
+                                "subject": "search results",
+                                "relation": "is_visible",
+                            }
+                        ),
+                        "evidence_requirements": ["fresh search results observation"],
+                        "operation_class": "reversible_write",
+                        "action_family": "activate",
+                    }
+                ]
+            }
+        )
+
+
+def test_llm_task_planner_repairs_precondition_into_post_action_outcome() -> None:
+    import asyncio
+
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    model = PreconditionOutcomeRepairModel()
+
+    plan = asyncio.run(
+        LLMTaskPlanner(model).plan(_context().model_copy(update={"task_spec": task}))
+    )
+
+    assert model.calls == 2
+    assert plan.subgoals[0].objective == "search results is visible"
     assert (
         TaskPlanValidator().validate(plan, task, state_version=4).status
         == TaskPlanValidationStatus.ACCEPT
