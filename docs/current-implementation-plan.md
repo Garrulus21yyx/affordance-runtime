@@ -25,16 +25,19 @@ M8.6 and must not authorize additional default semantic compilers. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-22): clean `7e1c7db` passes smoke
-6/6, PR 18/18, diagnostic 30/30, and frozen nightly 300/300 at reward 1.0.
-The complete 125-task x 5-seed residual release observed 625/625 and measured
-402/625 success (0.6432) without provider, retry, missing-artifact, drift, or
-batch-circuit failures. Its 223 residual failures span observation, planning,
-contract/field binding, execution, verification, and official-zero outcomes;
-they are retained as capability evidence, not a passing score. Do not resume or
-patch this frozen batch. Improve generic trace-derived family attribution,
-select architecture work from cross-task clusters, and keep task-specific
-solvers out of shared Runtime code.
+Current M8.2B diagnostic position (2026-07-24): strict-generalist implementation
+SHA `351dbdf` completed the new 6-case smoke, 18-case PR breadth gate, and
+seed-major 30 x 2 diagnostic without a batch stop, missing case, provider
+failure, or retry. The diagnostic measured 19/60 official success/reward
+(`0.3166666667`), so it is not a passing score and frozen nightly is held.
+Formal attribution yields 4 contract/field-binding, 4 execution, 7
+intent/planning, and 26 generic recovery envelopes. The generic recovery group
+mixes unlike precondition, approval, routing-target, and terminal-action facts
+across eight families; close this trace-to-FailureEnvelope ownership gap before
+selecting behavior repairs from that group. Then prioritize cross-family typed
+proposal parameters, perception evidence gating, subgoal-target constraints,
+and execution/verification. Do not add task-specific solvers. Evidence:
+`evidence/runs/m8.2b-diagnostic-351dbdf/`.
 
 Current post-R8 repair slice (2026-07-23): release traces for the stable
 password/login verification cluster show a shared observation defect. Native
@@ -1122,7 +1125,7 @@ benchmark matching the host report on every stable outcome/oracle field, and
 DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 `evidence/m8.1-40fd93b.md`.
 
-### M8.2: Planner Contracts and Public Benchmark Audit - strict reevaluation pending
+### M8.2: Planner Contracts and Public Benchmark Audit - diagnostic repair in progress
 
 #### M8.2A: Task Intake and Planner Contracts - component done; behavior reopened
 

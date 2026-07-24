@@ -27,11 +27,11 @@ Status values:
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Planner Contracts | partial | typed intake/revision, semantic proposal boundary, provider-neutral ports, local SaaS and cross-surface evidence | strict-generalist behavior, compiler isolation, behavioral controls, and normal task-plan wiring move to M8.6 |
-| M8.2B Public Benchmark Audit | strict reevaluation pending | historical smoke, PR, nightly 300/300, and residual release reports are classified legacy/compatibility evidence | run a new strict frozen ladder before any score review; provisioned public suites remain later audit gates |
+| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict `351dbdf` ladder completed 6-case smoke, 18-case PR, and 60-case seed-major diagnostic; diagnostic success is 19/60 with no provider failure/retry | hold frozen nightly; close attribution and cross-family Runtime owners before a new diagnostic |
 | M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
-| M8.6 Planner, Active Perception, and Recovery Governance | done | `c939051`: reopened repairs pass 680 tests/Ruff/mypy and the immutable 11-case four-profile rollout passes with no safety regression | preserve freeze and begin a new separately identified M8.2B diagnostic |
+| M8.6 Planner, Active Perception, and Recovery Governance | done | `c939051`: reopened repairs pass 680 tests/Ruff/mypy and the immutable 11-case four-profile rollout passes with no safety regression | preserve freeze; the separate M8.2B diagnostic is complete and does not reopen M8.6 |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -158,7 +158,22 @@ paths. The same planner class is tested across DOM/SoM/WoT affordances and
 passed an official BrowserGym `click-button` smoke through typed action binding.
 See `evidence/m8.2a-7edaa97.md`.
 
-### M8.2B Public Benchmark Audit - strict reevaluation pending
+### M8.2B Public Benchmark Audit - diagnostic complete, repair required
+
+The new strict-generalist evaluation at implementation SHA `351dbdf` completed
+all 60 scheduled cases in seed-major order after fresh smoke and PR breadth
+gates. It recorded 19 successes and 41 failures, mean official reward
+`0.3166666667`, 251 model calls, and zero provider failures, rate-limit retries,
+transient retries, missing cases, invalidations, or batch stops. Seven tasks are
+2/2, five are 1/2, and eighteen are 0/2. `official_score_claimed` remains false.
+
+Formal envelopes contain 4 contract/field-binding, 4 execution, 7
+intent/planning, and 26 generic recovery results. Because the recovery bucket
+mixes unlike precondition, approval, routing-target, and terminal-action facts
+across eight families, frozen nightly is held. The next implementation slice is
+generic attribution fidelity followed by cross-family contract, context,
+subgoal-routing, and execution/verification owners—not task-specific repair.
+Evidence: `evidence/runs/m8.2b-diagnostic-351dbdf/`.
 
 The isolated BrowserGym 0.14.3 adapter routes every supported action through
 `RunCoordinator`, exposes a typed action whitelist, discovers 125 registered
@@ -202,7 +217,8 @@ The v109 clean immutable 30x10 nightly completed 300/300 and exposed one
 acceptance error plus two execution failures. The replacement v112 nightly
 passed 300/300 for its exact revision and active compiler profile. These are
 historical compatibility and diagnostic results, not proof of a
-strict-generalist planner. New score promotion is paused until M8.6 closes;
+strict-generalist planner. M8.6 is now closed, and the new strict diagnostic
+remains non-promotable while its cross-family residual owners are open;
 release and provisioned external suites remain later audit gates.
 
 ### M8.3 Recovery-Cascade Components - partial

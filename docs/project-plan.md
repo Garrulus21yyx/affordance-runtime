@@ -169,7 +169,7 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Planner Contracts | partial / reopened | typed intake, TaskSpec revision, semantic proposal binding, and provider-neutral ports exist; default planner behavior is not yet strict-generalist |
-| M8.2B Public Benchmark Audit | strict reevaluation pending | historical smoke, PR, nightly, and release reports remain legacy/compatibility evidence; a new strict frozen run is required before score review |
+| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `351dbdf` completed 60/60 with 19 successes, no provider failure/retry, and 41 attributable residuals; frozen nightly is held |
 | M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
@@ -493,7 +493,16 @@ reversible-write, approval-gated, and cross-surface cases; blocking ambiguity
 and policy conflict stop safely; TaskSpec revisions invalidate stale proposals;
 and all model/proposal/contract lineage is traceable.
 
-#### M8.2B: Public Benchmark Expansion - new strict frozen evaluation required
+#### M8.2B: Public Benchmark Expansion - diagnostic complete, repair required
+
+The new strict-generalist ladder is no longer pending. Implementation SHA
+`351dbdf` completed smoke 6/6 accounting, PR 18/18 accounting, and the
+seed-major 30 x 2 diagnostic 60/60. The diagnostic result is 19/60 with zero
+provider failures/retries and no batch stop. It is evidence for repair
+selection, not a promoted score. Frozen nightly remains held until generic
+failure ownership, typed proposal parameters, perception gating,
+subgoal-target constraints, and execution/verification residuals close. See
+`evidence/runs/m8.2b-diagnostic-351dbdf/`.
 
 First complete a bounded consolidation pass:
 
@@ -517,7 +526,8 @@ pass must not introduce production-service infrastructure.
 The isolated BrowserGym 0.14.3 full-Coordinator bridge, typed action whitelist,
 external-policy boundary, and real one-task smoke are implemented. Existing
 18-episode, PR, nightly, and release reports remain historical profile evidence.
-Do not expand or promote scores until M8.6 closes.
+M8.6 is closed and the new strict diagnostic is complete; do not promote or
+expand to frozen nightly until its cross-family residual owners close.
 
 No task-specific regex, selector solver, or behaviorally equivalent task-family
 semantic compiler may be the strict-generalist scored path. Calendar,
