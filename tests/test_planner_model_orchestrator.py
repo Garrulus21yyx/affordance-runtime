@@ -16,6 +16,7 @@ from affordance_runtime.planner_model_orchestrator import (
     build_initial_candidate_schema,
     build_repair_candidate_schema,
     compatible_target_ids,
+    semantic_text_input_constraint,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 
@@ -273,6 +274,98 @@ def test_repair_schema_cannot_decode_a_relationally_rejected_target() -> None:
         }
     )
     assert accepted.target_affordance_id == "field-2"
+
+
+def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
+    context = _context().model_copy(
+        update={
+            "task_spec": {
+                **_context().task_spec,
+                "semantic_value_constraints": [
+                    {
+                        "relation": "prefix",
+                        "value": "Com",
+                        "target": "item",
+                        "source_ref": "request-1",
+                    },
+                    {
+                        "relation": "suffix",
+                        "value": "va",
+                        "target": "item",
+                        "source_ref": "request-1",
+                    },
+                ],
+            }
+        }
+    )
+
+    constraint = semantic_text_input_constraint(context, compatible_target_ids(context))
+
+    assert constraint is not None
+    assert constraint.relation == "prefix"
+    assert constraint.target_id == "field-1"
+    assert constraint.allowed_text_values == ("Com",)
+
+
+def test_suffix_only_multiple_values_or_multiple_controls_do_not_authorize_text() -> None:
+    suffix = _context().model_copy(
+        update={
+            "task_spec": {
+                **_context().task_spec,
+                "semantic_value_constraints": [
+                    {
+                        "relation": "suffix",
+                        "value": "va",
+                        "source_ref": "request-1",
+                    }
+                ],
+            }
+        }
+    )
+    multiple_values = suffix.model_copy(
+        update={
+            "task_spec": {
+                **suffix.task_spec,
+                "semantic_value_constraints": [
+                    {"relation": "prefix", "value": "A", "source_ref": "request-1"},
+                    {"relation": "prefix", "value": "B", "source_ref": "request-1"},
+                ],
+            }
+        }
+    )
+    multiple_controls = suffix.model_copy(
+        update={
+            "affordances": (
+                *suffix.affordances,
+                AffordanceSummary(
+                    id="field-2",
+                    surface="dom",
+                    role="textbox",
+                    label="Other",
+                    action="fill",
+                    confidence=1.0,
+                    state={},
+                ),
+            ),
+            "task_spec": multiple_values.task_spec,
+        }
+    )
+
+    assert semantic_text_input_constraint(suffix, compatible_target_ids(suffix)) is None
+    assert (
+        semantic_text_input_constraint(
+            multiple_values,
+            compatible_target_ids(multiple_values),
+        )
+        is None
+    )
+    assert (
+        semantic_text_input_constraint(
+            multiple_controls,
+            compatible_target_ids(multiple_controls),
+        )
+        is None
+    )
 
 
 def test_orchestrator_repairs_once_using_a_narrowed_schema_on_the_same_context() -> None:

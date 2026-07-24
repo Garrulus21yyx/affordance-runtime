@@ -54,7 +54,12 @@ from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    SemanticValueConstraint,
+    SemanticValueRelation,
+    TaskSpec,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -2441,6 +2446,72 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
     assert repair_model.calls == 2
     assert decision.proposal is not None
     assert decision.proposal.parameters == {"text": "Com"}
+
+
+def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<input id="tags" class="ui-autocomplete-input">',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Enter an item starting with Com")
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Enter an item starting with Com",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("item",),
+        semantic_value_constraints=(
+            SemanticValueConstraint(
+                relation=SemanticValueRelation.PREFIX,
+                value="Com",
+                target="item",
+                source_ref="request-1",
+            ),
+        ),
+        success_criteria=("matching item entered",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class PrefixSchemaModel:
+        provider: str = "fixed"
+        model: str = "prefix-schema"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            with pytest.raises(ValidationError):
+                output_schema.model_validate(
+                    {
+                        "action_kind": "type_text",
+                        "target_affordance_id": "dom_input_1",
+                        "parameters": {"text": "Computer"},
+                    }
+                )
+            return output_schema.model_validate(
+                {
+                    "action_kind": "type_text",
+                    "target_affordance_id": "dom_input_1",
+                    "parameters": {"text": "Com"},
+                }
+            )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(PrefixSchemaModel()).propose(
+            TaskEnvelope(task_spec=task_spec), state, snapshot
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.parameters == {"text": "Com"}
+    assert decision.planner_context["semantic_value_constraint"]["relation"] == "prefix"
 
 
 def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:

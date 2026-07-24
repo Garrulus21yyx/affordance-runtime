@@ -24,6 +24,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerModelOrchestrator,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
+    semantic_text_input_constraint,
 )
 from affordance_runtime.planner_model_orchestrator import (
     compatible_drag_destination_ids as _compatible_drag_destination_ids,
@@ -329,6 +330,16 @@ class GeneralistLMPlanner:
             initial_press_keys = ()
             constrained_text_values = ()
             source_destination_constrained = False
+        typed_text_constraint = None
+        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
+            typed_text_constraint = semantic_text_input_constraint(context, initial_targets)
+            if typed_text_constraint is not None:
+                initial_permitted = [PlannerActionKind.TYPE_TEXT.value]
+                initial_targets = {
+                    PlannerActionKind.TYPE_TEXT.value: [typed_text_constraint.target_id]
+                }
+                constrained_text_values = typed_text_constraint.allowed_text_values
+                source_destination_constrained = False
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
@@ -428,6 +439,16 @@ class GeneralistLMPlanner:
                         }
                     }
                     if constraints is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "semantic_value_constraint": {
+                            "relation": typed_text_constraint.relation,
+                            "target_id": typed_text_constraint.target_id,
+                        }
+                    }
+                    if typed_text_constraint is not None
                     else {}
                 ),
             },

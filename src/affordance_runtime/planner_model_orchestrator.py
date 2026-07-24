@@ -49,6 +49,13 @@ class EmptyPlannerParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+@dataclass(frozen=True)
+class SemanticTextInputConstraint:
+    relation: str
+    target_id: str
+    allowed_text_values: tuple[str, ...]
+
+
 CandidateT = TypeVar("CandidateT", bound=PlannerCandidateModel)
 
 CandidateIssueFn = Callable[[CandidateT, PlannerContext], str]
@@ -272,6 +279,40 @@ def compatible_drag_destination_ids(context: PlannerContext) -> list[str]:
         for item in context.affordances
         if item.action in {"drag", "drop"} or bool(item.state.get("accepts_drop"))
     ]
+
+
+def semantic_text_input_constraint(
+    context: PlannerContext,
+    compatible_targets: dict[str, list[str]],
+) -> SemanticTextInputConstraint | None:
+    """Bind explicit TaskSpec value authority only to one enabled text target."""
+
+    target_ids = compatible_targets.get(PlannerActionKind.TYPE_TEXT.value, [])
+    if len(target_ids) != 1:
+        return None
+    target_id = target_ids[0]
+    target = next((item for item in context.affordances if item.id == target_id), None)
+    if target is None or target.state.get("enabled") is False:
+        return None
+    raw_constraints = context.task_spec.get("semantic_value_constraints")
+    if not isinstance(raw_constraints, list):
+        return None
+    for relation in ("prefix", "exact"):
+        values = tuple(
+            dict.fromkeys(
+                str(item.get("value"))
+                for item in raw_constraints
+                if isinstance(item, dict)
+                and item.get("relation") == relation
+                and isinstance(item.get("value"), str)
+                and str(item.get("value")).strip()
+            )
+        )
+        if len(values) == 1:
+            return SemanticTextInputConstraint(relation, target_id, values)
+        if values:
+            return None
+    return None
 
 
 def build_repair_candidate_schema(

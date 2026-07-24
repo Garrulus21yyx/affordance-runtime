@@ -186,6 +186,7 @@ def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
         "targets",
         "success_criteria",
         "constraints",
+        "semantic_value_constraints",
         "forbidden_effects",
         "evidence_requirements",
         "requested_capabilities",

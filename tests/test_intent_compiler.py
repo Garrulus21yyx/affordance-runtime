@@ -18,6 +18,8 @@ from affordance_runtime.task_intake import (
     IntentDraftValidator,
     OperationClass,
     RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
     UserRequest,
 )
 from affordance_runtime.trace import TraceDag
@@ -57,6 +59,43 @@ def test_provider_schema_requires_deterministic_validator_prerequisites() -> Non
     assert schema["properties"]["objective"]["minLength"] == 1
     assert schema["properties"]["requested_effects"]["minItems"] == 1
     assert schema["properties"]["candidate_success_criteria"]["minItems"] == 1
+    assert "candidate_semantic_value_constraints" in schema["properties"]
+
+
+def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:
+    constraint = SemanticValueConstraint(
+        relation=SemanticValueRelation.PREFIX,
+        value="Com",
+        target="item",
+        source_ref="request-prefix",
+    )
+    model = FixedModel(
+        IntentDraft(
+            objective="Enter an item that starts with Com",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="item",
+                    source_ref="request-prefix",
+                ),
+            ),
+            candidate_success_criteria=("matching item entered",),
+            candidate_semantic_value_constraints=(constraint,),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="request-prefix",
+                raw_text="Enter an item that starts with Com",
+            )
+        )
+    )
+
+    assert result.task_spec is not None
+    assert result.task_spec.semantic_value_constraints == (constraint,)
+    assert "never invent a completion" in model.messages[0].content
 
 
 def test_llm_compiler_produces_draft_but_deterministic_policy_decides() -> None:

@@ -13,6 +13,8 @@ from affordance_runtime.task_intake import (
     IntentEntity,
     OperationClass,
     RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
     TaskStructure,
     UserRequest,
 )
@@ -60,6 +62,57 @@ def test_ready_compilation_creates_immutable_versioned_task_spec_without_grantin
     assert "granted" not in result.task_spec.model_dump()
     with pytest.raises(ValidationError):
         result.task_spec.revision = 3  # type: ignore[misc]
+
+
+def test_explicit_semantic_value_constraint_is_preserved_as_taskspec_authority() -> None:
+    constraint = SemanticValueConstraint(
+        relation=SemanticValueRelation.PREFIX,
+        value="Com",
+        target="item",
+        source_ref="request-1:0-3",
+    )
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(candidate_semantic_value_constraints=(constraint,)),
+    )
+
+    assert result.task_spec is not None
+    assert result.task_spec.schema_version == "1.1"
+    assert result.task_spec.semantic_value_constraints == (constraint,)
+
+
+def test_semantic_value_constraint_rejects_blank_or_unknown_relation() -> None:
+    with pytest.raises(ValidationError):
+        SemanticValueConstraint(
+            relation="prefix",
+            value=" ",
+            source_ref="request-1",
+        )
+    with pytest.raises(ValidationError):
+        SemanticValueConstraint(
+            relation="contains",
+            value="Com",
+            source_ref="request-1",
+        )
+
+
+def test_unsourced_semantic_value_constraint_cannot_become_taskspec_authority() -> None:
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(
+            candidate_semantic_value_constraints=(
+                SemanticValueConstraint(
+                    relation=SemanticValueRelation.PREFIX,
+                    value="Com",
+                    source_ref="page-observation",
+                ),
+            )
+        ),
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[0].code == "unsourced_semantic_value_constraint"
 
 
 def test_validated_intent_carries_explicit_multi_stage_routing_without_granting_authority() -> None:

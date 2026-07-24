@@ -8,7 +8,7 @@ from enum import StrEnum
 from time import time
 from typing import Iterable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -86,6 +86,25 @@ class FieldConfidence(StrictModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class SemanticValueRelation(StrEnum):
+    EXACT = "exact"
+    PREFIX = "prefix"
+    SUFFIX = "suffix"
+
+
+class SemanticValueConstraint(StrictModel):
+    relation: SemanticValueRelation
+    value: str = Field(min_length=1, max_length=240)
+    target: str = Field(default="", max_length=240)
+    source_ref: str = Field(min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def reject_blank_semantics(self) -> "SemanticValueConstraint":
+        if not self.value.strip():
+            raise ValueError("semantic value constraint cannot be blank")
+        return self
+
+
 class IntentDraft(StrictModel):
     objective: str = ""
     entities: tuple[IntentEntity, ...] = ()
@@ -95,6 +114,7 @@ class IntentDraft(StrictModel):
     candidate_success_criteria: tuple[str, ...] = ()
     candidate_evidence_requirements: tuple[str, ...] = ()
     candidate_constraints: tuple[str, ...] = ()
+    candidate_semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
     candidate_forbidden_effects: tuple[str, ...] = ()
     ambiguities: tuple[IntentAmbiguity, ...] = ()
     source_map: tuple[FieldProvenance, ...] = ()
@@ -103,7 +123,7 @@ class IntentDraft(StrictModel):
 
 
 class TaskSpec(StrictModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     objective: str = Field(min_length=1)
@@ -115,6 +135,7 @@ class TaskSpec(StrictModel):
     desired_outputs: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
     constraints: tuple[str, ...] = ()
+    semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
     forbidden_effects: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
     requested_capabilities: tuple[str, ...] = ()
@@ -170,6 +191,15 @@ class IntentDraftValidator:
             unsupported.append(CompilationIssue(code="missing_effect", field="requested_effects"))
         if not draft.candidate_success_criteria:
             unsupported.append(CompilationIssue(code="missing_success_criteria", field="candidate_success_criteria"))
+        for index, constraint in enumerate(draft.candidate_semantic_value_constraints):
+            if not _source_ref_authorized(request, constraint.source_ref):
+                unsupported.append(
+                    CompilationIssue(
+                        code="unsourced_semantic_value_constraint",
+                        field=f"candidate_semantic_value_constraints[{index}]",
+                        detail=constraint.source_ref,
+                    )
+                )
         if any(issue.code in {"missing_objective", "missing_effect"} for issue in unsupported):
             return CompilationResult(
                 status=CompilationStatus.UNSUPPORTED,
@@ -263,6 +293,7 @@ class IntentDraftValidator:
             desired_outputs=draft.desired_outputs,
             success_criteria=draft.candidate_success_criteria,
             constraints=draft.candidate_constraints,
+            semantic_value_constraints=draft.candidate_semantic_value_constraints,
             forbidden_effects=draft.candidate_forbidden_effects,
             evidence_requirements=draft.candidate_evidence_requirements,
             requested_capabilities=_ordered_unique(
@@ -296,3 +327,14 @@ def _normalized(value: str) -> str:
 
 def _ordered_unique(values: Iterable[object]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(item) for item in values if str(item)))
+
+
+def _source_ref_authorized(request: UserRequest, source_ref: str) -> bool:
+    sources = (
+        request.request_id,
+        *request.conversation_refs,
+        *request.attachment_refs,
+        *request.target_refs,
+        *request.profile_context_refs,
+    )
+    return any(source_ref == item or source_ref.startswith(f"{item}:") for item in sources)

@@ -18,7 +18,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.trace import TraceDag, TraceNode
 
-INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v3"
+INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v4"
 
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
 Return only the requested strict schema. Never grant capability or approval, choose a selector/coordinate, or claim execution.
@@ -28,6 +28,7 @@ Classify sending/posting/submitting externally, booking/reserving, purchasing, a
 Every requested effect and entity needs a source_ref pointing to the request or an explicitly supplied context reference.
 Each requested_effect.target must name the concrete semantic resource and preserve any explicit identifier needed to distinguish it; do not leave the identifier only in entities.
 Preserve explicit constraints, forbidden effects, desired outputs, success criteria, evidence requirements, and preferences.
+Extract only explicit semantic value constraints into candidate_semantic_value_constraints. Use relation=prefix for “starts with”, suffix for “ends with”, and exact only when the exact value itself is requested. Preserve the literal user-supplied value and its source_ref; never invent a completion or infer a value from page content.
 For every well-formed requested effect, always provide at least one observable candidate_success_criteria that directly restates the user's requested outcome and cites no new authority.
 Mark unresolved target, recipient, amount, destructive scope, credential/payment boundary, or communication channel as blocking high-risk ambiguity.
 Do not treat a discoverable page, app, URL, selector, runtime surface, or the caller's use of "my" as a blocking ambiguity; grounding those details belongs to planning and observation.
