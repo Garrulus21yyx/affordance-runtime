@@ -82,6 +82,7 @@ from affordance_runtime.intent_compiler import LLMIntentDraft, intent_compiler_m
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.task_planning import (
+    TASK_PLAN_SCHEMA_VERSION,
     TASK_PLANNER_PROMPT_VERSION,
     TaskPlanCandidate,
     task_planner_model_config,
@@ -275,8 +276,9 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v10",
+        "schema_version": "browsergym-generalist-checkpoint-v11",
         "action_contract_schema_version": ACTION_CONTRACT_SCHEMA_VERSION,
+        "task_plan_schema_version": TASK_PLAN_SCHEMA_VERSION,
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,

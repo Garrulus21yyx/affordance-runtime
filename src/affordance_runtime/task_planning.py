@@ -44,6 +44,8 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
     re.IGNORECASE,
 )
 
+TASK_PLAN_SCHEMA_VERSION = "1.1"
+
 
 class TaskPlanSource(StrEnum):
     RULE = "rule"
@@ -78,6 +80,7 @@ class SubgoalSpec(StrictModel):
     evidence_requirements: tuple[str, ...] = ()
     operation_class: OperationClass
     action_family: TaskPlanActionFamily | None = None
+    outcome: SubgoalOutcome | None = None
     max_actions: int = Field(default=10, ge=1, le=50)
     max_recoveries: int = Field(default=2, ge=0, le=10)
 
@@ -123,6 +126,9 @@ class SubgoalOutcome(StrictModel):
         return " ".join(part for part in (self.subject.strip(), phrase, value) if part)
 
 
+SubgoalSpec.model_rebuild()
+
+
 class TaskPlanSubgoalCandidate(StrictModel):
     """LLM-facing verifier-ready subgoal without runtime authority fields."""
 
@@ -137,7 +143,7 @@ class TaskPlanSubgoalCandidate(StrictModel):
 
 
 class TaskPlan(StrictModel):
-    schema_version: str = "1.0"
+    schema_version: str = TASK_PLAN_SCHEMA_VERSION
     plan_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
     task_revision: int = Field(ge=1)
@@ -504,6 +510,7 @@ class LLMTaskPlanner:
                     evidence_requirements=item.evidence_requirements,
                     operation_class=item.operation_class,
                     action_family=item.action_family,
+                    outcome=item.outcome,
                     max_actions=item.max_actions,
                     max_recoveries=item.max_recoveries,
                 )

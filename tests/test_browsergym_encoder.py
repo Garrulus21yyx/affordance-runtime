@@ -7,6 +7,7 @@ import pytest
 import affordance_runtime.benchmarks.browsergym as browsergym_facade
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.benchmarks.browsergym_action_schema import BrowserGymAction
+from affordance_runtime.benchmarks.browsergym_dom import browsergym_dom_adapter
 from affordance_runtime.benchmarks.browsergym_encoder import (
     BrowserGymContractBuilder,
     BrowserGymGestureEncoder,
@@ -15,6 +16,7 @@ from affordance_runtime.benchmarks.browsergym_encoder import (
     browsergym_action_verifiers,
     browsergym_fill_value,
     browsergym_requires_keyboard_events,
+    declare_browsergym_active_subgoal_evidence,
     is_sortable_list_binding,
     viewport_box,
 )
@@ -26,6 +28,17 @@ from affordance_runtime.contracts import (
     Observation,
     ProgressEvidenceScope,
     Surface,
+)
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_planning import (
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanActionFamily,
+    TaskPlanSource,
 )
 from affordance_runtime.verification import VerifierSpec
 
@@ -165,3 +178,201 @@ def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
         {"field": "aria_expanded", "value": "true"},
         progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
+
+
+def _active_typed_outcome_state(*, value: str = "Myron") -> StateKernel:
+    state = StateKernel("task-1", "Search for Myron")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.LLM,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="enter-search",
+                    objective=f"search box value equals {value}",
+                    success_criteria=(f"search box value equals {value}",),
+                    evidence_requirements=("current search box value",),
+                    operation_class=OperationClass.READ_ONLY,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                    outcome=SubgoalOutcome(
+                        subject="search box value",
+                        relation=SubgoalOutcomeRelation.EQUALS,
+                        value=value,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.active_subgoal()
+    return state
+
+
+def test_browsergym_exact_typed_value_declares_active_subgoal_evidence() -> None:
+    state = _active_typed_outcome_state()
+    affordance = _affordance(
+        "search",
+        action="fill",
+        locator={"backend_handle": "search"},
+        role="textbox",
+        label="Search",
+    )
+    proposal = PlannerProposal(
+        proposal_id="fill-search",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=affordance.id,
+        parameters={"text": "Myron"},
+    )
+    action = BrowserGymAction("fill", {"bid": "search", "value": "Myron"})
+    verifiers = [
+        VerifierSpec(
+            "dom_attribute",
+            "search",
+            {"target_attribute": "bid", "attribute": "value", "value": "Myron"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        )
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=action,
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+    assert verifiers[-1].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+
+
+def test_generalist_builder_wires_exact_typed_value_scope() -> None:
+    model = browsergym_dom_adapter().transduce(
+        '<input bid="search" type="text" placeholder="Search"/>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = _active_typed_outcome_state()
+    state.remember_observation(observation)
+    task = TaskSpec(
+        task_id=state.task_id,
+        revision=1,
+        objective="Search for Myron",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("Search",),
+        success_criteria=("search results are shown",),
+        source_request_ref="test",
+    )
+    proposal = PlannerProposal(
+        proposal_id="fill-search",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=model.affordances[0].id,
+        parameters={"text": "Myron"},
+    )
+
+    contract = GeneralistBrowserGymContractBuilder().build(
+        proposal,
+        task,
+        state,
+        BrowserSnapshot(observation, model),
+    )
+
+    assert contract.action == "fill"
+    assert contract.verifier_plan[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+
+
+def test_browsergym_generic_state_delta_cannot_advance_active_subgoal() -> None:
+    state = _active_typed_outcome_state()
+    affordance = _affordance(
+        "search",
+        action="activate",
+        locator={"backend_handle": "search"},
+        role="button",
+        label="Search",
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-search",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=affordance.id,
+    )
+    verifiers = [
+        VerifierSpec(
+            "state_delta_or_terminal",
+            "search",
+            True,
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        )
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("click", {"bid": "search"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+
+
+@pytest.mark.parametrize(
+    ("outcome_value", "label"),
+    [("Ada", "Search"), ("Myron", "Display name")],
+)
+def test_browsergym_mismatched_value_or_target_cannot_advance_typed_subgoal(
+    outcome_value: str,
+    label: str,
+) -> None:
+    state = _active_typed_outcome_state(value=outcome_value)
+    affordance = _affordance(
+        "input",
+        action="fill",
+        locator={"backend_handle": "input"},
+        role="textbox",
+        label=label,
+    )
+    proposal = PlannerProposal(
+        proposal_id="fill-input",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=affordance.id,
+        parameters={"text": "Myron"},
+    )
+    action = BrowserGymAction("fill", {"bid": "input", "value": "Myron"})
+    verifiers = [
+        VerifierSpec(
+            "dom_attribute",
+            "input",
+            {"target_attribute": "bid", "attribute": "value", "value": "Myron"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        )
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=action,
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.TASK_TERMINAL

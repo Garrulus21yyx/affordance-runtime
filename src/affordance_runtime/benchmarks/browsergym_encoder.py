@@ -20,6 +20,7 @@ from affordance_runtime.contracts import (
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_planning import SubgoalOutcomeRelation
 from affordance_runtime.unified_grounding import source_affordance_for_candidate
 from affordance_runtime.visual_contracts import VisualContractBinder
 
@@ -237,12 +238,20 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
                 f"unsupported generalist BrowserGym semantic action: {proposal.action_kind.value}"
             )
         action.render()
+        verifier_plan = browsergym_action_verifiers(action, snapshot)
+        verifier_plan = declare_browsergym_active_subgoal_evidence(
+            verifier_plan,
+            proposal=proposal,
+            state=state,
+            action=action,
+            affordance=affordance,
+        )
         return replace(
             contract,
             action=action.name,
             backend=BROWSERGYM_BACKEND,
             parameters={"action": asdict(action)},
-            verifier_plan=browsergym_action_verifiers(action, snapshot),
+            verifier_plan=verifier_plan,
             contract_hash="",
         )
 
@@ -400,3 +409,117 @@ def browsergym_action_verifiers(
         progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
     return verifier_plan
+
+
+def declare_browsergym_active_subgoal_evidence(
+    verifier_plan: list[VerifierSpec],
+    *,
+    proposal: PlannerProposal,
+    state: StateKernel,
+    action: BrowserGymAction,
+    affordance: Affordance,
+) -> list[VerifierSpec]:
+    """Declare exact adapter postconditions as active-subgoal evidence.
+
+    Core remains responsible for attaching current criterion/requirement ids.
+    This adapter declaration only states that its concrete backend verifier can
+    prove the current typed outcome; ambiguous deltas remain terminal-only.
+    """
+
+    if not verifier_plan or state.task_plan is None or state.plan_progress is None:
+        return verifier_plan
+    active_id = state.plan_progress.active_subgoal_id
+    active = next(
+        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+        None,
+    )
+    if (
+        active is None
+        or active.outcome is None
+        or active.action_family is None
+        or active.action_family.value != proposal.action_kind.value
+        or not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
+        or not _browsergym_postcondition_proves_outcome(
+            action,
+            verifier_plan[-1],
+            relation=active.outcome.relation,
+            outcome_value=active.outcome.value,
+            affordance=affordance,
+        )
+    ):
+        return verifier_plan
+    declared = list(verifier_plan)
+    declared[-1] = replace(
+        declared[-1],
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+    return declared
+
+
+def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> bool:
+    aliases = {
+        "box": "input",
+        "field": "input",
+        "textbox": "input",
+        "text": "input",
+        "value": "input",
+    }
+
+    def tokens(value: str) -> tuple[str, ...]:
+        return tuple(
+            aliases.get(token, token)
+            for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
+            if len(token) >= 3
+        )
+
+    subject_tokens = tokens(subject)
+    target_tokens = tokens(" ".join((affordance.label, affordance.role)))
+    return bool(subject_tokens and target_tokens) and all(
+        any(
+            target == subject_token
+            or (len(target) >= 4 and subject_token.startswith(target))
+            or (len(subject_token) >= 4 and target.startswith(subject_token))
+            for subject_token in subject_tokens
+        )
+        for target in target_tokens
+    )
+
+
+def _browsergym_postcondition_proves_outcome(
+    action: BrowserGymAction,
+    verifier: VerifierSpec,
+    *,
+    relation: SubgoalOutcomeRelation,
+    outcome_value: str,
+    affordance: Affordance,
+) -> bool:
+    expected = verifier.expected if isinstance(verifier.expected, dict) else {}
+    normalized_outcome = browsergym_fill_value(affordance.state, outcome_value.strip())
+    if action.name in {"fill", "type_text_with_events"} and verifier.kind == "dom_attribute":
+        actual = str(expected.get("value", ""))
+        return (
+            relation == SubgoalOutcomeRelation.EQUALS
+            and bool(normalized_outcome)
+            and actual == normalized_outcome
+        ) or (
+            relation == SubgoalOutcomeRelation.CONTAINS
+            and bool(normalized_outcome)
+            and normalized_outcome in actual
+        )
+    if action.name == "select_option" and verifier.kind == "control_state":
+        options = action.arguments.get("options")
+        selected = [str(item) for item in options] if isinstance(options, list) else [str(options)]
+        return bool(normalized_outcome) and (
+            (relation == SubgoalOutcomeRelation.EQUALS and selected == [normalized_outcome])
+            or (relation == SubgoalOutcomeRelation.CONTAINS and normalized_outcome in selected)
+            or (relation == SubgoalOutcomeRelation.IS_SELECTED and normalized_outcome in selected)
+        )
+    if action.name == "press" and verifier.kind == "control_state":
+        return relation == SubgoalOutcomeRelation.HAS_CHANGED and "changed_from" in expected
+    if action.name in {"click", "click_no_navigation"} and verifier.kind == "control_state":
+        return (
+            relation == SubgoalOutcomeRelation.IS_EXPANDED
+            and expected.get("field") == "aria_expanded"
+            and expected.get("value") == "true"
+        )
+    return False
