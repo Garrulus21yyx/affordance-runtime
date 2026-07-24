@@ -51,6 +51,7 @@ from affordance_runtime.planning import (
     proposal_error_code,
     proposal_record,
 )
+from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
     RecoveryAction,
@@ -216,6 +217,9 @@ class RunCoordinator:
     features: RuntimeFeatures = field(default_factory=RuntimeFeatures)
     contract_builder: ContractBuilder | None = None
     proposal_validator: PlannerProposalValidator = field(default_factory=PlannerProposalValidator)
+    proposal_recovery_policy: ProposalRejectionRecoveryPolicy = field(
+        default_factory=ProposalRejectionRecoveryPolicy
+    )
     task_planner: TaskPlannerPort | None = field(default_factory=PlanningRouter)
     task_plan_validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     subgoal_verifier: SubgoalVerifierPort = field(default_factory=VerifierBackedSubgoalVerifier)
@@ -987,6 +991,7 @@ class RunCoordinator:
                     )
                 except ProposalRejected as exc:
                     error_code = proposal_error_code(exc.code)
+                    recovery_decision = self.proposal_recovery_policy.decide(exc.code, exc.detail)
                     parent = trace.add(
                         "PlannerProposalRejected",
                         {
@@ -1003,18 +1008,11 @@ class RunCoordinator:
                     if (
                         state.current_recovery_plan is not None
                         and state.current_recovery_plan.commands[0].kind
-                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
-                    ):
-                        parent = self._fail_pending_recovery_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                        )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        == RecoveryCommandKind.REPLAN_STEP
+                        in {
+                            RecoveryCommandKind.REGROUND,
+                            RecoveryCommandKind.REROUTE,
+                            RecoveryCommandKind.REPLAN_STEP,
+                        }
                     ):
                         parent = self._fail_pending_recovery_command(
                             state,
@@ -1043,22 +1041,16 @@ class RunCoordinator:
                         phase=FailurePhase.PROPOSAL_VALIDATION,
                         failure_class=FailureClass.VALIDATION,
                         error_code=error_code,
-                        message=exc.detail or exc.code.value,
-                        available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                        message=recovery_decision.planner_feedback,
+                        available_commands=recovery_decision.available_commands,
                         snapshot=snapshot,
                         proposal_id=proposal.proposal_id,
                         expected_effect="; ".join(proposal.expected_effects),
-                        recoverable=False,
+                        recoverable=recovery_decision.recoverable,
                     )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.ABORTED,
-                        parent,
-                        error_code,
-                        latest_verification,
-                    )
+                    if _recovery_command != RecoveryCommandKind.ABORT:
+                        continue
+                    return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error_code, latest_verification)
                 if provenance is None:  # narrowed after source-neutral validation
                     raise RuntimeError("validated proposal is missing provenance")
                 parent = trace.add(

@@ -346,6 +346,14 @@ def _one_relevant_failure(state: StateKernel) -> dict[str, Any]:
             "finding": findings[-1] if isinstance(findings, list) and findings else "",
             "terminal_outcome": state.recovery_diagnostics.get("terminal_outcome", ""),
         }
+    failure = state.current_failure
+    if failure is not None:
+        return {
+            "kind": failure.phase.value,
+            "error_code": failure.error_code,
+            "message": failure.message[:240],
+            "recoverable": failure.recoverable,
+        }
     return {}
 
 

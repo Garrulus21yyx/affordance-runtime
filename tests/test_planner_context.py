@@ -3,6 +3,12 @@ import pytest
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
+from affordance_runtime.failure_envelope import (
+    FailureClass,
+    FailurePhase,
+    RemainingRecoveryBudgets,
+    make_failure_envelope,
+)
 from affordance_runtime.planner_context import (
     PlannerContextBuilder,
     PlannerLimits,
@@ -78,6 +84,29 @@ def test_compatibility_function_matches_explicit_builder() -> None:
     compatible = build_planner_context(envelope, state, snapshot, limits=limits)
 
     assert compatible == direct
+
+
+def test_builder_exposes_current_recoverable_proposal_rejection() -> None:
+    envelope, state, snapshot = _fixture()
+    state.current_failure = make_failure_envelope(
+        run_id=state.task_id,
+        phase=FailurePhase.PROPOSAL_VALIDATION,
+        failure_class=FailureClass.VALIDATION,
+        error_code="planner_proposal_rejected",
+        message="target_out_of_scope:semantic:wrong-target",
+        state_version=state.version,
+        recoverable=True,
+        remaining_budgets=RemainingRecoveryBudgets(),
+    )
+
+    summary = PlannerContextBuilder().build(envelope, state, snapshot).recovery_summary
+
+    assert summary == {
+        "kind": "proposal_validation",
+        "error_code": "planner_proposal_rejected",
+        "message": "target_out_of_scope:semantic:wrong-target",
+        "recoverable": True,
+    }
 
 
 def test_builder_rejects_unvalidated_legacy_envelope() -> None:

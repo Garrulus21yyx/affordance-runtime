@@ -13,6 +13,7 @@ from affordance_runtime.planning import (
     PlannerProposal,
     PlannerProposalProvenance,
     PlannerProposalSource,
+    PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
 )
@@ -120,6 +121,65 @@ class AlwaysFailPlanner:
     ) -> PlannerDecision:
         del envelope, state, snapshot
         raise RuntimeError("stable structured planning failure")
+
+
+class TargetScopeThenClarifyPlanner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        self.calls += 1
+        if self.calls > 1:
+            return PlannerDecision(
+                proposal=PlannerProposal(
+                    proposal_id="clarify-after-target-rejection",
+                    based_on_task_revision=1,
+                    based_on_state_version=state.version,
+                    snapshot_id=snapshot.observation.snapshot_id,
+                    action_kind=PlannerActionKind.ASK_USER,
+                    subgoal="Which visible target should be used?",
+                    requires_clarification=True,
+                    uncertainty=1.0,
+                ),
+                proposal_provenance=PlannerProposalProvenance(
+                    source=PlannerProposalSource.MODEL,
+                    producer_id="test-planner",
+                ),
+            )
+        target = snapshot.affordance_model.affordances[0]
+        return PlannerDecision(
+            proposal=PlannerProposal(
+                proposal_id="wrong-target",
+                based_on_task_revision=1,
+                based_on_state_version=state.version,
+                snapshot_id=snapshot.observation.snapshot_id,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=target.id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.MODEL,
+                producer_id="test-planner",
+            ),
+        )
+
+
+class RejectTargetScopeOnceValidator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def validate(self, *args: object, **kwargs: object) -> None:
+        self.calls += 1
+        if self.calls == 1:
+            raise ProposalRejected(
+                ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
+                "semantic:wrong-target",
+            )
+        PlannerProposalValidator().validate(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class ProviderFailOncePlanner(DonePlanner):
@@ -364,6 +424,26 @@ def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     assert result.state.current_failure.phase == FailurePhase.STEP_PLANNING
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
     assert result.state.recovery_deltas[0].changed_dimensions[0].value == "step_plan"
+
+
+def test_target_scope_rejection_replans_without_weakening_validation() -> None:
+    planner = TargetScopeThenClarifyPlanner()
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=planner,
+        executor=NeverExecutor(),
+        proposal_validator=RejectTargetScopeOnceValidator(),  # type: ignore[arg-type]
+        task_planner=None,
+    ).run_sync(TaskEnvelope(task_spec=_navigation_task_spec()))
+
+    assert result.status == RuntimeStep.WAITING_CLARIFICATION
+    assert planner.calls == 2
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.recoverable
+    assert result.state.current_failure.message == (
+        "target_out_of_scope:semantic:wrong-target"
+    )
+    assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
 
 
 def test_provider_failure_invokes_real_owner_before_reentering_planning() -> None:
