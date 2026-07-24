@@ -20,6 +20,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidationStatus,
     TaskPlanValidator,
     synthetic_task_plan,
+    task_plan_allowed_outcome_relations,
     task_plan_repair_directives,
     task_planner_model_config,
 )
@@ -65,23 +66,82 @@ def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> N
 
 def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None:
     schema = TaskPlanCandidate.model_json_schema()
-    subgoal_schema = schema["$defs"]["TaskPlanSubgoalCandidate"]
+    items_schema = schema["properties"]["subgoals"]["items"]
+    mapping = items_schema["discriminator"]["mapping"]
 
-    assert set(subgoal_schema["required"]) >= {
-        "subgoal_id",
-        "outcome",
-        "evidence_requirements",
-        "operation_class",
-        "action_family",
-    }
-    assert subgoal_schema["properties"]["evidence_requirements"]["minItems"] == 1
-    assert "success_criteria" not in subgoal_schema["properties"]
+    assert items_schema["discriminator"]["propertyName"] == "action_family"
+    assert set(mapping) == {item.value for item in TaskPlanActionFamily}
+    for family_value, candidate_ref in mapping.items():
+        candidate_schema = schema["$defs"][candidate_ref.rsplit("/", 1)[-1]]
+        outcome_ref = candidate_schema["properties"]["outcome"]["$ref"]
+        outcome_schema = schema["$defs"][outcome_ref.rsplit("/", 1)[-1]]
+        relation_schema = outcome_schema["properties"]["relation"]
+        if "$ref" in relation_schema:
+            relation_schema = schema["$defs"][relation_schema["$ref"].rsplit("/", 1)[-1]]
+        schema_relations = set(
+            relation_schema.get("enum", [relation_schema.get("const")])
+        )
+        family = TaskPlanActionFamily(family_value)
+
+        assert schema_relations == {
+            item.value for item in task_plan_allowed_outcome_relations(family)
+        }
+        assert set(candidate_schema["required"]) >= {
+            "subgoal_id",
+            "outcome",
+            "evidence_requirements",
+            "operation_class",
+            "action_family",
+        }
+        assert candidate_schema["properties"]["evidence_requirements"]["minItems"] == 1
+        assert "success_criteria" not in candidate_schema["properties"]
     assert set(SubgoalSpec.model_json_schema()["required"]) == {
         "subgoal_id",
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v5"
+    assert task_planner_model_config().prompt_version == "task-planner-v6"
+
+
+def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
+    with pytest.raises(ValueError, match="is_available"):
+        TaskPlanCandidate.model_validate(
+            {
+                "subgoals": [
+                    {
+                        "subgoal_id": "activate-search",
+                        "outcome": {
+                            "subject": "search button",
+                            "relation": "is_available",
+                        },
+                        "evidence_requirements": ["current search state"],
+                        "operation_class": "reversible_write",
+                        "action_family": "activate",
+                    }
+                ]
+            }
+        )
+
+
+def test_llm_facing_schema_accepts_same_relation_for_compatible_navigation() -> None:
+    candidate = TaskPlanCandidate.model_validate(
+        {
+            "subgoals": [
+                {
+                    "subgoal_id": "open-search",
+                    "outcome": {
+                        "subject": "search page",
+                        "relation": "is_available",
+                    },
+                    "evidence_requirements": ["current page observation"],
+                    "operation_class": "read_only",
+                    "action_family": "navigate",
+                }
+            ]
+        }
+    )
+
+    assert candidate.subgoals[0].action_family == TaskPlanActionFamily.NAVIGATE
 
 
 class RecordingComplexPlanner:
@@ -652,6 +712,7 @@ def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None
     assert plan.generated_by == TaskPlanSource.LLM
     assert plan.task_id == _task().task_id
     assert len(plan.subgoals) == 3
+    assert type(plan.subgoals[0].outcome) is SubgoalOutcome
     assert (
         TaskPlanValidator().validate(plan, task, state_version=4).status
         == TaskPlanValidationStatus.ACCEPT
@@ -708,65 +769,6 @@ def test_llm_task_planner_repairs_action_instruction_into_outcome() -> None:
 
     assert model.calls == 2
     assert plan.subgoals[0].objective == "Search results for Myron is visible"
-    assert (
-        TaskPlanValidator().validate(plan, task, state_version=4).status
-        == TaskPlanValidationStatus.ACCEPT
-    )
-
-
-class PreconditionOutcomeRepairModel:
-    provider = "fixed"
-    model = "fixed-task-planner"
-    endpoint_class = "test"
-    last_call = None
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
-        del config
-        self.calls += 1
-        if self.calls == 2:
-            assert '"field": "outcome.relation"' in messages[-1].content
-            assert '"disallowed_values": ["is_available"]' in messages[-1].content
-            assert '"required_semantics": "post_action_state"' in messages[-1].content
-        return output_schema.model_validate(
-            {
-                "subgoals": [
-                    {
-                        "subgoal_id": "activate-search",
-                        "outcome": (
-                            {
-                                "subject": "search button",
-                                "relation": "is_available",
-                            }
-                            if self.calls == 1
-                            else {
-                                "subject": "search results",
-                                "relation": "is_visible",
-                            }
-                        ),
-                        "evidence_requirements": ["fresh search results observation"],
-                        "operation_class": "reversible_write",
-                        "action_family": "activate",
-                    }
-                ]
-            }
-        )
-
-
-def test_llm_task_planner_repairs_precondition_into_post_action_outcome() -> None:
-    import asyncio
-
-    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
-    model = PreconditionOutcomeRepairModel()
-
-    plan = asyncio.run(
-        LLMTaskPlanner(model).plan(_context().model_copy(update={"task_spec": task}))
-    )
-
-    assert model.calls == 2
-    assert plan.subgoals[0].objective == "search results is visible"
     assert (
         TaskPlanValidator().validate(plan, task, state_version=4).status
         == TaskPlanValidationStatus.ACCEPT

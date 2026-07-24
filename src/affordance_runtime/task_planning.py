@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Awaitable, Protocol
+from typing import Annotated, Awaitable, Literal, Protocol, TypeAlias
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -182,6 +182,14 @@ _ACTION_OUTCOME_RELATIONS: dict[TaskPlanActionFamily, frozenset[SubgoalOutcomeRe
 }
 
 
+def task_plan_allowed_outcome_relations(
+    action_family: TaskPlanActionFamily,
+) -> frozenset[SubgoalOutcomeRelation]:
+    """Return the authoritative semantic relation set for one action family."""
+
+    return _ACTION_OUTCOME_RELATIONS[action_family]
+
+
 class SubgoalOutcome(StrictModel):
     """Provider-authored state predicate, never an executable instruction."""
 
@@ -211,17 +219,142 @@ class SubgoalOutcome(StrictModel):
 SubgoalSpec.model_rebuild()
 
 
-class TaskPlanSubgoalCandidate(StrictModel):
-    """LLM-facing verifier-ready subgoal without runtime authority fields."""
+class ActivationSubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.IS_ABSENT,
+        SubgoalOutcomeRelation.IS_CHECKED,
+        SubgoalOutcomeRelation.IS_EXPANDED,
+        SubgoalOutcomeRelation.IS_COMPLETED,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class TextEntrySubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class SelectionSubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.IS_SELECTED,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class PressKeySubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.IS_ABSENT,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class DragSubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.IS_ORDERED_AS,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class NavigationSubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.IS_AVAILABLE,
+        SubgoalOutcomeRelation.IS_COMPLETED,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class ScrollSubgoalOutcome(SubgoalOutcome):
+    relation: Literal[
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    ]
+
+
+class _TaskPlanSubgoalCandidateBase(StrictModel):
+    """Shared model-controlled fields without runtime binding authority."""
 
     subgoal_id: str = Field(min_length=1)
-    outcome: SubgoalOutcome
     depends_on: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = Field(min_length=1)
     operation_class: OperationClass
-    action_family: TaskPlanActionFamily
     max_actions: int = Field(default=10, ge=1, le=50)
     max_recoveries: int = Field(default=2, ge=0, le=10)
+
+
+class ActivationTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: ActivationSubgoalOutcome
+    action_family: Literal[
+        TaskPlanActionFamily.ACTIVATE,
+        TaskPlanActionFamily.POINT_ACTIVATE,
+    ]
+
+
+class TextEntryTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: TextEntrySubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.TYPE_TEXT]
+
+
+class SelectionTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: SelectionSubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.SELECT_OPTION]
+
+
+class PressKeyTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: PressKeySubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.PRESS_KEY]
+
+
+class DragTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: DragSubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.DRAG]
+
+
+class NavigationTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: NavigationSubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.NAVIGATE]
+
+
+class ScrollTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: ScrollSubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.SCROLL]
+
+
+class WaitTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: SubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.WAIT]
+
+
+TaskPlanSubgoalCandidate: TypeAlias = Annotated[
+    ActivationTaskPlanSubgoalCandidate
+    | TextEntryTaskPlanSubgoalCandidate
+    | SelectionTaskPlanSubgoalCandidate
+    | PressKeyTaskPlanSubgoalCandidate
+    | DragTaskPlanSubgoalCandidate
+    | NavigationTaskPlanSubgoalCandidate
+    | ScrollTaskPlanSubgoalCandidate
+    | WaitTaskPlanSubgoalCandidate,
+    Field(discriminator="action_family"),
+]
 
 
 class TaskPlan(StrictModel):
@@ -506,7 +639,7 @@ def _action_outcome_relation_compatible(
 ) -> bool:
     """Enforce the provider-neutral semantic action/outcome relation matrix."""
 
-    return relation in _ACTION_OUTCOME_RELATIONS[action_family]
+    return relation in task_plan_allowed_outcome_relations(action_family)
 
 
 def task_plan_repair_directives(
@@ -570,7 +703,7 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v5"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v6"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
@@ -649,22 +782,24 @@ class LLMTaskPlanner:
             supersedes_plan_id=context.current_plan_id,
             based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.LLM,
-            subgoals=tuple(
-                SubgoalSpec(
-                    subgoal_id=item.subgoal_id,
-                    objective=item.outcome.description(),
-                    depends_on=item.depends_on,
-                    success_criteria=(item.outcome.description(),),
-                    evidence_requirements=item.evidence_requirements,
-                    operation_class=item.operation_class,
-                    action_family=item.action_family,
-                    outcome=item.outcome,
-                    max_actions=item.max_actions,
-                    max_recoveries=item.max_recoveries,
-                )
-                for item in candidate.subgoals
-            ),
+            subgoals=tuple(LLMTaskPlanner._bind_subgoal_candidate(item) for item in candidate.subgoals),
             assumptions=candidate.assumptions,
+        )
+
+    @staticmethod
+    def _bind_subgoal_candidate(item: TaskPlanSubgoalCandidate) -> SubgoalSpec:
+        outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
+        return SubgoalSpec(
+            subgoal_id=item.subgoal_id,
+            objective=outcome.description(),
+            depends_on=item.depends_on,
+            success_criteria=(outcome.description(),),
+            evidence_requirements=item.evidence_requirements,
+            operation_class=item.operation_class,
+            action_family=TaskPlanActionFamily(item.action_family),
+            outcome=outcome,
+            max_actions=item.max_actions,
+            max_recoveries=item.max_recoveries,
         )
 
 
