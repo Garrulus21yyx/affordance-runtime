@@ -48,7 +48,7 @@ GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
 COMPATIBILITY_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
 # Bumped whenever the bounded observation/history construction changes. It is
 # part of a frozen evaluation identity, not a free-form prompt label.
-GENERALIST_PLANNER_CONTEXT_POLICY_VERSION = "bounded-current-v1"
+GENERALIST_PLANNER_CONTEXT_POLICY_VERSION = "bounded-current-v2"
 
 
 def _compatibility_algorithms() -> ModuleType:

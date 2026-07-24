@@ -68,6 +68,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "outcome",
         "evidence_requirements",
         "operation_class",
+        "action_family",
     }
     assert subgoal_schema["properties"]["evidence_requirements"]["minItems"] == 1
     assert "success_criteria" not in subgoal_schema["properties"]
@@ -76,7 +77,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v2"
+    assert task_planner_model_config().prompt_version == "task-planner-v3"
 
 
 class RecordingComplexPlanner:
@@ -411,6 +412,7 @@ class RepairingTaskPlanModel:
                             },
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
+                            "action_family": "activate",
                         }
                     ]
                 }
@@ -427,6 +429,7 @@ class RepairingTaskPlanModel:
                             },
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
+                            "action_family": "activate",
                         },
                         {
                             "subgoal_id": "write",
@@ -438,6 +441,7 @@ class RepairingTaskPlanModel:
                             "depends_on": ["discover"],
                             "evidence_requirements": ["settings API"],
                             "operation_class": "reversible_write",
+                            "action_family": "activate",
                         },
                         {
                             "subgoal_id": "confirm",
@@ -448,7 +452,8 @@ class RepairingTaskPlanModel:
                             },
                             "depends_on": ["write"],
                             "evidence_requirements": ["settings API"],
-                        "operation_class": "reversible_write",
+                            "operation_class": "reversible_write",
+                            "action_family": "activate",
                     },
                 ]
             }
@@ -506,6 +511,7 @@ class ActionInstructionRepairModel:
                         ),
                         "evidence_requirements": ["post-action results observation"],
                         "operation_class": "reversible_write",
+                        "action_family": "activate",
                     }
                 ]
             }

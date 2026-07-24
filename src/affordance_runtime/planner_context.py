@@ -32,6 +32,7 @@ class PlannerContext(BaseModel):
 
     task_spec: dict[str, Any]
     active_subgoal: str
+    active_subgoal_action_family: str = ""
     observed_text: str
     affordances: tuple[AffordanceSummary, ...]
     permitted_action_kinds: tuple[str, ...]
@@ -103,9 +104,11 @@ class PlannerContextBuilder:
             else ()
         )
         limits = self.limits
+        active_subgoal = state.active_subgoal() or task_spec.objective
         return PlannerContext(
             task_spec=_task_summary(task_spec.model_dump(mode="json")),
-            active_subgoal=state.active_subgoal() or task_spec.objective,
+            active_subgoal=active_subgoal,
+            active_subgoal_action_family=_active_subgoal_action_family(state),
             observed_text=str(snapshot.observation.metadata.get("visible_text") or "")[:2_000],
             affordances=tuple(
                 AffordanceSummary(
@@ -389,6 +392,17 @@ def _satisfied_action_targets(state: StateKernel) -> dict[str, tuple[str, ...]]:
         if target_id not in targets:
             targets.append(target_id)
     return {action_kind: tuple(target_ids) for action_kind, target_ids in collected.items()}
+
+
+def _active_subgoal_action_family(state: StateKernel) -> str:
+    if state.task_plan is None or state.plan_progress is None:
+        return ""
+    active_id = state.plan_progress.active_subgoal_id
+    subgoal = next(
+        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+        None,
+    )
+    return subgoal.action_family.value if subgoal is not None and subgoal.action_family else ""
 
 
 def _permitted_action_kinds(

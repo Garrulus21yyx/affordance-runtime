@@ -154,6 +154,7 @@ class MultiStageIntentAndPlanModel:
                             },
                             "evidence_requirements": ["fresh discovered-state observation"],
                             "operation_class": "read_only",
+                            "action_family": "activate",
                         },
                         {
                             "subgoal_id": "confirm",
@@ -164,6 +165,7 @@ class MultiStageIntentAndPlanModel:
                             "depends_on": ["discover"],
                             "evidence_requirements": ["fresh confirmed-state observation"],
                             "operation_class": "read_only",
+                            "action_family": "activate",
                         },
                     ]
                 }

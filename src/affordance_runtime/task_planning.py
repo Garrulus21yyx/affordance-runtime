@@ -52,6 +52,18 @@ class TaskPlanSource(StrEnum):
     SKILL = "skill"
 
 
+class TaskPlanActionFamily(StrEnum):
+    ACTIVATE = "activate"
+    POINT_ACTIVATE = "point_activate"
+    TYPE_TEXT = "type_text"
+    SELECT_OPTION = "select_option"
+    PRESS_KEY = "press_key"
+    DRAG = "drag"
+    NAVIGATE = "navigate"
+    SCROLL = "scroll"
+    WAIT = "wait"
+
+
 class TaskPlanValidationStatus(StrEnum):
     ACCEPT = "accept"
     REPAIRABLE = "repairable"
@@ -65,6 +77,7 @@ class SubgoalSpec(StrictModel):
     success_criteria: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
     operation_class: OperationClass
+    action_family: TaskPlanActionFamily | None = None
     max_actions: int = Field(default=10, ge=1, le=50)
     max_recoveries: int = Field(default=2, ge=0, le=10)
 
@@ -118,6 +131,7 @@ class TaskPlanSubgoalCandidate(StrictModel):
     depends_on: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = Field(min_length=1)
     operation_class: OperationClass
+    action_family: TaskPlanActionFamily
     max_actions: int = Field(default=10, ge=1, le=50)
     max_recoveries: int = Field(default=2, ge=0, le=10)
 
@@ -406,10 +420,10 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v2"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v3"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanCandidate.
-Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
-Subgoals are desired environment states, never UI scripts. Do not output selectors, coordinates, backend handles, executable code, capabilities, approval tokens, action instructions, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+Decompose only open-world, multi-stage, cross-application, or data-dependent work into 3-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
+Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
 
 def task_planner_model_config() -> ModelConfig:
@@ -489,6 +503,7 @@ class LLMTaskPlanner:
                     success_criteria=(item.outcome.description(),),
                     evidence_requirements=item.evidence_requirements,
                     operation_class=item.operation_class,
+                    action_family=item.action_family,
                     max_actions=item.max_actions,
                     max_recoveries=item.max_recoveries,
                 )

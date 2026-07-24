@@ -285,7 +285,12 @@ def restrict_targets_to_active_subgoal(
         return {key: list(value) for key, value in compatible_targets.items()}
     affordance_by_id = {item.id: item for item in context.affordances}
     active_tokens = _semantic_target_tokens(active_subgoal)
-    active_action_kinds = _active_subgoal_action_kinds(active_subgoal)
+    declared_action_family = context.active_subgoal_action_family.strip()
+    active_action_kinds = (
+        frozenset({declared_action_family})
+        if declared_action_family
+        else _active_subgoal_action_kinds(active_subgoal)
+    )
     return {
         action_kind: [
             target_id
@@ -329,9 +334,16 @@ def _active_subgoal_action_kinds(active_subgoal: str) -> frozenset[str]:
 
 
 def _semantic_target_tokens(value: str) -> tuple[str, ...]:
+    aliases = {
+        "box": "input",
+        "field": "input",
+        "textbox": "input",
+        "text": "input",
+        "value": "input",
+    }
     return tuple(
-        token
-        for token in re.findall(r"[\w]+", value.casefold(), flags=re.UNICODE)
+        aliases.get(token, token)
+        for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
         if len(token) >= 3
     )
 

@@ -228,6 +228,7 @@ def _profile_planner(profile: str, target_stage: int) -> tuple[TaskPlannerPort, 
                     "depends_on": [f"stage-{index - 1}"] if index > 1 else [],
                     "evidence_requirements": ["stage observation"],
                     "operation_class": "read_only",
+                    "action_family": "activate",
                 }
                 for index in range(1, 4)
             ]

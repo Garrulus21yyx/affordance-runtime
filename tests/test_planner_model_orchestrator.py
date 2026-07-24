@@ -351,7 +351,8 @@ def test_active_subgoal_restricts_targets_by_semantic_phase_and_label() -> None:
     ) == targets
     entry_context = context.model_copy(
         update={
-            "active_subgoal": "Enter Myron into the search textbox",
+            "active_subgoal": "search_box_value equals Myron",
+            "active_subgoal_action_family": "type_text",
             "affordances": (
                 context.affordances[0].model_copy(update={"label": "search-text"}),
                 *context.affordances[1:],
