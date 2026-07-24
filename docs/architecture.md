@@ -9,6 +9,12 @@ they do not own task semantics, perception orchestration, routing, contracts,
 verification, recovery, or learning. Benchmark-specific task logic is
 prohibited in the generic path.
 
+The [Responsibility Containment Boundary](responsibility-containment-boundary.md)
+is jointly normative. `RunCoordinator` is the sole authoritative state writer,
+but phase-specific algorithms belong to typed collaborators. Single-writer
+authority must never be used to justify parser, planner, probe, provider,
+recovery-effect, verifier, benchmark, or learning responsibility inflation.
+
 The operational design for evidence-gap-driven observation and phase-spanning
 recovery is defined in
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).

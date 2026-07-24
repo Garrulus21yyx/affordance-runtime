@@ -40,10 +40,11 @@ The project uses two compatible planning horizons:
 
 Repository governance, current correctness work, selective C009 reuse, and
 claim/evidence gates are maintained in the Governance and Correctness Gates
-section of the current implementation plan. Two documents are jointly
+section of the current implementation plan. Three documents are jointly
 normative:
 
 - [Runtime-First Architecture Boundary](runtime-first-boundary.md);
+- [Responsibility Containment Boundary](responsibility-containment-boundary.md);
 - [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md).
 
 They prohibit hard and behaviorally equivalent soft specialization. Every
@@ -172,7 +173,7 @@ evidence level. See
 | M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
-| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | complete | G0-G5 close profile classification, strict isolation, active perception, phase-general recovery, complete-run audit, and internal four-profile evidence; external confirmation remains separately provisioned |
+| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | reopened | G0/G1/G2/G4 remain accepted; G2.5 budget/evidence semantics, G3 real command effects, G5 empirical runs, and Coordinator containment are closure blockers |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -686,14 +687,18 @@ versioned protocol, and report/taxonomy modules, in
 `evidence/runtime-r8-closure-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - complete
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - reopened
 
-M8.6 G0-G5 are closed. Historical score promotion and task-family repair remain
-prohibited; M8.2B may proceed only with a new strict frozen evaluation. The
-authoritative diagnosis is
-[Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md);
-the normative control design is
-[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md).
+The implementation freeze contains substantial real components, but the
+[M8.6 Closure Audit](current-closure-audit-20260724.md) reopens active-perception
+budget/evidence truth, owning-port recovery effects, empirical profile evidence,
+and responsibility containment. Historical score promotion and task-family
+repair remain prohibited; M8.2B waits for these Runtime gates before a new
+strict frozen evaluation. The governing documents are the
+[Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md),
+[Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
+and normative
+[Responsibility Containment Boundary](responsibility-containment-boundary.md).
 
 #### Objective
 

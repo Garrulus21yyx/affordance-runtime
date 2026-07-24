@@ -31,7 +31,7 @@ Status values:
 | M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
-| M8.6 Planner, Active Perception, and Recovery Governance | done | `4e7d116`: G0-G5 historical profile inventory, strict isolation, bounded active perception, phase-general recovery, complete-run audit, and internal four-profile evidence | external confirmation remains separately provisioned; historical scores are not promoted |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `4e7d116`/`f4c3308`: substantial G0-G5 components; 666 tests pass after the containment ratchet; closure audit reopens semantic and containment gates | fix G2.5 budget/evidence truth, G3 owning-port effects, G5 empirical runs, and Coordinator responsibility containment |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -256,52 +256,78 @@ Follow M8.5R in `current-implementation-plan.md` and the normative
 `runtime-first-boundary.md`. The prior completion audit is component evidence,
 not milestone closure.
 
-### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - complete
+### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - reopened
 
-M8.6 G0-G5 are closed; M8.2B still requires a new strict frozen evaluation
-before any score review. The governing documents
-are:
+The implementation freeze remains substantive, but it is not milestone closure.
+The [M8.6 Closure Audit](current-closure-audit-20260724.md) found unmet
+behavioral and responsibility-containment exit criteria. M8.2B remains paused
+until the reopened Runtime gates close.
 
+The governing documents are:
+
+- [Runtime-First Architecture Boundary](runtime-first-boundary.md);
+- [Responsibility Containment Boundary](responsibility-containment-boundary.md);
 - [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md);
 - [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md);
-- [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
+- [M8.6 Closure Audit](current-closure-audit-20260724.md).
 
-| Gate | Status | Required evidence |
+| Gate | Status | Evidence and remaining work |
 | --- | --- | --- |
-| G0 Freeze and classify | complete | all committed score-bearing/legacy-master summaries classified; current profile/registry/prompt/skill/recovery identities inventoried |
-| G1 Strict-generalist profile | complete | strict default and Prompt/candidate policy; explicit compatibility registry and physical task-grammar isolation; mandatory typed proposal provenance; shared PlannerProposalValidator; paraphrase/distractor/extra-control/ambiguity/unrelated/unrequested-effect/scope controls; DOM/visual/WoT proof |
-| G2 Intent and TaskPlan integration | complete | typed intent/capability derivation; common TaskPlan entrypoint; verifier-bound subgoal progress; planner context excludes benchmark identity/reward wording |
-| G2.5 Active perception and evidence repair | complete | typed evidence gaps/probe contracts; minimum-cost read-only probes; coherent new epochs; normal/preflight/verification/recovery-inspection integration; safe unresolved blocking |
-| G3 Full-phase Recovery Coordinator | complete | strict phase-general FailureEnvelope; validated typed commands; semantic cascade guard; receipts and non-empty RecoveryDelta; inspect-before-repeat; explicit profile provenance; representative intake-through-verification/provider integration |
-| G4 Complete-run audit | complete | immutable typed run identity and case ledger; atomic v6 checkpoints/report; allowlisted batch stops; exact unobserved-only resume; Runtime/external outcome split; post-closure family and Runtime-owner clustering |
-| G5 Generalization proof | complete (internal) | strict, accepted-skill, compatibility, and ablation identities/cases isolated; required controls and safety gates pass; external confirmation unprovisioned |
+| G0 Freeze and classify | complete | score-bearing and legacy summaries are classified; current identities are explicit |
+| G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
+| G2 Intent and TaskPlan integration | complete | typed intent/capability derivation, common planning entrypoint, lineage, and verifier-bound subgoals |
+| G2.5 Active perception and evidence repair | reopened | protocol and call sites exist; task model/cost budgets must not be expanded and screenshot/source presence must not count as semantic evidence |
+| G3 Full-phase Recovery Coordinator | reopened | FailureEnvelope, cascade, and uncertain-effect inspection exist; context/schema/provider commands require real owning-port handlers and evidence-backed deltas |
+| G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
+| G5 Generalization evidence | partial | four-profile schema, recomputation, tamper rejection, and profile identity work; fresh profile-separated Runtime runs are still required |
+| Responsibility containment | reopened | Coordinator is feature-frozen until active perception, recovery dispatch, budget policy, and remaining independent TaskPlan flow are extracted behind typed results |
 
-Current hard findings:
+Current verified facts:
 
-- strict mode neither defines nor loads the historical task-grammar algorithms;
-  they are physically isolated behind the explicit compatibility profile;
-- planner-visible benchmark identity and blanket read-only classification are
-  removed and covered by governance regressions;
-- BrowserGym compiles the raw goal and enters the common PlanningRouter path;
-- source arbitration, typed active-perception contracts, one controller, and
-  normal/preflight/verification/recovery-inspection integration are complete;
-- recovery inspection and the adapted lower-half path now enter the same
-  phase-general FailureEnvelope and RecoveryCoordinator protocol;
-- representative planner and binding failures produce typed recovery commands,
-  and a replan is credited only after a validated replacement exists;
-- exact debug signatures coexist with a semantic family key that detects varied
-  equivalent failures without target/backend identity;
-- G3 proves bounded phase-spanning online recovery; G4 proves complete-run
-  accounting, invalidation, exact resume, and post-closure cluster governance;
-  G5 proves internal profile separation and non-benchmark conformance without
-  promoting historical scores.
+- the default planner is strict-generalist and historical task grammar is
+  physically isolated;
+- proposal provenance and validation are shared across model, deterministic,
+  parent, skill, and recovery sources;
+- raw requests enter typed intent and TaskPlan routing;
+- active-perception and recovery protocols are integrated at representative call
+  sites;
+- complete-run accounting continues after ordinary failures;
+- the audited `f4c3308` baseline passed 665 tests; this governance change passes
+  666 tests, Ruff, and mypy over 96 source files.
 
-Exit requires zero benchmark identity leakage, zero unrequested-action or
-scope-expansion regression on governance controls, one validated proposal
-boundary, one normal TaskPlan router, bounded evidence-gap repair through new
-coherent observation epochs, changed-strategy recovery across all phases,
-inspect-before-repeat for uncertain effects, complete clustered
-diagnostics, and non-benchmark evidence before benchmark replay.
+Current closure blockers:
+
+1. ProbeBudget derivation expands model/cost limits to fit visual capabilities;
+2. screenshot/source availability can satisfy a visual requirement without
+   relevant grounded semantic evidence;
+3. context compaction, schema repair, and provider switching can be credited
+   without a real owning-port result;
+4. SWITCH_PROVIDER is not reachable without a populated configured provider;
+5. G5 profile comparisons use an authored conformance ledger rather than fresh
+   immutable Runtime rollout evidence;
+6. coordinator.py has accumulated 3813 lines and multiple independent reasons
+   to change.
+
+Ordered next action:
+
+~~~text
+budget and evidence truth
+  -> real recovery command handlers
+  -> responsibility extraction with one state writer
+  -> fresh non-BrowserGym four-profile runs
+  -> complete local quality gate
+  -> new strict frozen diagnostic collection
+  -> cluster before repair
+  -> Runtime-first repair
+  -> targeted and breadth confirmation
+~~~
+
+M8.6 returns to done only when all enabled recovery actions produce real
+evidence-backed changes, authority budgets only narrow downstream, semantic
+requirements use target-relevant evidence, Coordinator passes the containment
+gate, and G5 comparisons are derived from immutable Runtime runs. External
+suites remain independently provisioned and historical scores remain
+unpromoted.
 
 ## Verification Commands
 
@@ -316,9 +342,8 @@ python -m pytest -q
 python -m ruff check src tests scripts
 python -m build
 
-# Repository-wide mypy is an open R7 gate until optional integration
-# environments and ignore policies are aligned:
-python -m mypy src
+# Current repository-governed static gate:
+python -m mypy --ignore-missing-imports src
 ```
 
 M1 end-to-end commands:
@@ -351,6 +376,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-24 | M8.6 closure audit / responsibility containment | Reopened G2.5, G3, and G5 empirical closure; froze Coordinator feature growth; added normative ownership, typed-result, no-op-success, budget-narrowing, and evidence-level gates | closure audit, responsibility boundary, README, plans, status | audited clean `f4c3308`; 666 tests after adding the containment ratchet; Ruff; mypy over 96 source files; no remote model/browser/score run |
 | 2026-07-23 | M8.6 G1 / behavioral governance and proposal provenance | Added runtime-authored source identity for model, rule, parent, skill, recovery, external-policy, and runtime-terminal proposals; rejected missing provenance before binding; persisted provenance in trace/state; added generic target-scope and unrequested-effect gates with camelCase/hyphen/morphology normalization and a non-BrowserGym anti-specialization matrix | proposal contracts/validator, Coordinator, all production proposal sources, governance matrix, plans/evidence | 567 tests; Ruff; mypy with optional imports across 90 source files; paraphrase positive control and distractor/extra-control/ambiguity/unrelated-interface/unrequested-terminal/destructive-effect/scope-expansion negatives; G1 complete; `m8.6-g1-behavior-provenance-20260723.md` |
 | 2026-07-23 | M8.6 G1 / physical compatibility containment | Moved historical objective parsers, terminal exposure, repair recipes, semantic rewrites, and compiler callback assembly out of the strict Planner module; retained only a lazy explicit replay entrypoint and reverse dependency on shared proposal contracts | `compatibility_planner_algorithms.py`, strict Planner lazy boundary, architecture controls, plans/evidence | 557 tests; 95 focused tests; Ruff; mypy with optional imports across 90 source files; subprocess proof that strict import/construction does not load compatibility while the historical profile does; `m8.6-g1-physical-containment-20260723.md`; G1 remains open for broader behavioral controls and proposal provenance |
 | 2026-07-22 | Runtime-first R8 / module containment closure | Audited extracted Core collaborators, typed boundaries, authoritative state/trace ownership, benchmark-vocabulary isolation, and BrowserGym facade compatibility; documented the legacy one-contract conformance harness as non-authoritative | executable R8 architecture boundary test, plans/audit/evidence | 522 tests; Ruff; mypy with optional imports across 89 source files; no Core benchmark vocabulary/adapter import; no collaborator `StateKernel` construction; observer/encoder/runner/protocol/report facade identity checks; `runtime-r8-closure-20260722.md` |

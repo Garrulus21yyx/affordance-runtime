@@ -1,15 +1,17 @@
 # Current Implementation Plan
 
 Implementation status: the controlled harness components through M8.5 exist,
-and M8.6 G0-G5 now close historical-profile classification, strict-planner
-containment, active-perception control, full-phase online recovery, complete-run
-audit governance, and internal four-profile generalization evidence. M8.2B is
-reopened only for a new strict frozen evaluation; historical scores are not
-promoted. See
+and substantial M8.6 implementation is present. The 2026-07-24 closure audit
+reopens G2.5 budget/evidence semantics, G3 owning-port recovery effects, G5
+empirical profile evidence, and responsibility containment. G0, G1, G2, and G4
+remain accepted component/integration evidence. M8.2B may not begin a new strict
+frozen score review until the reopened Runtime gates close; historical scores
+are not promoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
+[Responsibility Containment Boundary](responsibility-containment-boundary.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
-and the [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
+and the [M8.6 Closure Audit](current-closure-audit-20260724.md).
 
 Runtime-first R1-R8 remains valid component and containment evidence.
 TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
@@ -160,12 +162,15 @@ matches. Multiple exact matches or no remaining disclosure retain System 2
 fallthrough. Add generic near-match, exact-match, and ambiguity controls before
 repeating the failed seeds and full family.
 
-## 0. M8.6 Governance Correction Gate - complete
+## 0. M8.6 Governance Correction Gate - reopened
 
 This section overrides the historical task-family repair narrative above. The
-current implementation objective is not another BrowserGym family pass. It is
-to make the default Runtime path general, behaviorally bounded, and recoverable
-from every phase.
+implementation sequence produced substantial components, but the current
+closure decision is governed by the
+[M8.6 Closure Audit](current-closure-audit-20260724.md). The objective is not
+another BrowserGym family pass. It is to make the default Runtime path general,
+behaviorally bounded, recoverable from every phase, and contained behind clear
+module ownership.
 
 ### 0.1 Current diagnosis
 
@@ -258,9 +263,9 @@ Completed implementation steps: `PlannerProposalValidator` is the first
 context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
 Planner module. G2 now owns typed intent/capability derivation and the common
-TaskPlan entrypoint. G2.5 active perception and evidence repair and G3
-full-phase recovery, G4 complete-run audit, and G5 internal generalization
-evidence are now closed. Recovery-produced proposals remain subject to the same Validator and
+TaskPlan entrypoint. G2.5 active perception, G3 full-phase recovery, and G5 empirical evidence
+have implementation foundations but are reopened by the 2026-07-24 closure
+audit. G4 complete-run audit remains closed. Recovery-produced proposals remain subject to the same Validator and
 fail closed unless they carry the reserved typed `recovery` provenance.
 
 Completed physical-containment work: the reviewed call graph moved the
@@ -330,7 +335,7 @@ visual/spatial task requests visual evidence without first failing an action, an
 injected source conflict is resolved by a bounded targeted probe, and an
 irreducible conflict blocks an effectful contract.
 
-Status on 2026-07-23: **complete**. Core now owns strict `EvidenceGap`,
+Status on 2026-07-24: **reopened after implementation freeze**. Core owns strict `EvidenceGap`,
 `ProbeCapability`, `ProbeCommand`, `ProbePlan`, `ProbeReceipt`, and
 `PerceptionResolution` contracts plus one deterministic
 `ActivePerceptionController`. Coordinator derives gaps after ordinary
@@ -344,7 +349,9 @@ evidence blocks effectful execution; verification repair never repeats the
 effect. Structural paths with sufficient evidence produce no probe. Evidence:
 `evidence/m8.6-g2.5-active-perception-20260723.md`.
 
-This closes G2.5 infrastructure and integration. G3 subsequently reused those
+This establishes G2.5 infrastructure and call-site integration, but closure
+requires strict budget intersection and target-relevant semantic evidence rather
+than source/artifact presence. G3 subsequently reused those
 ports through one `FailureEnvelope`, command validator, changed-strategy guard,
 and phase-general `RecoveryCoordinator`; active perception remains owned by its
 controller rather than by recovery.
@@ -365,7 +372,7 @@ observation, infer missing facts, or execute the resulting action directly.
 5. preserve inspect-before-repeat and effect uncertainty;
 6. ask the user or abort when no safe change exists.
 
-Status on 2026-07-23: **complete**. One strict `FailureEnvelope`, typed command
+Status on 2026-07-24: **reopened after implementation freeze**. One strict `FailureEnvelope`, typed command
 union, plan validator, receipts, non-empty deltas, semantic cascade key, and
 pure `RecoveryCoordinator` now cover representative failures from intake
 through provider/context, skill activation, preflight, execution, and
@@ -416,8 +423,8 @@ unseen local interfaces, paraphrases, distractors, ambiguity, extra controls,
 DOM/accessibility/SVG/visual/WoT sources, provider/context stress, recovery
 injection, and external suites after independent provisioning.
 
-Status on 2026-07-24: **complete for internal conformance; external
-confirmation unprovisioned**. A strict typed report now isolates the four
+Status on 2026-07-24: **evidence schema/conformance complete; empirical
+profile proof reopened; external confirmation unprovisioned**. A strict typed report isolates the four
 profile identities, recomputes case metrics and shared-case comparisons,
 requires all perturbation/source controls and zero safety regression, binds
 accepted skill digest/artifact identity through the real Coordinator, and
@@ -451,9 +458,35 @@ M8.6 closes only when:
 - non-benchmark conformance and safety evidence precede benchmark replay;
 - README, status, and reports identify exact revision and active profile.
 
-These criteria are met by G0-G5. M8.2B may now collect a new strict frozen
-evaluation under the new protocols, but no historical result is promoted and
-`official_score_claimed` remains false until that distinct review completes.
+These criteria are not yet all met. G2.5, G3, G5 empirical evidence, and
+responsibility containment are reopened by the
+[M8.6 Closure Audit](current-closure-audit-20260724.md). M8.2B may collect a new
+strict frozen evaluation only after the closure sequence below passes. No
+historical result is promoted and `official_score_claimed` remains false.
+
+### 0.5 Reopened closure sequence
+
+Execute in this order:
+
+1. enforce strict task/run/capability intersection for probe budgets;
+2. distinguish source/artifact availability from target-relevant semantic
+   evidence;
+3. execute each enabled recovery command through its real owning port and reject
+   no-op success;
+4. extract active-perception flow, recovery command dispatch, probe-budget
+   policy, and remaining independent TaskPlan flow from the feature-frozen
+   Coordinator while preserving one authoritative state writer;
+5. publish fresh four-profile non-BrowserGym Runtime runs with trace, contract,
+   receipt, verifier, environment, and artifact identities;
+6. rerun all local gates, then run one new strict frozen diagnostic matrix,
+   collect ordinary failures to completion, cluster, repair Runtime-first, and
+   confirm with targeted plus breadth replay.
+
+The normative
+[Responsibility Containment Boundary](responsibility-containment-boundary.md)
+blocks feature additions to `coordinator.py` until the extraction gate passes.
+M9, external suites, and distributed infrastructure cannot substitute for this
+closure work.
 
 ## 1. Authority
 
@@ -466,7 +499,9 @@ release requirements. When the two documents differ, this implementation plan
 wins until a production feature is explicitly promoted through the decision
 gate in the main [Project Plan](project-plan.md).
 
-The [Runtime-First Architecture Boundary](runtime-first-boundary.md) and
+The [Runtime-First Architecture Boundary](runtime-first-boundary.md),
+[Responsibility Containment Boundary](responsibility-containment-boundary.md),
+and
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md)
 are jointly normative. BrowserGym is an external adapter and evaluation
 consumer.
@@ -1968,15 +2003,18 @@ BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
 milestone. The benchmark remains an external pressure test of the Runtime main
 path.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - complete
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - reopened
 
-The authoritative execution sequence and exit gates are in Section 0,
+The implementation freeze remains valuable component evidence, but the closure
+audit found unmet behavioral and containment gates. The authoritative execution
+sequence and exit gates are in Section 0,
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
 and the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
 This milestone supersedes benchmark-family repair as the current work order.
-G0-G5 are closed. M8.2B now requires a new strict frozen evaluation before any
-score claim; prior compatibility/legacy results remain unpromoted.
+G0, G1, G2, and G4 remain accepted; G2.5, G3, and G5 empirical evidence are
+reopened. M8.2B waits for closure before a new strict frozen evaluation or score
+claim; prior compatibility/legacy results remain unpromoted.
 
 ### M9: Durable Single-Run Recovery - conditional
 

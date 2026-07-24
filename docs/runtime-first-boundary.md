@@ -11,6 +11,12 @@ behavioral restrictions on prompts, semantic compilers, skills, planner
 profiles, and benchmark-driven repair. A benchmark is an architecture auditor,
 not the product objective.
 
+The [Responsibility Containment Boundary](responsibility-containment-boundary.md)
+is also jointly normative. It prevents the single authoritative Coordinator,
+planner, adapters, and recovery path from accumulating responsibilities merely
+because they already possess the necessary context. Its ownership and
+feature-freeze gates apply before milestone promotion.
+
 The
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md)
 is also normative for M8.6. It defines how missing evidence is repaired before

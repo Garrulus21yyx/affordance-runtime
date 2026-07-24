@@ -20,6 +20,13 @@ observations, encode validated Runtime actions, and collect official results; it
 must not become a replacement planner, perception stack, verifier, recovery
 engine, or learning system.
 
+The normative
+[Responsibility Containment Boundary](docs/responsibility-containment-boundary.md)
+also prevents a single-writer Coordinator from becoming a universal
+implementation module. Runtime collaborators own phase-specific algorithms and
+return typed results; only the Coordinator commits authoritative state and trace
+order.
+
 The stricter
 [Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)
 also governs planner rules, prompts, semantic compilers, skills, tests, and
@@ -29,21 +36,25 @@ are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
 The repository implements the controlled harness components through M8.5 and
-the M8.6 G0-G5 governance gate: historical profile classification,
+substantial M8.6 components: historical profile classification,
 strict-planner containment, typed intent and TaskPlan routing, bounded active
 perception, a phase-general online Recovery Coordinator, complete-run
-evaluation accounting, and internal four-profile generalization evidence.
-External-suite confirmation remains independently provisioned.
-The tested M8.6 implementation freeze is commit `4e7d116` with active default
-profile `strict-generalist`; each future result must still record its full
-immutable run identity rather than inheriting this label.
+evaluation accounting, and a four-profile evidence contract. The
+[M8.6 Closure Audit](docs/current-closure-audit-20260724.md) reopens closure for
+active-perception budget/evidence semantics, real recovery command effects,
+responsibility containment, and empirical profile-separated Runtime evidence.
+External-suite confirmation remains independently provisioned. Commit `4e7d116`
+is retained as the tested implementation freeze, not as proof that every G0-G5
+behavioral exit criterion is closed. The active default remains
+`strict-generalist`; each future result must record its full immutable run
+identity rather than inherit this label.
 
-M8.2B now requires a new strict-generalist frozen evaluation before any score
-review. Historical smoke, PR, nightly, and release reports remain legacy or
-compatibility evidence for their exact revisions, not proof of current strict
-capability. Benchmark work must audit Runtime generalization rather than add
-task-family behavior to the default planner. Current report code therefore
-keeps `official_score_claimed=false`.
+M8.2B requires the reopened M8.6 correctness and containment work before a new
+strict-generalist frozen evaluation. Historical smoke, PR, nightly, and release
+reports remain legacy or compatibility evidence for their exact revisions, not
+proof of current strict capability. Benchmark work must audit Runtime
+generalization rather than add task-family behavior to the default planner.
+Current report code therefore keeps `official_score_claimed=false`.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -161,7 +172,9 @@ Explicitly deferred beyond the current profile:
 ## Documents
 
 - [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md)
+- [Responsibility Containment Boundary](docs/responsibility-containment-boundary.md)
 - [Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)
+- [M8.6 Closure Audit - 2026-07-24](docs/current-closure-audit-20260724.md)
 - [Planner, Recovery, and Benchmark Governance Audit - 2026-07-23](docs/planner-recovery-governance-audit-20260723.md)
 - [Current Architecture Audit - 2026-07-22](docs/current-architecture-audit-20260722.md)
 - [Project Plan](docs/project-plan.md)
