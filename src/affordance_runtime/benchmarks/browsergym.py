@@ -69,6 +69,7 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
 )
+from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION
 from affordance_runtime.evaluation_audit import EvaluationRunIdentity
 from affordance_runtime.generalist_planner import (
     GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
@@ -269,7 +270,8 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v8",
+        "schema_version": "browsergym-generalist-checkpoint-v9",
+        "action_contract_schema_version": ACTION_CONTRACT_SCHEMA_VERSION,
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,

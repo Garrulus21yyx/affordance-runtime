@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from affordance_runtime.grounding import GroundingCandidate, RoutePlan
 
 
+ACTION_CONTRACT_SCHEMA_VERSION = "1.1"
+
+
 class Surface(StrEnum):
     DOM = "dom"
     SVG = "svg"
@@ -32,6 +35,12 @@ class RiskLevel(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     IRREVERSIBLE = "irreversible"
+
+
+class ScopeRelationKind(StrEnum):
+    SEMANTIC_VALUE_UNIQUE_CONTROL = "semantic_value_unique_control"
+    ENTITY_PROPERTY = "entity_property"
+    ORDINAL_COLLECTION_ITEM = "ordinal_collection_item"
 
 
 class RuntimeErrorCode(StrEnum):
@@ -223,6 +232,22 @@ class GestureBindingError(ValueError):
 
 
 @dataclass(frozen=True)
+class ScopeAuthorization:
+    """Task-authority decision bound to one current grounding candidate."""
+
+    relation: ScopeRelationKind
+    candidate_id: str
+    snapshot_id: str
+    target_fingerprint: str
+    evidence_digest: str
+    evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not all((self.candidate_id, self.snapshot_id, self.evidence_digest)):
+            raise ValueError("scope authorization requires candidate, snapshot, and evidence identity")
+
+
+@dataclass(frozen=True)
 class GestureContractBinder:
     """Resolve and validate a gesture before any backend encodes it.
 
@@ -399,6 +424,7 @@ class ActionContract:
     environment_revision: str
     locator: dict[str, Any]
     grounding_candidate: GroundingCandidate | None = None
+    scope_authorization: ScopeAuthorization | None = None
     route_plan: RoutePlan | None = None
     gesture_binding: GestureBinding | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
@@ -411,7 +437,7 @@ class ActionContract:
     compensation: str | None = None
     timeout_ms: int = 5_000
     fallback_backends: list[str] = field(default_factory=list)
-    schema_version: str = "1.0"
+    schema_version: str = ACTION_CONTRACT_SCHEMA_VERSION
     run_id: str = ""
     snapshot_id: str = ""
     page_revision: str = ""
@@ -430,6 +456,17 @@ class ActionContract:
             object.__setattr__(self, "page_revision", self.environment_revision)
         if not self.contract_hash:
             object.__setattr__(self, "contract_hash", self.compute_hash())
+        if self.scope_authorization is not None:
+            candidate = self.grounding_candidate
+            authorization = self.scope_authorization
+            if candidate is None:
+                raise ValueError("scope authorization requires a grounding candidate")
+            if (
+                authorization.candidate_id != candidate.candidate_id
+                or authorization.snapshot_id != candidate.observation_epoch_id
+                or authorization.target_fingerprint != candidate.target_fingerprint
+            ):
+                raise ValueError("scope authorization does not match the grounded contract target")
 
     def canonical_payload(self) -> dict[str, Any]:
         payload = asdict(self)

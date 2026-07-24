@@ -8,6 +8,8 @@ from pathlib import Path
 from time import time
 from typing import Any
 
+from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION
+
 
 @dataclass(frozen=True)
 class TraceNode:
@@ -23,7 +25,7 @@ class TraceDag:
     run_id: str
     nodes: list[TraceNode] = field(default_factory=list)
     runtime_version: str = "0.1.0"
-    contract_schema_version: str = "1.0"
+    contract_schema_version: str = ACTION_CONTRACT_SCHEMA_VERSION
     environment_version: str = ""
     artifact_index: list[str] = field(default_factory=list)
 

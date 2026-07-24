@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -25,6 +24,7 @@ from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
+from affordance_runtime.scope_authorization import ProposalScopeEvaluator, ScopeRejectionKind
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
@@ -219,40 +219,6 @@ def proposal_record(
     }
 
 
-_SCOPE_STOPWORDS = {
-    "activate",
-    "button",
-    "click",
-    "control",
-    "field",
-    "input",
-    "item",
-    "option",
-    "select",
-    "the",
-    "this",
-    "with",
-}
-_EFFECT_TERMS = {
-    "add",
-    "buy",
-    "confirm",
-    "create",
-    "delete",
-    "download",
-    "open",
-    "pay",
-    "publish",
-    "purchase",
-    "remove",
-    "save",
-    "send",
-    "submit",
-    "update",
-    "upload",
-}
-
-
 class ProposalRejected(ValueError):
     def __init__(self, code: ProposalRejectionCode, detail: str = "") -> None:
         self.code = code
@@ -322,27 +288,25 @@ class PlannerProposalValidator:
         """Reject current but unauthorized semantic targets before binding."""
 
         label, role = _semantic_target_label_role(proposal.target_affordance_id, snapshot)
-        label_tokens = _scope_tokens(label)
-        # proposal.subgoal is planner-authored evidence, not task authority; it
-        # cannot expand the user-validated objective or target scope.
-        authorized_text = " ".join((task_spec.objective, *task_spec.targets))
-        authorized_tokens = _scope_tokens(authorized_text)
-        unrequested_effects = label_tokens.intersection(_EFFECT_TERMS) - authorized_tokens
-        if unrequested_effects:
-            raise ProposalRejected(
-                ProposalRejectionCode.UNREQUESTED_EFFECT,
-                ",".join(sorted(unrequested_effects)),
-            )
-        if not task_spec.targets or role == "option" or not label_tokens:
+        decision = ProposalScopeEvaluator().evaluate(
+            action_kind=proposal.action_kind.value,
+            target_id=proposal.target_affordance_id,
+            target_label=label,
+            target_role=role,
+            parameters=proposal.parameters,
+            objective=task_spec.objective,
+            targets=task_spec.targets,
+            unified_affordances=snapshot.unified_affordances,
+            observation=snapshot.observation,
+        )
+        if decision.authorized:
             return
-        target_tokens = _scope_tokens(" ".join(task_spec.targets))
-        semantic_label_tokens = label_tokens - _EFFECT_TERMS
-        semantic_authorized_tokens = (target_tokens | authorized_tokens) - _EFFECT_TERMS
-        if target_tokens and semantic_label_tokens and semantic_label_tokens.isdisjoint(semantic_authorized_tokens):
-            raise ProposalRejected(
-                ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
-                proposal.target_affordance_id,
-            )
+        rejection = (
+            ProposalRejectionCode.UNREQUESTED_EFFECT
+            if decision.rejection == ScopeRejectionKind.UNREQUESTED_EFFECT
+            else ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+        )
+        raise ProposalRejected(rejection, decision.detail)
 
     @staticmethod
     def _validate_target(
@@ -378,22 +342,6 @@ class PlannerProposalValidator:
                 ProposalRejectionCode.UNSUPPORTED_ACTION,
                 f"{action.value} cannot bind {affordance.action}",
             )
-
-
-def _scope_tokens(value: str) -> set[str]:
-    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value).replace("-", " ")
-    tokens: set[str] = set()
-    for token in re.findall(r"\w+", normalized.casefold(), flags=re.UNICODE):
-        if len(token) <= 2 or token in _SCOPE_STOPWORDS:
-            continue
-        tokens.add(token)
-        if len(token) > 4 and token.endswith("ed"):
-            tokens.update((token[:-1], token[:-2]))
-        if len(token) > 5 and token.endswith("ing"):
-            tokens.add(token[:-3])
-        if len(token) > 4 and token.endswith("s"):
-            tokens.add(token[:-1])
-    return tokens
 
 
 def _semantic_target_label_role(
@@ -759,8 +707,31 @@ class ContractBuilder:
                 f"task:{task_spec.task_id}:revision:{task_spec.revision}:"
                 f"target:{affordance.id}:parameters:{sorted(parameters.items())}"
             )
+        scope_authorization = None
+        if contract.grounding_candidate is not None and source_resolution is not None:
+            scope_decision = ProposalScopeEvaluator().evaluate(
+                action_kind=proposal.action_kind.value,
+                target_id=proposal.target_affordance_id,
+                target_label=source_resolution.target.label,
+                target_role=source_resolution.target.role,
+                parameters=proposal.parameters,
+                objective=task_spec.objective,
+                targets=task_spec.targets,
+                unified_affordances=snapshot.unified_affordances,
+                observation=snapshot.observation,
+                selected_candidate=contract.grounding_candidate,
+            )
+            if not scope_decision.authorized:
+                rejection = (
+                    ProposalRejectionCode.UNREQUESTED_EFFECT
+                    if scope_decision.rejection == ScopeRejectionKind.UNREQUESTED_EFFECT
+                    else ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+                )
+                raise ProposalRejected(rejection, scope_decision.detail)
+            scope_authorization = scope_decision.authorization
         return replace(
             contract,
+            scope_authorization=scope_authorization,
             risk=risk,
             idempotency_key=idempotency_key,
             compensation=contract_requirements.compensation,
