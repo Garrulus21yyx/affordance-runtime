@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Awaitable, Protocol, cast
 
 from affordance_runtime.async_bridge import resolve_awaitable
@@ -28,6 +29,7 @@ from affordance_runtime.task_planning import (
     TaskPlanningRecoverySummary,
     TaskPlanValidationReport,
     TaskPlanValidator,
+    task_plan_entry_feasibility_issue,
 )
 
 
@@ -58,6 +60,24 @@ class TaskPlanTransition:
     plan: TaskPlan
     validation: TaskPlanValidationReport
     previous_plan: TaskPlan | None = None
+
+
+class TaskPlanReplacementReason(StrEnum):
+    SUBGOAL_ACTION_BUDGET_EXHAUSTED = "subgoal_action_budget_exhausted"
+    ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE = "active_subgoal_action_family_unavailable"
+
+
+@dataclass(frozen=True)
+class TaskPlanReplacementDecision:
+    """Authority-free lifecycle decision consumed by the state committer."""
+
+    reason: TaskPlanReplacementReason | None = None
+    subgoal_id: str = ""
+    unavailable_action_family: str = ""
+
+    @property
+    def required(self) -> bool:
+        return self.reason is not None
 
 
 @dataclass(frozen=True)
@@ -118,6 +138,38 @@ class TaskPlanLifecycle:
             state.task_plan is not None
             and state.plan_progress is not None
             and state.plan_progress.action_budget_exhausted(state.task_plan)
+        )
+
+    def evaluate_replacement(
+        self,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        budget: TaskPlanBudgetLimits,
+    ) -> TaskPlanReplacementDecision:
+        """Decide whether the current plan needs replacement without mutation."""
+
+        if state.task_plan is None or state.plan_progress is None:
+            return TaskPlanReplacementDecision()
+        if self.should_replan(state):
+            return TaskPlanReplacementDecision(
+                reason=TaskPlanReplacementReason.SUBGOAL_ACTION_BUDGET_EXHAUSTED,
+                subgoal_id=state.plan_progress.active_subgoal_id,
+            )
+        context = self.build_context(
+            task_spec,
+            state,
+            snapshot,
+            budget,
+            reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE.value,
+        )
+        issue = task_plan_entry_feasibility_issue(state.task_plan, context)
+        if issue is None:
+            return TaskPlanReplacementDecision()
+        return TaskPlanReplacementDecision(
+            reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE,
+            subgoal_id=issue.detail,
+            unavailable_action_family=(issue.disallowed_values[0] if issue.disallowed_values else ""),
         )
 
     @staticmethod

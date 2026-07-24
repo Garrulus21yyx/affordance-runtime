@@ -677,23 +677,9 @@ class TaskPlanValidator:
                     detail="assumptions",
                 )
             )
-        entry = _contextual_entry_subgoal(plan, planning_context)
-        if (
-            entry is not None
-            and entry.action_family is not None
-            and planning_context is not None
-            and planning_context.environment.affordances
-            and entry.action_family not in _context_action_families(planning_context)
-        ):
-            repairable.append(
-                TaskPlanValidationIssue(
-                    code="entry_action_family_unavailable",
-                    detail=entry.subgoal_id,
-                    field="action_family",
-                    disallowed_values=(entry.action_family.value,),
-                    required_semantics="currently_bindable_action_family",
-                )
-            )
+        entry_issue = task_plan_entry_feasibility_issue(plan, planning_context)
+        if entry_issue is not None:
+            repairable.append(entry_issue)
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
         if not any(item.subgoal_id not in dependency_targets for item in plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="missing_terminal_subgoal"))
@@ -703,6 +689,30 @@ class TaskPlanValidator:
         if repairable:
             return TaskPlanValidationReport(status=TaskPlanValidationStatus.REPAIRABLE, issues=tuple(repairable))
         return TaskPlanValidationReport(status=TaskPlanValidationStatus.ACCEPT)
+
+
+def task_plan_entry_feasibility_issue(
+    plan: TaskPlan,
+    context: TaskPlanningContext | None,
+) -> TaskPlanValidationIssue | None:
+    """Return the current-entry issue without revalidating immutable lineage."""
+
+    entry = _contextual_entry_subgoal(plan, context)
+    if (
+        entry is None
+        or entry.action_family is None
+        or context is None
+        or not context.environment.affordances
+        or entry.action_family in _context_action_families(context)
+    ):
+        return None
+    return TaskPlanValidationIssue(
+        code="entry_action_family_unavailable",
+        detail=entry.subgoal_id,
+        field="action_family",
+        disallowed_values=(entry.action_family.value,),
+        required_semantics="currently_bindable_action_family",
+    )
 
 
 def _contextual_entry_subgoal(

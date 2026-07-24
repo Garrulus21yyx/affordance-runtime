@@ -461,15 +461,18 @@ class RunCoordinator:
             if (
                 self.task_plan_lifecycle is not None
                 and envelope.task_spec is not None
-                and self.task_plan_lifecycle.should_replan(state)
+                and (task_plan_replacement := self.task_plan_lifecycle.evaluate_replacement(
+                    envelope.task_spec, state, snapshot, self.budget
+                )).required
             ):
+                assert task_plan_replacement.reason is not None
                 try:
                     transition = self.task_plan_lifecycle.propose_replacement(
                         envelope.task_spec,
                         state,
                         snapshot,
                         self.budget,
-                        reason="subgoal_action_budget_exhausted",
+                        reason=task_plan_replacement.reason.value,
                     )
                     task_plan = transition.plan
                     report = transition.validation
@@ -711,9 +714,6 @@ class RunCoordinator:
 
             state.transition(RuntimeStep.PLANNING.value)
             if self.task_plan_lifecycle is not None and state.task_plan is not None:
-                # Activate the next
-                # ready semantic unit before any action planner or TaskSkill
-                # reads progress; contract-time action accounting is too late.
                 state.active_subgoal()
             skill_decision: TaskSkillRuntimeDecision | None = None
             skill_step_id = ""

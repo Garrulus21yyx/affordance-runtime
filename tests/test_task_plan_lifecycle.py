@@ -5,11 +5,15 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
+from affordance_runtime.task_plan_lifecycle import (
+    TaskPlanLifecycle,
+    TaskPlanReplacementReason,
+)
 from affordance_runtime.task_planning import (
     PlanningRouter,
     SubgoalOutcome,
     SubgoalOutcomeRelation,
+    SubgoalSpec,
     TaskPlan,
     TaskPlanActionFamily,
     TaskPlanningContext,
@@ -139,3 +143,74 @@ def test_lifecycle_applies_contextual_entry_validation_to_non_llm_planner() -> N
         "entry_action_family_unavailable"
     }
     assert state.task_plan is None
+
+
+def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[TaskSpec, StateKernel]:
+    task = _task()
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    context = TaskPlanLifecycle.build_context(task, state, _snapshot(), Limits(), reason="initial")
+    base = PlanningRouter().plan(context)
+    first = base.subgoals[0].model_copy(
+        update={
+            "subgoal_id": "first",
+            "action_family": TaskPlanActionFamily.ACTIVATE,
+        }
+    )
+    second = SubgoalSpec(
+        subgoal_id="second",
+        objective="setting control is selected",
+        outcome=SubgoalOutcome(
+            subject="setting control",
+            relation=SubgoalOutcomeRelation.IS_SELECTED,
+        ),
+        depends_on=("first",),
+        success_criteria=("setting control is selected",),
+        evidence_requirements=("current control state",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=second_family,
+    )
+    state.install_task_plan(base.model_copy(update={"subgoals": (first, second)}))
+    assert state.active_subgoal() == first.objective
+    state.complete_subgoal("first", ("evidence:first",))
+    return task, state
+
+
+def test_lifecycle_requests_replacement_for_newly_ready_unavailable_family() -> None:
+    task, state = _installed_two_step_state(TaskPlanActionFamily.SELECT_OPTION)
+
+    decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+    )
+
+    assert decision.required
+    assert decision.reason == TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE
+    assert decision.subgoal_id == "second"
+    assert decision.unavailable_action_family == "select_option"
+    assert state.plan_progress is not None
+    assert state.plan_progress.active_subgoal_id == ""
+
+
+def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replanning() -> None:
+    task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
+    lifecycle = TaskPlanLifecycle(PlanningRouter())
+
+    compatible = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
+    empty_snapshot = BrowserSnapshot(
+        Observation("environment-empty", snapshot_id="snapshot-empty"),
+        DomAdapter().transduce(
+            "<main></main>",
+            environment_revision="environment-empty",
+            snapshot_id="snapshot-empty",
+        ),
+    )
+    unknown = lifecycle.evaluate_replacement(task, state, empty_snapshot, Limits())
+    assert state.active_subgoal() == "setting control is selected"
+    state.complete_subgoal("second", ("evidence:second",))
+    completed = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
+
+    assert not compatible.required
+    assert not unknown.required
+    assert not completed.required
