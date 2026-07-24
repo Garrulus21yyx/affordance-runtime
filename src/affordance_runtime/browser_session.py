@@ -905,11 +905,7 @@ class BrowserSession:
             acceptable_evidence=base.acceptable_evidence | requested_sources,
             preferred_sources=tuple(dict.fromkeys((*requested_source_order, *base.preferred_sources))),
             observation_budget=1,
-            model_call_budget=(
-                max(1, base.model_call_budget)
-                if requested_sources.intersection({GroundingSource.SOM, GroundingSource.VISUAL})
-                else base.model_call_budget
-            ),
+            model_call_budget=base.model_call_budget,
         )
         self._targeted_capture_sequence += 1
         screenshot_path = profile.screenshot_path

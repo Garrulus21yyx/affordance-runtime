@@ -2,9 +2,10 @@
 
 Implementation status: the controlled harness components through M8.5 exist,
 and substantial M8.6 implementation is present. The 2026-07-24 closure audit
-reopens G2.5 budget/evidence semantics, G3 owning-port recovery effects, G5
-empirical profile evidence, and responsibility containment. G0, G1, G2, and G4
-remain accepted component/integration evidence. M8.2B may not begin a new strict
+reopened G2.5 budget/evidence semantics, G3 owning-port recovery effects, G5
+empirical profile evidence, and responsibility containment. The G2.5/G3/first
+containment repair slices now pass locally; G0, G1, G2, and G4 remain accepted
+component/integration evidence. M8.2B may not begin a new strict
 frozen score review until the reopened Runtime gates close; historical scores
 are not promoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
@@ -263,9 +264,10 @@ Completed implementation steps: `PlannerProposalValidator` is the first
 context-bound semantic gate in Coordinator, ContractBuilder retains defense in
 depth, and compatibility task grammar is physically isolated from the strict
 Planner module. G2 now owns typed intent/capability derivation and the common
-TaskPlan entrypoint. G2.5 active perception, G3 full-phase recovery, and G5 empirical evidence
-have implementation foundations but are reopened by the 2026-07-24 closure
-audit. G4 complete-run audit remains closed. Recovery-produced proposals remain subject to the same Validator and
+TaskPlan entrypoint. G2.5 active perception and G3 owning-port recovery have
+completed their reopened correctness slices and local quality gate; G5
+empirical evidence remains open. G4 complete-run audit remains closed.
+Recovery-produced proposals remain subject to the same Validator and
 fail closed unless they carry the reserved typed `recovery` provenance.
 
 Completed physical-containment work: the reviewed call graph moved the
@@ -458,8 +460,9 @@ M8.6 closes only when:
 - non-benchmark conformance and safety evidence precede benchmark replay;
 - README, status, and reports identify exact revision and active profile.
 
-These criteria are not yet all met. G2.5, G3, G5 empirical evidence, and
-responsibility containment are reopened by the
+These criteria are not yet all met. G2.5 budget/evidence truth, G3 real
+owning-port effects, and the first containment ratchet now pass locally; fresh
+G5 empirical rollout evidence remains open under the
 [M8.6 Closure Audit](current-closure-audit-20260724.md). M8.2B may collect a new
 strict frozen evaluation only after the closure sequence below passes. No
 historical result is promoted and `official_score_claimed` remains false.
@@ -468,23 +471,26 @@ historical result is promoted and `official_score_claimed` remains false.
 
 Execute in this order:
 
-1. enforce strict task/run/capability intersection for probe budgets;
-2. distinguish source/artifact availability from target-relevant semantic
-   evidence;
-3. execute each enabled recovery command through its real owning port and reject
-   no-op success;
-4. extract active-perception flow, recovery command dispatch, probe-budget
-   policy, and remaining independent TaskPlan flow from the feature-frozen
-   Coordinator while preserving one authoritative state writer;
-5. publish fresh four-profile non-BrowserGym Runtime runs with trace, contract,
-   receipt, verifier, environment, and artifact identities;
-6. rerun all local gates, then run one new strict frozen diagnostic matrix,
+1. **completed locally** - enforce strict task/run/capability intersection for
+   probe budgets;
+2. **completed locally** - distinguish source/artifact availability from
+   target-relevant semantic evidence;
+3. **completed locally** - execute each enabled recovery command through its real
+   owning port and reject no-op success;
+4. **first containment slice completed locally** - extract active-perception
+   flow, recovery command dispatch, and evidence projections while preserving
+   one authoritative state writer; retain the Coordinator feature freeze and
+   extract TaskPlan flow only if it remains an independent change axis;
+5. **current** - publish fresh four-profile non-BrowserGym Runtime runs with
+   trace, contract, receipt, verifier, environment, and artifact identities;
+6. **pending** - rerun all local gates, then run one new strict frozen diagnostic matrix,
    collect ordinary failures to completion, cluster, repair Runtime-first, and
    confirm with targeted plus breadth replay.
 
 The normative
 [Responsibility Containment Boundary](responsibility-containment-boundary.md)
-blocks feature additions to `coordinator.py` until the extraction gate passes.
+continues to block feature additions to `coordinator.py`; the reduced ratchet is
+a containment checkpoint, not permission to resume feature growth.
 M9, external suites, and distributed infrastructure cannot substitute for this
 closure work.
 
@@ -2012,9 +2018,11 @@ sequence and exit gates are in Section 0,
 and the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
 This milestone supersedes benchmark-family repair as the current work order.
-G0, G1, G2, and G4 remain accepted; G2.5, G3, and G5 empirical evidence are
-reopened. M8.2B waits for closure before a new strict frozen evaluation or score
-claim; prior compatibility/legacy results remain unpromoted.
+G0, G1, G2, and G4 remain accepted. The reopened G2.5, G3, and responsibility
+containment repairs now pass the full local gate at the current working revision;
+G5 fresh immutable four-profile Runtime evidence remains open. M8.2B waits for
+closure before a new strict frozen evaluation or score claim; prior
+compatibility/legacy results remain unpromoted.
 
 ### M9: Durable Single-Run Recovery - conditional
 

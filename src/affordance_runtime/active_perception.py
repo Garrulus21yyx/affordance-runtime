@@ -16,6 +16,7 @@ from affordance_runtime.grounding import (
     AssertionResolutionStatus,
     EvidenceKind,
     GroundingSource,
+    PerceptionRequirements,
 )
 from affordance_runtime.task_intake import OperationClass, StrictModel
 
@@ -99,6 +100,30 @@ class ProbeBudget(StrictModel):
             and self.model_calls >= other.model_calls
             and self.estimated_cost >= other.estimated_cost
             and self.artifacts >= other.artifacts
+        )
+
+
+@dataclass(frozen=True)
+class ProbeBudgetPolicy:
+    """Intersect declared perception authority with remaining Runtime capacity."""
+
+    def remaining_authority(
+        self,
+        requirements: PerceptionRequirements | None,
+        *,
+        remaining_observations: int,
+    ) -> ProbeBudget:
+        declared = requirements or PerceptionRequirements()
+        observations = max(
+            0,
+            min(1, remaining_observations, declared.observation_budget),
+        )
+        return ProbeBudget(
+            observations=observations,
+            timeout_ms=declared.latency_budget_ms if observations else 0,
+            model_calls=declared.model_call_budget if observations else 0,
+            estimated_cost=declared.cost_budget if observations else 0.0,
+            artifacts=1 if observations else 0,
         )
 
 
@@ -713,13 +738,25 @@ def _preferred_sources(evidence_kind: EvidenceKind) -> tuple[GroundingSource, ..
 
 
 def _snapshot_has_evidence(snapshot: "BrowserSnapshot", evidence_kind: EvidenceKind) -> bool:
-    sources = {item.source for item in snapshot.source_observations}
-    acceptable = set(_preferred_sources(evidence_kind))
-    if sources.intersection(acceptable):
-        return True
-    if evidence_kind == EvidenceKind.SPATIAL:
-        return any(EvidenceKind.SPATIAL in item.evidence_kinds for item in snapshot.grounding_candidates)
-    return False
+    minimum_confidence = (
+        snapshot.perception_requirements.minimum_confidence
+        if snapshot.perception_requirements is not None
+        else 0.0
+    )
+    conflicted_entities = {
+        item.entity_key
+        for item in snapshot.assertion_decisions
+        if item.material and item.status == AssertionResolutionStatus.CONFLICT
+    }
+    return any(
+        evidence_kind in candidate.evidence_kinds
+        and candidate.confidence >= minimum_confidence
+        and candidate.is_current(snapshot.observation)
+        and target.semantic_target_id not in conflicted_entities
+        and not target.unresolved_conflicts
+        for target in snapshot.unified_affordances
+        for candidate in target.grounding_candidates
+    )
 
 
 def _source_probe_profile(source: GroundingSource) -> tuple[ProbeKind, int, int, float]:

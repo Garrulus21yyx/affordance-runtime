@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from time import time
@@ -12,14 +11,11 @@ from typing import Any, Awaitable, Protocol
 from uuid import uuid4
 
 from affordance_runtime.active_perception import (
-    ActivePerceptionController,
-    EvidenceGapExtractor,
     PerceptionResolutionStatus,
-    ProbeBudget,
-    ProbeReceipt,
-    probe_capabilities_for_requests,
-    probe_fingerprint,
-    request_for_command,
+)
+from affordance_runtime.active_perception_flow import (
+    ActivePerceptionFlow,
+    ActivePerceptionFlowContext,
 )
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
@@ -40,7 +36,7 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
-from affordance_runtime.model_port import ModelCallRecord, ProviderFailureKind, ProviderModelError
+from affordance_runtime.model_port import ModelCallRecord, ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planning import (
     ContractBuilder,
@@ -52,6 +48,8 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
     bind_active_subgoal_verifiers,
+    proposal_error_code,
+    proposal_record,
 )
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
@@ -60,6 +58,10 @@ from affordance_runtime.recovery import (
     RecoveryAttemptOutcome,
     RecoveryCascadeDetector,
     RecoveryIncident,
+)
+from affordance_runtime.recovery_command_dispatcher import (
+    OWNER_DISPATCH_COMMANDS,
+    RecoveryCommandDispatcher,
 )
 from affordance_runtime.recovery_commands import (
     RecoveryCommandKind,
@@ -82,6 +84,13 @@ from affordance_runtime.route_calibration import (
     RouteScope,
 )
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime_evidence import (
+    action_progress_signature,
+    semantic_progress_fingerprint,
+    semantic_target_descriptor,
+    verification_confirms_effect_absent,
+    verification_satisfies_effect,
+)
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
@@ -214,18 +223,19 @@ class RunCoordinator:
     runtime_profile_digest: str = ""
     loaded_profile_artifact_ids: tuple[str, ...] = ()
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
-    evidence_gap_extractor: EvidenceGapExtractor = field(default_factory=EvidenceGapExtractor)
-    active_perception_controller: ActivePerceptionController = field(
-        default_factory=ActivePerceptionController
-    )
     recovery_coordinator: RecoveryCoordinator = field(default_factory=RecoveryCoordinator)
+    recovery_command_dispatcher: RecoveryCommandDispatcher = field(
+        default_factory=RecoveryCommandDispatcher
+    )
     task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
+    active_perception_flow: ActivePerceptionFlow = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
     recovery_handler: RecoveryHandler = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.perception_session = PerceptionSession(self.observer, self.artifacts)
+        self.active_perception_flow = ActivePerceptionFlow(self.perception_session)
         self.contract_execution_loop = ContractExecutionLoop(
             executor=self.executor,
             verifier=self.verifier,
@@ -500,12 +510,16 @@ class RunCoordinator:
                         available_commands=frozenset(
                             {
                                 RecoveryCommandKind.REPLAN_TASK,
+                                *self.recovery_command_dispatcher.available_commands,
                                 RecoveryCommandKind.ABORT,
                             }
                         ),
                         snapshot=snapshot,
                     )
-                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                    if (
+                        recovery_command == RecoveryCommandKind.REPLAN_TASK
+                        or recovery_command in OWNER_DISPATCH_COMMANDS
+                    ):
                         continue
                     return self._finish(
                         envelope,
@@ -581,12 +595,16 @@ class RunCoordinator:
                         available_commands=frozenset(
                             {
                                 RecoveryCommandKind.REPLAN_TASK,
+                                *self.recovery_command_dispatcher.available_commands,
                                 RecoveryCommandKind.ABORT,
                             }
                         ),
                         snapshot=snapshot,
                     )
-                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                    if (
+                        recovery_command == RecoveryCommandKind.REPLAN_TASK
+                        or recovery_command in OWNER_DISPATCH_COMMANDS
+                    ):
                         continue
                     return self._finish(
                         envelope,
@@ -646,12 +664,16 @@ class RunCoordinator:
                         available_commands=frozenset(
                             {
                                 RecoveryCommandKind.REPLAN_TASK,
+                                *self.recovery_command_dispatcher.available_commands,
                                 RecoveryCommandKind.ABORT,
                             }
                         ),
                         snapshot=snapshot,
                     )
-                    if recovery_command == RecoveryCommandKind.REPLAN_TASK:
+                    if (
+                        recovery_command == RecoveryCommandKind.REPLAN_TASK
+                        or recovery_command in OWNER_DISPATCH_COMMANDS
+                    ):
                         continue
                     return self._finish(
                         envelope,
@@ -744,12 +766,16 @@ class RunCoordinator:
                             available_commands=frozenset(
                                 {
                                     RecoveryCommandKind.REPLAN_STEP,
+                                    *self.recovery_command_dispatcher.available_commands,
                                     RecoveryCommandKind.ABORT,
                                 }
                             ),
                             snapshot=snapshot,
                         )
-                        if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                        if (
+                            recovery_command == RecoveryCommandKind.REPLAN_STEP
+                            or recovery_command in OWNER_DISPATCH_COMMANDS
+                        ):
                             continue
                         return self._finish(
                             envelope,
@@ -812,7 +838,7 @@ class RunCoordinator:
                 else:
                     decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
             except ProviderModelError as exc:
-                error_code = _provider_runtime_error(exc.kind)
+                error_code = RuntimeErrorCode(exc.kind.value)
                 if (
                     state.current_recovery_plan is not None
                     and state.current_recovery_plan.commands[0].kind
@@ -839,10 +865,17 @@ class RunCoordinator:
                     failure_class=FailureClass.PROVIDER,
                     error_code=error_code,
                     message=f"provider failure: {exc.kind.value}",
-                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    available_commands=frozenset(
+                        {
+                            *self.recovery_command_dispatcher.available_commands,
+                            RecoveryCommandKind.ABORT,
+                        }
+                    ),
                     snapshot=snapshot,
                     abort_reentry_phase=RecoveryReentryPhase.DEFERRED,
                 )
+                if _recovery_command in OWNER_DISPATCH_COMMANDS:
+                    continue
                 parent = trace.add(
                     "PlannerDeferred",
                     {
@@ -900,12 +933,16 @@ class RunCoordinator:
                     available_commands=frozenset(
                         {
                             RecoveryCommandKind.REPLAN_STEP,
+                            *self.recovery_command_dispatcher.available_commands,
                             RecoveryCommandKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
                 )
-                if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                if (
+                    recovery_command == RecoveryCommandKind.REPLAN_STEP
+                    or recovery_command in OWNER_DISPATCH_COMMANDS
+                ):
                     continue
                 return self._finish(
                     envelope,
@@ -949,7 +986,7 @@ class RunCoordinator:
                         snapshot,
                     )
                 except ProposalRejected as exc:
-                    error_code = _proposal_error_code(exc.code)
+                    error_code = proposal_error_code(exc.code)
                     parent = trace.add(
                         "PlannerProposalRejected",
                         {
@@ -1045,11 +1082,11 @@ class RunCoordinator:
                         "snapshot_id": proposal.snapshot_id,
                         "action_kind": proposal.action_kind.value,
                         "target_affordance_id": proposal.target_affordance_id,
-                        "semantic_target": _semantic_target_descriptor(
+                        "semantic_target": semantic_target_descriptor(
                             snapshot,
                             proposal.target_affordance_id,
                         ),
-                        "semantic_destination": _semantic_target_descriptor(
+                        "semantic_destination": semantic_target_descriptor(
                             snapshot,
                             proposal.destination_affordance_id,
                         ),
@@ -1071,10 +1108,10 @@ class RunCoordinator:
                     plan_or_route_ref=proposal.proposal_id,
                 )
                 if proposal.done:
-                    state.record_planner_proposal(_proposal_record(proposal, provenance))
+                    state.record_planner_proposal(proposal_record(proposal, provenance))
                     decision = replace(decision, done=True, result=dict(proposal.result))
                 elif proposal.requires_clarification:
-                    state.record_planner_proposal(_proposal_record(proposal, provenance))
+                    state.record_planner_proposal(proposal_record(proposal, provenance))
                     state.final_result = {
                         "clarification": proposal.subgoal or proposal.reason,
                         "proposal_id": proposal.proposal_id,
@@ -1220,7 +1257,7 @@ class RunCoordinator:
                 try:
                     contract = self.contract_builder.build(decision.proposal, envelope.task_spec, state, snapshot)
                 except ProposalRejected as exc:
-                    error_code = _proposal_error_code(exc.code)
+                    error_code = proposal_error_code(exc.code)
                     parent = trace.add(
                         "PlannerProposalRejected",
                         {
@@ -1287,7 +1324,9 @@ class RunCoordinator:
                     )
                 if decision.proposal_provenance is None:  # validated above
                     raise RuntimeError("validated proposal is missing provenance")
-                state.record_planner_proposal(_proposal_record(decision.proposal, decision.proposal_provenance))
+                state.record_planner_proposal(
+                    proposal_record(decision.proposal, decision.proposal_provenance)
+                )
             if contract is None:
                 parent = trace.add(
                     "TaskFailed",
@@ -1306,12 +1345,16 @@ class RunCoordinator:
                     available_commands=frozenset(
                         {
                             RecoveryCommandKind.REPLAN_STEP,
+                            *self.recovery_command_dispatcher.available_commands,
                             RecoveryCommandKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
                 )
-                if recovery_command == RecoveryCommandKind.REPLAN_STEP:
+                if (
+                    recovery_command == RecoveryCommandKind.REPLAN_STEP
+                    or recovery_command in OWNER_DISPATCH_COMMANDS
+                ):
                     continue
                 return self._finish(
                     envelope,
@@ -1354,7 +1397,7 @@ class RunCoordinator:
                     state.replan_count += 1
                     state.transition(RuntimeStep.OBSERVING.value)
                     continue
-            action_signature = _action_progress_signature(decision.proposal, contract)
+            action_signature = action_progress_signature(decision.proposal, contract)
             progress_block = state.check_progress_guard(action_signature) if decision.proposal is not None else None
             if progress_block is not None:
                 state.record_progress_guard(progress_block, action_signature)
@@ -1401,11 +1444,11 @@ class RunCoordinator:
                     "semantic_action": (
                         {
                             "action_kind": decision.proposal.action_kind.value,
-                            "target": _semantic_target_descriptor(
+                            "target": semantic_target_descriptor(
                                 snapshot,
                                 decision.proposal.target_affordance_id,
                             ),
-                            "destination": _semantic_target_descriptor(
+                            "destination": semantic_target_descriptor(
                                 snapshot,
                                 decision.proposal.destination_affordance_id,
                             ),
@@ -2104,7 +2147,7 @@ class RunCoordinator:
                     action_signature,
                     post_snapshot.observation.environment_revision,
                     verification_passed=latest_verification.passed,
-                    effect_satisfied=_verification_satisfies_effect(latest_verification),
+                    effect_satisfied=verification_satisfies_effect(latest_verification),
                     post_page_revision=post_snapshot.observation.page_revision,
                 )
             verification_ref = self._write_verification(envelope.task_id, state.step_count, latest_verification)
@@ -2445,7 +2488,7 @@ class RunCoordinator:
                 tried_backends=tuple(item.backend for item in state.receipts),
                 incident=state.recovery_incident,
                 state_version=state.version,
-                progress_fingerprint=_semantic_progress_fingerprint(state),
+                progress_fingerprint=semantic_progress_fingerprint(state),
                 accepted_profile_digest=self.runtime_profile_digest,
                 accepted_profile_artifact_ids=self.loaded_profile_artifact_ids,
                 attempted_strategy_ids=tuple(
@@ -2581,6 +2624,12 @@ class RunCoordinator:
         recoverable: bool = True,
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
     ) -> tuple[RecoveryCommandKind, TraceNode]:
+        available_commands = frozenset(
+            kind
+            for kind in available_commands
+            if kind not in OWNER_DISPATCH_COMMANDS
+            or kind in self.recovery_command_dispatcher.available_commands
+        )
         task_plan = state.task_plan
         failure = make_failure_envelope(
             run_id=envelope.task_id,
@@ -2615,7 +2664,7 @@ class RunCoordinator:
             rejected_assumptions=tuple(state.disproved_assumptions),
             remaining_budgets=self._remaining_recovery_budgets(state),
             recoverable=recoverable,
-            progress_fingerprint=_semantic_progress_fingerprint(state),
+            progress_fingerprint=semantic_progress_fingerprint(state),
         )
         state.transition(RuntimeStep.RECOVERING.value)
         plan = self.recovery_coordinator.plan(
@@ -2626,6 +2675,9 @@ class RunCoordinator:
                 gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
                 accepted_profile_digest=self.runtime_profile_digest,
                 accepted_profile_artifact_ids=frozenset(self.loaded_profile_artifact_ids),
+                configured_provider_id=self.recovery_command_dispatcher.target_ref(
+                    RecoveryCommandKind.SWITCH_PROVIDER
+                ),
                 history=tuple(state.recovery_history),
                 abort_reentry_phase=abort_reentry_phase,
             ),
@@ -2657,10 +2709,58 @@ class RunCoordinator:
             RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
             RecoveryCommandKind.SWITCH_PROVIDER,
         }:
+            previous_fingerprint = (
+                failure.progress_fingerprint
+                or f"{failure.semantic_family_key}:state:{failure.state_version}"
+            )
+            dispatched = self.recovery_command_dispatcher.dispatch(
+                command,
+                previous_attempt_fingerprint=previous_fingerprint,
+            )
+            state.recovery_receipts.append(dispatched.receipt)
+            parent = trace.add(
+                "RecoveryCommandCompleted",
+                {
+                    "state": state.phase,
+                    "receipt": dispatched.receipt.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
+            if not dispatched.receipt.success or dispatched.delta is None:
+                state.current_recovery_plan = None
+                state.transition(abort_reentry_phase.value)
+                return RecoveryCommandKind.ABORT, parent
             state.replan_count += 1
-            state.record_disproved_assumption(f"{phase.value}:{failure.error_code}:{failure.message}")
+            state.record_disproved_assumption(
+                f"{phase.value}:{failure.error_code}:{failure.message}"
+            )
+            state.recovery_deltas.append(dispatched.delta)
+            state.recovery_history.append(
+                RecoveryHistoryItem(
+                    failure.semantic_family_key,
+                    command.strategy_id,
+                    previous_fingerprint,
+                    dispatched.delta.next_attempt_fingerprint,
+                )
+            )
+            state.current_recovery_plan = None
             state.transition(RuntimeStep.OBSERVING.value)
-            parent = self._complete_immediate_recovery_command(state, trace, parent)
+            parent = trace.add(
+                "RecoveryDeltaValidated",
+                {
+                    "state": state.phase,
+                    "delta": dispatched.delta.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
+            parent = trace.add(
+                "RecoveryReenteredPhase",
+                {
+                    "state": state.phase,
+                    "reentry_phase": command.reentry_phase.value,
+                },
+                parents=[parent.id],
+            )
             return command.kind, parent
         terminal_phase = {
             RecoveryReentryPhase.WAITING_USER: RuntimeStep.WAITING_CLARIFICATION.value,
@@ -2861,7 +2961,7 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
             changed_skill_fallthrough = bool(
-                _verification_confirms_effect_absent(verification)
+                verification_confirms_effect_absent(verification)
                 and state.task_skill is not None
                 and not state.task_skill.active
             )
@@ -3197,29 +3297,47 @@ class RunCoordinator:
         parent: TraceNode,
         snapshot: BrowserSnapshot,
     ) -> tuple[BrowserSnapshot, TraceNode]:
-        """Plan and execute bounded read-only probes through one state authority."""
+        """Commit typed active-perception results from the owning flow."""
 
         while True:
             run_id = envelope.task_id
             task_plan = state.task_plan
             plan_version = task_plan.plan_version if task_plan is not None else 0
-            gaps = self.evidence_gap_extractor.extract(
-                snapshot,
-                run_id=run_id,
-                task_revision=(
-                    task_plan.task_revision
-                    if task_plan is not None
-                    else envelope.task_spec.revision
-                    if envelope.task_spec is not None
-                    else 1
-                ),
-                plan_version=plan_version,
-                active_subgoal_id=(
-                    state.plan_progress.active_subgoal_id
-                    if state.plan_progress is not None
-                    else ""
-                ),
+            remaining_observations = min(
+                self.budget.max_active_perception_observations - state.active_perception_count,
+                self.budget.max_observations - state.observation_count,
             )
+            effectful_action = (
+                envelope.task_spec is not None
+                and envelope.task_spec.operation_class
+                not in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            )
+            preparation = self.active_perception_flow.prepare(
+                ActivePerceptionFlowContext(
+                    snapshot=snapshot,
+                    run_id=run_id,
+                    task_revision=(
+                        task_plan.task_revision
+                        if task_plan is not None
+                        else envelope.task_spec.revision
+                        if envelope.task_spec is not None
+                        else 1
+                    ),
+                    plan_version=plan_version,
+                    active_subgoal_id=(
+                        state.plan_progress.active_subgoal_id
+                        if state.plan_progress is not None
+                        else ""
+                    ),
+                    state_version=state.version,
+                    remaining_observations=remaining_observations,
+                    attempted_probe_fingerprints=frozenset(
+                        state.attempted_probe_fingerprints
+                    ),
+                    effectful_action=effectful_action,
+                )
+            )
+            gaps = preparation.gaps
             state.evidence_gaps = gaps
             if not gaps:
                 break
@@ -3232,14 +3350,10 @@ class RunCoordinator:
                 },
                 parents=[parent.id],
             )
-            if not self.perception_session.supports_targeted_capture:
-                decision = self.active_perception_controller.decide(
-                    gaps,
-                    (),
-                    based_on_state_version=state.version,
-                    based_on_snapshot_id=snapshot.observation.snapshot_id,
-                    budget=ProbeBudget(observations=0, timeout_ms=0, artifacts=0),
-                )
+            decision = preparation.decision
+            if decision is None:  # guarded by non-empty gaps
+                raise RuntimeError("active perception flow omitted a decision")
+            if not preparation.targeted_capture_available:
                 state.perception_resolution = decision.resolution
                 parent = trace.add(
                     "TargetedPerceptionUnavailable",
@@ -3256,53 +3370,6 @@ class RunCoordinator:
                     decision.resolution,
                 )
                 break
-            remaining_observations = min(
-                self.budget.max_active_perception_observations - state.active_perception_count,
-                self.budget.max_observations - state.observation_count,
-            )
-            requirements = snapshot.perception_requirements
-            requests = snapshot.active_perception_requests or tuple(
-                ActivePerceptionRequest(
-                    entity_key=item.entity_key,
-                    property_key=item.property_key,
-                    requested_sources=item.preferred_sources,
-                    reason=item.reason,
-                    max_observations=1,
-                )
-                for item in gaps
-                if item.preferred_sources
-            )
-            capabilities = probe_capabilities_for_requests(requests)
-            budget = ProbeBudget(
-                observations=max(0, min(1, remaining_observations)),
-                timeout_ms=max(
-                    requirements.latency_budget_ms if requirements is not None else 5_000,
-                    *(item.expected_latency_ms for item in capabilities),
-                ),
-                model_calls=max(
-                    requirements.model_call_budget if requirements is not None else 0,
-                    *(item.model_calls for item in capabilities),
-                ),
-                estimated_cost=max(
-                    requirements.cost_budget if requirements is not None else 0.0,
-                    *(item.estimated_cost for item in capabilities),
-                ),
-                artifacts=1 if remaining_observations > 0 else 0,
-            )
-            effectful_action = (
-                envelope.task_spec is not None
-                and envelope.task_spec.operation_class
-                not in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-            )
-            decision = self.active_perception_controller.decide(
-                gaps,
-                capabilities,
-                based_on_state_version=state.version,
-                based_on_snapshot_id=snapshot.observation.snapshot_id,
-                budget=budget,
-                attempted_probe_fingerprints=frozenset(state.attempted_probe_fingerprints),
-                effectful_action=effectful_action,
-            )
             if decision.plan is None:
                 state.perception_resolution = decision.resolution
                 parent = trace.add(
@@ -3310,8 +3377,14 @@ class RunCoordinator:
                     {
                         "state": state.phase,
                         "active_perception_count": state.active_perception_count,
-                        "max_active_perception_observations": (self.budget.max_active_perception_observations),
-                        "reason": decision.resolution.reason if decision.resolution is not None else "",
+                        "max_active_perception_observations": (
+                            self.budget.max_active_perception_observations
+                        ),
+                        "reason": (
+                            decision.resolution.reason
+                            if decision.resolution is not None
+                            else ""
+                        ),
                     },
                     parents=[parent.id],
                 )
@@ -3324,22 +3397,17 @@ class RunCoordinator:
                 break
             plan = decision.plan
             state.active_probe_plan = plan
-            command = plan.commands[0]
-            capability = next(
-                item for item in capabilities if item.capability_id == command.capability_id
-            )
-            state.attempted_probe_fingerprints.add(
-                probe_fingerprint(
-                    capability,
-                    next(item for item in gaps if item.gap_id in command.gap_ids),
+            if preparation.selected_probe_fingerprint:
+                state.attempted_probe_fingerprints.add(
+                    preparation.selected_probe_fingerprint
                 )
-            )
+            command = plan.commands[0]
             parent = trace.add(
                 "ActivePerceptionPlanned",
                 {
                     "state": state.phase,
                     "plan": plan.model_dump(mode="json"),
-                    "remaining_budget": budget.model_dump(mode="json"),
+                    "remaining_budget": preparation.budget.model_dump(mode="json"),
                 },
                 parents=[parent.id],
             )
@@ -3351,40 +3419,17 @@ class RunCoordinator:
                 },
                 parents=[parent.id],
             )
-            started_at_s = time()
-            try:
-                targeted = self.perception_session.capture_targeted(
-                    (request_for_command(command),)
-                )
-            except Exception as exc:
-                completed_at_s = time()
-                receipt = ProbeReceipt(
-                    command_id=command.command_id,
-                    started_at_s=started_at_s,
-                    completed_at_s=completed_at_s,
-                    observation_epoch_id=snapshot.observation.snapshot_id,
-                    source=command.source,
-                    success=False,
-                    error_code=type(exc).__name__,
-                    latency_ms=(completed_at_s - started_at_s) * 1_000,
-                    model_calls=command.budget.model_calls,
-                    estimated_cost=command.budget.estimated_cost,
-                )
-                state.active_perception_count += 1
-                state.probe_receipts.append(receipt)
-                resolution = self.active_perception_controller.resolve(
-                    gaps,
-                    snapshot,
-                    based_on_snapshot_id=plan.based_on_snapshot_id,
-                    receipts=(receipt,),
-                    effectful_action=effectful_action,
-                )
-                state.perception_resolution = resolution
+            probe_result = self.active_perception_flow.execute(preparation)
+            state.active_perception_count += 1
+            state.probe_receipts.append(probe_result.receipt)
+            state.perception_resolution = probe_result.resolution
+            targeted = probe_result.targeted_snapshot
+            if targeted is None:
                 parent = trace.add(
                     "ProbeCompleted",
                     {
                         "state": state.phase,
-                        "receipt": receipt.model_dump(mode="json"),
+                        "receipt": probe_result.receipt.model_dump(mode="json"),
                     },
                     parents=[parent.id],
                 )
@@ -3392,27 +3437,15 @@ class RunCoordinator:
                     trace,
                     parent,
                     state,
-                    resolution,
+                    probe_result.resolution,
                 )
                 break
-            completed_at_s = time()
-            state.active_perception_count += 1
             state.remember_observation(targeted.observation)
-            receipt = ProbeReceipt(
-                command_id=command.command_id,
-                started_at_s=started_at_s,
-                completed_at_s=completed_at_s,
-                observation_epoch_id=targeted.observation.snapshot_id,
-                source=command.source,
-                success=True,
-                artifact_refs=tuple(targeted.observation.artifact_refs),
-                assertion_refs=tuple(item.assertion_id for item in targeted.source_assertions),
-                estimated_cost=command.budget.estimated_cost,
-                latency_ms=(completed_at_s - started_at_s) * 1_000,
-                model_calls=command.budget.model_calls,
+            targeted_ref = self._write_observation(
+                run_id=run_id,
+                sequence=state.observation_count,
+                snapshot=targeted,
             )
-            state.probe_receipts.append(receipt)
-            targeted_ref = self._write_observation(run_id, state.observation_count, targeted)
             self._index(trace, targeted_ref)
             self._index_paths(trace, targeted.observation.artifact_refs)
             parent = trace.add(
@@ -3438,24 +3471,16 @@ class RunCoordinator:
                 "ProbeCompleted",
                 {
                     "state": state.phase,
-                    "receipt": receipt.model_dump(mode="json"),
+                    "receipt": probe_result.receipt.model_dump(mode="json"),
                 },
                 parents=[parent.id],
             )
             parent = self._trace_source_arbitration(trace, parent, targeted, state.phase)
-            resolution = self.active_perception_controller.resolve(
-                gaps,
-                targeted,
-                based_on_snapshot_id=plan.based_on_snapshot_id,
-                receipts=(receipt,),
-                effectful_action=effectful_action,
-            )
-            state.perception_resolution = resolution
             parent = self._trace_perception_resolution(
                 trace,
                 parent,
                 state,
-                resolution,
+                probe_result.resolution,
             )
             snapshot = targeted
         return snapshot, parent
@@ -3705,109 +3730,3 @@ def _resolve_planner_decision(
 
 async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
     return await value
-
-
-def _action_progress_signature(
-    proposal: PlannerProposal | None,
-    contract: ActionContract,
-) -> str:
-    """Canonical semantic action identity for deterministic progress checks."""
-
-    if proposal is not None:
-        payload: dict[str, Any] = {
-            "action_kind": proposal.action_kind.value,
-            "target": proposal.target_affordance_id,
-            "parameters": proposal.parameters,
-        }
-        if proposal.destination_affordance_id:
-            payload["destination"] = proposal.destination_affordance_id
-    else:
-        payload = {
-            "action_kind": contract.action,
-            "target": contract.locator.get("backend_handle") or contract.affordance_id,
-            "parameters": contract.parameters,
-        }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
-
-
-def _proposal_error_code(code: ProposalRejectionCode) -> RuntimeErrorCode:
-    if code == ProposalRejectionCode.STALE_TASK_REVISION:
-        return RuntimeErrorCode.STALE_TASK_REVISION
-    if code == ProposalRejectionCode.STALE_STATE_VERSION:
-        return RuntimeErrorCode.STALE_STATE_VERSION
-    if code == ProposalRejectionCode.STALE_SNAPSHOT:
-        return RuntimeErrorCode.SNAPSHOT_MISMATCH
-    return RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
-
-
-def _proposal_record(
-    proposal: PlannerProposal,
-    provenance: PlannerProposalProvenance,
-) -> dict[str, Any]:
-    return {
-        **proposal.model_dump(mode="json"),
-        "provenance": provenance.model_dump(mode="json"),
-    }
-
-
-def _provider_runtime_error(kind: ProviderFailureKind) -> RuntimeErrorCode:
-    return {
-        ProviderFailureKind.RATE_LIMIT_TRANSIENT: RuntimeErrorCode.RATE_LIMIT_TRANSIENT,
-        ProviderFailureKind.QUOTA_EXHAUSTED: RuntimeErrorCode.QUOTA_EXHAUSTED,
-        ProviderFailureKind.PROVIDER_CAPACITY: RuntimeErrorCode.PROVIDER_CAPACITY,
-    }[kind]
-
-
-def _verification_satisfies_effect(report: VerificationReport) -> bool:
-    if not report.passed:
-        return False
-    return not any(
-        item.verifier_kind == "control_state" and isinstance(item.expected, dict) and "changed_from" in item.expected
-        for item in report.evidence
-    )
-
-
-def _verification_confirms_effect_absent(report: VerificationReport) -> bool:
-    return (
-        report.status == VerificationStatus.FAILED
-        and bool(report.evidence)
-        and any(not item.passed and item.strength == "strong" for item in report.evidence)
-    )
-
-
-def _semantic_progress_fingerprint(state: StateKernel) -> str:
-    progress = {
-        "completed_subgoals": (
-            list(state.plan_progress.completed_subgoal_ids)
-            if state.plan_progress is not None
-            else []
-        ),
-        "completed_skill_steps": (
-            list(state.task_skill.completed_step_ids)
-            if state.task_skill is not None
-            else []
-        ),
-        "satisfied_effects": [
-            item.signature
-            for item in state.action_progress
-            if item.verification_passed and item.effect_satisfied
-        ],
-        "pending_obligations": sorted(state.pending_obligations),
-    }
-    return json.dumps(progress, sort_keys=True, separators=(",", ":"))
-
-
-def _semantic_target_descriptor(snapshot: BrowserSnapshot, semantic_target_id: str) -> dict[str, str] | None:
-    if not semantic_target_id:
-        return None
-    target = next(
-        (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
-        None,
-    )
-    if target is None:
-        return None
-    return {
-        "semantic_target_id": target.semantic_target_id,
-        "role": target.role,
-        "label": target.label,
-    }

@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from affordance_runtime.active_perception import PerceptionResolutionStatus
+from affordance_runtime.active_perception_flow import (
+    ActivePerceptionFlow,
+    ActivePerceptionFlowContext,
+)
+from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
+from affordance_runtime.grounding import (
+    ActivePerceptionRequest,
+    EvidenceKind,
+    GroundingSource,
+    PerceptionRequirements,
+    SourceObservation,
+    UnifiedAffordance,
+)
+from affordance_runtime.perception_session import PerceptionSession
+from affordance_runtime.unified_grounding import candidate_from_affordance
+
+
+def _snapshot(sequence: int, *, resolved: bool) -> BrowserSnapshot:
+    snapshot_id = f"snapshot-{sequence}"
+    model = DomAdapter().transduce(
+        "<button>Save</button>" if resolved else "<main></main>",
+        environment_revision="revision-1",
+        snapshot_id=snapshot_id,
+        page_revision="page-1",
+    )
+    observation = Observation(
+        "revision-1",
+        snapshot_id=snapshot_id,
+        page_revision="page-1",
+    )
+    candidates = ()
+    targets = ()
+    if resolved:
+        candidate = candidate_from_affordance(
+            model.affordances[0],
+            observation,
+            semantic_target_id="semantic:save",
+        )
+        observation = Observation(
+            "revision-1",
+            snapshot_id=snapshot_id,
+            page_revision="page-1",
+            target_fingerprints={candidate.candidate_id: candidate.target_fingerprint},
+        )
+        candidates = (candidate,)
+        targets = (
+            UnifiedAffordance(
+                "semantic:save",
+                "button",
+                "Save",
+                frozenset({"activate"}),
+                grounding_candidates=candidates,
+            ),
+        )
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.STRUCTURAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM}),
+        preferred_sources=(GroundingSource.DOM,),
+        observation_budget=1,
+        model_call_budget=0,
+        latency_budget_ms=100,
+        cost_budget=0.0,
+    )
+    return BrowserSnapshot(
+        observation,
+        model,
+        source_observations=(
+            SourceObservation(
+                GroundingSource.DOM,
+                "dom-adapter",
+                snapshot_id,
+                "revision-1",
+                "page-1",
+            ),
+        ),
+        grounding_candidates=candidates,
+        unified_affordances=targets,
+        active_perception_requests=(
+            ()
+            if resolved
+            else (
+                ActivePerceptionRequest(
+                    "task:unresolved-target",
+                    "semantic_target",
+                    (GroundingSource.DOM,),
+                    "semantic target is missing",
+                ),
+            )
+        ),
+        perception_requirements=requirements,
+    )
+
+
+@dataclass
+class TargetedObserver:
+    fail: bool = False
+    calls: int = 0
+
+    def capture(self) -> BrowserSnapshot:
+        return _snapshot(1, resolved=False)
+
+    def capture_targeted(self, requests: object) -> BrowserSnapshot:
+        assert isinstance(requests, tuple) and len(requests) == 1
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("controlled targeted capture failure")
+        return _snapshot(2, resolved=True)
+
+
+def _context(snapshot: BrowserSnapshot) -> ActivePerceptionFlowContext:
+    return ActivePerceptionFlowContext(
+        snapshot=snapshot,
+        run_id="run-1",
+        task_revision=1,
+        plan_version=0,
+        active_subgoal_id="",
+        state_version=0,
+        remaining_observations=1,
+        attempted_probe_fingerprints=frozenset(),
+        effectful_action=False,
+    )
+
+
+def test_flow_returns_typed_resolution_from_targeted_capture_without_state_authority() -> None:
+    observer = TargetedObserver()
+    flow = ActivePerceptionFlow(PerceptionSession(observer))
+
+    preparation = flow.prepare(_context(observer.capture()))
+    result = flow.execute(preparation)
+
+    assert preparation.decision is not None and preparation.decision.plan is not None
+    assert preparation.selected_probe_fingerprint
+    assert observer.calls == 1
+    assert result.receipt.success
+    assert result.targeted_snapshot is not None
+    assert result.resolution.status == PerceptionResolutionStatus.RESOLVED
+
+
+def test_flow_returns_failed_receipt_and_no_delta_like_success_on_owner_failure() -> None:
+    observer = TargetedObserver(fail=True)
+    flow = ActivePerceptionFlow(PerceptionSession(observer))
+
+    preparation = flow.prepare(_context(observer.capture()))
+    result = flow.execute(preparation)
+
+    assert observer.calls == 1
+    assert not result.receipt.success
+    assert result.receipt.error_code == "RuntimeError"
+    assert result.targeted_snapshot is None
+    assert result.resolution.status == PerceptionResolutionStatus.INCONCLUSIVE

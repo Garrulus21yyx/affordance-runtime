@@ -173,7 +173,7 @@ evidence level. See
 | M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
-| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | reopened | G0/G1/G2/G4 remain accepted; G2.5 budget/evidence semantics, G3 real command effects, G5 empirical runs, and Coordinator containment are closure blockers |
+| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | reopened / in progress | G0/G1/G2/G4 remain accepted; reopened G2.5/G3/containment repairs pass locally; fresh immutable G5 Runtime rollout evidence remains the closure blocker |
 
 M9 durable single-run recovery remains conditional on a measured restart or waiting
 failure.
@@ -690,10 +690,12 @@ remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 ### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - reopened
 
 The implementation freeze contains substantial real components, but the
-[M8.6 Closure Audit](current-closure-audit-20260724.md) reopens active-perception
+[M8.6 Closure Audit](current-closure-audit-20260724.md) reopened active-perception
 budget/evidence truth, owning-port recovery effects, empirical profile evidence,
-and responsibility containment. Historical score promotion and task-family
-repair remain prohibited; M8.2B waits for these Runtime gates before a new
+and responsibility containment. The G2.5/G3/containment repair slices now pass
+the full local gate with a reduced Coordinator ratchet; fresh immutable G5
+four-profile rollout evidence remains open. Historical score promotion and
+task-family repair remain prohibited; M8.2B waits for closure before a new
 strict frozen evaluation. The governing documents are the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),

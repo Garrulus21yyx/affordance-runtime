@@ -239,3 +239,31 @@ M8.6 may return to `done` only when:
 
 M9 and distributed/service work remain deferred. They are not valid substitutes
 for closing these Runtime semantics.
+
+## 9. Reclosure Progress After This Audit
+
+The findings above remain the immutable decision for audited revision `f4c3308`.
+Subsequent working-tree repairs on 2026-07-24 have locally closed the code-level
+parts of F-01, F-02, F-03, and the first containment ratchet of F-05:
+
+- `ProbeBudgetPolicy` intersects declared and remaining authority; neither the
+  Coordinator nor BrowserSession promotes model-call, cost, or latency limits;
+- source/screenshot presence no longer satisfies semantic evidence; a relevant,
+  current, linked, conflict-free candidate is required;
+- `ActivePerceptionFlow` owns typed probe preparation/execution without state or
+  trace authority;
+- `RecoveryCommandDispatcher` exposes only configured owning-port commands and
+  requires matching before/after evidence; failed, unavailable, or no-op work
+  produces no `RecoveryDelta`;
+- the normal provider-failure path invokes a configured switch owner;
+- the Coordinator remains the only state/trace committer and its executable
+  ratchet decreased from 3813/29 to 3732 lines / 26 methods.
+
+Local verification in the fixed Python 3.12 environment is 680 tests passed,
+Ruff passed, mypy passed over 100 source files, and `git diff --check` passed.
+This is working-tree repair evidence, not an immutable reviewed release.
+
+F-04 remains open. M8.6 therefore remains `in_progress`, M8.2B remains paused,
+and no strict score or milestone completion may be claimed until fresh
+profile-separated Runtime rollouts are generated from one immutable revision and
+the resulting artifacts are independently validated.

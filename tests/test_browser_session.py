@@ -609,6 +609,72 @@ def test_targeted_perception_issues_a_fresh_epoch_and_visual_candidate(
     assert not first.grounding_candidates[0].is_current(second.observation)
 
 
+def test_targeted_visual_capture_does_not_expand_zero_model_authority(tmp_path: Path) -> None:
+    class ZeroBudgetPage(FakePage):
+        def content(self) -> str:
+            return "<main><canvas></canvas></main>"
+
+        def evaluate(self, expression: str, arg: Any = None) -> object:
+            del arg
+            if "innerWidth" in expression:
+                return [640, 480]
+            if "document.activeElement" in expression or "innerText" in expression:
+                return ""
+            return {}
+
+        def screenshot(self, **kwargs: Any) -> bytes:
+            payload = b"transport-only"
+            path = kwargs.get("path")
+            if path:
+                Path(path).write_bytes(payload)
+            return payload
+
+    class ForbiddenProposer:
+        provider = "fixture"
+        model = "must-not-run"
+        prompt_version = "test-v1"
+        calls = 0
+
+        def propose(self, request):  # type: ignore[no-untyped-def]
+            del request
+            self.calls += 1
+            raise AssertionError("zero model budget must not invoke visual proposal")
+
+    proposer = ForbiddenProposer()
+    session = BrowserSession(
+        ZeroBudgetPage(),
+        perception_orchestrator=GenericPerceptionOrchestrator(proposer),
+    )
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+        acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+        preferred_sources=(GroundingSource.VISUAL,),
+        model_call_budget=0,
+        cost_budget=0.0,
+    )
+    first = session.capture(
+        screenshot_path=str(tmp_path / "zero-budget.png"),
+        perception_requirements=requirements,
+        task_instruction="Inspect the visual target",
+    )
+    second = session.capture_targeted(
+        (
+            ActivePerceptionRequest(
+                "task:unresolved-target",
+                "appearance",
+                (GroundingSource.VISUAL,),
+                "visual evidence remains missing",
+            ),
+        )
+    )
+
+    assert proposer.calls == 0
+    assert first.grounding_candidates == second.grounding_candidates == ()
+    assert any(item.source == GroundingSource.VISUAL for item in second.source_observations)
+    assert second.perception_requirements is not None
+    assert second.perception_requirements.model_call_budget == 0
+
+
 def test_svg_visual_position_conflict_requests_reobservation_and_blocks_target(
     tmp_path: Path,
 ) -> None:

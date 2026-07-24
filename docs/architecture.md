@@ -240,11 +240,12 @@ Only accepted state enters target fingerprints, preconditions, and verifier
 inputs. Raw assertions and conflict decisions remain in trace artifacts.
 
 Current status: immutable sourced assertions, rule-first arbitration,
-property-specific authority, unresolved-conflict route blocking, and a bounded
-coherent capture_targeted observation port are implemented. Source-arbitration
-and bounded ActivePerceptionRequest decisions can be traced at the foundation
-level. The complete EvidenceGap-to-ProbePlan controller, shared call-site
-integration, live conflict families, and calibration remain M8.6 work.
+property-specific authority, unresolved-conflict route blocking, bounded
+coherent targeted capture, and the EvidenceGap-to-ProbePlan flow are
+implemented. Probe authority is a strict intersection and source/screenshot
+presence is transport, not semantic evidence. The typed ActivePerceptionFlow
+has no Runtime state or trace authority; the Coordinator commits its result.
+Fresh profile-separated rollout evidence and later live calibration remain open.
 
 #### 2.1.2 Active Perception Control
 

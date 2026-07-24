@@ -118,8 +118,9 @@ Line count is not the architecture, but it is an escalation signal.
 2,000 lines first and below 1,500 lines after the current active-perception,
 recovery-dispatch, and TaskPlan ownership extraction. The ratchet in
 `tests/test_responsibility_containment.py` prevents growth beyond the audited
-3813-line and 29-method surface; both ceilings must only decrease. These numbers
-are gates, not a reason to create one-file-per-class packages.
+3813-line and 29-method audited surface; both ceilings must only decrease. The
+current executable ratchet is 3732 lines and 26 methods. These numbers are gates,
+not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,
 not an acceptable model for current Runtime control modules. It may not receive

@@ -15,6 +15,7 @@ from time import perf_counter
 from typing import Any
 
 from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import (
     ActionContract,
@@ -108,6 +109,7 @@ class AdaptiveRoutingAblationRun:
     cost: float
     latency_ms: float
     trace_events: tuple[str, ...]
+    artifact_refs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -345,7 +347,17 @@ def run_adaptive_routing_ablation(output_dir: Path) -> dict[str, Any]:
     return report
 
 
-def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
+def run_adaptive_routing_case(
+    profile: str,
+    case_id: str,
+    *,
+    artifacts: ArtifactStore | None = None,
+    task_id_prefix: str = "m85",
+) -> AdaptiveRoutingAblationRun:
+    """Run one real Coordinator case for a declared routing profile."""
+
+    if profile not in ABLATION_PROFILES or case_id not in ABLATION_CASES:
+        raise ValueError(f"unsupported adaptive routing case: {profile}/{case_id}")
     world = _AblationWorld()
     observer = _AblationObserver(world, profile, case_id)
     planner = _CountingSystem2Planner()
@@ -370,7 +382,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
     else:
         objective = "Activate Save"
     task = TaskSpec(
-        task_id=f"m85-{profile}-{case_id}",
+        task_id=f"{task_id_prefix}-{profile}-{case_id}",
         revision=1,
         objective=objective,
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -413,6 +425,7 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         loaded_profile_artifact_ids=(
             accepted_skill.artifact_ids if accepted_skill is not None else ()
         ),
+        artifacts=artifacts,
     ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
@@ -450,7 +463,12 @@ def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
         0.0,
         latency_ms,
         events,
+        tuple(item.path for item in result.artifacts),
     )
+
+
+def _run_case(profile: str, case_id: str) -> AdaptiveRoutingAblationRun:
+    return run_adaptive_routing_case(profile, case_id)
 
 
 def _accepted_save_skill() -> _AcceptedSkillBundle:

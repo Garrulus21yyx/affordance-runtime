@@ -40,16 +40,21 @@ substantial M8.6 components: historical profile classification,
 strict-planner containment, typed intent and TaskPlan routing, bounded active
 perception, a phase-general online Recovery Coordinator, complete-run
 evaluation accounting, and a four-profile evidence contract. The
-[M8.6 Closure Audit](docs/current-closure-audit-20260724.md) reopens closure for
+[M8.6 Closure Audit](docs/current-closure-audit-20260724.md) reopened closure for
 active-perception budget/evidence semantics, real recovery command effects,
 responsibility containment, and empirical profile-separated Runtime evidence.
+The first three repair slices now pass the local quality gate: authority budgets
+only narrow, semantic evidence requires a current relevant candidate, enabled
+recovery commands invoke typed owning ports, no-op recovery earns no delta, and
+the Coordinator ratchet decreased to 3732 lines / 26 methods. Fresh immutable
+four-profile Runtime rollout evidence remains the open closure gate.
 External-suite confirmation remains independently provisioned. Commit `4e7d116`
 is retained as the tested implementation freeze, not as proof that every G0-G5
 behavioral exit criterion is closed. The active default remains
 `strict-generalist`; each future result must record its full immutable run
 identity rather than inherit this label.
 
-M8.2B requires the reopened M8.6 correctness and containment work before a new
+M8.2B requires the remaining M8.6 empirical closure work before a new
 strict-generalist frozen evaluation. Historical smoke, PR, nightly, and release
 reports remain legacy or compatibility evidence for their exact revisions, not
 proof of current strict capability. Benchmark work must audit Runtime
@@ -134,9 +139,10 @@ Implemented current profile:
 
 Verified evidence:
 
-- all 665 current unit/integration tests pass with Ruff in the fixed Python 3.12
-  BrowserGym environment; mypy with repository-governed optional imports passes
-  all 96 source files
+- the reopened M8.6 repair working tree passes 680 unit/integration tests and
+  Ruff in the fixed Python 3.12 BrowserGym environment; mypy with
+  repository-governed optional imports passes all 100 source files; this is local
+  repair evidence, not an immutable release or benchmark result
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval

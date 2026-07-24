@@ -11,7 +11,14 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
-from affordance_runtime.grounding import GroundingSource, SourceAssertion, SourceObservation
+from affordance_runtime.grounding import (
+    ActivePerceptionRequest,
+    EvidenceKind,
+    GroundingSource,
+    PerceptionRequirements,
+    SourceAssertion,
+    SourceObservation,
+)
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.state_kernel import StateKernel
@@ -200,6 +207,81 @@ class FinishAfterObservationPlanner:
     ) -> PlannerDecision:
         del envelope, state, snapshot
         return PlannerDecision(done=True, result={"observed": True})
+
+
+class ZeroBudgetVisualObserver:
+    targeted_captures = 0
+
+    def capture(self) -> BrowserSnapshot:
+        snapshot_id = "zero-budget-snapshot"
+        model = DomAdapter().transduce(
+            "<main></main>",
+            environment_revision="revision-1",
+            snapshot_id=snapshot_id,
+            page_revision="page-1",
+        )
+        return BrowserSnapshot(
+            Observation(
+                "revision-1",
+                screenshot_ref="transport-only.png",
+                snapshot_id=snapshot_id,
+                page_revision="page-1",
+            ),
+            model,
+            source_observations=(
+                SourceObservation(
+                    GroundingSource.VISUAL,
+                    "playwright-screenshot",
+                    snapshot_id,
+                    "revision-1",
+                    "page-1",
+                    artifact_refs=("transport-only.png",),
+                ),
+            ),
+            active_perception_requests=(
+                ActivePerceptionRequest(
+                    "task:unresolved-target",
+                    "appearance",
+                    (GroundingSource.VISUAL,),
+                    "visual evidence is required",
+                ),
+            ),
+            perception_requirements=PerceptionRequirements(
+                required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+                acceptable_evidence=frozenset({GroundingSource.VISUAL}),
+                preferred_sources=(GroundingSource.VISUAL,),
+                observation_budget=1,
+                model_call_budget=0,
+                latency_budget_ms=500,
+                cost_budget=0.0,
+            ),
+        )
+
+    def capture_targeted(self, requests: object) -> BrowserSnapshot:
+        del requests
+        self.targeted_captures += 1
+        raise AssertionError("zero-budget visual probe must not execute")
+
+
+def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> None:
+    observer = ZeroBudgetVisualObserver()
+
+    result = RunCoordinator(
+        observer=observer,
+        planner=FinishAfterObservationPlanner(),
+        executor=RecordingExecutor(),
+        task_planner=None,
+    ).run_sync(TaskEnvelope("zero-budget", "inspect the visual target"))
+
+    events = [node.kind for node in result.trace.nodes]
+    assert result.status == RuntimeStep.DONE
+    assert observer.targeted_captures == 0
+    assert "EvidenceGapDetected" in events
+    assert "TargetedPerceptionBudgetExhausted" in events
+    assert "ActivePerceptionPlanned" not in events
+    assert "ProbeStarted" not in events
+    assert result.state.perception_resolution is not None
+    assert result.state.perception_resolution.status.value == "inconclusive"
 
 
 def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:

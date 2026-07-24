@@ -8,8 +8,8 @@ COORDINATOR_PATH = REPOSITORY_ROOT / "src" / "affordance_runtime" / "coordinator
 
 # Ratchet from the audited f4c3308 tree. Lower both ceilings as ownership is
 # extracted; do not raise them to admit new feature work.
-COORDINATOR_LINE_CEILING = 3_813
-COORDINATOR_METHOD_CEILING = 29
+COORDINATOR_LINE_CEILING = 3_732
+COORDINATOR_METHOD_CEILING = 26
 
 
 def test_run_coordinator_feature_freeze_cannot_expand() -> None:

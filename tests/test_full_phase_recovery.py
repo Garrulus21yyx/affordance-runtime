@@ -6,6 +6,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.failure_envelope import FailurePhase
+from affordance_runtime.model_port import ProviderFailureKind, ProviderModelError
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -15,7 +16,11 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
 )
-from affordance_runtime.recovery_commands import RecoveryCommandKind
+from affordance_runtime.recovery_command_dispatcher import (
+    RecoveryCommandDispatcher,
+    RecoveryOwnerResult,
+)
+from affordance_runtime.recovery_commands import RecoveryCommand, RecoveryCommandKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
@@ -115,6 +120,44 @@ class AlwaysFailPlanner:
     ) -> PlannerDecision:
         del envelope, state, snapshot
         raise RuntimeError("stable structured planning failure")
+
+
+class ProviderFailOncePlanner(DonePlanner):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        self.calls += 1
+        if self.calls == 1:
+            raise ProviderModelError(ProviderFailureKind.QUOTA_EXHAUSTED)
+        return super().propose(envelope, state, snapshot)
+
+
+@dataclass
+class ProviderSwitchOwner:
+    no_op: bool = False
+    owner_id: str = "provider-registry"
+    target_ref: str = "provider-b"
+    calls: int = 0
+
+    def execute(self, command: RecoveryCommand) -> RecoveryOwnerResult:
+        self.calls += 1
+        return RecoveryOwnerResult(
+            owner_id=self.owner_id,
+            kind=command.kind,
+            success=True,
+            state_before_ref="provider:provider-a",
+            state_after_ref=(
+                "provider:provider-a" if self.no_op else "provider:provider-b"
+            ),
+            changed_dimensions=command.changed_dimensions,
+            evidence_refs=("artifact:provider-switch",),
+        )
 
 
 class ClarifyPlanner:
@@ -321,6 +364,53 @@ def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     assert result.state.current_failure.phase == FailurePhase.STEP_PLANNING
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
     assert result.state.recovery_deltas[0].changed_dimensions[0].value == "step_plan"
+
+
+def test_provider_failure_invokes_real_owner_before_reentering_planning() -> None:
+    planner = ProviderFailOncePlanner()
+    owner = ProviderSwitchOwner()
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=planner,
+        executor=NeverExecutor(),
+        task_planner=None,
+        recovery_command_dispatcher=RecoveryCommandDispatcher(
+            {RecoveryCommandKind.SWITCH_PROVIDER: owner}
+        ),
+    ).run_sync(TaskEnvelope("provider-owner-recovery", "produce a safe answer"))
+
+    assert result.status == RuntimeStep.DONE
+    assert planner.calls == 2
+    assert owner.calls == 1
+    assert result.state.recovery_receipts[0].success
+    assert result.state.recovery_deltas[0].changed_dimensions[0].value == "provider"
+    events = [node.kind for node in result.trace.nodes]
+    assert events.index("RecoveryCommandStarted") < events.index(
+        "RecoveryCommandCompleted"
+    )
+    assert events.index("RecoveryCommandCompleted") < events.index(
+        "RecoveryReenteredPhase"
+    )
+
+
+def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
+    owner = ProviderSwitchOwner(no_op=True)
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=ProviderFailOncePlanner(),
+        executor=NeverExecutor(),
+        task_planner=None,
+        recovery_command_dispatcher=RecoveryCommandDispatcher(
+            {RecoveryCommandKind.SWITCH_PROVIDER: owner}
+        ),
+    ).run_sync(TaskEnvelope("provider-no-op-recovery", "produce a safe answer"))
+
+    assert result.status == RuntimeStep.DEFERRED
+    assert result.state.phase == RuntimeStep.DEFERRED.value
+    assert owner.calls == 1
+    assert result.state.recovery_deltas == []
+    assert not result.state.recovery_receipts[0].success
+    assert result.state.recovery_receipts[0].error_code == "owning_port_no_op"
 
 
 def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget() -> None:

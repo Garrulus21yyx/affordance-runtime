@@ -195,6 +195,30 @@ class ProposalRejectionCode(StrEnum):
     UNREQUESTED_EFFECT = "unrequested_effect"
 
 
+def proposal_error_code(code: ProposalRejectionCode) -> RuntimeErrorCode:
+    """Map proposal validation failures to their Runtime protocol code."""
+
+    if code == ProposalRejectionCode.STALE_TASK_REVISION:
+        return RuntimeErrorCode.STALE_TASK_REVISION
+    if code == ProposalRejectionCode.STALE_STATE_VERSION:
+        return RuntimeErrorCode.STALE_STATE_VERSION
+    if code == ProposalRejectionCode.STALE_SNAPSHOT:
+        return RuntimeErrorCode.SNAPSHOT_MISMATCH
+    return RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
+
+
+def proposal_record(
+    proposal: PlannerProposal,
+    provenance: PlannerProposalProvenance,
+) -> dict[str, Any]:
+    """Serialize a proposal together with its Runtime-attached provenance."""
+
+    return {
+        **proposal.model_dump(mode="json"),
+        "provenance": provenance.model_dump(mode="json"),
+    }
+
+
 _SCOPE_STOPWORDS = {
     "activate",
     "button",
