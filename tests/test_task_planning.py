@@ -6,6 +6,8 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_planning import (
     LLMTaskPlanner,
+    PlanningAffordanceSummary,
+    PlanningEnvironmentSummary,
     PlanningRouter,
     PlanProgress,
     SubgoalOutcome,
@@ -357,6 +359,146 @@ def test_validator_allows_availability_as_navigation_outcome() -> None:
     )
 
     report = TaskPlanValidator().validate(navigated, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
+def test_validator_marks_current_entry_action_family_unavailable() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    unavailable = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "objective": "search page is available",
+                        "success_criteria": ("search page is available",),
+                        "action_family": TaskPlanActionFamily.NAVIGATE,
+                        "outcome": SubgoalOutcome(
+                            subject="search page",
+                            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="search-text",
+                        label="Search",
+                        supported_actions=("type_text", "activate"),
+                    ),
+                )
+            ),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        unavailable,
+        task,
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    issue = next(item for item in report.issues if item.code == "entry_action_family_unavailable")
+    assert issue.detail == "subgoal-1"
+    assert issue.field == "action_family"
+    assert issue.disallowed_values == ("navigate",)
+    assert issue.required_semantics == "currently_bindable_action_family"
+
+
+def test_validator_checks_only_current_ready_subgoal_against_inventory() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    first = SubgoalSpec(
+        subgoal_id="enter",
+        objective="search text equals Myron",
+        success_criteria=("search text equals Myron",),
+        evidence_requirements=("current input value",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.TYPE_TEXT,
+        outcome=SubgoalOutcome(
+            subject="search text",
+            relation=SubgoalOutcomeRelation.EQUALS,
+            value="Myron",
+        ),
+    )
+    later = SubgoalSpec(
+        subgoal_id="open",
+        objective="results page is available",
+        depends_on=("enter",),
+        success_criteria=("results page is available",),
+        evidence_requirements=("current page observation",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.NAVIGATE,
+        outcome=SubgoalOutcome(
+            subject="results page",
+            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+        ),
+    )
+    plan = TaskPlan(
+        plan_id="plan-entry",
+        task_id=task.task_id,
+        task_revision=task.revision,
+        plan_version=1,
+        based_on_state_version=4,
+        generated_by=TaskPlanSource.LLM,
+        subgoals=(first, later),
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="search-text",
+                        supported_actions=("fill",),
+                    ),
+                )
+            ),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan,
+        task,
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
+def test_validator_does_not_infer_unavailability_from_empty_environment_summary() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    unknown = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "action_family": TaskPlanActionFamily.NAVIGATE,
+                        "outcome": SubgoalOutcome(
+                            subject="settings page",
+                            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        unknown,
+        task,
+        state_version=4,
+        planning_context=_context().model_copy(update={"task_spec": task}),
+    )
 
     assert report.status == TaskPlanValidationStatus.ACCEPT
 
@@ -771,5 +913,81 @@ def test_llm_task_planner_repairs_action_instruction_into_outcome() -> None:
     assert plan.subgoals[0].objective == "Search results for Myron is visible"
     assert (
         TaskPlanValidator().validate(plan, task, state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
+
+
+class ContextualEntryRepairModel:
+    provider = "fixed"
+    model = "fixed-task-planner"
+    endpoint_class = "test"
+    last_call = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
+        del config
+        self.calls += 1
+        if self.calls == 2:
+            assert '"field": "action_family"' in messages[-1].content
+            assert '"disallowed_values": ["navigate"]' in messages[-1].content
+            assert '"required_semantics": "currently_bindable_action_family"' in messages[-1].content
+        return output_schema.model_validate(
+            {
+                "subgoals": [
+                    {
+                        "subgoal_id": "entry",
+                        "outcome": (
+                            {
+                                "subject": "search page",
+                                "relation": "is_available",
+                            }
+                            if self.calls == 1
+                            else {
+                                "subject": "search text",
+                                "relation": "equals",
+                                "value": "Myron",
+                            }
+                        ),
+                        "evidence_requirements": ["fresh current-state observation"],
+                        "operation_class": "reversible_write",
+                        "action_family": "navigate" if self.calls == 1 else "type_text",
+                    }
+                ]
+            }
+        )
+
+
+def test_llm_task_planner_repairs_unavailable_entry_family_once() -> None:
+    import asyncio
+
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="search-text",
+                        supported_actions=("type_text",),
+                    ),
+                )
+            ),
+        }
+    )
+    model = ContextualEntryRepairModel()
+
+    plan = asyncio.run(LLMTaskPlanner(model).plan(context))
+
+    assert model.calls == 2
+    assert plan.subgoals[0].action_family == TaskPlanActionFamily.TYPE_TEXT
+    assert (
+        TaskPlanValidator().validate(
+            plan,
+            task,
+            state_version=4,
+            planning_context=context,
+        ).status
         == TaskPlanValidationStatus.ACCEPT
     )

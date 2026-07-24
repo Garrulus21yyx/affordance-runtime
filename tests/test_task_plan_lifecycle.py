@@ -8,7 +8,10 @@ from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planning import (
     PlanningRouter,
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
     TaskPlan,
+    TaskPlanActionFamily,
     TaskPlanningContext,
     TaskPlanValidationStatus,
 )
@@ -79,6 +82,28 @@ class InvalidAsyncPlanner:
         return valid.model_copy(update={"task_id": "different-task"})
 
 
+class UnavailableEntryPlanner:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        valid = PlanningRouter().plan(context)
+        return valid.model_copy(
+            update={
+                "subgoals": (
+                    valid.subgoals[0].model_copy(
+                        update={
+                            "objective": "settings page is available",
+                            "success_criteria": ("settings page is available",),
+                            "action_family": TaskPlanActionFamily.NAVIGATE,
+                            "outcome": SubgoalOutcome(
+                                subject="settings page",
+                                relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                            ),
+                        }
+                    ),
+                )
+            }
+        )
+
+
 def test_lifecycle_resolves_async_planner_and_rejects_invalid_plan_without_installing_it() -> None:
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
@@ -95,3 +120,22 @@ def test_lifecycle_resolves_async_planner_and_rejects_invalid_plan_without_insta
     assert {item.code for item in transition.validation.issues} == {"task_id_mismatch"}
     assert state.task_plan is None
     assert state.plan_progress is None
+
+
+def test_lifecycle_applies_contextual_entry_validation_to_non_llm_planner() -> None:
+    task = _task()
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    state.remember_observation(_snapshot().observation)
+
+    transition = TaskPlanLifecycle(UnavailableEntryPlanner()).propose_initial(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+    )
+
+    assert transition.validation.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in transition.validation.issues} == {
+        "entry_action_family_unavailable"
+    }
+    assert state.task_plan is None

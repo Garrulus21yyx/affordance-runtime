@@ -521,6 +521,7 @@ class TaskPlanValidator:
         previous_plan: TaskPlan | None = None,
         previous_plan_id: str = "",
         previous_plan_version: int = 0,
+        planning_context: TaskPlanningContext | None = None,
     ) -> TaskPlanValidationReport:
         fatal: list[TaskPlanValidationIssue] = []
         repairable: list[TaskPlanValidationIssue] = []
@@ -622,6 +623,23 @@ class TaskPlanValidator:
                     detail="assumptions",
                 )
             )
+        entry = _contextual_entry_subgoal(plan, planning_context)
+        if (
+            entry is not None
+            and entry.action_family is not None
+            and planning_context is not None
+            and planning_context.environment.affordances
+            and entry.action_family not in _context_action_families(planning_context)
+        ):
+            repairable.append(
+                TaskPlanValidationIssue(
+                    code="entry_action_family_unavailable",
+                    detail=entry.subgoal_id,
+                    field="action_family",
+                    disallowed_values=(entry.action_family.value,),
+                    required_semantics="currently_bindable_action_family",
+                )
+            )
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
         if not any(item.subgoal_id not in dependency_targets for item in plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="missing_terminal_subgoal"))
@@ -631,6 +649,61 @@ class TaskPlanValidator:
         if repairable:
             return TaskPlanValidationReport(status=TaskPlanValidationStatus.REPAIRABLE, issues=tuple(repairable))
         return TaskPlanValidationReport(status=TaskPlanValidationStatus.ACCEPT)
+
+
+def _contextual_entry_subgoal(
+    plan: TaskPlan,
+    context: TaskPlanningContext | None,
+) -> SubgoalSpec | None:
+    if context is None:
+        return None
+    completed = set(context.completed_subgoal_ids)
+    failed = set(context.failed_subgoal_ids)
+    if context.active_subgoal_id:
+        active = next(
+            (
+                item
+                for item in plan.subgoals
+                if item.subgoal_id == context.active_subgoal_id
+                and item.subgoal_id not in completed | failed
+            ),
+            None,
+        )
+        if active is not None:
+            return active
+    return next(
+        (
+            item
+            for item in plan.subgoals
+            if item.subgoal_id not in completed | failed
+            and all(dependency in completed for dependency in item.depends_on)
+        ),
+        None,
+    )
+
+
+def _context_action_families(
+    context: TaskPlanningContext,
+) -> frozenset[TaskPlanActionFamily]:
+    aliases = {
+        "click": TaskPlanActionFamily.ACTIVATE,
+        "fill": TaskPlanActionFamily.TYPE_TEXT,
+        "type": TaskPlanActionFamily.TYPE_TEXT,
+        "select": TaskPlanActionFamily.SELECT_OPTION,
+        "press": TaskPlanActionFamily.PRESS_KEY,
+        "drop": TaskPlanActionFamily.DRAG,
+    }
+    families: set[TaskPlanActionFamily] = set()
+    for affordance in context.environment.affordances:
+        for action in affordance.supported_actions:
+            normalized = action.strip().lower()
+            try:
+                families.add(TaskPlanActionFamily(normalized))
+            except ValueError:
+                alias = aliases.get(normalized)
+                if alias is not None:
+                    families.add(alias)
+    return frozenset(families)
 
 
 def _action_outcome_relation_compatible(
@@ -749,6 +822,7 @@ class LLMTaskPlanner:
             state_version=context.state_version,
             previous_plan_id=context.current_plan_id,
             previous_plan_version=context.current_plan_version,
+            planning_context=context,
         )
         if report.status != TaskPlanValidationStatus.REPAIRABLE:
             return plan

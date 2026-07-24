@@ -76,7 +76,12 @@ class TaskPlanLifecycle:
     ) -> TaskPlanTransition:
         context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
         plan = _resolve_task_plan(self.planner.plan(context))
-        validation = self.validator.validate(plan, task_spec, state_version=state.version)
+        validation = self.validator.validate(
+            plan,
+            task_spec,
+            state_version=state.version,
+            planning_context=context,
+        )
         return TaskPlanTransition(context=context, plan=plan, validation=validation)
 
     def propose_replacement(
@@ -98,6 +103,7 @@ class TaskPlanLifecycle:
             task_spec,
             state_version=state.version,
             previous_plan=previous_plan,
+            planning_context=context,
         )
         return TaskPlanTransition(
             context=context,
