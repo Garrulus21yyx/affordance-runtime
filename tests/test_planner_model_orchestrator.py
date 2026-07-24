@@ -305,6 +305,7 @@ def test_explicit_prefix_binds_only_one_enabled_text_target() -> None:
     assert constraint.relation == "prefix"
     assert constraint.target_id == "field-1"
     assert constraint.allowed_text_values == ("Com",)
+    assert constraint.satisfied is False
 
 
 @pytest.mark.parametrize(
@@ -347,7 +348,8 @@ def test_current_control_value_retires_only_the_satisfied_input_obligation(
 
     constraint = semantic_text_input_constraint(context, compatible_target_ids(context))
 
-    assert (constraint is None) is satisfied
+    assert constraint is not None
+    assert constraint.satisfied is satisfied
 
 
 def test_suffix_only_multiple_values_or_multiple_controls_do_not_authorize_text() -> None:

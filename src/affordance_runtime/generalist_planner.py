@@ -334,12 +334,22 @@ class GeneralistLMPlanner:
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
             typed_text_constraint = semantic_text_input_constraint(context, initial_targets)
             if typed_text_constraint is not None:
-                initial_permitted = [PlannerActionKind.TYPE_TEXT.value]
-                initial_targets = {
-                    PlannerActionKind.TYPE_TEXT.value: [typed_text_constraint.target_id]
-                }
-                constrained_text_values = typed_text_constraint.allowed_text_values
-                source_destination_constrained = False
+                if typed_text_constraint.satisfied:
+                    initial_targets[PlannerActionKind.TYPE_TEXT.value] = [
+                        target_id
+                        for target_id in initial_targets.get(
+                            PlannerActionKind.TYPE_TEXT.value,
+                            [],
+                        )
+                        if target_id != typed_text_constraint.target_id
+                    ]
+                else:
+                    initial_permitted = [PlannerActionKind.TYPE_TEXT.value]
+                    initial_targets = {
+                        PlannerActionKind.TYPE_TEXT.value: [typed_text_constraint.target_id]
+                    }
+                    constrained_text_values = typed_text_constraint.allowed_text_values
+                    source_destination_constrained = False
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
@@ -446,6 +456,11 @@ class GeneralistLMPlanner:
                         "semantic_value_constraint": {
                             "relation": typed_text_constraint.relation,
                             "target_id": typed_text_constraint.target_id,
+                            "status": (
+                                "satisfied"
+                                if typed_text_constraint.satisfied
+                                else "open"
+                            ),
                         }
                     }
                     if typed_text_constraint is not None

@@ -54,6 +54,7 @@ class SemanticTextInputConstraint:
     relation: str
     target_id: str
     allowed_text_values: tuple[str, ...]
+    satisfied: bool = False
 
 
 CandidateT = TypeVar("CandidateT", bound=PlannerCandidateModel)
@@ -310,13 +311,17 @@ def semantic_text_input_constraint(
         )
         if len(values) == 1:
             current_value = target.state.get("control_value")
-            if isinstance(current_value, str) and _semantic_value_is_present(
+            satisfied = isinstance(current_value, str) and _semantic_value_is_present(
                 current_value,
                 relation=relation,
                 required_value=values[0],
-            ):
-                return None
-            return SemanticTextInputConstraint(relation, target_id, values)
+            )
+            return SemanticTextInputConstraint(
+                relation,
+                target_id,
+                values,
+                satisfied=satisfied,
+            )
         if values:
             return None
     return None

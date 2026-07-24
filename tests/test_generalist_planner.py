@@ -2553,6 +2553,14 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
         ) -> T:
             del messages, config
+            with pytest.raises(ValidationError):
+                output_schema.model_validate(
+                    {
+                        "action_kind": "type_text",
+                        "target_affordance_id": "dom_input_1",
+                        "parameters": {"text": "Com"},
+                    }
+                )
             return output_schema.model_validate(
                 {
                     "action_kind": "activate",
@@ -2570,7 +2578,11 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
     assert decision.proposal is not None
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
     assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert "semantic_value_constraint" not in decision.planner_context
+    assert decision.planner_context["semantic_value_constraint"] == {
+        "relation": "prefix",
+        "target_id": "dom_input_1",
+        "status": "satisfied",
+    }
 
 
 def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:
