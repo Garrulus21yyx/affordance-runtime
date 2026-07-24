@@ -41,6 +41,8 @@ class ScopeRelationKind(StrEnum):
     SEMANTIC_VALUE_UNIQUE_CONTROL = "semantic_value_unique_control"
     ENTITY_PROPERTY = "entity_property"
     ORDINAL_COLLECTION_ITEM = "ordinal_collection_item"
+    GLOBAL_ORDINAL_COLLECTION_ITEM = "global_ordinal_collection_item"
+    PAGINATION_TRANSITION = "pagination_transition"
 
 
 class RuntimeErrorCode(StrEnum):

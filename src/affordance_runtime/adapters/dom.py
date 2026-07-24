@@ -563,6 +563,61 @@ def _group_context_text(node: dict[str, Any], container_context: str) -> str:
     return ""
 
 
+def _annotate_pagination_nodes(nodes: list[dict[str, Any]]) -> None:
+    """Attach structural pagination facts without interpreting task intent."""
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for node in nodes:
+        if node.get("tag") != "a":
+            continue
+        ancestors = tuple(node.get("context_ancestors", ()))
+        pagination = next(
+            (
+                ancestor
+                for ancestor in ancestors
+                if ancestor.get("tag") in {"ul", "ol"}
+                and "pagination" in str(ancestor.get("attr", {}).get("class", "")).split()
+            ),
+            None,
+        )
+        if pagination is None:
+            continue
+        owner = str(pagination.get("attr", {}).get("id") or "").strip()
+        if not owner:
+            continue
+        item = next(
+            (ancestor for ancestor in ancestors if ancestor.get("tag") == "li"),
+            None,
+        )
+        classes = set(str((item or {}).get("attr", {}).get("class", "")).split())
+        label = _label_for(node).strip()
+        relation = (
+            "next"
+            if "next" in classes
+            else "previous"
+            if "prev" in classes or "previous" in classes
+            else "page"
+            if label.isdigit()
+            else ""
+        )
+        if not relation:
+            continue
+        node["pagination_owner"] = owner
+        node["pagination_relation"] = relation
+        node["pagination_current"] = "active" in classes
+        if relation == "page":
+            node["pagination_page"] = int(label)
+        groups.setdefault(owner, []).append(node)
+
+    for group in groups.values():
+        pages = [int(node["pagination_page"]) for node in group if "pagination_page" in node]
+        if not pages:
+            continue
+        total_pages = max(pages)
+        for node in group:
+            node["pagination_total_pages"] = total_pages
+
+
 def _collection_position(
     attr: dict[str, str],
     ancestors: tuple[dict[str, Any], ...] = (),
@@ -679,6 +734,7 @@ class DomAdapter:
         parser.feed(html or "")
         parser.close()
         _associate_control_labels(parser.nodes)
+        _annotate_pagination_nodes(parser.nodes)
         nested_control_label_nodes = {
             id(parent)
             for node in parser.nodes
@@ -730,6 +786,11 @@ class DomAdapter:
                 "toggle_selected": node.get("toggle_selected"),
                 "aria_expanded": node["attr"].get("aria-expanded", ""),
                 "aria_controls": node["attr"].get("aria-controls", ""),
+                "pagination_owner": node.get("pagination_owner"),
+                "pagination_relation": node.get("pagination_relation"),
+                "pagination_page": node.get("pagination_page"),
+                "pagination_current": node.get("pagination_current"),
+                "pagination_total_pages": node.get("pagination_total_pages"),
             }
             for node in planner_nodes
         ]
@@ -892,6 +953,22 @@ class DomAdapter:
                         ),
                         **({"collection_position": collection_position} if collection_position is not None else {}),
                         **({"href": attr["href"]} if node["tag"] == "a" and "href" in attr else {}),
+                        **(
+                            {
+                                "pagination_owner": node["pagination_owner"],
+                                "pagination_relation": node["pagination_relation"],
+                                "pagination_current": bool(node.get("pagination_current")),
+                                "pagination_total_pages": node["pagination_total_pages"],
+                                **(
+                                    {"pagination_page": node["pagination_page"]}
+                                    if "pagination_page" in node
+                                    else {}
+                                ),
+                            }
+                            if node.get("pagination_owner")
+                            and node.get("pagination_total_pages")
+                            else {}
+                        ),
                         **({"observed_color": attr["data-color"]} if attr.get("data-color") else {}),
                         **(
                             {

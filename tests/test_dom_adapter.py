@@ -349,6 +349,31 @@ def test_dom_adapter_preserves_link_role_and_bounded_container_context() -> None
     assert result.state["container_context"] == "Ada https://example.test Result summary"
 
 
+def test_dom_adapter_exposes_stable_pagination_structure() -> None:
+    html = """
+    <ul id="results-pages" class="pagination">
+      <li class="page-item prev"><a href="#">&lt;</a></li>
+      <li class="page-item active"><a href="#">1</a></li>
+      <li class="page-item"><a href="#">2</a></li>
+      <li class="page-item"><a href="#">3</a></li>
+      <li class="page-item next"><a href="#">&gt;</a></li>
+    </ul>
+    """
+
+    model = DomAdapter().transduce(html, environment_revision="rev-1", snapshot_id="snap-1")
+    by_label = {item.label: item for item in model.affordances}
+
+    assert by_label["1"].state["pagination_owner"] == "results-pages"
+    assert by_label["1"].state["pagination_relation"] == "page"
+    assert by_label["1"].state["pagination_current"] is True
+    assert by_label["1"].state["pagination_total_pages"] == 3
+    assert by_label["1"].state["pagination_page"] == 1
+    assert by_label["2"].state["pagination_current"] is False
+    assert by_label["2"].state["pagination_page"] == 2
+    assert by_label["<"].state["pagination_relation"] == "previous"
+    assert by_label[">"].state["pagination_relation"] == "next"
+
+
 def test_dom_adapter_does_not_bind_native_button_identity_to_mutable_siblings() -> None:
     model = _authored_adapter().transduce(
         '<div><button data-runtime-handle="search">Search</button><div>Changing results</div></div>',

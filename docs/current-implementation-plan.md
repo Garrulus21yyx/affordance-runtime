@@ -489,6 +489,19 @@ Execute in this order:
    collect ordinary failures to completion, cluster, repair Runtime-first, and
    confirm with targeted plus breadth replay.
 
+Current strict re-evaluation update (2026-07-24): the intent-owned
+exact/prefix/suffix schema and source lineage now reach the strict Planner.
+Successive clean `use-autocomplete` replays prove authorized prefix input,
+correct visible-option selection, and retirement of the satisfied textbox from
+the next `type_text` schema. The remaining plain `Submit` button has no trusted
+form/effect descriptor; strict mode safely asks rather than treating its page
+label as authority. Do not add a MiniWoB/autocomplete submit branch. Environment
+commit support requires typed adapter-declared effect/risk evidence and
+independent negative controls. Active repair selection now moves to the frozen
+pagination/global-ordinal residual: model page windows and next/previous
+relations explicitly before mapping a global ordinal to a local candidate.
+See [the strict re-evaluation execution plan](evidence/m8.2b-strict-reevaluation-plan-20260724.md).
+
 The normative
 [Responsibility Containment Boundary](responsibility-containment-boundary.md)
 continues to block feature additions to `coordinator.py`; the reduced ratchet is

@@ -10,6 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.collection_window import (
+    resolve_global_ordinal_constraint,
+    snapshot_collection_affordances,
+)
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -295,6 +299,11 @@ class PlannerProposalValidator:
         """Reject current but unauthorized semantic targets before binding."""
 
         label, role = _semantic_target_label_role(proposal.target_affordance_id, snapshot)
+        ordinal_constraint = resolve_global_ordinal_constraint(
+            objective=task_spec.objective,
+            targets=task_spec.targets,
+            affordances=snapshot_collection_affordances(snapshot),
+        )
         decision = ProposalScopeEvaluator().evaluate(
             action_kind=proposal.action_kind.value,
             target_id=proposal.target_affordance_id,
@@ -305,6 +314,7 @@ class PlannerProposalValidator:
             targets=task_spec.targets,
             unified_affordances=snapshot.unified_affordances,
             observation=snapshot.observation,
+            ordinal_constraint=ordinal_constraint,
         )
         if decision.authorized:
             return
@@ -720,6 +730,11 @@ class ContractBuilder:
             )
         scope_authorization = None
         if contract.grounding_candidate is not None and source_resolution is not None:
+            ordinal_constraint = resolve_global_ordinal_constraint(
+                objective=task_spec.objective,
+                targets=task_spec.targets,
+                affordances=snapshot_collection_affordances(snapshot),
+            )
             scope_decision = ProposalScopeEvaluator().evaluate(
                 action_kind=proposal.action_kind.value,
                 target_id=proposal.target_affordance_id,
@@ -731,6 +746,7 @@ class ContractBuilder:
                 unified_affordances=snapshot.unified_affordances,
                 observation=snapshot.observation,
                 selected_candidate=contract.grounding_candidate,
+                ordinal_constraint=ordinal_constraint,
             )
             if not scope_decision.authorized:
                 rejection = (

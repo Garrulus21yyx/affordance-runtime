@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.collection_window import OrdinalRouteConstraint, OrdinalRouteKind
 from affordance_runtime.contracts import Observation, ScopeRelationKind, VerifierSpec
 from affordance_runtime.grounding import (
     CandidateScopeEvidence,
@@ -180,6 +181,42 @@ def test_ordinal_relation_requires_the_requested_collection_position() -> None:
     assert accepted.authorization is not None
     assert accepted.authorization.relation == ScopeRelationKind.ORDINAL_COLLECTION_ITEM
     assert wrong_position.rejection == ScopeRejectionKind.TARGET_OUT_OF_SCOPE
+
+
+def test_pagination_transition_requires_independently_resolved_global_ordinal_route() -> None:
+    page_two, observation = _candidate(
+        candidate_id="candidate:page-two",
+        target_id="semantic:page-two",
+        context="1 2 3",
+    )
+    target = _target(page_two, label="2")
+    constraint = OrdinalRouteConstraint(
+        kind=OrdinalRouteKind.PAGE_TRANSITION,
+        target_id=target.semantic_target_id,
+        requested_ordinal=4,
+        current_page=1,
+        target_page=2,
+        page_size=3,
+        total_pages=3,
+        pagination_owner="results-pages",
+    )
+
+    accepted = ProposalScopeEvaluator().evaluate(
+        action_kind="activate",
+        target_id=target.semantic_target_id,
+        target_label=target.label,
+        target_role=target.role,
+        parameters={},
+        objective="Click the 4th search result.",
+        targets=("search result",),
+        unified_affordances=(target,),
+        observation=observation,
+        selected_candidate=page_two,
+        ordinal_constraint=constraint,
+    )
+
+    assert accepted.authorization is not None
+    assert accepted.authorization.relation == ScopeRelationKind.PAGINATION_TRANSITION
 
 
 class _Page:

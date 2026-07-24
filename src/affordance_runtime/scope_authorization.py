@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any, Mapping
 
+from affordance_runtime.collection_window import OrdinalRouteConstraint, OrdinalRouteKind
 from affordance_runtime.contracts import Observation, ScopeAuthorization, ScopeRelationKind
 from affordance_runtime.grounding import GroundingCandidate, UnifiedAffordance
 
@@ -108,7 +109,28 @@ class ProposalScopeEvaluator:
         unified_affordances: tuple[UnifiedAffordance, ...],
         observation: Observation,
         selected_candidate: GroundingCandidate | None = None,
+        ordinal_constraint: OrdinalRouteConstraint | None = None,
     ) -> ProposalScopeDecision:
+        if (
+            ordinal_constraint is not None
+            and action_kind == "activate"
+            and target_id == ordinal_constraint.target_id
+        ):
+            ordinal_relation = (
+                ScopeRelationKind.PAGINATION_TRANSITION
+                if ordinal_constraint.kind == OrdinalRouteKind.PAGE_TRANSITION
+                else ScopeRelationKind.GLOBAL_ORDINAL_COLLECTION_ITEM
+            )
+            target = next(
+                (item for item in unified_affordances if item.semantic_target_id == target_id),
+                None,
+            )
+            candidates = self._candidate_pool(target, observation, selected_candidate)
+            if candidates:
+                return ProposalScopeDecision(
+                    True,
+                    authorization=_scope_authorization(ordinal_relation, candidates[0]),
+                )
         authorized_text = " ".join((objective, *targets))
         authorized_tokens = _scope_tokens(authorized_text)
         label_tokens = _scope_tokens(target_label)

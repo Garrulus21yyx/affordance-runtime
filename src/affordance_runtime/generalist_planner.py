@@ -10,6 +10,7 @@ from types import ModuleType
 from typing import Any
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.collection_window import resolve_global_ordinal_constraint
 from affordance_runtime.coordinator import PlannerDecision
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
@@ -350,6 +351,20 @@ class GeneralistLMPlanner:
                     }
                     constrained_text_values = typed_text_constraint.allowed_text_values
                     source_destination_constrained = False
+        ordinal_constraint = None
+        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
+            ordinal_constraint = resolve_global_ordinal_constraint(
+                objective=str(context.task_spec.get("objective") or ""),
+                targets=tuple(str(item) for item in context.task_spec.get("targets", ())),
+                affordances=context.affordances,
+            )
+            if ordinal_constraint is not None:
+                initial_permitted = [PlannerActionKind.ACTIVATE.value]
+                initial_targets = {
+                    PlannerActionKind.ACTIVATE.value: [ordinal_constraint.target_id]
+                }
+                constrained_text_values = ()
+                source_destination_constrained = False
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
@@ -464,6 +479,20 @@ class GeneralistLMPlanner:
                         }
                     }
                     if typed_text_constraint is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "ordinal_route_constraint": {
+                            "kind": ordinal_constraint.kind.value,
+                            "requested_ordinal": ordinal_constraint.requested_ordinal,
+                            "current_page": ordinal_constraint.current_page,
+                            "target_page": ordinal_constraint.target_page,
+                            "target_id": ordinal_constraint.target_id,
+                            "pagination_owner": ordinal_constraint.pagination_owner,
+                        }
+                    }
+                    if ordinal_constraint is not None
                     else {}
                 ),
             },

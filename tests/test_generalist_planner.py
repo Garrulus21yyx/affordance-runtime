@@ -2585,6 +2585,75 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
     }
 
 
+def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<div id="results"><a data-result="0">A</a><a data-result="1">B</a>'
+        '<a data-result="2">C</a></div><ul id="pages" class="pagination">'
+        '<li class="page-item active"><a>1</a></li>'
+        '<li class="page-item"><a>2</a></li>'
+        '<li class="page-item"><a>3</a></li></ul>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Click the 4th search result")
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Click the 4th search result",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("search result",),
+        success_criteria=("the fourth result is activated",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class PageTransitionModel:
+        provider: str = "fixed"
+        model: str = "ordinal-page-transition"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            with pytest.raises(ValidationError):
+                output_schema.model_validate(
+                    {
+                        "action_kind": "activate",
+                        "target_affordance_id": "dom_a_1",
+                        "parameters": {},
+                    }
+                )
+            return output_schema.model_validate(
+                {
+                    "action_kind": "activate",
+                    "target_affordance_id": "dom_a_5",
+                    "parameters": {},
+                }
+            )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(PageTransitionModel()).propose(
+            TaskEnvelope(task_spec=task_spec), state, snapshot
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.target_affordance_id == "dom_a_5"
+    assert decision.planner_context["ordinal_route_constraint"] == {
+        "kind": "page_transition",
+        "requested_ordinal": 4,
+        "current_page": 1,
+        "target_page": 2,
+        "target_id": "dom_a_5",
+        "pagination_owner": "pages",
+    }
+
+
 def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:
     schema = _initial_candidate_schema(["activate"])
 
