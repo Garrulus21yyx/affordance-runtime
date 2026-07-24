@@ -38,6 +38,11 @@ _FORBIDDEN_PLAN_CONTENT = re.compile(
     r")",
     re.IGNORECASE,
 )
+_ACTION_INSTRUCTION_SUBGOAL = re.compile(
+    r"(?:^\s*(?:activate|choose|click|drag|drop|fill|press|scroll|select|type)\b|"
+    r"^\s*enter\b.+\b(?:in|into)\b)",
+    re.IGNORECASE,
+)
 
 
 class TaskPlanSource(StrEnum):
@@ -244,6 +249,16 @@ class TaskPlanValidator:
             fatal.append(TaskPlanValidationIssue(code="duplicate_subgoal_id"))
         known = set(identifiers)
         for subgoal in plan.subgoals:
+            if (
+                task_spec.task_structure == TaskStructure.MULTI_STAGE
+                and _is_action_instruction_subgoal(subgoal.objective)
+            ):
+                repairable.append(
+                    TaskPlanValidationIssue(
+                        code="action_instruction_subgoal",
+                        detail=subgoal.subgoal_id,
+                    )
+                )
             if not subgoal.success_criteria:
                 repairable.append(TaskPlanValidationIssue(code="missing_success_criteria", detail=subgoal.subgoal_id))
             if not subgoal.evidence_requirements:
@@ -526,6 +541,12 @@ def _has_cycle(subgoals: tuple[SubgoalSpec, ...]) -> bool:
 
 def _contains_executable_plan_content(values: tuple[str, ...]) -> bool:
     return any(_FORBIDDEN_PLAN_CONTENT.search(value) is not None for value in values)
+
+
+def _is_action_instruction_subgoal(objective: str) -> bool:
+    """Reject UI procedures where a multi-stage plan requires an outcome."""
+
+    return _ACTION_INSTRUCTION_SUBGOAL.search(objective) is not None
 
 
 def _operation_rank(operation: OperationClass) -> int:

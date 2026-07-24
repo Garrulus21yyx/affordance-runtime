@@ -157,6 +157,56 @@ def test_validator_marks_missing_verification_requirements_repairable() -> None:
     assert {item.code for item in report.issues} == {"missing_success_criteria", "missing_evidence_requirements"}
 
 
+@pytest.mark.parametrize(
+    "instruction",
+    (
+        "Press the Search button",
+        "Click the third result",
+        "Enter Myron into the search textbox",
+        "Select the requested option",
+    ),
+)
+def test_validator_requires_outcomes_instead_of_multistage_action_instructions(
+    instruction: str,
+) -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(
+        _context().model_copy(update={"task_spec": task})
+    )
+    instructed = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(update={"objective": instruction}),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(instructed, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in report.issues} == {"action_instruction_subgoal"}
+
+
+def test_validator_accepts_observable_multistage_outcome() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(
+        _context().model_copy(update={"task_spec": task})
+    )
+    outcome = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={"objective": "Search results for Myron are visible"}
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(outcome, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
 def test_validator_rejects_non_monotonic_replacement_lineage() -> None:
     previous = synthetic_task_plan(_context())
     replacement = previous.model_copy(
@@ -382,3 +432,54 @@ def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None
     assert plan.task_id == _task().task_id
     assert len(plan.subgoals) == 3
     assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
+
+
+class ActionInstructionRepairModel:
+    provider = "fixed"
+    model = "fixed-task-planner"
+    endpoint_class = "test"
+    last_call = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate_structured(self, messages, output_schema, config):  # type: ignore[no-untyped-def]
+        del config
+        self.calls += 1
+        objective = (
+            "Press the Search button"
+            if self.calls == 1
+            else "Search results for Myron are visible"
+        )
+        if self.calls == 2:
+            assert "action_instruction_subgoal" in messages[-1].content
+        return output_schema.model_validate(
+            {
+                "subgoals": [
+                    {
+                        "subgoal_id": "results-visible",
+                        "objective": objective,
+                        "success_criteria": ["results for Myron are visible"],
+                        "evidence_requirements": ["post-action results observation"],
+                        "operation_class": "reversible_write",
+                    }
+                ]
+            }
+        )
+
+
+def test_llm_task_planner_repairs_action_instruction_into_outcome() -> None:
+    import asyncio
+
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    context = _context().model_copy(update={"task_spec": task})
+    model = ActionInstructionRepairModel()
+
+    plan = asyncio.run(LLMTaskPlanner(model).plan(context))
+
+    assert model.calls == 2
+    assert plan.subgoals[0].objective == "Search results for Myron are visible"
+    assert (
+        TaskPlanValidator().validate(plan, task, state_version=4).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
