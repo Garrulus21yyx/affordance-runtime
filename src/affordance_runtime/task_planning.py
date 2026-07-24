@@ -11,11 +11,12 @@ import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Annotated, Awaitable, Literal, Protocol, TypeAlias
+from typing import Annotated, Any, Awaitable, Literal, Protocol, TypeAlias
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import Field
+from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import (
@@ -45,6 +46,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
 )
 
 TASK_PLAN_SCHEMA_VERSION = "1.1"
+TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "current-entry-prefix-v1"
 
 
 class TaskPlanSource(StrEnum):
@@ -375,6 +377,58 @@ class TaskPlanCandidate(StrictModel):
 
     subgoals: tuple[TaskPlanSubgoalCandidate, ...] = Field(min_length=1, max_length=8)
     assumptions: tuple[str, ...] = ()
+
+
+def task_plan_candidate_model_for_context(
+    context: TaskPlanningContext,
+) -> type[TaskPlanCandidate]:
+    """Constrain only the first provider-authored subgoal to current actions."""
+
+    if not context.environment.affordances:
+        return TaskPlanCandidate
+    allowed_families = _context_action_families(context)
+    if not allowed_families or allowed_families == frozenset(TaskPlanActionFamily):
+        return TaskPlanCandidate
+    allowed_values = tuple(sorted(item.value for item in allowed_families))
+
+    class ContextualTaskPlanCandidate(TaskPlanCandidate):
+        @classmethod
+        def model_json_schema(
+            cls,
+            by_alias: bool = True,
+            ref_template: str = DEFAULT_REF_TEMPLATE,
+            schema_generator: type[GenerateJsonSchema] = GenerateJsonSchema,
+            mode: JsonSchemaMode = "validation",
+            *,
+            union_format: Literal["any_of", "primitive_type_array"] = "any_of",
+        ) -> dict[str, Any]:
+            schema = super().model_json_schema(
+                by_alias=by_alias,
+                ref_template=ref_template,
+                schema_generator=schema_generator,
+                mode=mode,
+                union_format=union_format,
+            )
+            subgoals_schema = schema["properties"]["subgoals"]
+            items = subgoals_schema["items"]
+            mapping = items["discriminator"]["mapping"]
+            entry_mapping = {value: mapping[value] for value in allowed_values}
+            entry_refs = tuple(dict.fromkeys(entry_mapping.values()))
+            subgoals_schema["prefixItems"] = [
+                {
+                    "discriminator": {
+                        "propertyName": "action_family",
+                        "mapping": entry_mapping,
+                    },
+                    "oneOf": [{"$ref": value} for value in entry_refs],
+                }
+            ]
+            schema["title"] = TaskPlanCandidate.__name__
+            return schema
+
+    ContextualTaskPlanCandidate.__name__ = TaskPlanCandidate.__name__
+    ContextualTaskPlanCandidate.__qualname__ = TaskPlanCandidate.__qualname__
+    return ContextualTaskPlanCandidate
 
 
 class PlanningAffordanceSummary(StrictModel):
@@ -814,7 +868,8 @@ class LLMTaskPlanner:
             ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
             ModelMessage(role="user", content=json.dumps(prompt_context, sort_keys=True)),
         ]
-        candidate = await self.model.generate_structured(messages, TaskPlanCandidate, self.config)
+        candidate_model = task_plan_candidate_model_for_context(context)
+        candidate = await self.model.generate_structured(messages, candidate_model, self.config)
         plan = self._bind_candidate(candidate, context)
         report = self.validator.validate(
             plan,
@@ -840,7 +895,7 @@ class LLMTaskPlanner:
                 ModelMessage(role="assistant", content=candidate.model_dump_json()),
                 ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
             ],
-            TaskPlanCandidate,
+            candidate_model,
             self.config,
         )
         return self._bind_candidate(repaired, context)

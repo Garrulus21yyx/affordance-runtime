@@ -5,6 +5,7 @@ from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_planning import (
+    TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
     LLMTaskPlanner,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
@@ -23,6 +24,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidator,
     synthetic_task_plan,
     task_plan_allowed_outcome_relations,
+    task_plan_candidate_model_for_context,
     task_plan_repair_directives,
     task_planner_model_config,
 )
@@ -144,6 +146,89 @@ def test_llm_facing_schema_accepts_same_relation_for_compatible_navigation() -> 
     )
 
     assert candidate.subgoals[0].action_family == TaskPlanActionFamily.NAVIGATE
+
+
+def test_context_schema_constrains_only_first_subgoal_to_current_actions() -> None:
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="search-text",
+                        supported_actions=("type_text", "activate"),
+                    ),
+                )
+            )
+        }
+    )
+    candidate_model = task_plan_candidate_model_for_context(context)
+    schema = candidate_model.model_json_schema()
+    subgoals_schema = schema["properties"]["subgoals"]
+    items = subgoals_schema["items"]
+
+    assert TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION == "current-entry-prefix-v1"
+    assert set(subgoals_schema["prefixItems"][0]["discriminator"]["mapping"]) == {
+        "activate",
+        "type_text",
+    }
+    assert set(items["discriminator"]["mapping"]) == {
+        item.value for item in TaskPlanActionFamily
+    }
+
+
+def test_context_schema_parser_preserves_future_family_and_public_shape() -> None:
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="search-text",
+                        supported_actions=("type_text",),
+                    ),
+                )
+            )
+        }
+    )
+    candidate_model = task_plan_candidate_model_for_context(context)
+
+    candidate = candidate_model.model_validate(
+        {
+            "subgoals": [
+                {
+                    "subgoal_id": "enter",
+                    "outcome": {
+                        "subject": "search text",
+                        "relation": "equals",
+                        "value": "Myron",
+                    },
+                    "evidence_requirements": ["current input value"],
+                    "operation_class": "reversible_write",
+                    "action_family": "type_text",
+                },
+                {
+                    "subgoal_id": "open",
+                    "outcome": {
+                        "subject": "results page",
+                        "relation": "is_available",
+                    },
+                    "depends_on": ["enter"],
+                    "evidence_requirements": ["current page observation"],
+                    "operation_class": "reversible_write",
+                    "action_family": "navigate",
+                },
+            ]
+        }
+    )
+
+    assert isinstance(candidate, TaskPlanCandidate)
+    assert [item.action_family for item in candidate.subgoals] == [
+        TaskPlanActionFamily.TYPE_TEXT,
+        TaskPlanActionFamily.NAVIGATE,
+    ]
+
+
+def test_context_schema_stays_generic_when_environment_is_unknown() -> None:
+    assert task_plan_candidate_model_for_context(_context()) is TaskPlanCandidate
 
 
 class RecordingComplexPlanner:
