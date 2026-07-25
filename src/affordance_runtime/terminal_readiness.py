@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.task_planning import PlanProgress, SubgoalSpec, TaskPlan
+
 
 class ObligationState(StrEnum):
     OPEN = "open"
@@ -53,6 +55,106 @@ class TerminalCandidate:
             set(self.prerequisite_obligation_ids)
         ):
             raise ValueError("terminal prerequisites must be unique")
+
+
+@dataclass(frozen=True)
+class TerminalEffectBinding:
+    """Current grounding of one terminal candidate to one typed plan subgoal."""
+
+    semantic_target_id: str
+    subgoal_id: str
+    task_revision: int
+    observation_epoch_id: str
+    target_fingerprint: str
+
+    def __post_init__(self) -> None:
+        if not all(
+            (
+                self.semantic_target_id,
+                self.subgoal_id,
+                self.observation_epoch_id,
+                self.target_fingerprint,
+            )
+        ) or self.task_revision < 1:
+            raise ValueError("terminal effect binding requires current typed lineage")
+
+
+@dataclass(frozen=True)
+class TaskObligationView:
+    """Compiler output consumed by the readiness evaluator without inference."""
+
+    candidates: tuple[TerminalCandidate, ...]
+    obligations: tuple[TaskObligationEvidence, ...]
+
+
+@dataclass(frozen=True)
+class TaskObligationViewCompiler:
+    """Bind validated TaskPlan dependencies and completed evidence to terminals."""
+
+    def compile(
+        self,
+        *,
+        plan: TaskPlan,
+        progress: PlanProgress,
+        bindings: tuple[TerminalEffectBinding, ...],
+        task_revision: int,
+        observation_epoch_id: str,
+        target_fingerprints: dict[str, str],
+    ) -> TaskObligationView:
+        if task_revision < 1 or not observation_epoch_id:
+            raise ValueError("task obligation compilation requires current identity")
+        target_ids = [item.semantic_target_id for item in bindings]
+        if len(target_ids) != len(set(target_ids)):
+            raise ValueError("terminal effect bindings must have unique targets")
+        subgoal_by_id = {item.subgoal_id: item for item in plan.subgoals}
+        evidence_by_id: dict[str, TaskObligationEvidence] = {}
+        candidates: list[TerminalCandidate] = []
+        for binding in bindings:
+            current = (
+                plan.task_revision == task_revision
+                and binding.task_revision == task_revision
+                and binding.observation_epoch_id == observation_epoch_id
+                and target_fingerprints.get(binding.semantic_target_id)
+                == binding.target_fingerprint
+            )
+            terminal_subgoal = subgoal_by_id.get(binding.subgoal_id)
+            if not current or terminal_subgoal is None or terminal_subgoal.outcome is None:
+                candidates.append(TerminalCandidate(binding.semantic_target_id))
+                continue
+            prerequisite_ids, complete = _transitive_prerequisites(
+                binding.subgoal_id,
+                subgoal_by_id,
+            )
+            for obligation_id in prerequisite_ids:
+                if obligation_id in evidence_by_id:
+                    continue
+                subgoal = subgoal_by_id.get(obligation_id)
+                if subgoal is None or subgoal.outcome is None:
+                    complete = False
+                    continue
+                evidence_refs = tuple(progress.evidence_by_subgoal.get(obligation_id, ()))
+                completed = obligation_id in progress.completed_subgoal_ids
+                state = (
+                    ObligationState.SATISFIED
+                    if completed and evidence_refs
+                    else ObligationState.UNKNOWN
+                    if completed
+                    else ObligationState.OPEN
+                )
+                evidence_by_id[obligation_id] = TaskObligationEvidence(
+                    obligation_id,
+                    state,
+                    task_revision,
+                    verification_refs=evidence_refs,
+                )
+            candidates.append(
+                TerminalCandidate(
+                    binding.semantic_target_id,
+                    prerequisite_ids,
+                    dependencies_complete=complete,
+                )
+            )
+        return TaskObligationView(tuple(candidates), tuple(evidence_by_id.values()))
 
 
 @dataclass(frozen=True)
@@ -159,3 +261,35 @@ class TerminalReadinessEvaluator:
             tuple(blocking),
             tuple(unknown),
         )
+
+
+def _transitive_prerequisites(
+    subgoal_id: str,
+    subgoal_by_id: dict[str, SubgoalSpec],
+) -> tuple[tuple[str, ...], bool]:
+    ordered: list[str] = []
+    visiting: set[str] = set()
+    complete = True
+
+    def visit(identifier: str) -> None:
+        nonlocal complete
+        if identifier in visiting:
+            complete = False
+            return
+        subgoal = subgoal_by_id.get(identifier)
+        if subgoal is None:
+            complete = False
+            return
+        dependencies = subgoal.depends_on
+        visiting.add(identifier)
+        for dependency in dependencies:
+            if dependency not in subgoal_by_id:
+                complete = False
+                continue
+            visit(dependency)
+            if dependency not in ordered:
+                ordered.append(dependency)
+        visiting.remove(identifier)
+
+    visit(subgoal_id)
+    return tuple(ordered), complete
