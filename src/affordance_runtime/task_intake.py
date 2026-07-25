@@ -92,6 +92,139 @@ class SemanticValueRelation(StrEnum):
     SUFFIX = "suffix"
 
 
+class TaskClaimKind(StrEnum):
+    EFFECT = "effect"
+    VALUE = "value"
+    DEPENDENCY = "dependency"
+    TERMINAL = "terminal"
+    CONSTRAINT = "constraint"
+
+
+class TaskObligationKind(StrEnum):
+    PREDICATE = "predicate"
+    EFFECT = "effect"
+
+
+class TaskObligationRelation(StrEnum):
+    EQUALS = "equals"
+    CONTAINS = "contains"
+    MATCHES = "matches"
+    IS_VISIBLE = "is_visible"
+    IS_ABSENT = "is_absent"
+    IS_AVAILABLE = "is_available"
+    IS_SELECTED = "is_selected"
+    IS_CHECKED = "is_checked"
+    IS_EXPANDED = "is_expanded"
+    IS_COMPLETED = "is_completed"
+    IS_ORDERED_AS = "is_ordered_as"
+    HAS_CHANGED = "has_changed"
+
+
+class TaskObligationValueSource(StrEnum):
+    NONE = "none"
+    LITERAL = "literal"
+    OBSERVATION = "observation"
+    OBLIGATION_OUTPUT = "obligation_output"
+
+
+class SourcedTaskClaim(StrictModel):
+    claim_id: str = Field(min_length=1, max_length=120)
+    kind: TaskClaimKind
+    statement: str = Field(min_length=1, max_length=480)
+    source_ref: str = Field(min_length=1, max_length=240)
+    required: bool = True
+
+    @model_validator(mode="after")
+    def reject_blank_claim(self) -> "SourcedTaskClaim":
+        if not self.claim_id.strip() or not self.statement.strip():
+            raise ValueError("task claim identity and statement cannot be blank")
+        return self
+
+
+class TaskObligationSpec(StrictModel):
+    """One sourced desired state or effect in an immutable dependency graph."""
+
+    obligation_id: str = Field(min_length=1, max_length=120)
+    kind: TaskObligationKind
+    subject: str = Field(min_length=1, max_length=480)
+    relation: TaskObligationRelation
+    value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
+    expected_value: str = Field(default="", max_length=480)
+    value_obligation_id: str = Field(default="", max_length=120)
+    claim_ids: tuple[str, ...] = Field(min_length=1)
+    depends_on: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = ()
+    blocking: bool = True
+    terminal: bool = False
+
+    @model_validator(mode="after")
+    def validate_value_and_identity(self) -> "TaskObligationSpec":
+        if not self.obligation_id.strip() or not self.subject.strip():
+            raise ValueError("task obligation identity and subject cannot be blank")
+        if len(self.claim_ids) != len(set(self.claim_ids)):
+            raise ValueError("task obligation claim ids must be unique")
+        if len(self.depends_on) != len(set(self.depends_on)):
+            raise ValueError("task obligation dependencies must be unique")
+        if self.obligation_id in self.depends_on:
+            raise ValueError("task obligation cannot depend on itself")
+        if any(not item.strip() for item in (*self.claim_ids, *self.depends_on)):
+            raise ValueError("task obligation references cannot be blank")
+        if any(not item.strip() for item in self.evidence_requirements):
+            raise ValueError("task obligation evidence requirements cannot be blank")
+        if self.blocking and not self.evidence_requirements:
+            raise ValueError("blocking task obligation requires independent evidence")
+        if self.terminal and not self.blocking:
+            raise ValueError("terminal task obligation must be blocking")
+
+        value_relations = {
+            TaskObligationRelation.EQUALS,
+            TaskObligationRelation.CONTAINS,
+            TaskObligationRelation.MATCHES,
+            TaskObligationRelation.IS_ORDERED_AS,
+        }
+        if self.relation in value_relations and self.value_source not in {
+            TaskObligationValueSource.LITERAL,
+            TaskObligationValueSource.OBLIGATION_OUTPUT,
+        }:
+            raise ValueError("value relation requires a literal or obligation output")
+        if self.value_source == TaskObligationValueSource.LITERAL:
+            if not self.expected_value.strip() or self.value_obligation_id:
+                raise ValueError("literal obligation value requires only expected_value")
+        elif self.value_source == TaskObligationValueSource.OBLIGATION_OUTPUT:
+            if (
+                not self.value_obligation_id
+                or self.value_obligation_id not in self.depends_on
+                or self.expected_value
+            ):
+                raise ValueError(
+                    "obligation output value must name one declared dependency"
+                )
+        elif self.value_source == TaskObligationValueSource.OBSERVATION:
+            if (
+                self.kind != TaskObligationKind.PREDICATE
+                or self.relation != TaskObligationRelation.IS_AVAILABLE
+                or self.expected_value
+                or self.value_obligation_id
+            ):
+                raise ValueError(
+                    "observation value must be an available predicate without a supplied value"
+                )
+        elif self.expected_value or self.value_obligation_id:
+            raise ValueError("value-free obligation cannot carry a value")
+
+        if (
+            self.relation not in value_relations
+            and self.relation != TaskObligationRelation.IS_SELECTED
+            and self.value_source
+            not in {
+                TaskObligationValueSource.NONE,
+                TaskObligationValueSource.OBSERVATION,
+            }
+        ):
+            raise ValueError("unary obligation relation cannot carry a supplied value")
+        return self
+
+
 class SemanticValueConstraint(StrictModel):
     relation: SemanticValueRelation
     value: str = Field(min_length=1, max_length=240)
@@ -115,15 +248,25 @@ class IntentDraft(StrictModel):
     candidate_evidence_requirements: tuple[str, ...] = ()
     candidate_constraints: tuple[str, ...] = ()
     candidate_semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
+    candidate_source_claims: tuple[SourcedTaskClaim, ...] = ()
+    candidate_obligations: tuple[TaskObligationSpec, ...] = ()
     candidate_forbidden_effects: tuple[str, ...] = ()
     ambiguities: tuple[IntentAmbiguity, ...] = ()
     source_map: tuple[FieldProvenance, ...] = ()
     confidence_by_field: tuple[FieldConfidence, ...] = ()
     task_structure: TaskStructure = TaskStructure.FLAT
 
+    @model_validator(mode="after")
+    def validate_candidate_obligation_graph(self) -> "IntentDraft":
+        _validate_task_obligation_graph(
+            self.candidate_source_claims,
+            self.candidate_obligations,
+        )
+        return self
+
 
 class TaskSpec(StrictModel):
-    schema_version: str = "1.2"
+    schema_version: str = "1.3"
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     objective: str = Field(min_length=1)
@@ -137,6 +280,8 @@ class TaskSpec(StrictModel):
     success_criteria: tuple[str, ...]
     constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
+    source_claims: tuple[SourcedTaskClaim, ...] = ()
+    obligations: tuple[TaskObligationSpec, ...] = ()
     forbidden_effects: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
     requested_capabilities: tuple[str, ...] = ()
@@ -144,6 +289,11 @@ class TaskSpec(StrictModel):
     source_request_ref: str = Field(min_length=1)
     field_provenance: tuple[FieldProvenance, ...] = ()
     created_at_s: float = Field(default_factory=time)
+
+    @model_validator(mode="after")
+    def validate_obligation_graph(self) -> "TaskSpec":
+        _validate_task_obligation_graph(self.source_claims, self.obligations)
+        return self
 
     @property
     def identity(self) -> str:
@@ -192,6 +342,24 @@ class IntentDraftValidator:
             unsupported.append(CompilationIssue(code="missing_effect", field="requested_effects"))
         if not draft.candidate_success_criteria:
             unsupported.append(CompilationIssue(code="missing_success_criteria", field="candidate_success_criteria"))
+        for index, effect in enumerate(draft.requested_effects):
+            if not _source_ref_authorized(request, effect.source_ref):
+                unsupported.append(
+                    CompilationIssue(
+                        code="unsourced_requested_effect",
+                        field=f"requested_effects[{index}]",
+                        detail=effect.source_ref,
+                    )
+                )
+        for index, entity in enumerate(draft.entities):
+            if not _source_ref_authorized(request, entity.source_ref):
+                unsupported.append(
+                    CompilationIssue(
+                        code="unsourced_intent_entity",
+                        field=f"entities[{index}]",
+                        detail=entity.source_ref,
+                    )
+                )
         for index, constraint in enumerate(draft.candidate_semantic_value_constraints):
             if not _source_ref_authorized(request, constraint.source_ref):
                 unsupported.append(
@@ -199,6 +367,15 @@ class IntentDraftValidator:
                         code="unsourced_semantic_value_constraint",
                         field=f"candidate_semantic_value_constraints[{index}]",
                         detail=constraint.source_ref,
+                    )
+                )
+        for index, claim in enumerate(draft.candidate_source_claims):
+            if not _source_ref_authorized(request, claim.source_ref):
+                unsupported.append(
+                    CompilationIssue(
+                        code="unsourced_task_claim",
+                        field=f"candidate_source_claims[{index}]",
+                        detail=claim.source_ref,
                     )
                 )
         if any(issue.code in {"missing_objective", "missing_effect"} for issue in unsupported):
@@ -296,6 +473,8 @@ class IntentDraftValidator:
             success_criteria=draft.candidate_success_criteria,
             constraints=draft.candidate_constraints,
             semantic_value_constraints=draft.candidate_semantic_value_constraints,
+            source_claims=draft.candidate_source_claims,
+            obligations=draft.candidate_obligations,
             forbidden_effects=draft.candidate_forbidden_effects,
             evidence_requirements=draft.candidate_evidence_requirements,
             requested_capabilities=_ordered_unique(
@@ -311,6 +490,87 @@ class IntentDraftValidator:
             draft=draft,
             task_spec=task_spec,
         )
+
+
+def _validate_task_obligation_graph(
+    claims: tuple[SourcedTaskClaim, ...],
+    obligations: tuple[TaskObligationSpec, ...],
+) -> None:
+    if not claims and not obligations:
+        return
+    if not claims or not obligations:
+        raise ValueError("task claims and obligations must be supplied together")
+
+    claim_by_id = {item.claim_id: item for item in claims}
+    if len(claim_by_id) != len(claims):
+        raise ValueError("task claim ids must be unique")
+    obligation_by_id = {item.obligation_id: item for item in obligations}
+    if len(obligation_by_id) != len(obligations):
+        raise ValueError("task obligation ids must be unique")
+
+    known_claim_ids = set(claim_by_id)
+    known_obligation_ids = set(obligation_by_id)
+    covered_claim_ids: set[str] = set()
+    terminal_ids = {
+        item.obligation_id for item in obligations if item.terminal
+    }
+    if not terminal_ids:
+        raise ValueError("task obligation graph requires a terminal obligation")
+
+    dependencies: dict[str, set[str]] = {}
+    for obligation in obligations:
+        unknown_claims = set(obligation.claim_ids) - known_claim_ids
+        if unknown_claims:
+            raise ValueError("task obligation references an unknown claim")
+        unknown_dependencies = set(obligation.depends_on) - known_obligation_ids
+        if unknown_dependencies:
+            raise ValueError("task obligation references an unknown dependency")
+        if (
+            obligation.value_obligation_id
+            and obligation.value_obligation_id not in known_obligation_ids
+        ):
+            raise ValueError("task obligation references an unknown value dependency")
+        covered_claim_ids.update(obligation.claim_ids)
+        dependencies[obligation.obligation_id] = set(obligation.depends_on)
+
+    required_claim_ids = {
+        item.claim_id for item in claims if item.required
+    }
+    if required_claim_ids - covered_claim_ids:
+        raise ValueError("required task claim is not covered by an obligation")
+    if any(terminal_id in values for values in dependencies.values() for terminal_id in terminal_ids):
+        raise ValueError("terminal task obligation must be a graph sink")
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(identifier: str) -> None:
+        if identifier in visiting:
+            raise ValueError("task obligation graph cannot contain a cycle")
+        if identifier in visited:
+            return
+        visiting.add(identifier)
+        for dependency in dependencies[identifier]:
+            visit(dependency)
+        visiting.remove(identifier)
+        visited.add(identifier)
+
+    for obligation_id in obligation_by_id:
+        visit(obligation_id)
+
+    terminal_ancestors = set(terminal_ids)
+    pending = list(terminal_ids)
+    while pending:
+        current = pending.pop()
+        for dependency in dependencies[current]:
+            if dependency not in terminal_ancestors:
+                terminal_ancestors.add(dependency)
+                pending.append(dependency)
+    blocking_ids = {
+        item.obligation_id for item in obligations if item.blocking
+    }
+    if blocking_ids - terminal_ancestors:
+        raise ValueError("blocking task obligation must lead to a terminal obligation")
 
 
 def _operation_rank(operation: OperationClass) -> int:

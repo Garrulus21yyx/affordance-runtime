@@ -8,6 +8,12 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     SemanticValueConstraint,
     SemanticValueRelation,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskObligationValueSource,
     TaskSpec,
     TaskStructure,
 )
@@ -106,11 +112,30 @@ def test_task_planning_summary_preserves_effect_and_value_authority_without_sour
         target="theme",
         source_ref="request-1:value",
     )
+    claim = SourcedTaskClaim(
+        claim_id="claim:theme-value",
+        kind=TaskClaimKind.VALUE,
+        statement="theme must equal dark",
+        source_ref="request-1:claim",
+    )
+    obligation = TaskObligationSpec(
+        obligation_id="obligation:theme-value",
+        kind=TaskObligationKind.PREDICATE,
+        subject="theme",
+        relation=TaskObligationRelation.EQUALS,
+        value_source=TaskObligationValueSource.LITERAL,
+        expected_value="dark",
+        claim_ids=(claim.claim_id,),
+        evidence_requirements=("settings API confirms dark",),
+        terminal=True,
+    )
     summary = task_spec_planning_summary(
         _task().model_copy(
             update={
                 "requested_effects": (effect,),
                 "semantic_value_constraints": (constraint,),
+                "source_claims": (claim,),
+                "obligations": (obligation,),
             }
         )
     )
@@ -125,6 +150,30 @@ def test_task_planning_summary_preserves_effect_and_value_authority_without_sour
     ]
     assert summary["semantic_value_constraints"] == [
         {"relation": "exact", "value": "dark", "target": "theme"}
+    ]
+    assert summary["source_claims"] == [
+        {
+            "claim_id": "claim:theme-value",
+            "kind": "value",
+            "statement": "theme must equal dark",
+            "required": True,
+        }
+    ]
+    assert summary["obligations"] == [
+        {
+            "obligation_id": "obligation:theme-value",
+            "kind": "predicate",
+            "subject": "theme",
+            "relation": "equals",
+            "value_source": "literal",
+            "expected_value": "dark",
+            "value_obligation_id": "",
+            "claim_ids": ["claim:theme-value"],
+            "depends_on": [],
+            "evidence_requirements": ["settings API confirms dark"],
+            "blocking": True,
+            "terminal": True,
+        }
     ]
     assert "request-1" not in str(summary)
 

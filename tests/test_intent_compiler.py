@@ -20,6 +20,11 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     SemanticValueConstraint,
     SemanticValueRelation,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
     UserRequest,
 )
 from affordance_runtime.trace import TraceDag
@@ -60,6 +65,10 @@ def test_provider_schema_requires_deterministic_validator_prerequisites() -> Non
     assert schema["properties"]["requested_effects"]["minItems"] == 1
     assert schema["properties"]["candidate_success_criteria"]["minItems"] == 1
     assert "candidate_semantic_value_constraints" in schema["properties"]
+    assert "candidate_source_claims" in schema["properties"]
+    assert "candidate_obligations" in schema["properties"]
+    assert "candidate_source_claims" not in schema["required"]
+    assert "candidate_obligations" not in schema["required"]
 
 
 def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:
@@ -117,6 +126,25 @@ def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None
                     source_ref="raw_text",
                 ),
             ),
+            candidate_source_claims=(
+                SourcedTaskClaim(
+                    claim_id="claim-effect",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="matching item entered",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_obligations=(
+                TaskObligationSpec(
+                    obligation_id="obligation-effect",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="matching item",
+                    relation=TaskObligationRelation.IS_COMPLETED,
+                    claim_ids=("claim-effect",),
+                    evidence_requirements=("matching item is independently observed",),
+                    terminal=True,
+                ),
+            ),
         )
     )
 
@@ -133,6 +161,8 @@ def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None
     assert result.task_spec.semantic_value_constraints[0].source_ref == (
         "request-prefix"
     )
+    assert result.task_spec.source_claims[0].source_ref == "request-prefix"
+    assert result.task_spec.obligations[0].claim_ids == ("claim-effect",)
     assert result.task_spec.targets == ("item",)
 
 

@@ -15,6 +15,12 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     SemanticValueConstraint,
     SemanticValueRelation,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskObligationValueSource,
     TaskStructure,
     UserRequest,
 )
@@ -41,6 +47,65 @@ def _draft(**changes: object) -> IntentDraft:
     }
     values.update(changes)
     return IntentDraft(**values)
+
+
+def _derived_claims_and_obligations() -> tuple[
+    tuple[SourcedTaskClaim, ...],
+    tuple[TaskObligationSpec, ...],
+]:
+    claims = (
+        SourcedTaskClaim(
+            claim_id="claim:source-value",
+            kind=TaskClaimKind.VALUE,
+            statement="derive the requested value from the current source",
+            source_ref="request-1:0-24",
+        ),
+        SourcedTaskClaim(
+            claim_id="claim:write-value",
+            kind=TaskClaimKind.EFFECT,
+            statement="write the derived value to the destination",
+            source_ref="request-1:0-24",
+        ),
+        SourcedTaskClaim(
+            claim_id="claim:submit",
+            kind=TaskClaimKind.TERMINAL,
+            statement="submit after the destination is correct",
+            source_ref="request-1:0-24",
+        ),
+    )
+    obligations = (
+        TaskObligationSpec(
+            obligation_id="obligation:source-value",
+            kind=TaskObligationKind.PREDICATE,
+            subject="requested value in current source",
+            relation=TaskObligationRelation.IS_AVAILABLE,
+            value_source=TaskObligationValueSource.OBSERVATION,
+            claim_ids=("claim:source-value",),
+            evidence_requirements=("current source value evidence",),
+        ),
+        TaskObligationSpec(
+            obligation_id="obligation:destination-value",
+            kind=TaskObligationKind.PREDICATE,
+            subject="destination value",
+            relation=TaskObligationRelation.EQUALS,
+            value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+            value_obligation_id="obligation:source-value",
+            claim_ids=("claim:write-value",),
+            depends_on=("obligation:source-value",),
+            evidence_requirements=("current destination value evidence",),
+        ),
+        TaskObligationSpec(
+            obligation_id="obligation:submitted",
+            kind=TaskObligationKind.EFFECT,
+            subject="submission",
+            relation=TaskObligationRelation.IS_COMPLETED,
+            claim_ids=("claim:submit",),
+            depends_on=("obligation:destination-value",),
+            evidence_requirements=("independent submission evidence",),
+            terminal=True,
+        ),
+    )
+    return claims, obligations
 
 
 def test_ready_compilation_creates_immutable_versioned_task_spec_without_granting_capability() -> None:
@@ -78,8 +143,107 @@ def test_explicit_semantic_value_constraint_is_preserved_as_taskspec_authority()
     )
 
     assert result.task_spec is not None
-    assert result.task_spec.schema_version == "1.2"
+    assert result.task_spec.schema_version == "1.3"
     assert result.task_spec.semantic_value_constraints == (constraint,)
+
+
+def test_sourced_dependency_graph_is_preserved_as_taskspec_authority() -> None:
+    claims, obligations = _derived_claims_and_obligations()
+
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
+            task_structure=TaskStructure.MULTI_STAGE,
+        ),
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.schema_version == "1.3"
+    assert result.task_spec.source_claims == claims
+    assert result.task_spec.obligations == obligations
+    assert result.task_spec.obligations[-1].terminal
+
+
+def test_required_claim_must_be_covered_by_obligation_graph() -> None:
+    claims, obligations = _derived_claims_and_obligations()
+    terminal_without_terminal_claim = obligations[-1].model_copy(
+        update={"claim_ids": ("claim:write-value",)}
+    )
+
+    with pytest.raises(ValidationError, match="required task claim"):
+        _draft(
+            candidate_source_claims=claims,
+            candidate_obligations=(
+                *obligations[:-1],
+                terminal_without_terminal_claim,
+            ),
+        )
+
+
+def test_obligation_output_value_must_name_declared_dependency() -> None:
+    with pytest.raises(ValidationError, match="declared dependency"):
+        TaskObligationSpec(
+            obligation_id="obligation:destination-value",
+            kind=TaskObligationKind.PREDICATE,
+            subject="destination value",
+            relation=TaskObligationRelation.EQUALS,
+            value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+            value_obligation_id="obligation:source-value",
+            claim_ids=("claim:write-value",),
+            evidence_requirements=("current destination value evidence",),
+        )
+
+
+def test_obligation_graph_rejects_cycles_and_dangling_dependencies() -> None:
+    claims, obligations = _derived_claims_and_obligations()
+    cyclic = (
+        obligations[0].model_copy(
+            update={"depends_on": ("obligation:destination-value",)}
+        ),
+        obligations[1],
+        obligations[2],
+    )
+    with pytest.raises(ValidationError, match="cannot contain a cycle"):
+        _draft(
+            candidate_source_claims=claims,
+            candidate_obligations=cyclic,
+        )
+
+    dangling = obligations[2].model_copy(
+        update={"depends_on": ("obligation:missing",)}
+    )
+    with pytest.raises(ValidationError, match="unknown dependency"):
+        _draft(
+            candidate_source_claims=claims,
+            candidate_obligations=(*obligations[:-1], dangling),
+        )
+
+
+def test_unsourced_task_claim_cannot_become_taskspec_authority() -> None:
+    claims, obligations = _derived_claims_and_obligations()
+    unsourced = claims[0].model_copy(update={"source_ref": "page-observation"})
+
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(
+            candidate_source_claims=(unsourced, *claims[1:]),
+            candidate_obligations=obligations,
+        ),
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[0].code == "unsourced_task_claim"
+
+
+def test_claims_and_obligations_must_be_supplied_together() -> None:
+    claims, _ = _derived_claims_and_obligations()
+
+    with pytest.raises(ValidationError, match="supplied together"):
+        _draft(candidate_source_claims=claims)
 
 
 def test_semantic_value_constraint_rejects_blank_or_unknown_relation() -> None:
@@ -114,6 +278,46 @@ def test_unsourced_semantic_value_constraint_cannot_become_taskspec_authority() 
     assert result.status == CompilationStatus.UNSUPPORTED
     assert result.task_spec is None
     assert result.issues[0].code == "unsourced_semantic_value_constraint"
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected_code"),
+    (
+        (
+            {
+                "requested_effects": (
+                    RequestedEffect(
+                        operation_class=OperationClass.REVERSIBLE_WRITE,
+                        target="theme",
+                        source_ref="page-observation",
+                    ),
+                )
+            },
+            "unsourced_requested_effect",
+        ),
+        (
+            {
+                "entities": (
+                    IntentEntity(
+                        name="theme",
+                        value="dark",
+                        source_ref="page-observation",
+                    ),
+                )
+            },
+            "unsourced_intent_entity",
+        ),
+    ),
+)
+def test_unsourced_effect_or_entity_cannot_become_taskspec_authority(
+    changes: dict[str, object],
+    expected_code: str,
+) -> None:
+    result = IntentDraftValidator().compile(_request(), _draft(**changes))
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[0].code == expected_code
 
 
 def test_validated_intent_carries_explicit_multi_stage_routing_without_granting_authority() -> None:

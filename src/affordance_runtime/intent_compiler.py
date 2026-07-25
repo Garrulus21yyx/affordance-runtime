@@ -160,6 +160,10 @@ def _bind_draft_source_lineage(
                 item.model_copy(update={"source_ref": source_ref(item.source_ref)})
                 for item in draft.candidate_semantic_value_constraints
             ),
+            "candidate_source_claims": tuple(
+                item.model_copy(update={"source_ref": source_ref(item.source_ref)})
+                for item in draft.candidate_source_claims
+            ),
             "source_map": tuple(
                 item.model_copy(update={"source_ref": source_ref(item.source_ref)})
                 for item in draft.source_map

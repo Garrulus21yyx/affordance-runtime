@@ -1385,6 +1385,32 @@ def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
             }
             for item in task_spec.semantic_value_constraints
         ],
+        "source_claims": [
+            {
+                "claim_id": item.claim_id,
+                "kind": item.kind.value,
+                "statement": item.statement,
+                "required": item.required,
+            }
+            for item in task_spec.source_claims
+        ],
+        "obligations": [
+            {
+                "obligation_id": item.obligation_id,
+                "kind": item.kind.value,
+                "subject": item.subject,
+                "relation": item.relation.value,
+                "value_source": item.value_source.value,
+                "expected_value": item.expected_value,
+                "value_obligation_id": item.value_obligation_id,
+                "claim_ids": list(item.claim_ids),
+                "depends_on": list(item.depends_on),
+                "evidence_requirements": list(item.evidence_requirements),
+                "blocking": item.blocking,
+                "terminal": item.terminal,
+            }
+            for item in task_spec.obligations
+        ],
         "forbidden_effects": list(task_spec.forbidden_effects),
         "evidence_requirements": list(task_spec.evidence_requirements),
         "requested_capabilities": list(task_spec.requested_capabilities),

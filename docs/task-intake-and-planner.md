@@ -213,8 +213,8 @@ claims:
 SourcedTaskClaim
   claim_id
   kind: effect | value | dependency | terminal | constraint
-  source_span_ref
-  normalized_statement
+  source_ref
+  statement
   required
 
 TaskObligationSpec
@@ -234,7 +234,7 @@ TaskObligationSpec
 Dependencies are graph edges, not an obligation kind. Evidence requirements
 are properties of the obligation they can prove, not synthetic evidence nodes.
 A literal value must be present in an authorized source claim. An
-`obligation_output` value must name a transitive prerequisite. Terminal
+`obligation_output` value must name a declared direct prerequisite. Terminal
 obligations must use a terminal-compatible typed relation and independent
 evidence requirement. Duplicate ids, cycles, dangling references, blank source
 claims, invalid value-source combinations, or a terminal without evidence are
