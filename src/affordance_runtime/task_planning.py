@@ -224,75 +224,130 @@ class SubgoalOutcome(StrictModel):
 SubgoalSpec.model_rebuild()
 
 
-class ActivationSubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.MATCHES,
-        SubgoalOutcomeRelation.IS_VISIBLE,
-        SubgoalOutcomeRelation.IS_ABSENT,
-        SubgoalOutcomeRelation.IS_CHECKED,
-        SubgoalOutcomeRelation.IS_EXPANDED,
-        SubgoalOutcomeRelation.IS_COMPLETED,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class _RequiredValueCandidateOutcome(SubgoalOutcome):
+    value: str = Field(min_length=1, pattern=r"\S")
 
 
-class TextEntrySubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.MATCHES,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class _UnaryCandidateOutcome(SubgoalOutcome):
+    value: Literal[""] = ""
 
 
-class SelectionSubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.IS_SELECTED,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class EqualsCandidateOutcome(_RequiredValueCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.EQUALS]
 
 
-class PressKeySubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.MATCHES,
-        SubgoalOutcomeRelation.IS_VISIBLE,
-        SubgoalOutcomeRelation.IS_ABSENT,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class ContainsCandidateOutcome(_RequiredValueCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.CONTAINS]
 
 
-class DragSubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.IS_ORDERED_AS,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class MatchesCandidateOutcome(_RequiredValueCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.MATCHES]
 
 
-class NavigationSubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.EQUALS,
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.MATCHES,
-        SubgoalOutcomeRelation.IS_VISIBLE,
-        SubgoalOutcomeRelation.IS_AVAILABLE,
-        SubgoalOutcomeRelation.IS_COMPLETED,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class OrderedCandidateOutcome(_RequiredValueCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_ORDERED_AS]
 
 
-class ScrollSubgoalOutcome(SubgoalOutcome):
-    relation: Literal[
-        SubgoalOutcomeRelation.CONTAINS,
-        SubgoalOutcomeRelation.IS_VISIBLE,
-        SubgoalOutcomeRelation.HAS_CHANGED,
-    ]
+class VisibleCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_VISIBLE]
+
+
+class AbsentCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_ABSENT]
+
+
+class AvailableCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_AVAILABLE]
+
+
+class SelectedCandidateOutcome(SubgoalOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_SELECTED]
+
+
+class CheckedCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_CHECKED]
+
+
+class ExpandedCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_EXPANDED]
+
+
+class CompletedCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.IS_COMPLETED]
+
+
+class ChangedCandidateOutcome(_UnaryCandidateOutcome):
+    relation: Literal[SubgoalOutcomeRelation.HAS_CHANGED]
+
+
+ActivationSubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | MatchesCandidateOutcome
+    | VisibleCandidateOutcome
+    | AbsentCandidateOutcome
+    | CheckedCandidateOutcome
+    | ExpandedCandidateOutcome
+    | CompletedCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+TextEntrySubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | MatchesCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+SelectionSubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | SelectedCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+PressKeySubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | MatchesCandidateOutcome
+    | VisibleCandidateOutcome
+    | AbsentCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+DragSubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome | OrderedCandidateOutcome | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+NavigationSubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | MatchesCandidateOutcome
+    | VisibleCandidateOutcome
+    | AvailableCandidateOutcome
+    | CompletedCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+ScrollSubgoalOutcome: TypeAlias = Annotated[
+    ContainsCandidateOutcome | VisibleCandidateOutcome | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
+WaitSubgoalOutcome: TypeAlias = Annotated[
+    EqualsCandidateOutcome
+    | ContainsCandidateOutcome
+    | MatchesCandidateOutcome
+    | OrderedCandidateOutcome
+    | VisibleCandidateOutcome
+    | AbsentCandidateOutcome
+    | AvailableCandidateOutcome
+    | SelectedCandidateOutcome
+    | CheckedCandidateOutcome
+    | ExpandedCandidateOutcome
+    | CompletedCandidateOutcome
+    | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
 
 
 class _TaskPlanSubgoalCandidateBase(StrictModel):
@@ -345,7 +400,7 @@ class ScrollTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
 
 
 class WaitTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
-    outcome: SubgoalOutcome
+    outcome: WaitSubgoalOutcome
     action_family: Literal[TaskPlanActionFamily.WAIT]
 
 

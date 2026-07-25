@@ -93,19 +93,24 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
     assert set(mapping) == {item.value for item in TaskPlanActionFamily}
     for family_value, candidate_ref in mapping.items():
         candidate_schema = schema["$defs"][candidate_ref.rsplit("/", 1)[-1]]
-        outcome_ref = candidate_schema["properties"]["outcome"]["$ref"]
-        outcome_schema = schema["$defs"][outcome_ref.rsplit("/", 1)[-1]]
-        relation_schema = outcome_schema["properties"]["relation"]
-        if "$ref" in relation_schema:
-            relation_schema = schema["$defs"][relation_schema["$ref"].rsplit("/", 1)[-1]]
-        schema_relations = set(
-            relation_schema.get("enum", [relation_schema.get("const")])
-        )
+        outcome_schema = candidate_schema["properties"]["outcome"]
+        assert outcome_schema["discriminator"]["propertyName"] == "relation"
+        outcome_mapping = outcome_schema["discriminator"]["mapping"]
+        schema_relations = set(outcome_mapping)
         family = TaskPlanActionFamily(family_value)
 
         assert schema_relations == {
             item.value for item in task_plan_allowed_outcome_relations(family)
         }
+        for relation, outcome_ref in outcome_mapping.items():
+            value_schema = schema["$defs"][outcome_ref.rsplit("/", 1)[-1]][
+                "properties"
+            ]["value"]
+            if relation in {"equals", "contains", "matches", "is_ordered_as"}:
+                assert value_schema["minLength"] == 1
+                assert value_schema["pattern"] == r"\S"
+            elif relation != "is_selected":
+                assert value_schema["const"] == ""
         assert set(candidate_schema["required"]) >= {
             "subgoal_id",
             "outcome",
@@ -141,6 +146,45 @@ def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() 
                 ]
             }
         )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    (
+        {"subject": "field", "relation": "contains", "value": ""},
+        {"subject": "field", "relation": "matches", "value": "   "},
+        {"subject": "panel", "relation": "is_visible", "value": "false"},
+    ),
+)
+def test_llm_facing_schema_rejects_invalid_relation_value_arity(
+    outcome: dict[str, str],
+) -> None:
+    family = "activate" if outcome["relation"] == "is_visible" else "type_text"
+
+    with pytest.raises(ValueError):
+        TaskPlanCandidate.model_validate(
+            {
+                "subgoals": [
+                    {
+                        "subgoal_id": "entry",
+                        "outcome": outcome,
+                        "evidence_requirements": ["fresh current state"],
+                        "operation_class": "reversible_write",
+                        "action_family": family,
+                    }
+                ]
+            }
+        )
+
+
+def test_runtime_outcome_remains_permissive_for_validator_negative_inputs() -> None:
+    outcome = SubgoalOutcome(
+        subject="field",
+        relation=SubgoalOutcomeRelation.CONTAINS,
+        value="",
+    )
+
+    assert outcome.value == ""
 
 
 def test_llm_facing_schema_accepts_same_relation_for_compatible_navigation() -> None:
