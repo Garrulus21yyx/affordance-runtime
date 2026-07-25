@@ -46,7 +46,10 @@ The provider-neutral terminal-readiness protocol, typed TaskPlan validation,
 current grounding resolver, and strict-Planner candidate narrowing are
 implemented through clean `3447795`. The provider-neutral sourced claim and
 TaskObligationSpec input contract is implemented at `a6233ac`, but provider
-completeness and typed repair before READY are not. The full local gate is 871
+completeness and typed repair before READY are not. Clean `fe28a76` now rejects
+a wholly missing raw-language ledger/graph as typed `UNSUPPORTED`, but
+independent semantic coverage and typed malformed-graph handling remain open.
+The full local gate is 872
 tests, Ruff, and governed mypy over 105 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested

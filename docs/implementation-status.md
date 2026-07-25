@@ -26,12 +26,12 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | typed intake/revision, semantic proposal boundary, provider-neutral ports, and TaskSpec 1.3 sourced claim/obligation graph at `a6233ac` | enforce raw-request completeness before READY and complete strict decision boundaries |
+| M8.2A Task Intake and Planner Contracts | in_progress | TaskSpec 1.3 sourced graph at `a6233ac`; raw compiler missing-graph rejection at `fe28a76` | add independent semantic coverage, typed malformed-graph results, outcome compilation, and strict decision boundaries |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals | hold nightly/release; complete sourced obligations and protected-family regression before breadth promotion |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed injectable owner dispatch, quarantined artifact replay, acceptance, persistence, and rollback | implement concrete context/schema/provider owners and wire them into normal entrypoints |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, context, lineage, normal routing, and controlled ablation | compile obligation-complete flat/dependent outcomes and prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal budget/evidence/dispatcher/G5 gate and immutable 11-case rollout; `a6233ac` passes 871 tests, Ruff, and mypy | operational recovery owners, obligation completeness enforcement, planner generalization, and responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `fe28a76` rejects missing raw obligation authority and passes 872 tests, Ruff, and mypy | semantic coverage, operational recovery owners, planner generalization, and responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -300,12 +300,12 @@ The governing documents are:
 | --- | --- | --- |
 | G0 Freeze and classify | complete | score-bearing and legacy summaries are classified; current identities are explicit |
 | G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
-| G2 Intent and TaskPlan integration | typed obligation contract complete / completeness gate open | TaskSpec 1.3 carries sourced claims and typed dependency/terminal obligations with structural validation; provider omission can still compile READY and TaskPlan outcome compilation remains open |
+| G2 Intent and TaskPlan integration | typed obligation contract complete / semantic coverage open | TaskSpec 1.3 carries sourced typed obligations and raw compilation rejects a wholly missing graph; independent clause/dependency coverage, malformed-graph results, and TaskPlan outcome compilation remain open |
 | G2.5 Active perception and evidence repair | repaired / locally verified | strict authority intersection, no adapter escalation, current relevant semantic-candidate evidence, typed flow owner, and negative controls pass |
 | G3 Full-phase Recovery Coordinator | injectable path verified / normal entry open | configured context/schema/provider commands require real owning ports and non-empty deltas; the generalist runner does not yet configure those owners |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
 | G5 Internal conformance evidence | complete for internal scope | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external/open-world suites unprovisioned |
-| Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, and stateless TaskPlanFlow have typed ownership; Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; current 871-test gate passes while the reduction target remains open |
+| Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, and stateless TaskPlanFlow have typed ownership; Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; current 872-test gate passes while the reduction target remains open |
 
 Current verified facts:
 
@@ -317,14 +317,14 @@ Current verified facts:
 - active perception and lower-half recovery run through normal Coordinator
   paths; provider/context/schema repair remains conditional on an injected owner;
 - complete-run accounting continues after ordinary failures;
-- the audited `f4c3308` baseline passed 665 tests; immutable `a6233ac` passes
-  871 tests, Ruff, and mypy over 105 source files in the fixed Python 3.12
+- the audited `f4c3308` baseline passed 665 tests; immutable `fe28a76` passes
+  872 tests, Ruff, and mypy over 105 source files in the fixed Python 3.12
   environment.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
 close the broader product work. The default dispatcher remains empty unless an
-entrypoint supplies concrete owners, the typed TaskSpec obligation contract can
-still be omitted by raw-request compilation before READY,
+entrypoint supplies concrete owners, raw-language obligation coverage is not
+yet independently established before READY,
 the Coordinator remains above its reduction target, and strict planner behavior
 is still diagnostic. External-suite provisioning is a separate confirmation gap.
 
