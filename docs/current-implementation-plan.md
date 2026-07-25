@@ -53,7 +53,8 @@ wholly missing raw-language ledger/graph as typed `UNSUPPORTED`; clean
 non-BrowserGym raw-intake conformance closes at `d860c2c`; TaskPlan outcome
 compilation closes at `0b294f8`; verifier-evidence identity binding is now the
 completed at `6861e98`; deterministic cross-scenario conformance is now the
-open owner. The full local gate is 887
+completed at `766f598`; DecisionConstraintSet extraction is now the open owner.
+The full local gate is 888
 tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
@@ -71,7 +72,7 @@ freeze benchmark-family repair
   -> completed: define sourced TaskObligationSpec
   -> completed: reject incomplete READY compilation
   -> completed: compile typed flat and dependent outcomes
-  -> build DecisionConstraintSet outside the step planner
+  -> build DecisionConstraintSet outside the step planner (current)
   -> wire concrete recovery owners into normal entrypoints
   -> continue Coordinator/Planner responsibility reduction
   -> non-BrowserGym held-out conformance
