@@ -31,6 +31,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidationReport,
     TaskPlanValidator,
     task_plan_entry_feasibility_issue,
+    task_plan_entry_state_issue,
 )
 
 
@@ -66,6 +67,9 @@ class TaskPlanTransition:
 class TaskPlanReplacementReason(StrEnum):
     SUBGOAL_ACTION_BUDGET_EXHAUSTED = "subgoal_action_budget_exhausted"
     ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE = "active_subgoal_action_family_unavailable"
+    ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED = (
+        "active_subgoal_outcome_already_satisfied"
+    )
 
 
 @dataclass(frozen=True)
@@ -169,6 +173,12 @@ class TaskPlanLifecycle:
             budget,
             reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE.value,
         )
+        state_issue = task_plan_entry_state_issue(state.task_plan, context)
+        if state_issue is not None:
+            return TaskPlanReplacementDecision(
+                reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED,
+                subgoal_id=state_issue.detail,
+            )
         issue = task_plan_entry_feasibility_issue(state.task_plan, context)
         if issue is None:
             return TaskPlanReplacementDecision()

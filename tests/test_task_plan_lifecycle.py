@@ -246,6 +246,60 @@ def test_lifecycle_requests_replacement_for_newly_ready_unavailable_family() -> 
     assert state.plan_progress.active_subgoal_id == ""
 
 
+def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> None:
+    task = _task()
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    context = TaskPlanLifecycle.build_context(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+        reason="initial",
+    )
+    base = PlanningRouter().plan(context)
+    first = base.subgoals[0].model_copy(
+        update={
+            "subgoal_id": "first",
+            "action_family": TaskPlanActionFamily.ACTIVATE,
+        }
+    )
+    already_visible = SubgoalSpec(
+        subgoal_id="already-visible",
+        objective="Save setting is visible",
+        outcome=SubgoalOutcome(
+            subject="Save setting",
+            relation=SubgoalOutcomeRelation.IS_VISIBLE,
+        ),
+        depends_on=("first",),
+        success_criteria=("Save setting is visible",),
+        evidence_requirements=("current button visibility",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.ACTIVATE,
+    )
+    state.install_task_plan(
+        base.model_copy(update={"subgoals": (first, already_visible)})
+    )
+    state.complete_subgoal("first", ("evidence:first",))
+
+    decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
+        task,
+        state,
+        _snapshot(),
+        Limits(),
+    )
+
+    assert decision.required
+    assert (
+        decision.reason
+        == TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED
+    )
+    assert decision.subgoal_id == "already-visible"
+    assert state.task_plan is not None
+    assert state.task_plan.plan_id == base.plan_id
+    assert state.plan_progress is not None
+    assert state.plan_progress.completed_subgoal_ids == ["first"]
+
+
 def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replanning() -> None:
     task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
     lifecycle = TaskPlanLifecycle(PlanningRouter())
