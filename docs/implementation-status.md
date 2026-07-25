@@ -28,10 +28,10 @@ Status values:
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Planner Contracts | in_progress | sourced graph/admission, outcome compiler, all-plan binding, terminal evidence, cross-scenario conformance, and stateless DecisionConstraintSet through `ca71819` | normal-entrypoint recovery wiring and held-out conformance |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals | hold nightly/release; complete sourced obligations and protected-family regression before breadth promotion |
-| M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed injectable owner dispatch, quarantined artifact replay, acceptance, persistence, and rollback | implement concrete context/schema/provider owners and wire them into normal entrypoints |
+| M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, and conditional BrowserGym fallback-provider owner wiring through `befa319` | implement real context/schema owners and broader normal-entrypoint wiring |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `ca71819` completes stateless decision admission with 890 tests | operational recovery owners, planner generalization, and responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `befa319` adds conditional real provider switching with 893 tests | context/schema recovery owners, planner generalization, and responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -302,7 +302,7 @@ The governing documents are:
 | G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
 | G2 Intent and TaskPlan integration | obligation chain and decision owner complete | TaskSpec obligations compile to same-id outcomes, every plan source is checked, verified evidence reaches TerminalReadiness, cross-scenario controls pass, and `DecisionConstraintSet` owns typed text, ordinal, terminal, and current-state admission |
 | G2.5 Active perception and evidence repair | repaired / locally verified | strict authority intersection, no adapter escalation, current relevant semantic-candidate evidence, typed flow owner, and negative controls pass |
-| G3 Full-phase Recovery Coordinator | injectable path verified / normal entry open | configured context/schema/provider commands require real owning ports and non-empty deltas; the generalist runner does not yet configure those owners |
+| G3 Full-phase Recovery Coordinator | conditional provider path verified / normal entry open | BrowserGym generalist configures a provider-switch owner only for a real multi-profile fallback; context/schema remain unavailable until real owners exist |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
 | G5 Internal conformance evidence | complete for internal scope | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external/open-world suites unprovisioned |
 | Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, stateless TaskPlanFlow, TaskObligationCoverage, and TaskObligationOutcomeCompiler have typed ownership; Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; current 888-test gate passes while the reduction target remains open |
@@ -315,14 +315,15 @@ Current verified facts:
   parent, skill, and recovery sources;
 - raw requests enter typed intent and TaskPlan routing;
 - active perception and lower-half recovery run through normal Coordinator
-  paths; provider/context/schema repair remains conditional on an injected owner;
+  paths; BrowserGym generalist can switch a configured fallback provider through
+  a real owner, while context/schema repair remains unavailable without an owner;
 - complete-run accounting continues after ordinary failures;
-- the audited `f4c3308` baseline passed 665 tests; clean `ca71819` passes 890
-  tests, Ruff, and mypy over 107 source files in the fixed Python 3.12 environment.
+- the audited `f4c3308` baseline passed 665 tests; clean `befa319` passes 893
+  tests, Ruff, and mypy over 108 source files in the fixed Python 3.12 environment.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
 close the broader product work. The default dispatcher remains empty unless an
-entrypoint supplies concrete owners,
+entrypoint supplies real context/schema owners,
 the Coordinator remains above its reduction target, and strict planner behavior
 is still diagnostic. External-suite provisioning is a separate confirmation gap.
 
