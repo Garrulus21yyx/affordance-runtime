@@ -52,7 +52,8 @@ wholly missing raw-language ledger/graph as typed `UNSUPPORTED`; clean
 `f3c4a6f` projects graph-level malformed input to typed rejection. Deterministic
 non-BrowserGym raw-intake conformance closes at `d860c2c`; TaskPlan outcome
 compilation closes at `0b294f8`; verifier-evidence identity binding is now the
-open owner. The full local gate is 886
+completed at `6861e98`; deterministic cross-scenario conformance is now the
+open owner. The full local gate is 887
 tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
