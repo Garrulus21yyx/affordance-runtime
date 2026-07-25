@@ -26,7 +26,7 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | sourced graph/admission at `a6233ac`–`f3c4a6f`; raw conformance at `d860c2c`; same-id typed outcome compilation at `0b294f8` | bind verifier evidence and complete strict decision boundaries |
+| M8.2A Task Intake and Planner Contracts | in_progress | sourced graph/admission at `a6233ac`–`f3c4a6f`; raw conformance at `d860c2c`; same-id outcome compilation at `0b294f8`; all-plan binding validation at `8cff73a` | prove verified evidence through terminal readiness and complete strict decision boundaries |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals | hold nightly/release; complete sourced obligations and protected-family regression before breadth promotion |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed injectable owner dispatch, quarantined artifact replay, acceptance, persistence, and rollback | implement concrete context/schema/provider owners and wire them into normal entrypoints |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, context, lineage, normal routing, and obligation-driven outcome compilation | bind obligation evidence through terminal readiness and prove held-out behavior |
@@ -300,7 +300,7 @@ The governing documents are:
 | --- | --- | --- |
 | G0 Freeze and classify | complete | score-bearing and legacy summaries are classified; current identities are explicit |
 | G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
-| G2 Intent and TaskPlan integration | outcome compilation complete / evidence binding open | TaskSpec 1.3 sourced obligations compile to same-id TaskPlan outcomes with preserved dependencies and derived-value references; verifier/terminal evidence binding remains open |
+| G2 Intent and TaskPlan integration | plan binding complete / verified evidence open | TaskSpec 1.3 sourced obligations compile to same-id TaskPlan outcomes and every plan source is checked against that identity; verifier/terminal evidence binding remains open |
 | G2.5 Active perception and evidence repair | repaired / locally verified | strict authority intersection, no adapter escalation, current relevant semantic-candidate evidence, typed flow owner, and negative controls pass |
 | G3 Full-phase Recovery Coordinator | injectable path verified / normal entry open | configured context/schema/provider commands require real owning ports and non-empty deltas; the generalist runner does not yet configure those owners |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
