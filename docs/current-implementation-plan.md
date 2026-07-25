@@ -49,8 +49,9 @@ TaskObligationSpec input contract is implemented at `a6233ac`, but provider
 completeness and typed repair before READY are not. Clean `fe28a76` rejects a
 wholly missing raw-language ledger/graph as typed `UNSUPPORTED`; clean
 `aca0b5d` adds an independently decoded, fixed-budget coverage review; clean
-`f3c4a6f` projects graph-level malformed input to typed rejection. Empirical
-non-BrowserGym coverage remains open. The full local gate is 878
+`f3c4a6f` projects graph-level malformed input to typed rejection. Deterministic
+non-BrowserGym raw-intake conformance closes at `d860c2c`; TaskPlan outcome
+compilation is now the open owner. The full local gate is 884
 tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
@@ -66,7 +67,7 @@ Mandatory next sequence:
 ~~~text
 freeze benchmark-family repair
   -> completed: define sourced TaskObligationSpec
-  -> reject incomplete READY compilation
+  -> completed: reject incomplete READY compilation
   -> compile typed flat and dependent outcomes
   -> build DecisionConstraintSet outside the step planner
   -> wire concrete recovery owners into normal entrypoints
