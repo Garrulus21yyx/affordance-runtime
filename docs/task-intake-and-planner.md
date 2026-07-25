@@ -266,6 +266,15 @@ subgoal and that at least one reachable terminal subgoal discharges the
 terminal obligations. A passed action receipt or unrelated verification event
 cannot satisfy an obligation.
 
+`TaskObligationOutcomeCompiler` is the sole TaskSpec-to-TaskPlan translation:
+each `TaskObligationSpec.obligation_id` becomes the corresponding
+`SubgoalSpec.subgoal_id`, while `depends_on` edges and evidence requirements
+are preserved exactly. Literal values remain outcome literals; a derived value
+is represented as `SubgoalOutcome.value_obligation_id`, never as a guessed
+string. Typed obligation graphs bypass model task decomposition, reducing the
+existing episode model-call use rather than adding a call. The legacy one-
+subgoal flat plan remains only for TaskSpecs that predate obligation authority.
+
 
 ## 5. Planner Boundary
 
