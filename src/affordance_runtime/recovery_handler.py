@@ -31,6 +31,7 @@ from affordance_runtime.recovery_coordinator import (
     RecoveryHistoryItem,
     RecoverySelectionContext,
 )
+from affordance_runtime.verification import VerificationReport
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ class RecoveryRequest:
     accepted_profile_artifact_ids: tuple[str, ...] = ()
     attempted_strategy_ids: tuple[str, ...] = ()
     recovery_history: tuple[RecoveryHistoryItem, ...] = ()
+    verification: VerificationReport | None = None
+    verification_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -153,7 +156,10 @@ class RecoveryHandler:
             failure_class=_failure_class(request.error, request.receipt),
             error_code=request.error or (request.receipt.error_code if request.receipt else None) or "unknown",
             message=(
-                request.receipt.message
+                request.verification.reason
+                if request.error == RuntimeErrorCode.VERIFICATION_FAILED
+                and request.verification is not None
+                else request.receipt.message
                 if request.receipt is not None and request.receipt.message
                 else signature.normalized_error
             ),
@@ -165,6 +171,8 @@ class RecoveryHandler:
             expected_effect=request.contract.expected_effects[0].description
             if request.contract.expected_effects
             else request.contract.intent,
+            evidence_refs=(request.verification_ref,) if request.verification_ref else (),
+            verification_ref=request.verification_ref,
             effect_status=effect_status,
             attempted_strategy_ids=request.attempted_strategy_ids,
             remaining_budgets=RemainingRecoveryBudgets(
@@ -179,6 +187,18 @@ class RecoveryHandler:
             ),
             recoverable=not assessment.should_abort,
             progress_fingerprint=request.progress_fingerprint or request.state_revision,
+            debug_context=(
+                {
+                    "verification_status": request.verification.status.value,
+                    "failed_verifier_kinds": [
+                        item.verifier_kind
+                        for item in request.verification.evidence
+                        if not item.passed
+                    ],
+                }
+                if request.verification is not None
+                else None
+            ),
         )
         available = {
             RecoveryCommandKind.REOBSERVE,

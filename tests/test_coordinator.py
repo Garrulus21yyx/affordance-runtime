@@ -948,7 +948,7 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
     assert blocked[-1].payload["error_code"] == RuntimeErrorCode.EFFECT_ALREADY_SATISFIED.value
 
 
-def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta() -> None:
+def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_path) -> None:
     executor = CountingExecutor()
     result = RunCoordinator(
         observer=StableSavedObserver(saved=False),
@@ -956,6 +956,7 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta() -> N
         executor=executor,
         contract_builder=_semantic_guard_builder(),
         task_planner=None,
+        artifacts=ArtifactStore(tmp_path / "artifacts"),
         recovery=BoundedRecoveryPolicy(
             decision_override=lambda contract, receipt, context, error: RecoveryDecision(
                 RecoveryAction.REOBSERVE, "replan after failed verification"
@@ -967,6 +968,12 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta() -> N
     assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
     assert executor.calls == 1
     assert not result.state.progress_guard_events
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.message == "verifier failed: observation_metadata:saved"
+    assert result.state.current_failure.verification_ref.endswith("verification_0001.json")
+    assert result.state.current_failure.evidence_refs == (
+        result.state.current_failure.verification_ref,
+    )
     events = [node.kind for node in result.trace.nodes]
     assert "RecoveryStateInspected" in events
     assert "RecoveryAborted" in events

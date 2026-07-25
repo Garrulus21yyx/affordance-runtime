@@ -182,6 +182,45 @@ def test_browsergym_preserves_task_replan_validator_detail_code() -> None:
     assert projected.detail_code == "entry_outcome_state_unsupported"
 
 
+def test_browsergym_preserves_failed_verifier_kind_as_detail_code() -> None:
+    trace = TraceDag("run")
+    trace.add(
+        "PostconditionFailed",
+        {
+            "reason": "verifier failed: control_state:slider",
+            "evidence": [
+                {
+                    "verifier_kind": "evidence",
+                    "passed": True,
+                },
+                {
+                    "verifier_kind": "control_state",
+                    "passed": False,
+                },
+            ],
+        },
+    )
+    trace.add(
+        "FailureDetected",
+        {
+            "failure": {
+                "phase": "verification",
+                "failure_class": "verification",
+                "error_code": "verification_failed",
+                "effect_status": "may_have_occurred",
+                "message": "verifier failed: control_state:slider",
+                "evidence_refs": ["artifact:verification"],
+            }
+        },
+    )
+
+    projected = _browsergym_failure_stats(trace.nodes)["runtime_failure"]
+
+    assert projected is not None
+    assert projected.detail_code == "control_state"
+    assert projected.evidence_refs == ["artifact:verification"]
+
+
 def test_browsergym_projects_approval_pause_without_fabricating_recovery() -> None:
     trace = TraceDag("run")
     trace.add("HumanApprovalRequested", {"state": "waiting_approval"})

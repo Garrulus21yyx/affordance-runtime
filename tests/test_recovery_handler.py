@@ -14,6 +14,7 @@ from affordance_runtime.recovery import (
 )
 from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
+from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
 
 
 def _contract(**overrides: object) -> ActionContract:
@@ -87,6 +88,38 @@ def test_handler_returns_reobserve_for_stale_contract() -> None:
 
     assert evaluation.decision.action == RecoveryAction.REOBSERVE
     assert not evaluation.assessment.should_abort
+
+
+def test_handler_preserves_verification_reason_and_artifact_in_failure() -> None:
+    verification = VerificationReport(
+        VerificationStatus.FAILED,
+        [
+            VerificationEvidence(
+                verifier_kind="control_state",
+                target="slider",
+                expected={"field": "value", "value": "103"},
+                observed="104",
+                passed=False,
+                source="post_action_observation",
+            )
+        ],
+        "verifier failed: control_state:slider",
+    )
+    evaluation = _handler().evaluate(
+        replace(
+            _request(
+                receipt=_receipt(RuntimeErrorCode.VERIFICATION_FAILED),
+                error=RuntimeErrorCode.VERIFICATION_FAILED,
+            ),
+            failure_phase="verifying",
+            verification=verification,
+            verification_ref="artifact:verification",
+        )
+    )
+
+    assert evaluation.failure.message == verification.reason
+    assert evaluation.failure.verification_ref == "artifact:verification"
+    assert evaluation.failure.evidence_refs == ("artifact:verification",)
 
 
 def test_handler_adapts_confirmed_nondispatch_to_typed_reroute_plan() -> None:

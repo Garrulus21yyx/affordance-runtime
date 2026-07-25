@@ -2335,11 +2335,10 @@ class RunCoordinator:
                     "preserved_completed_step_ids": list(state.task_skill.completed_step_ids),
                 }
             recovery_result = self._recover(
-                state,
-                contract,
-                receipt,
-                RuntimeErrorCode.VERIFICATION_FAILED,
+                state, contract, receipt, RuntimeErrorCode.VERIFICATION_FAILED,
                 failure_context=skill_failure_context,
+                verification=latest_verification,
+                verification_ref=verification_ref.path if verification_ref else "",
             )
             parent = self._trace_recovery_protocol(trace, parent, state)
             parent = trace.add(
@@ -2383,6 +2382,7 @@ class RunCoordinator:
         error: RuntimeErrorCode | None,
         *,
         failure_context: dict[str, Any] | None = None,
+        verification: VerificationReport | None = None, verification_ref: str = "",
     ) -> RecoveryAction:
         failure_phase = state.phase
         state.transition(RuntimeStep.RECOVERING.value)
@@ -2401,10 +2401,9 @@ class RunCoordinator:
                 progress_fingerprint=semantic_progress_fingerprint(state),
                 accepted_profile_digest=self.runtime_profile_digest,
                 accepted_profile_artifact_ids=self.loaded_profile_artifact_ids,
-                attempted_strategy_ids=tuple(
-                    sorted(state.attempted_recovery_strategy_ids)
-                ),
+                attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),
                 recovery_history=tuple(state.recovery_history),
+                verification=verification, verification_ref=verification_ref,
             )
         )
         signature = evaluation.signature

@@ -1068,6 +1068,26 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
             issues = rejected.payload.get("issues") if rejected is not None else None
             if isinstance(issues, list) and issues and isinstance(issues[0], dict):
                 detail_code = str(issues[0].get("code") or "")
+        elif phase == "verification":
+            failed = next(
+                (
+                    previous
+                    for previous in reversed(nodes[:index])
+                    if previous.kind == "PostconditionFailed"
+                ),
+                None,
+            )
+            evidence = failed.payload.get("evidence") if failed is not None else None
+            if isinstance(evidence, list):
+                failed_kinds = list(
+                    dict.fromkeys(
+                        str(item.get("verifier_kind") or "")
+                        for item in evidence
+                        if isinstance(item, dict) and item.get("passed") is False
+                    )
+                )
+                if len(failed_kinds) == 1:
+                    detail_code = failed_kinds[0]
         evidence_refs = failure.get("evidence_refs")
         return {
             "runtime_failure": BrowserGymRuntimeFailure(
