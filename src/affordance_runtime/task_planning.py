@@ -898,13 +898,13 @@ def task_plan_entry_state_issue(
     entry = _contextual_entry_subgoal(plan, context)
     if entry is None or entry.outcome is None or context is None:
         return None
-    subject_tokens = _planning_semantic_tokens(entry.outcome.subject)
+    subject_tokens = planning_semantic_tokens(entry.outcome.subject)
     if not subject_tokens:
         return None
     matches = tuple(
         item
         for item in context.environment.affordances
-        if _planning_semantic_tokens(item.label) == subject_tokens
+        if planning_semantic_tokens(item.label) == subject_tokens
     )
     if len(matches) != 1 or not _planning_outcome_is_current(
         entry.outcome,
@@ -931,11 +931,11 @@ def task_plan_entry_state_support_issue(
     entry = _contextual_entry_subgoal(plan, context)
     if entry is None or entry.outcome is None or context is None:
         return None
-    subject_tokens = _planning_semantic_tokens(entry.outcome.subject)
+    subject_tokens = planning_semantic_tokens(entry.outcome.subject)
     matches = tuple(
         item
         for item in context.environment.affordances
-        if subject_tokens and _planning_semantic_tokens(item.label) == subject_tokens
+        if subject_tokens and planning_semantic_tokens(item.label) == subject_tokens
     )
     if len(matches) != 1:
         return None
@@ -1074,7 +1074,7 @@ def _planning_outcome_is_current(
     return False
 
 
-def _planning_semantic_tokens(value: str) -> tuple[str, ...]:
+def planning_semantic_tokens(value: str) -> tuple[str, ...]:
     aliases = {
         "box": "input",
         "field": "input",

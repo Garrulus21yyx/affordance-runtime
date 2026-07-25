@@ -1,5 +1,13 @@
 import pytest
 
+from affordance_runtime.contracts import Observation
+from affordance_runtime.grounding import (
+    DomGroundingPayload,
+    EvidenceKind,
+    GroundingCandidate,
+    GroundingSource,
+    UnifiedAffordance,
+)
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_planning import (
     PlanProgress,
@@ -17,6 +25,7 @@ from affordance_runtime.terminal_readiness import (
     TaskObligationViewCompiler,
     TerminalCandidate,
     TerminalEffectBinding,
+    TerminalEffectBindingResolver,
     TerminalReadinessEvaluator,
     TerminalReadinessStatus,
 )
@@ -208,6 +217,7 @@ def _plan(*, prerequisite_outcome: bool = True, terminal_outcome: bool = True) -
 def _binding(**changes: object) -> TerminalEffectBinding:
     values = {
         "semantic_target_id": "semantic:submit",
+        "candidate_id": "candidate:dom:submit",
         "subgoal_id": "settings:submitted",
         "task_revision": 2,
         "observation_epoch_id": "snapshot-2",
@@ -215,6 +225,56 @@ def _binding(**changes: object) -> TerminalEffectBinding:
     }
     values.update(changes)
     return TerminalEffectBinding(**values)  # type: ignore[arg-type]
+
+
+def _observation(*, fingerprint: str = "sha256:submit") -> Observation:
+    return Observation(
+        "rev-1",
+        snapshot_id="snapshot-2",
+        page_revision="page-1",
+        target_fingerprints={"candidate:dom:submit": fingerprint},
+    )
+
+
+def _grounding_candidate(
+    *,
+    semantic_target_id: str = "semantic:submit",
+    candidate_id: str = "candidate:dom:submit",
+) -> GroundingCandidate:
+    return GroundingCandidate(
+        candidate_id=candidate_id,
+        semantic_target_id=semantic_target_id,
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(backend_handle="submit"),
+        compatible_executor="browsergym",
+        observation_epoch_id="snapshot-2",
+        environment_revision="rev-1",
+        page_revision="page-1",
+        target_fingerprint="sha256:submit",
+        supported_actions=frozenset({"activate"}),
+        evidence_kinds=frozenset({EvidenceKind.STRUCTURAL}),
+    )
+
+
+def _unified_terminal(
+    *,
+    semantic_target_id: str = "semantic:submit",
+    candidate_id: str = "candidate:dom:submit",
+    candidates: bool = True,
+) -> UnifiedAffordance:
+    grounding = (
+        _grounding_candidate(
+            semantic_target_id=semantic_target_id,
+            candidate_id=candidate_id,
+        ),
+    ) if candidates else ()
+    return UnifiedAffordance(
+        semantic_target_id=semantic_target_id,
+        role="button",
+        label="settings submission",
+        supported_actions=frozenset({"activate"}),
+        grounding_candidates=grounding,
+    )
 
 
 def _compile(
@@ -228,7 +288,7 @@ def _compile(
         bindings=(binding or _binding(),),
         task_revision=2,
         observation_epoch_id="snapshot-2",
-        target_fingerprints={"semantic:submit": "sha256:submit"},
+        target_fingerprints={"candidate:dom:submit": "sha256:submit"},
     )
 
 
@@ -276,6 +336,7 @@ def test_compiler_does_not_complete_dependencies_from_untyped_plan(plan: TaskPla
     [
         _binding(task_revision=1),
         _binding(observation_epoch_id="snapshot-1"),
+        _binding(candidate_id="candidate:dom:stale"),
         _binding(target_fingerprint="sha256:stale"),
     ],
 )
@@ -300,3 +361,92 @@ def test_completed_plan_dependency_without_evidence_remains_unknown() -> None:
     )
 
     assert decision.candidates[0].status == TerminalReadinessStatus.UNKNOWN
+
+
+def test_resolver_binds_unique_typed_completion_to_current_grounding() -> None:
+    resolution = TerminalEffectBindingResolver().resolve(
+        plan=_plan(),
+        progress=PlanProgress(
+            active_subgoal_id="settings:submitted",
+            completed_subgoal_ids=["field:value"],
+        ),
+        unified_affordances=(_unified_terminal(),),
+        observation=_observation(),
+    )
+
+    assert resolution.bindings == (_binding(),)
+    assert resolution.unresolved_target_ids == ()
+
+
+def test_resolver_does_not_treat_noncompletion_navigation_as_terminal() -> None:
+    plan = _plan()
+    terminal = plan.subgoals[1].model_copy(
+        update={
+            "objective": "open settings submission",
+            "outcome": SubgoalOutcome(
+                subject="settings submission",
+                relation=SubgoalOutcomeRelation.IS_VISIBLE,
+            ),
+        }
+    )
+
+    resolution = TerminalEffectBindingResolver().resolve(
+        plan=plan.model_copy(update={"subgoals": (plan.subgoals[0], terminal)}),
+        progress=PlanProgress(
+            active_subgoal_id="settings:submitted",
+            completed_subgoal_ids=["field:value"],
+        ),
+        unified_affordances=(_unified_terminal(),),
+        observation=_observation(),
+    )
+
+    assert resolution.bindings == ()
+    assert resolution.unresolved_target_ids == ()
+
+
+def test_resolver_does_not_infer_terminal_from_untyped_flat_outcome() -> None:
+    resolution = TerminalEffectBindingResolver().resolve(
+        plan=_plan(terminal_outcome=False),
+        progress=PlanProgress(
+            active_subgoal_id="settings:submitted",
+            completed_subgoal_ids=["field:value"],
+        ),
+        unified_affordances=(_unified_terminal(),),
+        observation=_observation(),
+    )
+
+    assert resolution.bindings == ()
+    assert resolution.unresolved_target_ids == ()
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_resolver_refuses_stale_or_ambiguous_terminal_grounding(
+    ambiguous: bool,
+) -> None:
+    targets = (_unified_terminal(),)
+    observation = _observation(fingerprint="sha256:stale")
+    if ambiguous:
+        targets += (
+            _unified_terminal(
+                semantic_target_id="semantic:submit-alternate",
+                candidate_id="candidate:dom:submit-alternate",
+            ),
+        )
+        observation = _observation()
+
+    resolution = TerminalEffectBindingResolver().resolve(
+        plan=_plan(),
+        progress=PlanProgress(
+            active_subgoal_id="settings:submitted",
+            completed_subgoal_ids=["field:value"],
+        ),
+        unified_affordances=targets,
+        observation=observation,
+    )
+
+    assert resolution.bindings == ()
+    assert resolution.unresolved_target_ids == (
+        ("semantic:submit", "semantic:submit-alternate")
+        if ambiguous
+        else ("semantic:submit",)
+    )

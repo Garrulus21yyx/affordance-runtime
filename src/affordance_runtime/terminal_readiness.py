@@ -5,7 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.task_planning import PlanProgress, SubgoalSpec, TaskPlan
+from affordance_runtime.contracts import Observation
+from affordance_runtime.grounding import UnifiedAffordance
+from affordance_runtime.task_planning import (
+    PlanProgress,
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanActionFamily,
+    planning_semantic_tokens,
+)
 
 
 class ObligationState(StrEnum):
@@ -62,6 +71,7 @@ class TerminalEffectBinding:
     """Current grounding of one terminal candidate to one typed plan subgoal."""
 
     semantic_target_id: str
+    candidate_id: str
     subgoal_id: str
     task_revision: int
     observation_epoch_id: str
@@ -71,12 +81,84 @@ class TerminalEffectBinding:
         if not all(
             (
                 self.semantic_target_id,
+                self.candidate_id,
                 self.subgoal_id,
                 self.observation_epoch_id,
                 self.target_fingerprint,
             )
         ) or self.task_revision < 1:
             raise ValueError("terminal effect binding requires current typed lineage")
+
+
+@dataclass(frozen=True)
+class TerminalEffectBindingResolution:
+    bindings: tuple[TerminalEffectBinding, ...] = ()
+    unresolved_target_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TerminalEffectBindingResolver:
+    """Resolve only a unique active typed completion outcome to current grounding."""
+
+    def resolve(
+        self,
+        *,
+        plan: TaskPlan,
+        progress: PlanProgress,
+        unified_affordances: tuple[UnifiedAffordance, ...],
+        observation: Observation,
+    ) -> TerminalEffectBindingResolution:
+        subgoal = _active_subgoal(plan, progress)
+        if (
+            subgoal is None
+            or subgoal.outcome is None
+            or subgoal.outcome.relation != SubgoalOutcomeRelation.IS_COMPLETED
+            or subgoal.action_family
+            not in {
+                TaskPlanActionFamily.ACTIVATE,
+                TaskPlanActionFamily.POINT_ACTIVATE,
+            }
+        ):
+            return TerminalEffectBindingResolution()
+        subject_tokens = planning_semantic_tokens(subgoal.outcome.subject)
+        if not subject_tokens:
+            return TerminalEffectBindingResolution()
+        matches = tuple(
+            item
+            for item in unified_affordances
+            if planning_semantic_tokens(item.label) == subject_tokens
+            and _supports_terminal_family(item, subgoal.action_family)
+        )
+        if not matches:
+            return TerminalEffectBindingResolution()
+        if len(matches) != 1:
+            return TerminalEffectBindingResolution(
+                unresolved_target_ids=tuple(item.semantic_target_id for item in matches)
+            )
+        target = matches[0]
+        current_candidates = tuple(
+            item
+            for item in target.grounding_candidates
+            if item.is_current(observation)
+            and _candidate_supports_terminal_family(item.supported_actions, subgoal.action_family)
+        )
+        if len(current_candidates) != 1:
+            return TerminalEffectBindingResolution(
+                unresolved_target_ids=(target.semantic_target_id,)
+            )
+        candidate = current_candidates[0]
+        return TerminalEffectBindingResolution(
+            bindings=(
+                TerminalEffectBinding(
+                    semantic_target_id=target.semantic_target_id,
+                    candidate_id=candidate.candidate_id,
+                    subgoal_id=subgoal.subgoal_id,
+                    task_revision=plan.task_revision,
+                    observation_epoch_id=observation.snapshot_id,
+                    target_fingerprint=candidate.target_fingerprint,
+                ),
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -114,7 +196,7 @@ class TaskObligationViewCompiler:
                 plan.task_revision == task_revision
                 and binding.task_revision == task_revision
                 and binding.observation_epoch_id == observation_epoch_id
-                and target_fingerprints.get(binding.semantic_target_id)
+                and target_fingerprints.get(binding.candidate_id)
                 == binding.target_fingerprint
             )
             terminal_subgoal = subgoal_by_id.get(binding.subgoal_id)
@@ -293,3 +375,52 @@ def _transitive_prerequisites(
 
     visit(subgoal_id)
     return tuple(ordered), complete
+
+
+def _active_subgoal(plan: TaskPlan, progress: PlanProgress) -> SubgoalSpec | None:
+    unavailable = set(progress.completed_subgoal_ids) | set(progress.failed_subgoal_ids)
+    if progress.active_subgoal_id:
+        active = next(
+            (
+                item
+                for item in plan.subgoals
+                if item.subgoal_id == progress.active_subgoal_id
+                and item.subgoal_id not in unavailable
+            ),
+            None,
+        )
+        if active is not None:
+            return active
+    return next(
+        (
+            item
+            for item in plan.subgoals
+            if item.subgoal_id not in unavailable
+            and all(dependency in progress.completed_subgoal_ids for dependency in item.depends_on)
+        ),
+        None,
+    )
+
+
+def _supports_terminal_family(
+    target: UnifiedAffordance,
+    family: TaskPlanActionFamily,
+) -> bool:
+    return _candidate_supports_terminal_family(target.supported_actions, family)
+
+
+def _candidate_supports_terminal_family(
+    supported_actions: frozenset[str],
+    family: TaskPlanActionFamily,
+) -> bool:
+    compatible = {
+        TaskPlanActionFamily.ACTIVATE: {
+            "activate",
+            "click",
+            "download",
+            "invoke",
+            "write_property",
+        },
+        TaskPlanActionFamily.POINT_ACTIVATE: {"point_activate"},
+    }
+    return bool(supported_actions.intersection(compatible.get(family, set())))
