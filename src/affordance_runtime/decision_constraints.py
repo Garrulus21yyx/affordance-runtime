@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import OrdinalRouteConstraint, resolve_global_ordinal_constraint
 from affordance_runtime.planner_context import PlannerContext
-from affordance_runtime.planner_model_orchestrator import SemanticTextInputConstraint, semantic_text_input_constraint
+from affordance_runtime.planner_model_orchestrator import (
+    SemanticTextInputConstraint,
+    restrict_targets_to_active_subgoal,
+    semantic_text_input_constraint,
+)
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.terminal_readiness import (
@@ -71,6 +75,28 @@ class StrictDecisionConstraintBuilder:
             text_constraint=text,
             ordinal_constraint=ordinal,
         )
+
+    def apply_current_state(
+        self,
+        context: PlannerContext,
+        permitted_action_kinds: list[str],
+        compatible_target_ids: dict[str, list[str]],
+    ) -> tuple[list[str], dict[str, list[str]]]:
+        """Apply verifier-backed progress and active-subgoal scope admission."""
+
+        targets = {
+            action: [
+                target
+                for target in values
+                if target not in context.satisfied_action_targets.get(action, ())
+            ]
+            for action, values in compatible_target_ids.items()
+        }
+        targets = restrict_targets_to_active_subgoal(context, targets)
+        permitted = list(permitted_action_kinds)
+        if not context.verified_effects:
+            permitted = [action for action in permitted if action != "finish"]
+        return permitted, targets
 
     def narrow_terminal_candidates(
         self,

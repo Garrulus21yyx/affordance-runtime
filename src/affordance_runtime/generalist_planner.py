@@ -25,7 +25,6 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerModelOrchestrator,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
-    restrict_targets_to_active_subgoal,
 )
 from affordance_runtime.planner_model_orchestrator import (
     compatible_drag_destination_ids as _compatible_drag_destination_ids,
@@ -327,13 +326,9 @@ class GeneralistLMPlanner:
                 initial_targets,
             )
         else:
-            initial_permitted, initial_targets = _strict_exclude_verified_targets(
+            initial_permitted, initial_targets = self.decision_constraints.apply_current_state(
                 context,
                 initial_permitted,
-                initial_targets,
-            )
-            initial_targets = restrict_targets_to_active_subgoal(
-                context,
                 initial_targets,
             )
         constraints = semantic_compilers.constrain(
@@ -380,7 +375,10 @@ class GeneralistLMPlanner:
                 and context.task_spec.get("ambiguity_status") == "resolved"
             ):
                 initial_permitted = [item for item in initial_permitted if item != "ask_user"]
-            if not context.verified_effects:
+            if (
+                self.planner_profile == GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY
+                and not context.verified_effects
+            ):
                 initial_permitted = [item for item in initial_permitted if item != "finish"]
         initial_schema = (
             _repair_candidate_schema(
