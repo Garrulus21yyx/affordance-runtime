@@ -263,8 +263,17 @@ class LLMIntentCompiler:
                     LLMIntentDraft,
                     intent_draft_repair_model_config(),
                 )
-            except StructuredModelError:
-                pass
+            except StructuredModelError as exc:
+                if trace is not None:
+                    parent = trace.add(
+                        "IntentDraftRepairFailed",
+                        {
+                            "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+                            "error_type": type(exc).__name__,
+                            "fallback_failures": list(getattr(self.model, "failures", ())),
+                        },
+                        parents=[parent.id] if parent else None,
+                    )
             else:
                 draft, provider_issues = _decode_provider_draft(repaired_model_draft, request)
                 result = _compile_decoded_draft(

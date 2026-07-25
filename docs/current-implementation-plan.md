@@ -96,9 +96,10 @@ than inferring a fixed two-call path: `IntentDraftRepairProduced` now carries
 its real model-call record and a distinct `intent-draft-repair-v1` decoding
 identity. That identity and schema are part of immutable BrowserGym checkpoint
 metadata, while provider/context/schema recovery ownership remains separately
-open. The targeted gates cover successful repair, unsafe repair fail-closed,
-budget exhaustion, single-call policy/ambiguity stops, and BrowserGym's
-successful-repair call accounting. This is a local correctness repair, not
+open. The targeted gates cover successful repair, a failed repair's typed,
+redacted trace event, unsafe repair fail-closed, budget exhaustion, single-call
+policy/ambiguity stops, and BrowserGym's successful-repair call accounting.
+This is a local correctness repair, not
 benchmark evidence or authorization to run a protected family.
 
 Protected-family recheck after that local repair was deliberately bounded to

@@ -10,7 +10,7 @@ from affordance_runtime.intent_compiler import (
     LLMIntentCompiler,
     LLMIntentDraft,
 )
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.task_intake import (
     CompilationPolicy,
     CompilationStatus,
@@ -180,6 +180,23 @@ class ProviderSchemaRepairingModel(RepairingModel):
                 }
             )
         raise AssertionError(f"unexpected schema: {output_schema.__name__}")
+
+
+@dataclass
+class FailingRepairModel(FixedModel):
+    calls: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        self.calls += 1
+        if self.calls == 2:
+            assert config.prompt_version == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+            raise StructuredModelError("redacted repair decode failure")
+        return await super().generate_structured(messages, output_schema, config)
 
 
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
@@ -362,6 +379,34 @@ def test_llm_compiler_repair_remains_fail_closed_when_repair_introduces_ambiguit
     assert result.status == CompilationStatus.NEEDS_CLARIFICATION
     assert result.task_spec is None
     assert model.calls == 2
+
+
+def test_llm_compiler_traces_failed_repair_without_crediting_it_as_success() -> None:
+    initial = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="repair-failure",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+    )
+    model = FailingRepairModel(initial)
+    trace = TraceDag("repair-failure")
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="repair-failure", raw_text="Read pricing"), trace=trace
+        )
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert model.calls == 2
+    failed = next(node.payload for node in trace.nodes if node.kind == "IntentDraftRepairFailed")
+    assert failed["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+    assert failed["error_type"] == "StructuredModelError"
 
 
 def test_llm_compiler_stops_when_repair_consumes_intake_budget() -> None:
