@@ -101,6 +101,19 @@ budget exhaustion, single-call policy/ambiguity stops, and BrowserGym's
 successful-repair call accounting. This is a local correctness repair, not
 benchmark evidence or authorization to run a protected family.
 
+Protected-family recheck after that local repair was deliberately bounded to
+`enter-date` and `text-transform`. At immutable `f2f689a`, the first breadth
+wave was invalidated as `schema_incompatible` before seed-1 because raw provider
+obligation nodes failed strict decoding. Clean `05bd94c` changed that boundary
+so malformed nodes become typed `invalid_provider_obligation` repair input; its
+complete 2-task x 2-seed recheck accounted for all four episodes with zero
+provider/retry failure, but all four remained fail-closed after the one repair.
+The required-field provider envelope at clean `58f01ff` reproduced the same
+two seed-0 failures. The stable root layer is `INTENT / PLANNING`: the local
+provider did not produce a valid sourced obligation graph. These are negative
+local evidence, not scores. Hold PR breadth and diagnostic; do not repair this
+by task-name logic, more retries, a larger budget, or a Prompt-only patch.
+
 Mandatory next sequence:
 
 ~~~text
