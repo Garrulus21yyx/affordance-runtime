@@ -362,6 +362,14 @@ class GeneralistClickModel:
                     "task_structure": "flat",
                 }
             )
+        if output_schema.__name__ == "TaskObligationCoverageReview":
+            self.calls += 1
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": ["claim-activate-target"],
+                }
+            )
         context = json.loads(messages[-1].content)
         if self.planner_calls == 0:
             self.first_target_id = context["affordances"][0]["id"]
@@ -542,8 +550,8 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 2
-    assert result.model_call_count == 2
+    assert model.calls == 3
+    assert result.model_call_count == 3
     assert environment.page.default_timeout_ms == 1_500
     assert model.first_target_id.startswith("semantic:")
     assert model.first_target_id != "dom_button_1"

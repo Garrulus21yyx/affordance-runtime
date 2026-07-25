@@ -37,6 +37,17 @@ class FixedModel:
         config: ModelConfig,
     ) -> T:
         del messages, config
+        if output_schema.__name__ == "TaskObligationCoverageReview":
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": [
+                        item.claim_id
+                        for item in self.draft.candidate_source_claims
+                        if item.required
+                    ],
+                }
+            )
         return output_schema.model_validate(self.draft.model_dump())
 
 

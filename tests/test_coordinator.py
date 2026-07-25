@@ -1041,6 +1041,13 @@ class _PipelineIntentModel:
         config: ModelConfig,
     ) -> T:
         del messages, config
+        if output_schema.__name__ == "TaskObligationCoverageReview":
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": ["claim-save-settings"],
+                }
+            )
         return output_schema.model_validate(
             IntentDraft(
                 objective="Save settings",
@@ -1112,9 +1119,10 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
 
     assert result.status == "done"
     assert result.coordinator is not None
-    assert [node.kind for node in result.trace.nodes][:4] == [
+    assert [node.kind for node in result.trace.nodes][:5] == [
         "UserRequestReceived",
         "IntentDraftProduced",
+        "TaskObligationCoverageReviewed",
         "TaskSpecCreated",
         "TaskCreated",
     ]

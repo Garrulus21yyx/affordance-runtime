@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
@@ -26,6 +26,11 @@ from affordance_runtime.task_intake import (
     TaskObligationRelation,
     TaskObligationSpec,
     UserRequest,
+)
+from affordance_runtime.task_obligation_coverage import (
+    TaskObligationCoverageDecision,
+    TaskObligationCoverageReview,
+    TaskObligationCoverageStatus,
 )
 from affordance_runtime.trace import TraceDag
 
@@ -62,6 +67,7 @@ class FixedModel:
     endpoint_class: str = "test"
     last_call: ModelCallRecord | None = None
     messages: Sequence[ModelMessage] = ()
+    message_batches: list[Sequence[ModelMessage]] = field(default_factory=list)
 
     async def generate_structured(
         self,
@@ -70,9 +76,35 @@ class FixedModel:
         config: ModelConfig,
     ) -> T:
         self.messages = messages
-        assert output_schema is LLMIntentDraft
-        assert config.prompt_version == INTENT_COMPILER_PROMPT_VERSION
-        return output_schema.model_validate(self.draft.model_dump())
+        self.message_batches.append(messages)
+        if output_schema is LLMIntentDraft:
+            assert config.prompt_version == INTENT_COMPILER_PROMPT_VERSION
+            return output_schema.model_validate(self.draft.model_dump())
+        if output_schema is TaskObligationCoverageReview:
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": [
+                        item.claim_id
+                        for item in self.draft.candidate_source_claims
+                        if item.required
+                    ],
+                }
+            )
+        raise AssertionError(f"unexpected schema: {output_schema.__name__}")
+
+
+@dataclass(frozen=True)
+class FixedCoverageChecker:
+    decision: TaskObligationCoverageDecision
+
+    async def review(
+        self,
+        request: UserRequest,
+        draft: IntentDraft,
+    ) -> TaskObligationCoverageDecision:
+        del request, draft
+        return self.decision
 
 
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
@@ -129,7 +161,10 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
 
     assert result.task_spec is not None
     assert result.task_spec.semantic_value_constraints == (constraint,)
-    assert "never invent a completion" in model.messages[0].content.casefold()
+    assert any(
+        "never invent a completion" in messages[0].content.casefold()
+        for messages in model.message_batches
+    )
 
 
 def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None:
@@ -286,6 +321,7 @@ def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
     assert [node.kind for node in trace.nodes] == [
         "UserRequestReceived",
         "IntentDraftProduced",
+        "TaskObligationCoverageReviewed",
         "TaskSpecCreated",
     ]
     assert "private wording" not in str(trace.to_dict())
@@ -319,3 +355,78 @@ def test_raw_language_compiler_rejects_missing_obligation_authority() -> None:
         "missing_source_claims",
         "missing_task_obligations",
     ]
+
+
+def test_independent_coverage_rejection_cannot_create_taskspec() -> None:
+    claims, obligations = _terminal_authority("request-read", "pricing read")
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
+        )
+    )
+    review = TaskObligationCoverageReview(
+        status=TaskObligationCoverageStatus.UNSUPPORTED,
+        uncovered_source_quotes=("Read pricing",),
+    )
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=FixedCoverageChecker(
+                TaskObligationCoverageDecision(
+                    status=TaskObligationCoverageStatus.UNSUPPORTED,
+                    issue_code="uncovered_task_clause",
+                    issue_detail="Read pricing",
+                    review=review,
+                )
+            ),
+        ).compile(UserRequest(request_id="request-read", raw_text="Read pricing"))
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[0].code == "uncovered_task_clause"
+
+
+def test_independent_coverage_ambiguity_becomes_clarification() -> None:
+    claims, obligations = _terminal_authority("request-read", "pricing read")
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
+        )
+    )
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=FixedCoverageChecker(
+                TaskObligationCoverageDecision(
+                    status=TaskObligationCoverageStatus.NEEDS_CLARIFICATION,
+                    issue_code="unresolved_task_dependency",
+                    issue_detail="pricing",
+                )
+            ),
+        ).compile(UserRequest(request_id="request-read", raw_text="Read pricing"))
+    )
+
+    assert result.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert result.task_spec is None
+    assert result.issues[0].code == "unresolved_task_dependency"

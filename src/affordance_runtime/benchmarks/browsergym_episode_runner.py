@@ -694,7 +694,7 @@ def run_browsergym_generalist_episode(
             limits=planner_limits,
             max_model_calls=max(
                 0,
-                max_model_calls - (3 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 1),
+                max_model_calls - (4 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 2),
             ),
             planner_profile=planner_profile,
         )
@@ -729,7 +729,7 @@ def run_browsergym_generalist_episode(
         )
         trace_path = next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), "")
         model_stats = {
-            **_browsergym_model_stats(result.trace.nodes, planner.model_call_count + 1),
+            **_browsergym_model_stats(result.trace.nodes, planner.model_call_count + 2),
             **_browsergym_context_stats(result.trace.nodes, planner_limits.max_affordances),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),
             **_browsergym_failure_stats(result.trace.nodes),
@@ -1011,7 +1011,12 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
     records = [
         node.payload.get("model_call")
         for node in nodes
-        if node.kind in {"IntentDraftProduced", "PlannerProposalProduced"}
+        if node.kind
+        in {
+            "IntentDraftProduced",
+            "TaskObligationCoverageReviewed",
+            "PlannerProposalProduced",
+        }
         and isinstance(node.payload.get("model_call"), dict)
     ]
     provider_failures = [

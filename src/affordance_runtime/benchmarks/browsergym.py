@@ -81,6 +81,10 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.intent_compiler import LLMIntentDraft, intent_compiler_model_config
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
+from affordance_runtime.task_obligation_coverage import (
+    TaskObligationCoverageReview,
+    task_obligation_coverage_model_config,
+)
 from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
@@ -280,7 +284,7 @@ def run_browsergym_miniwob_generalist_suite(
     expected = set(schedule)
     checkpoint_dir = output_dir / "episodes"
     checkpoint_metadata = {
-        "schema_version": "browsergym-generalist-checkpoint-v11",
+        "schema_version": "browsergym-generalist-checkpoint-v12",
         "action_contract_schema_version": ACTION_CONTRACT_SCHEMA_VERSION,
         "task_plan_schema_version": TASK_PLAN_SCHEMA_VERSION,
         "task_plan_entry_schema_policy_version": TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
@@ -331,6 +335,10 @@ def run_browsergym_miniwob_generalist_suite(
         ).model_dump(mode="json"),
         "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
         "intent_compiler_schema_sha256": _intent_compiler_schema_sha256(),
+        "task_obligation_coverage_model_config": task_obligation_coverage_model_config().model_dump(
+            mode="json"
+        ),
+        "task_obligation_coverage_schema_sha256": _task_obligation_coverage_schema_sha256(),
         "task_planner_prompt_version": TASK_PLANNER_PROMPT_VERSION,
         "task_planner_model_config": task_planner_model_config().model_dump(mode="json"),
         "task_planner_schema_sha256": _task_planner_schema_sha256(),
@@ -504,6 +512,12 @@ def _planner_schema_sha256() -> str:
 
 def _intent_compiler_schema_sha256() -> str:
     payload = LLMIntentDraft.model_json_schema()
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _task_obligation_coverage_schema_sha256() -> str:
+    payload = TaskObligationCoverageReview.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 

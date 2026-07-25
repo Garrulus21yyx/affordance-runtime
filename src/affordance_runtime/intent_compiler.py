@@ -8,13 +8,26 @@ from dataclasses import dataclass, field
 
 from pydantic import Field
 
-from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
+from affordance_runtime.model_port import (
+    ModelConfig,
+    ModelMessage,
+    ModelPort,
+    ProviderModelError,
+    StructuredModelError,
+)
 from affordance_runtime.task_intake import (
+    CompilationIssue,
     CompilationResult,
+    CompilationStatus,
     IntentDraft,
     IntentDraftValidator,
     RequestedEffect,
     UserRequest,
+)
+from affordance_runtime.task_obligation_coverage import (
+    ModelBackedTaskObligationCoverageChecker,
+    TaskObligationCoverageChecker,
+    TaskObligationCoverageStatus,
 )
 from affordance_runtime.trace import TraceDag, TraceNode
 
@@ -64,6 +77,7 @@ class LLMIntentCompiler:
     model: ModelPort
     validator: IntentDraftValidator = field(default_factory=IntentDraftValidator)
     config: ModelConfig = field(default_factory=intent_compiler_model_config)
+    coverage_checker: TaskObligationCoverageChecker | None = None
 
     async def compile(
         self,
@@ -125,6 +139,64 @@ class LLMIntentCompiler:
             task_id=task_id,
             require_obligation_graph=True,
         )
+        if result.status == CompilationStatus.READY and result.task_spec is not None:
+            checker = self.coverage_checker or ModelBackedTaskObligationCoverageChecker(self.model)
+            try:
+                coverage = await checker.review(request, draft)
+            except ProviderModelError:
+                raise
+            except StructuredModelError as exc:
+                result = CompilationResult(
+                    status=CompilationStatus.UNSUPPORTED,
+                    request_id=request.request_id,
+                    draft=draft,
+                    issues=(
+                        CompilationIssue(
+                            code="coverage_review_unavailable",
+                            field="task_obligation_coverage",
+                            detail=type(exc).__name__,
+                        ),
+                    ),
+                )
+            else:
+                if trace is not None:
+                    parent = trace.add(
+                        "TaskObligationCoverageReviewed",
+                        {
+                            "status": coverage.status.value,
+                            "issue_code": coverage.issue_code,
+                            "issue_detail": coverage.issue_detail,
+                            "review": (
+                                coverage.review.model_dump(mode="json")
+                                if coverage.review is not None
+                                else None
+                            ),
+                            "model_call": (
+                                self.model.last_call.model_dump(mode="json")
+                                if self.model.last_call is not None
+                                else None
+                            ),
+                        },
+                        parents=[parent.id] if parent else None,
+                    )
+                if coverage.status != TaskObligationCoverageStatus.COMPLETE:
+                    result = CompilationResult(
+                        status=(
+                            CompilationStatus.NEEDS_CLARIFICATION
+                            if coverage.status
+                            == TaskObligationCoverageStatus.NEEDS_CLARIFICATION
+                            else CompilationStatus.UNSUPPORTED
+                        ),
+                        request_id=request.request_id,
+                        draft=draft,
+                        issues=(
+                            CompilationIssue(
+                                code=coverage.issue_code,
+                                field="task_obligation_coverage",
+                                detail=coverage.issue_detail,
+                            ),
+                        ),
+                    )
         _record_compilation_result(trace, result, parent)
         return result
 

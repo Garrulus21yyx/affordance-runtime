@@ -177,6 +177,13 @@ class MultiStageIntentAndPlanModel:
                     "task_structure": "multi_stage",
                 }
             )
+        if output_schema.__name__ == "TaskObligationCoverageReview":
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": ["claim-discover", "claim-confirm"],
+                }
+            )
         if output_schema.__name__ == "TaskPlanProviderEnvelope":
             return output_schema.model_validate(
                 {
@@ -231,7 +238,7 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
 
     assert result.status == RuntimeStep.DONE.value
     assert world == MultiStageWorld(discovered=True, confirmed=True)
-    assert model.calls == 2
+    assert model.calls == 3
     task_plan = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
     assert task_plan.payload["generated_by"] == "llm"
     completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
