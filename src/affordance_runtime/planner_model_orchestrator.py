@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, Literal, TypeVar, cast
+from types import MappingProxyType
+from typing import Any, Callable, Generic, Literal, Mapping, TypeVar, cast
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError, create_model, field_validator
 
@@ -83,24 +84,48 @@ class PlannerCandidateRepairPolicy(Generic[CandidateT]):
 
 
 @dataclass(frozen=True)
+class PlannerModelRequest(Generic[CandidateT]):
+    """Immutable model-invocation boundary for one semantic planner turn."""
+
+    model: ModelPort
+    config: ModelConfig
+    messages: tuple[ModelMessage, ...]
+    context: PlannerContext
+    candidate_type: type[CandidateT]
+    initial_schema: type[CandidateT]
+    repair_permitted: tuple[str, ...]
+    repair_targets: Mapping[str, tuple[str, ...]]
+    max_candidate_repairs: int
+    reserve_model_call: Callable[[], None]
+    policy: PlannerCandidateRepairPolicy[CandidateT]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "repair_targets",
+            MappingProxyType({key: tuple(value) for key, value in self.repair_targets.items()}),
+        )
+
+
+@dataclass(frozen=True)
 class PlannerModelOrchestrator:
     """Run one initial structured generation plus bounded semantic repairs."""
 
     async def propose(
         self,
-        *,
-        model: ModelPort,
-        config: ModelConfig,
-        messages: list[ModelMessage],
-        context: PlannerContext,
-        candidate_type: type[CandidateT],
-        initial_schema: type[CandidateT],
-        repair_permitted: list[str],
-        repair_targets: dict[str, list[str]],
-        max_candidate_repairs: int,
-        reserve_model_call: Callable[[], None],
-        policy: PlannerCandidateRepairPolicy[CandidateT],
+        request: PlannerModelRequest[CandidateT],
     ) -> PlannerProposal:
+        model = request.model
+        config = request.config
+        messages = list(request.messages)
+        context = request.context
+        candidate_type = request.candidate_type
+        initial_schema = request.initial_schema
+        repair_permitted = list(request.repair_permitted)
+        repair_targets = {key: list(value) for key, value in request.repair_targets.items()}
+        max_candidate_repairs = request.max_candidate_repairs
+        reserve_model_call = request.reserve_model_call
+        policy = request.policy
         candidate = await self._generate_candidate(
             model=model,
             config=config,

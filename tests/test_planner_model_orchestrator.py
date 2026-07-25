@@ -13,6 +13,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerCandidateModel,
     PlannerCandidateRepairPolicy,
     PlannerModelOrchestrator,
+    PlannerModelRequest,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
     compatible_target_ids,
@@ -147,22 +148,44 @@ def _run(
     context = _context()
     return asyncio.run(
         PlannerModelOrchestrator().propose(
-            model=model,
-            config=ModelConfig(prompt_version="fixture-v1"),
-            messages=[ModelMessage(role="system", content="fixed"), ModelMessage(role="user", content="{}")],
-            context=context,
-            candidate_type=PlannerCandidateModel,
-            initial_schema=build_initial_candidate_schema(
-                PlannerCandidateModel,
-                list(context.permitted_action_kinds),
-            ),
-            repair_permitted=list(context.permitted_action_kinds),
-            repair_targets={"type_text": ["field-1"]},
-            max_candidate_repairs=max_candidate_repairs,
-            reserve_model_call=reserve_model_call,
-            policy=_policy(),
+            PlannerModelRequest(
+                model=model,
+                config=ModelConfig(prompt_version="fixture-v1"),
+                messages=(ModelMessage(role="system", content="fixed"), ModelMessage(role="user", content="{}")),
+                context=context,
+                candidate_type=PlannerCandidateModel,
+                initial_schema=build_initial_candidate_schema(
+                    PlannerCandidateModel,
+                    list(context.permitted_action_kinds),
+                ),
+                repair_permitted=tuple(context.permitted_action_kinds),
+                repair_targets={"type_text": ("field-1",)},
+                max_candidate_repairs=max_candidate_repairs,
+                reserve_model_call=reserve_model_call,
+                policy=_policy(),
+            )
         )
     )
+
+
+def test_model_request_freezes_model_turn_constraints() -> None:
+    context = _context()
+    request = PlannerModelRequest(
+        model=SequenceModel(({"action_kind": "ask_user"},)),
+        config=ModelConfig(prompt_version="fixture-v1"),
+        messages=(ModelMessage(role="user", content="{}"),),
+        context=context,
+        candidate_type=PlannerCandidateModel,
+        initial_schema=PlannerCandidateModel,
+        repair_permitted=("ask_user",),
+        repair_targets={"ask_user": ()},
+        max_candidate_repairs=0,
+        reserve_model_call=lambda: None,
+        policy=_policy(),
+    )
+
+    with pytest.raises(TypeError):
+        request.repair_targets["ask_user"] = ("field-1",)  # type: ignore[index]
 
 
 def test_orchestrator_returns_a_provider_neutral_structured_candidate() -> None:

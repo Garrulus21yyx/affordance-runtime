@@ -23,6 +23,7 @@ from affordance_runtime.planner_model_orchestrator import (
     PlannerCandidateModel,
     PlannerCandidateRepairPolicy,
     PlannerModelOrchestrator,
+    PlannerModelRequest,
     build_initial_candidate_schema,
     build_repair_candidate_schema,
 )
@@ -396,47 +397,14 @@ class GeneralistLMPlanner:
         )
         compatibility_mode = self.planner_profile == GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY
         proposal = await self.model_orchestrator.propose(
-            model=self.model,
-            config=self.config,
-            messages=messages,
-            context=context,
-            candidate_type=PlannerProposalCandidate,
-            initial_schema=initial_schema,
-            repair_permitted=list(initial_permitted),
-            repair_targets={key: list(value) for key, value in initial_targets.items()},
-            max_candidate_repairs=self.max_candidate_repairs,
-            reserve_model_call=self._reserve_model_call,
-            policy=PlannerCandidateRepairPolicy(
-                prebind_issue=(_candidate_prebind_issue if compatibility_mode else _strict_candidate_prebind_issue),
-                bind_candidate=lambda candidate, current: candidate.bind(
-                    current,
-                    compatibility_rewrites=compatibility_mode,
-                ),
-                context_issue=(_candidate_context_issue if compatibility_mode else _strict_candidate_context_issue),
-                repair_constraints=lambda current, candidate, issue, permitted, targets: (
-                    _repair_constraints if compatibility_mode else _strict_repair_constraints
-                )(
-                    current,
-                    candidate,
-                    issue,
-                    permitted_action_kinds=permitted,
-                    compatible_target_ids=targets,
-                ),
-                required_slider_direction=(
-                    (
-                        lambda candidate, current: _compatibility_algorithms()._required_slider_direction(
-                            candidate, current
-                        )
-                    )
-                    if compatibility_mode
-                    else lambda candidate, current: ""
-                ),
-                autocomplete_prefix=(
-                    lambda current: (
-                        _compatibility_algorithms()._autocomplete_prefix(current) if compatibility_mode else ""
-                    )
-                ),
-            ),
+            self._model_request(
+                context=context,
+                messages=messages,
+                initial_schema=initial_schema,
+                permitted_action_kinds=initial_permitted,
+                compatible_target_ids=initial_targets,
+                compatibility_mode=compatibility_mode,
+            )
         )
         return PlannerDecision(
             proposal=proposal,
@@ -504,6 +472,62 @@ class GeneralistLMPlanner:
                 ),
             },
             model_call=self.model.last_call,
+        )
+
+    def _model_request(
+        self,
+        *,
+        context: PlannerContext,
+        messages: list[ModelMessage],
+        initial_schema: type[PlannerProposalCandidate],
+        permitted_action_kinds: list[str],
+        compatible_target_ids: dict[str, list[str]],
+        compatibility_mode: bool,
+    ) -> PlannerModelRequest[PlannerProposalCandidate]:
+        """Bind immutable planner turn inputs before model orchestration."""
+
+        return PlannerModelRequest(
+            model=self.model,
+            config=self.config,
+            messages=tuple(messages),
+            context=context,
+            candidate_type=PlannerProposalCandidate,
+            initial_schema=initial_schema,
+            repair_permitted=tuple(permitted_action_kinds),
+            repair_targets={key: tuple(value) for key, value in compatible_target_ids.items()},
+            max_candidate_repairs=self.max_candidate_repairs,
+            reserve_model_call=self._reserve_model_call,
+            policy=PlannerCandidateRepairPolicy(
+                prebind_issue=(_candidate_prebind_issue if compatibility_mode else _strict_candidate_prebind_issue),
+                bind_candidate=lambda candidate, current: candidate.bind(
+                    current,
+                    compatibility_rewrites=compatibility_mode,
+                ),
+                context_issue=(_candidate_context_issue if compatibility_mode else _strict_candidate_context_issue),
+                repair_constraints=lambda current, candidate, issue, permitted, targets: (
+                    _repair_constraints if compatibility_mode else _strict_repair_constraints
+                )(
+                    current,
+                    candidate,
+                    issue,
+                    permitted_action_kinds=permitted,
+                    compatible_target_ids=targets,
+                ),
+                required_slider_direction=(
+                    (
+                        lambda candidate, current: _compatibility_algorithms()._required_slider_direction(
+                            candidate, current
+                        )
+                    )
+                    if compatibility_mode
+                    else lambda candidate, current: ""
+                ),
+                autocomplete_prefix=(
+                    lambda current: (
+                        _compatibility_algorithms()._autocomplete_prefix(current) if compatibility_mode else ""
+                    )
+                ),
+            ),
         )
 
     def _reserve_model_call(self) -> None:
