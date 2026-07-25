@@ -86,14 +86,14 @@ def intent_draft_repair_model_config() -> ModelConfig:
 class LLMTaskObligationSpec(StrictModel):
     """Provider-facing graph node: structurally guided, semantically untrusted."""
 
-    obligation_id: str = Field(default="", max_length=120)
-    kind: TaskObligationKind | None = None
-    subject: str = Field(default="", max_length=480)
-    relation: TaskObligationRelation | None = None
+    obligation_id: str = Field(min_length=1, max_length=120)
+    kind: TaskObligationKind
+    subject: str = Field(min_length=1, max_length=480)
+    relation: TaskObligationRelation
     value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
     expected_value: str = Field(default="", max_length=480)
     value_obligation_id: str = Field(default="", max_length=120)
-    claim_ids: tuple[str, ...] = ()
+    claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
     blocking: bool = True

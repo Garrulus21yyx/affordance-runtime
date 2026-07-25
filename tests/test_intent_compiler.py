@@ -215,6 +215,9 @@ def test_provider_obligation_schema_keeps_graph_fields_while_deferring_semantic_
         "evidence_requirements",
         "terminal",
     }.issubset(obligation_schema["properties"])
+    assert {"obligation_id", "kind", "subject", "relation", "claim_ids"}.issubset(
+        obligation_schema["required"]
+    )
 
 
 def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:
