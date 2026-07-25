@@ -243,4 +243,9 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     assert task_plan.payload["generated_by"] == "rule"
     completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
     assert completed == ["obligation-discover", "obligation-confirm"]
+    assert result.coordinator is not None
+    progress = result.coordinator.state.plan_progress
+    assert progress is not None
+    assert progress.completed_subgoal_ids == ["obligation-discover", "obligation-confirm"]
+    assert all(progress.evidence_by_subgoal[identifier] for identifier in completed)
     assert "ActivePerceptionPlanned" not in [node.kind for node in result.trace.nodes]

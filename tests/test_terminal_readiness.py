@@ -8,14 +8,27 @@ from affordance_runtime.grounding import (
     GroundingSource,
     UnifiedAffordance,
 )
-from affordance_runtime.task_intake import OperationClass
+from affordance_runtime.task_intake import (
+    OperationClass,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskObligationValueSource,
+    TaskSpec,
+    TaskStructure,
+)
 from affordance_runtime.task_planning import (
     PlanProgress,
     SubgoalOutcome,
     SubgoalOutcomeRelation,
     SubgoalSpec,
+    TaskObligationOutcomeCompiler,
     TaskPlan,
     TaskPlanActionFamily,
+    TaskPlanningBudgetSummary,
+    TaskPlanningContext,
     TaskPlanSource,
 )
 from affordance_runtime.terminal_readiness import (
@@ -306,6 +319,95 @@ def test_compiler_binds_completed_plan_dependency_to_verified_terminal_readiness
     )
 
     assert view.candidates[0].prerequisite_obligation_ids == ("field:value",)
+    assert decision.ready_target_ids == ("semantic:submit",)
+
+
+def test_compiled_taskspec_obligation_identity_reaches_terminal_readiness() -> None:
+    read_claim = SourcedTaskClaim(
+        claim_id="claim-read",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="read current code",
+        source_ref="request-1",
+    )
+    submit_claim = SourcedTaskClaim(
+        claim_id="claim-submit",
+        kind=TaskClaimKind.TERMINAL,
+        statement="submit code",
+        source_ref="request-1",
+    )
+    task_spec = TaskSpec(
+        task_id="task-compiled",
+        revision=2,
+        objective="Read then submit code",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        task_structure=TaskStructure.MULTI_STAGE,
+        targets=("code submission",),
+        success_criteria=("code submitted",),
+        source_request_ref="request-1",
+        source_claims=(read_claim, submit_claim),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="obligation-read",
+                kind=TaskObligationKind.PREDICATE,
+                subject="current code",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=(read_claim.claim_id,),
+                evidence_requirements=("fresh code observation",),
+            ),
+            TaskObligationSpec(
+                obligation_id="obligation-submit",
+                kind=TaskObligationKind.EFFECT,
+                subject="code submission",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                claim_ids=(submit_claim.claim_id,),
+                depends_on=("obligation-read",),
+                evidence_requirements=("fresh submission confirmation",),
+                terminal=True,
+            ),
+        ),
+    )
+    plan = TaskObligationOutcomeCompiler().compile(
+        TaskPlanningContext(
+            task_spec=task_spec,
+            state_version=4,
+            remaining_budget=TaskPlanningBudgetSummary(
+                steps_remaining=10,
+                observations_remaining=10,
+                replans_remaining=2,
+                recoveries_remaining=2,
+                effectful_actions_remaining=2,
+            ),
+        )
+    )
+    view = TaskObligationViewCompiler().compile(
+        plan=plan,
+        progress=PlanProgress(
+            completed_subgoal_ids=["obligation-read"],
+            evidence_by_subgoal={"obligation-read": ["artifact:read"]},
+        ),
+        bindings=(
+            TerminalEffectBinding(
+                semantic_target_id="semantic:submit",
+                candidate_id="candidate:submit",
+                subgoal_id="obligation-submit",
+                task_revision=2,
+                observation_epoch_id="snapshot-2",
+                target_fingerprint="sha256:submit",
+            ),
+        ),
+        task_revision=2,
+        observation_epoch_id="snapshot-2",
+        target_fingerprints={"candidate:submit": "sha256:submit"},
+    )
+    decision = TerminalReadinessEvaluator().evaluate(
+        task_revision=2,
+        observation_epoch_id="snapshot-2",
+        candidates=view.candidates,
+        obligations=view.obligations,
+    )
+
+    assert view.candidates[0].prerequisite_obligation_ids == ("obligation-read",)
     assert decision.ready_target_ids == ("semantic:submit",)
 
 
