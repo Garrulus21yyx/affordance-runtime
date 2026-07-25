@@ -126,8 +126,10 @@ recovery-dispatch, and TaskPlan ownership extraction. At audited `b01e73b`, the
 module remains 3,643 lines and `RunCoordinator.run_sync()` remains 2,098 lines.
 Clean `03a0d32` moves TaskPlan commit preparation and trace projection into the
 typed, authority-free `TaskPlanCommitPreparation`, reducing the module to 3,584
-lines while retaining Coordinator as the only state/trace committer. This is a
-successful non-expansion checkpoint, not responsibility closure. The
+lines. Clean `50ae956` moves recovery protocol event content into typed
+`RecoveryTraceProjection`, reducing the module to 3,567 lines while retaining
+Coordinator as the only state/trace committer. This is a successful
+non-expansion checkpoint, not responsibility closure. The
 ratchet in
 `tests/test_responsibility_containment.py` prevents growth beyond the audited
 3813-line and 29-method audited surface; both ceilings must only decrease. The

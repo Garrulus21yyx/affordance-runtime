@@ -81,6 +81,11 @@ only invokes `install_task_plan`/`replace_task_plan` and appends the returned
 typed projections; its source decreases from 3643 to 3584 lines. This is a
 containment reduction, not an M8.2B behavior or benchmark claim.
 
+Clean `50ae956` moves recovery protocol event payload construction to pure
+`RecoveryTraceProjection`; Coordinator only appends those typed projections and
+decreases to 3567 lines. Recovery command execution and state completion remain
+separate open ownership work.
+
 Mandatory next sequence:
 
 ~~~text
