@@ -10,6 +10,7 @@ from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMes
 from affordance_runtime.task_intake import (
     AmbiguityRisk,
     CompilationStatus,
+    GraphConstructionSource,
     IntentAmbiguity,
     IntentDraft,
     OperationClass,
@@ -282,7 +283,10 @@ def test_non_browsergym_raw_intake_conformance_accepts_typed_authority(
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
-    assert result.task_spec.obligations == draft.candidate_obligations
+    assert result.task_spec.obligations == tuple(
+        item.model_copy(update={"construction_source": GraphConstructionSource.MODEL_PROPOSAL})
+        for item in draft.candidate_obligations
+    )
     assert model.calls == 2
 
 

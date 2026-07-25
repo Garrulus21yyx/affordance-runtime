@@ -22,6 +22,8 @@ from affordance_runtime.task_intake import (
     CompilationIssue,
     CompilationResult,
     CompilationStatus,
+    EvidenceRequirement,
+    GraphConstructionSource,
     IntentDraft,
     IntentDraftValidator,
     RequestedEffect,
@@ -97,8 +99,10 @@ class LLMTaskObligationSpec(StrictModel):
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
+    typed_evidence_requirements: tuple[EvidenceRequirement, ...] = ()
     blocking: bool = True
     terminal: bool = False
+    construction_source: GraphConstructionSource = GraphConstructionSource.MODEL_PROPOSAL
 
 
 class LLMIntentDraft(IntentDraft):
@@ -403,7 +407,9 @@ def _decode_provider_draft(
     issues: list[CompilationIssue] = []
     for index, raw_obligation in enumerate(provider_draft.candidate_obligations):
         try:
-            obligations.append(TaskObligationSpec.model_validate(raw_obligation.model_dump(mode="json")))
+            raw_payload = raw_obligation.model_dump(mode="json")
+            raw_payload["construction_source"] = GraphConstructionSource.MODEL_PROPOSAL
+            obligations.append(TaskObligationSpec.model_validate(raw_payload))
         except ValidationError as exc:
             issues.append(
                 CompilationIssue(

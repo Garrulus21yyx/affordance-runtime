@@ -127,12 +127,49 @@ class TaskObligationValueSource(StrEnum):
     OBLIGATION_OUTPUT = "obligation_output"
 
 
+class EvidenceKind(StrEnum):
+    DOM_STATE = "dom_state"
+    ACCESSIBILITY_STATE = "accessibility_state"
+    VISUAL_STATE = "visual_state"
+    API_STATE = "api_state"
+    FILE_RECEIPT = "file_receipt"
+    DOWNLOAD_RECEIPT = "download_receipt"
+    DEVICE_STATE = "device_state"
+    HUMAN_CONFIRMATION = "human_confirmation"
+
+
+class EvidenceRequirement(StrictModel):
+    kind: EvidenceKind
+    subject: str = Field(min_length=1, max_length=480)
+    relation: TaskObligationRelation
+    value_ref: str = Field(default="", max_length=240)
+    minimum_strength: str = Field(min_length=1, max_length=80)
+    source_constraints: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_source_constraints(self) -> "EvidenceRequirement":
+        if len(self.source_constraints) != len(set(self.source_constraints)):
+            raise ValueError("evidence requirement source constraints must be unique")
+        if any(not value.strip() for value in self.source_constraints):
+            raise ValueError("evidence requirement source constraints cannot be blank")
+        return self
+
+
+class GraphConstructionSource(StrEnum):
+    COMPATIBILITY = "compatibility"
+    CANONICAL_COMPILER = "canonical_compiler"
+    MODEL_PROPOSAL = "model_proposal"
+    PARENT = "parent"
+
+
 class SourcedTaskClaim(StrictModel):
     claim_id: str = Field(min_length=1, max_length=120)
     kind: TaskClaimKind
     statement: str = Field(min_length=1, max_length=480)
     source_ref: str = Field(min_length=1, max_length=240)
     required: bool = True
+    source_unit_ids: tuple[str, ...] = ()
+    construction_source: GraphConstructionSource = GraphConstructionSource.COMPATIBILITY
 
     @model_validator(mode="after")
     def reject_blank_claim(self) -> "SourcedTaskClaim":
@@ -154,8 +191,10 @@ class TaskObligationSpec(StrictModel):
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
+    typed_evidence_requirements: tuple[EvidenceRequirement, ...] = ()
     blocking: bool = True
     terminal: bool = False
+    construction_source: GraphConstructionSource = GraphConstructionSource.COMPATIBILITY
 
     @model_validator(mode="after")
     def validate_value_and_identity(self) -> "TaskObligationSpec":
@@ -171,6 +210,8 @@ class TaskObligationSpec(StrictModel):
             raise ValueError("task obligation references cannot be blank")
         if any(not item.strip() for item in self.evidence_requirements):
             raise ValueError("task obligation evidence requirements cannot be blank")
+        if self.construction_source == GraphConstructionSource.CANONICAL_COMPILER and not self.typed_evidence_requirements:
+            raise ValueError("canonical task obligation requires typed evidence")
         if self.blocking and not self.evidence_requirements:
             raise ValueError("blocking task obligation requires independent evidence")
         if self.terminal and not self.blocking:

@@ -257,6 +257,13 @@ that bind to known source units, legal typed predicates, legal value flow, and
 available evidence classes. Unsupported semantics or unresolved dependency
 direction returns clarification/unsupported instead of inventing a graph.
 
+**SG2 foundation status:** `CanonicalObligationCompiler` now constructs stable
+claim/obligation ids, canonical provenance, generic read/effect terminal
+relations, and typed evidence only from source-ledger-bound inputs. Unknown
+effect or evidence source units reject before graph construction. The existing
+raw model-draft path has not yet been migrated to this compiler; that authority
+replacement remains SG3-SG5.
+
 ### 4.4 Typed evidence requirements
 
 Free-form evidence descriptions are useful for explanation but should not be

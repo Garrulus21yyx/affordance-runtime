@@ -163,7 +163,7 @@ Mandatory next sequence:
 freeze benchmark-family repair
   -> SG0 complete: freeze schema/graph authority and anti-specialization boundary
   -> SG1 complete: code-owned bounded SourceLedger and exact request lineage
-  -> SG2: generic CanonicalObligationCompiler and typed evidence requirements
+  -> SG2 foundation complete: generic CanonicalObligationCompiler and typed evidence requirements; normal-path migration remains SG3-SG5
   -> SG3: normalize model/parent semantic proposals; stop trusting graph ids
   -> SG4: deterministic source/claim/graph/terminal coverage; model veto only
   -> SG5: remove direct candidate graph copying and version checkpoint identity
