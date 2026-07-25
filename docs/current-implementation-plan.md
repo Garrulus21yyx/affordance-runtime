@@ -86,6 +86,12 @@ Clean `50ae956` moves recovery protocol event payload construction to pure
 decreases to 3567 lines. Recovery command execution and state completion remain
 separate open ownership work.
 
+Clean `7669090`/`5538f4d` add one bounded raw-intake repair path for missing
+success criteria, sourced claims, obligations, or malformed obligation graphs.
+Initial draft, repair, and independent coverage share a three-call intake
+ceiling; BrowserGym reserves that third slot by reducing planner allowance.
+Unsourced/stale, policy, and ambiguity failures remain single-call fail-closed.
+
 Mandatory next sequence:
 
 ~~~text
