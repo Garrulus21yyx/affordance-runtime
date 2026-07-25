@@ -133,7 +133,7 @@ non-expansion checkpoint, not responsibility closure. The
 ratchet in
 `tests/test_responsibility_containment.py` prevents growth beyond the audited
 3813-line and 29-method audited surface; both ceilings must only decrease. The
-current executable ratchet is 3643 lines and 26 methods. These numbers are gates,
+current executable ratchet is 3520 lines and 26 methods. These numbers are gates,
 not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,
