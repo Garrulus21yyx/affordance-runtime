@@ -115,7 +115,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v10"
+    assert task_planner_model_config().prompt_version == "task-planner-v11"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
@@ -686,11 +686,17 @@ def test_validator_repairs_uniquely_proven_current_entry(
     }
     issue = report.issues[0]
     assert issue.field == "outcome"
-    assert issue.required_semantics == "currently_unsatisfied_outcome"
+    assert (
+        issue.required_semantics
+        == "different_currently_unsatisfied_outcome_without_boolean_negation"
+    )
     directives = task_plan_repair_directives(report.issues)
     assert len(directives) == 1
     assert directives[0].field == "outcome"
-    assert directives[0].required_semantics == "currently_unsatisfied_outcome"
+    assert (
+        directives[0].required_semantics
+        == "different_currently_unsatisfied_outcome_without_boolean_negation"
+    )
 
 
 def test_validator_detects_satisfied_subject_independently_of_action_target() -> None:
@@ -819,6 +825,117 @@ def test_validator_keeps_unknown_ambiguous_and_causal_entry_state() -> None:
         state_version=4,
         planning_context=ambiguous_context,
     ).status == TaskPlanValidationStatus.ACCEPT
+
+
+@pytest.mark.parametrize(
+    ("relation", "value", "code", "required_semantics"),
+    (
+        (
+            SubgoalOutcomeRelation.CONTAINS,
+            "",
+            "outcome_value_required",
+            "non_empty_value_for_relation",
+        ),
+        (
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            "false",
+            "outcome_value_forbidden",
+            "empty_value_for_unary_relation",
+        ),
+    ),
+)
+def test_validator_enforces_outcome_relation_value_arity(
+    relation: SubgoalOutcomeRelation,
+    value: str,
+    code: str,
+    required_semantics: str,
+) -> None:
+    plan = synthetic_task_plan(_context())
+    outcome = SubgoalOutcome(
+        subject="search-text",
+        relation=relation,
+        value=value,
+    )
+    entry = plan.subgoals[0].model_copy(
+        update={
+            "objective": outcome.description(),
+            "success_criteria": (outcome.description(),),
+            "action_family": (
+                TaskPlanActionFamily.TYPE_TEXT
+                if relation == SubgoalOutcomeRelation.CONTAINS
+                else TaskPlanActionFamily.ACTIVATE
+            ),
+            "outcome": outcome,
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:search-text",
+                        label="search-text",
+                        supported_actions=("type_text", "activate"),
+                        current_state=PlanningAffordanceState(visible=True),
+                    ),
+                )
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan.model_copy(update={"subgoals": (entry,)}),
+        _task(),
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in report.issues} == {code}
+    assert report.issues[0].field == "outcome.value"
+    assert report.issues[0].required_semantics == required_semantics
+
+
+def test_validator_allows_optional_named_selected_value() -> None:
+    plan = synthetic_task_plan(_context())
+    outcome = SubgoalOutcome(
+        subject="theme",
+        relation=SubgoalOutcomeRelation.IS_SELECTED,
+        value="dark",
+    )
+    entry = plan.subgoals[0].model_copy(
+        update={
+            "objective": outcome.description(),
+            "success_criteria": (outcome.description(),),
+            "action_family": TaskPlanActionFamily.SELECT_OPTION,
+            "outcome": outcome,
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:theme",
+                        label="theme",
+                        supported_actions=("select_option",),
+                        current_state=PlanningAffordanceState(
+                            selected_options=("light",),
+                        ),
+                    ),
+                )
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan.model_copy(update={"subgoals": (entry,)}),
+        _task(),
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
 
 
 def test_validator_checks_only_current_ready_subgoal_against_inventory() -> None:

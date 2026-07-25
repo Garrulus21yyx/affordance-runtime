@@ -743,6 +743,10 @@ class TaskPlanValidator:
                         required_semantics="post_action_state",
                     )
                 )
+            if subgoal.outcome is not None and (
+                value_issue := _task_plan_outcome_value_issue(subgoal)
+            ) is not None:
+                repairable.append(value_issue)
             if subgoal.max_actions > self.max_actions_per_subgoal:
                 fatal.append(TaskPlanValidationIssue(code="action_budget_out_of_bounds", detail=subgoal.subgoal_id))
             if subgoal.max_recoveries > self.max_recoveries_per_subgoal:
@@ -778,6 +782,14 @@ class TaskPlanValidator:
             )
         entry_state_issue = task_plan_entry_state_issue(plan, planning_context)
         if entry_state_issue is not None:
+            repairable = [
+                issue
+                for issue in repairable
+                if not (
+                    issue.detail == entry_state_issue.detail
+                    and issue.code == "outcome_value_forbidden"
+                )
+            ]
             repairable.append(entry_state_issue)
         else:
             entry_issue = task_plan_entry_feasibility_issue(plan, planning_context)
@@ -845,8 +857,50 @@ def task_plan_entry_state_issue(
         detail=entry.subgoal_id,
         field="outcome",
         disallowed_values=(entry.outcome.description(),),
-        required_semantics="currently_unsatisfied_outcome",
+        required_semantics=(
+            "different_currently_unsatisfied_outcome_without_boolean_negation"
+        ),
     )
+
+
+def _task_plan_outcome_value_issue(
+    subgoal: SubgoalSpec,
+) -> TaskPlanValidationIssue | None:
+    outcome = subgoal.outcome
+    if outcome is None:
+        return None
+    value = outcome.value.strip()
+    value_required = {
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.IS_ORDERED_AS,
+    }
+    value_forbidden = {
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.IS_ABSENT,
+        SubgoalOutcomeRelation.IS_AVAILABLE,
+        SubgoalOutcomeRelation.IS_CHECKED,
+        SubgoalOutcomeRelation.IS_EXPANDED,
+        SubgoalOutcomeRelation.IS_COMPLETED,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    }
+    if outcome.relation in value_required and not value:
+        return TaskPlanValidationIssue(
+            code="outcome_value_required",
+            detail=subgoal.subgoal_id,
+            field="outcome.value",
+            required_semantics="non_empty_value_for_relation",
+        )
+    if outcome.relation in value_forbidden and value:
+        return TaskPlanValidationIssue(
+            code="outcome_value_forbidden",
+            detail=subgoal.subgoal_id,
+            field="outcome.value",
+            disallowed_values=(value,),
+            required_semantics="empty_value_for_unary_relation",
+        )
+    return None
 
 
 def _planning_outcome_is_current(
@@ -1046,8 +1100,8 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v10"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v11"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
