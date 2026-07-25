@@ -96,6 +96,38 @@ def _direct_form_draft(source_ref: str) -> IntentDraft:
     )
 
 
+def _direct_button_draft(source_ref: str) -> IntentDraft:
+    claim = SourcedTaskClaim(
+        claim_id="claim-enable-notifications",
+        kind=TaskClaimKind.TERMINAL,
+        statement="enable notifications",
+        source_ref=source_ref,
+    )
+    return IntentDraft(
+        objective="Enable notifications",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="notifications",
+                source_ref=source_ref,
+            ),
+        ),
+        candidate_success_criteria=("notifications are enabled",),
+        candidate_source_claims=(claim,),
+        candidate_obligations=(
+            TaskObligationSpec(
+                obligation_id="obligation-enable-notifications",
+                kind=TaskObligationKind.EFFECT,
+                subject="notifications",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                claim_ids=(claim.claim_id,),
+                evidence_requirements=("fresh notification-state confirmation",),
+                terminal=True,
+            ),
+        ),
+    )
+
+
 def _derived_submit_draft(source_ref: str) -> IntentDraft:
     read_claim = SourcedTaskClaim(
         claim_id="claim-read-code",
@@ -229,6 +261,7 @@ def _send_draft(source_ref: str) -> IntentDraft:
 @pytest.mark.parametrize(
     ("raw_text", "draft_factory"),
     (
+        ("Enable notifications", _direct_button_draft),
         ("Set the theme to dark", _direct_form_draft),
         ("Read the current code, enter it in the destination, then submit", _derived_submit_draft),
         ("Open the help center", _navigation_draft),
