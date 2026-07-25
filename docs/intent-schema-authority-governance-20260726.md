@@ -2,7 +2,8 @@
 
 Status: **normative remediation record**.
 
-Audited revision: bba582c on agent/migrate-runtime-components.
+Audited revision: bba582c on agent/migrate-runtime-components. SG1 source-ledger
+implementation is delivered at the succeeding revision; SG2-SG7 remain open.
 
 This document governs the natural-language intake boundary. It is jointly
 normative with:
@@ -184,6 +185,17 @@ general-purpose NLP parser. When segmentation or conjunction scope is
 ambiguous, the result is an explicit ambiguity or model proposal bound to exact
 source spans.
 
+**SG1 implementation status:** complete for source identity and bounded
+lineage. `SourceLedgerBuilder` deterministically emits a whole-request unit,
+at most 32 trimmed request clause units with exact offsets and content hashes,
+and metadata-only units for supplied conversation, attachment, target, and
+profile references. `LLMIntentCompiler` builds this ledger before any model
+call, records only ids/spans/hashes/lengths in trace, exposes the same metadata
+to the model, and maps the legacy `raw_text` alias to the canonical whole
+request unit. An over-bound request rejects as `UNSUPPORTED` without a model
+call. This does not yet make model claim or graph proposals canonical; exact
+proposal-unit enforcement and canonical compilation are SG3 and SG2.
+
 ### 4.2 Semantic proposal
 
 Replace model ownership of final graph nodes with an explicitly untrusted
@@ -299,3 +311,9 @@ bypass schema validation, policy, capability intersection, terminal evidence,
 or stale task revision checks.
 
 ### Benchmark path
+
+Benchmark adapters should submit a canonical `TaskSpec` when evaluating the
+Runtime itself. Raw-language intake is a separately identified intake
+evaluation and may not be merged into a Runtime score. No protected family,
+PR breadth, diagnostic, nightly, or release run is authorized until SG1-SG6
+have passed their local and held-out gates.

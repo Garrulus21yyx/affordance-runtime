@@ -168,7 +168,7 @@ evidence level. See
 | M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
-| M8.2A Task Intake and Planner Contracts | partial / reopened | typed TaskSpec 1.3, structural graph rejection, bounded repair, and outcome compilation exist; code-owned source ledger, canonical obligation compilation, deterministic semantic coverage, typed evidence requirements, and veto-only model audit remain open |
+| M8.2A Task Intake and Planner Contracts | partial / reopened | typed TaskSpec 1.3, structural graph rejection, bounded repair, outcome compilation, and code-owned bounded source lineage exist; canonical obligation compilation, deterministic semantic coverage, typed evidence requirements, and veto-only model audit remain open |
 | M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `df5b820` completed 60/60 with 24 successes, no provider failure/retry, and 36 attributable residuals; frozen nightly is held |
 | M8.3 Recovery-Cascade Components | partial | incident detection, lower-half recovery, injectable typed dispatch, executable artifacts, replay, and rollback exist; normal entrypoints still need concrete context/schema/provider owners |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |

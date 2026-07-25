@@ -95,7 +95,7 @@ ceiling; BrowserGym reserves that third slot by reducing planner allowance.
 Unsourced/stale, policy, and ambiguity failures remain single-call fail-closed.
 The follow-up repair-audit correction records every reserved intake call rather
 than inferring a fixed two-call path: `IntentDraftRepairProduced` now carries
-its real model-call record and a distinct `intent-draft-repair-v1` decoding
+its real model-call record and a distinct `intent-draft-repair-v2` decoding
 identity. That identity and schema are part of immutable BrowserGym checkpoint
 metadata, while provider/context/schema recovery ownership remains separately
 open. The targeted gates cover successful repair, a failed repair's typed,
@@ -136,6 +136,14 @@ The fixed Python 3.12 local gate passes 907 tests, Ruff, and repository-governed
 mypy over 110 source files. No benchmark or provider episode was run for this
 audit.
 
+SG1 is now complete at the succeeding source-ledger revision: a deterministic
+bounded `SourceLedgerBuilder` emits hash-bound whole-request/clause/reference
+units before model intake, records redacted lineage in trace, maps the legacy
+`raw_text` alias to the canonical whole-request unit, and rejects an over-bound
+request without a model call. Prompt identities advance to
+`intent-compiler-v7` and `intent-draft-repair-v2`; this is a new immutable
+intake identity, not comparable benchmark evidence. SG2-SG6 remain open.
+
 The governing remediation is
 [Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 Do not continue repairing provider graph shape through Prompt changes. Preserve
@@ -154,7 +162,7 @@ Mandatory next sequence:
 ~~~text
 freeze benchmark-family repair
   -> SG0 complete: freeze schema/graph authority and anti-specialization boundary
-  -> SG1: code-owned SourceLedger and exact source lineage
+  -> SG1 complete: code-owned bounded SourceLedger and exact request lineage
   -> SG2: generic CanonicalObligationCompiler and typed evidence requirements
   -> SG3: normalize model/parent semantic proposals; stop trusting graph ids
   -> SG4: deterministic source/claim/graph/terminal coverage; model veto only

@@ -199,6 +199,24 @@ class FailingRepairModel(FixedModel):
         return await super().generate_structured(messages, output_schema, config)
 
 
+@dataclass
+class UnexpectedModelCall:
+    provider: str = "unexpected"
+    model: str = "unexpected-v1"
+    endpoint_class: str = "test"
+    calls: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del messages, output_schema, config
+        self.calls += 1
+        raise AssertionError("source ledger rejection must not call the model")
+
+
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
     schema = LLMIntentDraft.model_json_schema()
 
@@ -409,6 +427,27 @@ def test_llm_compiler_traces_failed_repair_without_crediting_it_as_success() -> 
     assert failed["error_type"] == "StructuredModelError"
 
 
+def test_llm_compiler_fails_closed_before_model_call_when_source_ledger_is_bounded() -> None:
+    model = UnexpectedModelCall()
+    trace = TraceDag("ledger-bound")
+    raw_text = " ".join(f"Clause {index}." for index in range(33))
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="ledger-bound", raw_text=raw_text),
+            trace=trace,
+        )
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.issues[0].code == "source_ledger_unavailable"
+    assert model.calls == 0
+    assert [node.kind for node in trace.nodes] == [
+        "UserRequestReceived",
+        "IntentCompilationRejected",
+    ]
+
+
 def test_llm_compiler_stops_when_repair_consumes_intake_budget() -> None:
     initial = IntentDraft(
         objective="Read pricing",
@@ -490,9 +529,9 @@ def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None
 
     assert result.task_spec is not None
     assert result.task_spec.semantic_value_constraints[0].source_ref == (
-        "request-prefix"
+            "request-prefix:source:request:whole"
     )
-    assert result.task_spec.source_claims[0].source_ref == "request-prefix"
+    assert result.task_spec.source_claims[0].source_ref == "request-prefix:source:request:whole"
     assert result.task_spec.obligations[0].claim_ids == ("claim-effect",)
     assert result.task_spec.targets == ("item",)
 
@@ -593,11 +632,17 @@ def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
     assert result.status == CompilationStatus.READY
     assert [node.kind for node in trace.nodes] == [
         "UserRequestReceived",
+        "SourceLedgerBuilt",
         "IntentDraftProduced",
         "TaskObligationCoverageReviewed",
         "TaskSpecCreated",
     ]
     assert "private wording" not in str(trace.to_dict())
+    source_ledger = trace.nodes[1].payload
+    assert source_ledger["redaction"]["source_content"] == "sha256_and_length_only"
+    assert source_ledger["source_units"][0]["source_unit_id"] == (
+        "request-read:source:request:whole"
+    )
     assert trace.nodes[-1].parents == [trace.nodes[-2].id]
 
 

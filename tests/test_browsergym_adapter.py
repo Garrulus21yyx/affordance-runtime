@@ -2526,8 +2526,8 @@ def test_browsergym_checkpoint_metadata_binds_selected_matrix(tmp_path: Path) ->
 def test_browsergym_checkpoint_identity_binds_distinct_intent_repair_prompt() -> None:
     identity = _intent_compiler_checkpoint_identity()
 
-    assert identity["intent_compiler_model_config"]["prompt_version"] == "intent-compiler-v6"
-    assert identity["intent_draft_repair_model_config"]["prompt_version"] == "intent-draft-repair-v1"
+    assert identity["intent_compiler_model_config"]["prompt_version"] == "intent-compiler-v7"
+    assert identity["intent_draft_repair_model_config"]["prompt_version"] == "intent-draft-repair-v2"
     assert identity["intent_compiler_schema_sha256"] == identity["intent_draft_repair_schema_sha256"]
 
 

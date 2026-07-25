@@ -29,8 +29,8 @@ typed sourced claims/obligations, structural graph validation, fail-closed
 admission, bounded repair, model-call accounting, repair Prompt identity, and
 TaskSpec-to-TaskPlan outcome compilation exist. However, the raw-language path
 still asks a model to author candidate claims and obligation nodes, then uses a
-model-backed completeness review by default. Runtime validates the proposed
-graph but does not yet own a canonical source ledger and generic graph
+model-backed completeness review by default. Runtime now owns a bounded source
+ledger and canonical raw-text lineage, but does not yet own a generic graph
 compiler.
 
 The next mandatory slice is:

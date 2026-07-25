@@ -1123,8 +1123,9 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
 
     assert result.status == "done"
     assert result.coordinator is not None
-    assert [node.kind for node in result.trace.nodes][:5] == [
+    assert [node.kind for node in result.trace.nodes][:6] == [
         "UserRequestReceived",
+        "SourceLedgerBuilt",
         "IntentDraftProduced",
         "TaskObligationCoverageReviewed",
         "TaskSpecCreated",

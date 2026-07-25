@@ -26,7 +26,7 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | code-owned schemas, sourced graph structural admission, bounded repair with accurate accounting/Prompt identity, outcome compiler, terminal evidence, and stateless DecisionConstraintSet | SG1-SG6 source ledger, canonical graph compiler, deterministic semantic coverage, typed evidence, direct-copy removal, and held-out conformance |
+| M8.2A Task Intake and Planner Contracts | in_progress | code-owned schemas, bounded SourceLedger lineage, sourced graph structural admission, bounded repair with accurate accounting/Prompt identity, outcome compiler, terminal evidence, and stateless DecisionConstraintSet | SG2-SG6 canonical graph compiler, deterministic semantic coverage, typed evidence, direct-copy removal, and held-out conformance |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; later protected recheck isolates a shared local-provider obligation-graph intake failure | hold PR/nightly/release; establish provider-neutral obligation-complete intake before breadth promotion |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, and conditional real fallback-provider owner wiring in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | implement real context/schema owners and broader normal-entrypoint wiring |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
@@ -163,11 +163,12 @@ fields survive repair, model-call reservations are counted, repair has an
 immutable Prompt/checkpoint identity, selected provider profile is preserved,
 and failed repair emits a redacted trace event.
 
-M8.2A remains open at the authority boundary. The model still proposes the
-claim/obligation instances and the default model-backed coverage review
-participates in READY admission. No code-owned SourceLedger,
+M8.2A remains open at the authority boundary. SG1 now supplies code-owned,
+bounded source-unit ids, spans, hashes, and redacted trace lineage before every
+model call. The model still proposes the claim/obligation instances and the
+default model-backed coverage review participates in READY admission. No
 CanonicalObligationCompiler, typed evidence envelope, or deterministic
-source-to-terminal semantic coverage exists. Gates SG1-SG6 in
+source-to-terminal semantic coverage exists. Gates SG2-SG6 in
 `intent-schema-authority-governance-20260726.md` precede further protected
 family, breadth, diagnostic, nightly, or release promotion.
 
@@ -412,6 +413,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-26 | M8.2A SG1 source-ledger lineage | Added a deterministic, bounded SourceLedgerBuilder before model intake. It owns whole-request/clause ids, exact request spans, hashes, metadata-only external references, redacted trace projection, and canonicalization of the legacy raw-text alias; over-bound input rejects before a model call. | source ledger, intent compiler, intake/coordinator/BrowserGym identity tests, current plans | 911 tests; Ruff; repository-governed mypy over 111 source files; `git diff --check`; no benchmark/provider/GitHub Actions/`.env`/push or score claim |
 | 2026-07-25 | M8.2A repair-failure observability | Added a typed, redacted `IntentDraftRepairFailed` trace event when the bounded repair call cannot decode; it records only the immutable repair Prompt version and error type, while the reservation-based compiler count still accounts for the attempted call. | intent compiler, intake tests, current plan | targeted repair trace test; 907 tests; Ruff; repository-governed mypy over 110 source files; `git diff --check`; no benchmark/provider/GitHub Actions/`.env`/push or score claim |
 | 2026-07-26 | M8.2A schema/graph authority audit | Audited clean source revision `bba582c`; froze code-owned SourceLedger, CanonicalObligationCompiler, deterministic coverage, veto-only model audit, and SG1-SG7 ordering without changing Runtime behavior | schema-authority governance, architecture/boundary, task-intake, project/current plans | 907 tests; Ruff; repository-governed mypy over 110 source files; no benchmark/provider/GitHub Actions/.env/push or score claim |
 | 2026-07-25 | M8.2B provider-profile launcher boundary | Removed the launcher's unconditional local-profile override. The sole launcher now accepts explicit local/mistral/gemini/zhipu selection, retains Ollama preflight only for local, and leaves the selected provider in immutable run identity. | BrowserGym launcher, current plan | Gemini-profile runtime preflight passed without a remote call; succeeding full local gate passed |
