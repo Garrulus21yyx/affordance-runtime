@@ -786,6 +786,46 @@ class TaskPlanValidator:
         if len(identifiers) != len(set(identifiers)):
             fatal.append(TaskPlanValidationIssue(code="duplicate_subgoal_id"))
         known = set(identifiers)
+        if task_spec.obligations:
+            expected_subgoals = {
+                item.obligation_id: TaskObligationOutcomeCompiler._compile_obligation(
+                    item,
+                    task_spec.operation_class,
+                )
+                for item in task_spec.obligations
+            }
+            actual_subgoals = {item.subgoal_id: item for item in plan.subgoals}
+            missing_obligations = expected_subgoals.keys() - actual_subgoals.keys()
+            unexpected_subgoals = actual_subgoals.keys() - expected_subgoals.keys()
+            if missing_obligations:
+                fatal.append(
+                    TaskPlanValidationIssue(
+                        code="obligation_subgoal_missing",
+                        detail=",".join(sorted(missing_obligations)),
+                    )
+                )
+            if unexpected_subgoals:
+                fatal.append(
+                    TaskPlanValidationIssue(
+                        code="unbound_obligation_subgoal",
+                        detail=",".join(sorted(unexpected_subgoals)),
+                    )
+                )
+            for obligation_id in expected_subgoals.keys() & actual_subgoals.keys():
+                expected = expected_subgoals[obligation_id]
+                actual = actual_subgoals[obligation_id]
+                if (
+                    actual.depends_on != expected.depends_on
+                    or actual.outcome != expected.outcome
+                    or actual.evidence_requirements != expected.evidence_requirements
+                    or actual.operation_class != expected.operation_class
+                ):
+                    fatal.append(
+                        TaskPlanValidationIssue(
+                            code="obligation_subgoal_mismatch",
+                            detail=obligation_id,
+                        )
+                    )
         for subgoal in plan.subgoals:
             if (
                 task_spec.task_structure == TaskStructure.MULTI_STAGE

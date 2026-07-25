@@ -161,6 +161,20 @@ def test_obligation_outcome_compiler_preserves_dependency_and_dynamic_value_iden
     assert write.outcome.value_obligation_id == "obligation-read"
     assert TaskPlanValidator().validate(plan, task, state_version=4).status == TaskPlanValidationStatus.ACCEPT
 
+    corrupted_write = write.model_copy(
+        update={"outcome": write.outcome.model_copy(update={"value_obligation_id": ""})}
+    )
+    corrupted = plan.model_copy(
+        update={"subgoals": (plan.subgoals[0], corrupted_write, plan.subgoals[2])}
+    )
+    report = TaskPlanValidator().validate(corrupted, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.REJECT
+    assert any(
+        item.code == "obligation_subgoal_mismatch" and item.detail == "obligation-write"
+        for item in report.issues
+    )
+
 
 def test_subgoal_outcome_rejects_literal_and_dynamic_value_together() -> None:
     with pytest.raises(ValueError, match="literal and obligation"):
