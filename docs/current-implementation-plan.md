@@ -75,6 +75,12 @@ verifier or `UNREQUESTED_EFFECT`, add task-specific solvers, expand budgets, or
 run family/PR/nightly before the typed input path exists. Evidence:
 `evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
 
+Clean `03a0d32` moves TaskPlan commit intent, commit-failure normalization, and
+TaskPlan trace projections to `TaskPlanCommitPreparation`. The Coordinator now
+only invokes `install_task_plan`/`replace_task_plan` and appends the returned
+typed projections; its source decreases from 3643 to 3584 lines. This is a
+containment reduction, not an M8.2B behavior or benchmark claim.
+
 Mandatory next sequence:
 
 ~~~text
@@ -85,7 +91,7 @@ freeze benchmark-family repair
   -> completed: build DecisionConstraintSet outside the step planner
   -> partial: wire configured fallback-provider recovery into normal entrypoint
   -> wire real context/schema recovery owners into normal entrypoints
-  -> partial: continue Coordinator/Planner responsibility reduction
+  -> partial: continue Coordinator responsibility reduction after TaskPlan commit preparation
   -> non-BrowserGym held-out conformance
   -> targeted + protected-family + cross-family + fresh diagnostic
   -> publish immutable local evidence
