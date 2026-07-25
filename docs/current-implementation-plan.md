@@ -44,9 +44,10 @@ held. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
 artifact lineage, and failed verifier kind in the canonical FailureEnvelope.
 The provider-neutral terminal-readiness protocol, typed TaskPlan validation,
 current grounding resolver, and strict-Planner candidate narrowing are
-implemented through clean `3447795`; sourced intent-to-obligation compilation is
-not. The full local gate is 863 tests,
-Ruff, and governed mypy over 105 source files. Clean first-case validation at
+implemented through clean `3447795`. The provider-neutral sourced claim and
+TaskObligationSpec input contract is implemented at `a6233ac`, but provider
+completeness and typed repair before READY are not. The full local gate is 871
+tests, Ruff, and governed mypy over 105 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
 terminal effect/data dependency and the flat RuleTaskPlan has no typed outcome
@@ -60,7 +61,7 @@ Mandatory next sequence:
 
 ~~~text
 freeze benchmark-family repair
-  -> define sourced TaskObligationSpec
+  -> completed: define sourced TaskObligationSpec
   -> reject incomplete READY compilation
   -> compile typed flat and dependent outcomes
   -> build DecisionConstraintSet outside the step planner
