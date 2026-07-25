@@ -60,6 +60,21 @@ from affordance_runtime.task_intake import (
     SemanticValueRelation,
     TaskSpec,
 )
+from affordance_runtime.task_planning import (
+    PlanProgress,
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanActionFamily,
+    TaskPlanSource,
+)
+from affordance_runtime.unified_grounding import (
+    CandidateDescriptor,
+    SemanticEntityResolver,
+    candidate_fingerprints,
+    candidate_from_affordance,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -979,6 +994,153 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     assert compatibility.proposal_provenance.source.value == "model"
     assert compatibility.proposal_provenance.profile_id == "historical-compatibility"
     assert "autocomplete" in compatibility_model.system_prompt.casefold()
+
+
+@pytest.mark.parametrize("verified_prerequisite", [False, True])
+def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
+    verified_prerequisite: bool,
+) -> None:
+    affordance_model = _authored_dom_adapter().transduce(
+        '<button data-runtime-handle="submit">settings submission</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-2",
+    )
+    source = affordance_model.affordances[0]
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-2",
+        page_revision=affordance_model.page_revision,
+    )
+    candidate = candidate_from_affordance(
+        source,
+        observation,
+        semantic_target_id="pending",
+        compatible_executor="browsergym",
+    )
+    target = SemanticEntityResolver().resolve(
+        (
+            CandidateDescriptor(
+                "button",
+                "settings submission",
+                "activate",
+                "settings",
+                candidate,
+            ),
+        )
+    )[0]
+    observation = replace(
+        observation,
+        target_fingerprints=candidate_fingerprints((target,)),
+    )
+    snapshot = BrowserSnapshot(
+        observation,
+        affordance_model,
+        grounding_candidates=target.grounding_candidates,
+        unified_affordances=(target,),
+    )
+    plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=2,
+        plan_version=1,
+        based_on_state_version=1,
+        generated_by=TaskPlanSource.LLM,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="field:value",
+                objective="field equals dark",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="field",
+                    relation=SubgoalOutcomeRelation.EQUALS,
+                    value="dark",
+                ),
+            ),
+            SubgoalSpec(
+                subgoal_id="settings:submitted",
+                objective="settings submission is completed",
+                depends_on=("field:value",),
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.ACTIVATE,
+                outcome=SubgoalOutcome(
+                    subject="settings submission",
+                    relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+            ),
+        ),
+    )
+    state = StateKernel("task-1", "submit settings")
+    state.task_plan = plan
+    state.plan_progress = PlanProgress(
+        active_subgoal_id="settings:submitted",
+        completed_subgoal_ids=["field:value"],
+        evidence_by_subgoal=(
+            {"field:value": ["artifact:verification"]}
+            if verified_prerequisite
+            else {}
+        ),
+    )
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=2,
+        objective="Set the field to dark and submit settings",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("settings",),
+        success_criteria=("settings submitted",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class ReadinessModel:
+        provider: str = "fixed"
+        model: str = "readiness"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+        context: dict[str, object] | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del config
+            self.context = __import__("json").loads(messages[1].content)
+            visible_ids = [item["id"] for item in self.context["affordances"]]  # type: ignore[index]
+            return output_schema.model_validate(
+                {
+                    "action_kind": "activate" if visible_ids else "ask_user",
+                    "target_affordance_id": visible_ids[0] if visible_ids else "",
+                }
+            )
+
+    model = ReadinessModel()
+    decision = asyncio.run(
+        GeneralistLMPlanner(model).propose(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
+    )
+
+    assert model.context is not None
+    visible_ids = [item["id"] for item in model.context["affordances"]]  # type: ignore[index]
+    readiness = decision.planner_context["terminal_readiness"]
+    assert visible_ids == ([target.semantic_target_id] if verified_prerequisite else [])
+    assert readiness["excluded_target_ids"] == (  # type: ignore[index]
+        [] if verified_prerequisite else [target.semantic_target_id]
+    )
+    assert readiness["candidates"][0]["status"] == (  # type: ignore[index]
+        "ready" if verified_prerequisite else "unknown"
+    )
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == (
+        PlannerActionKind.ACTIVATE
+        if verified_prerequisite
+        else PlannerActionKind.ASK_USER
+    )
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:

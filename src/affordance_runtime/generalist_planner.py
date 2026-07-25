@@ -43,6 +43,11 @@ from affordance_runtime.planning import (
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.terminal_readiness import (
+    TaskObligationViewCompiler,
+    TerminalEffectBindingResolver,
+    TerminalReadinessEvaluator,
+)
 
 GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
 COMPATIBILITY_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
@@ -258,6 +263,13 @@ class GeneralistLMPlanner:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
         context = self.build_context(envelope, state, snapshot)
+        terminal_readiness: dict[str, object] = {}
+        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
+            context, terminal_readiness = _narrow_terminal_candidates(
+                context,
+                state,
+                snapshot,
+            )
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
             raise RuntimeError("planner semantic compiler profile was not initialized")
@@ -290,6 +302,11 @@ class GeneralistLMPlanner:
                         "compiler_id": compiled.compiler_id,
                         "evidence_ref": compiled.evidence_ref,
                     },
+                    **(
+                        {"terminal_readiness": terminal_readiness}
+                        if terminal_readiness
+                        else {}
+                    ),
                 },
             )
         messages = [
@@ -462,6 +479,11 @@ class GeneralistLMPlanner:
                 "planner_profile": self.planner_profile.value,
                 "semantic_compiler_registry_digest": semantic_compilers.digest,
                 **(
+                    {"terminal_readiness": terminal_readiness}
+                    if terminal_readiness
+                    else {}
+                ),
+                **(
                     {
                         "semantic_constraints": {
                             "compiler_id": constraints.compiler_id,
@@ -523,6 +545,61 @@ class GeneralistLMPlanner:
             accepted_knowledge=self.accepted_knowledge,
             allow_finish=self.allow_finish,
         )
+
+
+def _narrow_terminal_candidates(
+    context: PlannerContext,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> tuple[PlannerContext, dict[str, object]]:
+    plan = state.task_plan
+    progress = state.plan_progress
+    if plan is None or progress is None or not snapshot.unified_affordances:
+        return context, {}
+    resolution = TerminalEffectBindingResolver().resolve(
+        plan=plan,
+        progress=progress,
+        unified_affordances=snapshot.unified_affordances,
+        observation=snapshot.observation,
+    )
+    if not resolution.bindings and not resolution.unresolved_target_ids:
+        return context, {}
+    view = TaskObligationViewCompiler().compile(
+        plan=plan,
+        progress=progress,
+        bindings=resolution.bindings,
+        task_revision=context.task_revision,
+        observation_epoch_id=context.snapshot_id,
+        target_fingerprints=snapshot.observation.target_fingerprints,
+    )
+    decision = TerminalReadinessEvaluator().evaluate(
+        task_revision=context.task_revision,
+        observation_epoch_id=context.snapshot_id,
+        candidates=view.candidates,
+        obligations=view.obligations,
+    )
+    excluded_target_ids = set(resolution.unresolved_target_ids)
+    excluded_target_ids.update(decision.blocked_target_ids)
+    narrowed = context.model_copy(
+        update={
+            "affordances": tuple(
+                item for item in context.affordances if item.id not in excluded_target_ids
+            )
+        }
+    )
+    return narrowed, {
+        "excluded_target_ids": sorted(excluded_target_ids),
+        "unresolved_target_ids": list(resolution.unresolved_target_ids),
+        "candidates": [
+            {
+                "semantic_target_id": item.semantic_target_id,
+                "status": item.status.value,
+                "blocking_obligation_ids": list(item.blocking_obligation_ids),
+                "unknown_obligation_ids": list(item.unknown_obligation_ids),
+            }
+            for item in decision.candidates
+        ],
+    }
 
 
 def _strict_candidate_prebind_issue(
