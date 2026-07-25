@@ -1363,11 +1363,28 @@ def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
         "operation_class": task_spec.operation_class.value,
         "task_structure": task_spec.task_structure.value,
         "targets": list(task_spec.targets),
+        "requested_effects": [
+            {
+                "operation_class": item.operation_class.value,
+                "target": item.target,
+                "capability": item.capability,
+                "description": item.description,
+            }
+            for item in task_spec.requested_effects
+        ],
         "entities": [{"name": item.name, "value": item.value} for item in task_spec.entities],
         "preferences": list(task_spec.preferences),
         "desired_outputs": list(task_spec.desired_outputs),
         "success_criteria": list(task_spec.success_criteria),
         "constraints": list(task_spec.constraints),
+        "semantic_value_constraints": [
+            {
+                "relation": item.relation.value,
+                "value": item.value,
+                "target": item.target,
+            }
+            for item in task_spec.semantic_value_constraints
+        ],
         "forbidden_effects": list(task_spec.forbidden_effects),
         "evidence_requirements": list(task_spec.evidence_requirements),
         "requested_capabilities": list(task_spec.requested_capabilities),

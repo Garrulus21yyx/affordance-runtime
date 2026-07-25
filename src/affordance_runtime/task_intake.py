@@ -123,13 +123,14 @@ class IntentDraft(StrictModel):
 
 
 class TaskSpec(StrictModel):
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     objective: str = Field(min_length=1)
     operation_class: OperationClass
     task_structure: TaskStructure = TaskStructure.FLAT
     targets: tuple[str, ...]
+    requested_effects: tuple[RequestedEffect, ...] = ()
     entities: tuple[IntentEntity, ...] = ()
     preferences: tuple[str, ...] = ()
     desired_outputs: tuple[str, ...] = ()
@@ -288,6 +289,7 @@ class IntentDraftValidator:
             operation_class=operation,
             task_structure=draft.task_structure,
             targets=_ordered_unique(effect.target for effect in draft.requested_effects),
+            requested_effects=draft.requested_effects,
             entities=draft.entities,
             preferences=draft.preferences,
             desired_outputs=draft.desired_outputs,

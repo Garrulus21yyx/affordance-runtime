@@ -56,6 +56,7 @@ def test_ready_compilation_creates_immutable_versioned_task_spec_without_grantin
     assert result.task_spec.revision == 2
     assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
     assert result.task_spec.task_structure == TaskStructure.FLAT
+    assert result.task_spec.requested_effects == _draft().requested_effects
     assert result.task_spec.requested_capabilities == ("settings.write",)
     assert result.task_spec.entities == (entity,)
     assert result.task_spec.evidence_requirements == ("settings API confirms dark",)
@@ -77,7 +78,7 @@ def test_explicit_semantic_value_constraint_is_preserved_as_taskspec_authority()
     )
 
     assert result.task_spec is not None
-    assert result.task_spec.schema_version == "1.1"
+    assert result.task_spec.schema_version == "1.2"
     assert result.task_spec.semantic_value_constraints == (constraint,)
 
 

@@ -3,7 +3,14 @@ import pytest
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import (
+    OperationClass,
+    RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
+    TaskSpec,
+    TaskStructure,
+)
 from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
@@ -32,6 +39,7 @@ from affordance_runtime.task_planning import (
     task_plan_provider_model_for_context,
     task_plan_repair_directives,
     task_planner_model_config,
+    task_spec_planning_summary,
 )
 from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
 
@@ -82,6 +90,43 @@ def test_task_planning_context_versions_bounded_current_state_policy() -> None:
         TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION
         == "typed-subject-state-support-v1"
     )
+
+
+def test_task_planning_summary_preserves_effect_and_value_authority_without_source_identity() -> None:
+    effect = RequestedEffect(
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        target="theme",
+        capability="settings.write",
+        description="Set the theme to dark",
+        source_ref="request-1:effect",
+    )
+    constraint = SemanticValueConstraint(
+        relation=SemanticValueRelation.EXACT,
+        value="dark",
+        target="theme",
+        source_ref="request-1:value",
+    )
+    summary = task_spec_planning_summary(
+        _task().model_copy(
+            update={
+                "requested_effects": (effect,),
+                "semantic_value_constraints": (constraint,),
+            }
+        )
+    )
+
+    assert summary["requested_effects"] == [
+        {
+            "operation_class": "reversible_write",
+            "target": "theme",
+            "capability": "settings.write",
+            "description": "Set the theme to dark",
+        }
+    ]
+    assert summary["semantic_value_constraints"] == [
+        {"relation": "exact", "value": "dark", "target": "theme"}
+    ]
+    assert "request-1" not in str(summary)
 
 
 def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None:
