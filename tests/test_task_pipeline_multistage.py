@@ -86,8 +86,8 @@ class MultiStageActionPlanner:
         del envelope
         active = state.plan_progress.active_subgoal_id if state.plan_progress is not None else ""
         label, evidence_key = {
-            "discover": ("Discover", "discovered"),
-            "confirm": ("Confirm", "confirmed"),
+            "obligation-discover": ("Discover", "discovered"),
+            "obligation-confirm": ("Confirm", "confirmed"),
         }[active]
         affordance = next(item for item in snapshot.affordance_model.affordances if item.label == label)
         return PlannerDecision(
@@ -238,9 +238,9 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
 
     assert result.status == RuntimeStep.DONE.value
     assert world == MultiStageWorld(discovered=True, confirmed=True)
-    assert model.calls == 3
+    assert model.calls == 2
     task_plan = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
-    assert task_plan.payload["generated_by"] == "llm"
+    assert task_plan.payload["generated_by"] == "rule"
     completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
-    assert completed == ["discover", "confirm"]
+    assert completed == ["obligation-discover", "obligation-confirm"]
     assert "ActivePerceptionPlanned" not in [node.kind for node in result.trace.nodes]

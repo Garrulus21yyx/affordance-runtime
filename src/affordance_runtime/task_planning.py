@@ -15,7 +15,7 @@ from typing import Annotated, Any, Awaitable, Literal, Protocol, TypeAlias
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 
 from affordance_runtime.contracts import Observation
@@ -26,7 +26,15 @@ from affordance_runtime.criteria import (
     evidence_requirements_from_descriptions,
 )
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
-from affordance_runtime.task_intake import OperationClass, StrictModel, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import (
+    OperationClass,
+    StrictModel,
+    TaskObligationKind,
+    TaskObligationSpec,
+    TaskObligationValueSource,
+    TaskSpec,
+    TaskStructure,
+)
 from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
@@ -45,7 +53,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
     re.IGNORECASE,
 )
 
-TASK_PLAN_SCHEMA_VERSION = "1.1"
+TASK_PLAN_SCHEMA_VERSION = "1.2"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
@@ -201,6 +209,21 @@ class SubgoalOutcome(StrictModel):
     subject: str = Field(min_length=1)
     relation: SubgoalOutcomeRelation
     value: str = ""
+    value_obligation_id: str = ""
+
+    @model_validator(mode="after")
+    def validate_value_reference(self) -> "SubgoalOutcome":
+        value_relations = {
+            SubgoalOutcomeRelation.EQUALS,
+            SubgoalOutcomeRelation.CONTAINS,
+            SubgoalOutcomeRelation.MATCHES,
+            SubgoalOutcomeRelation.IS_ORDERED_AS,
+        }
+        if self.value and self.value_obligation_id:
+            raise ValueError("subgoal outcome cannot carry literal and obligation values")
+        if self.value_obligation_id and self.relation not in value_relations:
+            raise ValueError("subgoal outcome reference requires a value relation")
+        return self
 
     def description(self) -> str:
         phrase = {
@@ -218,7 +241,12 @@ class SubgoalOutcome(StrictModel):
             SubgoalOutcomeRelation.HAS_CHANGED: "has changed",
         }[self.relation]
         value = self.value.strip()
-        return " ".join(part for part in (self.subject.strip(), phrase, value) if part)
+        reference = (
+            f"output of {self.value_obligation_id}"
+            if self.value_obligation_id
+            else ""
+        )
+        return " ".join(part for part in (self.subject.strip(), phrase, value, reference) if part)
 
 
 SubgoalSpec.model_rebuild()
@@ -1013,19 +1041,21 @@ def _task_plan_outcome_value_issue(
         SubgoalOutcomeRelation.IS_COMPLETED,
         SubgoalOutcomeRelation.HAS_CHANGED,
     }
-    if outcome.relation in value_required and not value:
+    if outcome.relation in value_required and not (value or outcome.value_obligation_id):
         return TaskPlanValidationIssue(
             code="outcome_value_required",
             detail=subgoal.subgoal_id,
             field="outcome.value",
             required_semantics="non_empty_value_for_relation",
         )
-    if outcome.relation in value_forbidden and value:
+    if outcome.relation in value_forbidden and (value or outcome.value_obligation_id):
         return TaskPlanValidationIssue(
             code="outcome_value_forbidden",
             detail=subgoal.subgoal_id,
             field="outcome.value",
-            disallowed_values=(value,),
+            disallowed_values=tuple(
+                item for item in (value, outcome.value_obligation_id) if item
+            ),
             required_semantics="empty_value_for_unary_relation",
         )
     return None
@@ -1221,10 +1251,76 @@ class VerifierBackedSubgoalVerifier:
 
 
 @dataclass(frozen=True)
+class TaskObligationOutcomeCompiler:
+    """Compile immutable TaskSpec obligations into one typed outcome graph."""
+
+    max_subgoals: int = 8
+
+    def compile(self, context: TaskPlanningContext) -> TaskPlan:
+        task_spec = context.task_spec
+        obligations = task_spec.obligations
+        if not obligations:
+            raise ValueError("task obligation outcome compilation requires obligations")
+        if len(obligations) > self.max_subgoals:
+            raise ValueError("task obligation graph exceeds task plan limit")
+        return TaskPlan(
+            plan_id=f"plan-{uuid4().hex}",
+            task_id=task_spec.task_id,
+            task_revision=task_spec.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=tuple(
+                self._compile_obligation(item, task_spec.operation_class)
+                for item in obligations
+            ),
+            assumptions=(),
+        )
+
+    @staticmethod
+    def _compile_obligation(
+        obligation: TaskObligationSpec,
+        task_operation: OperationClass,
+    ) -> SubgoalSpec:
+        outcome = SubgoalOutcome(
+            subject=obligation.subject,
+            relation=SubgoalOutcomeRelation(obligation.relation.value),
+            value=(
+                obligation.expected_value
+                if obligation.value_source == TaskObligationValueSource.LITERAL
+                else ""
+            ),
+            value_obligation_id=(
+                obligation.value_obligation_id
+                if obligation.value_source == TaskObligationValueSource.OBLIGATION_OUTPUT
+                else ""
+            ),
+        )
+        return SubgoalSpec(
+            subgoal_id=obligation.obligation_id,
+            objective=outcome.description(),
+            depends_on=obligation.depends_on,
+            success_criteria=(outcome.description(),),
+            evidence_requirements=obligation.evidence_requirements,
+            operation_class=(
+                task_operation
+                if obligation.kind == TaskObligationKind.EFFECT
+                else OperationClass.READ_ONLY
+            ),
+            outcome=outcome,
+        )
+
+
+@dataclass(frozen=True)
 class RuleTaskPlanner:
-    """Creates a deterministic flat plan for a directly verifiable task."""
+    """Compile immutable obligations, retaining the legacy flat fallback."""
+
+    obligation_compiler: TaskObligationOutcomeCompiler = TaskObligationOutcomeCompiler()
 
     def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        if context.task_spec.obligations:
+            return self.obligation_compiler.compile(context)
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
@@ -1344,6 +1440,8 @@ class PlanningRouter:
         *,
         complex_task: bool | None = None,
     ) -> TaskPlan | Awaitable[TaskPlan]:
+        if context.task_spec.obligations:
+            return self.rule_planner.plan(context)
         if complex_task is None:
             complex_task = context.task_spec.task_structure == TaskStructure.MULTI_STAGE
         if not complex_task:

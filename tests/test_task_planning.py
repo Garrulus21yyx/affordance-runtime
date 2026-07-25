@@ -87,6 +87,91 @@ def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> N
     assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
 
 
+def test_obligation_outcome_compiler_preserves_dependency_and_dynamic_value_identity() -> None:
+    read_claim = SourcedTaskClaim(
+        claim_id="claim-read",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="read the current code",
+        source_ref="request-1",
+    )
+    write_claim = SourcedTaskClaim(
+        claim_id="claim-write",
+        kind=TaskClaimKind.EFFECT,
+        statement="write the code to the destination",
+        source_ref="request-1",
+    )
+    submit_claim = SourcedTaskClaim(
+        claim_id="claim-submit",
+        kind=TaskClaimKind.TERMINAL,
+        statement="submit the destination code",
+        source_ref="request-1",
+    )
+    task = _task().model_copy(
+        update={
+            "task_structure": TaskStructure.MULTI_STAGE,
+            "source_claims": (read_claim, write_claim, submit_claim),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-read",
+                    kind=TaskObligationKind.PREDICATE,
+                    subject="current code",
+                    relation=TaskObligationRelation.IS_AVAILABLE,
+                    value_source=TaskObligationValueSource.OBSERVATION,
+                    claim_ids=(read_claim.claim_id,),
+                    evidence_requirements=("fresh current-code observation",),
+                ),
+                TaskObligationSpec(
+                    obligation_id="obligation-write",
+                    kind=TaskObligationKind.PREDICATE,
+                    subject="destination code",
+                    relation=TaskObligationRelation.EQUALS,
+                    value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+                    value_obligation_id="obligation-read",
+                    claim_ids=(write_claim.claim_id,),
+                    depends_on=("obligation-read",),
+                    evidence_requirements=("fresh destination observation",),
+                ),
+                TaskObligationSpec(
+                    obligation_id="obligation-submit",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="destination code submission",
+                    relation=TaskObligationRelation.IS_COMPLETED,
+                    claim_ids=(submit_claim.claim_id,),
+                    depends_on=("obligation-write",),
+                    evidence_requirements=("fresh submission evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(update={"task_spec": task})
+
+    plan = PlanningRouter().plan(context)
+
+    assert plan.generated_by == TaskPlanSource.RULE
+    assert [item.subgoal_id for item in plan.subgoals] == [
+        "obligation-read",
+        "obligation-write",
+        "obligation-submit",
+    ]
+    write = plan.subgoals[1]
+    assert write.depends_on == ("obligation-read",)
+    assert write.outcome is not None
+    assert write.outcome.value == ""
+    assert write.outcome.value_obligation_id == "obligation-read"
+    assert TaskPlanValidator().validate(plan, task, state_version=4).status == TaskPlanValidationStatus.ACCEPT
+
+
+def test_subgoal_outcome_rejects_literal_and_dynamic_value_together() -> None:
+    with pytest.raises(ValueError, match="literal and obligation"):
+        SubgoalOutcome(
+            subject="destination code",
+            relation=SubgoalOutcomeRelation.EQUALS,
+            value="1234",
+            value_obligation_id="obligation-read",
+        )
+
+
 def test_task_planning_context_versions_bounded_current_state_policy() -> None:
     context = _context()
 

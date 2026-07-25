@@ -529,6 +529,8 @@ def _validate_task_obligation_graph(
         return
     if not claims or not obligations:
         raise ValueError("task claims and obligations must be supplied together")
+    if len(obligations) > 8:
+        raise ValueError("task obligation graph exceeds task plan limit")
 
     claim_by_id = {item.claim_id: item for item in claims}
     if len(claim_by_id) != len(claims):

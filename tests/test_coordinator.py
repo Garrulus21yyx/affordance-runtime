@@ -1099,9 +1099,13 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
                                 "observation_metadata",
                                 "saved",
                                 True,
-                                criterion_ids=(criterion_id("subgoal", "subgoal-1", 0),),
+                                criterion_ids=(
+                                    criterion_id("subgoal", "obligation-save-settings", 0),
+                                ),
                                 requirement_ids=(
-                                    evidence_requirement_id("subgoal", "subgoal-1", 0),
+                                    evidence_requirement_id(
+                                        "subgoal", "obligation-save-settings", 0
+                                    ),
                                 ),
                             ),
                         ),
