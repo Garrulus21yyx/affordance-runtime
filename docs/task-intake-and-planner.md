@@ -238,7 +238,9 @@ A literal value must be present in an authorized source claim. An
 obligations must use a terminal-compatible typed relation and independent
 evidence requirement. Duplicate ids, cycles, dangling references, blank source
 claims, invalid value-source combinations, or a terminal without evidence are
-invalid.
+invalid. Candidate-draft graph violations are deterministically projected to
+typed compilation rejection; the immutable TaskSpec boundary repeats the same
+validation and cannot be constructed from an invalid graph.
 
 Every required claim must be covered by at least one obligation and every
 obligation must cite one or more authorized claims. This proves structural

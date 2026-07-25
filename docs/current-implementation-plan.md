@@ -48,9 +48,9 @@ implemented through clean `3447795`. The provider-neutral sourced claim and
 TaskObligationSpec input contract is implemented at `a6233ac`, but provider
 completeness and typed repair before READY are not. Clean `fe28a76` rejects a
 wholly missing raw-language ledger/graph as typed `UNSUPPORTED`; clean
-`aca0b5d` adds an independently decoded, fixed-budget coverage review. Typed
-malformed-graph projection and empirical non-BrowserGym coverage remain open.
-The full local gate is 877
+`aca0b5d` adds an independently decoded, fixed-budget coverage review; clean
+`f3c4a6f` projects graph-level malformed input to typed rejection. Empirical
+non-BrowserGym coverage remains open. The full local gate is 878
 tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
