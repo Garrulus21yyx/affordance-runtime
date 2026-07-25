@@ -9,6 +9,9 @@ It is jointly normative with the
 [Runtime-First Architecture Boundary](runtime-first-boundary.md) and the
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md).
 
+Natural-language ownership is further constrained by
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
+
 ## 1. Core Decision
 
 The Runtime uses one authoritative `RunCoordinator`, but the Coordinator is a
@@ -62,8 +65,12 @@ adapter-to-core callbacks that bypass contracts are prohibited.
 | Area | Owns | Must not own |
 | --- | --- | --- |
 | `RunCoordinator` | phase sequencing, state-version checks, authoritative commit, budget accounting, trace ordering | parser algorithms, Prompt/model policy, provider repair, probe ranking, backend encoding, verifier implementation, report aggregation |
-| Intent compiler | raw request to sourced intent draft | capability grant, GUI target choice, execution |
-| Obligation compiler | prove complete sourced effects, values, dependencies, and terminal relations before READY | infer authority from page content or select GUI targets |
+| Source-ledger builder | canonical authorized source-unit identity, exact-span/hash lineage, bounded segmentation | semantic intent choice, capability grant, task graph construction |
+| Hybrid intent interpreter | rule-first extraction and non-authoritative model/parent semantic proposals | canonical ids, final obligation graph, READY admission, capability grant |
+| Canonical obligation compiler | canonical claims, typed values/effects, dependencies, evidence requirements, terminal graph, construction provenance | infer authority from page content, benchmark-family programs, GUI target choice |
+| Obligation coverage validator | deterministic source-to-claim, claim-to-obligation, and terminal reachability coverage | invent missing semantics or accept model self-certification |
+| Model coverage auditor | optional veto, downgrade, or clarification evidence | upgrade to READY, mutate graph, grant authority |
+| Intent admission validator | ambiguity, provenance, policy intersection, immutable TaskSpec creation | provider repair, GUI target choice, execution |
 | Task-plan flow | flat/skill/shallow-plan selection, plan lineage, subgoal activation | grounding, backend choice, state mutation |
 | Decision-constraint builder | current task/subgoal scope, obligation readiness, relations, and state admission | model invocation, trace commit, benchmark task grammar |
 | Step planner | one semantic proposal from bounded context and typed constraints | semantic resolver accumulation, selectors, coordinates, capabilities, execution, success authority |
@@ -103,7 +110,10 @@ The following changes are rejected:
 11. calling a configured recovery protocol an integrated capability when the
     normal entrypoint does not provide a concrete owner;
 12. adding benchmark-discovered terminal, pagination, value, form, or gesture
-    policy directly to the step planner instead of the typed owning contract.
+    policy directly to the step planner instead of the typed owning contract;
+13. copying provider-authored claim ids, obligation ids, dependency edges,
+    terminal flags, or free-form evidence strings directly into authoritative
+    TaskSpec without canonical compilation.
 
 ## 5. Mechanical Containment Gates
 
@@ -193,9 +203,11 @@ Every production change must state in its pull request or evidence record:
 5. the authority and budget source;
 6. the state writer and trace writer;
 7. the generic positive, negative, stale, no-op, and failure tests;
-8. the non-BrowserGym evidence when benchmark work discovered the need;
-9. whether any module crosses a mechanical containment gate;
-10. which old responsibility or duplicated path is removed.
+8. for intake changes, the source units and canonical compiler that authorize
+   each accepted claim/obligation;
+9. the non-BrowserGym evidence when benchmark work discovered the need;
+10. whether any module crosses a mechanical containment gate;
+11. which old responsibility or duplicated path is removed.
 
 Missing answers block merge. A vague answer such as "Coordinator owns the run"
 does not justify adding phase-specific algorithms to Coordinator.

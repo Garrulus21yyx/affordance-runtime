@@ -35,6 +35,13 @@ and generalization, not the product objective. Behavioral task-template solvers
 are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
+The normative
+[Intent Schema and Obligation Authority Governance](docs/intent-schema-authority-governance-20260726.md)
+also prohibits direct model ownership of the accepted task graph. Runtime code
+owns the source ledger, canonical obligation compilation, deterministic
+coverage, policy, and READY decision. A model or parent agent may submit
+semantic proposals, but those proposals carry no execution authority.
+
 The repository has completed the **scoped M8.6 internal governance gate**, not
 the full open-world Runtime claim. Implemented components include historical
 profile classification, strict-planner containment, typed intent and TaskPlan
@@ -52,11 +59,12 @@ evidence. The fresh four-profile internal conformance rollout for immutable revi
 no safety regression and a complete artifact hash index. This is provider-free
 internal evidence, not open-world or external-suite proof.
 
-The current critical audit records four still-open product gaps: sourced,
-typed task obligations; a smaller and genuinely general step-planner decision
-boundary; concrete provider/context/schema recovery owners in the normal
-BrowserGym and standalone entrypoints; and continued Coordinator/planner
-responsibility reduction. The latest immutable M8.2B diagnostic completed all
+The current critical audit and schema-authority audit keep these product gaps
+open: a code-owned source ledger and canonical obligation compiler instead of
+model-owned graph instances; a smaller and genuinely general step-planner
+decision boundary; concrete provider/context/schema recovery owners in normal
+entrypoints; and continued Coordinator/planner responsibility reduction. The
+latest immutable M8.2B diagnostic completed all
 60 episodes at 24/60 with zero provider or accounting failures, but regressed
 protected text-transformation/date families and therefore is not promotable.
 Historical smoke, PR, nightly, and release reports remain evidence only for
@@ -183,6 +191,7 @@ Explicitly deferred beyond the current profile:
 ## Documents
 
 - [Current Governance Critical Audit - 2026-07-25](docs/current-governance-critical-audit-20260725.md)
+- [Intent Schema and Obligation Authority Governance - 2026-07-26](docs/intent-schema-authority-governance-20260726.md)
 - [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md)
 - [Responsibility Containment Boundary](docs/responsibility-containment-boundary.md)
 - [Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)

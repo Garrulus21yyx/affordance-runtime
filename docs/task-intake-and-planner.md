@@ -24,30 +24,44 @@ The raw-request pipeline, typed `TaskSpec`, shallow `TaskPlan`, and action-level
 `GeneralistLMPlanner` exist. `TaskEnvelope(goal: str)` remains a compatibility
 path, not the long-term authority boundary.
 
-Current maturity is narrower than the schema list suggests. `TaskSpec`
-currently records requested effects, but does not yet compile every sourced
-user dependency and terminal outcome into an executable obligation graph. The
-current `GeneralistLMPlanner.propose()` also owns too much residual semantic
-policy. The next mandatory slice is:
+Current maturity is narrower than the schema list suggests. `TaskSpec` 1.3,
+typed sourced claims/obligations, structural graph validation, fail-closed
+admission, bounded repair, model-call accounting, repair Prompt identity, and
+TaskSpec-to-TaskPlan outcome compilation exist. However, the raw-language path
+still asks a model to author candidate claims and obligation nodes, then uses a
+model-backed completeness review by default. Runtime validates the proposed
+graph but does not yet own a canonical source ledger and generic graph
+compiler.
 
-```text
-IntentDraft -> TaskSpec -> TaskObligationSpec[] -> TaskPlan
+The next mandatory slice is:
+
+~~~text
+UserRequest -> SourceLedger
+SemanticProposal -> CanonicalObligationCompiler
+Canonical graph -> deterministic coverage -> TaskSpec -> TaskPlan
 Task + active obligation + current evidence -> DecisionConstraintSet
 DecisionConstraintSet + snapshot -> GeneralistLMPlanner
-```
+~~~
 
-The critical assessment is recorded in
-[Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
+The critical assessments are recorded in
+[Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
+and
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 
 ## 2. End-to-End Chain
 
-```text
-UserRequest or Parent Task
-  -> LLMIntentCompiler
-  -> IntentDraft
+~~~text
+UserRequest or Parent Task/Proposal
+  -> SourceLedgerBuilder
+  -> HybridIntentInterpreter
+       rule-first explicit facts
+       model-assisted open semantics
+  -> non-authoritative IntentSemanticProposal
+  -> CanonicalObligationCompiler
+  -> deterministic source/graph/terminal coverage
+  -> optional model coverage veto
   -> deterministic validation and policy intersection
   -> immutable TaskSpec revision
-  -> sourced TaskObligationSpec validation
   -> immutable DecisionConstraintSet
   -> initial observation
   -> adaptive task-planning router
@@ -69,7 +83,7 @@ Every stage
 Completed or failed traces
   -> benchmark and failure analysis
   -> regression-gated harness evolution
-```
+~~~
 
 Only the Coordinator advances authoritative runtime state. The compiler and
 planner return immutable typed outputs.
@@ -78,9 +92,9 @@ planner return immutable typed outputs.
 
 | Mode | Request owner | Intent compilation | Planner |
 | --- | --- | --- | --- |
-| Standalone | end user | `LLMIntentCompiler` | `GeneralistLMPlanner` |
-| Parent-agent | Codex, Claude, OpenHands, or another agent | parent may submit `TaskSpec` directly | parent adapter or generalist planner |
-| Benchmark | benchmark adapter | canonical `TaskSpec` or separately evaluated compiler | reproducible planner adapter |
+| Standalone | end user | current LLM draft; target hybrid interpreter plus canonical compiler | `GeneralistLMPlanner` |
+| Parent-agent | Codex, Claude, OpenHands, or another agent | typed `TaskSpec` or semantic proposal through the same validators | parent adapter or generalist planner |
+| Benchmark | benchmark adapter | canonical `TaskSpec` for Runtime isolation or separately scored raw intake | reproducible planner adapter |
 | Runtime diagnosis | test harness | fixed `TaskSpec` | `ScriptedPlanner` |
 
 BrowserGym-specific planners never become the only standalone planner.
@@ -139,6 +153,9 @@ preferences[]
 desired_outputs[]
 candidate_success_criteria[]
 candidate_constraints[]
+candidate_semantic_value_constraints[]
+candidate_source_claims[]
+candidate_obligations[]
 candidate_forbidden_effects[]
 ambiguities[]
 source_map
@@ -146,6 +163,14 @@ confidence_by_field
 ```
 
 The draft is not executable and carries no authority.
+At the current revision, the model still proposes the claim ledger and
+obligation nodes. Strict output schemas and deterministic graph rejection make
+that proposal bounded; they do not make it canonical. The target provider
+boundary is an `IntentSemanticProposal` bound to code-owned source units.
+Provider ids, dependency edges, terminal flags, and evidence descriptions are
+then normalized by `CanonicalObligationCompiler` rather than copied into
+`TaskSpec`. See
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 
 ### 4.4 Deterministic Compilation Result
 
@@ -172,11 +197,17 @@ task_id
 revision
 objective
 operation_class
+task_structure
 targets[]
+requested_effects[]
+entities[]
 preferences[]
 desired_outputs[]
 success_criteria[]
 constraints[]
+semantic_value_constraints[]
+source_claims[]
+obligations[]
 forbidden_effects[]
 evidence_requirements[]
 requested_capabilities[]
@@ -244,16 +275,22 @@ validation and cannot be constructed from an invalid graph.
 
 Every required claim must be covered by at least one obligation and every
 obligation must cite one or more authorized claims. This proves structural
-coverage against the claim ledger; it does not let one model certify the
-semantic completeness of its own natural-language extraction. Parent/typed
-callers may supply an authoritative ledger. The raw-language path uses a
-single bounded independent coverage review. The review is a separately versioned
-structured model call, records every required claim id it accepts, and may cite
-only literal clauses from the raw request. BrowserGym reserves one planner call
-for it, preserving the fixed total episode call ceiling. Disagreement, an
-uncovered imperative clause, or unresolved data dependency causes
-`NEEDS_CLARIFICATION`/`UNSUPPORTED`; it may not silently compile a permissive
-flat plan.
+coverage against the submitted claim ledger. At the audited revision, the
+raw-language path then runs one separately versioned model coverage review. Its
+references and literal request quotations are checked locally, disagreement is
+fail-closed, and BrowserGym reserves one planner call to preserve the episode
+ceiling.
+
+That is a containment mechanism, not final semantic independence. By default
+the same provider class authors the candidate graph and performs the review.
+The target path first builds code-owned source units, canonicalizes claims and
+obligations through generic Runtime templates, and proves deterministic
+source-to-claim, claim-to-obligation, and obligation-to-terminal coverage. The
+optional model reviewer then has negative authority only: it may return
+`NEEDS_CLARIFICATION` or `UNSUPPORTED`, but its `COMPLETE` result cannot
+upgrade an invalid task to READY. Parent/typed callers may submit authoritative
+facts or a complete TaskSpec, but still pass schema, policy, terminal-evidence,
+and revision validation.
 
 Every effectful task must have at least one terminal obligation and independent
 evidence requirement. Every user-stated dependency must either appear in the
@@ -275,6 +312,51 @@ string. Typed obligation graphs bypass model task decomposition, reducing the
 existing episode model-call use rather than adding a call. The legacy one-
 subgoal flat plan remains only for TaskSpecs that predate obligation authority.
 
+### 4.7 Schema and graph authority
+
+The intake boundary is split into four owners:
+
+| Owner | Output | Authority |
+| --- | --- | --- |
+| SourceLedgerBuilder | immutable authorized source units | source identity only |
+| HybridIntentInterpreter | semantic proposal bound to source units | no execution or READY authority |
+| CanonicalObligationCompiler | canonical claims, graph, value flow, evidence requirements, terminal nodes | graph construction |
+| Coverage/Intent/Policy validators | READY, clarification, conflict, or unsupported | final admission |
+
+The standard schema is never generated by a provider. Runtime code owns legal
+relations, value sources, evidence kinds, graph limits, canonical id rules, and
+schema versions.
+
+The model remains useful for open language:
+
+~~~text
+paraphrase and entity interpretation
+dependency and success-condition proposals
+non-trivial decomposition
+ambiguity discovery
+~~~
+
+Every proposal must cite known source units. Provider-generated ids, terminal
+flags, evidence strings, and dependency edges are normalized or rejected.
+Common tasks use a small generic template vocabulary:
+
+~~~text
+observe a resource or value
+derive or transform a sourced value
+make a reversible local state change
+produce an external or irreversible effect
+verify a predicate or effect
+~~~
+
+These are dataflow/effect primitives, not benchmark task programs. Unknown or
+ambiguous semantics return clarification/unsupported; they do not authorize a
+new benchmark-family template.
+
+The current direct candidate-obligation copy is compatibility behavior to
+remove through gates SG1-SG5 in
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
+`TaskObligationOutcomeCompiler` remains the downstream TaskSpec-to-TaskPlan
+owner and should not absorb natural-language parsing.
 
 ## 5. Planner Boundary
 
@@ -818,6 +900,16 @@ improves completion without excessive inference or stale-plan overhead.
    primitive execution.
 8. Add compiler/planner trace events, redaction, and model manifests.
 9. Run the controlled compiler, real-environment planner, and end-to-end suites.
+10. Add a code-owned source ledger with deterministic ids and privacy-safe
+    lineage.
+11. Add CanonicalObligationCompiler with a small generic dataflow/effect
+    template registry.
+12. Replace model completeness authority with deterministic coverage and an
+    optional veto-only model auditor.
+13. Replace free-form-only evidence obligations with typed verifier-resolvable
+    requirements.
+14. Remove direct provider-candidate graph copying after normal-entrypoint and
+    checkpoint compatibility migration.
 
 ### Exit Criteria
 
@@ -831,6 +923,13 @@ M8.2A is complete when:
 - one read-only, one reversible-write, one approval-gated, and one
   DOM/visual/WoT cross-surface task pass;
 - no LM output grants capability, approval, or direct executor access;
+- no accepted claim or obligation cites an unknown source unit;
+- provider-authored ids, dependency edges, terminal flags, and evidence strings
+  are canonicalized rather than copied into TaskSpec;
+- deterministic source/claim/graph/terminal gates are sufficient for READY;
+- an optional model coverage result can block but cannot authorize;
+- held-out non-BrowserGym cases contain no false READY, invented value, missing
+  terminal outcome, or policy bypass;
 - the same PlannerPort runs a BrowserGym smoke without task-specific solver
   logic;
 - prompt/model/schema versions and proposal-to-contract lineage are traceable;
@@ -840,9 +939,10 @@ M8.2A is complete when:
 
 ### Adaptive Shallow Task Planning - implemented baseline, follow-through open
 
-The listed baseline components exist. Remaining work is sourced obligation
-coverage, complete replan inputs and version lineage, planner responsibility
-reduction, and protected-family/non-BrowserGym evidence.
+The listed baseline components exist. Remaining work begins upstream with the
+SG1-SG6 schema-authority gates, followed by complete replan inputs and version
+lineage, planner responsibility reduction, and protected-family/non-BrowserGym
+evidence.
 
 Original entry criteria:
 

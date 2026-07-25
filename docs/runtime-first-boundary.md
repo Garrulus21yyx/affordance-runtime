@@ -18,6 +18,13 @@ because they already possess the necessary context. Its ownership and
 feature-freeze gates apply before milestone promotion.
 
 The
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md)
+is jointly normative for raw-language and parent-agent intake. It prohibits
+direct provider ownership of accepted claim, obligation, evidence, and terminal
+graph identity. Schema and canonical compilation remain Runtime responsibilities
+even when a model performs semantic interpretation.
+
+The
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md)
 is also normative for M8.6. It defines how missing evidence is repaired before
 effects, how phase-general failures become typed recovery commands, and how the
@@ -174,10 +181,26 @@ The task planner emits outcome-oriented subgoals. The action planner emits
 semantic action proposals. Neither may emit or authorize raw selectors,
 coordinates, bids, backend action strings, capabilities, or approvals.
 
-Before task planning, a sourced obligation compiler must prove that every
-explicit requested effect, terminal relation, typed value, and data dependency
-survives into immutable TaskSpec authority. A non-empty effect list is not
-obligation completeness.
+Before task planning, Runtime must:
+
+1. construct a bounded source ledger from authorized request/context units;
+2. accept deterministic or model-assisted semantic proposals bound to those
+   units;
+3. compile canonical sourced claims, typed obligations, value flow,
+   dependencies, evidence requirements, and terminal relations;
+4. prove deterministic source-to-claim, claim-to-obligation, and
+   obligation-to-terminal coverage;
+5. run policy and ambiguity admission before constructing immutable TaskSpec.
+
+A non-empty effect list is not obligation completeness. A structurally valid
+model graph is also not semantic authority. Provider ids, free-form evidence
+strings, terminal declarations, and dependency edges are proposals until the
+canonical compiler normalizes them.
+
+An optional model coverage review may veto, downgrade, or request clarification.
+Its COMPLETE result cannot upgrade an otherwise invalid or incomplete task to
+READY. Repair produces a new proposal and fresh validation result; it does not
+mutate an accepted TaskSpec or grant authority.
 
 Before step planning, generic resolvers compile current task scope, active-
 subgoal scope, obligation readiness, semantic values, collection relations, and

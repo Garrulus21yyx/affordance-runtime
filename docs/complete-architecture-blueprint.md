@@ -292,29 +292,39 @@ set, stable list semantics, and immutability after approval.
 
 The promoted lightweight implementation specification is
 [Task Intake and Generalist Planner](task-intake-and-planner.md). This chapter
-preserves the broader production destination.
+preserves the broader production destination. Schema and graph authority are
+governed by
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 
 ### 7.1 Intent Compilation
 
 Standalone mode may add:
 
-```text
+~~~text
 Raw User Request
-  -> Intent Interpreter
-  -> Task Compiler
+  -> code-owned Source Ledger
+  -> Hybrid Intent Interpreter
+       deterministic explicit facts
+       model-assisted semantic proposal
+  -> Canonical Obligation Compiler
+  -> deterministic source/claim/graph/terminal coverage
+  -> optional veto-only model audit
   -> Policy Resolver
   -> immutable TaskSpec revision
   -> Planner
-```
+~~~
 
 Intent interpretation may use an external or local LLM, but cannot grant
-capability, remove constraints, or authorize side effects. High-risk ambiguity
-returns `NEEDS_CLARIFICATION`.
+capability, remove constraints, authorize side effects, define the wire schema,
+or directly commit provider-authored graph ids/edges/evidence. Runtime code owns
+canonical compilation and READY admission. High-risk ambiguity returns
+`NEEDS_CLARIFICATION`.
 
 Benchmark mode should normally begin from a canonical TaskSpec so intent errors
 and runtime errors can be measured separately. Parent agents may submit TaskSpec
-directly but the runtime still validates policy, capabilities, ambiguity, and
-success criteria.
+directly or provide a semantic proposal, but Runtime still validates schema,
+source lineage, graph coverage, policy, capabilities, ambiguity, and terminal
+evidence.
 
 Intent changes create a new TaskSpec revision. Pending contracts based on an
 older revision must be rejected or revalidated.

@@ -21,6 +21,12 @@ recovery is defined in
 It is part of the current M8.6 skeleton, not a future distributed-service
 option.
 
+The
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md)
+is normative for natural-language intake. Runtime code owns source identity,
+canonical obligation compilation, deterministic coverage, and READY admission;
+models and parent agents submit non-authoritative semantic proposals.
+
 The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
 records the current implementation boundary. M8.6 proves the internal protocol
 and configured-path gate; it does not yet prove obligation-complete intake,
@@ -30,9 +36,14 @@ generality, or completed responsibility reduction.
 ## 1. High-Level System
 
 ~~~text
-User Request / Parent TaskSpec
-  -> IntentCompiler / TaskSpecValidator
-  -> sourced TaskObligation validation
+User Request / parent semantic proposal / Parent TaskSpec
+  -> source ledger and authorized lineage
+  -> hybrid intent interpretation
+  -> canonical sourced claim and obligation compilation
+  -> deterministic source/graph/terminal coverage
+  -> optional model coverage audit with veto-only authority
+  -> TaskSpecValidator / policy
+  -> immutable TaskSpec
   -> TaskPlanRouter
        -> one flat subgoal
        -> accepted TaskSkill
@@ -91,7 +102,6 @@ All paths
   -> accept / reject / rollback
 ~~~
 
-
 The online runtime is bounded. It is not an unconstrained ReAct loop. It follows
 a stateful workflow with explicit transitions, stale-state rejection, scoped
 capabilities, post-action verification, and trace logging.
@@ -127,6 +137,8 @@ migration scaffolding, not the final intent/planner contract.
 | INV-19 | Step planning consumes typed decision constraints; benchmark-discovered semantic resolvers do not accumulate inside the generalist model loop. |
 | INV-20 | Provider, context, or schema recovery is enabled only when the normal entrypoint configures a concrete owning port. |
 | INV-21 | A containment ratchet proves non-expansion, not completion of the module-reduction target. |
+| INV-22 | Models and parent agents may propose intent semantics, but Runtime code owns canonical source ids, obligation graph construction, validation, policy, and READY admission. |
+| INV-23 | A model-backed coverage review may narrow or block admission; it cannot upgrade an invalid or incomplete task to READY. |
 
 ## 1.2 Task State Machine
 
@@ -166,7 +178,6 @@ rejected.
 
 run_contract may remain an internal/debug API, but the public runtime is
 task-level and holds one RunContext across steps.
-
 
 ## 1.3 Run State / State Kernel
 
@@ -625,7 +636,6 @@ The initial recovery matrix remains:
 | verifier inconclusive | gather stronger evidence | 2 | ask or fail | do not repeat effectful action |
 | capability denied | request approval | 1 | abort | no backend bypass |
 | partial side effect | verify current state | 1 | compensate or abort | no blind retry |
-
 
 ### 2.10 Trace and Evaluation Layer
 

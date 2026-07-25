@@ -14,6 +14,8 @@ unpromoted. See
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
 the [M8.6 Closure Audit](current-closure-audit-20260724.md), and the
 [Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
+The intake remediation is governed by
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 
 Runtime-first R1-R8 remains valid component and containment evidence.
 TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
@@ -118,23 +120,61 @@ The sole BrowserGym launcher now exposes explicit immutable `--llm-profile`
 selection instead of overriding a configured profile to local; local retains
 its GPU preflight, while a selected remote profile is recorded separately by
 the existing run identity and is never merged with local evidence.
+Schema-authority re-audit at clean `bba582c`: recent commits correctly preserve
+provider obligation fields during bounded repair, distinguish repair Prompt
+identity, count reserved model calls, preserve the selected provider profile,
+and trace failed repairs. `TaskSpec`, graph vocabulary, structural validation,
+policy, and fail-closed admission are code-owned. However,
+`LLMIntentCompiler` still accepts provider-authored claim and obligation
+instances, `_compile_decoded_draft()` can copy them into TaskSpec after
+validation, and the default `ModelBackedTaskObligationCoverageChecker` gives a
+model COMPLETE result a role in READY admission. No code-owned source-unit
+ledger or generic canonical graph compiler exists. This is bounded model
+authority, not model-independent compilation.
+
+The fixed Python 3.12 local gate passes 907 tests, Ruff, and repository-governed
+mypy over 110 source files. No benchmark or provider episode was run for this
+audit.
+
+The governing remediation is
+[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
+Do not continue repairing provider graph shape through Prompt changes. Preserve
+the current three-call maximum while moving authority into:
+
+~~~text
+SourceLedgerBuilder
+  -> HybridIntentInterpreter proposal
+  -> CanonicalObligationCompiler
+  -> deterministic coverage and policy
+  -> optional model audit with veto-only authority
+~~~
 
 Mandatory next sequence:
 
 ~~~text
 freeze benchmark-family repair
-  -> completed: define sourced TaskObligationSpec
-  -> completed: reject incomplete READY compilation
-  -> completed: compile typed flat and dependent outcomes
-  -> completed: build DecisionConstraintSet outside the step planner
-  -> partial: wire configured fallback-provider recovery into BrowserGym and GeneralistTaskPipeline normal entrypoints
+  -> SG0 complete: freeze schema/graph authority and anti-specialization boundary
+  -> SG1: code-owned SourceLedger and exact source lineage
+  -> SG2: generic CanonicalObligationCompiler and typed evidence requirements
+  -> SG3: normalize model/parent semantic proposals; stop trusting graph ids
+  -> SG4: deterministic source/claim/graph/terminal coverage; model veto only
+  -> SG5: remove direct candidate graph copying and version checkpoint identity
+  -> full local quality gates
+  -> SG6: non-BrowserGym held-out intake conformance and adversarial omissions
   -> wire real context/schema recovery owners into normal entrypoints
-  -> partial: continue Coordinator responsibility reduction after TaskPlan commit preparation
-  -> non-BrowserGym held-out conformance
-  -> targeted + protected-family + cross-family + fresh diagnostic
+  -> retain partial configured provider switch without claiming full recovery
+  -> continue Coordinator responsibility reduction without adding intake logic
+  -> SG7 targeted protected families
+  -> PR breadth and fresh diagnostic only after SG1-SG6 pass
+  -> nightly/release only after promotion criteria and explicit authorization
   -> publish immutable local evidence
   -> synchronize origin or remote CI only with explicit user authorization
 ~~~
+
+The existing `TaskObligationOutcomeCompiler`, `DecisionConstraintSet`, task
+planner, contract, verification, recovery, trace, and evolution path remain
+downstream consumers. They must not absorb raw-language or benchmark-family
+compilation while SG1-SG5 are implemented.
 
 Current post-R8 repair slice (2026-07-23): release traces for the stable
 password/login verification cluster show a shared observation defect. Native
