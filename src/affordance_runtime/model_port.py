@@ -113,10 +113,36 @@ class FallbackModelPort:
     last_call: ModelCallRecord | None = field(default=None, init=False)
     failures: tuple[str, ...] = field(default=(), init=False)
     failure_details: tuple[str, ...] = field(default=(), init=False)
+    active_port_index: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if not self.ports:
             raise ValueError("FallbackModelPort requires at least one model port")
+
+    @property
+    def active_profile_ref(self) -> str:
+        """Return the currently preferred non-secret provider/model identity."""
+
+        port = self.ports[self.active_port_index]
+        return f"{port.provider}:{port.model}"
+
+    @property
+    def next_profile_ref(self) -> str:
+        """Return the next configured profile without changing selection."""
+
+        if len(self.ports) < 2:
+            return ""
+        port = self.ports[(self.active_port_index + 1) % len(self.ports)]
+        return f"{port.provider}:{port.model}"
+
+    def switch_to_next_profile(self) -> tuple[str, str] | None:
+        """Select a different configured provider for later calls, if one exists."""
+
+        if len(self.ports) < 2:
+            return None
+        before = self.active_profile_ref
+        self.active_port_index = (self.active_port_index + 1) % len(self.ports)
+        return before, self.active_profile_ref
 
     async def generate_structured(
         self,
@@ -126,7 +152,9 @@ class FallbackModelPort:
     ) -> T:
         failures: list[str] = []
         failure_details: list[str] = []
-        for port in self.ports:
+        for offset in range(len(self.ports)):
+            port_index = (self.active_port_index + offset) % len(self.ports)
+            port = self.ports[port_index]
             try:
                 value = await port.generate_structured(messages, output_schema, config)
             except StructuredModelError as exc:
@@ -136,6 +164,7 @@ class FallbackModelPort:
             self.last_call = port.last_call
             self.failures = tuple(failures)
             self.failure_details = tuple(failure_details)
+            self.active_port_index = port_index
             return value
         self.last_call = None
         self.failures = tuple(failures)

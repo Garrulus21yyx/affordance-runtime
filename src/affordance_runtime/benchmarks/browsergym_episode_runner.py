@@ -55,6 +55,7 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
+from affordance_runtime.model_recovery import recovery_dispatcher_for_model
 from affordance_runtime.perception import (
     GenericPerceptionOrchestrator,
     derive_perception_requirements,
@@ -718,6 +719,7 @@ def run_browsergym_generalist_episode(
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
+            recovery_command_dispatcher=recovery_dispatcher_for_model(model),
         ).run_sync(TaskEnvelope(task_spec=task_spec), intake_trace)
         planner_error = next(
             (
