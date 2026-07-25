@@ -245,9 +245,12 @@ obligation must cite one or more authorized claims. This proves structural
 coverage against the claim ledger; it does not let one model certify the
 semantic completeness of its own natural-language extraction. Parent/typed
 callers may supply an authoritative ledger. The raw-language path uses a
-bounded independent coverage check; disagreement, an uncovered imperative
-clause, or unresolved data dependency causes one budget-neutral repair or
-`NEEDS_CLARIFICATION`/`UNSUPPORTED`. It may not silently compile a permissive
+single bounded independent coverage review. The review is a separately versioned
+structured model call, records every required claim id it accepts, and may cite
+only literal clauses from the raw request. BrowserGym reserves one planner call
+for it, preserving the fixed total episode call ceiling. Disagreement, an
+uncovered imperative clause, or unresolved data dependency causes
+`NEEDS_CLARIFICATION`/`UNSUPPORTED`; it may not silently compile a permissive
 flat plan.
 
 Every effectful task must have at least one terminal obligation and independent
