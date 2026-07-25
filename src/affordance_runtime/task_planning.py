@@ -225,7 +225,7 @@ SubgoalSpec.model_rebuild()
 
 
 class _RequiredValueCandidateOutcome(SubgoalOutcome):
-    value: str = Field(min_length=1, pattern=r"\S")
+    value: str = Field(min_length=1)
 
 
 class _UnaryCandidateOutcome(SubgoalOutcome):

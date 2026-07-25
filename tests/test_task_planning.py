@@ -108,7 +108,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
             ]["value"]
             if relation in {"equals", "contains", "matches", "is_ordered_as"}:
                 assert value_schema["minLength"] == 1
-                assert value_schema["pattern"] == r"\S"
+                assert "pattern" not in value_schema
             elif relation != "is_selected":
                 assert value_schema["const"] == ""
         assert set(candidate_schema["required"]) >= {
@@ -152,7 +152,6 @@ def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() 
     "outcome",
     (
         {"subject": "field", "relation": "contains", "value": ""},
-        {"subject": "field", "relation": "matches", "value": "   "},
         {"subject": "panel", "relation": "is_visible", "value": "false"},
     ),
 )
@@ -185,6 +184,29 @@ def test_runtime_outcome_remains_permissive_for_validator_negative_inputs() -> N
     )
 
     assert outcome.value == ""
+
+
+def test_trusted_validator_rejects_whitespace_only_required_value() -> None:
+    plan = synthetic_task_plan(_context())
+    entry = plan.subgoals[0].model_copy(
+        update={
+            "action_family": TaskPlanActionFamily.TYPE_TEXT,
+            "outcome": SubgoalOutcome(
+                subject="field",
+                relation=SubgoalOutcomeRelation.MATCHES,
+                value="   ",
+            ),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan.model_copy(update={"subgoals": (entry,)}),
+        _task(),
+        state_version=4,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert "outcome_value_required" in {item.code for item in report.issues}
 
 
 def test_llm_facing_schema_accepts_same_relation_for_compatible_navigation() -> None:
