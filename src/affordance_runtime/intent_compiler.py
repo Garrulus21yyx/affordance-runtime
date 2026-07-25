@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Callable, Sequence, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -24,7 +24,11 @@ from affordance_runtime.task_intake import (
     IntentDraft,
     IntentDraftValidator,
     RequestedEffect,
+    StrictModel,
+    TaskObligationKind,
+    TaskObligationRelation,
     TaskObligationSpec,
+    TaskObligationValueSource,
     UserRequest,
 )
 from affordance_runtime.task_obligation_coverage import (
@@ -79,6 +83,23 @@ def intent_draft_repair_model_config() -> ModelConfig:
     )
 
 
+class LLMTaskObligationSpec(StrictModel):
+    """Provider-facing graph node: structurally guided, semantically untrusted."""
+
+    obligation_id: str = Field(default="", max_length=120)
+    kind: TaskObligationKind | None = None
+    subject: str = Field(default="", max_length=480)
+    relation: TaskObligationRelation | None = None
+    value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
+    expected_value: str = Field(default="", max_length=480)
+    value_obligation_id: str = Field(default="", max_length=120)
+    claim_ids: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = ()
+    blocking: bool = True
+    terminal: bool = False
+
+
 class LLMIntentDraft(IntentDraft):
     """Provider schema whose deterministic-validator prerequisites are required."""
 
@@ -88,7 +109,7 @@ class LLMIntentDraft(IntentDraft):
     # Provider drafts may have a locally malformed graph node. Keep that node
     # outside the trusted draft until deterministic decoding can turn it into a
     # typed repairable issue; TaskSpec never receives the raw mapping.
-    candidate_obligations: tuple[dict[str, Any], ...] = ()  # type: ignore[assignment]
+    candidate_obligations: tuple[LLMTaskObligationSpec, ...] = ()  # type: ignore[assignment]
 
 
 @dataclass
@@ -346,7 +367,7 @@ def _decode_provider_draft(
     issues: list[CompilationIssue] = []
     for index, raw_obligation in enumerate(provider_draft.candidate_obligations):
         try:
-            obligations.append(TaskObligationSpec.model_validate(raw_obligation))
+            obligations.append(TaskObligationSpec.model_validate(raw_obligation.model_dump(mode="json")))
         except ValidationError as exc:
             issues.append(
                 CompilationIssue(

@@ -200,6 +200,23 @@ def test_provider_schema_requires_deterministic_validator_prerequisites() -> Non
     assert "candidate_obligations" not in schema["required"]
 
 
+def test_provider_obligation_schema_keeps_graph_fields_while_deferring_semantic_validation() -> None:
+    schema = LLMIntentDraft.model_json_schema()
+    reference = schema["properties"]["candidate_obligations"]["items"]["$ref"]
+    obligation_schema = schema["$defs"][reference.rsplit("/", 1)[-1]]
+
+    assert {
+        "obligation_id",
+        "kind",
+        "subject",
+        "relation",
+        "claim_ids",
+        "depends_on",
+        "evidence_requirements",
+        "terminal",
+    }.issubset(obligation_schema["properties"])
+
+
 def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:
     constraint = SemanticValueConstraint(
         relation=SemanticValueRelation.PREFIX,
