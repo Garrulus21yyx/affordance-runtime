@@ -73,6 +73,7 @@ from affordance_runtime.recovery_commands import (
 from affordance_runtime.recovery_commands import (
     RecoveryReceipt as RecoveryCommandReceipt,
 )
+from affordance_runtime.recovery_completion import successful_recovery_completion
 from affordance_runtime.recovery_coordinator import (
     RecoveryCoordinator,
     RecoveryHistoryItem,
@@ -2621,50 +2622,26 @@ class RunCoordinator:
         if failure is None or plan is None:
             raise ValueError("immediate recovery completion requires failure and plan")
         command = plan.commands[0]
-        previous_fingerprint = (
-            failure.progress_fingerprint
-            or f"{failure.semantic_family_key}:state:{failure.state_version}"
-        )
-        next_fingerprint = (
-            f"{failure.semantic_family_key}:{command.strategy_id}:"
-            f"{state.phase}:state:{state.version}"
-        )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=previous_fingerprint,
-            next_attempt_fingerprint=next_fingerprint,
-            changed_dimensions=command.changed_dimensions,
+        completion = successful_recovery_completion(
+            failure=failure,
+            command=command,
+            state_version=state.version,
             retired_assumptions=tuple(state.disproved_assumptions[-1:]),
-            new_plan_or_route_ref=command.provider_id,
-            explanation=command.expected_change,
+            fingerprint_ref=state.phase,
+            plan_or_route_ref=command.provider_id,
         )
-        receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=True,
-            state_before=f"state:{failure.state_version}",
-            state_after=f"state:{state.version}",
-            changed_dimensions=command.changed_dimensions,
-            plan_refs=(command.provider_id,) if command.provider_id else (),
-            delta=delta,
-        )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
-        state.recovery_history.append(
-            RecoveryHistoryItem(
-                failure.semantic_family_key,
-                command.strategy_id,
-                previous_fingerprint,
-                next_fingerprint,
-            )
-        )
+        state.recovery_deltas.append(completion.delta)
+        state.recovery_receipts.append(completion.receipt)
+        state.recovery_history.append(completion.history)
         state.current_recovery_plan = None
         parent = trace.add(
             "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},
             parents=[parent.id],
         )
         parent = trace.add(
             "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            {"state": state.phase, "delta": completion.delta.model_dump(mode="json")},
             parents=[parent.id],
         )
         return trace.add(
@@ -2687,50 +2664,26 @@ class RunCoordinator:
         if failure is None or plan is None or plan.commands[0].kind != kind:
             return parent
         command = plan.commands[0]
-        previous_fingerprint = (
-            failure.progress_fingerprint
-            or f"{failure.semantic_family_key}:state:{failure.state_version}"
-        )
-        next_fingerprint = (
-            f"{failure.semantic_family_key}:{command.strategy_id}:"
-            f"{plan_or_route_ref}:state:{state.version}"
-        )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=previous_fingerprint,
-            next_attempt_fingerprint=next_fingerprint,
-            changed_dimensions=command.changed_dimensions,
+        completion = successful_recovery_completion(
+            failure=failure,
+            command=command,
+            state_version=state.version,
             retired_assumptions=tuple(state.disproved_assumptions[-1:]),
-            new_plan_or_route_ref=plan_or_route_ref,
-            explanation=command.expected_change,
+            fingerprint_ref=plan_or_route_ref,
+            plan_or_route_ref=plan_or_route_ref,
         )
-        receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=True,
-            state_before=f"state:{failure.state_version}",
-            state_after=f"state:{state.version}",
-            changed_dimensions=command.changed_dimensions,
-            plan_refs=(plan_or_route_ref,),
-            delta=delta,
-        )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
-        state.recovery_history.append(
-            RecoveryHistoryItem(
-                failure.semantic_family_key,
-                command.strategy_id,
-                previous_fingerprint,
-                next_fingerprint,
-            )
-        )
+        state.recovery_deltas.append(completion.delta)
+        state.recovery_receipts.append(completion.receipt)
+        state.recovery_history.append(completion.history)
         state.current_recovery_plan = None
         parent = trace.add(
             "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},
             parents=[parent.id],
         )
         parent = trace.add(
             "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            {"state": state.phase, "delta": completion.delta.model_dump(mode="json")},
             parents=[parent.id],
         )
         return trace.add(
