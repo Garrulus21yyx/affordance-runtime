@@ -26,12 +26,12 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | sourced graph/admission, outcome compiler, all-plan binding, terminal evidence, and cross-scenario conformance through `766f598` | extract strict DecisionConstraintSet outside Planner |
+| M8.2A Task Intake and Planner Contracts | in_progress | sourced graph/admission, outcome compiler, all-plan binding, terminal evidence, cross-scenario conformance, and stateless DecisionConstraintSet through `ca71819` | normal-entrypoint recovery wiring and held-out conformance |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals | hold nightly/release; complete sourced obligations and protected-family regression before breadth promotion |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed injectable owner dispatch, quarantined artifact replay, acceptance, persistence, and rollback | implement concrete context/schema/provider owners and wire them into normal entrypoints |
-| M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, and deterministic cross-scenario controls | extract strict DecisionConstraintSet and prove held-out behavior |
+| M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `766f598` closes deterministic obligation conformance with 888 tests | DecisionConstraintSet, operational recovery owners, planner generalization, and responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `ca71819` completes stateless decision admission with 890 tests | operational recovery owners, planner generalization, and responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -300,7 +300,7 @@ The governing documents are:
 | --- | --- | --- |
 | G0 Freeze and classify | complete | score-bearing and legacy summaries are classified; current identities are explicit |
 | G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
-| G2 Intent and TaskPlan integration | obligation chain complete / decision owner open | TaskSpec obligations compile to same-id outcomes, every plan source is checked, verified evidence reaches TerminalReadiness, and cross-scenario controls pass; DecisionConstraintSet remains open |
+| G2 Intent and TaskPlan integration | obligation chain and decision owner complete | TaskSpec obligations compile to same-id outcomes, every plan source is checked, verified evidence reaches TerminalReadiness, cross-scenario controls pass, and `DecisionConstraintSet` owns typed text, ordinal, terminal, and current-state admission |
 | G2.5 Active perception and evidence repair | repaired / locally verified | strict authority intersection, no adapter escalation, current relevant semantic-candidate evidence, typed flow owner, and negative controls pass |
 | G3 Full-phase Recovery Coordinator | injectable path verified / normal entry open | configured context/schema/provider commands require real owning ports and non-empty deltas; the generalist runner does not yet configure those owners |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
@@ -317,14 +317,12 @@ Current verified facts:
 - active perception and lower-half recovery run through normal Coordinator
   paths; provider/context/schema repair remains conditional on an injected owner;
 - complete-run accounting continues after ordinary failures;
-- the audited `f4c3308` baseline passed 665 tests; immutable `766f598` passes
-  888 tests, Ruff, and mypy over 106 source files in the fixed Python 3.12
-  environment.
+- the audited `f4c3308` baseline passed 665 tests; clean `ca71819` passes 890
+  tests, Ruff, and mypy over 107 source files in the fixed Python 3.12 environment.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
 close the broader product work. The default dispatcher remains empty unless an
-entrypoint supplies concrete owners, the DecisionConstraintSet owner remains
-inside the Planner rather than extracted,
+entrypoint supplies concrete owners,
 the Coordinator remains above its reduction target, and strict planner behavior
 is still diagnostic. External-suite provisioning is a separate confirmation gap.
 

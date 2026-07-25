@@ -53,11 +53,12 @@ wholly missing raw-language ledger/graph as typed `UNSUPPORTED`; clean
 non-BrowserGym raw-intake conformance closes at `d860c2c`; TaskPlan outcome
 compilation closes at `0b294f8`; verifier-evidence identity binding is now the
 completed at `6861e98`; deterministic cross-scenario conformance is now the
-completed at `766f598`; DecisionConstraintSet extraction is now the open owner.
-Clean `c6c19d1` extracts typed-text and ordinal admission; terminal narrowing
-joins the same owner at `482a3c5`; current-state admission audit remains. The
-full local gate is 888
-tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
+completed at `766f598`. Clean `c6c19d1` extracts typed-text and ordinal
+admission; terminal narrowing joins the same owner at `482a3c5`; and clean
+`ca71819` completes verifier-backed current-target exclusion, active-subgoal
+scope, and strict finish-evidence admission in the same stateless owner. The
+full local gate is 890 tests, Ruff, and governed mypy over 107 source files.
+The next owner is normal-entrypoint recovery wiring. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
 terminal effect/data dependency and the flat RuleTaskPlan has no typed outcome
@@ -74,7 +75,7 @@ freeze benchmark-family repair
   -> completed: define sourced TaskObligationSpec
   -> completed: reject incomplete READY compilation
   -> completed: compile typed flat and dependent outcomes
-  -> build DecisionConstraintSet outside the step planner (current)
+  -> completed: build DecisionConstraintSet outside the step planner
   -> wire concrete recovery owners into normal entrypoints
   -> continue Coordinator/Planner responsibility reduction
   -> non-BrowserGym held-out conformance
