@@ -107,6 +107,35 @@ class FixedCoverageChecker:
         return self.decision
 
 
+@dataclass
+class RepairingModel(FixedModel):
+    repaired_draft: IntentDraft = field(default_factory=IntentDraft)
+    calls: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        self.calls += 1
+        self.messages = messages
+        self.message_batches.append(messages)
+        if output_schema is LLMIntentDraft:
+            draft = self.draft if self.calls == 1 else self.repaired_draft
+            return output_schema.model_validate(draft.model_dump())
+        if output_schema is TaskObligationCoverageReview:
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": [
+                        item.claim_id for item in self.repaired_draft.candidate_source_claims if item.required
+                    ],
+                }
+            )
+        raise AssertionError(f"unexpected schema: {output_schema.__name__}")
+
+
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
     schema = LLMIntentDraft.model_json_schema()
 
@@ -165,6 +194,35 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
         "never invent a completion" in messages[0].content.casefold()
         for messages in model.message_batches
     )
+
+
+def test_llm_compiler_repairs_missing_obligation_graph_within_three_call_budget() -> None:
+    initial = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="repair-request",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+    )
+    claims, obligations = _terminal_authority("repair-request", "pricing read")
+    repaired = initial.model_copy(
+        update={"candidate_source_claims": claims, "candidate_obligations": obligations}
+    )
+    model = RepairingModel(initial, repaired_draft=repaired)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="repair-request", raw_text="Read pricing")
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert model.calls == 3
 
 
 def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None:
