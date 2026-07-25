@@ -169,7 +169,7 @@ evidence level. See
 | M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Planner Contracts | partial / reopened | typed intake, TaskSpec revision, semantic proposal binding, and provider-neutral ports exist; default planner behavior is not yet strict-generalist |
-| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `351dbdf` completed 60/60 with 19 successes, no provider failure/retry, and 41 attributable residuals; frozen nightly is held |
+| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `df5b820` completed 60/60 with 24 successes, no provider failure/retry, and 36 attributable residuals; frozen nightly is held |
 | M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
@@ -495,14 +495,16 @@ and all model/proposal/contract lineage is traceable.
 
 #### M8.2B: Public Benchmark Expansion - diagnostic complete, repair required
 
-The new strict-generalist ladder is no longer pending. Implementation SHA
-`351dbdf` completed smoke 6/6 accounting, PR 18/18 accounting, and the
-seed-major 30 x 2 diagnostic 60/60. The diagnostic result is 19/60 with zero
-provider failures/retries and no batch stop. It is evidence for repair
-selection, not a promoted score. Frozen nightly remains held until generic
-failure ownership, typed proposal parameters, perception gating,
-subgoal-target constraints, and execution/verification residuals close. See
-`evidence/runs/m8.2b-diagnostic-351dbdf/`.
+The current strict-generalist ladder is no longer pending. After bounded typed
+ownership, proposal, TaskPlan, and provider-arity repairs, implementation SHA
+`df5b820` completed the seed-major 30 x 2 diagnostic 60/60. The diagnostic
+result is 24/60 with zero provider failures/retries, missing/invalidated cases,
+or batch stop. It is evidence for repair selection, not a promoted score.
+Evidence-only SHA `6d1703c` preserves failed verifier kind, reason, and artifact
+lineage in canonical FailureEnvelopes. Frozen nightly remains held while the
+cross-family typed obligation/terminal-readiness owner and remaining
+perception, execution, and planning residuals are open. See
+`evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
 
 First complete a bounded consolidation pass:
 

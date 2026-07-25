@@ -25,19 +25,19 @@ M8.6 and must not authorize additional default semantic compilers. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
-Current M8.2B diagnostic position (2026-07-24): strict-generalist implementation
-SHA `351dbdf` completed the new 6-case smoke, 18-case PR breadth gate, and
-seed-major 30 x 2 diagnostic without a batch stop, missing case, provider
-failure, or retry. The diagnostic measured 19/60 official success/reward
-(`0.3166666667`), so it is not a passing score and frozen nightly is held.
-Formal attribution yields 4 contract/field-binding, 4 execution, 7
-intent/planning, and 26 generic recovery envelopes. The generic recovery group
-mixes unlike precondition, approval, routing-target, and terminal-action facts
-across eight families; close this trace-to-FailureEnvelope ownership gap before
-selecting behavior repairs from that group. Then prioritize cross-family typed
-proposal parameters, perception evidence gating, subgoal-target constraints,
-and execution/verification. Do not add task-specific solvers. Evidence:
-`evidence/runs/m8.2b-diagnostic-351dbdf/`.
+Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
+proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
+completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward
+(`0.4`). All 60 cases were accounted with zero provider failure/retry,
+unrun/missing/invalidated case, or batch stop. The 36 ordinary envelopes are
+12 intent/planning, 11 contract/field binding, 8 verification, 3 execution,
+and 2 observation/context. `official_score_claimed=false`; frozen nightly is
+held. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
+artifact lineage, and failed verifier kind in the canonical FailureEnvelope.
+Cross-task trace review selects typed obligation/terminal readiness as the next
+candidate behavior owner; do not weaken verifier or `UNREQUESTED_EFFECT`, add
+task-specific solvers, or change Prompt/model/budgets. Evidence:
+`evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
 
 Current post-R8 repair slice (2026-07-23): release traces for the stable
 password/login verification cluster show a shared observation defect. Native
