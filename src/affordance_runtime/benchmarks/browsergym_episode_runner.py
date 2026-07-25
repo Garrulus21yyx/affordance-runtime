@@ -695,7 +695,7 @@ def run_browsergym_generalist_episode(
             limits=planner_limits,
             max_model_calls=max(
                 0,
-                max_model_calls - (4 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 2),
+                max_model_calls - (4 if task_spec.task_structure == TaskStructure.MULTI_STAGE else 3),
             ),
             planner_profile=planner_profile,
         )

@@ -34,6 +34,7 @@ from affordance_runtime.task_obligation_coverage import (
 from affordance_runtime.trace import TraceDag, TraceNode
 
 INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v6"
+INTENT_DRAFT_REPAIR_PROMPT_VERSION = "intent-draft-repair-v1"
 T = TypeVar("T", bound=BaseModel)
 
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
@@ -122,7 +123,8 @@ class LLMIntentCompiler:
     validator: IntentDraftValidator = field(default_factory=IntentDraftValidator)
     config: ModelConfig = field(default_factory=intent_compiler_model_config)
     coverage_checker: TaskObligationCoverageChecker | None = None
-    max_model_calls: int = 2
+    max_model_calls: int = 3
+    max_draft_repairs: int = 1
 
     async def compile(
         self,
@@ -188,6 +190,49 @@ class LLMIntentCompiler:
             task_id=task_id,
             require_obligation_graph=True,
         )
+        if result.status == CompilationStatus.UNSUPPORTED and self.max_draft_repairs:
+            repair_context = {
+                "raw_request": _bounded_request(request),
+                "draft": draft.model_dump(mode="json"),
+                "validation_issues": [item.model_dump(mode="json") for item in result.issues],
+                "instruction": (
+                    "Return one replacement IntentDraft that repairs only the listed deterministic "
+                    "issues. Preserve source-bound user authority; do not add capabilities, page facts, "
+                    "or inferred values. Provide a complete sourced claim ledger and obligation graph."
+                ),
+            }
+            try:
+                repaired_model_draft = await budgeted_model.generate_structured(
+                    [
+                        ModelMessage(role="system", content=_SYSTEM_PROMPT),
+                        ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
+                    ],
+                    LLMIntentDraft,
+                    self.config,
+                )
+            except StructuredModelError:
+                pass
+            else:
+                draft = _bind_draft_source_lineage(
+                    IntentDraft.model_validate(repaired_model_draft.model_dump()), request
+                )
+                result = self.validator.compile(
+                    request,
+                    draft,
+                    revision=revision,
+                    task_id=task_id,
+                    require_obligation_graph=True,
+                )
+                if trace is not None:
+                    parent = trace.add(
+                        "IntentDraftRepairProduced",
+                        {
+                            "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+                            "draft": draft.model_dump(mode="json"),
+                            "status": result.status.value,
+                        },
+                        parents=[parent.id] if parent else None,
+                    )
         if result.status == CompilationStatus.READY and result.task_spec is not None:
             checker = self.coverage_checker or ModelBackedTaskObligationCoverageChecker(budgeted_model)
             try:
