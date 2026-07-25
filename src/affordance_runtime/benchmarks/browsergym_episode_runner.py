@@ -1056,6 +1056,18 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
             )
             if rejected is not None:
                 detail_code = str(rejected.payload.get("rejection_code") or "")
+        elif phase == "task_planning":
+            rejected = next(
+                (
+                    previous
+                    for previous in reversed(nodes[:index])
+                    if previous.kind in {"TaskPlanRejected", "TaskReplanRejected"}
+                ),
+                None,
+            )
+            issues = rejected.payload.get("issues") if rejected is not None else None
+            if isinstance(issues, list) and issues and isinstance(issues[0], dict):
+                detail_code = str(issues[0].get("code") or "")
         evidence_refs = failure.get("evidence_refs")
         return {
             "runtime_failure": BrowserGymRuntimeFailure(

@@ -14,7 +14,7 @@ strict frozen diagnostic review; historical scores are not promoted. See
 and the [M8.6 Closure Audit](current-closure-audit-20260724.md).
 
 Runtime-first R1-R8 remains valid component and containment evidence.
-TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
+TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
 PlannerContextBuilder, and BrowserGym adapter splits are retained. They do not
 prove that the default planner is strict-generalist or that all pre-contract
 failures enter Recovery Cascade.
@@ -479,10 +479,10 @@ Execute in this order:
    target-relevant semantic evidence;
 3. **completed locally** - execute each enabled recovery command through its real
    owning port and reject no-op success;
-4. **first containment slice completed locally** - extract active-perception
-   flow, recovery command dispatch, and evidence projections while preserving
-   one authoritative state writer; retain the Coordinator feature freeze and
-   extract TaskPlan flow only if it remains an independent change axis;
+4. **TaskPlan containment extraction in verification** - active-perception
+   flow, recovery command dispatch, evidence projections, and stateless
+   TaskPlanFlow are extracted while preserving one authoritative state/trace
+   writer; the Coordinator feature freeze remains and its ratchet is 3644/26;
 5. **completed** - publish fresh four-profile non-BrowserGym Runtime runs with
    trace, contract, receipt, verifier, environment, and artifact identities;
 6. **current** - run one new strict frozen diagnostic matrix,
@@ -1917,7 +1917,7 @@ full-phase Recovery Coordinator integration.
    is frozen at clean `7e1c7db`. See
    `evidence/runtime-r7-clean-public-evaluation-20260722.md`.
 8. **Contain modules after semantics stabilize — complete:** stateless
-   TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, and
+   TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, and
    RecoveryHandler collaborators now own immutable plan preparation/validation,
    observation-port acquisition, stateless contract stages, and read-only
    recovery assessment respectively, while Coordinator and StateKernel retain

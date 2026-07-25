@@ -687,7 +687,8 @@ metrics, and acceptance criteria are authoritative in
 
 The prior `evidence/m8.5-completion-audit-20260722.md` remains component and
 perturbation evidence rather than the closure proof. Runtime-first R1-R8 are
-complete; R8 module containment closed with TaskPlanLifecycle,
+complete; subsequent M8.2B evidence selected a first stateless TaskPlanFlow
+extraction above TaskPlanLifecycle. R8 module containment closed with TaskPlanLifecycle,
 PerceptionSession, ContractExecutionLoop, and read-only RecoveryHandler
 collaborators plus a separated generalist PlannerContextBuilder, typed default
 SemanticCompiler registry factory, and stateless model/schema repair

@@ -566,7 +566,7 @@ Recovery follows this safety-first order:
 
 RecoveryCoordinator chooses but never executes. RunCoordinator applies one
 validated command through PerceptionSession, PlannerContextBuilder, ModelPort,
-IntentCompiler, TaskPlanLifecycle, GeneralistStepPlanner, router,
+IntentCompiler, TaskPlanFlow/TaskPlanLifecycle, GeneralistStepPlanner, router,
 ContractBuilder, contract execution, verifier, or parent/user boundary.
 
 Another attempt is accepted only when RecoveryDelta changes evidence,

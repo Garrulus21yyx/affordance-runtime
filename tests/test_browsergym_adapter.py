@@ -147,6 +147,41 @@ def test_browsergym_preserves_proposal_validator_detail_code() -> None:
     assert projected.detail_code == "target_out_of_scope"
 
 
+def test_browsergym_preserves_task_replan_validator_detail_code() -> None:
+    trace = TraceDag("run")
+    trace.add(
+        "TaskReplanRejected",
+        {
+            "error_code": "planner_proposal_rejected",
+            "validation": "repairable",
+            "issues": [
+                {
+                    "code": "entry_outcome_state_unsupported",
+                    "detail": "search",
+                }
+            ],
+        },
+    )
+    trace.add(
+        "FailureDetected",
+        {
+            "failure": {
+                "phase": "task_planning",
+                "failure_class": "validation",
+                "error_code": "planner_proposal_rejected",
+                "effect_status": "not_dispatched",
+                "message": "task plan validation: repairable",
+                "evidence_refs": [],
+            }
+        },
+    )
+
+    projected = _browsergym_failure_stats(trace.nodes)["runtime_failure"]
+
+    assert projected is not None
+    assert projected.detail_code == "entry_outcome_state_unsupported"
+
+
 def test_browsergym_projects_approval_pause_without_fabricating_recovery() -> None:
     trace = TraceDag("run")
     trace.add("HumanApprovalRequested", {"state": "waiting_approval"})

@@ -119,7 +119,8 @@ Line count is not the architecture, but it is an escalation signal.
 recovery-dispatch, and TaskPlan ownership extraction. The ratchet in
 `tests/test_responsibility_containment.py` prevents growth beyond the audited
 3813-line and 29-method audited surface; both ceilings must only decrease. The
-current executable ratchet is 3732 lines and 26 methods. These numbers are gates,
+current executable ratchet is 3644 lines and 26 methods after the first
+`TaskPlanFlow` extraction. These numbers are gates,
 not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,
@@ -155,7 +156,8 @@ The first required extractions are:
 2. `RecoveryCommandDispatcher`: validated command to real owning-port result,
    receipt, and delta;
 3. `TaskPlanFlow`: planning context, plan/replan invocation, lineage, and typed
-   acceptance result when this remains an independent change axis;
+   acceptance result; the first extraction is implemented, while authoritative
+   plan commit and trace ordering remain in Coordinator;
 4. `ProbeBudgetPolicy`: strict intersection of task, run, and capability limits,
    never capability-driven budget expansion.
 

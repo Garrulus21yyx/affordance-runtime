@@ -21,6 +21,7 @@ EXTRACTED_CORE_COLLABORATORS = (
     "planner_context.py",
     "planner_model_orchestrator.py",
     "recovery_handler.py",
+    "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )
 
@@ -65,6 +66,15 @@ def test_extracted_core_collaborators_do_not_create_authoritative_state() -> Non
     # runtime.py is the backwards-compatible one-contract conformance harness;
     # full task execution is owned only by RunCoordinator.
     assert constructors == {"coordinator.py", "runtime.py"}
+
+
+def test_task_plan_flow_has_no_state_or_trace_commit_authority() -> None:
+    source = (SOURCE_ROOT / "task_plan_flow.py").read_text(encoding="utf-8")
+
+    assert "install_task_plan(" not in source
+    assert "replace_task_plan(" not in source
+    assert "TraceDag" not in source
+    assert ".transition(" not in source
 
 
 def test_strict_planner_does_not_define_compatibility_task_grammar() -> None:

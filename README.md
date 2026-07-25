@@ -46,7 +46,8 @@ responsibility containment, and empirical profile-separated Runtime evidence.
 All reopened repair slices now pass the local quality gate: authority budgets
 only narrow, semantic evidence requires a current relevant candidate, enabled
 recovery commands invoke typed owning ports, no-op recovery earns no delta, and
-the Coordinator ratchet decreased to 3732 lines / 26 methods. The fresh
+the first typed `TaskPlanFlow` extraction preserves plan/replan validation
+evidence while reducing the Coordinator ratchet to 3644 lines / 26 methods. The fresh
 four-profile Runtime rollout for immutable implementation revision
 `c9390517624eaf28a84aee9e77d0ba83ff533106` passes 11/11 expected outcomes with
 no safety regression and a complete artifact hash index.

@@ -96,12 +96,16 @@ from affordance_runtime.runtime_evidence import (
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
+from affordance_runtime.task_plan_flow import (
+    TaskPlanFlow,
+    TaskPlanFlowFailure,
+    TaskPlanFlowKind,
+)
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_planning import (
     PlanningRouter,
     SubgoalVerifierPort,
     TaskPlannerPort,
-    TaskPlanValidationStatus,
     TaskPlanValidator,
     VerifierBackedSubgoalVerifier,
     task_planning_context_summary,
@@ -232,7 +236,7 @@ class RunCoordinator:
     recovery_command_dispatcher: RecoveryCommandDispatcher = field(
         default_factory=RecoveryCommandDispatcher
     )
-    task_plan_lifecycle: TaskPlanLifecycle | None = field(init=False, default=None, repr=False)
+    task_plan_flow: TaskPlanFlow | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
     active_perception_flow: ActivePerceptionFlow = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
@@ -253,9 +257,11 @@ class RunCoordinator:
             cascade_detector=self.cascade_detector,
         )
         if self.task_planner is not None:
-            self.task_plan_lifecycle = TaskPlanLifecycle(
-                planner=self.task_planner,
-                validator=self.task_plan_validator,
+            self.task_plan_flow = TaskPlanFlow(
+                TaskPlanLifecycle(
+                    planner=self.task_planner,
+                    validator=self.task_plan_validator,
+                )
             )
         if isinstance(self.contract_builder, ContractBuilder):
             router = self.contract_builder.unified_resolver.router
@@ -458,194 +464,74 @@ class RunCoordinator:
                     latest_verification,
                 )
 
-            if (
-                self.task_plan_lifecycle is not None
-                and envelope.task_spec is not None
-                and (task_plan_replacement := self.task_plan_lifecycle.evaluate_replacement(
-                    envelope.task_spec, state, snapshot, self.budget
-                )).required
-            ):
-                assert task_plan_replacement.reason is not None
-                try:
-                    transition = self.task_plan_lifecycle.propose_replacement(
-                        envelope.task_spec,
-                        state,
-                        snapshot,
-                        self.budget,
-                        reason=task_plan_replacement.reason.value,
-                    )
+            if self.task_plan_flow is not None and envelope.task_spec is not None:
+                flow_result = self.task_plan_flow.prepare(
+                    envelope.task_spec,
+                    state,
+                    snapshot,
+                    self.budget,
+                )
+                transition = flow_result.transition
+                if flow_result.kind == TaskPlanFlowKind.INITIAL and transition is not None:
                     task_plan = transition.plan
                     report = transition.validation
-                    previous_plan = transition.previous_plan
-                    if previous_plan is None:
-                        raise ValueError("task replan transition is missing its previous plan")
-                    if report.status != TaskPlanValidationStatus.ACCEPT:
-                        raise ValueError(f"task replan validation: {report.status.value}")
-                    state.replace_task_plan(task_plan)
-                    if state.plan_progress is None:
-                        raise ValueError("task replan did not install progress state")
-                    preserved_subgoal_ids = list(state.plan_progress.completed_subgoal_ids)
-                except Exception as exc:
                     parent = trace.add(
-                        "TaskReplanRejected",
+                        "TaskPlanProposed",
                         {
                             "state": state.phase,
-                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                            "reason": f"{type(exc).__name__}: {exc}"[:500],
-                        },
-                        parents=[parent.id],
-                    )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        == RecoveryCommandKind.REPLAN_TASK
-                    ):
-                        parent = self._fail_pending_recovery_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                        )
-                    recovery_command, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.TASK_PLANNING,
-                        failure_class=FailureClass.PLANNING,
-                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        message=f"{type(exc).__name__}: {exc}"[:500],
-                        available_commands=frozenset(
-                            {
-                                RecoveryCommandKind.REPLAN_TASK,
-                                *self.recovery_command_dispatcher.available_commands,
-                                RecoveryCommandKind.ABORT,
-                            }
-                        ),
-                        snapshot=snapshot,
-                    )
-                    if (
-                        recovery_command == RecoveryCommandKind.REPLAN_TASK
-                        or recovery_command in OWNER_DISPATCH_COMMANDS
-                    ):
-                        continue
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep(state.phase),
-                        parent,
-                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        latest_verification,
-                    )
-                parent = trace.add(
-                    "TaskReplanned",
-                    {
-                        "state": state.phase,
-                        "reason": "subgoal_action_budget_exhausted",
-                        "previous_plan_id": previous_plan.plan_id,
-                        "supersedes_plan_id": task_plan.supersedes_plan_id,
-                        "plan_id": task_plan.plan_id,
-                        "plan_version": task_plan.plan_version,
-                        "preserved_subgoal_ids": preserved_subgoal_ids,
-                        "active_subgoal": state.active_subgoal(),
-                        "planning_context": task_planning_context_summary(transition.context),
-                    },
-                    parents=[parent.id],
-                )
-                parent = self._complete_pending_recovery_plan_change(
-                    state,
-                    trace,
-                    parent,
-                    kind=RecoveryCommandKind.REPLAN_TASK,
-                    plan_or_route_ref=task_plan.plan_id,
-                )
-
-            if self.task_plan_lifecycle is not None and state.task_plan is None and envelope.task_spec is not None:
-                try:
-                    transition = self.task_plan_lifecycle.propose_initial(
-                        envelope.task_spec,
-                        state,
-                        snapshot,
-                        self.budget,
-                    )
-                    task_plan = transition.plan
-                except Exception as exc:
-                    parent = trace.add(
-                        "TaskPlanRejected",
-                        {
-                            "state": state.phase,
-                            "error_code": RuntimeErrorCode.PLANNER_FAILED.value,
-                            "reason": f"{type(exc).__name__}: {exc}"[:500],
-                        },
-                        parents=[parent.id],
-                    )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        == RecoveryCommandKind.REPLAN_TASK
-                    ):
-                        parent = self._fail_pending_recovery_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_FAILED.value,
-                        )
-                    recovery_command, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.TASK_PLANNING,
-                        failure_class=FailureClass.PLANNING,
-                        error_code=RuntimeErrorCode.PLANNER_FAILED,
-                        message=f"{type(exc).__name__}: {exc}"[:500],
-                        available_commands=frozenset(
-                            {
-                                RecoveryCommandKind.REPLAN_TASK,
-                                *self.recovery_command_dispatcher.available_commands,
-                                RecoveryCommandKind.ABORT,
-                            }
-                        ),
-                        snapshot=snapshot,
-                    )
-                    if (
-                        recovery_command == RecoveryCommandKind.REPLAN_TASK
-                        or recovery_command in OWNER_DISPATCH_COMMANDS
-                    ):
-                        continue
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep(state.phase),
-                        parent,
-                        RuntimeErrorCode.PLANNER_FAILED,
-                        latest_verification,
-                    )
-                report = transition.validation
-                parent = trace.add(
-                    "TaskPlanProposed",
-                    {
-                        "state": state.phase,
-                        "plan_id": task_plan.plan_id,
-                        "plan_version": task_plan.plan_version,
-                        "generated_by": task_plan.generated_by.value,
-                        "subgoal_count": len(task_plan.subgoals),
-                        "supersedes_plan_id": task_plan.supersedes_plan_id,
-                        "planning_context": task_planning_context_summary(transition.context),
-                        "validation": report.status.value,
-                        "issues": [item.model_dump(mode="json") for item in report.issues],
-                    },
-                    parents=[parent.id],
-                )
-                if report.status != TaskPlanValidationStatus.ACCEPT:
-                    parent = trace.add(
-                        "TaskPlanRejected",
-                        {
-                            "state": state.phase,
-                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            "plan_id": task_plan.plan_id,
+                            "plan_version": task_plan.plan_version,
+                            "generated_by": task_plan.generated_by.value,
+                            "subgoal_count": len(task_plan.subgoals),
+                            "supersedes_plan_id": task_plan.supersedes_plan_id,
+                            "planning_context": task_planning_context_summary(transition.context),
                             "validation": report.status.value,
+                            "issues": [item.model_dump(mode="json") for item in report.issues],
+                        },
+                        parents=[parent.id],
+                    )
+                flow_failure = flow_result.failure
+                if flow_result.accepted:
+                    assert transition is not None
+                    task_plan = transition.plan
+                    try:
+                        if flow_result.kind == TaskPlanFlowKind.REPLACEMENT:
+                            state.replace_task_plan(task_plan)
+                        else:
+                            state.install_task_plan(task_plan)
+                    except Exception as exc:
+                        flow_failure = TaskPlanFlowFailure(
+                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                            failure_class=FailureClass.VALIDATION,
+                            message=f"{type(exc).__name__}: {exc}"[:500],
+                        )
+                if flow_failure is not None:
+                    rejection_kind = (
+                        "TaskReplanRejected"
+                        if flow_result.kind == TaskPlanFlowKind.REPLACEMENT
+                        else "TaskPlanRejected"
+                    )
+                    parent = trace.add(
+                        rejection_kind,
+                        {
+                            "state": state.phase,
+                            "error_code": flow_failure.error_code.value,
+                            "reason": flow_failure.message,
+                            "validation": (
+                                flow_failure.validation_status.value
+                                if flow_failure.validation_status is not None
+                                else ""
+                            ),
+                            "issues": [
+                                item.model_dump(mode="json")
+                                for item in flow_failure.issues
+                            ],
+                            "replacement_reason": (
+                                flow_result.replacement.reason.value
+                                if flow_result.replacement is not None
+                                and flow_result.replacement.reason is not None
+                                else ""
+                            ),
                         },
                         parents=[parent.id],
                     )
@@ -658,7 +544,7 @@ class RunCoordinator:
                             state,
                             trace,
                             parent,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+                            error_code=flow_failure.error_code.value,
                         )
                     recovery_command, parent = self._recover_phase_failure(
                         envelope,
@@ -666,9 +552,9 @@ class RunCoordinator:
                         trace,
                         parent,
                         phase=FailurePhase.TASK_PLANNING,
-                        failure_class=FailureClass.VALIDATION,
-                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        message=f"task plan validation: {report.status.value}",
+                        failure_class=flow_failure.failure_class,
+                        error_code=flow_failure.error_code,
+                        message=flow_failure.message,
                         available_commands=frozenset(
                             {
                                 RecoveryCommandKind.REPLAN_TASK,
@@ -689,31 +575,58 @@ class RunCoordinator:
                         trace,
                         RuntimeStep(state.phase),
                         parent,
-                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                        flow_failure.error_code,
                         latest_verification,
                     )
-                state.install_task_plan(task_plan)
-                parent = trace.add(
-                    "TaskPlanAccepted",
-                    {
-                        "state": state.phase,
-                        "plan_id": task_plan.plan_id,
-                        "plan_version": task_plan.plan_version,
-                        "supersedes_plan_id": task_plan.supersedes_plan_id,
-                        "active_subgoal": state.active_subgoal(),
-                    },
-                    parents=[parent.id],
-                )
-                parent = self._complete_pending_recovery_plan_change(
-                    state,
-                    trace,
-                    parent,
-                    kind=RecoveryCommandKind.REPLAN_TASK,
-                    plan_or_route_ref=task_plan.plan_id,
-                )
+                if flow_result.accepted:
+                    assert transition is not None
+                    task_plan = transition.plan
+                    if flow_result.kind == TaskPlanFlowKind.REPLACEMENT:
+                        assert transition.previous_plan is not None
+                        assert flow_result.replacement is not None
+                        assert flow_result.replacement.reason is not None
+                        assert state.plan_progress is not None
+                        parent = trace.add(
+                            "TaskReplanned",
+                            {
+                                "state": state.phase,
+                                "reason": flow_result.replacement.reason.value,
+                                "previous_plan_id": transition.previous_plan.plan_id,
+                                "supersedes_plan_id": task_plan.supersedes_plan_id,
+                                "plan_id": task_plan.plan_id,
+                                "plan_version": task_plan.plan_version,
+                                "preserved_subgoal_ids": list(
+                                    state.plan_progress.completed_subgoal_ids
+                                ),
+                                "active_subgoal": state.active_subgoal(),
+                                "planning_context": task_planning_context_summary(
+                                    transition.context
+                                ),
+                            },
+                            parents=[parent.id],
+                        )
+                    else:
+                        parent = trace.add(
+                            "TaskPlanAccepted",
+                            {
+                                "state": state.phase,
+                                "plan_id": task_plan.plan_id,
+                                "plan_version": task_plan.plan_version,
+                                "supersedes_plan_id": task_plan.supersedes_plan_id,
+                                "active_subgoal": state.active_subgoal(),
+                            },
+                            parents=[parent.id],
+                        )
+                    parent = self._complete_pending_recovery_plan_change(
+                        state,
+                        trace,
+                        parent,
+                        kind=RecoveryCommandKind.REPLAN_TASK,
+                        plan_or_route_ref=task_plan.plan_id,
+                    )
 
             state.transition(RuntimeStep.PLANNING.value)
-            if self.task_plan_lifecycle is not None and state.task_plan is not None:
+            if state.task_plan is not None:
                 state.active_subgoal()
             skill_decision: TaskSkillRuntimeDecision | None = None
             skill_step_id = ""

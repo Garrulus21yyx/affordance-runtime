@@ -296,7 +296,7 @@ The governing documents are:
 | G3 Full-phase Recovery Coordinator | repaired / locally verified | enabled context/schema/provider commands derive from configured owning ports; real before/after evidence is required and no-op/failed/unavailable handlers produce no delta |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
 | G5 Generalization evidence | complete | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external suites unprovisioned |
-| Responsibility containment | first repair slice verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, and Runtime evidence projections have typed ownership; Coordinator remains sole state/trace committer and is capped at 3732 lines / 26 methods |
+| Responsibility containment | TaskPlanFlow locally verified / immutable replay pending | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, and stateless TaskPlanFlow have typed ownership; Coordinator remains sole state/trace committer and is capped at 3644 lines / 26 methods; 832-test full gate passes |
 
 Current verified facts:
 

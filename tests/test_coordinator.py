@@ -34,8 +34,11 @@ from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.task_planning import (
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
     SubgoalSpec,
     TaskPlan,
+    TaskPlanActionFamily,
     TaskPlanningContext,
     TaskPlanSource,
 )
@@ -402,6 +405,68 @@ class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
         return super().plan(context)
 
 
+class UnsupportedThenValidTaskPlanner:
+    def __init__(self, *, valid_replacement: bool = True) -> None:
+        self.valid_replacement = valid_replacement
+
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        first = SubgoalSpec(
+            subgoal_id="write",
+            objective="Write settings",
+            success_criteria=("settings are saved",),
+            evidence_requirements=("saved observation",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            action_family=TaskPlanActionFamily.ACTIVATE,
+            outcome=SubgoalOutcome(
+                subject="settings",
+                relation=SubgoalOutcomeRelation.HAS_CHANGED,
+            ),
+        )
+        unsupported = SubgoalSpec(
+            subgoal_id="confirm",
+            objective="Save is checked",
+            depends_on=("write",),
+            success_criteria=("Save is checked",),
+            evidence_requirements=("current checked state",),
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            action_family=TaskPlanActionFamily.ACTIVATE,
+            outcome=SubgoalOutcome(
+                subject="Save",
+                relation=SubgoalOutcomeRelation.IS_CHECKED,
+            ),
+        )
+        if not context.completed_subgoal_ids:
+            subgoals = (first, unsupported)
+        elif self.valid_replacement:
+            subgoals = (
+                SubgoalSpec(
+                    subgoal_id="confirm-replacement",
+                    objective="settings confirmation changed",
+                    depends_on=("write",),
+                    success_criteria=("settings are saved",),
+                    evidence_requirements=("saved observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject="settings confirmation",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            )
+        else:
+            subgoals = (unsupported,)
+        return TaskPlan(
+            plan_id=f"unsupported-flow-{context.current_plan_version + 1}",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=subgoals,
+        )
+
+
 class SubgoalAwarePlanner:
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope
@@ -442,6 +507,42 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     assert events.index("TaskPlanAccepted") < events.index("SubgoalCompleted")
     completed = [node for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
     assert all(node.payload["criterion_evidence_links"] for node in completed)
+
+
+def test_coordinator_commits_typed_task_plan_flow_replacement_reason() -> None:
+    result = RunCoordinator(
+        observer=TwoStageObserver(),
+        planner=SubgoalAwarePlanner(),
+        executor=FakeExecutor(),
+        task_planner=UnsupportedThenValidTaskPlanner(),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.DONE
+    replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
+    assert replanned.payload["reason"] == "active_subgoal_outcome_state_unsupported"
+    assert replanned.payload["planning_context"]["reason"] == (
+        "active_subgoal_outcome_state_unsupported"
+    )
+
+
+def test_coordinator_traces_typed_task_replan_validation_issue() -> None:
+    result = RunCoordinator(
+        observer=TwoStageObserver(),
+        planner=SubgoalAwarePlanner(),
+        executor=FakeExecutor(),
+        task_planner=UnsupportedThenValidTaskPlanner(valid_replacement=False),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.status == RuntimeStep.ABORTED
+    rejected = next(
+        node for node in result.trace.nodes if node.kind == "TaskReplanRejected"
+    )
+    assert rejected.payload["replacement_reason"] == (
+        "active_subgoal_outcome_state_unsupported"
+    )
+    assert [item["code"] for item in rejected.payload["issues"]] == [
+        "entry_outcome_state_unsupported"
+    ]
 
 
 class EarlyFinishPlanner:
