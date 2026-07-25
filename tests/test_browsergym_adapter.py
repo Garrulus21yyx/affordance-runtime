@@ -30,6 +30,7 @@ from affordance_runtime.benchmarks.browsergym import (
     _browsergym_context_stats,
     _close_quietly,
     _fuse_visual_candidates,
+    _intent_compiler_checkpoint_identity,
     _load_browsergym_checkpoints,
     _prepare_browsergym_checkpoint_metadata,
     _require_frozen_profile_identity,
@@ -2520,6 +2521,14 @@ def test_browsergym_checkpoint_metadata_binds_selected_matrix(tmp_path: Path) ->
             {**first, "seeds": [0, 1, 2]},
             resume=True,
         )
+
+
+def test_browsergym_checkpoint_identity_binds_distinct_intent_repair_prompt() -> None:
+    identity = _intent_compiler_checkpoint_identity()
+
+    assert identity["intent_compiler_model_config"]["prompt_version"] == "intent-compiler-v6"
+    assert identity["intent_draft_repair_model_config"]["prompt_version"] == "intent-draft-repair-v1"
+    assert identity["intent_compiler_schema_sha256"] == identity["intent_draft_repair_schema_sha256"]
 
 
 def test_browsergym_runtime_source_digest_changes_only_with_runtime_inputs(tmp_path: Path) -> None:

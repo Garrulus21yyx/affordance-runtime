@@ -337,12 +337,7 @@ def run_browsergym_miniwob_generalist_suite(
             timeout_s=model_call_timeout_s,
             planner_profile=planner_profile,
         ).model_dump(mode="json"),
-        "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
-        "intent_compiler_schema_sha256": _intent_compiler_schema_sha256(),
-        "intent_draft_repair_model_config": intent_draft_repair_model_config().model_dump(
-            mode="json"
-        ),
-        "intent_draft_repair_schema_sha256": _intent_compiler_schema_sha256(),
+        **_intent_compiler_checkpoint_identity(),
         "task_obligation_coverage_model_config": task_obligation_coverage_model_config().model_dump(
             mode="json"
         ),
@@ -522,6 +517,20 @@ def _intent_compiler_schema_sha256() -> str:
     payload = LLMIntentDraft.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _intent_compiler_checkpoint_identity() -> dict[str, Any]:
+    """Bind every compiler-stage Prompt/schema contract into resume identity."""
+
+    schema_sha256 = _intent_compiler_schema_sha256()
+    return {
+        "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
+        "intent_compiler_schema_sha256": schema_sha256,
+        "intent_draft_repair_model_config": intent_draft_repair_model_config().model_dump(
+            mode="json"
+        ),
+        "intent_draft_repair_schema_sha256": schema_sha256,
+    }
 
 
 def _task_obligation_coverage_schema_sha256() -> str:
