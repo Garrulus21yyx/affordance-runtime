@@ -31,7 +31,7 @@ Status values:
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, and conditional BrowserGym fallback-provider owner wiring through `befa319` | implement real context/schema owners and broader normal-entrypoint wiring |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `50ae956` adds recovery trace projection with 897 tests | context/schema recovery owners, planner generalization, and Coordinator responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `05fe664` adds recovery completion evidence with 897 tests | context/schema recovery owners, planner generalization, and Coordinator responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
