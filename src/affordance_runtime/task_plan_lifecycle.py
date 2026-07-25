@@ -32,6 +32,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidator,
     task_plan_entry_feasibility_issue,
     task_plan_entry_state_issue,
+    task_plan_entry_state_support_issue,
 )
 
 
@@ -69,6 +70,9 @@ class TaskPlanReplacementReason(StrEnum):
     ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE = "active_subgoal_action_family_unavailable"
     ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED = (
         "active_subgoal_outcome_already_satisfied"
+    )
+    ACTIVE_SUBGOAL_OUTCOME_STATE_UNSUPPORTED = (
+        "active_subgoal_outcome_state_unsupported"
     )
 
 
@@ -178,6 +182,12 @@ class TaskPlanLifecycle:
             return TaskPlanReplacementDecision(
                 reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED,
                 subgoal_id=state_issue.detail,
+            )
+        support_issue = task_plan_entry_state_support_issue(state.task_plan, context)
+        if support_issue is not None:
+            return TaskPlanReplacementDecision(
+                reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_STATE_UNSUPPORTED,
+                subgoal_id=support_issue.detail,
             )
         issue = task_plan_entry_feasibility_issue(state.task_plan, context)
         if issue is None:

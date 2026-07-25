@@ -49,6 +49,7 @@ TASK_PLAN_SCHEMA_VERSION = "1.1"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
+TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION = "typed-subject-state-support-v1"
 
 
 class TaskPlanSource(StrEnum):
@@ -792,7 +793,10 @@ class TaskPlanValidator:
             ]
             repairable.append(entry_state_issue)
         else:
-            entry_issue = task_plan_entry_feasibility_issue(plan, planning_context)
+            entry_issue = task_plan_entry_state_support_issue(
+                plan,
+                planning_context,
+            ) or task_plan_entry_feasibility_issue(plan, planning_context)
             if entry_issue is not None:
                 repairable.append(entry_issue)
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
@@ -860,6 +864,75 @@ def task_plan_entry_state_issue(
         required_semantics=(
             "different_currently_unsatisfied_outcome_without_boolean_negation"
         ),
+    )
+
+
+def task_plan_entry_state_support_issue(
+    plan: TaskPlan,
+    context: TaskPlanningContext | None,
+) -> TaskPlanValidationIssue | None:
+    """Reject a uniquely grounded state predicate only when incompatibility is explicit."""
+
+    entry = _contextual_entry_subgoal(plan, context)
+    if entry is None or entry.outcome is None or context is None:
+        return None
+    subject_tokens = _planning_semantic_tokens(entry.outcome.subject)
+    matches = tuple(
+        item
+        for item in context.environment.affordances
+        if subject_tokens and _planning_semantic_tokens(item.label) == subject_tokens
+    )
+    if len(matches) != 1:
+        return None
+    affordance = matches[0]
+    relation = entry.outcome.relation
+    role = affordance.role.casefold().strip().replace("-", "_")
+    known_non_checkable = {
+        "button",
+        "link",
+        "option",
+        "select",
+        "textbox",
+        "treeitem",
+    }
+    known_non_selectable = {
+        "button",
+        "checkbox",
+        "link",
+        "radio",
+        "switch",
+        "textbox",
+    }
+    known_non_expandable = {
+        "checkbox",
+        "link",
+        "option",
+        "radio",
+        "switch",
+        "textbox",
+    }
+    unsupported = (
+        relation == SubgoalOutcomeRelation.IS_CHECKED
+        and affordance.current_state.checked is None
+        and role in known_non_checkable
+    ) or (
+        relation == SubgoalOutcomeRelation.IS_SELECTED
+        and affordance.current_state.selected is None
+        and not affordance.current_state.selected_options
+        and role in known_non_selectable
+    ) or (
+        relation == SubgoalOutcomeRelation.IS_EXPANDED
+        and affordance.current_state.expanded is None
+        and role in known_non_expandable
+    )
+    if not unsupported:
+        return None
+    return TaskPlanValidationIssue(
+        code="entry_outcome_state_unsupported",
+        detail=entry.subgoal_id,
+        field="outcome.relation",
+        disallowed_values=(relation.value,),
+        required_semantics="state_relation_supported_by_unique_current_subject",
     )
 
 
@@ -1100,8 +1173,8 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v11"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v12"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. Use is_checked only for a checkable state, is_selected only for a selectable state, and is_expanded only for an expandable state; ordinary buttons, links, and textboxes do not gain those states merely because they can be activated. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 

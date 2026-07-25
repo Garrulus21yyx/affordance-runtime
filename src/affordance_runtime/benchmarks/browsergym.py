@@ -85,6 +85,7 @@ from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
     TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
+    TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION,
     TASK_PLAN_SCHEMA_VERSION,
     TASK_PLANNER_PROMPT_VERSION,
     TaskPlanProviderEnvelope,
@@ -285,6 +286,9 @@ def run_browsergym_miniwob_generalist_suite(
         "task_plan_entry_schema_policy_version": TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
         "task_plan_cardinality_policy_version": TASK_PLAN_CARDINALITY_POLICY_VERSION,
         "task_plan_context_policy_version": TASK_PLAN_CONTEXT_POLICY_VERSION,
+        "task_plan_outcome_state_support_policy_version": (
+            TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION
+        ),
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,
