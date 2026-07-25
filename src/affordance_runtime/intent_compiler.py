@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Callable, Sequence, TypeVar
+from typing import Any, Callable, Sequence, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from affordance_runtime.model_port import (
     ModelCallRecord,
@@ -24,6 +24,7 @@ from affordance_runtime.task_intake import (
     IntentDraft,
     IntentDraftValidator,
     RequestedEffect,
+    TaskObligationSpec,
     UserRequest,
 )
 from affordance_runtime.task_obligation_coverage import (
@@ -84,6 +85,10 @@ class LLMIntentDraft(IntentDraft):
     objective: str = Field(min_length=1)
     requested_effects: tuple[RequestedEffect, ...] = Field(min_length=1)
     candidate_success_criteria: tuple[str, ...] = Field(min_length=1)
+    # Provider drafts may have a locally malformed graph node. Keep that node
+    # outside the trusted draft until deterministic decoding can turn it into a
+    # typed repairable issue; TaskSpec never receives the raw mapping.
+    candidate_obligations: tuple[dict[str, Any], ...] = ()  # type: ignore[assignment]
 
 
 @dataclass
@@ -179,10 +184,7 @@ class LLMIntentCompiler:
                     parents=[parent.id] if parent else None,
                 )
             raise
-        draft = _bind_draft_source_lineage(
-            IntentDraft.model_validate(model_draft.model_dump()),
-            request,
-        )
+        draft, provider_issues = _decode_provider_draft(model_draft, request)
         if trace is not None:
             parent = trace.add(
                 "IntentDraftProduced",
@@ -201,18 +203,20 @@ class LLMIntentCompiler:
                 },
                 parents=[parent.id] if parent else None,
             )
-        result = self.validator.compile(
+        result = _compile_decoded_draft(
+            self.validator,
             request,
             draft,
+            provider_issues,
             revision=revision,
             task_id=task_id,
-            require_obligation_graph=True,
         )
         repairable_codes = {
             "missing_success_criteria",
             "missing_source_claims",
             "missing_task_obligations",
             "invalid_task_obligation_graph",
+            "invalid_provider_obligation",
         }
         if (
             result.status == CompilationStatus.UNSUPPORTED
@@ -241,15 +245,14 @@ class LLMIntentCompiler:
             except StructuredModelError:
                 pass
             else:
-                draft = _bind_draft_source_lineage(
-                    IntentDraft.model_validate(repaired_model_draft.model_dump()), request
-                )
-                result = self.validator.compile(
+                draft, provider_issues = _decode_provider_draft(repaired_model_draft, request)
+                result = _compile_decoded_draft(
+                    self.validator,
                     request,
                     draft,
+                    provider_issues,
                     revision=revision,
                     task_id=task_id,
-                    require_obligation_graph=True,
                 )
                 if trace is not None:
                     parent = trace.add(
@@ -330,6 +333,67 @@ class LLMIntentCompiler:
                     )
         _record_compilation_result(trace, result, parent)
         return result
+
+
+def _decode_provider_draft(
+    provider_draft: LLMIntentDraft,
+    request: UserRequest,
+) -> tuple[IntentDraft, tuple[CompilationIssue, ...]]:
+    """Decode untrusted obligation nodes without allowing them into TaskSpec."""
+
+    payload = provider_draft.model_dump(mode="json")
+    obligations: list[TaskObligationSpec] = []
+    issues: list[CompilationIssue] = []
+    for index, raw_obligation in enumerate(provider_draft.candidate_obligations):
+        try:
+            obligations.append(TaskObligationSpec.model_validate(raw_obligation))
+        except ValidationError as exc:
+            issues.append(
+                CompilationIssue(
+                    code="invalid_provider_obligation",
+                    field=f"candidate_obligations[{index}]",
+                    detail=_provider_obligation_error_code(exc),
+                )
+            )
+    payload["candidate_obligations"] = [item.model_dump(mode="json") for item in obligations]
+    return _bind_draft_source_lineage(IntentDraft.model_validate(payload), request), tuple(issues)
+
+
+def _provider_obligation_error_code(error: ValidationError) -> str:
+    """Expose only deterministic validation shape, never provider field values."""
+
+    errors = error.errors()
+    if not errors:
+        return "validation_error"
+    first = errors[0]
+    location = ".".join(str(item) for item in first.get("loc", ()))
+    return f"{location}:{first.get('type', 'validation_error')}".strip(":")
+
+
+def _compile_decoded_draft(
+    validator: IntentDraftValidator,
+    request: UserRequest,
+    draft: IntentDraft,
+    provider_issues: tuple[CompilationIssue, ...],
+    *,
+    revision: int,
+    task_id: str | None,
+) -> CompilationResult:
+    result = validator.compile(
+        request,
+        draft,
+        revision=revision,
+        task_id=task_id,
+        require_obligation_graph=True,
+    )
+    if not provider_issues:
+        return result
+    return CompilationResult(
+        status=CompilationStatus.UNSUPPORTED,
+        request_id=result.request_id,
+        draft=draft,
+        issues=tuple((*result.issues, *provider_issues)),
+    )
 
 
 def _bounded_request(request: UserRequest) -> dict[str, object]:

@@ -146,6 +146,42 @@ class RepairingModel(FixedModel):
         raise AssertionError(f"unexpected schema: {output_schema.__name__}")
 
 
+@dataclass
+class ProviderSchemaRepairingModel(RepairingModel):
+    """First provider draft has one malformed untrusted obligation node."""
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        self.calls += 1
+        self.messages = messages
+        self.message_batches.append(messages)
+        if output_schema is LLMIntentDraft:
+            expected_prompt = (
+                INTENT_COMPILER_PROMPT_VERSION
+                if self.calls == 1
+                else INTENT_DRAFT_REPAIR_PROMPT_VERSION
+            )
+            assert config.prompt_version == expected_prompt
+            payload = self.repaired_draft.model_dump(mode="json")
+            if self.calls == 1:
+                payload["candidate_obligations"][0]["evidence_requirements"] = []
+            return output_schema.model_validate(payload)
+        if output_schema is TaskObligationCoverageReview:
+            return output_schema.model_validate(
+                {
+                    "status": "complete",
+                    "covered_claim_ids": [
+                        item.claim_id for item in self.repaired_draft.candidate_source_claims if item.required
+                    ],
+                }
+            )
+        raise AssertionError(f"unexpected schema: {output_schema.__name__}")
+
+
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
     schema = LLMIntentDraft.model_json_schema()
 
@@ -237,6 +273,35 @@ def test_llm_compiler_repairs_missing_obligation_graph_within_three_call_budget(
     repair = next(node.payload for node in trace.nodes if node.kind == "IntentDraftRepairProduced")
     assert repair["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
     assert repair["decoding_config"]["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+
+
+def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_it() -> None:
+    claims, obligations = _terminal_authority("provider-schema", "pricing read")
+    repaired = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="provider-schema",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+        candidate_source_claims=claims,
+        candidate_obligations=obligations,
+    )
+    model = ProviderSchemaRepairingModel(repaired, repaired_draft=repaired)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="provider-schema", raw_text="Read pricing")
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert model.calls == 3
+    assert "invalid_provider_obligation" in model.message_batches[1][-1].content
 
 
 def test_llm_compiler_repair_remains_fail_closed_when_repair_introduces_ambiguity() -> None:
