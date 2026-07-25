@@ -107,6 +107,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-python", type=Path, help=f"override ${BROWSERGYM_RUNTIME_PYTHON_ENV}")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--llm-profile",
+        choices=("local", "mistral", "gemini", "zhipu"),
+        help="explicit model profile; defaults to LLM_ACTIVE_PROFILE or local",
+    )
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--profile", choices=("smoke", "pr", "diagnostic", "nightly", "release"), default="smoke")
     parser.add_argument(
@@ -139,12 +144,13 @@ def main() -> int:
         try:
             environment = _local_dotenv_environment(repository_root / ".env", dict(os.environ))
             runtime_python = args.runtime_python or configured_browsergym_python(environment)
+            llm_profile = args.llm_profile or environment.get("LLM_ACTIVE_PROFILE", "local").strip().lower()
             preflight = inspect_browsergym_runtime(runtime_python, repository_root=repository_root)
             (args.output / "browsergym-runtime-preflight.json").write_text(
                 json.dumps(preflight, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
             local_provider = environment.get("LLM_LOCAL_PROVIDER", "ollama").strip().lower().replace("-", "_")
-            if local_provider == "ollama":
+            if llm_profile == "local" and local_provider == "ollama":
                 ollama_preflight = inspect_ollama_gpu(
                     base_url=environment.get("LLM_LOCAL_BASE_URL", "http://127.0.0.1:11434").removesuffix("/v1"),
                     model=(
@@ -168,7 +174,7 @@ def main() -> int:
                 print(json.dumps(preflight, indent=2, sort_keys=True))
                 return 0
             environment["PYTHONPATH"] = str(repository_root / "src")
-            environment["LLM_ACTIVE_PROFILE"] = "local"
+            environment["LLM_ACTIVE_PROFILE"] = llm_profile
             command = [
                 preflight["sys_executable"],
                 "-m",

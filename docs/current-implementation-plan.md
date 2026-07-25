@@ -113,6 +113,10 @@ two seed-0 failures. The stable root layer is `INTENT / PLANNING`: the local
 provider did not produce a valid sourced obligation graph. These are negative
 local evidence, not scores. Hold PR breadth and diagnostic; do not repair this
 by task-name logic, more retries, a larger budget, or a Prompt-only patch.
+The sole BrowserGym launcher now exposes explicit immutable `--llm-profile`
+selection instead of overriding a configured profile to local; local retains
+its GPU preflight, while a selected remote profile is recorded separately by
+the existing run identity and is never merged with local evidence.
 
 Mandatory next sequence:
 
