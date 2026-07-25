@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Sequence, TypeVar
+from typing import Callable, Sequence, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -68,6 +68,16 @@ def intent_compiler_model_config() -> ModelConfig:
     )
 
 
+def intent_draft_repair_model_config() -> ModelConfig:
+    """Return the distinct immutable decoding identity for draft repair."""
+
+    return ModelConfig(
+        temperature=0.0,
+        max_tokens=2_048,
+        prompt_version=INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+    )
+
+
 class LLMIntentDraft(IntentDraft):
     """Provider schema whose deterministic-validator prerequisites are required."""
 
@@ -82,11 +92,14 @@ class IntakeModelCallBudget:
 
     maximum: int = 2
     used: int = 0
+    on_reserve: Callable[[], None] | None = None
 
     def reserve(self) -> None:
         if self.used >= self.maximum:
             raise StructuredModelError("intake model call budget exhausted")
         self.used += 1
+        if self.on_reserve is not None:
+            self.on_reserve()
 
 
 @dataclass
@@ -125,6 +138,7 @@ class LLMIntentCompiler:
     coverage_checker: TaskObligationCoverageChecker | None = None
     max_model_calls: int = 3
     max_draft_repairs: int = 1
+    model_call_count: int = field(default=0, init=False)
 
     async def compile(
         self,
@@ -134,10 +148,14 @@ class LLMIntentCompiler:
         task_id: str | None = None,
         trace: TraceDag | None = None,
     ) -> CompilationResult:
+        self.model_call_count = 0
         parent = _record_request(trace, request)
         budgeted_model = BudgetedIntakeModelPort(
             self.model,
-            IntakeModelCallBudget(maximum=self.max_model_calls),
+            IntakeModelCallBudget(
+                maximum=self.max_model_calls,
+                on_reserve=lambda: setattr(self, "model_call_count", self.model_call_count + 1),
+            ),
         )
         try:
             model_draft = await budgeted_model.generate_structured(
@@ -192,7 +210,7 @@ class LLMIntentCompiler:
         )
         repairable_codes = {
             "missing_success_criteria",
-            "missing_task_claims",
+            "missing_source_claims",
             "missing_task_obligations",
             "invalid_task_obligation_graph",
         }
@@ -218,7 +236,7 @@ class LLMIntentCompiler:
                         ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
                     ],
                     LLMIntentDraft,
-                    self.config,
+                    intent_draft_repair_model_config(),
                 )
             except StructuredModelError:
                 pass
@@ -238,8 +256,17 @@ class LLMIntentCompiler:
                         "IntentDraftRepairProduced",
                         {
                             "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+                            "decoding_config": intent_draft_repair_model_config().model_dump(
+                                mode="json"
+                            ),
                             "draft": draft.model_dump(mode="json"),
                             "status": result.status.value,
+                            "model_call": (
+                                self.model.last_call.model_dump(mode="json")
+                                if self.model.last_call is not None
+                                else None
+                            ),
+                            "fallback_failures": list(getattr(self.model, "failures", ())),
                         },
                         parents=[parent.id] if parent else None,
                     )

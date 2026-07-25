@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from affordance_runtime.intent_compiler import (
     INTENT_COMPILER_PROMPT_VERSION,
+    INTENT_DRAFT_REPAIR_PROMPT_VERSION,
     LLMIntentCompiler,
     LLMIntentDraft,
 )
@@ -78,7 +79,10 @@ class FixedModel:
         self.messages = messages
         self.message_batches.append(messages)
         if output_schema is LLMIntentDraft:
-            assert config.prompt_version == INTENT_COMPILER_PROMPT_VERSION
+            assert config.prompt_version in {
+                INTENT_COMPILER_PROMPT_VERSION,
+                INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+            }
             return output_schema.model_validate(self.draft.model_dump())
         if output_schema is TaskObligationCoverageReview:
             return output_schema.model_validate(
@@ -122,6 +126,12 @@ class RepairingModel(FixedModel):
         self.messages = messages
         self.message_batches.append(messages)
         if output_schema is LLMIntentDraft:
+            expected_prompt = (
+                INTENT_COMPILER_PROMPT_VERSION
+                if self.calls == 1
+                else INTENT_DRAFT_REPAIR_PROMPT_VERSION
+            )
+            assert config.prompt_version == expected_prompt
             draft = self.draft if self.calls == 1 else self.repaired_draft
             return output_schema.model_validate(draft.model_dump())
         if output_schema is TaskObligationCoverageReview:
@@ -214,15 +224,88 @@ def test_llm_compiler_repairs_missing_obligation_graph_within_three_call_budget(
     )
     model = RepairingModel(initial, repaired_draft=repaired)
 
+    trace = TraceDag("repair-request")
     result = asyncio.run(
         LLMIntentCompiler(model).compile(
-            UserRequest(request_id="repair-request", raw_text="Read pricing")
+            UserRequest(request_id="repair-request", raw_text="Read pricing"), trace=trace
         )
     )
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
     assert model.calls == 3
+    repair = next(node.payload for node in trace.nodes if node.kind == "IntentDraftRepairProduced")
+    assert repair["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+    assert repair["decoding_config"]["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+
+
+def test_llm_compiler_repair_remains_fail_closed_when_repair_introduces_ambiguity() -> None:
+    initial = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="repair-unsafe",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+    )
+    claims, obligations = _terminal_authority("repair-unsafe", "pricing read")
+    repaired = initial.model_copy(
+        update={
+            "candidate_source_claims": claims,
+            "candidate_obligations": obligations,
+            "ambiguities": (
+                IntentAmbiguity(
+                    field="pricing scope",
+                    reason="scope is unresolved",
+                    blocking=True,
+                    risk="high",
+                ),
+            ),
+        }
+    )
+    model = RepairingModel(initial, repaired_draft=repaired)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="repair-unsafe", raw_text="Read pricing")
+        )
+    )
+
+    assert result.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert result.task_spec is None
+    assert model.calls == 2
+
+
+def test_llm_compiler_stops_when_repair_consumes_intake_budget() -> None:
+    initial = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="repair-budget",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+    )
+    claims, obligations = _terminal_authority("repair-budget", "pricing read")
+    repaired = initial.model_copy(
+        update={"candidate_source_claims": claims, "candidate_obligations": obligations}
+    )
+    model = RepairingModel(initial, repaired_draft=repaired)
+    compiler = LLMIntentCompiler(model, max_model_calls=2)
+
+    result = asyncio.run(
+        compiler.compile(UserRequest(request_id="repair-budget", raw_text="Read pricing"))
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.issues[0].code == "coverage_review_unavailable"
+    assert model.calls == 2
+    assert compiler.model_call_count == 2
 
 
 def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None:
@@ -314,6 +397,7 @@ def test_llm_compiler_produces_draft_but_deterministic_policy_decides() -> None:
     assert result.task_spec is None
     assert result.issues[0].code == "capability_not_allowed"
     assert "Send the report" in model.messages[1].content
+    assert len(model.message_batches) == 1
 
 
 def test_llm_compiler_cannot_override_blocking_ambiguity() -> None:
@@ -347,6 +431,7 @@ def test_llm_compiler_cannot_override_blocking_ambiguity() -> None:
 
     assert result.status == CompilationStatus.NEEDS_CLARIFICATION
     assert result.task_spec is None
+    assert len(model.message_batches) == 1
 
 
 def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:

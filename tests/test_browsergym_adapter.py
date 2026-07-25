@@ -51,7 +51,10 @@ from affordance_runtime.benchmarks.browsergym_dom import (
     browsergym_dom_adapter,
     browsergym_svg_observer,
 )
-from affordance_runtime.benchmarks.browsergym_episode_runner import _browsergym_failure_stats
+from affordance_runtime.benchmarks.browsergym_episode_runner import (
+    _browsergym_failure_stats,
+    _browsergym_model_stats,
+)
 from affordance_runtime.benchmarks.browsergym_matrix import checkpoint_filename
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
@@ -389,6 +392,39 @@ class GeneralistClickModel:
         return output_schema.model_validate(payload)
 
 
+class RepairingGeneralistClickModel(GeneralistClickModel):
+    intake_drafts: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        if output_schema.__name__ == "LLMIntentDraft":
+            self.intake_drafts += 1
+            if self.intake_drafts == 1:
+                request = json.loads(messages[-1].content)
+                self.calls += 1
+                return output_schema.model_validate(
+                    {
+                        "objective": request["raw_text"],
+                        "requested_effects": [
+                            {
+                                "operation_class": "reversible_write",
+                                "target": "target",
+                                "source_ref": request["request_id"],
+                            }
+                        ],
+                        "candidate_success_criteria": ["the target is activated"],
+                    }
+                )
+            repair_context = json.loads(messages[-1].content)
+            raw_request = repair_context["raw_request"]
+            messages = (*messages[:-1], ModelMessage(role="user", content=json.dumps(raw_request)))
+        return await super().generate_structured(messages, output_schema, config)
+
+
 class InvalidIntentModel:
     provider = "fixed"
     model = "invalid-intent"
@@ -599,10 +635,39 @@ def test_generalist_intent_rejection_preserves_trace_and_model_attempt(tmp_path:
 
     assert result.runtime_status == "failed"
     assert result.runtime_error.startswith("ValueError: intent compilation unsupported:")
-    assert result.model_call_count == 1
+    assert result.model_call_count == 2
     assert result.trace_path
     events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
     assert events[-2:] == ["IntentCompilationRejected", "BrowserGymEpisodeFailed"]
+
+
+def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Path) -> None:
+    model = RepairingGeneralistClickModel()
+
+    result = run_browsergym_generalist_episode(
+        FakeBrowserGymEnvironment(),
+        model,
+        task_id="click-button",
+        seed=4,
+        artifact_root=tmp_path,
+    )
+
+    assert result.runtime_status == "done"
+    assert model.calls == 4
+    assert result.model_call_count == 4
+
+
+def test_browsergym_model_stats_counts_repair_model_call_record() -> None:
+    nodes = (
+        SimpleNamespace(kind="IntentDraftProduced", payload={"model_call": {"latency_ms": 1}}),
+        SimpleNamespace(kind="IntentDraftRepairProduced", payload={"model_call": {"latency_ms": 2}}),
+        SimpleNamespace(kind="TaskObligationCoverageReviewed", payload={"model_call": {"latency_ms": 3}}),
+    )
+
+    stats = _browsergym_model_stats(nodes, attempted_calls=3)
+
+    assert stats["model_call_count"] == 3
+    assert stats["model_call_latency_ms"] == 6.0
 
 
 def test_generalist_browsergym_adapter_binds_native_option_activation_as_select() -> None:

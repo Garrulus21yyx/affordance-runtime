@@ -78,7 +78,11 @@ from affordance_runtime.generalist_planner import (
     historical_compatibility_semantic_compiler_registry,
     planner_prompt_version,
 )
-from affordance_runtime.intent_compiler import LLMIntentDraft, intent_compiler_model_config
+from affordance_runtime.intent_compiler import (
+    LLMIntentDraft,
+    intent_compiler_model_config,
+    intent_draft_repair_model_config,
+)
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.task_obligation_coverage import (
@@ -335,6 +339,10 @@ def run_browsergym_miniwob_generalist_suite(
         ).model_dump(mode="json"),
         "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
         "intent_compiler_schema_sha256": _intent_compiler_schema_sha256(),
+        "intent_draft_repair_model_config": intent_draft_repair_model_config().model_dump(
+            mode="json"
+        ),
+        "intent_draft_repair_schema_sha256": _intent_compiler_schema_sha256(),
         "task_obligation_coverage_model_config": task_obligation_coverage_model_config().model_dump(
             mode="json"
         ),

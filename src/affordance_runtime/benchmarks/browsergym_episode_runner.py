@@ -633,6 +633,7 @@ def run_browsergym_generalist_episode(
     browser_version = ""
     intake_trace: TraceDag | None = None
     intent_call_attempted = False
+    intent_compiler: LLMIntentCompiler | None = None
     episode_phase = "environment"
     try:
         obs, info = environment.reset(seed=seed)
@@ -662,8 +663,9 @@ def run_browsergym_generalist_episode(
         intake_trace = TraceDag(run_id=run_id)
         intent_call_attempted = True
         episode_phase = "intent_compilation"
+        intent_compiler = LLMIntentCompiler(model)
         compilation = resolve_awaitable(
-            LLMIntentCompiler(model).compile(
+            intent_compiler.compile(
                 UserRequest(
                     request_id=run_id,
                     raw_text=goal,
@@ -731,7 +733,10 @@ def run_browsergym_generalist_episode(
         )
         trace_path = next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), "")
         model_stats = {
-            **_browsergym_model_stats(result.trace.nodes, planner.model_call_count + 2),
+            **_browsergym_model_stats(
+                result.trace.nodes,
+                planner.model_call_count + intent_compiler.model_call_count,
+            ),
             **_browsergym_context_stats(result.trace.nodes, planner_limits.max_affordances),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),
             **_browsergym_failure_stats(result.trace.nodes),
@@ -778,7 +783,7 @@ def run_browsergym_generalist_episode(
             trace_path = next((item.path for item in artifacts if item.path.endswith("events.jsonl")), "")
             failure_model_stats = _browsergym_model_stats(
                 intake_trace.nodes,
-                int(intent_call_attempted),
+                intent_compiler.model_call_count if intent_compiler is not None else int(intent_call_attempted),
             )
         return BrowserGymEpisodeResult(
             task_id,
@@ -1016,6 +1021,7 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
         if node.kind
         in {
             "IntentDraftProduced",
+            "IntentDraftRepairProduced",
             "TaskObligationCoverageReviewed",
             "PlannerProposalProduced",
         }

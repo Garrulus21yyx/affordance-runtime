@@ -91,6 +91,15 @@ success criteria, sourced claims, obligations, or malformed obligation graphs.
 Initial draft, repair, and independent coverage share a three-call intake
 ceiling; BrowserGym reserves that third slot by reducing planner allowance.
 Unsourced/stale, policy, and ambiguity failures remain single-call fail-closed.
+The follow-up repair-audit correction records every reserved intake call rather
+than inferring a fixed two-call path: `IntentDraftRepairProduced` now carries
+its real model-call record and a distinct `intent-draft-repair-v1` decoding
+identity. That identity and schema are part of immutable BrowserGym checkpoint
+metadata, while provider/context/schema recovery ownership remains separately
+open. The targeted gates cover successful repair, unsafe repair fail-closed,
+budget exhaustion, single-call policy/ambiguity stops, and BrowserGym's
+successful-repair call accounting. This is a local correctness repair, not
+benchmark evidence or authorization to run a protected family.
 
 Mandatory next sequence:
 
