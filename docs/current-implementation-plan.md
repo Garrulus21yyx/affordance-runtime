@@ -62,7 +62,10 @@ Clean `befa319` wires an evidence-backed provider-switch owner into the
 BrowserGym generalist normal entrypoint only when a configured multi-profile
 fallback exists; it remains fail-closed for a single provider. Context/schema
 owners are still absent, so normal-entrypoint recovery wiring remains open.
-Clean first-case validation at
+Clean `b48bf02` separately moves immutable model-invocation assembly to
+`PlannerModelRequest`/`PlannerModelOrchestrator`, reducing
+`GeneralistLMPlanner.propose()` to 222 lines without changing semantic
+admission or model budgets. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
 terminal effect/data dependency and the flat RuleTaskPlan has no typed outcome
@@ -82,7 +85,7 @@ freeze benchmark-family repair
   -> completed: build DecisionConstraintSet outside the step planner
   -> partial: wire configured fallback-provider recovery into normal entrypoint
   -> wire real context/schema recovery owners into normal entrypoints
-  -> continue Coordinator/Planner responsibility reduction
+  -> partial: continue Coordinator/Planner responsibility reduction
   -> non-BrowserGym held-out conformance
   -> targeted + protected-family + cross-family + fresh diagnostic
   -> publish immutable local evidence

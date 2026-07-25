@@ -135,10 +135,11 @@ not a reason to create one-file-per-class packages.
 not an acceptable model for current Runtime control modules. It may not receive
 new strict-generalist behavior.
 
-`GeneralistLMPlanner.propose()` is also above the 250-line method gate. New
-semantic resolvers are prohibited there. Extract a typed decision-constraint
-owner before adding obligation, terminal, relation, pagination, or current-state
-admission behavior.
+At the audited baseline `GeneralistLMPlanner.propose()` was above the 250-line
+method gate. New semantic resolvers remain prohibited there. Clean `b48bf02`
+extracts its typed model-invocation boundary and brings the method to 222 lines;
+`DecisionConstraintSet` remains the owner of terminal, relation, pagination,
+and current-state admission. Future changes must preserve both boundaries.
 
 ## 6. Required Extraction Pattern
 

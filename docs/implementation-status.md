@@ -31,7 +31,7 @@ Status values:
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, and conditional BrowserGym fallback-provider owner wiring through `befa319` | implement real context/schema owners and broader normal-entrypoint wiring |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `befa319` adds conditional real provider switching with 893 tests | context/schema recovery owners, planner generalization, and responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; `b48bf02` brings strict `propose()` below the method gate with 894 tests | context/schema recovery owners, planner generalization, and Coordinator responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -305,7 +305,7 @@ The governing documents are:
 | G3 Full-phase Recovery Coordinator | conditional provider path verified / normal entry open | BrowserGym generalist configures a provider-switch owner only for a real multi-profile fallback; context/schema remain unavailable until real owners exist |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
 | G5 Internal conformance evidence | complete for internal scope | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external/open-world suites unprovisioned |
-| Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, stateless TaskPlanFlow, TaskObligationCoverage, and TaskObligationOutcomeCompiler have typed ownership; Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; current 888-test gate passes while the reduction target remains open |
+| Responsibility containment | Planner invocation extracted / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, stateless TaskPlanFlow, TaskObligationCoverage, TaskObligationOutcomeCompiler, and immutable PlannerModelRequest have typed ownership; strict `propose()` is 222 lines, while Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; its reduction target remains open |
 
 Current verified facts:
 
@@ -318,7 +318,7 @@ Current verified facts:
   paths; BrowserGym generalist can switch a configured fallback provider through
   a real owner, while context/schema repair remains unavailable without an owner;
 - complete-run accounting continues after ordinary failures;
-- the audited `f4c3308` baseline passed 665 tests; clean `befa319` passes 893
+- the audited `f4c3308` baseline passed 665 tests; clean `b48bf02` passes 894
   tests, Ruff, and mypy over 108 source files in the fixed Python 3.12 environment.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
