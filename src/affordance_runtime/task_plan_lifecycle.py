@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Awaitable, Protocol, cast
+from typing import Awaitable, Mapping, Protocol, cast
 
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -18,6 +18,7 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import (
     CriteriaEvidenceLedgerEntry,
+    PlanningAffordanceState,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
     SubgoalSpec,
@@ -208,6 +209,9 @@ class TaskPlanLifecycle:
     ) -> TaskPlanningContext:
         plan = state.task_plan
         progress = state.plan_progress
+        source_affordances = {
+            item.id: item for item in snapshot.affordance_model.affordances
+        }
         if snapshot.unified_affordances:
             affordances = tuple(
                 PlanningAffordanceSummary(
@@ -215,6 +219,16 @@ class TaskPlanLifecycle:
                     role=item.role,
                     label=item.label,
                     supported_actions=tuple(item.supported_actions),
+                    current_state=_planning_affordance_state(
+                        next(
+                            (
+                                source_affordances[candidate.source_affordance_id].state
+                                for candidate in item.grounding_candidates
+                                if candidate.source_affordance_id in source_affordances
+                            ),
+                            {},
+                        )
+                    ),
                 )
                 for item in snapshot.unified_affordances[:64]
             )
@@ -225,6 +239,7 @@ class TaskPlanLifecycle:
                     role=item.role,
                     label=item.label,
                     supported_actions=(item.action,),
+                    current_state=_planning_affordance_state(item.state),
                 )
                 for item in snapshot.affordance_model.affordances[:64]
             )
@@ -335,3 +350,44 @@ def _carry_forward_completed_subgoals(
         item for item in replacement.subgoals if item.subgoal_id not in completed
     )
     return replacement.model_copy(update={"subgoals": (*preserved, *unfinished)})
+
+
+def _planning_affordance_state(
+    state: Mapping[str, object],
+) -> PlanningAffordanceState:
+    """Project only bounded predicate state; never expose handles or passwords."""
+
+    def boolean(name: str) -> bool | None:
+        value = state.get(name)
+        return value if isinstance(value, bool) else None
+
+    input_type = str(state.get("input_type") or "").casefold()
+    raw_value = state.get("control_value")
+    control_value = (
+        raw_value[:240]
+        if isinstance(raw_value, str) and input_type != "password"
+        else None
+    )
+    raw_options = state.get("selected_options")
+    selected_options = (
+        tuple(item[:160] for item in raw_options[:20] if isinstance(item, str))
+        if isinstance(raw_options, (list, tuple))
+        else ()
+    )
+    selected = boolean("selected")
+    if selected is None:
+        aria_selected = state.get("aria_selected")
+        if isinstance(aria_selected, str) and aria_selected.casefold() in {
+            "true",
+            "false",
+        }:
+            selected = aria_selected.casefold() == "true"
+    return PlanningAffordanceState(
+        visible=boolean("visible"),
+        enabled=boolean("enabled"),
+        control_value=control_value,
+        checked=boolean("checked"),
+        selected=selected,
+        selected_options=selected_options,
+        expanded=boolean("expanded"),
+    )

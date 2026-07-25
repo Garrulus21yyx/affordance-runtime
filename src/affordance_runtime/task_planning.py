@@ -48,6 +48,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
 TASK_PLAN_SCHEMA_VERSION = "1.1"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
+TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
 
 
 class TaskPlanSource(StrEnum):
@@ -457,11 +458,26 @@ def task_plan_provider_model_for_context(
     return ContextualTaskPlanProviderEnvelope
 
 
+class PlanningAffordanceState(StrictModel):
+    """Small, handle-free current-state projection for outcome planning."""
+
+    visible: bool | None = None
+    enabled: bool | None = None
+    control_value: str | None = Field(default=None, max_length=240)
+    checked: bool | None = None
+    selected: bool | None = None
+    selected_options: tuple[str, ...] = Field(default=(), max_length=20)
+    expanded: bool | None = None
+
+
 class PlanningAffordanceSummary(StrictModel):
     semantic_target_id: str = Field(min_length=1)
     role: str = ""
     label: str = ""
     supported_actions: tuple[str, ...] = ()
+    current_state: PlanningAffordanceState = Field(
+        default_factory=PlanningAffordanceState
+    )
 
 
 class PlanningEnvironmentSummary(StrictModel):
@@ -504,7 +520,7 @@ class TaskPlanningBudgetSummary(StrictModel):
 class TaskPlanningContext(StrictModel):
     """Bounded, handle-free input for initial planning and replanning."""
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     task_spec: TaskSpec
     state_version: int = Field(ge=0)
     reason: str = "initial"
@@ -760,9 +776,13 @@ class TaskPlanValidator:
                     detail="assumptions",
                 )
             )
-        entry_issue = task_plan_entry_feasibility_issue(plan, planning_context)
-        if entry_issue is not None:
-            repairable.append(entry_issue)
+        entry_state_issue = task_plan_entry_state_issue(plan, planning_context)
+        if entry_state_issue is not None:
+            repairable.append(entry_state_issue)
+        else:
+            entry_issue = task_plan_entry_feasibility_issue(plan, planning_context)
+            if entry_issue is not None:
+                repairable.append(entry_issue)
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
         if not any(item.subgoal_id not in dependency_targets for item in plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="missing_terminal_subgoal"))
@@ -796,6 +816,92 @@ def task_plan_entry_feasibility_issue(
         disallowed_values=(entry.action_family.value,),
         required_semantics="currently_bindable_action_family",
     )
+
+
+def task_plan_entry_state_issue(
+    plan: TaskPlan,
+    context: TaskPlanningContext | None,
+) -> TaskPlanValidationIssue | None:
+    """Reject only a uniquely grounded entry predicate already proven current."""
+
+    entry = _contextual_entry_subgoal(plan, context)
+    if entry is None or entry.outcome is None or context is None:
+        return None
+    subject_tokens = _planning_semantic_tokens(entry.outcome.subject)
+    if not subject_tokens:
+        return None
+    matches = tuple(
+        item
+        for item in context.environment.affordances
+        if _planning_semantic_tokens(item.label) == subject_tokens
+    )
+    if len(matches) != 1 or not _planning_outcome_is_current(
+        entry.outcome,
+        matches[0],
+    ):
+        return None
+    return TaskPlanValidationIssue(
+        code="entry_outcome_already_satisfied",
+        detail=entry.subgoal_id,
+        field="outcome",
+        disallowed_values=(entry.outcome.description(),),
+        required_semantics="currently_unsatisfied_outcome",
+    )
+
+
+def _planning_outcome_is_current(
+    outcome: SubgoalOutcome,
+    affordance: PlanningAffordanceSummary,
+) -> bool:
+    state = affordance.current_state
+    value = _planning_normalized_value(outcome.value)
+    observed_values = tuple(
+        _planning_normalized_value(item)
+        for item in (state.control_value, *state.selected_options)
+        if isinstance(item, str)
+    )
+    if outcome.relation == SubgoalOutcomeRelation.EQUALS:
+        return bool(value) and value in observed_values
+    if outcome.relation == SubgoalOutcomeRelation.CONTAINS:
+        return bool(value) and any(value in item for item in observed_values)
+    if outcome.relation == SubgoalOutcomeRelation.IS_VISIBLE:
+        if state.visible is not True:
+            return False
+        if not value:
+            return True
+        label = _planning_normalized_value(affordance.label)
+        return value in observed_values or value in label
+    if outcome.relation == SubgoalOutcomeRelation.IS_AVAILABLE:
+        return state.visible is True and state.enabled is not False
+    if outcome.relation == SubgoalOutcomeRelation.IS_CHECKED:
+        return state.checked is True
+    if outcome.relation == SubgoalOutcomeRelation.IS_SELECTED:
+        if value:
+            return value in tuple(
+                _planning_normalized_value(item) for item in state.selected_options
+            )
+        return state.selected is True or bool(state.selected_options)
+    if outcome.relation == SubgoalOutcomeRelation.IS_EXPANDED:
+        return state.expanded is True
+    return False
+
+
+def _planning_semantic_tokens(value: str) -> tuple[str, ...]:
+    aliases = {
+        "box": "input",
+        "field": "input",
+        "text": "input",
+        "textbox": "input",
+    }
+    return tuple(
+        aliases.get(token, token)
+        for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
+        if token
+    )
+
+
+def _planning_normalized_value(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def _contextual_entry_subgoal(
@@ -923,8 +1029,8 @@ class RuleTaskPlanner:
         return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v9"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v10"
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 

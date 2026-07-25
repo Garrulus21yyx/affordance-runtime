@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -79,6 +79,58 @@ def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> N
     assert state.active_subgoal() == task.objective
     assert lifecycle.active_subgoal_spec(state) == transition.plan.subgoals[0]
     assert not lifecycle.completed(state)
+
+
+def test_lifecycle_projects_bounded_current_state_without_password_value() -> None:
+    task = _task()
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    model = DomAdapter().transduce(
+        """
+        <main>
+          <input id='search-text' value='Keli'>
+          <input id='password' type='password' value='secret'>
+        </main>
+        """,
+        environment_revision="environment-state",
+        snapshot_id="snapshot-state",
+        page_revision="page-state",
+    )
+    enriched = []
+    for item in model.affordances:
+        extra = (
+            {
+                "selected_options": [f"option-{index}" for index in range(25)],
+                "aria_selected": "true",
+                "expanded": False,
+            }
+            if item.label == "search-text"
+            else {"control_value": "must-not-leak"}
+        )
+        enriched.append(replace(item, state={**item.state, **extra}))
+    model = replace(model, affordances=enriched)
+    observation = Observation(
+        "environment-state",
+        snapshot_id="snapshot-state",
+        page_revision="page-state",
+        target_fingerprints={item.id: item.target_fingerprint for item in enriched},
+    )
+    snapshot = BrowserSnapshot(observation, model)
+    state.remember_observation(observation)
+
+    context = TaskPlanLifecycle.build_context(
+        task,
+        state,
+        snapshot,
+        Limits(),
+        reason="initial",
+    )
+
+    by_label = {item.label: item.current_state for item in context.environment.affordances}
+    assert by_label["search-text"].control_value == "Keli"
+    assert by_label["search-text"].selected is True
+    assert len(by_label["search-text"].selected_options) == 20
+    assert by_label["search-text"].expanded is False
+    assert by_label["password"].control_value is None
 
 
 class InvalidAsyncPlanner:

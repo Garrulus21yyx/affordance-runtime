@@ -6,8 +6,10 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
+    TASK_PLAN_CONTEXT_POLICY_VERSION,
     TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
     LLMTaskPlanner,
+    PlanningAffordanceState,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
     PlanningRouter,
@@ -70,6 +72,13 @@ def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> N
     assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
 
 
+def test_task_planning_context_versions_bounded_current_state_policy() -> None:
+    context = _context()
+
+    assert context.schema_version == "1.1"
+    assert TASK_PLAN_CONTEXT_POLICY_VERSION == "bounded-current-state-v1"
+
+
 def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None:
     schema = TaskPlanCandidate.model_json_schema()
     items_schema = schema["properties"]["subgoals"]["items"]
@@ -106,7 +115,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "objective",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v9"
+    assert task_planner_model_config().prompt_version == "task-planner-v10"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:
@@ -565,6 +574,239 @@ def test_validator_marks_current_entry_action_family_unavailable() -> None:
     assert issue.field == "action_family"
     assert issue.disallowed_values == ("navigate",)
     assert issue.required_semantics == "currently_bindable_action_family"
+
+
+@pytest.mark.parametrize(
+    ("relation", "value", "family", "current_state"),
+    (
+        (
+            SubgoalOutcomeRelation.EQUALS,
+            "Keli",
+            TaskPlanActionFamily.TYPE_TEXT,
+            PlanningAffordanceState(control_value="Keli"),
+        ),
+        (
+            SubgoalOutcomeRelation.CONTAINS,
+            "eli",
+            TaskPlanActionFamily.TYPE_TEXT,
+            PlanningAffordanceState(control_value="Keli"),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            "Keli",
+            TaskPlanActionFamily.ACTIVATE,
+            PlanningAffordanceState(visible=True, control_value="Keli"),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_CHECKED,
+            "",
+            TaskPlanActionFamily.ACTIVATE,
+            PlanningAffordanceState(checked=True),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_SELECTED,
+            "dark",
+            TaskPlanActionFamily.SELECT_OPTION,
+            PlanningAffordanceState(selected_options=("dark",)),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_EXPANDED,
+            "",
+            TaskPlanActionFamily.ACTIVATE,
+            PlanningAffordanceState(expanded=True),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_AVAILABLE,
+            "",
+            TaskPlanActionFamily.NAVIGATE,
+            PlanningAffordanceState(visible=True, enabled=True),
+        ),
+    ),
+)
+def test_validator_repairs_uniquely_proven_current_entry(
+    relation: SubgoalOutcomeRelation,
+    value: str,
+    family: TaskPlanActionFamily,
+    current_state: PlanningAffordanceState,
+) -> None:
+    plan = synthetic_task_plan(_context())
+    entry = plan.subgoals[0].model_copy(
+        update={
+            "objective": SubgoalOutcome(
+                subject="search text",
+                relation=relation,
+                value=value,
+            ).description(),
+            "success_criteria": ("typed predicate",),
+            "action_family": family,
+            "outcome": SubgoalOutcome(
+                subject="search text",
+                relation=relation,
+                value=value,
+            ),
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:search-text",
+                        label="search-text",
+                        supported_actions=(family.value,),
+                        current_state=current_state,
+                    ),
+                )
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan.model_copy(update={"subgoals": (entry,)}),
+        _task(),
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert {item.code for item in report.issues} == {
+        "entry_outcome_already_satisfied"
+    }
+    issue = report.issues[0]
+    assert issue.field == "outcome"
+    assert issue.required_semantics == "currently_unsatisfied_outcome"
+    directives = task_plan_repair_directives(report.issues)
+    assert len(directives) == 1
+    assert directives[0].field == "outcome"
+    assert directives[0].required_semantics == "currently_unsatisfied_outcome"
+
+
+def test_validator_detects_satisfied_subject_independently_of_action_target() -> None:
+    plan = synthetic_task_plan(_context())
+    outcome = SubgoalOutcome(
+        subject="search-text",
+        relation=SubgoalOutcomeRelation.IS_VISIBLE,
+        value="Keli",
+    )
+    entry = plan.subgoals[0].model_copy(
+        update={
+            "objective": outcome.description(),
+            "success_criteria": (outcome.description(),),
+            "action_family": TaskPlanActionFamily.ACTIVATE,
+            "outcome": outcome,
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:search-text",
+                        label="search-text",
+                        supported_actions=("type_text",),
+                        current_state=PlanningAffordanceState(
+                            visible=True,
+                            control_value="Keli",
+                        ),
+                    ),
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:search",
+                        label="Search",
+                        supported_actions=("activate",),
+                        current_state=PlanningAffordanceState(visible=True),
+                    ),
+                )
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan.model_copy(update={"subgoals": (entry,)}),
+        _task(),
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert report.issues[0].code == "entry_outcome_already_satisfied"
+
+
+def test_validator_keeps_unknown_ambiguous_and_causal_entry_state() -> None:
+    plan = synthetic_task_plan(_context())
+    outcome = SubgoalOutcome(
+        subject="results panel",
+        relation=SubgoalOutcomeRelation.IS_VISIBLE,
+    )
+    causal = plan.subgoals[0].model_copy(
+        update={
+            "objective": outcome.description(),
+            "success_criteria": (outcome.description(),),
+            "action_family": TaskPlanActionFamily.ACTIVATE,
+            "outcome": outcome,
+        }
+    )
+    causal_context = _context().model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:disclosure",
+                        label="Show results",
+                        supported_actions=("activate",),
+                        current_state=PlanningAffordanceState(visible=True),
+                    ),
+                )
+            )
+        }
+    )
+    unknown_context = causal_context.model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:results-panel",
+                        label="results panel",
+                        supported_actions=("activate",),
+                    ),
+                )
+            )
+        }
+    )
+    ambiguous_context = causal_context.model_copy(
+        update={
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id=f"semantic:results-panel:{index}",
+                        label="results panel",
+                        supported_actions=("activate",),
+                        current_state=PlanningAffordanceState(visible=True),
+                    )
+                    for index in range(2)
+                )
+            )
+        }
+    )
+    candidate = plan.model_copy(update={"subgoals": (causal,)})
+
+    assert TaskPlanValidator().validate(
+        candidate,
+        _task(),
+        state_version=4,
+        planning_context=causal_context,
+    ).status == TaskPlanValidationStatus.ACCEPT
+    assert TaskPlanValidator().validate(
+        candidate,
+        _task(),
+        state_version=4,
+        planning_context=unknown_context,
+    ).status == TaskPlanValidationStatus.ACCEPT
+    assert TaskPlanValidator().validate(
+        candidate,
+        _task(),
+        state_version=4,
+        planning_context=ambiguous_context,
+    ).status == TaskPlanValidationStatus.ACCEPT
 
 
 def test_validator_checks_only_current_ready_subgoal_against_inventory() -> None:
