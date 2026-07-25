@@ -1,17 +1,19 @@
 # Current Implementation Plan
 
-Implementation status: the controlled harness components through M8.6 exist.
-The 2026-07-24 closure audit
-reopened G2.5 budget/evidence semantics, G3 owning-port recovery effects, G5
-empirical profile evidence, and responsibility containment. The G2.5/G3/first
-containment repair slices and fresh four-profile rollout now pass; G0-G5 are
-closed for immutable implementation revision `c939051`. M8.2B may begin a new
-strict frozen diagnostic review; historical scores are not promoted. See
+Implementation status: the controlled harness components through M8.6 exist,
+but only the scoped internal governance gate is closed. The 2026-07-24 closure
+audit reopened G2.5 budget/evidence semantics, G3 owning-port recovery effects,
+G5 empirical profile evidence, and responsibility containment. The scoped
+G2.5/G3/first-containment slices and fresh four-profile rollout pass for
+immutable implementation revision `c939051`. The strict M8.2B diagnostic has
+since completed at 24/60 and is not promotable; historical scores remain
+unpromoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
 [Responsibility Containment Boundary](responsibility-containment-boundary.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
-and the [M8.6 Closure Audit](current-closure-audit-20260724.md).
+the [M8.6 Closure Audit](current-closure-audit-20260724.md), and the
+[Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
 
 Runtime-first R1-R8 remains valid component and containment evidence.
 TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
@@ -25,6 +27,12 @@ M8.6 and must not authorize additional default semantic compilers. M9 remains
 conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
+Governance interpretation: M8.6 is complete only as the scoped internal
+budget/evidence/injectable-dispatch/G5 gate. It does not claim that normal
+entrypoints configure provider/context/schema recovery owners, that task intake
+is obligation-complete, that the strict planner is robust, or that Coordinator
+responsibility reduction has reached its stated target.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward
@@ -34,9 +42,10 @@ unrun/missing/invalidated case, or batch stop. The 36 ordinary envelopes are
 and 2 observation/context. `official_score_claimed=false`; frozen nightly is
 held. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
 artifact lineage, and failed verifier kind in the canonical FailureEnvelope.
-The provider-neutral terminal-readiness protocol, typed TaskPlan obligation
-compiler, current grounding resolver, and strict-Planner candidate narrowing
-are now implemented through clean `3447795`; the full local gate is 863 tests,
+The provider-neutral terminal-readiness protocol, typed TaskPlan validation,
+current grounding resolver, and strict-Planner candidate narrowing are
+implemented through clean `3447795`; sourced intent-to-obligation compilation is
+not. The full local gate is 863 tests,
 Ruff, and governed mypy over 105 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
@@ -46,6 +55,22 @@ owner upstream to sourced intake-to-obligation completeness. Do not weaken the
 verifier or `UNREQUESTED_EFFECT`, add task-specific solvers, expand budgets, or
 run family/PR/nightly before the typed input path exists. Evidence:
 `evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
+
+Mandatory next sequence:
+
+~~~text
+freeze benchmark-family repair
+  -> define sourced TaskObligationSpec
+  -> reject incomplete READY compilation
+  -> compile typed flat and dependent outcomes
+  -> build DecisionConstraintSet outside the step planner
+  -> wire concrete recovery owners into normal entrypoints
+  -> continue Coordinator/Planner responsibility reduction
+  -> non-BrowserGym held-out conformance
+  -> targeted + protected-family + cross-family + fresh diagnostic
+  -> publish immutable local evidence
+  -> synchronize origin or remote CI only with explicit user authorization
+~~~
 
 Current post-R8 repair slice (2026-07-23): release traces for the stable
 password/login verification cluster show a shared observation defect. Native
@@ -301,8 +326,9 @@ profile and replay entrypoint preserve historical evidence.
 5. wire the same router into reference, parent-agent, and benchmark entrypoints;
 6. remove suite identity and reward from planner context.
 
-Status on 2026-07-23: **complete**. Raw requests enter `LLMIntentCompiler` and
-the deterministic `IntentDraftValidator`; `TaskSpec.task_structure` selects the
+Status on 2026-07-25: **component path complete; sourced obligation gate
+open**. Raw requests enter `LLMIntentCompiler` and the deterministic
+`IntentDraftValidator`; `TaskSpec.task_structure` selects the
 flat rule plan or a declared shallow complex planner without granting action
 authority. Coordinator installs `PlanningRouter` as the common TaskSpec path,
 and the reference, parent/Coordinator, raw pipeline, and BrowserGym generalist
@@ -485,12 +511,13 @@ Execute in this order:
    probe budgets;
 2. **completed locally** - distinguish source/artifact availability from
    target-relevant semantic evidence;
-3. **completed locally** - execute each enabled recovery command through its real
-   owning port and reject no-op success;
-4. **TaskPlan containment extraction in verification** - active-perception
+3. **completed as an injectable path** - execute each enabled recovery command
+   through a supplied owning port and reject no-op success; concrete owners in
+   normal standalone/benchmark entrypoints remain open;
+4. **first containment ratchet complete; reduction target open** - TaskPlan containment extraction - active-perception
    flow, recovery command dispatch, evidence projections, and stateless
    TaskPlanFlow are extracted while preserving one authoritative state/trace
-   writer; the Coordinator feature freeze remains and its ratchet is 3644/26;
+   writer; the Coordinator feature freeze remains and its ratchet is 3643/26;
 5. **completed** - publish fresh four-profile non-BrowserGym Runtime runs with
    trace, contract, receipt, verifier, environment, and artifact identities;
 6. **current** - run one new strict frozen diagnostic matrix,
@@ -2033,7 +2060,7 @@ BrowserGym-only success cannot close M8.4, M8.5, or any future architecture
 milestone. The benchmark remains an external pressure test of the Runtime main
 path.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - done
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - internal gate done
 
 The implementation freeze remains valuable component evidence, but the closure
 audit found unmet behavioral and containment gates. The authoritative execution
@@ -2042,10 +2069,11 @@ sequence and exit gates are in Section 0,
 and the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md).
 This milestone supersedes benchmark-family repair as the current work order.
-G0-G4 remain accepted. The reopened G2.5, G3, responsibility containment, and
-G5 fresh immutable four-profile Runtime evidence pass for `c939051`. M8.2B may
-begin a new strict frozen diagnostic evaluation; prior compatibility/legacy
-results remain unpromoted.
+G0-G4 remain accepted only at their documented component-evidence scope. The
+reopened G2.5, G3 injectable path, first responsibility-containment ratchet, and
+G5 fresh immutable four-profile Runtime evidence pass for `c939051`. M8.2B has
+completed a strict frozen diagnostic at 24/60; the result and prior
+compatibility/legacy evidence remain unpromoted.
 
 ### M9: Durable Single-Run Recovery - conditional
 

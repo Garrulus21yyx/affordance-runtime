@@ -170,13 +170,16 @@ evidence level. See
 | M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
 | M8.2A Task Intake and Planner Contracts | partial / reopened | typed intake, TaskSpec revision, semantic proposal binding, and provider-neutral ports exist; default planner behavior is not yet strict-generalist |
 | M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `df5b820` completed 60/60 with 24 successes, no provider failure/retry, and 36 attributable residuals; frozen nightly is held |
-| M8.3 Recovery-Cascade Components | partial / reopened | incident detection, lower-half recovery, executable artifacts, replay, and rollback exist; full-phase online recovery waits for M8.6 |
+| M8.3 Recovery-Cascade Components | partial | incident detection, lower-half recovery, injectable typed dispatch, executable artifacts, replay, and rollback exist; normal entrypoints still need concrete context/schema/provider owners |
 | M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
 | M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
-| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | done | G0-G5 pass; reopened repairs and fresh immutable 11-case Runtime rollout are bound to `c939051` |
+| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | internal gate done | scoped G0-G5 budget/evidence/injectable-dispatch gate and immutable 11-case Runtime rollout pass at `c939051`; operational follow-through remains open |
 
-M9 durable single-run recovery remains conditional on a measured restart or waiting
-failure.
+The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
+is the current claim boundary. The next required work is sourced obligation
+completeness, typed decision constraints outside the step planner, concrete
+recovery-owner wiring, and continued responsibility reduction. M9 durable
+single-run recovery remains conditional on a measured restart or waiting failure.
 
 Current seeds create deterministic distinct local variants, and M8 adds unseen
 layouts and screenshot grounding. SoM and WoT also prove common contract reuse
@@ -704,7 +707,7 @@ versioned protocol, and report/taxonomy modules, in
 `evidence/runtime-r8-closure-20260722.md`. BrowserGym nightly and public suites
 remain evaluation gates under M8.2B, not substitutes for Runtime completion.
 
-### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - done
+### M8.6: Generalist Planner, Active Perception, and Full-Phase Recovery Governance - internal gate done
 
 The implementation freeze contains substantial real components, but the
 [M8.6 Closure Audit](current-closure-audit-20260724.md) reopened active-perception
@@ -712,12 +715,15 @@ budget/evidence truth, owning-port recovery effects, empirical profile evidence,
 and responsibility containment. The G2.5/G3/containment repair slices pass the
 full local gate with a reduced Coordinator ratchet, and the fresh immutable G5
 four-profile rollout for `c939051` passes. Historical score promotion and
-task-family repair remain prohibited; M8.2B may now start a new strict frozen
-diagnostic evaluation. The governing documents are the
+task-family repair remain prohibited. The later strict diagnostic is complete
+at 24/60 but remains non-promotable; obligation completeness and protected-family
+regression are now the active gate. The governing documents are the
 [Planner, Recovery, and Benchmark Governance Audit](planner-recovery-governance-audit-20260723.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
 and normative
-[Responsibility Containment Boundary](responsibility-containment-boundary.md).
+[Responsibility Containment Boundary](responsibility-containment-boundary.md)
+and the
+[Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
 
 #### Objective
 
@@ -728,8 +734,10 @@ entrypoints:
 UserRequest
   -> IntentCompiler
   -> TaskSpec
+  -> sourced TaskObligationSpec[]
   -> optional shallow TaskPlan
   -> active SubgoalSpec
+  -> immutable DecisionConstraintSet
   -> PerceptionRequirements
   -> coherent multi-source observation and assertion arbitration
   -> bounded active perception when evidence is insufficient
@@ -828,8 +836,9 @@ Exit when raw natural language reaches a validated TaskSpec, simple and
 multi-stage local tasks use the declared chain, plan lineage and evidence-bound
 progress are traceable, and planner context has zero benchmark identity leakage.
 
-Status on 2026-07-23: **complete**. Typed intent now derives operation class,
-requested capabilities, constraints, and flat/multi-stage structure. One
+Status on 2026-07-25: **component path complete; sourced obligation gate
+open**. Typed intent derives operation class, requested capabilities,
+constraints, and flat/multi-stage structure. One
 PlanningRouter is installed at the Coordinator boundary and used by the raw
 pipeline, reference/parent paths, and BrowserGym generalist runner. The
 benchmark runner compiles its raw goal instead of assigning a blanket operation
@@ -864,8 +873,9 @@ Exit when cheap structural paths remain cheap, visual/spatial tasks acquire the
 right evidence proactively, bounded probes resolve injected stale/conflicting
 sources, and irreducible conflicts end as safe inconclusive results.
 
-Status on 2026-07-23: **complete**. One typed controller now serves ordinary
-observation, preflight, inconclusive-verification evidence repair, and the
+Status on 2026-07-25: **complete for the scoped active-perception component
+path**. One typed controller serves ordinary observation, preflight,
+inconclusive-verification evidence repair, and the
 existing recovery inspection path. Probes are read-only and capability/budget
 gated, output a fresh coherent epoch, and require re-arbitration. Independent
 sources are preferred for conflicts, equivalent same-gap probes are not
@@ -900,16 +910,18 @@ path, equivalent loops stop before budget exhaustion, no blind duplicate effect
 occurs, and recovery proves reobserve, replan, reroute or stronger verify, and
 safe ask/abort outcomes.
 
-Status on 2026-07-23: **complete**. The production Runtime now uses one strict
-`FailureEnvelope`, typed and validated recovery commands, semantic cascade
-matching, explicit accepted-profile provenance, command receipts, non-empty
-recovery deltas, and declared re-entry. `RecoveryCoordinator` selects but never
-executes; `RunCoordinator` and the existing owning ports retain all mutation and
-effect authority. Replanning is credited only after an accepted replacement
-TaskPlan or validated proposal, uncertain effects are inspected before repeat,
-and equivalent failures change strategy or safely terminate before budget
-exhaustion. See
-`evidence/m8.6-g3-full-phase-recovery-20260723.md`.
+Status on 2026-07-25: **typed injectable protocol complete; normal-entry
+operational integration open**. The Runtime uses one strict `FailureEnvelope`,
+typed and validated recovery commands, semantic cascade matching, explicit
+accepted-profile provenance, command receipts, non-empty recovery deltas, and
+declared re-entry. `RecoveryCoordinator` selects but never executes;
+`RunCoordinator` and configured owning ports retain mutation and effect
+authority. Lower-half reobserve, reground, replan, uncertain-effect inspection,
+and safe termination run on the normal path. Provider switch/defer, context
+compaction, and schema repair have fixture-injected proof, but the generalist
+runner does not yet configure concrete owners. See
+`evidence/m8.6-g3-full-phase-recovery-20260723.md` and
+`current-governance-critical-audit-20260725.md`.
 
 G4 subsequently closes complete-run accounting and G5 closes internal
 profile-separated evidence. Neither promotes a historical benchmark score.

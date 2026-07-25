@@ -20,9 +20,24 @@ natural-language understanding and planning
   != success verification
 ```
 
-The raw-request pipeline, typed `TaskSpec`, and action-level
-`GeneralistLMPlanner` are implemented. `TaskEnvelope(goal: str)` remains a
-compatibility path, not the long-term authority boundary.
+The raw-request pipeline, typed `TaskSpec`, shallow `TaskPlan`, and action-level
+`GeneralistLMPlanner` exist. `TaskEnvelope(goal: str)` remains a compatibility
+path, not the long-term authority boundary.
+
+Current maturity is narrower than the schema list suggests. `TaskSpec`
+currently records requested effects, but does not yet compile every sourced
+user dependency and terminal outcome into an executable obligation graph. The
+current `GeneralistLMPlanner.propose()` also owns too much residual semantic
+policy. The next mandatory slice is:
+
+```text
+IntentDraft -> TaskSpec -> TaskObligationSpec[] -> TaskPlan
+Task + active obligation + current evidence -> DecisionConstraintSet
+DecisionConstraintSet + snapshot -> GeneralistLMPlanner
+```
+
+The critical assessment is recorded in
+[Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
 
 ## 2. End-to-End Chain
 
@@ -32,6 +47,8 @@ UserRequest or Parent Task
   -> IntentDraft
   -> deterministic validation and policy intersection
   -> immutable TaskSpec revision
+  -> sourced TaskObligationSpec validation
+  -> immutable DecisionConstraintSet
   -> initial observation
   -> adaptive task-planning router
   -> optional shallow TaskPlan
@@ -185,6 +202,65 @@ intersection of caller grants, runtime policy, and action requirements.
 A user intent change creates a new `TaskSpec` revision. Pending proposals and
 contracts based on an older revision are rejected or revalidated.
 
+### 4.6 Task obligations
+
+`requested_effects[]` is descriptive input, not by itself a completion
+contract. Raw natural language first produces a bounded sourced claim ledger;
+the obligation compiler then produces typed obligations that cover those
+claims:
+
+```text
+SourcedTaskClaim
+  claim_id
+  kind: effect | value | dependency | terminal | constraint
+  source_span_ref
+  normalized_statement
+  required
+
+TaskObligationSpec
+  obligation_id
+  kind: predicate | effect
+  subject
+  relation
+  value_source: none | literal | observation | obligation_output
+  expected_value
+  claim_ids[]
+  depends_on[]
+  evidence_requirements[]
+  blocking
+  terminal
+```
+
+Dependencies are graph edges, not an obligation kind. Evidence requirements
+are properties of the obligation they can prove, not synthetic evidence nodes.
+A literal value must be present in an authorized source claim. An
+`obligation_output` value must name a transitive prerequisite. Terminal
+obligations must use a terminal-compatible typed relation and independent
+evidence requirement. Duplicate ids, cycles, dangling references, blank source
+claims, invalid value-source combinations, or a terminal without evidence are
+invalid.
+
+Every required claim must be covered by at least one obligation and every
+obligation must cite one or more authorized claims. This proves structural
+coverage against the claim ledger; it does not let one model certify the
+semantic completeness of its own natural-language extraction. Parent/typed
+callers may supply an authoritative ledger. The raw-language path uses a
+bounded independent coverage check; disagreement, an uncovered imperative
+clause, or unresolved data dependency causes one budget-neutral repair or
+`NEEDS_CLARIFICATION`/`UNSUPPORTED`. It may not silently compile a permissive
+flat plan.
+
+Every effectful task must have at least one terminal obligation and independent
+evidence requirement. Every user-stated dependency must either appear in the
+compiled graph or cause a fail-closed compilation result. The compiler may
+normalize user language; it may not infer authority from page content or invent
+a benchmark-family solution.
+
+`TaskPlanValidator` must prove that each blocking obligation is covered by a
+subgoal and that at least one reachable terminal subgoal discharges the
+terminal obligations. A passed action receipt or unrelated verification event
+cannot satisfy an obligation.
+
 
 ## 5. Planner Boundary
 
@@ -208,6 +284,26 @@ task revision, state version, and snapshot id
 
 The planner does not receive raw credentials, cookies, complete historical DOM,
 unrelated traces, executor handles, or benchmark oracle answers.
+
+Before the model is called, deterministic owners derive an immutable
+`DecisionConstraintSet`:
+
+```text
+allowed_action_families
+required_outcomes
+forbidden_effects
+candidate_scope
+terminal_readiness
+required_evidence
+remaining_budgets
+recovery_constraints
+```
+
+The planner chooses among permitted semantic actions. It must not own terminal
+readiness policy, global ordinal/pagination policy, benchmark-family semantics,
+or evidence-coverage rules. Those rules belong to the obligation compiler,
+task-plan lifecycle, candidate resolver, or verifier. This keeps
+`GeneralistLMPlanner` general enough for real environments.
 
 ### 5.2 PlannerProposal
 
@@ -344,11 +440,11 @@ AgentLab or BrowserGym action strings must be intercepted and translated into
 `PlannerProposal`. They may not call `env.step()` or an executor outside the
 Coordinator.
 
-### 6.4 Adaptive Shallow Task Planning - planned
+### 6.4 Adaptive Shallow Task Planning - implemented baseline, governance open
 
 The implemented `GeneralistLMPlanner` remains the action-level planner: it
-selects one semantic action from the latest affordance snapshot. A planned,
-optional task-level layer decomposes a complex `TaskSpec` into a small number
+selects one semantic action from the latest affordance snapshot. The optional
+task-level layer now decomposes a complex `TaskSpec` into a small number
 of verifiable outcomes before action selection.
 
 The design is adaptive rather than always hierarchical:
@@ -493,6 +589,12 @@ verified completed outcomes and creates a new plan version.
 Post-action observation remains mandatory. Navigation, modal, and download
 hooks may provide targeted feedback; a continuous watcher remains deferred
 until benchmark evidence shows an advantage.
+
+The baseline does not close task planning governance. Plan versions,
+completed-evidence summaries, failure summaries, current environment summaries,
+and sourced obligations must be present on every replan. Aggregate benchmark
+gain cannot justify embedding residual task semantics in the step planner.
+Protected-family and non-BrowserGym evidence are required before promotion.
 
 ## 7. Multimodal and Cross-Surface Planning
 
@@ -722,9 +824,13 @@ M8.2A is complete when:
 
 ## 13. Implementation Milestone: M8.4
 
-### Adaptive Shallow Task Planning - planned
+### Adaptive Shallow Task Planning - implemented baseline, follow-through open
 
-Entry:
+The listed baseline components exist. Remaining work is sourced obligation
+coverage, complete replan inputs and version lineage, planner responsibility
+reduction, and protected-family/non-BrowserGym evidence.
+
+Original entry criteria:
 
 - the M8.2B consolidation gate and current action-planner PR profile are
   reproducible;

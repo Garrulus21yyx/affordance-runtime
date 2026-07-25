@@ -63,8 +63,10 @@ adapter-to-core callbacks that bypass contracts are prohibited.
 | --- | --- | --- |
 | `RunCoordinator` | phase sequencing, state-version checks, authoritative commit, budget accounting, trace ordering | parser algorithms, Prompt/model policy, provider repair, probe ranking, backend encoding, verifier implementation, report aggregation |
 | Intent compiler | raw request to sourced intent draft | capability grant, GUI target choice, execution |
+| Obligation compiler | prove complete sourced effects, values, dependencies, and terminal relations before READY | infer authority from page content or select GUI targets |
 | Task-plan flow | flat/skill/shallow-plan selection, plan lineage, subgoal activation | grounding, backend choice, state mutation |
-| Step planner | semantic proposal from bounded context | selectors, coordinates, capabilities, execution, success authority |
+| Decision-constraint builder | current task/subgoal scope, obligation readiness, relations, and state admission | model invocation, trace commit, benchmark task grammar |
+| Step planner | one semantic proposal from bounded context and typed constraints | semantic resolver accumulation, selectors, coordinates, capabilities, execution, success authority |
 | Proposal validator | provenance, scope, action/target and current-context validity | repairing proposals or inventing replacement actions |
 | Perception session | coherent source capture and normalization | deciding task completion or granting extra budget |
 | Active-perception controller | evidence-gap extraction and cheapest permitted read-only probe decision | increasing authority budgets, executing effects, mutating old snapshots |
@@ -97,7 +99,11 @@ The following changes are rejected:
    when an existing typed port can own the behavior;
 9. splitting files without establishing a real ownership boundary;
 10. using line-count reduction to hide circular dependencies or pass mutable
-    state through an untyped dictionary.
+    state through an untyped dictionary;
+11. calling a configured recovery protocol an integrated capability when the
+    normal entrypoint does not provide a concrete owner;
+12. adding benchmark-discovered terminal, pagination, value, form, or gesture
+    policy directly to the step planner instead of the typed owning contract.
 
 ## 5. Mechanical Containment Gates
 
@@ -116,16 +122,23 @@ Line count is not the architecture, but it is an escalation signal.
 
 `coordinator.py` is currently feature-frozen. Its remediation target is below
 2,000 lines first and below 1,500 lines after the current active-perception,
-recovery-dispatch, and TaskPlan ownership extraction. The ratchet in
+recovery-dispatch, and TaskPlan ownership extraction. At audited `b01e73b`, the
+module remains 3,643 lines and `RunCoordinator.run_sync()` remains 2,098 lines.
+This is a successful non-expansion checkpoint, not responsibility closure. The
+ratchet in
 `tests/test_responsibility_containment.py` prevents growth beyond the audited
 3813-line and 29-method audited surface; both ceilings must only decrease. The
-current executable ratchet is 3644 lines and 26 methods after the first
-`TaskPlanFlow` extraction. These numbers are gates,
+current executable ratchet is 3643 lines and 26 methods. These numbers are gates,
 not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,
 not an acceptable model for current Runtime control modules. It may not receive
 new strict-generalist behavior.
+
+`GeneralistLMPlanner.propose()` is also above the 250-line method gate. New
+semantic resolvers are prohibited there. Extract a typed decision-constraint
+owner before adding obligation, terminal, relation, pagination, or current-state
+admission behavior.
 
 ## 6. Required Extraction Pattern
 
@@ -183,12 +196,13 @@ does not justify adding phase-specific algorithms to Coordinator.
 
 ## 8. Completion and Evidence Semantics
 
-The following three levels must remain separate:
+The following four levels must remain separate:
 
 | Level | Meaning | Valid claim |
 | --- | --- | --- |
 | protocol | schema, validator, and unit behavior exist | component implemented |
-| integration | normal entrypoint invokes the owning port and returns a real typed result | Runtime path integrated |
+| injectable path | Coordinator can invoke a supplied owner in a controlled test | configured path implemented |
+| normal-entrypoint integration | standalone/parent/benchmark runner supplies the concrete owner and returns a real typed result | Runtime capability integrated for that entrypoint |
 | empirical evidence | immutable runs and artifacts demonstrate the behavior under declared controls | gate or capability proven |
 
 Protocol tests cannot close an empirical gate. A synthetic ledger may test
@@ -224,7 +238,9 @@ A change passes responsibility governance only when:
 - authority and budgets can only stay equal or become narrower downstream;
 - success is backed by the owning port and criteria-bound evidence;
 - the same behavior is testable without a benchmark adapter;
-- the repository remains simpler to explain after the change.
+- the repository remains simpler to explain after the change;
+- every claimed recovery capability names its concrete owner and normal entrypoint;
+- a ratchet or extraction checkpoint is not reported as completion of the stated reduction target.
 
 If these conditions cannot be met, the change must be redesigned, deferred, or
 rejected.

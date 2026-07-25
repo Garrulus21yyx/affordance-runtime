@@ -225,9 +225,13 @@ Every promoted repair must include:
 7. safety, uncertain-effect, and duplicate-effect checks where applicable;
 8. targeted benchmark confirmation;
 9. breadth regression evidence;
-10. an honest claim describing what remains unsupported.
+10. an honest claim describing what remains unsupported;
+11. a protected-family comparison against the previous immutable diagnostic;
+12. a versioned report and trace manifest outside temporary storage.
 
-A targeted family pass is never sufficient by itself.
+A targeted family pass is never sufficient by itself. Aggregate improvement
+also cannot hide a protected-family regression; the regression must be explained,
+repaired, or explicitly accepted by a separate decision before breadth expands.
 
 ## 9. Behavioral Anti-Cheating Tests
 
@@ -250,6 +254,12 @@ The strict-generalist planner must be tested with:
 A rule fails governance when it takes an unrequested action, completes an
 unverified obligation, expands scope, or activates from a task-shaped phrase
 without sufficient current evidence.
+
+Lexical absence of `BrowserGym` or `MiniWoB` is not a behavioral proof. Tests
+must also detect a shared planner that accumulates pagination, terminal, value,
+form, or gesture branches in the same order as benchmark residual repair. Such
+capabilities pass only when their typed owner and non-benchmark held-out behavior
+are independently demonstrated.
 
 ## 10. Recovery and Evolution Boundary
 
@@ -278,7 +288,9 @@ verified traces
 ~~~
 
 No benchmark failure may immediately mutate the default planner, prompt, policy,
-or skill registry.
+or skill registry. A recovery capability is not counted as available merely
+because a dispatcher protocol exists; the evaluated entrypoint must identify
+and configure its concrete owner.
 
 ## 11. Reporting Profiles
 
@@ -299,6 +311,7 @@ Every report records:
 - active compiler and skill registry digests;
 - prompts and budgets;
 - environment and suite versions;
+- concrete recovery-owner identities enabled by the entrypoint;
 - observed, completed, failed, and unrun counts;
 - Runtime failure taxonomy;
 - external evaluator result;
@@ -320,6 +333,9 @@ Every benchmark-related pull request must answer:
 9. Is an accepted skill involved, and is applicability regression-gated?
 10. Is the benchmark result being used as audit evidence rather than product
     completion?
+11. Did any previously passing protected family regress?
+12. Is the report stored under an immutable evidence identity rather than only
+    in `/tmp` or prose?
 
 A missing or weak answer blocks merge.
 

@@ -1,6 +1,12 @@
 # Active Perception and Online Recovery Architecture
 
-Status: **normative target design for M8.6**
+Status: **normative design; scoped internal M8.6 gate complete, normal-entry
+operational recovery still open**
+
+The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
+is authoritative for present maturity. A typed command, dispatcher branch, or
+fixture-only injected owner proves a protocol path; it does not prove that the
+standalone or BrowserGym normal entrypoint can perform that repair.
 
 This document defines how Affordance Runtime absorbs the useful
 active-perception and online-recovery ideas from C009 without importing its
@@ -123,16 +129,19 @@ verification, and trace.
 | Inspect-before-repeat | BoundedRecoveryPolicy |
 | Recovery replay and artifacts | recovery_evolution and accepted profiles |
 
-Missing integration:
+Remaining product integration:
 
-- evidence-gap and probe contracts above capture_targeted;
-- a controller selecting probes by authority, information value, risk, and cost;
-- a FailureEnvelope valid before or after ActionContract construction;
-- a RecoveryCoordinator spanning all Runtime phases;
-- typed execution and receipts for recovery commands;
-- a changed-strategy guard;
-- consistent accepted-profile loading;
-- an end-to-end trace across perception and recovery.
+- concrete provider-switch/defer, context-compaction, and schema-repair owners
+  in normal standalone and BrowserGym entrypoints;
+- explicit owner identity and availability evidence in each run manifest;
+- sourced task obligations and decision constraints before planner recovery;
+- protected-family and non-BrowserGym replay after each recovery-policy change;
+- continued extraction of phase algorithms from the Coordinator;
+- consistent accepted-profile loading and broader AR6/AR7 evidence.
+
+Lower-half reobserve, reground, replan, loop termination, uncertain-effect
+inspection, and safe abort paths are real. Provider/context/schema repair is
+currently an injectable protocol path and fixture proof.
 
 ## 4. Ownership
 
@@ -715,9 +724,11 @@ defer/switch, schema repair, intent clarification, task/step replan, and regroun
 Exit: one observation failure changes source, one planning failure changes
 context/plan, one ambiguity asks the user, and equivalent planning loops stop.
 
-Status: **complete for the configured G3 production paths**. Provider switch,
-context compaction, or schema repair remains unavailable unless the respective
-owning port/capability is configured; recovery cannot simulate those changes.
+Status: **complete as a typed injectable protocol path, not as normal-entry
+operational integration**. Provider switch, context compaction, and schema
+repair remain unavailable unless the respective owning port/capability is
+configured. The current generalist BrowserGym runner does not inject those
+owners. Recovery cannot simulate a change or earn delta from a no-op.
 
 ### AR5: Unify contract and effect recovery
 
@@ -743,6 +754,23 @@ Status: **partial**. Explicit recovery artifact identity/digest, provenance,
 fallthrough, rollback, and fresh candidate replay are enforced. Learned
 perception-policy integration and broader generalization evidence remain later
 work and are not part of G3 closure.
+
+### Recovery claim maturity
+
+Recovery claims use four levels:
+
+1. `protocol`: typed command, receipt, delta, and validation exist;
+2. `injectable_path`: a test or fixture can inject a concrete owner and prove
+   the command has a real effect;
+3. `normal_entrypoint_integration`: standalone and BrowserGym runners configure
+   concrete owners and record availability/identity;
+4. `empirical_effectiveness`: immutable replay proves improved recovery without
+   protected-family or safety regression.
+
+Provider/context/schema recovery is currently at level 2. Lower-half
+reobserve/reground/replan and safe termination have stronger normal-path
+evidence. No unqualified "full-phase online recovery complete" claim is allowed
+until the relevant command reaches levels 3 and 4.
 
 ### AR7: Generalization and benchmark audit
 

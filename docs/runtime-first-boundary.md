@@ -23,6 +23,11 @@ is also normative for M8.6. It defines how missing evidence is repaired before
 effects, how phase-general failures become typed recovery commands, and how the
 single Coordinator retains authority.
 
+The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
+is the latest evidence decision. It narrows the M8.6 `done` claim to the internal
+governance gate and keeps obligation-complete intake, normal-entrypoint recovery
+owners, planner generalization, and responsibility reduction open.
+
 ## 1. Decision
 
 Affordance Runtime is the product. BrowserGym, MiniWoB++, WorkArena, ScreenSpot,
@@ -169,6 +174,17 @@ The task planner emits outcome-oriented subgoals. The action planner emits
 semantic action proposals. Neither may emit or authorize raw selectors,
 coordinates, bids, backend action strings, capabilities, or approvals.
 
+Before task planning, a sourced obligation compiler must prove that every
+explicit requested effect, terminal relation, typed value, and data dependency
+survives into immutable TaskSpec authority. A non-empty effect list is not
+obligation completeness.
+
+Before step planning, generic resolvers compile current task scope, active-
+subgoal scope, obligation readiness, semantic values, collection relations, and
+current-state exclusions into one typed `DecisionConstraintSet`. The step
+planner consumes that set. It must not accumulate one deterministic branch per
+benchmark-discovered residual.
+
 Rule-based planning is a System 1 optimization, not a place to accumulate
 benchmark solvers. Every rule must implement a typed, independently named
 semantic compiler interface and declare:
@@ -240,7 +256,9 @@ post-observation, and verification.
 | Generic adapters | standards-based source normalization | MiniWoB task-family solvers |
 | Perception | task-aware source acquisition, evidence-gap repair, and provenance | task completion decisions or hidden effectful probes |
 | Active perception | cheapest permitted read-only probe and new coherent epoch | action planning, authority changes, or mutation of an old snapshot |
-| Planner | semantic intent and outcome proposals | selectors, coordinates, authority, or execution |
+| Obligation compiler | sourced effect, value, dependency, and terminal completeness | GUI target selection or inferred authority from page labels |
+| Decision constraints | current typed scope, obligation, relation, and state admission | model invocation, execution, or benchmark task grammar |
+| Planner | one semantic intent or outcome proposal within supplied constraints | selectors, coordinates, authority, execution, or accumulating semantic resolvers |
 | ContractBuilder | candidate binding and fresh attempt contract | free-form task reasoning |
 | Coordinator | authoritative serial state transitions | benchmark episode policy |
 | Verifier | criteria-bound independent evidence | official reward as sole truth |
@@ -259,10 +277,12 @@ Every pull request touching benchmark reliability must answer:
 5. Does any benchmark label, selector, coordinate, or action syntax enter core?
 6. Does the patch preserve contract, policy, preflight, verification, and trace?
 7. Is the benchmark result diagnostic, targeted, nightly, or release evidence?
+8. If recovery is claimed, which concrete owner is configured by the normal entrypoint?
+9. Is the immutable report stored in the repository-governed evidence path?
 
-8. Would the behavior remain correct under paraphrase, distractors, and extra controls?
-9. Does the rule encode a task grammar or expose an effect the user did not request?
-10. Is the benchmark being used as an auditor rather than the repair objective?
+10. Would the behavior remain correct under paraphrase, distractors, and extra controls?
+11. Does the rule encode a task grammar or expose an effect the user did not request?
+12. Is the benchmark being used as an auditor rather than the repair objective?
 A milestone may be marked done only when its declared generic Runtime path is
 wired into a normal entrypoint and has reproducible evidence from the current
 immutable revision.

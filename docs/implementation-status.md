@@ -26,12 +26,12 @@ Status values:
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | partial | typed intake/revision, semantic proposal boundary, provider-neutral ports, local SaaS and cross-surface evidence | strict-generalist behavior, compiler isolation, behavioral controls, and normal task-plan wiring move to M8.6 |
-| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict `351dbdf` ladder completed 6-case smoke, 18-case PR, and 60-case seed-major diagnostic; diagnostic success is 19/60 with no provider failure/retry | hold frozen nightly; close attribution and cross-family Runtime owners before a new diagnostic |
-| M8.3 Recovery-Cascade Components | partial | incident/loop detection, lower-half online recovery, quarantined artifact replay, acceptance, persistence, and rollback | full-phase intake/observation/planning/binding/provider/context recovery moves to M8.6 |
-| M8.4 Adaptive Shallow Task Planning | component_done | TaskPlan contracts, criteria-bound progress, context, lineage, controlled ablation, and reference entrypoint | wire one task-plan router into all normal entrypoints under M8.6 |
-| M8.5 Unified Adaptive Routing and Skill Internalization | component_done | unified candidates, routes, gestures, safe fallback, source-arbitration foundations, trace mining, accepted profile loading, fallthrough, and rollback | complete the active-perception controller, strict-generalist integration, and full-phase recovery under M8.6 |
-| M8.6 Planner, Active Perception, and Recovery Governance | done | `c939051`: reopened repairs pass 680 tests/Ruff/mypy and the immutable 11-case four-profile rollout passes with no safety regression | preserve freeze; the separate M8.2B diagnostic is complete and does not reopen M8.6 |
+| M8.2A Task Intake and Planner Contracts | in_progress | typed intake/revision, semantic proposal boundary, provider-neutral ports, local SaaS and cross-surface evidence | add sourced claim/obligation coverage and complete strict decision boundaries |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals | hold nightly/release; complete sourced obligations and protected-family regression before breadth promotion |
+| M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed injectable owner dispatch, quarantined artifact replay, acceptance, persistence, and rollback | implement concrete context/schema/provider owners and wire them into normal entrypoints |
+| M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, context, lineage, normal routing, and controlled ablation | compile obligation-complete flat/dependent outcomes and prove held-out behavior |
+| M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal budget/evidence/dispatcher/G5 gate; `b01e73b` passes 863 tests, Ruff, mypy, and a fresh 11-case internal rollout | operational recovery owners, obligation-complete intake, planner generalization, and responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -160,7 +160,15 @@ See `evidence/m8.2a-7edaa97.md`.
 
 ### M8.2B Public Benchmark Audit - diagnostic complete, repair required
 
-The new strict-generalist evaluation at implementation SHA `351dbdf` completed
+The latest clean strict diagnostic at `df5b820` completed all 60 episodes at
+24/60 success (`0.4`) with zero provider failure, retry, missing episode,
+invalidation, or batch stop. Its 36 envelopes are 12 intent/planning, 11
+contract/field binding, 8 verification, 3 execution, and 2 observation/context.
+The result is diagnostic and non-promotable. It also contains protected-family
+regressions, including `text-transform` 2/2 to 0/2 and `enter-date` 2/2 to 1/2.
+The immutable report must be published before any release claim.
+
+The earlier strict-generalist evaluation at implementation SHA `351dbdf` completed
 all 60 scheduled cases in seed-major order after fresh smoke and PR breadth
 gates. It recorded 19 successes and 41 failures, mean official reward
 `0.3166666667`, 251 model calls, and zero provider failures, rate-limit retries,
@@ -272,12 +280,13 @@ Follow M8.5R in `current-implementation-plan.md` and the normative
 `runtime-first-boundary.md`. The prior completion audit is component evidence,
 not milestone closure.
 
-### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - done
+### M8.6 Planner, Active Perception, and Full-Phase Recovery Governance - internal gate done
 
 The [M8.6 Closure Audit](current-closure-audit-20260724.md) reopened behavioral
-and responsibility-containment exit criteria. Those repairs and the fresh G5
-rollout now pass for immutable implementation revision `c939051`; M8.2B is
-eligible for a separately identified strict diagnostic evaluation.
+and responsibility-containment exit criteria. The scoped repairs and fresh G5
+internal rollout pass for immutable implementation revision `c939051`. M8.2B
+has since completed a separately identified strict diagnostic at 24/60; it is
+not promotion evidence.
 
 The governing documents are:
 
@@ -291,12 +300,12 @@ The governing documents are:
 | --- | --- | --- |
 | G0 Freeze and classify | complete | score-bearing and legacy summaries are classified; current identities are explicit |
 | G1 Strict-generalist profile | complete | strict default, physical compatibility isolation, typed provenance, shared proposal validation, and anti-specialization controls |
-| G2 Intent and TaskPlan integration | complete | typed intent/capability derivation, common planning entrypoint, lineage, and verifier-bound subgoals |
+| G2 Intent and TaskPlan integration | component complete / obligation gap open | typed intent/capability derivation, common planning entrypoint, lineage, and verifier-bound subgoals exist; sourced dependency and terminal-obligation compilation remains open |
 | G2.5 Active perception and evidence repair | repaired / locally verified | strict authority intersection, no adapter escalation, current relevant semantic-candidate evidence, typed flow owner, and negative controls pass |
-| G3 Full-phase Recovery Coordinator | repaired / locally verified | enabled context/schema/provider commands derive from configured owning ports; real before/after evidence is required and no-op/failed/unavailable handlers produce no delta |
+| G3 Full-phase Recovery Coordinator | injectable path verified / normal entry open | configured context/schema/provider commands require real owning ports and non-empty deltas; the generalist runner does not yet configure those owners |
 | G4 Complete-run audit | complete | immutable run identity, ordinary-failure continuation, exact resume, allowlisted batch stops, and post-collection clustering |
-| G5 Generalization evidence | complete | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external suites unprovisioned |
-| Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, and stateless TaskPlanFlow have typed ownership; Coordinator remains sole state/trace committer and is capped at 3644 lines / 26 methods; 832-test gate and clean 8-case evidence replay pass |
+| G5 Internal conformance evidence | complete for internal scope | fresh 11-case profile-separated Runtime rollout at `docs/evidence/runs/m8.6-g5-c939051`; expected/safe outcomes 100%, hash index revalidated, external/open-world suites unprovisioned |
+| Responsibility containment | TaskPlanFlow verified / feature freeze remains | ActivePerceptionFlow, RecoveryCommandDispatcher, Runtime evidence projections, and stateless TaskPlanFlow have typed ownership; Coordinator remains sole state/trace committer and is capped at 3643 lines / 26 methods; current 863-test gate passes while the reduction target remains open |
 
 Current verified facts:
 
@@ -305,35 +314,41 @@ Current verified facts:
 - proposal provenance and validation are shared across model, deterministic,
   parent, skill, and recovery sources;
 - raw requests enter typed intent and TaskPlan routing;
-- active-perception and recovery owning ports are integrated through normal
-  Coordinator paths;
+- active perception and lower-half recovery run through normal Coordinator
+  paths; provider/context/schema repair remains conditional on an injected owner;
 - complete-run accounting continues after ordinary failures;
-- the audited `f4c3308` baseline passed 665 tests; the current reopened repair
-  passes 680 tests, Ruff, and mypy over 100 source files in the fixed Python 3.12
+- the audited `f4c3308` baseline passed 665 tests; immutable `b01e73b` passes
+  863 tests, Ruff, and mypy over 105 source files in the fixed Python 3.12
   environment.
 
-Current closure blockers: none for M8.6. External-suite provisioning remains an
-independent confirmation gap and is not required for the internal gate. M8.2B
-must start a new output identity; no historical score is promoted.
+Current blockers for the scoped `c939051` internal gate: none. This does not
+close the broader product work. The default dispatcher remains empty unless an
+entrypoint supplies concrete owners, TaskSpec is not yet obligation-complete,
+the Coordinator remains above its reduction target, and strict planner behavior
+is still diagnostic. External-suite provisioning is a separate confirmation gap.
 
 Ordered next action:
 
 ~~~text
 completed budget and evidence truth
-  -> completed real recovery owning-port dispatch
+  -> completed injectable recovery owning-port dispatch
+  -> open normal-entrypoint recovery-owner wiring
   -> completed first containment ratchet with one state writer
+  -> open Coordinator and Planner responsibility reduction
   -> completed fresh non-BrowserGym four-profile runs
   -> completed local quality gate
-  -> new strict frozen diagnostic collection (current)
-  -> cluster before repair
-  -> Runtime-first repair
-  -> targeted and breadth confirmation
+  -> completed strict frozen diagnostic collection and clustering
+  -> sourced TaskObligation completeness (current)
+  -> typed DecisionConstraintSet and Planner containment
+  -> targeted plus protected-family confirmation
+  -> cross-family and fresh diagnostic confirmation
 ~~~
 
-M8.6 returns to done only when all enabled recovery actions produce real
-evidence-backed changes, authority budgets only narrow downstream, semantic
-requirements use target-relevant evidence, Coordinator passes the containment
-gate, and G5 comparisons are derived from immutable Runtime runs. External
+The broader product claim may be promoted only when enabled recovery actions
+have concrete normal-entry owners and real evidence-backed changes, authority
+budgets only narrow downstream, semantic requirements use target-relevant
+evidence, Coordinator and Planner pass their reduction gates, and comparisons
+come from immutable Runtime runs without protected-family regression. External
 suites remain independently provisioned and historical scores remain
 unpromoted.
 

@@ -21,11 +21,18 @@ recovery is defined in
 It is part of the current M8.6 skeleton, not a future distributed-service
 option.
 
+The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
+records the current implementation boundary. M8.6 proves the internal protocol
+and configured-path gate; it does not yet prove obligation-complete intake,
+concrete recovery-owner wiring in every normal entrypoint, open-world planner
+generality, or completed responsibility reduction.
+
 ## 1. High-Level System
 
 ~~~text
 User Request / Parent TaskSpec
   -> IntentCompiler / TaskSpecValidator
+  -> sourced TaskObligation validation
   -> TaskPlanRouter
        -> one flat subgoal
        -> accepted TaskSkill
@@ -46,7 +53,12 @@ For each active subgoal:
          or safe inconclusive FailureEnvelope
 
   accepted snapshot
-    -> GeneralistStepPlanner
+    -> DecisionConstraintSet
+         -> task and active-subgoal scope
+         -> current obligation and state admission
+         -> semantic value / relation constraints
+         -> permitted actions and current targets
+    -> GeneralistStepPlanner consumes constraints
     -> semantic PlannerProposal
     -> PlannerProposalValidator
     -> semantic target resolution and route selection
@@ -64,7 +76,8 @@ Any phase may emit:
     -> RecoveryCoordinator
     -> RecoveryPlanValidator
     -> one typed RecoveryCommand
-    -> owning Runtime port
+    -> configured owning Runtime port
+         or typed unavailable result
     -> RecoveryReceipt + non-empty RecoveryDelta
     -> re-enter changed phase
          or wait for approval/user
@@ -110,6 +123,10 @@ migration scaffolding, not the final intent/planner contract.
 | INV-15 | An uncertain effect is inspected before retry, reroute, or compensation. |
 | INV-16 | Failures from every Runtime phase use one FailureEnvelope and bounded RecoveryCoordinator protocol. |
 | INV-17 | Benchmark identity and external reward never enter generic perception or recovery decisions. |
+| INV-18 | A task may become READY only when every explicit effect and data dependency is represented by a sourced typed obligation. |
+| INV-19 | Step planning consumes typed decision constraints; benchmark-discovered semantic resolvers do not accumulate inside the generalist model loop. |
+| INV-20 | Provider, context, or schema recovery is enabled only when the normal entrypoint configures a concrete owning port. |
+| INV-21 | A containment ratchet proves non-expansion, not completion of the module-reduction target. |
 
 ## 1.2 Task State Machine
 
@@ -568,6 +585,17 @@ RecoveryCoordinator chooses but never executes. RunCoordinator applies one
 validated command through PerceptionSession, PlannerContextBuilder, ModelPort,
 IntentCompiler, TaskPlanFlow/TaskPlanLifecycle, GeneralistStepPlanner, router,
 ContractBuilder, contract execution, verifier, or parent/user boundary.
+
+Current implementation maturity must be reported per entrypoint. Reobserve,
+reground, replan, verifier escalation, loop detection, inspect-before-repeat,
+and safe abort are available on the ordinary Coordinator path. Context
+compaction, provider switching, and model-schema repair currently have a typed
+dispatcher and fault-injection proof, but a runner has those capabilities only
+when it injects concrete owners. An empty dispatcher must be reported as
+`unavailable`; the existence of the port is not an end-to-end recovery claim.
+
+The next architecture slice supplies those production owners without moving
+provider or context policy into the Coordinator.
 
 Another attempt is accepted only when RecoveryDelta changes evidence,
 assumption, plan, candidate, route, verifier, provider/context, skill use,

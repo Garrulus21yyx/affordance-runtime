@@ -35,34 +35,33 @@ and generalization, not the product objective. Behavioral task-template solvers
 are prohibited even when they avoid benchmark ids and are placed in a shared
 generalist module.
 
-The repository implements the controlled harness components through M8.6:
-historical profile classification,
-strict-planner containment, typed intent and TaskPlan routing, bounded active
-perception, a phase-general online Recovery Coordinator, complete-run
-evaluation accounting, and a four-profile evidence contract. The
+The repository has completed the **scoped M8.6 internal governance gate**, not
+the full open-world Runtime claim. Implemented components include historical
+profile classification, strict-planner containment, typed intent and TaskPlan
+routing, bounded active perception, a phase-general recovery protocol,
+complete-run evaluation accounting, and a four-profile evidence contract. The
 [M8.6 Closure Audit](docs/current-closure-audit-20260724.md) reopened closure for
 active-perception budget/evidence semantics, real recovery command effects,
 responsibility containment, and empirical profile-separated Runtime evidence.
-All reopened repair slices now pass the local quality gate: authority budgets
-only narrow, semantic evidence requires a current relevant candidate, enabled
+Those scoped repair slices pass the local quality gate: authority budgets only
+narrow, semantic evidence requires a current relevant candidate, configured
 recovery commands invoke typed owning ports, no-op recovery earns no delta, and
 the first typed `TaskPlanFlow` extraction preserves plan/replan validation
-evidence while reducing the Coordinator ratchet to 3644 lines / 26 methods. The fresh
-four-profile Runtime rollout for immutable implementation revision
+evidence. The fresh four-profile internal conformance rollout for immutable revision
 `c9390517624eaf28a84aee9e77d0ba83ff533106` passes 11/11 expected outcomes with
-no safety regression and a complete artifact hash index.
-External-suite confirmation remains independently provisioned. Commit `4e7d116`
-is retained as the tested implementation freeze, not as proof that every G0-G5
-behavioral exit criterion is closed. The active default remains
-`strict-generalist`; each future result must record its full immutable run
-identity rather than inherit this label.
+no safety regression and a complete artifact hash index. This is provider-free
+internal evidence, not open-world or external-suite proof.
 
-M8.2B is now eligible for a new strict-generalist frozen diagnostic evaluation.
-Historical smoke, PR, nightly, and release
-reports remain legacy or compatibility evidence for their exact revisions, not
-proof of current strict capability. Benchmark work must audit Runtime
-generalization rather than add task-family behavior to the default planner.
-Current report code therefore keeps `official_score_claimed=false`.
+The current critical audit records four still-open product gaps: sourced,
+typed task obligations; a smaller and genuinely general step-planner decision
+boundary; concrete provider/context/schema recovery owners in the normal
+BrowserGym and standalone entrypoints; and continued Coordinator/planner
+responsibility reduction. The latest immutable M8.2B diagnostic completed all
+60 episodes at 24/60 with zero provider or accounting failures, but regressed
+protected text-transformation/date families and therefore is not promotable.
+Historical smoke, PR, nightly, and release reports remain evidence only for
+their exact revisions. Current report code keeps
+`official_score_claimed=false`.
 Service-grade distributed options remain explicitly deferred.
 
 Planning follows two horizons: the current implementation plan is authoritative
@@ -142,10 +141,10 @@ Implemented current profile:
 
 Verified evidence:
 
-- the reopened M8.6 repair working tree passes 680 unit/integration tests and
-  Ruff in the fixed Python 3.12 BrowserGym environment; mypy with
-  repository-governed optional imports passes all 100 source files; this is local
-  repair evidence, not an immutable release or benchmark result
+- immutable revision `b01e73b` passes 863 unit/integration tests and Ruff in
+  the fixed Python 3.12 BrowserGym environment; mypy with repository-governed
+  optional imports passes all 105 source files; a fresh current-HEAD 11-case G5
+  rollout also passes, but remains internal conformance evidence
 - clean commit `e463e16` reproduces the complete M0-M8 gate via `./scripts/reproduce_local.sh`; milestone-specific historical freezes remain in `docs/evidence/`
 - Full Runtime passes all three scenarios across three distinct seeded layouts with zero constraint violations, unsafe side effects, and verifier false accepts
 - real Chromium parent-agent flow returns evidence/trace, blocks export before approval, and succeeds after scoped approval
@@ -165,11 +164,14 @@ Verified evidence:
   unrelated, partial, stale, weak, or unbound evidence cannot advance generic
   Subgoal or TaskSkill progress
 
-Next evaluation gate: run a fresh immutable strict-generalist M8.2B ladder under
-the complete-run audit and four-profile evidence protocols. Do not resume or
-promote historical compatibility runs. Public suites remain architecture audits
-only after independent environment/asset provisioning. M9 remains conditional
-on measured restart/waiting evidence.
+Next implementation gate: compile requested effects and terminal outcomes into
+sourced typed `TaskObligationSpec` records, derive an immutable
+`DecisionConstraintSet` outside `GeneralistLMPlanner`, inject concrete
+provider/context/schema recovery owners into normal entrypoints, and continue
+the Coordinator/planner responsibility ratchets. Only then rerun protected
+local families and the immutable M8.2B ladder. Public suites remain architecture
+audits only after independent environment/asset provisioning. M9 remains
+conditional on measured restart/waiting evidence.
 
 Explicitly deferred beyond the current profile:
 
@@ -180,6 +182,7 @@ Explicitly deferred beyond the current profile:
 
 ## Documents
 
+- [Current Governance Critical Audit - 2026-07-25](docs/current-governance-critical-audit-20260725.md)
 - [Runtime-First Architecture Boundary](docs/runtime-first-boundary.md)
 - [Responsibility Containment Boundary](docs/responsibility-containment-boundary.md)
 - [Benchmark Governance and Anti-Specialization Boundary](docs/benchmark-governance-boundary.md)

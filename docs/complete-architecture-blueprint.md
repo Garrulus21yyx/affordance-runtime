@@ -11,6 +11,14 @@ It is a reference architecture, not the current implementation contract.
 Current releases follow the [Current Implementation Plan](current-implementation-plan.md).
 Nothing in this document becomes required merely because it is described here.
 
+Current maturity and corrections are tracked by the
+[Current Governance Critical Audit](current-governance-critical-audit-20260725.md).
+In particular, the existence of a future `RecoveryPort`, durable scheduler, or
+multi-worker topology must not be used to claim current operational recovery.
+The present modular monolith must first complete sourced task obligations,
+decision constraints, concrete normal-entry recovery owners, and responsibility
+containment.
+
 Promotion into the current plan requires all of the following:
 
 1. a concrete benchmark, integration, or operational failure needs it
