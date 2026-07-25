@@ -55,7 +55,8 @@ compilation closes at `0b294f8`; verifier-evidence identity binding is now the
 completed at `6861e98`; deterministic cross-scenario conformance is now the
 completed at `766f598`; DecisionConstraintSet extraction is now the open owner.
 Clean `c6c19d1` extracts typed-text and ordinal admission; terminal narrowing
-remains. The full local gate is 888
+joins the same owner at `482a3c5`; current-state admission audit remains. The
+full local gate is 888
 tests, Ruff, and governed mypy over 106 source files. Clean first-case validation at
 `1bef687` proves the diagnostic residual does not yet enter that path:
 `scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
