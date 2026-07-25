@@ -190,7 +190,17 @@ class LLMIntentCompiler:
             task_id=task_id,
             require_obligation_graph=True,
         )
-        if result.status == CompilationStatus.UNSUPPORTED and self.max_draft_repairs:
+        repairable_codes = {
+            "missing_success_criteria",
+            "missing_task_claims",
+            "missing_task_obligations",
+            "invalid_task_obligation_graph",
+        }
+        if (
+            result.status == CompilationStatus.UNSUPPORTED
+            and self.max_draft_repairs
+            and any(item.code in repairable_codes for item in result.issues)
+        ):
             repair_context = {
                 "raw_request": _bounded_request(request),
                 "draft": draft.model_dump(mode="json"),
