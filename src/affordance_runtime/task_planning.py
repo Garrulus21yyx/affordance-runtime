@@ -867,7 +867,10 @@ def _planning_outcome_is_current(
     if outcome.relation == SubgoalOutcomeRelation.IS_VISIBLE:
         if state.visible is not True:
             return False
-        if not value:
+        if not value or _planning_boolean_predicate_value(
+            value,
+            SubgoalOutcomeRelation.IS_VISIBLE,
+        ):
             return True
         label = _planning_normalized_value(affordance.label)
         return value in observed_values or value in label
@@ -876,7 +879,10 @@ def _planning_outcome_is_current(
     if outcome.relation == SubgoalOutcomeRelation.IS_CHECKED:
         return state.checked is True
     if outcome.relation == SubgoalOutcomeRelation.IS_SELECTED:
-        if value:
+        if value and not _planning_boolean_predicate_value(
+            value,
+            SubgoalOutcomeRelation.IS_SELECTED,
+        ):
             return value in tuple(
                 _planning_normalized_value(item) for item in state.selected_options
             )
@@ -902,6 +908,17 @@ def _planning_semantic_tokens(value: str) -> tuple[str, ...]:
 
 def _planning_normalized_value(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _planning_boolean_predicate_value(
+    value: str,
+    relation: SubgoalOutcomeRelation,
+) -> bool:
+    relation_markers = {
+        SubgoalOutcomeRelation.IS_VISIBLE: {"visible"},
+        SubgoalOutcomeRelation.IS_SELECTED: {"selected"},
+    }
+    return value in {"1", "true", "yes", *relation_markers.get(relation, set())}
 
 
 def _contextual_entry_subgoal(

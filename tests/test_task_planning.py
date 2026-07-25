@@ -598,6 +598,12 @@ def test_validator_marks_current_entry_action_family_unavailable() -> None:
             PlanningAffordanceState(visible=True, control_value="Keli"),
         ),
         (
+            SubgoalOutcomeRelation.IS_VISIBLE,
+            "true",
+            TaskPlanActionFamily.ACTIVATE,
+            PlanningAffordanceState(visible=True),
+        ),
+        (
             SubgoalOutcomeRelation.IS_CHECKED,
             "",
             TaskPlanActionFamily.ACTIVATE,
@@ -608,6 +614,12 @@ def test_validator_marks_current_entry_action_family_unavailable() -> None:
             "dark",
             TaskPlanActionFamily.SELECT_OPTION,
             PlanningAffordanceState(selected_options=("dark",)),
+        ),
+        (
+            SubgoalOutcomeRelation.IS_SELECTED,
+            "true",
+            TaskPlanActionFamily.SELECT_OPTION,
+            PlanningAffordanceState(selected=True),
         ),
         (
             SubgoalOutcomeRelation.IS_EXPANDED,
