@@ -23,6 +23,7 @@ from affordance_runtime.task_plan_lifecycle import (
 from affordance_runtime.task_planning import (
     TaskPlanValidationIssue,
     TaskPlanValidationStatus,
+    task_planning_context_summary,
 )
 
 
@@ -59,6 +60,136 @@ class TaskPlanFlowResult:
     @property
     def accepted(self) -> bool:
         return self.required and self.transition is not None and self.failure is None
+
+
+@dataclass(frozen=True)
+class TaskPlanTraceProjection:
+    """One event payload that the Coordinator may append after committing state."""
+
+    kind: str
+    payload: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TaskPlanCommitStateView:
+    """Post-commit facts projected without granting state mutation authority."""
+
+    active_subgoal: str
+    completed_subgoal_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TaskPlanCommitPreparation:
+    """Translate TaskPlanFlow output into commit and trace projections only."""
+
+    result: TaskPlanFlowResult
+
+    @property
+    def transition(self) -> TaskPlanTransition | None:
+        return self.result.transition
+
+    @property
+    def failure(self) -> TaskPlanFlowFailure | None:
+        return self.result.failure
+
+    @property
+    def accepted(self) -> bool:
+        return self.result.accepted
+
+    def pre_commit_projection(self, *, state_phase: str) -> TaskPlanTraceProjection | None:
+        transition = self.transition
+        if self.result.kind != TaskPlanFlowKind.INITIAL or transition is None:
+            return None
+        task_plan = transition.plan
+        report = transition.validation
+        return TaskPlanTraceProjection(
+            "TaskPlanProposed",
+            {
+                "state": state_phase,
+                "plan_id": task_plan.plan_id,
+                "plan_version": task_plan.plan_version,
+                "generated_by": task_plan.generated_by.value,
+                "subgoal_count": len(task_plan.subgoals),
+                "supersedes_plan_id": task_plan.supersedes_plan_id,
+                "planning_context": task_planning_context_summary(transition.context),
+                "validation": report.status.value,
+                "issues": [item.model_dump(mode="json") for item in report.issues],
+            },
+        )
+
+    def with_commit_failure(self, exc: Exception) -> "TaskPlanCommitPreparation":
+        if not self.accepted:
+            raise ValueError("only an accepted TaskPlanFlow result can fail during commit")
+        return TaskPlanCommitPreparation(
+            TaskPlanFlowResult(
+                kind=self.result.kind,
+                transition=self.transition,
+                replacement=self.result.replacement,
+                failure=TaskPlanFlowFailure(
+                    error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    failure_class=FailureClass.VALIDATION,
+                    message=f"{type(exc).__name__}: {exc}"[:500],
+                ),
+            )
+        )
+
+    def failure_projection(self, *, state_phase: str) -> TaskPlanTraceProjection:
+        failure = self.failure
+        if failure is None:
+            raise ValueError("a failure projection requires a TaskPlanFlow failure")
+        replacement = self.result.replacement
+        return TaskPlanTraceProjection(
+            "TaskReplanRejected" if self.result.kind == TaskPlanFlowKind.REPLACEMENT else "TaskPlanRejected",
+            {
+                "state": state_phase,
+                "error_code": failure.error_code.value,
+                "reason": failure.message,
+                "validation": failure.validation_status.value if failure.validation_status is not None else "",
+                "issues": [item.model_dump(mode="json") for item in failure.issues],
+                "replacement_reason": (
+                    replacement.reason.value if replacement is not None and replacement.reason is not None else ""
+                ),
+            },
+        )
+
+    def acceptance_projection(
+        self,
+        *,
+        state_phase: str,
+        committed: TaskPlanCommitStateView,
+    ) -> TaskPlanTraceProjection:
+        if not self.accepted or self.transition is None:
+            raise ValueError("an acceptance projection requires an accepted TaskPlanFlow result")
+        task_plan = self.transition.plan
+        if self.result.kind == TaskPlanFlowKind.REPLACEMENT:
+            previous = self.transition.previous_plan
+            replacement = self.result.replacement
+            if previous is None or replacement is None or replacement.reason is None:
+                raise ValueError("accepted replacement must retain previous-plan and replacement lineage")
+            return TaskPlanTraceProjection(
+                "TaskReplanned",
+                {
+                    "state": state_phase,
+                    "reason": replacement.reason.value,
+                    "previous_plan_id": previous.plan_id,
+                    "supersedes_plan_id": task_plan.supersedes_plan_id,
+                    "plan_id": task_plan.plan_id,
+                    "plan_version": task_plan.plan_version,
+                    "preserved_subgoal_ids": list(committed.completed_subgoal_ids),
+                    "active_subgoal": committed.active_subgoal,
+                    "planning_context": task_planning_context_summary(self.transition.context),
+                },
+            )
+        return TaskPlanTraceProjection(
+            "TaskPlanAccepted",
+            {
+                "state": state_phase,
+                "plan_id": task_plan.plan_id,
+                "plan_version": task_plan.plan_version,
+                "supersedes_plan_id": task_plan.supersedes_plan_id,
+                "active_subgoal": committed.active_subgoal,
+            },
+        )
 
 
 @dataclass(frozen=True)

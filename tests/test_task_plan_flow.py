@@ -6,7 +6,12 @@ from affordance_runtime.contracts import Observation, RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureClass
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_plan_flow import TaskPlanFlow, TaskPlanFlowKind
+from affordance_runtime.task_plan_flow import (
+    TaskPlanCommitPreparation,
+    TaskPlanCommitStateView,
+    TaskPlanFlow,
+    TaskPlanFlowKind,
+)
 from affordance_runtime.task_plan_lifecycle import (
     TaskPlanLifecycle,
     TaskPlanReplacementReason,
@@ -83,6 +88,28 @@ def test_flow_prepares_accepted_initial_plan_without_mutating_state() -> None:
     assert state.task_plan is None
 
 
+def test_commit_preparation_projects_initial_trace_without_state_mutation() -> None:
+    result = TaskPlanFlow(TaskPlanLifecycle(PlanningRouter())).prepare(
+        _task(),
+        _state(),
+        _snapshot(),
+        Limits(),
+    )
+    preparation = TaskPlanCommitPreparation(result)
+
+    proposed = preparation.pre_commit_projection(state_phase="observing")
+    accepted = preparation.acceptance_projection(
+        state_phase="observing",
+        committed=TaskPlanCommitStateView(active_subgoal="Save the selected setting"),
+    )
+
+    assert proposed is not None
+    assert proposed.kind == "TaskPlanProposed"
+    assert proposed.payload["validation"] == "accept"
+    assert accepted.kind == "TaskPlanAccepted"
+    assert accepted.payload["active_subgoal"] == "Save the selected setting"
+
+
 class InvalidPlanner:
     def plan(self, context):  # type: ignore[no-untyped-def]
         plan = PlanningRouter().plan(context)
@@ -106,6 +133,28 @@ def test_flow_preserves_initial_validation_issues_without_mutating_state() -> No
     assert result.failure.failure_class == FailureClass.VALIDATION
     assert {item.code for item in result.failure.issues} == {"task_id_mismatch"}
     assert state.task_plan is None
+
+
+def test_commit_preparation_projects_failure_and_normalizes_commit_exception() -> None:
+    invalid = TaskPlanFlow(TaskPlanLifecycle(InvalidPlanner())).prepare(
+        _task(),
+        _state(),
+        _snapshot(),
+        Limits(),
+    )
+    rejection = TaskPlanCommitPreparation(invalid).failure_projection(state_phase="observing")
+    assert rejection.kind == "TaskPlanRejected"
+    assert rejection.payload["validation"] == "reject"
+
+    accepted = TaskPlanFlow(TaskPlanLifecycle(PlanningRouter())).prepare(
+        _task(),
+        _state(),
+        _snapshot(),
+        Limits(),
+    )
+    normalized = TaskPlanCommitPreparation(accepted).with_commit_failure(RuntimeError("state changed"))
+    assert normalized.failure is not None
+    assert normalized.failure.message == "RuntimeError: state changed"
 
 
 class ExplodingPlanner:

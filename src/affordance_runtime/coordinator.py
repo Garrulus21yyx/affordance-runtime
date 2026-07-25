@@ -97,8 +97,9 @@ from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_flow import (
+    TaskPlanCommitPreparation,
+    TaskPlanCommitStateView,
     TaskPlanFlow,
-    TaskPlanFlowFailure,
     TaskPlanFlowKind,
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
@@ -108,7 +109,6 @@ from affordance_runtime.task_planning import (
     TaskPlannerPort,
     TaskPlanValidator,
     VerifierBackedSubgoalVerifier,
-    task_planning_context_summary,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
@@ -471,27 +471,17 @@ class RunCoordinator:
                     snapshot,
                     self.budget,
                 )
-                transition = flow_result.transition
-                if flow_result.kind == TaskPlanFlowKind.INITIAL and transition is not None:
-                    task_plan = transition.plan
-                    report = transition.validation
+                plan_commit = TaskPlanCommitPreparation(flow_result)
+                transition = plan_commit.transition
+                pre_commit = plan_commit.pre_commit_projection(state_phase=state.phase)
+                if pre_commit is not None:
                     parent = trace.add(
-                        "TaskPlanProposed",
-                        {
-                            "state": state.phase,
-                            "plan_id": task_plan.plan_id,
-                            "plan_version": task_plan.plan_version,
-                            "generated_by": task_plan.generated_by.value,
-                            "subgoal_count": len(task_plan.subgoals),
-                            "supersedes_plan_id": task_plan.supersedes_plan_id,
-                            "planning_context": task_planning_context_summary(transition.context),
-                            "validation": report.status.value,
-                            "issues": [item.model_dump(mode="json") for item in report.issues],
-                        },
+                        pre_commit.kind,
+                        pre_commit.payload,
                         parents=[parent.id],
                     )
-                flow_failure = flow_result.failure
-                if flow_result.accepted:
+                flow_failure = plan_commit.failure
+                if plan_commit.accepted:
                     assert transition is not None
                     task_plan = transition.plan
                     try:
@@ -500,39 +490,13 @@ class RunCoordinator:
                         else:
                             state.install_task_plan(task_plan)
                     except Exception as exc:
-                        flow_failure = TaskPlanFlowFailure(
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                            failure_class=FailureClass.VALIDATION,
-                            message=f"{type(exc).__name__}: {exc}"[:500],
-                        )
+                        plan_commit = plan_commit.with_commit_failure(exc)
+                        flow_failure = plan_commit.failure
                 if flow_failure is not None:
-                    rejection_kind = (
-                        "TaskReplanRejected"
-                        if flow_result.kind == TaskPlanFlowKind.REPLACEMENT
-                        else "TaskPlanRejected"
-                    )
+                    rejection = plan_commit.failure_projection(state_phase=state.phase)
                     parent = trace.add(
-                        rejection_kind,
-                        {
-                            "state": state.phase,
-                            "error_code": flow_failure.error_code.value,
-                            "reason": flow_failure.message,
-                            "validation": (
-                                flow_failure.validation_status.value
-                                if flow_failure.validation_status is not None
-                                else ""
-                            ),
-                            "issues": [
-                                item.model_dump(mode="json")
-                                for item in flow_failure.issues
-                            ],
-                            "replacement_reason": (
-                                flow_result.replacement.reason.value
-                                if flow_result.replacement is not None
-                                and flow_result.replacement.reason is not None
-                                else ""
-                            ),
-                        },
+                        rejection.kind,
+                        rejection.payload,
                         parents=[parent.id],
                     )
                     if (
@@ -578,45 +542,22 @@ class RunCoordinator:
                         flow_failure.error_code,
                         latest_verification,
                     )
-                if flow_result.accepted:
+                if plan_commit.accepted:
                     assert transition is not None
                     task_plan = transition.plan
-                    if flow_result.kind == TaskPlanFlowKind.REPLACEMENT:
-                        assert transition.previous_plan is not None
-                        assert flow_result.replacement is not None
-                        assert flow_result.replacement.reason is not None
-                        assert state.plan_progress is not None
-                        parent = trace.add(
-                            "TaskReplanned",
-                            {
-                                "state": state.phase,
-                                "reason": flow_result.replacement.reason.value,
-                                "previous_plan_id": transition.previous_plan.plan_id,
-                                "supersedes_plan_id": task_plan.supersedes_plan_id,
-                                "plan_id": task_plan.plan_id,
-                                "plan_version": task_plan.plan_version,
-                                "preserved_subgoal_ids": list(
-                                    state.plan_progress.completed_subgoal_ids
-                                ),
-                                "active_subgoal": state.active_subgoal(),
-                                "planning_context": task_planning_context_summary(
-                                    transition.context
-                                ),
-                            },
-                            parents=[parent.id],
-                        )
-                    else:
-                        parent = trace.add(
-                            "TaskPlanAccepted",
-                            {
-                                "state": state.phase,
-                                "plan_id": task_plan.plan_id,
-                                "plan_version": task_plan.plan_version,
-                                "supersedes_plan_id": task_plan.supersedes_plan_id,
-                                "active_subgoal": state.active_subgoal(),
-                            },
-                            parents=[parent.id],
-                        )
+                    committed = TaskPlanCommitStateView(
+                        active_subgoal=state.active_subgoal(),
+                        completed_subgoal_ids=(
+                            tuple(state.plan_progress.completed_subgoal_ids)
+                            if state.plan_progress is not None
+                            else ()
+                        ),
+                    )
+                    acceptance = plan_commit.acceptance_projection(
+                        state_phase=state.phase,
+                        committed=committed,
+                    )
+                    parent = trace.add(acceptance.kind, acceptance.payload, parents=[parent.id])
                     parent = self._complete_pending_recovery_plan_change(
                         state,
                         trace,
