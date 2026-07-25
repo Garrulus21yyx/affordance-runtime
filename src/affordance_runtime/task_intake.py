@@ -256,14 +256,6 @@ class IntentDraft(StrictModel):
     confidence_by_field: tuple[FieldConfidence, ...] = ()
     task_structure: TaskStructure = TaskStructure.FLAT
 
-    @model_validator(mode="after")
-    def validate_candidate_obligation_graph(self) -> "IntentDraft":
-        _validate_task_obligation_graph(
-            self.candidate_source_claims,
-            self.candidate_obligations,
-        )
-        return self
-
 
 class TaskSpec(StrictModel):
     schema_version: str = "1.3"
@@ -379,6 +371,19 @@ class IntentDraftValidator:
                         detail=claim.source_ref,
                     )
                 )
+        try:
+            _validate_task_obligation_graph(
+                draft.candidate_source_claims,
+                draft.candidate_obligations,
+            )
+        except ValueError as exc:
+            unsupported.append(
+                CompilationIssue(
+                    code="invalid_task_obligation_graph",
+                    field="candidate_obligations",
+                    detail=str(exc),
+                )
+            )
         if any(issue.code in {"missing_objective", "missing_effect"} for issue in unsupported):
             return CompilationResult(
                 status=CompilationStatus.UNSUPPORTED,

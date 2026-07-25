@@ -173,14 +173,21 @@ def test_required_claim_must_be_covered_by_obligation_graph() -> None:
         update={"claim_ids": ("claim:write-value",)}
     )
 
-    with pytest.raises(ValidationError, match="required task claim"):
+    result = IntentDraftValidator().compile(
+        _request(),
         _draft(
             candidate_source_claims=claims,
             candidate_obligations=(
                 *obligations[:-1],
                 terminal_without_terminal_claim,
             ),
-        )
+        ),
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[-1].code == "invalid_task_obligation_graph"
+    assert "required task claim" in result.issues[-1].detail
 
 
 def test_obligation_output_value_must_name_declared_dependency() -> None:
@@ -206,20 +213,30 @@ def test_obligation_graph_rejects_cycles_and_dangling_dependencies() -> None:
         obligations[1],
         obligations[2],
     )
-    with pytest.raises(ValidationError, match="cannot contain a cycle"):
+    cyclic_result = IntentDraftValidator().compile(
+        _request(),
         _draft(
             candidate_source_claims=claims,
             candidate_obligations=cyclic,
-        )
+        ),
+    )
+    assert cyclic_result.status == CompilationStatus.UNSUPPORTED
+    assert cyclic_result.issues[-1].code == "invalid_task_obligation_graph"
+    assert "cannot contain a cycle" in cyclic_result.issues[-1].detail
 
     dangling = obligations[2].model_copy(
         update={"depends_on": ("obligation:missing",)}
     )
-    with pytest.raises(ValidationError, match="unknown dependency"):
+    dangling_result = IntentDraftValidator().compile(
+        _request(),
         _draft(
             candidate_source_claims=claims,
             candidate_obligations=(*obligations[:-1], dangling),
-        )
+        ),
+    )
+    assert dangling_result.status == CompilationStatus.UNSUPPORTED
+    assert dangling_result.issues[-1].code == "invalid_task_obligation_graph"
+    assert "unknown dependency" in dangling_result.issues[-1].detail
 
 
 def test_unsourced_task_claim_cannot_become_taskspec_authority() -> None:
@@ -242,8 +259,14 @@ def test_unsourced_task_claim_cannot_become_taskspec_authority() -> None:
 def test_claims_and_obligations_must_be_supplied_together() -> None:
     claims, _ = _derived_claims_and_obligations()
 
-    with pytest.raises(ValidationError, match="supplied together"):
-        _draft(candidate_source_claims=claims)
+    result = IntentDraftValidator().compile(
+        _request(),
+        _draft(candidate_source_claims=claims),
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.issues[-1].code == "invalid_task_obligation_graph"
+    assert "supplied together" in result.issues[-1].detail
 
 
 def test_semantic_value_constraint_rejects_blank_or_unknown_relation() -> None:

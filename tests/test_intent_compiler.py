@@ -357,6 +357,47 @@ def test_raw_language_compiler_rejects_missing_obligation_authority() -> None:
     ]
 
 
+def test_raw_language_compiler_projects_invalid_graph_to_typed_rejection() -> None:
+    claims, obligations = _terminal_authority("request-read", "pricing read")
+    prerequisite = TaskObligationSpec(
+        obligation_id="obligation-prerequisite",
+        kind=TaskObligationKind.PREDICATE,
+        subject="pricing",
+        relation=TaskObligationRelation.IS_VISIBLE,
+        claim_ids=(claims[0].claim_id,),
+        depends_on=(obligations[0].obligation_id,),
+        evidence_requirements=("fresh pricing evidence",),
+    )
+    cyclic_obligation = obligations[0].model_copy(
+        update={"depends_on": (prerequisite.obligation_id,)}
+    )
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=(prerequisite, cyclic_obligation),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="request-read", raw_text="Read pricing")
+        )
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[-1].code == "invalid_task_obligation_graph"
+
+
 def test_independent_coverage_rejection_cannot_create_taskspec() -> None:
     claims, obligations = _terminal_authority("request-read", "pricing read")
     model = FixedModel(
