@@ -34,9 +34,17 @@ unrun/missing/invalidated case, or batch stop. The 36 ordinary envelopes are
 and 2 observation/context. `official_score_claimed=false`; frozen nightly is
 held. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
 artifact lineage, and failed verifier kind in the canonical FailureEnvelope.
-Cross-task trace review selects typed obligation/terminal readiness as the next
-candidate behavior owner; do not weaken verifier or `UNREQUESTED_EFFECT`, add
-task-specific solvers, or change Prompt/model/budgets. Evidence:
+The provider-neutral terminal-readiness protocol, typed TaskPlan obligation
+compiler, current grounding resolver, and strict-Planner candidate narrowing
+are now implemented through clean `3447795`; the full local gate is 863 tests,
+Ruff, and governed mypy over 105 source files. Clean first-case validation at
+`1bef687` proves the diagnostic residual does not yet enter that path:
+`scroll-text:seed-0` remains 0/1 because IntentDraft v5 omits the requested
+terminal effect/data dependency and the flat RuleTaskPlan has no typed outcome
+or action family. Treat this as an incomplete diagnostic and move the next
+owner upstream to sourced intake-to-obligation completeness. Do not weaken the
+verifier or `UNREQUESTED_EFFECT`, add task-specific solvers, expand budgets, or
+run family/PR/nightly before the typed input path exists. Evidence:
 `evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
 
 Current post-R8 repair slice (2026-07-23): release traces for the stable

@@ -501,9 +501,12 @@ ownership, proposal, TaskPlan, and provider-arity repairs, implementation SHA
 result is 24/60 with zero provider failures/retries, missing/invalidated cases,
 or batch stop. It is evidence for repair selection, not a promoted score.
 Evidence-only SHA `6d1703c` preserves failed verifier kind, reason, and artifact
-lineage in canonical FailureEnvelopes. Frozen nightly remains held while the
-cross-family typed obligation/terminal-readiness owner and remaining
-perception, execution, and planning residuals are open. See
+lineage in canonical FailureEnvelopes. The typed TaskPlan terminal-readiness
+path is implemented through `3447795`, but clean `scroll-text:seed-0` evidence
+at `1bef687` proves flat IntentDraft/TaskSpec inputs do not yet carry the
+terminal effect and data dependency needed to enter it. Frozen nightly remains
+held while intake-to-obligation completeness and the remaining perception,
+execution, and planning residuals are open. See
 `evidence/m8.2b-strict-reevaluation-plan-20260724.md`.
 
 First complete a bounded consolidation pass:
