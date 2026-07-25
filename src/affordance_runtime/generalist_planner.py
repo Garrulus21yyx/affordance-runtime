@@ -10,8 +10,8 @@ from types import ModuleType
 from typing import Any
 
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.collection_window import resolve_global_ordinal_constraint
 from affordance_runtime.coordinator import PlannerDecision
+from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
     AffordanceSummary,
@@ -26,7 +26,6 @@ from affordance_runtime.planner_model_orchestrator import (
     build_initial_candidate_schema,
     build_repair_candidate_schema,
     restrict_targets_to_active_subgoal,
-    semantic_text_input_constraint,
 )
 from affordance_runtime.planner_model_orchestrator import (
     compatible_drag_destination_ids as _compatible_drag_destination_ids,
@@ -230,6 +229,10 @@ class GeneralistLMPlanner:
     allow_finish: bool = True
     planner_profile: GeneralistPlannerProfile = GeneralistPlannerProfile.STRICT_GENERALIST
     semantic_compilers: SemanticCompilerRegistry | None = None
+    decision_constraints: StrictDecisionConstraintBuilder = field(
+        default_factory=StrictDecisionConstraintBuilder,
+        repr=False,
+    )
     model_orchestrator: PlannerModelOrchestrator = field(
         default_factory=PlannerModelOrchestrator,
         repr=False,
@@ -354,39 +357,23 @@ class GeneralistLMPlanner:
             constrained_text_values = ()
             source_destination_constrained = False
         typed_text_constraint = None
-        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            typed_text_constraint = semantic_text_input_constraint(context, initial_targets)
-            if typed_text_constraint is not None:
-                if typed_text_constraint.satisfied:
-                    initial_targets[PlannerActionKind.TYPE_TEXT.value] = [
-                        target_id
-                        for target_id in initial_targets.get(
-                            PlannerActionKind.TYPE_TEXT.value,
-                            [],
-                        )
-                        if target_id != typed_text_constraint.target_id
-                    ]
-                else:
-                    initial_permitted = [PlannerActionKind.TYPE_TEXT.value]
-                    initial_targets = {
-                        PlannerActionKind.TYPE_TEXT.value: [typed_text_constraint.target_id]
-                    }
-                    constrained_text_values = typed_text_constraint.allowed_text_values
-                    source_destination_constrained = False
         ordinal_constraint = None
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            ordinal_constraint = resolve_global_ordinal_constraint(
-                objective=context.active_subgoal,
-                targets=tuple(str(item) for item in context.task_spec.get("targets", ())),
-                affordances=context.affordances,
+            decision_constraints = self.decision_constraints.build(
+                context,
+                initial_permitted,
+                initial_targets,
+                allowed_text_values=constrained_text_values,
+                require_bound_text_source=source_destination_constrained,
             )
-            if ordinal_constraint is not None:
-                initial_permitted = [PlannerActionKind.ACTIVATE.value]
-                initial_targets = {
-                    PlannerActionKind.ACTIVATE.value: [ordinal_constraint.target_id]
-                }
-                constrained_text_values = ()
-                source_destination_constrained = False
+            initial_permitted = list(decision_constraints.permitted_action_kinds)
+            initial_targets = {
+                key: list(value) for key, value in decision_constraints.compatible_target_ids.items()
+            }
+            constrained_text_values = decision_constraints.allowed_text_values
+            source_destination_constrained = decision_constraints.require_bound_text_source
+            typed_text_constraint = decision_constraints.text_constraint
+            ordinal_constraint = decision_constraints.ordinal_constraint
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
