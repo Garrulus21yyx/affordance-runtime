@@ -79,6 +79,7 @@ from affordance_runtime.recovery_coordinator import (
     RecoverySelectionContext,
 )
 from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
+from affordance_runtime.recovery_trace_projection import recovery_protocol_projections
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
@@ -2418,44 +2419,6 @@ class RunCoordinator:
             state.transition(RuntimeStep.OBSERVING.value)
         return decision.action
 
-    @staticmethod
-    def _trace_recovery_protocol(
-        trace: TraceDag,
-        parent: TraceNode,
-        state: StateKernel,
-    ) -> TraceNode:
-        failure = state.current_failure
-        plan = state.current_recovery_plan
-        if failure is None or plan is None:
-            return parent
-        command = plan.commands[0]
-        parent = trace.add(
-            "FailureDetected",
-            {
-                "state": state.phase,
-                "failure": failure.model_dump(mode="json"),
-            },
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryStrategySelected",
-            {
-                "state": state.phase,
-                "plan": plan.model_dump(mode="json"),
-                "strategy_id": command.strategy_id,
-                "changed_dimensions": [item.value for item in command.changed_dimensions],
-            },
-            parents=[parent.id],
-        )
-        return trace.add(
-            "RecoveryCommandStarted",
-            {
-                "state": state.phase,
-                "command": command.model_dump(mode="json"),
-            },
-            parents=[parent.id],
-        )
-
     def _recover_phase_failure(
         self,
         envelope: TaskEnvelope,
@@ -2626,6 +2589,26 @@ class RunCoordinator:
         state.transition(terminal_phase)
         parent = self._complete_immediate_recovery_command(state, trace, parent)
         return command.kind, parent
+
+    @staticmethod
+    def _trace_recovery_protocol(
+        trace: TraceDag,
+        parent: TraceNode,
+        state: StateKernel,
+    ) -> TraceNode:
+        """Append projections only; recovery protocol content has a separate owner."""
+
+        failure = state.current_failure
+        plan = state.current_recovery_plan
+        if failure is None or plan is None:
+            return parent
+        for projection in recovery_protocol_projections(
+            state_phase=state.phase,
+            failure=failure,
+            plan=plan,
+        ):
+            parent = trace.add(projection.kind, projection.payload, parents=[parent.id])
+        return parent
 
     @staticmethod
     def _complete_immediate_recovery_command(
