@@ -31,7 +31,18 @@ from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, R
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
-from affordance_runtime.task_intake import IntentDraft, OperationClass, RequestedEffect, TaskSpec, UserRequest
+from affordance_runtime.task_intake import (
+    IntentDraft,
+    OperationClass,
+    RequestedEffect,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskSpec,
+    UserRequest,
+)
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 from affordance_runtime.task_planning import (
     SubgoalOutcome,
@@ -1043,6 +1054,25 @@ class _PipelineIntentModel:
                 ),
                 candidate_success_criteria=("settings are saved",),
                 candidate_evidence_requirements=("saved observation",),
+                candidate_source_claims=(
+                    SourcedTaskClaim(
+                        claim_id="claim-save-settings",
+                        kind=TaskClaimKind.TERMINAL,
+                        statement="save settings",
+                        source_ref="pipeline-run",
+                    ),
+                ),
+                candidate_obligations=(
+                    TaskObligationSpec(
+                        obligation_id="obligation-save-settings",
+                        kind=TaskObligationKind.EFFECT,
+                        subject="settings",
+                        relation=TaskObligationRelation.IS_COMPLETED,
+                        claim_ids=("claim-save-settings",),
+                        evidence_requirements=("saved observation",),
+                        terminal=True,
+                    ),
+                ),
             ).model_dump()
         )
 

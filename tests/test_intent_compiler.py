@@ -32,6 +32,28 @@ from affordance_runtime.trace import TraceDag
 T = TypeVar("T", bound=BaseModel)
 
 
+def _terminal_authority(
+    source_ref: str,
+    subject: str,
+) -> tuple[tuple[SourcedTaskClaim, ...], tuple[TaskObligationSpec, ...]]:
+    claim = SourcedTaskClaim(
+        claim_id="claim-terminal",
+        kind=TaskClaimKind.TERMINAL,
+        statement=f"complete {subject}",
+        source_ref=source_ref,
+    )
+    obligation = TaskObligationSpec(
+        obligation_id="obligation-terminal",
+        kind=TaskObligationKind.EFFECT,
+        subject=subject,
+        relation=TaskObligationRelation.IS_COMPLETED,
+        claim_ids=(claim.claim_id,),
+        evidence_requirements=(f"independent {subject} evidence",),
+        terminal=True,
+    )
+    return (claim,), (obligation,)
+
+
 @dataclass
 class FixedModel:
     draft: IntentDraft
@@ -78,6 +100,7 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
         target="item",
         source_ref="request-prefix",
     )
+    claims, obligations = _terminal_authority("request-prefix", "matching item entry")
     model = FixedModel(
         IntentDraft(
             objective="Enter an item that starts with Com",
@@ -90,6 +113,8 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
             ),
             candidate_success_criteria=("matching item entered",),
             candidate_semantic_value_constraints=(constraint,),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
         )
     )
 
@@ -232,6 +257,7 @@ def test_llm_compiler_cannot_override_blocking_ambiguity() -> None:
 
 
 def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
+    claims, obligations = _terminal_authority("request-read", "pricing read")
     model = FixedModel(
         IntentDraft(
             objective="Read pricing",
@@ -243,6 +269,8 @@ def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
                 ),
             ),
             candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
         )
     )
     trace = TraceDag("request-read")
@@ -262,3 +290,32 @@ def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
     ]
     assert "private wording" not in str(trace.to_dict())
     assert trace.nodes[-1].parents == [trace.nodes[-2].id]
+
+
+def test_raw_language_compiler_rejects_missing_obligation_authority() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="request-read", raw_text="Read pricing")
+        )
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert [item.code for item in result.issues] == [
+        "missing_source_claims",
+        "missing_task_obligations",
+    ]

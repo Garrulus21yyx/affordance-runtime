@@ -139,6 +139,41 @@ class MultiStageIntentAndPlanModel:
                     ],
                     "candidate_success_criteria": ["the current state is confirmed"],
                     "candidate_evidence_requirements": ["fresh state observations"],
+                    "candidate_source_claims": [
+                        {
+                            "claim_id": "claim-discover",
+                            "kind": "dependency",
+                            "statement": "discover the current state",
+                            "source_ref": "multi-stage-request",
+                        },
+                        {
+                            "claim_id": "claim-confirm",
+                            "kind": "terminal",
+                            "statement": "confirm the discovered state",
+                            "source_ref": "multi-stage-request",
+                        },
+                    ],
+                    "candidate_obligations": [
+                        {
+                            "obligation_id": "obligation-discover",
+                            "kind": "predicate",
+                            "subject": "current state",
+                            "relation": "is_available",
+                            "value_source": "observation",
+                            "claim_ids": ["claim-discover"],
+                            "evidence_requirements": ["fresh discovered-state observation"],
+                        },
+                        {
+                            "obligation_id": "obligation-confirm",
+                            "kind": "effect",
+                            "subject": "discovered state",
+                            "relation": "is_completed",
+                            "claim_ids": ["claim-confirm"],
+                            "depends_on": ["obligation-discover"],
+                            "evidence_requirements": ["fresh confirmed-state observation"],
+                            "terminal": True,
+                        },
+                    ],
                     "task_structure": "multi_stage",
                 }
             )

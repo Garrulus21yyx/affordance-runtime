@@ -18,7 +18,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.trace import TraceDag, TraceNode
 
-INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v5"
+INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v6"
 
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
 Return only the requested strict schema. Never grant capability or approval, choose a selector/coordinate, or claim execution.
@@ -28,6 +28,9 @@ Classify sending/posting/submitting externally, booking/reserving, purchasing, a
 Every requested effect and entity needs a source_ref pointing to the request or an explicitly supplied context reference.
 Each requested_effect.target must name the concrete semantic resource and preserve any explicit identifier needed to distinguish it; do not leave the identifier only in entities.
 Preserve explicit constraints, forbidden effects, desired outputs, success criteria, evidence requirements, and preferences.
+Produce a candidate_source_claims ledger covering every explicit effect, value, dependency, terminal outcome, and constraint in raw_text. Every claim must cite source_ref=raw_text and required=true unless the user explicitly marks it optional.
+Produce candidate_obligations that cover every required claim. Use typed predicate/effect relations, explicit depends_on edges, and independent evidence requirements. Every blocking obligation must lead to a terminal obligation. Represent a value read from the environment as an observation obligation and make each consumer use value_source=obligation_output with a direct dependency on that obligation. Never copy a page-derived value into expected_value.
+Every effectful task needs a terminal effect obligation. A directly verifiable read-only task still needs one terminal predicate obligation. Do not omit the ledger or obligation graph for a well-formed request.
 Extract only explicit semantic value constraints into candidate_semantic_value_constraints. Use relation=prefix for “starts with”, suffix for “ends with”, and exact only when the exact value itself is requested. Preserve the literal user-supplied value; use source_ref=raw_text only for content explicitly present in the supplied raw_text field. Runtime binds that alias to the current request lineage. Never invent a completion or infer a value from page content.
 For every well-formed requested effect, always provide at least one observable candidate_success_criteria that directly restates the user's requested outcome and cites no new authority.
 Mark unresolved target, recipient, amount, destructive scope, credential/payment boundary, or communication channel as blocking high-risk ambiguity.
@@ -115,7 +118,13 @@ class LLMIntentCompiler:
                 },
                 parents=[parent.id] if parent else None,
             )
-        result = self.validator.compile(request, draft, revision=revision, task_id=task_id)
+        result = self.validator.compile(
+            request,
+            draft,
+            revision=revision,
+            task_id=task_id,
+            require_obligation_graph=True,
+        )
         _record_compilation_result(trace, result, parent)
         return result
 

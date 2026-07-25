@@ -340,6 +340,25 @@ class GeneralistClickModel:
                     ],
                     "candidate_success_criteria": ["the target is activated"],
                     "candidate_evidence_requirements": ["fresh post-action state"],
+                    "candidate_source_claims": [
+                        {
+                            "claim_id": "claim-activate-target",
+                            "kind": "terminal",
+                            "statement": "activate the target",
+                            "source_ref": request["request_id"],
+                        }
+                    ],
+                    "candidate_obligations": [
+                        {
+                            "obligation_id": "obligation-activate-target",
+                            "kind": "effect",
+                            "subject": "target",
+                            "relation": "is_completed",
+                            "claim_ids": ["claim-activate-target"],
+                            "evidence_requirements": ["fresh post-action state"],
+                            "terminal": True,
+                        }
+                    ],
                     "task_structure": "flat",
                 }
             )

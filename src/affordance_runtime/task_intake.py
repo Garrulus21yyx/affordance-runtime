@@ -334,6 +334,7 @@ class IntentDraftValidator:
         *,
         revision: int = 1,
         task_id: str | None = None,
+        require_obligation_graph: bool = False,
     ) -> CompilationResult:
         unsupported: list[CompilationIssue] = []
         if not draft.objective.strip():
@@ -453,6 +454,29 @@ class IntentDraftValidator:
                 request_id=request.request_id,
                 draft=draft,
                 issues=tuple(conflicts),
+            )
+
+        missing_obligation_authority: list[CompilationIssue] = []
+        if require_obligation_graph and not draft.candidate_source_claims:
+            missing_obligation_authority.append(
+                CompilationIssue(
+                    code="missing_source_claims",
+                    field="candidate_source_claims",
+                )
+            )
+        if require_obligation_graph and not draft.candidate_obligations:
+            missing_obligation_authority.append(
+                CompilationIssue(
+                    code="missing_task_obligations",
+                    field="candidate_obligations",
+                )
+            )
+        if missing_obligation_authority:
+            return CompilationResult(
+                status=CompilationStatus.UNSUPPORTED,
+                request_id=request.request_id,
+                draft=draft,
+                issues=tuple(missing_obligation_authority),
             )
 
         operation = max(
