@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import Sequence, TypeVar
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from affordance_runtime.model_port import (
+    ModelCallRecord,
     ModelConfig,
     ModelMessage,
     ModelPort,
@@ -32,6 +34,7 @@ from affordance_runtime.task_obligation_coverage import (
 from affordance_runtime.trace import TraceDag, TraceNode
 
 INTENT_COMPILER_PROMPT_VERSION = "intent-compiler-v6"
+T = TypeVar("T", bound=BaseModel)
 
 _SYSTEM_PROMPT = """You compile a sourced user request into a non-executable IntentDraft.
 Return only the requested strict schema. Never grant capability or approval, choose a selector/coordinate, or claim execution.
@@ -73,11 +76,53 @@ class LLMIntentDraft(IntentDraft):
 
 
 @dataclass
+class IntakeModelCallBudget:
+    """Per-request model-call ceiling shared by intake drafting and review."""
+
+    maximum: int = 2
+    used: int = 0
+
+    def reserve(self) -> None:
+        if self.used >= self.maximum:
+            raise StructuredModelError("intake model call budget exhausted")
+        self.used += 1
+
+
+@dataclass
+class BudgetedIntakeModelPort:
+    """Delegate calls while making every default intake call consume one slot."""
+
+    delegate: ModelPort
+    budget: IntakeModelCallBudget
+    provider: str = field(init=False)
+    model: str = field(init=False)
+    endpoint_class: str = field(init=False)
+    last_call: ModelCallRecord | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        self.provider = self.delegate.provider
+        self.model = self.delegate.model
+        self.endpoint_class = self.delegate.endpoint_class
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        self.budget.reserve()
+        result = await self.delegate.generate_structured(messages, output_schema, config)
+        self.last_call = self.delegate.last_call
+        return result
+
+
+@dataclass
 class LLMIntentCompiler:
     model: ModelPort
     validator: IntentDraftValidator = field(default_factory=IntentDraftValidator)
     config: ModelConfig = field(default_factory=intent_compiler_model_config)
     coverage_checker: TaskObligationCoverageChecker | None = None
+    max_model_calls: int = 2
 
     async def compile(
         self,
@@ -88,8 +133,12 @@ class LLMIntentCompiler:
         trace: TraceDag | None = None,
     ) -> CompilationResult:
         parent = _record_request(trace, request)
+        budgeted_model = BudgetedIntakeModelPort(
+            self.model,
+            IntakeModelCallBudget(maximum=self.max_model_calls),
+        )
         try:
-            model_draft = await self.model.generate_structured(
+            model_draft = await budgeted_model.generate_structured(
                 [
                     ModelMessage(role="system", content=_SYSTEM_PROMPT),
                     ModelMessage(role="user", content=json.dumps(_bounded_request(request), sort_keys=True)),
@@ -140,7 +189,7 @@ class LLMIntentCompiler:
             require_obligation_graph=True,
         )
         if result.status == CompilationStatus.READY and result.task_spec is not None:
-            checker = self.coverage_checker or ModelBackedTaskObligationCoverageChecker(self.model)
+            checker = self.coverage_checker or ModelBackedTaskObligationCoverageChecker(budgeted_model)
             try:
                 coverage = await checker.review(request, draft)
             except ProviderModelError:
