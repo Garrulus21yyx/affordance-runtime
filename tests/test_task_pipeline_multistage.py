@@ -10,7 +10,8 @@ from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Obser
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.intent_compiler import LLMIntentCompiler
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.model_port import FallbackModelPort, ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import UserRequest
@@ -249,3 +250,21 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     assert progress.completed_subgoal_ids == ["obligation-discover", "obligation-confirm"]
     assert all(progress.evidence_by_subgoal[identifier] for identifier in completed)
     assert "ActivePerceptionPlanned" not in [node.kind for node in result.trace.nodes]
+
+
+def test_task_pipeline_wires_only_a_real_configured_provider_fallback() -> None:
+    primary = MultiStageIntentAndPlanModel(provider="primary", model="primary-model")
+    fallback = MultiStageIntentAndPlanModel(provider="fallback", model="fallback-model")
+    pipeline = GeneralistTaskPipeline(
+        compiler=LLMIntentCompiler(FallbackModelPort((primary, fallback))),
+        coordinator=RunCoordinator(
+            observer=MultiStageObserver(MultiStageWorld()),
+            planner=MultiStageActionPlanner(),
+            executor=MultiStageExecutor(MultiStageWorld()),
+        ),
+    )
+
+    dispatcher = pipeline.coordinator.recovery_command_dispatcher
+
+    assert dispatcher.available_commands == frozenset({RecoveryCommandKind.SWITCH_PROVIDER})
+    assert dispatcher.target_ref(RecoveryCommandKind.SWITCH_PROVIDER) == "fallback:fallback-model"

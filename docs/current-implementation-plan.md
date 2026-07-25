@@ -109,7 +109,7 @@ freeze benchmark-family repair
   -> completed: reject incomplete READY compilation
   -> completed: compile typed flat and dependent outcomes
   -> completed: build DecisionConstraintSet outside the step planner
-  -> partial: wire configured fallback-provider recovery into normal entrypoint
+  -> partial: wire configured fallback-provider recovery into BrowserGym and GeneralistTaskPipeline normal entrypoints
   -> wire real context/schema recovery owners into normal entrypoints
   -> partial: continue Coordinator responsibility reduction after TaskPlan commit preparation
   -> non-BrowserGym held-out conformance

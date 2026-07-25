@@ -14,6 +14,7 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.intent_compiler import LLMIntentCompiler
+from affordance_runtime.model_recovery import recovery_dispatcher_for_model
 from affordance_runtime.recovery_commands import (
     RecoveryChangeDimension,
     RecoveryCommandKind,
@@ -41,6 +42,23 @@ class GeneralistTaskPipeline:
     coordinator: RunCoordinator
     constraints: dict[str, Any] = field(default_factory=dict)
     granted_capabilities: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Attach only a real configured model fallback to this normal entrypoint."""
+
+        model = getattr(self.compiler, "model", None)
+        if model is None:
+            return
+        model_dispatcher = recovery_dispatcher_for_model(model)
+        if not model_dispatcher.available_commands:
+            return
+        handlers = dict(self.coordinator.recovery_command_dispatcher.handlers)
+        for kind, handler in model_dispatcher.handlers.items():
+            handlers.setdefault(kind, handler)
+        self.coordinator = replace(
+            self.coordinator,
+            recovery_command_dispatcher=type(self.coordinator.recovery_command_dispatcher)(handlers),
+        )
 
     async def run(self, request: UserRequest) -> TaskPipelineResult:
         trace = TraceDag(run_id=request.request_id)
