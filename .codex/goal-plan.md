@@ -121,9 +121,15 @@ delivery claims.
     `tests/test_intent_compiler.py::test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready`.
     The repair drops invalid coverage-review quotes as invalid vetoes while
     preserving valid coverage vetoes. Do not batch V-PRB-2 through V-PRB-4.
-23. `pending` — After local gates and commit, rerun the same PR breadth
+23. `done` — After local gates and commit, rerun the same PR breadth
     6-task x 2-seed matrix on the clean committed revision and classify impact;
-    no promotion or official score claim.
+    no promotion or official score claim. Clean `d40f8f1` rerun observed 12/12
+    episodes, passed 0/12, and showed V-PRB-1 closed invalid coverage-audit
+    vetoes by advancing the two affected episodes to planner clarification.
+24. `pending` — Select one next child slice only: V-PRB-3 typed semantic
+    action constraints first if prioritizing the largest 7-episode
+    `planner_waiting_clarification` cluster, otherwise V-PRB-2 provider graph
+    proposal normalization for the 4 invalid graph episodes. Do not batch.
 
 ## Change Record
 

@@ -128,6 +128,17 @@ the local gates and commit, rerun the same PR breadth 6-task x 2-seed matrix on
 the clean committed revision. Do not batch V-PRB-2 through V-PRB-4 into this
 patch.
 
+The clean V-PRB-1 PR breadth rerun at `d40f8f1`
+(`docs/evidence/runs/m8.2a-pr-breadth-d40f8f1/`) remains negative: 12/12
+episodes were observed, 0/12 passed, with no provider failure,
+missing/unrun/invalidated case, or promotion claim. V-PRB-1 did close the
+invalid coverage-audit mechanism: the prior `click-dialog:seed-0` and
+`enter-text:seed-0` invalid quote failures now advance to
+`planner_waiting_clarification`. The largest remaining cluster is therefore
+V-PRB-3 typed semantic action constraints with 7 episodes; V-PRB-2 provider
+graph proposal normalization remains the alternative next child slice with 4
+episodes. Select exactly one of these next; do not batch.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward

@@ -330,6 +330,27 @@ def test_pr_breadth_invalid_coverage_audit_child_slice_is_scoped() -> None:
     assert "do not add task-name" in child_text
 
 
+def test_v_prb_1_clean_pr_breadth_rerun_is_recorded() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-d40f8f1/README.md"
+
+    assert evidence.exists()
+    assert (evidence.parent / "browsergym-report.json").exists()
+    assert (evidence.parent / "matrix-metadata.json").exists()
+
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    assert "v_prb_1_clean_rerun:" in status
+    assert "revision: d40f8f1792e85f391fe6c94dd88f9b5e0235d481" in status
+    assert "passed: 0" in status
+    assert "waiting_clarification: 7" in status
+    assert "invalid_coverage_audit_handling_closed: true" in status
+    assert "m8.2a-pr-breadth-d40f8f1" in current_plan
+    assert "official_score_claimed=false" in evidence_text
+    assert "promotion eligible: no" in evidence_text
+    assert "next selectable repair: v-prb-3" in evidence_text
+
+
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
