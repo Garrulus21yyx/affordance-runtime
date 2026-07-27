@@ -1106,6 +1106,45 @@ def test_independent_coverage_rejection_cannot_create_taskspec() -> None:
     assert result.issues[0].code == "uncovered_task_clause"
 
 
+def test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready() -> None:
+    claims, obligations = _terminal_authority("request-read", "pricing read")
+    model = FixedModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="request-read",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
+        )
+    )
+    invalid_review = TaskObligationCoverageReview(
+        status=TaskObligationCoverageStatus.UNSUPPORTED,
+        uncovered_source_quotes=("invented clause",),
+    )
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=FixedCoverageChecker(
+                TaskObligationCoverageDecision(
+                    status=TaskObligationCoverageStatus.UNSUPPORTED,
+                    issue_code="coverage_review_invalid_quote",
+                    review=invalid_review,
+                )
+            ),
+        ).compile(UserRequest(request_id="request-read", raw_text="Read pricing"))
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert not result.issues
+
+
 def test_independent_coverage_ambiguity_becomes_clarification() -> None:
     claims, obligations = _terminal_authority("request-read", "pricing read")
     model = FixedModel(

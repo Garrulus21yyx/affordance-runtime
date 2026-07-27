@@ -91,6 +91,7 @@ child_slices:
     role: read_only_classification
     production_change_allowed: false
   - id: V-PRB-1
+    record: docs/change-admission/v-prb-1-invalid-coverage-audit-handling.yaml
     mechanism: invalid coverage audit handling
     candidates:
       - click-dialog:seed-0

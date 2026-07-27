@@ -118,10 +118,15 @@ The resulting child lanes are:
    `CONTRACT / FIELD_BINDING` report layer is projection debt until proven
    otherwise.
 
-Next implementation selection should choose one child slice only. The first
-candidate remains V-PRB-1 if non-BrowserGym reproduction proves deterministic
-READY was blocked only by an invalid optional coverage audit; otherwise select
-V-PRB-2. Do not batch V-PRB-1 through V-PRB-4.
+V-PRB-1 invalid coverage audit handling has been selected as the first
+production slice after non-BrowserGym reproduction proved deterministic READY
+was blocked only by an invalid optional coverage audit. The repair is scoped to
+intent coverage audit admission: the invalid quote audit is recorded but cannot
+veto deterministic READY. It does not modify Coordinator, StateKernel,
+PlannerPort, prompt, budget, task grammar, or benchmark-specific logic. After
+the local gates and commit, rerun the same PR breadth 6-task x 2-seed matrix on
+the clean committed revision. Do not batch V-PRB-2 through V-PRB-4 into this
+patch.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

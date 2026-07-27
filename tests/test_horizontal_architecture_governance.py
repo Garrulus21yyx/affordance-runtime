@@ -311,6 +311,25 @@ def test_pr_breadth_failure_attribution_child_slice_is_recorded() -> None:
     assert "12/12 episodes have exact mechanism owner" in child_text
 
 
+def test_pr_breadth_invalid_coverage_audit_child_slice_is_scoped() -> None:
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    child_record = CHANGE_ADMISSION_DIR / "v-prb-1-invalid-coverage-audit-handling.yaml"
+
+    assert child_record.exists()
+
+    child_text = " ".join(child_record.read_text(encoding="utf-8").split()).casefold()
+    assert "v-prb-1 invalid coverage audit handling" in current_plan
+    assert "v_prb_1_invalid_coverage_audit_handling:" in status
+    assert "single_primary_owner: intent coverage audit admission" in child_text
+    assert "production_change_allowed: true" in child_text
+    assert "non_browsergym_red_test:" in child_text
+    assert "coverage_review_invalid_quote" in child_text
+    assert "do not modify coordinator" in child_text
+    assert "do not modify statekernel" in child_text
+    assert "do not add task-name" in child_text
+
+
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     compose = COMPOSE_FILE.read_text(encoding="utf-8")

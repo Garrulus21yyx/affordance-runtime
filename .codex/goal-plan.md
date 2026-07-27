@@ -114,10 +114,16 @@ delivery claims.
     created, coverage audit invalid quotes are separated from graph
     normalization, and planner clarification cases are routed to typed semantic
     action constraints.
-22. `pending` — Select exactly one child production slice after non-BrowserGym
+22. `done` — Select exactly one child production slice after non-BrowserGym
     reproduction: V-PRB-1 invalid coverage audit handling first if deterministic
     READY was blocked only by invalid optional audit; otherwise V-PRB-2 provider
-    graph proposal normalization. Do not batch V-PRB-1 through V-PRB-4.
+    graph proposal normalization. V-PRB-1 was selected and reproduced with
+    `tests/test_intent_compiler.py::test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready`.
+    The repair drops invalid coverage-review quotes as invalid vetoes while
+    preserving valid coverage vetoes. Do not batch V-PRB-2 through V-PRB-4.
+23. `pending` — After local gates and commit, rerun the same PR breadth
+    6-task x 2-seed matrix on the clean committed revision and classify impact;
+    no promotion or official score claim.
 
 ## Change Record
 

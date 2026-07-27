@@ -358,6 +358,7 @@ class LLMIntentCompiler:
                         self.model.last_call,
                         parent,
                     )
+                coverage = _drop_invalid_coverage_veto(coverage)
                 if coverage.status != TaskObligationCoverageStatus.COMPLETE:
                     coverage_issue = CompilationIssue(
                         code=coverage.issue_code,
@@ -413,6 +414,7 @@ class LLMIntentCompiler:
                                     self.model.last_call,
                                     parent,
                                 )
+                            coverage = _drop_invalid_coverage_veto(coverage)
                     if coverage.status != TaskObligationCoverageStatus.COMPLETE:
                         result = CompilationResult(
                             status=(
@@ -835,6 +837,24 @@ def _normalize_coverage_claim_references(
         }
     )
     return validate_task_obligation_coverage_review(request, draft, normalized_review)
+
+
+def _drop_invalid_coverage_veto(
+    coverage: TaskObligationCoverageDecision,
+) -> TaskObligationCoverageDecision:
+    """Treat incoherent model-review findings as unavailable vetoes.
+
+    The coverage reviewer has negative authority only when its references are
+    locally coherent.  A nonliteral quote proves the reviewer response is
+    unusable; it does not prove the deterministic READY graph is unsafe.
+    """
+
+    if coverage.issue_code != "coverage_review_invalid_quote":
+        return coverage
+    return TaskObligationCoverageDecision(
+        status=TaskObligationCoverageStatus.COMPLETE,
+        review=coverage.review,
+    )
 
 
 def _record_coverage_review(
