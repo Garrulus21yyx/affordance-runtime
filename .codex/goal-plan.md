@@ -215,13 +215,20 @@ delivery claims.
     failures, 5 Runtime failures, no missing/unrun/invalidated/provider
     failures, and `official_score_claimed=false`. The prior
     `click-button:seed-1` schema incompatibility no longer reproduces.
-36. `in_progress` — Write the next V-PRB-5A non-BrowserGym RED for
+36. `done` — Write the next V-PRB-5A non-BrowserGym RED for
     completed-click progress evidence / observer-verifier binding. The clean
     traces show `effect / is_completed` obligations are now present, but after
     the first click Runtime correctly rejects weak receipt/state-delta evidence,
     leaves active subgoal `button ONE is completed`, and the strict planner
-    asks for clarification. Do not accept receipt success alone as progress;
-    keep V-PRB-5B, V-PRB-6, immutable Planner input, and promotion separate.
+    asks for clarification. The RED failed because BrowserGym only returned
+    terminal-only `state_delta_or_terminal`; it now passes with an
+    active-subgoal `observation_metadata(active_control == bid)` verifier for
+    completed click outcomes. Generic `state_delta_or_terminal` remains weak
+    and terminal-only. Do not accept receipt success alone as progress; keep
+    V-PRB-5B, V-PRB-6, immutable Planner input, and promotion separate.
+37. `in_progress` — Commit and push the completed-click progress evidence
+    repair, then rerun the same PR breadth 6-task x 2-seed matrix on the clean
+    committed revision before judging button-sequence closure.
 
 ## Change Record
 

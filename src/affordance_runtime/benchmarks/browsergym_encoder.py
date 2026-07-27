@@ -439,13 +439,20 @@ def declare_browsergym_active_subgoal_evidence(
         or active.action_family is None
         or active.action_family.value != proposal.action_kind.value
         or not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
-        or not _browsergym_postcondition_proves_outcome(
-            action,
-            verifier_plan[-1],
-            relation=active.outcome.relation,
-            outcome_value=active.outcome.value,
-            affordance=affordance,
-        )
+    ):
+        return verifier_plan
+    completed_click_progress = _browsergym_completed_click_progress_spec(
+        action,
+        relation=active.outcome.relation,
+    )
+    if completed_click_progress is not None:
+        return [*verifier_plan, completed_click_progress]
+    if not _browsergym_postcondition_proves_outcome(
+        action,
+        verifier_plan[-1],
+        relation=active.outcome.relation,
+        outcome_value=active.outcome.value,
+        affordance=affordance,
     ):
         return verifier_plan
     declared = list(verifier_plan)
@@ -482,6 +489,26 @@ def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> 
             for subject_token in subject_tokens
         )
         for target in target_tokens
+    )
+
+
+def _browsergym_completed_click_progress_spec(
+    action: BrowserGymAction,
+    *,
+    relation: SubgoalOutcomeRelation,
+) -> VerifierSpec | None:
+    if action.name not in {"click", "click_no_navigation"}:
+        return None
+    if relation != SubgoalOutcomeRelation.IS_COMPLETED:
+        return None
+    action_bid = str(action.arguments.get("bid") or "")
+    if not action_bid:
+        return None
+    return VerifierSpec(
+        "observation_metadata",
+        "active_control",
+        action_bid,
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
 
 

@@ -84,6 +84,7 @@ done_when:
   - provider does not regain graph authority
   - explicit dependency and intermediate/final terminal semantics are preserved for multi-stage requested-effect fallback
   - clicked/activated multi-stage navigation effects compile as completed effect obligations rather than availability predicates
+  - completed click effects receive independent post-observation progress evidence instead of relying on receipt success
   - flat requested-effect default behavior remains independent terminal effects
   - receipt success remains insufficient for task/subgoal completion
   - no Coordinator or StateKernel special case is added
@@ -92,7 +93,9 @@ done_when:
 non_browsergym_red_tests:
   - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_preserves_dependency_and_terminal_boundary
   - tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_clicked_navigation_effects_as_completed_actions
+  - tests/test_browsergym_encoder.py::test_browsergym_click_completed_outcome_declares_independent_progress_evidence
 regression_tests:
+  - tests/test_browsergym_encoder.py::test_browsergym_generic_state_delta_cannot_advance_active_subgoal
   - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_default_preserves_independent_flat_effects
   - tests/test_canonical_obligation_compiler.py
   - tests/test_intent_compiler.py
@@ -104,7 +107,7 @@ promotion_status: held
 remote_ci: disabled
 
 result:
-  status: rerun_failed_after_second_repair
+  status: implemented_after_progress_red
   production_change_admitted: true
   local_verification:
     - non-BrowserGym RED/GREEN passed
@@ -122,6 +125,20 @@ result:
       - no Coordinator or StateKernel modification
       - no PlannerPort or PlannerStateView migration
       - no prompt, budget, task-name, URL, selector, or benchmark-family branch
+  progress_evidence_repair:
+    scope: completed-click progress evidence / observer-verifier binding
+    behavior:
+      - completed click outcomes add an observation_metadata active_control verifier scoped to the active subgoal
+      - generic state_delta_or_terminal remains terminal-only and weak for progress
+      - receipt success remains insufficient for subgoal completion
+    forbidden_changes:
+      - no Coordinator or StateKernel modification
+      - no PlannerPort or PlannerStateView migration
+      - no verifier weakening or receipt-driven progress
+    local_verification:
+      - focused browsergym/criteria/planning/governance tests passed 99/99
+      - full local pytest passed 977/977
+      - Ruff, mypy, and diff check passed
   clean_pr_breadth_rerun:
     revision: 0565e2ef3f5d082cdc13652b8ca399a393ef4074
     evidence: docs/evidence/runs/m8.2a-pr-breadth-0565e2e/
@@ -169,6 +186,6 @@ result:
       rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
       planner_result_after_rejection: ask_user / waiting_clarification
   next_requirement:
-    - write a new non-BrowserGym RED for completed-click progress evidence / observer-verifier binding
-    - do not accept receipt success alone as completion evidence
+    - commit the completed-click progress evidence repair
+    - rerun the same clean PR breadth matrix on the committed revision before judging button-sequence closure
     - keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate
