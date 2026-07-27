@@ -417,6 +417,30 @@ def test_pr_breadth_provider_graph_normalization_child_slice_is_scoped() -> None
     assert "do not modify prompt" in child_text
 
 
+def test_v_prb_2_clean_pr_breadth_rerun_is_recorded() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-c24b277/README.md"
+
+    assert evidence.exists()
+    assert (evidence.parent / "browsergym-report.json").exists()
+    assert (evidence.parent / "matrix-metadata.json").exists()
+
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    assert "v_prb_2_clean_rerun:" in status
+    assert "revision: c24b277a93712191c626a1db87cc1f3fc1c166bd" in status
+    assert "passed: 8" in status
+    assert "failed: 4" in status
+    assert "invalid_provider_graph_closed: true" in status
+    assert "waiting_clarification: 2" in status
+    assert "entry_action_family_unavailable: 2" in status
+    assert "m8.2a-pr-breadth-c24b277" in current_plan
+    assert "official_score_claimed=false" in evidence_text
+    assert "promotion eligible: no" in evidence_text
+    assert "invalid_provider_graph closed: yes" in evidence_text
+    assert "next selectable repair: v-prb-5" in evidence_text
+
+
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     compose = COMPOSE_FILE.read_text(encoding="utf-8")

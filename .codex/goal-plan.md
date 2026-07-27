@@ -143,12 +143,27 @@ delivery claims.
     matrix. One additional `enter-text:seed-1` runtime terminal-completion
     guard observation has `official_reward=1.0` and is tracked separately from
     official failed episodes.
-26. `pending` — Select one next child production slice only: V-PRB-2 provider
+26. `done` — Select one next child production slice only: V-PRB-2 provider
     graph proposal normalization for the four remaining official-failed
     `click-button-sequence` and `form-sequence` episodes. First create a
     non-BrowserGym reproduction for source-bound multi-effect provider graph
     normalization; do not batch PlanningRequest migration, terminal-completion
-    guard handling, fresh diagnostic, or PR/nightly/release promotion.
+    guard handling, fresh diagnostic, or PR/nightly/release promotion. The
+    selected slice was implemented with
+    `tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_graph_is_incomplete`.
+27. `done` — Implement V-PRB-2 as a narrow canonical obligation compiler
+    boundary repair after a non-BrowserGym red test. Clean `c24b277` PR breadth
+    rerun observed 12/12 episodes, passed 8/12 official reward, failed 4/12
+    official reward, and showed invalid provider graph is closed. The four
+    remaining official failures advanced downstream: two
+    `click-button-sequence` planner clarification cases and two
+    `form-sequence` task-planning `entry_action_family_unavailable` cases.
+28. `pending` — Select one next child slice only: V-PRB-5 downstream
+    task-planning/planner constraint follow-up. First classify exact owner and
+    create non-BrowserGym reproduction for either click-button-sequence
+    continuation planning or form-sequence entry action family availability; do
+    not batch them together and do not start immutable PlanningRequest unless
+    the evidence shows mutable planner input is the root cause.
 
 ## Change Record
 

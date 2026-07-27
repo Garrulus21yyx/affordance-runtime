@@ -68,8 +68,8 @@ pr_breadth_initial_negative:
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 pr_breadth_latest:
-  revision: 9b951ed968314aa7a139611d00256adb17b3cbb7
-  evidence: docs/evidence/runs/m8.2a-pr-breadth-9b951ed/
+  revision: c24b277a93712191c626a1db87cc1f3fc1c166bd
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
   status: failed
   expected: 12
   observed: 12
@@ -82,7 +82,9 @@ pr_breadth_latest:
   official_score_claimed: false
   promotion_status: held
   root_owner_next: INTENT / PLANNING
-  remaining_official_failed_mechanism: invalid_provider_graph
+  remaining_official_failed_mechanisms:
+    waiting_clarification: 2
+    entry_action_family_unavailable: 2
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 attribution_classification:
@@ -199,6 +201,28 @@ v_prb_2_provider_graph_proposal_normalization:
     benchmark_specific_logic_added: false
   promotion_status: held
   rerun_required: PR breadth 6-task x 2-seed matrix on a clean committed revision
+
+v_prb_2_clean_rerun:
+  revision: c24b277a93712191c626a1db87cc1f3fc1c166bd
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  status: failed
+  expected: 12
+  observed: 12
+  passed: 8
+  failed: 4
+  runtime_failed: 5
+  provider_failures: 0
+  missing: 0
+  unrun: 0
+  invalidated: 0
+  official_score_claimed: false
+  promotion_status: held
+  invalid_provider_graph_closed: true
+  remaining_mechanisms:
+    waiting_clarification: 2
+    entry_action_family_unavailable: 2
+    planner_terminal_completion_guard: 1
+  next_selectable_child_slice: V-PRB-5 task planning / planner constraint follow-up
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or
@@ -251,8 +275,8 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1 and V-PRB-3, clean PR breadth at `9b951ed` improved to 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure. | repair the remaining V-PRB-2 invalid provider graph failures generically before rerunning protected cross-family / PR breadth; promotion held |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `9b951ed` remains failed at 8/12 with four invalid provider graph episodes and no promotion claim | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, and V-PRB-2, clean PR breadth at `c24b277` remains 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure, with invalid provider graph closed and downstream planning failures remaining. | classify and repair the remaining task-planning/planner constraint failures generically before rerunning protected cross-family / PR breadth; promotion held |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `c24b277` remains failed at 8/12 with four downstream planning failures and no promotion claim | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
