@@ -6,6 +6,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src" / "affordance_runtime"
 GOVERNANCE_DOC = REPOSITORY_ROOT / "docs" / "architecture-governance-track.md"
+CHANGE_ADMISSION_DIR = REPOSITORY_ROOT / "docs" / "change-admission"
 PROJECT_PLAN = REPOSITORY_ROOT / "docs" / "project-plan.md"
 CURRENT_PLAN = REPOSITORY_ROOT / "docs" / "current-implementation-plan.md"
 IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
@@ -142,7 +143,11 @@ def _matches_module(dependency: str, prefix: str) -> bool:
     return dependency == prefix or dependency.startswith(f"{prefix}.")
 
 
-def _class_method(path: Path, class_name: str, method_name: str) -> ast.AST:
+def _class_method(
+    path: Path,
+    class_name: str,
+    method_name: str,
+) -> ast.FunctionDef | ast.AsyncFunctionDef:
     module = ast.parse(path.read_text(encoding="utf-8"))
     owner = next(
         node
@@ -191,9 +196,29 @@ def test_governance_status_and_dual_lane_policy_have_one_current_source() -> Non
     assert "double-track, one-gate" in governance
     assert "single production writer" in governance
     assert "sole authoritative task-execution commit sequencer" in architecture
-    assert "sg1-sg6 are locally complete" in intent
-    assert "sg7 targeted protected-family confirmation is the active vertical slice" in intent
+    assert "sg1-sg7 targeted confirmation is locally complete" in intent
+    assert "protected cross-family / pr breadth is the active vertical slice" in intent
     assert "remains incomplete" in intent
+
+
+def test_reviewed_architecture_debt_and_sg7_admission_record_are_visible() -> None:
+    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    sg7_record = CHANGE_ADMISSION_DIR / "v-sg7-targeted-protected-family.yaml"
+
+    assert "standard `plannerport` still receives mutable `statekernel`" in governance
+    assert "generalist planner semantic fallback ownership review" in governance
+    assert "semantic_ownership_review: pending_review" in status
+    assert sg7_record.exists()
+
+    record = sg7_record.read_text(encoding="utf-8").casefold()
+    assert "slice_id: v-sg7-targeted-protected-family" in record
+    assert "change_type: vertical_evidence_and_generic_repair" in record
+    assert "production_change_initially_allowed: false" in record
+    assert "architecture_admission: pass" in record
+    assert "semantic_ownership_review:" in record
+    assert "status: pending_review" in record
+    assert "official_score_claimed: false" in record
 
 
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
@@ -287,7 +312,7 @@ def test_extracted_collaborators_cannot_reacquire_state_or_trace_authority() -> 
                         "affordance_runtime.trace",
                     )
                 ):
-                    violations.append((filename, node.lineno, dependency))
+                    violations.append((filename, getattr(node, "lineno", 0), dependency))
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)

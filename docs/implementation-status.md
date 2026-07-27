@@ -34,6 +34,7 @@ milestone status values.
 | Current worktree identity | clean worktree at committed `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Current worktree local gate | pass; no local production or documentation diff is pending |
 | Architecture admission | mechanical gates pass for the current tree; SG7 targeted protected-family confirmation remains bound to clean repair revision `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, while PR breadth/nightly/release promotion remains held |
+| Semantic ownership review | `pending_review`: SG7 generic repair preserved the benchmark/authority hard boundaries, but introduced deterministic semantic fallback in Generalist Planner and value-entry lexical normalization in intent/task-planning surfaces; these are baselined as ownership-review debt rather than declared architecturally clean |
 | Remote CI | disabled: GitHub Actions is intentionally closed for the current iteration, so no remote-green or remote-fail claim is made for `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Promotion status | held |
 
@@ -60,6 +61,14 @@ repository until a unified rewrite is complete.
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
 | `active` | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a` passing local equivalent gates; remote CI disabled | Coordinator 3473 lines / 26 methods; `run_sync` 2039 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | protected cross-family / PR breadth is the next vertical lane; immutable Planner input is the next horizontal lane and should not be mixed into the same evidence identity |
+
+The current SG7 repair also has a semantic ownership review state:
+`semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
+targeted, generic repair candidate under existing tests, but the ownership of
+value-entry interpretation, page-observed value binding, and terminal-submit
+fallback must be revisited before planner/intake responsibility can be called
+clean. Until then, these paths may not expand through task-name, URL, selector,
+Prompt-only, budget, or benchmark-family branches.
 
 Change admission uses `pass | fail | waived | not_evaluated`; remediation items
 use `pending | in_progress | done | blocked`. These states do not replace the

@@ -179,6 +179,9 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | Debt | State | Required direction |
 | --- | --- | --- |
 | `RunCoordinator.run_sync` contains multiple phase algorithms | `in_progress` | extract one named responsibility at a time through immutable context and typed result |
+| standard `PlannerPort` still receives mutable `StateKernel` | `pending` | introduce frozen `PlannerStateView` / `PlanningRequest` before claiming immutable planner input |
+| Generalist Planner semantic fallback ownership review | `pending_review` | move SG7-triggered deterministic semantic fallback ownership toward typed resolver/constraint owners when the next planning slice touches it |
+| `LLMIntentCompiler` contains value-entry lexical normalization | `pending_review` | isolate source-bound value-entry normalization into a typed intent normalizer before declaring intake responsibility clean |
 | `task_planning.py` combines models, provider schema, validation, routing, and implementations | `pending` | split by change reason when the relevant planning slice is touched |
 | `LLMIntentCompiler.compile` is 253 lines | `pending` | isolate a typed phase without changing the three-call/authority boundary |
 | `StateKernel.active_subgoal()` had a hidden progress mutation used by read-oriented consumers | `done` locally | `active_subgoal()` is read-only; `activate_next_subgoal()` is explicit and Coordinator-owned in production; planner context construction no longer activates progress |
