@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Callable, Sequence, TypeVar
 
@@ -48,12 +49,20 @@ class ScriptedRawIntentModel:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        del messages, config
+        del config
         self.calls += 1
         if output_schema is LLMIntentDraft:
             return output_schema.model_validate(self.draft.model_dump())
         if output_schema is TaskObligationCoverageReview:
-            return output_schema.model_validate(self.review.model_dump())
+            payload = self.review.model_dump(mode="json")
+            if payload["status"] == TaskObligationCoverageStatus.COMPLETE:
+                reviewed_draft = json.loads(messages[-1].content)
+                payload["covered_claim_ids"] = [
+                    item["claim_id"]
+                    for item in reviewed_draft["source_claims"]
+                    if item["required"]
+                ]
+            return output_schema.model_validate(payload)
         raise AssertionError(f"unexpected schema: {output_schema.__name__}")
 
 
@@ -283,10 +292,14 @@ def test_non_browsergym_raw_intake_conformance_accepts_typed_authority(
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
-    assert result.task_spec.obligations == tuple(
-        item.model_copy(update={"construction_source": GraphConstructionSource.MODEL_PROPOSAL})
-        for item in draft.candidate_obligations
+    expected_source = (
+        GraphConstructionSource.MODEL_PROPOSAL
+        if draft.task_structure == TaskStructure.MULTI_STAGE
+        else GraphConstructionSource.CANONICAL_COMPILER
     )
+    assert all(item.construction_source == expected_source for item in result.task_spec.obligations)
+    assert all(item.obligation_id.startswith("obligation:") for item in result.task_spec.obligations)
+    assert all(item.claim_id.startswith("claim:") for item in result.task_spec.source_claims)
     assert model.calls == 2
 
 
@@ -326,6 +339,95 @@ def test_non_browsergym_raw_intake_conformance_preserves_ambiguity_stop() -> Non
     assert result.status == CompilationStatus.NEEDS_CLARIFICATION
     assert result.task_spec is None
     assert model.calls == 1
+
+
+def test_non_browsergym_heldout_multistage_intake_rebuilds_value_flow_without_provider_nodes() -> None:
+    """Exercise a non-fixture vocabulary through the ordinary raw intake path."""
+
+    request_id = "heldout-agreement"
+    read_claim = SourcedTaskClaim(
+        claim_id="provider-read-reference",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="read the agreement reference",
+        source_ref=request_id,
+    )
+    write_claim = SourcedTaskClaim(
+        claim_id="provider-write-reference",
+        kind=TaskClaimKind.EFFECT,
+        statement="enter the agreement reference in records",
+        source_ref=request_id,
+    )
+    finalize_claim = SourcedTaskClaim(
+        claim_id="provider-finalize-record",
+        kind=TaskClaimKind.TERMINAL,
+        statement="finalize the record",
+        source_ref=request_id,
+    )
+    draft = IntentDraft(
+        objective="Read the agreement reference, enter it in records, then finalize",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="records reference",
+                source_ref=request_id,
+            ),
+        ),
+        candidate_success_criteria=("record finalized with the agreement reference",),
+        task_structure=TaskStructure.MULTI_STAGE,
+        candidate_source_claims=(read_claim, write_claim, finalize_claim),
+        candidate_obligations=(
+            TaskObligationSpec(
+                obligation_id="provider-read-obligation",
+                kind=TaskObligationKind.PREDICATE,
+                subject="agreement reference",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=(read_claim.claim_id,),
+                evidence_requirements=("provider evidence",),
+            ),
+            TaskObligationSpec(
+                obligation_id="provider-write-obligation",
+                kind=TaskObligationKind.PREDICATE,
+                subject="records reference",
+                relation=TaskObligationRelation.EQUALS,
+                value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+                value_obligation_id="provider-read-obligation",
+                claim_ids=(write_claim.claim_id,),
+                depends_on=("provider-read-obligation",),
+                evidence_requirements=("provider evidence",),
+            ),
+            TaskObligationSpec(
+                obligation_id="provider-finalize-obligation",
+                kind=TaskObligationKind.EFFECT,
+                subject="record finalization",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                claim_ids=(finalize_claim.claim_id,),
+                depends_on=("provider-write-obligation",),
+                evidence_requirements=("provider evidence",),
+                terminal=True,
+            ),
+        ),
+    )
+    model = ScriptedRawIntentModel(draft=draft, review=_complete_review(draft))
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id=request_id,
+                raw_text="Read the agreement reference, enter it in records, then finalize the record.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    read, write, finalize = result.task_spec.obligations
+    assert all("provider" not in item.obligation_id for item in result.task_spec.obligations)
+    assert write.depends_on == (read.obligation_id,)
+    assert write.value_obligation_id == read.obligation_id
+    assert finalize.depends_on == (write.obligation_id,)
+    assert all(item.typed_evidence_requirements for item in result.task_spec.obligations)
+    assert model.calls == 2
 
 
 def test_non_browsergym_raw_intake_conformance_rejects_stale_lineage() -> None:

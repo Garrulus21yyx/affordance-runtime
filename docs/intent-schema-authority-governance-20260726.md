@@ -260,9 +260,51 @@ direction returns clarification/unsupported instead of inventing a graph.
 **SG2 foundation status:** `CanonicalObligationCompiler` now constructs stable
 claim/obligation ids, canonical provenance, generic read/effect terminal
 relations, and typed evidence only from source-ledger-bound inputs. Unknown
-effect or evidence source units reject before graph construction. The existing
-raw model-draft path has not yet been migrated to this compiler; that authority
-replacement remains SG3-SG5.
+effect or evidence source units reject before graph construction. The flat raw
+model-draft path is now migrated to this compiler; the remaining authority
+replacement is limited to bounded multi-stage relation/value-flow templates.
+
+**SG3/SG5 implementation status:** model and parent claim/obligation IDs are
+proposal-local handles. Before either semantic proposal can cross the
+`TaskSpec` boundary, Runtime validates every referenced source unit and
+reconstructs canonical graph nodes, identities, claim edges, dependencies,
+obligation-output references, and typed evidence. A proposal may contribute
+only a validated legal relation/value-flow/edge; it never contributes a graph
+node instance or free-form evidence contract. The model coverage reviewer
+receives this canonical graph. `ParentSemanticProposalCompiler` is model-free
+but applies the same ledger, deterministic validation, policy, and immutable
+admission boundary; a complete typed TaskSpec remains a separate API. A legacy
+reviewer-reference bridge is replay compatibility only and cannot place a
+provider handle in `TaskSpec`. SG4 and SG5 are complete.
+
+**SG4 implementation status:** `DeterministicTaskObligationCoverageValidator`
+proves known SourceLedger source-unit lineage into required claims and a
+structurally valid obligation graph with a reachable terminal. It runs before
+any model audit. The model auditor may only veto, request clarification, or
+report unsupported semantics; `COMPLETE` cannot upgrade a deterministically
+invalid proposal, and temporary auditor unavailability cannot reject one that
+the deterministic admission path has already accepted. SG5 remains responsible
+for removing the remaining proposal-shape compatibility path in favor of
+canonical graph construction.
+
+**SG5 migration status:** `CanonicalObligationCompiler` constructs a generic
+flat terminal graph directly from source-bound requested effects and
+reconstructs multi-stage proposal relations into new canonical graph nodes.
+The compiler derives stable ids, canonical provenance, dependency/value-flow
+references, and typed independent evidence; it does not retain a proposal
+node instance or its free-form evidence text. Both `ParentSemanticProposalCompiler`
+and the model-draft entrypoint use this boundary. A coverage-auditor `COMPLETE`
+is advisory only and does not provide graph admission authority, while typed
+non-complete findings remain bounded vetoes.
+
+**SG6 local status:** ordinary non-BrowserGym intake has a held-out sequential
+value-flow conformance request using unrelated agreement/records vocabulary.
+It traverses model intake, canonical multi-stage construction, deterministic
+coverage, and the optional independent audit without benchmark-specific
+vocabulary. Source-clause omission, unknown-source, stale-lineage, ambiguity,
+and typed-auditor-veto controls remain negative evidence. This local gate does
+not authorize benchmark, provider, PR-breadth, diagnostic, nightly, or release
+evaluation.
 
 ### 4.4 Typed evidence requirements
 

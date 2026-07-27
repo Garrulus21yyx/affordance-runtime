@@ -10,16 +10,18 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
+from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.runner import BenchmarkReport, BenchmarkReportWriter, BenchmarkRunner
 from affordance_runtime.benchmarks.spec import BenchmarkRun, BenchmarkTask
 from affordance_runtime.benchmarks.suites import mvp_benchmark_tasks
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator, RuntimeFeatures
+from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import EXPORT_SHA256, LOCAL_SAAS_FIXTURE_VERSION, PRICING_DATA, create_fixture_server
 from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
+from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 
 

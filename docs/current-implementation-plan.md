@@ -9,6 +9,7 @@ immutable implementation revision `c939051`. The strict M8.2B diagnostic has
 since completed at 24/60 and is not promotable; historical scores remain
 unpromoted. See
 [Implementation Status and Forward Gates](implementation-status.md),
+[Horizontal Architecture Governance Track](architecture-governance-track.md),
 [Responsibility Containment Boundary](responsibility-containment-boundary.md),
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md),
 [Active Perception and Online Recovery Architecture](active-perception-and-online-recovery.md),
@@ -30,10 +31,20 @@ conditional on measured restart/waiting evidence; production-scale options
 remain non-blocking.
 
 Governance interpretation: M8.6 is complete only as the scoped internal
-budget/evidence/injectable-dispatch/G5 gate. It does not claim that normal
-entrypoints configure provider/context/schema recovery owners, that task intake
-is obligation-complete, that the strict planner is robust, or that Coordinator
+budget/evidence/injectable-dispatch/G5 gate. Normal BrowserGym and
+`GeneralistTaskPipeline` entrypoints now configure concrete planner-context and
+planner-schema owners, and configured multi-profile paths retain provider
+switching. This is component/integration evidence, not level-4 empirical
+recovery effectiveness. It does not claim that every entrypoint has every
+recovery owner, that the strict planner is robust, or that Coordinator
 responsibility reduction has reached its stated target.
+
+The horizontal architecture-governance track is active immediately and applies
+as a synchronous admission gate to every step below. It is not another
+milestone in the sequence: existing architecture debt does not block unrelated
+work, while a proposed change that grows a frozen control surface, introduces a
+reverse dependency, or duplicates authority fails admission. Named debt is
+reduced incrementally when the active feature/correctness slice touches it.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
@@ -42,7 +53,8 @@ completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward
 unrun/missing/invalidated case, or batch stop. The 36 ordinary envelopes are
 12 intent/planning, 11 contract/field binding, 8 verification, 3 execution,
 and 2 observation/context. `official_score_claimed=false`; frozen nightly is
-held. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
+held. The remainder of this paragraph is a historical revision-by-revision
+snapshot, not the current capability inventory. Clean evidence-only SHA `6d1703c` then preserved verifier reason,
 artifact lineage, and failed verifier kind in the canonical FailureEnvelope.
 The provider-neutral terminal-readiness protocol, typed TaskPlan validation,
 current grounding resolver, and strict-Planner candidate narrowing are
@@ -60,10 +72,12 @@ admission; terminal narrowing joins the same owner at `482a3c5`; and clean
 `ca71819` completes verifier-backed current-target exclusion, active-subgoal
 scope, and strict finish-evidence admission in the same stateless owner. The
 full local gate is 890 tests, Ruff, and governed mypy over 107 source files.
-Clean `befa319` wires an evidence-backed provider-switch owner into the
+At that historical snapshot, clean `befa319` wires an evidence-backed provider-switch owner into the
 BrowserGym generalist normal entrypoint only when a configured multi-profile
 fallback exists; it remains fail-closed for a single provider. Context/schema
-owners are still absent, so normal-entrypoint recovery wiring remains open.
+owners were still absent, so normal-entrypoint recovery wiring remained open
+at that revision. Current BrowserGym and `GeneralistTaskPipeline`
+context/schema integration is stated above.
 Clean `b48bf02` separately moves immutable model-invocation assembly to
 `PlannerModelRequest`/`PlannerModelOrchestrator`, reducing
 `GeneralistLMPlanner.propose()` to 222 lines without changing semantic
@@ -85,8 +99,9 @@ containment reduction, not an M8.2B behavior or benchmark claim.
 
 Clean `50ae956` moves recovery protocol event payload construction to pure
 `RecoveryTraceProjection`; Coordinator only appends those typed projections and
-decreases to 3567 lines. Recovery command execution and state completion remain
-separate open ownership work.
+decreases to 3567 lines. At that historical revision, recovery command execution
+and state completion remained separate open ownership work; the later typed
+dispatcher/owner integration supersedes that status.
 
 Clean `7669090`/`5538f4d` add one bounded raw-intake repair path for missing
 success criteria, sourced claims, obligations, or malformed obligation graphs.
@@ -97,8 +112,8 @@ The follow-up repair-audit correction records every reserved intake call rather
 than inferring a fixed two-call path: `IntentDraftRepairProduced` now carries
 its real model-call record and a distinct `intent-draft-repair-v2` decoding
 identity. That identity and schema are part of immutable BrowserGym checkpoint
-metadata, while provider/context/schema recovery ownership remains separately
-open. The targeted gates cover successful repair, a failed repair's typed,
+metadata, while provider/context/schema recovery ownership remained separately
+open at those historical revisions. The targeted gates cover successful repair, a failed repair's typed,
 redacted trace event, unsafe repair fail-closed, budget exhaustion, single-call
 policy/ambiguity stops, and BrowserGym's successful-repair call accounting.
 This is a local correctness repair, not
@@ -132,9 +147,9 @@ model COMPLETE result a role in READY admission. No code-owned source-unit
 ledger or generic canonical graph compiler exists. This is bounded model
 authority, not model-independent compilation.
 
-The fixed Python 3.12 local gate passes 907 tests, Ruff, and repository-governed
-mypy over 110 source files. No benchmark or provider episode was run for this
-audit.
+At that historical audit revision, the fixed Python 3.12 local gate passed 907
+tests, Ruff, and repository-governed mypy over 110 source files. No benchmark or
+provider episode was run for that audit.
 
 SG1 is now complete at the succeeding source-ledger revision: a deterministic
 bounded `SourceLedgerBuilder` emits hash-bound whole-request/clause/reference
@@ -142,7 +157,9 @@ units before model intake, records redacted lineage in trace, maps the legacy
 `raw_text` alias to the canonical whole-request unit, and rejects an over-bound
 request without a model call. Prompt identities advance to
 `intent-compiler-v7` and `intent-draft-repair-v2`; this is a new immutable
-intake identity, not comparable benchmark evidence. SG2-SG6 remain open.
+intake identity, not comparable benchmark evidence. SG2-SG6 are now complete
+at the current local revision; this does not authorize a benchmark, provider,
+or release score.
 
 The governing remediation is
 [Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
@@ -157,21 +174,18 @@ SourceLedgerBuilder
   -> optional model audit with veto-only authority
 ~~~
 
-Mandatory next sequence:
+Mandatory feature/evidence sequence (all steps are independently subject to the
+horizontal architecture gates):
 
 ~~~text
 freeze benchmark-family repair
   -> SG0 complete: freeze schema/graph authority and anti-specialization boundary
   -> SG1 complete: code-owned bounded SourceLedger and exact request lineage
-  -> SG2 foundation complete: generic CanonicalObligationCompiler and typed evidence requirements; normal-path migration remains SG3-SG5
-  -> SG3: normalize model/parent semantic proposals; stop trusting graph ids
-  -> SG4: deterministic source/claim/graph/terminal coverage; model veto only
-  -> SG5: remove direct candidate graph copying and version checkpoint identity
+  -> SG2-SG5 complete: canonical graph construction, source/graph coverage, veto-only audit, and no direct candidate graph copying
   -> full local quality gates
-  -> SG6: non-BrowserGym held-out intake conformance and adversarial omissions
-  -> wire real context/schema recovery owners into normal entrypoints
+  -> SG6 complete: non-BrowserGym held-out intake conformance and adversarial omissions
+  -> context/schema normal-entrypoint owners complete at maturity level 3
   -> retain partial configured provider switch without claiming full recovery
-  -> continue Coordinator responsibility reduction without adding intake logic
   -> SG7 targeted protected families
   -> PR breadth and fresh diagnostic only after SG1-SG6 pass
   -> nightly/release only after promotion criteria and explicit authorization
@@ -623,13 +637,16 @@ Execute in this order:
    probe budgets;
 2. **completed locally** - distinguish source/artifact availability from
    target-relevant semantic evidence;
-3. **completed as an injectable path** - execute each enabled recovery command
-   through a supplied owning port and reject no-op success; concrete owners in
-   normal standalone/benchmark entrypoints remain open;
+3. **normal-entrypoint component integration complete; empirical gate open** -
+   execute each enabled recovery command through a supplied owning port and
+   reject no-op success; BrowserGym and `GeneralistTaskPipeline` provide the
+   context/schema owners, while every-entrypoint coverage and level-4
+   effectiveness remain open;
 4. **first containment ratchet complete; reduction target open** - TaskPlan containment extraction - active-perception
    flow, recovery command dispatch, evidence projections, and stateless
-   TaskPlanFlow are extracted while preserving one authoritative state/trace
-   writer; the Coordinator feature freeze remains and its ratchet is 3643/26;
+   TaskPlanFlow are extracted while preserving one authoritative task-execution state/trace
+   commit sequence; the Coordinator feature freeze remains and its active
+   ratchet is 3473/26;
 5. **completed** - publish fresh four-profile non-BrowserGym Runtime runs with
    trace, contract, receipt, verifier, environment, and artifact identities;
 6. **current** - run one new strict frozen diagnostic matrix,
@@ -669,6 +686,7 @@ gate in the main [Project Plan](project-plan.md).
 
 The [Runtime-First Architecture Boundary](runtime-first-boundary.md),
 [Responsibility Containment Boundary](responsibility-containment-boundary.md),
+[Horizontal Architecture Governance Track](architecture-governance-track.md),
 and
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md)
 are jointly normative. BrowserGym is an external adapter and evaluation
@@ -1287,14 +1305,15 @@ DOM, screenshot/SoM, and real node-wot traces against one shared oracle. See
 
 ### M8.2: Planner Contracts and Public Benchmark Audit - diagnostic repair in progress
 
-#### M8.2A: Task Intake and Planner Contracts - component done; behavior reopened
+#### M8.2A: Task Intake and Planner Contracts - locally complete; empirical generality open
 
 The schemas and contract boundaries below are retained. The default
 GeneralistLMPlanner and compiler registry are not accepted as generalization
 proof until M8.6 isolates task-family behavior and passes behavioral controls.
 All later task-family narratives in this M8.2 section are historical evidence,
-not authorized current work. The current implementation order is Section 0
-G0-G5.
+not authorized current work. SG1-SG6 are locally complete; SG7 confirmation is
+the next vertical step when authorized, with horizontal gates applied in
+parallel.
 
 Implement the schemas and gates in
 [Task Intake and Generalist Planner](task-intake-and-planner.md):
@@ -1412,8 +1431,8 @@ Required implementation order:
 7. Re-run in order: one click seed, one text-entry seed, six tasks x one seed,
    the 18-episode PR matrix, then the 30 x 10 nightly and release matrices.
 
-Local implementation status: items 1-6 are complete in the working tree and
-the current repository gate passes 365 local tests. Text, selection, keyboard/slider,
+Historical local implementation snapshot: items 1-6 were complete in that
+working tree and its repository gate passed 365 local tests. Text, selection, keyboard/slider,
 and click state-delta/terminal-oracle verifiers are distinct from the executor
 receipt. The semantic progress guard blocks verified or unchanged duplicate
 actions before execution. Planner v47 bounds affordances and keeps one proposal,
@@ -2250,7 +2269,7 @@ justify merging the two runtime architectures.
 | --- | --- | --- |
 | done (R1) | Subgoal and SkillStep progress previously accepted unbound evidence | shared matcher now requires explicit, fresh, strong, complete criterion/evidence links; see `evidence/runtime-r1-criteria-evidence-20260722.md` |
 | P0 | the initial Coordinator path records the same observation twice | record it once and increment state and budget counters once |
-| P0 | replacement plans do not form a monotonic plan-version chain | increment and trace every accepted replacement plan |
+| done (R2) | replacement plans previously lacked a monotonic plan-version chain | accepted replacements now increment version, bind supersession, preserve verified subgoals, and trace lineage |
 | P0 | recovery can select compensation, retry, or reroute without an explicit executed recovery command | add a bounded RecoveryExecutor with receipt, post-state inspection, and verification |
 | P0 | Web and BrowserGym intentionally require incompatible Playwright versions | publish and test separate core, Web, BrowserGym, and visual commands |
 | done (R2) | task replanning previously received insufficient failure, evidence, and environment context | bounded TaskPlanningContext and monotonic lineage now drive initial planning and replanning |
@@ -2300,7 +2319,13 @@ It does not create a second mutable world model. A transition view is derived
 from the canonical trace and links pre-snapshot, contract, backend, receipt,
 post-snapshot, verification, recovery, and fault context.
 
-### 12.4 Ordered Governance Work
+### 12.4 Historical Governance Queue and Horizontal Admission
+
+The queue below records the earlier ordering rationale. It is not a unified
+refactor prerequisite. Current changes are admitted through the always-active
+[Horizontal Architecture Governance Track](architecture-governance-track.md);
+only the violating change is blocked. Remaining items below are selected when
+their owning milestone or correctness slice is active.
 
 #### G0: Correctness and Claim Integrity
 
@@ -2319,12 +2344,17 @@ presented as complete.
 
 - extract TaskPlanController, ContractExecutionEngine, and RecoveryExecutor as
   internal collaborators;
-- retain one RunCoordinator, one RunState, and one canonical trace;
+- retain one RunCoordinator, one RunState, and one canonical task-execution
+  trace within that Runtime scope;
 - add versioned planning context and typed surface payloads;
 - bound working-state growth.
 
 Exit: no collaborator can execute outside an Action Contract and no duplicate
 authority is introduced.
+
+The active growth, long-method, dependency, and authority baselines are owned by
+the horizontal track and executable architecture tests; historical line counts
+in this section are not current ceilings.
 
 #### G2: Environment Truth and Transition Evidence
 
@@ -2344,11 +2374,11 @@ execution order.
 Current status: DOM, visual, and WoT adapters already share the Affordance,
 Action Contract, Coordinator, verifier, and trace path. SourceAssertion,
 FusedAssertion, rule-first arbitration, ActivePerceptionRequest, and targeted
-capture foundations are implemented. The missing current layer is one complete
-ActivePerceptionController with typed probe plan/receipt, coherent-epoch
-replacement, normal/preflight/verification/recovery integration, and shared
-budget/trace policy. The gated reflex cache exists as a component; strict
-profile integration and held-out calibration remain M8.6 evidence work.
+capture foundations are implemented. `ActivePerceptionController` and
+`ActivePerceptionFlow` now provide typed probe planning/resolution with bounded
+normal/preflight/verification/recovery integration. Held-out calibration and
+empirical effectiveness remain open; no additional controller may be added as
+a parallel authority.
 
 ##### G2A: Sourced Assertions and Rule-First Arbitration
 

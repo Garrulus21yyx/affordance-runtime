@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.failure_envelope import EffectStatus
+from affordance_runtime.generalist_planner import GeneralistLMPlanner
 from affordance_runtime.model_port import FallbackModelPort
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
 from affordance_runtime.recovery_commands import (
@@ -40,6 +41,40 @@ def _provider_switch_command() -> RecoveryCommand:
     )
 
 
+def _context_compaction_command() -> RecoveryCommand:
+    return RecoveryCommand(
+        command_id="command:compact-context",
+        failure_id="failure:planning",
+        based_on_state_version=2,
+        strategy_id="strategy:compact-context",
+        kind=RecoveryCommandKind.COMPACT_CONTEXT,
+        expected_change="reduce optional planner context",
+        changed_dimensions=(RecoveryChangeDimension.CONTEXT,),
+        preconditions=("planner owns compactable context",),
+        budget_cost=RecoveryBudgetCost(recoveries=1, replans=1, timeout_ms=500),
+        timeout_ms=500,
+        reentry_phase=RecoveryReentryPhase.PLANNING,
+        effect_status=EffectStatus.NOT_DISPATCHED,
+    )
+
+
+def _schema_repair_command() -> RecoveryCommand:
+    return RecoveryCommand(
+        command_id="command:repair-schema",
+        failure_id="failure:proposal-validation",
+        based_on_state_version=2,
+        strategy_id="strategy:repair-schema",
+        kind=RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+        expected_change="bind the next candidate schema to current targets",
+        changed_dimensions=(RecoveryChangeDimension.CONTEXT,),
+        preconditions=("planner model orchestration owns repair schema",),
+        budget_cost=RecoveryBudgetCost(recoveries=1, replans=1, timeout_ms=500),
+        timeout_ms=500,
+        reentry_phase=RecoveryReentryPhase.PLANNING,
+        effect_status=EffectStatus.NOT_DISPATCHED,
+    )
+
+
 def test_fallback_provider_owner_switches_real_active_profile_with_evidence() -> None:
     model = FallbackModelPort((_Port("remote", "primary"), _Port("local", "secondary")))
     dispatcher = recovery_dispatcher_for_model(model)
@@ -70,3 +105,44 @@ def test_normal_model_without_configured_fallback_exposes_no_provider_owner() ->
     )
     assert not unavailable.receipt.success
     assert unavailable.receipt.error_code == "owning_port_unavailable"
+
+
+def test_context_owner_compacts_real_generalist_planner_state_with_evidence() -> None:
+    model = _Port("local", "only")
+    planner = GeneralistLMPlanner(
+        model,  # type: ignore[arg-type]
+        accepted_knowledge=("older", "newer"),
+    )
+    dispatcher = recovery_dispatcher_for_model(model, planner=planner)  # type: ignore[arg-type]
+
+    assert dispatcher.target_ref(RecoveryCommandKind.COMPACT_CONTEXT).endswith("affordances=80:artifacts=3:knowledge=2")
+    result = dispatcher.dispatch(
+        _context_compaction_command(),
+        previous_attempt_fingerprint="sha256:" + "3" * 64,
+    )
+
+    assert result.receipt.success
+    assert result.delta is not None
+    assert planner.limits.max_affordances == 40
+    assert planner.limits.max_artifact_refs == 1
+    assert planner.accepted_knowledge == ("newer",)
+    assert result.receipt.artifact_refs[0].startswith("planner-context-compacted:")
+
+
+def test_schema_owner_switches_generalist_planner_to_target_bound_schema_with_evidence() -> None:
+    model = _Port("local", "only")
+    planner = GeneralistLMPlanner(model)  # type: ignore[arg-type]
+    dispatcher = recovery_dispatcher_for_model(model, planner=planner)  # type: ignore[arg-type]
+
+    before = dispatcher.target_ref(RecoveryCommandKind.REPAIR_MODEL_SCHEMA)
+    result = dispatcher.dispatch(
+        _schema_repair_command(),
+        previous_attempt_fingerprint="sha256:" + "4" * 64,
+    )
+
+    assert before.endswith("action-bound-initial")
+    assert result.receipt.success
+    assert result.delta is not None
+    assert planner.schema_recovery_generation == 1
+    assert planner.planner_schema_ref().endswith("target-bound-repair")
+    assert result.receipt.artifact_refs[0].startswith("planner-schema-repaired:")

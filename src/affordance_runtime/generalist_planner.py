@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
 from types import ModuleType
 from typing import Any
 
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.coordinator import PlannerDecision
 from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
@@ -39,6 +38,7 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
@@ -233,6 +233,7 @@ class GeneralistLMPlanner:
         repr=False,
     )
     model_call_count: int = field(default=0, init=False)
+    schema_recovery_generation: int = field(default=0, init=False)
     config: ModelConfig = field(
         default_factory=lambda: ModelConfig(
             temperature=0.0,
@@ -389,7 +390,8 @@ class GeneralistLMPlanner:
                 allowed_text_values=constrained_text_values,
                 drag_destination_ids=tuple(_compatible_drag_destination_ids(context)),
             )
-            if initial_permitted == ["activate"]
+            if self.schema_recovery_generation > 0
+            or initial_permitted == ["activate"]
             or initial_press_keys
             or constrained_text_values
             or source_destination_constrained
@@ -549,6 +551,53 @@ class GeneralistLMPlanner:
             accepted_knowledge=self.accepted_knowledge,
             allow_finish=self.allow_finish,
         )
+
+    def planner_context_ref(self) -> str:
+        """Expose only bounded context-shape state to the recovery owner."""
+
+        return (
+            "planner-context:"
+            f"affordances={self.limits.max_affordances}:"
+            f"artifacts={self.limits.max_artifact_refs}:"
+            f"knowledge={len(self.accepted_knowledge)}"
+        )
+
+    def compact_planner_context(self) -> tuple[str, str] | None:
+        """Narrow optional planner context while retaining task/state authority.
+
+        The Runtime still supplies the immutable TaskSpec, current snapshot,
+        constraints, budgets, and verifier state. Only optional history-like
+        context and presentation inventory limits are reduced.
+        """
+
+        before = self.planner_context_ref()
+        compacted_limits = replace(
+            self.limits,
+            max_affordances=max(16, self.limits.max_affordances // 2),
+            max_artifact_refs=max(1, self.limits.max_artifact_refs // 2),
+            max_accepted_knowledge=max(1, self.limits.max_accepted_knowledge // 2),
+        )
+        compacted_knowledge = self.accepted_knowledge[-compacted_limits.max_accepted_knowledge :]
+        if compacted_limits == self.limits and compacted_knowledge == self.accepted_knowledge:
+            return None
+        self.limits = compacted_limits
+        self.accepted_knowledge = compacted_knowledge
+        return before, self.planner_context_ref()
+
+    def planner_schema_ref(self) -> str:
+        """Return the non-secret planner schema-mode identity."""
+
+        mode = "target-bound-repair" if self.schema_recovery_generation else "action-bound-initial"
+        return f"planner-schema:{self.config.prompt_version}:{mode}"
+
+    def repair_planner_schema(self) -> tuple[str, str] | None:
+        """Make subsequent candidate decoding use the existing bounded repair schema."""
+
+        if self.schema_recovery_generation:
+            return None
+        before = self.planner_schema_ref()
+        self.schema_recovery_generation = 1
+        return before, self.planner_schema_ref()
 
 
 def _strict_candidate_prebind_issue(

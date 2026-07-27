@@ -86,10 +86,11 @@ class MultiStageActionPlanner:
     ) -> PlannerDecision:
         del envelope
         active = state.plan_progress.active_subgoal_id if state.plan_progress is not None else ""
+        active_description = state.active_subgoal()
         label, evidence_key = {
-            "obligation-discover": ("Discover", "discovered"),
-            "obligation-confirm": ("Confirm", "confirmed"),
-        }[active]
+            "current state is available": ("Discover", "discovered"),
+            "discovered state is completed": ("Confirm", "confirmed"),
+        }[active_description]
         affordance = next(item for item in snapshot.affordance_model.affordances if item.label == label)
         return PlannerDecision(
             contract=ActionContract.from_affordance(
@@ -243,11 +244,12 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     task_plan = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
     assert task_plan.payload["generated_by"] == "rule"
     completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
-    assert completed == ["obligation-discover", "obligation-confirm"]
+    assert len(completed) == 2
+    assert all(identifier.startswith("obligation:") for identifier in completed)
     assert result.coordinator is not None
     progress = result.coordinator.state.plan_progress
     assert progress is not None
-    assert progress.completed_subgoal_ids == ["obligation-discover", "obligation-confirm"]
+    assert progress.completed_subgoal_ids == completed
     assert all(progress.evidence_by_subgoal[identifier] for identifier in completed)
     assert "ActivePerceptionPlanned" not in [node.kind for node in result.trace.nodes]
 

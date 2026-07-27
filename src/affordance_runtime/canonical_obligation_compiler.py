@@ -10,9 +10,12 @@ from pydantic import Field
 
 from affordance_runtime.source_ledger import SourceLedger
 from affordance_runtime.task_intake import (
+    CompilationIssue,
+    EvidenceKind,
     EvidenceRequirement,
     GraphConstructionSource,
     OperationClass,
+    RequestedEffect,
     SourcedTaskClaim,
     StrictModel,
     TaskClaimKind,
@@ -36,10 +39,71 @@ class CanonicalObligationGraph(StrictModel):
 
 
 @dataclass(frozen=True)
+class CanonicalProposalGraph:
+    """Canonicalized graph plus proposal-local reference diagnostics."""
+
+    graph: CanonicalObligationGraph
+    proposal_claim_ids: dict[str, str]
+    issues: tuple[CompilationIssue, ...] = ()
+
+
+@dataclass(frozen=True)
 class CanonicalObligationCompiler:
     """Compile source-bound typed effect inputs without provider graph ids."""
 
     compiler_version: str = "canonical-obligation-v1"
+
+    def compile_requested_effects(
+        self,
+        source_ledger: SourceLedger,
+        effects: tuple[RequestedEffect, ...],
+    ) -> CanonicalObligationGraph:
+        """Compile flat source-bound effects without proposal graph structure.
+
+        This is intentionally generic: operation class determines only the
+        terminal relation and broad independent evidence surface. It never
+        derives a benchmark family, GUI target, dependency, or literal value.
+        Multi-stage dataflow remains a separate canonical-template migration.
+        """
+
+        known_units = {unit.source_unit_id for unit in source_ledger.units}
+        inputs: list[CanonicalEffectInput] = []
+        for effect in effects:
+            if effect.source_ref not in known_units:
+                raise ValueError("requested effect references unknown source unit")
+            read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            relation = (
+                TaskObligationRelation.IS_AVAILABLE
+                if read
+                else TaskObligationRelation.IS_COMPLETED
+            )
+            evidence_kind = (
+                EvidenceKind.DOM_STATE
+                if effect.operation_class
+                in {
+                    OperationClass.READ_ONLY,
+                    OperationClass.NAVIGATION,
+                    OperationClass.REVERSIBLE_WRITE,
+                }
+                else EvidenceKind.API_STATE
+            )
+            inputs.append(
+                CanonicalEffectInput(
+                    operation_class=effect.operation_class,
+                    target=effect.target,
+                    source_unit_ids=(effect.source_ref,),
+                    evidence=(
+                        EvidenceRequirement(
+                            kind=evidence_kind,
+                            subject=effect.target,
+                            relation=relation,
+                            minimum_strength="independent",
+                            source_constraints=(effect.source_ref,),
+                        ),
+                    ),
+                )
+            )
+        return self.compile(source_ledger, tuple(inputs))
 
     def compile(
         self,
@@ -86,7 +150,169 @@ class CanonicalObligationCompiler:
             obligations=tuple(obligations),
         )
 
+    def compile_proposed_graph(
+        self,
+        source_ledger: SourceLedger,
+        claims: tuple[SourcedTaskClaim, ...],
+        obligations: tuple[TaskObligationSpec, ...],
+        *,
+        construction_source: GraphConstructionSource,
+    ) -> CanonicalProposalGraph:
+        """Canonicalize a bounded multi-stage semantic proposal.
+
+        A proposal may supply legal relationship and value-flow semantics, but
+        its identifiers, evidence descriptions, and node instances are never
+        copied into the authoritative graph. Runtime reconstructs each node,
+        dependency, value reference, and typed evidence contract from the
+        source-bound semantic proposal.
+        """
+
+        known_source_units = {unit.source_unit_id for unit in source_ledger.units}
+        issues: list[CompilationIssue] = []
+        claim_id_map: dict[str, str] = {}
+        canonical_claims: list[SourcedTaskClaim] = []
+        claim_source_units: dict[str, tuple[str, ...]] = {}
+        for index, claim in enumerate(claims):
+            source_unit_ids = claim.source_unit_ids or (claim.source_ref,)
+            if set(source_unit_ids) - known_source_units:
+                issues.append(
+                    CompilationIssue(
+                        code="proposal_unknown_source_unit",
+                        field=f"candidate_source_claims[{index}].source_unit_ids",
+                    )
+                )
+                continue
+            if claim.claim_id in claim_id_map:
+                issues.append(
+                    CompilationIssue(
+                        code="duplicate_proposal_claim_id",
+                        field=f"candidate_source_claims[{index}].claim_id",
+                    )
+                )
+                continue
+            canonical_id = _proposal_identity(
+                "claim",
+                {
+                    "kind": claim.kind.value,
+                    "statement": claim.statement,
+                    "source_unit_ids": source_unit_ids,
+                    "required": claim.required,
+                },
+            )
+            claim_id_map[claim.claim_id] = canonical_id
+            claim_source_units[claim.claim_id] = source_unit_ids
+            canonical_claims.append(
+                SourcedTaskClaim(
+                    claim_id=canonical_id,
+                    kind=claim.kind,
+                    statement=claim.statement,
+                    source_ref=source_unit_ids[0],
+                    required=claim.required,
+                    source_unit_ids=source_unit_ids,
+                    construction_source=construction_source,
+                )
+            )
+
+        obligation_id_map: dict[str, str] = {}
+        for index, obligation in enumerate(obligations):
+            if obligation.obligation_id in obligation_id_map:
+                issues.append(
+                    CompilationIssue(
+                        code="duplicate_proposal_obligation_id",
+                        field=f"candidate_obligations[{index}].obligation_id",
+                    )
+                )
+                continue
+            obligation_id_map[obligation.obligation_id] = _proposal_identity(
+                "obligation",
+                {
+                    "kind": obligation.kind.value,
+                    "subject": obligation.subject,
+                    "relation": obligation.relation.value,
+                    "value_source": obligation.value_source.value,
+                    "expected_value": obligation.expected_value,
+                    "terminal": obligation.terminal,
+                },
+            )
+
+        canonical_obligations: list[TaskObligationSpec] = []
+        for index, obligation in enumerate(obligations):
+            resolved_obligation_id = obligation_id_map.get(obligation.obligation_id)
+            if resolved_obligation_id is None:
+                continue
+            unknown_claim_ids = set(obligation.claim_ids) - set(claim_id_map)
+            unknown_dependency_ids = set(obligation.depends_on) - set(obligation_id_map)
+            value_dependency_unknown = (
+                bool(obligation.value_obligation_id)
+                and obligation.value_obligation_id not in obligation_id_map
+            )
+            if unknown_claim_ids or unknown_dependency_ids or value_dependency_unknown:
+                issues.append(
+                    CompilationIssue(
+                        code="proposal_unknown_graph_reference",
+                        field=f"candidate_obligations[{index}]",
+                    )
+                )
+                continue
+            canonical_claim_ids = tuple(claim_id_map[item] for item in obligation.claim_ids)
+            source_constraints = tuple(
+                dict.fromkeys(
+                    source_unit
+                    for proposal_claim_id in obligation.claim_ids
+                    for source_unit in claim_source_units[proposal_claim_id]
+                )
+            )
+            canonical_value_obligation_id = (
+                obligation_id_map[obligation.value_obligation_id]
+                if obligation.value_obligation_id
+                else ""
+            )
+            evidence = EvidenceRequirement(
+                kind=EvidenceKind.DOM_STATE,
+                subject=obligation.subject,
+                relation=obligation.relation,
+                value_ref=(
+                    obligation.expected_value
+                    if obligation.expected_value
+                    else canonical_value_obligation_id
+                ),
+                minimum_strength="independent",
+                source_constraints=source_constraints,
+            )
+            canonical_obligations.append(
+                TaskObligationSpec(
+                    obligation_id=resolved_obligation_id,
+                    kind=obligation.kind,
+                    subject=obligation.subject,
+                    relation=obligation.relation,
+                    value_source=obligation.value_source,
+                    expected_value=obligation.expected_value,
+                    value_obligation_id=canonical_value_obligation_id,
+                    claim_ids=canonical_claim_ids,
+                    depends_on=tuple(obligation_id_map[item] for item in obligation.depends_on),
+                    evidence_requirements=(f"{evidence.kind.value}:{evidence.subject}",),
+                    typed_evidence_requirements=(evidence,),
+                    blocking=obligation.blocking,
+                    terminal=obligation.terminal,
+                    construction_source=construction_source,
+                )
+            )
+        return CanonicalProposalGraph(
+            graph=CanonicalObligationGraph(
+                compiler_version=self.compiler_version,
+                claims=tuple(canonical_claims),
+                obligations=tuple(canonical_obligations),
+            ),
+            proposal_claim_ids=claim_id_map,
+            issues=tuple(issues),
+        )
+
 
 def _identity(effect: CanonicalEffectInput) -> str:
     payload = json.dumps(effect.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+
+def _proposal_identity(kind: str, payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return f"{kind}:" + hashlib.sha256(encoded.encode()).hexdigest()[:24]

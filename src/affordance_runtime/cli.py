@@ -7,10 +7,11 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
+from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.coordinator import ConfiguredApprovalProvider, PlannerPort, RunCoordinator, RuntimeFeatures
+from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
@@ -21,6 +22,7 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
 )
+from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.recovery import BoundedRecoveryPolicy
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import OperationClass, TaskSpec

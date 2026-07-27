@@ -11,7 +11,8 @@ from affordance_runtime.contracts import (
     RiskLevel,
     Surface,
 )
-from affordance_runtime.coordinator import CoordinatorResult, PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.coordinator import CoordinatorResult, RunBudget, RunCoordinator
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,

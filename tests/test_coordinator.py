@@ -831,6 +831,40 @@ class AsyncSemanticSavePlanner:
         )
 
 
+@dataclass
+class ActiveSubgoalSavePlanner(AsyncSemanticSavePlanner):
+    """Test planner that consumes Runtime-owned normalized subgoal ids."""
+
+    async def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        if state.receipts:
+            return await super().propose(envelope, state, snapshot)
+        active_subgoal_id = state.plan_progress.active_subgoal_id if state.plan_progress else ""
+        active_subgoal = state.active_subgoal()
+        return PlannerDecision(
+            contract=ActionContract.from_affordance(
+                snapshot.affordance_model.affordances[0],
+                intent=active_subgoal,
+                backend="fake",
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        criterion_ids=(criterion_id("subgoal", active_subgoal_id, 0),),
+                        requirement_ids=(
+                            evidence_requirement_id("subgoal", active_subgoal_id, 0),
+                        ),
+                    ),
+                ),
+            )
+        )
+
+
 def _semantic_task() -> TaskSpec:
     return TaskSpec(
         task_id="semantic-run",
@@ -1089,32 +1123,8 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
         compiler=LLMIntentCompiler(_PipelineIntentModel()),
         coordinator=RunCoordinator(
             observer=FakeObserver(),
-            planner=AsyncSemanticSavePlanner(),
+            planner=ActiveSubgoalSavePlanner(),
             executor=FakeExecutor(),
-            contract_builder=ContractBuilder(
-                requirements={
-                    "dom_button_1": ContractRequirements(
-                        verifier_plan=(
-                            VerifierSpec(
-                                "observation_metadata",
-                                "saved",
-                                True,
-                                criterion_ids=(
-                                    criterion_id("subgoal", "obligation-save-settings", 0),
-                                ),
-                                requirement_ids=(
-                                    evidence_requirement_id(
-                                        "subgoal", "obligation-save-settings", 0
-                                    ),
-                                ),
-                            ),
-                        ),
-                        required_capabilities=("settings.write",),
-                        idempotency_key="semantic-save-v1",
-                        compensation="restore settings",
-                    )
-                }
-            ),
         ),
         granted_capabilities=("settings.write", "admin.unrequested"),
     )

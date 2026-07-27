@@ -8,6 +8,9 @@ this boundary, containment wins.
 It is jointly normative with the
 [Runtime-First Architecture Boundary](runtime-first-boundary.md) and the
 [Benchmark Governance and Anti-Specialization Boundary](benchmark-governance-boundary.md).
+Its synchronous enforcement, status axes, baselines, waivers, and
+anti-circumvention rules are owned by the independent
+[Horizontal Architecture Governance Track](architecture-governance-track.md).
 
 Natural-language ownership is further constrained by
 [Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
@@ -29,8 +32,11 @@ RunCoordinator
   choose the next phase
 ~~~
 
-Single-writer means only the Coordinator commits authoritative `RunState`. It
-does not authorize the Coordinator to implement planning algorithms, source
+Single-writer means the Coordinator owns authoritative task-execution commit
+sequencing. The compatibility harness and currently baselined skill/progress
+mutation paths are explicit debt, not precedent for another writer; they may
+not spread and must be removed before claiming strict physical single-writer
+closure. This authority does not authorize the Coordinator to implement planning algorithms, source
 parsers, probe selection policy, provider repair, executor behavior, verifier
 logic, benchmark scheduling, report generation, or learning algorithms.
 
@@ -71,6 +77,7 @@ adapter-to-core callbacks that bypass contracts are prohibited.
 | Obligation coverage validator | deterministic source-to-claim, claim-to-obligation, and terminal reachability coverage | invent missing semantics or accept model self-certification |
 | Model coverage auditor | optional veto, downgrade, or clarification evidence | upgrade to READY, mutate graph, grant authority |
 | Intent admission validator | ambiguity, provenance, policy intersection, immutable TaskSpec creation | provider repair, GUI target choice, execution |
+| Approval source | issue a capability-scoped, run/contract/revision-bound token from explicit entrypoint configuration | infer authority from observations, mutate Runtime state, or bypass the capability gate |
 | Task-plan flow | flat/skill/shallow-plan selection, plan lineage, subgoal activation | grounding, backend choice, state mutation |
 | Decision-constraint builder | current task/subgoal scope, obligation readiness, relations, and state admission | model invocation, trace commit, benchmark task grammar |
 | Step planner | one semantic proposal from bounded context and typed constraints | semantic resolver accumulation, selectors, coordinates, capabilities, execution, success authority |
@@ -117,12 +124,16 @@ The following changes are rejected:
 
 ## 5. Mechanical Containment Gates
 
-Line count is not the architecture, but it is an escalation signal.
+Line count is not the architecture, but it is an escalation signal. The active
+ratchets and non-blocking horizontal admission semantics are defined in
+[Horizontal Architecture Governance Track](architecture-governance-track.md).
 
 - A Runtime control module above 1,500 lines requires an accepted containment
   plan before new feature logic is added.
 - A Runtime control module above 2,000 lines is feature-frozen. Only correctness,
   security, evidence, or net-reduction changes are permitted.
+- Necessary compatibility growth requires a prior, time-bounded `waived`
+  decision under the horizontal track; it is not ordinary feature admission.
 - A method above 250 lines requires extraction or an explicit review explaining
   why one cohesive transaction cannot be separated.
 - A pull request that adds a new reason to change to a feature-frozen module
@@ -130,20 +141,20 @@ Line count is not the architecture, but it is an escalation signal.
 - An extraction is accepted only when the new collaborator has a typed input,
   typed output, no authoritative state mutation, and focused tests.
 
-`coordinator.py` is currently feature-frozen. Its remediation target is below
-2,000 lines first and below 1,500 lines after the current active-perception,
-recovery-dispatch, and TaskPlan ownership extraction. At audited `b01e73b`, the
+`coordinator.py` is currently feature-frozen. Its long-term health thresholds
+are below 2,000 lines and then below 1,500 lines, reached through further named
+responsibility slices. These numbers neither select a slice nor prove it
+complete. At audited `b01e73b`, the
 module remains 3,643 lines and `RunCoordinator.run_sync()` remains 2,098 lines.
 Clean `03a0d32` moves TaskPlan commit preparation and trace projection into the
 typed, authority-free `TaskPlanCommitPreparation`, reducing the module to 3,584
 lines. Clean `50ae956` moves recovery protocol event content into typed
 `RecoveryTraceProjection`, reducing the module to 3,567 lines while retaining
-Coordinator as the only state/trace committer. This is a successful
+Coordinator task-execution commit sequencing at that slice. This is a successful
 non-expansion checkpoint, not responsibility closure. The
-ratchet in
-`tests/test_responsibility_containment.py` prevents growth beyond the audited
-3813-line and 29-method audited surface; both ceilings must only decrease. The
-current executable ratchet is 3520 lines and 26 methods. These numbers are gates,
+historical ratchets began at 3813 lines / 29 methods and have only decreased.
+The current executable ratchet in
+`tests/test_responsibility_containment.py` is 3473 lines and 26 methods. These numbers are gates,
 not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,
@@ -178,17 +189,18 @@ Coordinator calls helper
   -> Coordinator infers what happened
 ~~~
 
-The first required extractions are:
+Implemented extraction inventory and remaining direction:
 
-1. `ActivePerceptionFlow`: requirements/gaps plus remaining authority budget to
+1. `ActivePerceptionFlow` owns requirements/gaps plus remaining authority budget to
    probe decision, targeted capture, and typed resolution;
-2. `RecoveryCommandDispatcher`: validated command to real owning-port result,
+2. `RecoveryCommandDispatcher` owns validated command to real owning-port result,
    receipt, and delta;
-3. `TaskPlanFlow`: planning context, plan/replan invocation, lineage, and typed
+3. `TaskPlanFlow` owns planning context, plan/replan invocation, lineage, and typed
    acceptance result; the first extraction is implemented, while authoritative
    plan commit and trace ordering remain in Coordinator;
-4. `ProbeBudgetPolicy`: strict intersection of task, run, and capability limits,
-   never capability-driven budget expansion.
+4. remaining slices must name one phase responsibility and follow the same
+   typed context/result pattern; the horizontal track, not this list order,
+   decides admission.
 
 The Coordinator remains the sole state writer after all extraction.
 
@@ -250,7 +262,9 @@ The following remain deferred unless a measured failure promotes them:
 
 A change passes responsibility governance only when:
 
-- it improves one declared Runtime responsibility;
+- it changes one declared Runtime responsibility without expanding baselined
+  debt; any claimed remediation removes one named responsibility or duplicated
+  path;
 - it does not create a second owner;
 - it does not add a new reason to change to a feature-frozen module;
 - authority and budgets can only stay equal or become narrower downstream;

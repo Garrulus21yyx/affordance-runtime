@@ -8,7 +8,7 @@ COORDINATOR_PATH = REPOSITORY_ROOT / "src" / "affordance_runtime" / "coordinator
 
 # Ratchet from the audited f4c3308 tree. Lower both ceilings as ownership is
 # extracted; do not raise them to admit new feature work.
-COORDINATOR_LINE_CEILING = 3_520
+COORDINATOR_LINE_CEILING = 3_473
 COORDINATOR_METHOD_CEILING = 26
 
 

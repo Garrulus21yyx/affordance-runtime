@@ -10,7 +10,13 @@ from affordance_runtime.task_intake import (
     EvidenceRequirement,
     GraphConstructionSource,
     OperationClass,
+    RequestedEffect,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
     TaskObligationRelation,
+    TaskObligationSpec,
+    TaskObligationValueSource,
     UserRequest,
     _validate_task_obligation_graph,
 )
@@ -56,3 +62,81 @@ def test_canonical_compiler_owns_ids_provenance_and_typed_evidence() -> None:
 def test_canonical_compiler_rejects_unknown_source_unit_before_graph_construction() -> None:
     with pytest.raises(ValueError, match="unknown source unit"):
         CanonicalObligationCompiler().compile(_ledger(), (_effect("invented-source"),))
+
+
+def test_canonical_compiler_constructs_flat_graph_from_requested_effect_without_proposal_ids() -> None:
+    ledger = _ledger()
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="requested report",
+                source_ref=ledger.raw_text_unit_id,
+            ),
+        ),
+    )
+
+    assert graph.claims[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+    assert graph.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+    assert graph.obligations[0].relation == TaskObligationRelation.IS_COMPLETED
+    assert graph.obligations[0].typed_evidence_requirements[0].kind == EvidenceKind.DOM_STATE
+    assert graph.obligations[0].evidence_requirements == ("dom_state:requested report",)
+
+
+def test_canonical_compiler_rebuilds_multistage_proposal_nodes_and_value_flow() -> None:
+    ledger = _ledger()
+    source_unit_id = ledger.raw_text_unit_id
+    proposal = CanonicalObligationCompiler().compile_proposed_graph(
+        ledger,
+        (
+            SourcedTaskClaim(
+                claim_id="provider-read",
+                kind=TaskClaimKind.DEPENDENCY,
+                statement="read current value",
+                source_ref=source_unit_id,
+            ),
+            SourcedTaskClaim(
+                claim_id="provider-write",
+                kind=TaskClaimKind.EFFECT,
+                statement="write current value",
+                source_ref=source_unit_id,
+            ),
+        ),
+        (
+            TaskObligationSpec(
+                obligation_id="provider-read-obligation",
+                kind=TaskObligationKind.PREDICATE,
+                subject="current value",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=("provider-read",),
+                evidence_requirements=("provider-authored evidence",),
+            ),
+            TaskObligationSpec(
+                obligation_id="provider-write-obligation",
+                kind=TaskObligationKind.PREDICATE,
+                subject="destination value",
+                relation=TaskObligationRelation.EQUALS,
+                value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+                value_obligation_id="provider-read-obligation",
+                claim_ids=("provider-write",),
+                depends_on=("provider-read-obligation",),
+                evidence_requirements=("another provider-authored description",),
+                terminal=True,
+            ),
+        ),
+        construction_source=GraphConstructionSource.MODEL_PROPOSAL,
+    )
+
+    graph = proposal.graph
+    assert not proposal.issues
+    assert proposal.proposal_claim_ids["provider-read"] == graph.claims[0].claim_id
+    assert all("provider" not in item.obligation_id for item in graph.obligations)
+    assert graph.obligations[1].depends_on == (graph.obligations[0].obligation_id,)
+    assert graph.obligations[1].value_obligation_id == graph.obligations[0].obligation_id
+    assert graph.obligations[0].evidence_requirements == ("dom_state:current value",)
+    assert graph.obligations[0].typed_evidence_requirements[0].source_constraints == (
+        source_unit_id,
+    )
+    _validate_task_obligation_graph(graph.claims, graph.obligations)

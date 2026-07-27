@@ -898,6 +898,7 @@ class ProposalModel:
     last_call: ModelCallRecord | None = None
     context: dict[str, object] | None = None
     system_prompt: str = ""
+    output_schema_name: str = ""
 
     async def generate_structured(
         self,
@@ -907,6 +908,7 @@ class ProposalModel:
     ) -> T:
         self.system_prompt = messages[0].content
         self.context = __import__("json").loads(messages[1].content)
+        self.output_schema_name = output_schema.__name__
         assert config.prompt_version in {
             GENERALIST_PLANNER_PROMPT_VERSION,
             COMPATIBILITY_PLANNER_PROMPT_VERSION,
@@ -976,6 +978,20 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     assert "slider" not in fixed.system_prompt.casefold()
     assert "first or last content" not in fixed.system_prompt.casefold()
     assert "permitted_action_kind" in fixed.system_prompt
+
+    repaired_model = ProposalModel()
+    repaired_planner = GeneralistLMPlanner(repaired_model)
+    assert repaired_planner.repair_planner_schema() is not None
+    repaired_decision = asyncio.run(
+        repaired_planner.propose(
+            TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
+            state,
+            snapshot,
+        )
+    )
+    assert repaired_decision.proposal is not None
+    assert fixed.output_schema_name == "PlannerProposalConstrainedCandidate"
+    assert repaired_model.output_schema_name == "PlannerProposalRepairCandidate"
 
     compatibility_model = ProposalModel()
     compatibility = asyncio.run(

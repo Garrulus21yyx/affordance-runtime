@@ -1,3 +1,4 @@
+from affordance_runtime.source_ledger import SourceLedgerBuilder
 from affordance_runtime.task_intake import (
     IntentDraft,
     OperationClass,
@@ -10,6 +11,7 @@ from affordance_runtime.task_intake import (
     UserRequest,
 )
 from affordance_runtime.task_obligation_coverage import (
+    DeterministicTaskObligationCoverageValidator,
     TaskObligationCoverageReview,
     TaskObligationCoverageStatus,
     validate_task_obligation_coverage_review,
@@ -71,7 +73,7 @@ def _draft() -> IntentDraft:
     )
 
 
-def test_complete_review_must_cover_every_required_claim() -> None:
+def test_complete_review_cannot_override_deterministic_coverage() -> None:
     decision = validate_task_obligation_coverage_review(
         _request(),
         _draft(),
@@ -81,8 +83,8 @@ def test_complete_review_must_cover_every_required_claim() -> None:
         ),
     )
 
-    assert decision.status == TaskObligationCoverageStatus.UNSUPPORTED
-    assert decision.issue_code == "coverage_review_incomplete_claim_set"
+    assert decision.status == TaskObligationCoverageStatus.COMPLETE
+    assert decision.issue_code == ""
 
 
 def test_coverage_review_rejects_nonliteral_request_quote() -> None:
@@ -112,3 +114,47 @@ def test_coverage_review_projects_ambiguous_dependency_to_clarification() -> Non
     assert decision.status == TaskObligationCoverageStatus.NEEDS_CLARIFICATION
     assert decision.issue_code == "unresolved_task_dependency"
     assert decision.issue_detail == "current code"
+
+
+def test_deterministic_coverage_rejects_a_required_clause_without_claim_lineage() -> None:
+    request = UserRequest(
+        request_id="request-clauses",
+        raw_text="Read the code. Submit the result.",
+    )
+    ledger = SourceLedgerBuilder().build(request)
+    first_clause = next(unit for unit in ledger.units if unit.required_candidate)
+    claim = SourcedTaskClaim(
+        claim_id="claim-read",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="read code",
+        source_ref=first_clause.source_unit_id,
+        source_unit_ids=(first_clause.source_unit_id,),
+    )
+    draft = IntentDraft(
+        objective="Read and submit",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="result",
+                source_ref=request.request_id,
+            ),
+        ),
+        candidate_success_criteria=("result submitted",),
+        candidate_source_claims=(claim,),
+        candidate_obligations=(
+            TaskObligationSpec(
+                obligation_id="obligation-read",
+                kind=TaskObligationKind.EFFECT,
+                subject="result",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                claim_ids=(claim.claim_id,),
+                evidence_requirements=("independent submission evidence",),
+                terminal=True,
+            ),
+        ),
+    )
+
+    decision = DeterministicTaskObligationCoverageValidator().validate(ledger, draft)
+
+    assert decision.status == TaskObligationCoverageStatus.UNSUPPORTED
+    assert decision.issue_code == "deterministic_uncovered_source_unit"

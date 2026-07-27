@@ -14,15 +14,28 @@ from affordance_runtime.benchmarks import browsergym_report as report_adapter
 
 SOURCE_ROOT = Path(__file__).parents[1] / "src" / "affordance_runtime"
 EXTRACTED_CORE_COLLABORATORS = (
+    "approval_contracts.py",
     "contract_execution_loop.py",
     "compatibility_planner_algorithms.py",
     "compatibility_semantic_compilers.py",
     "perception_session.py",
     "planner_context.py",
     "planner_model_orchestrator.py",
+    "planning_contracts.py",
     "recovery_handler.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
+)
+
+APPROVAL_ENTRYPOINT_MODULES = (
+    "cli.py",
+    "benchmarks/local.py",
+)
+
+PLANNER_IMPLEMENTATION_MODULES = (
+    "generalist_planner.py",
+    "planner_adapters.py",
+    "planners.py",
 )
 
 COMPATIBILITY_TASK_GRAMMAR_DEFINITIONS = {
@@ -75,6 +88,76 @@ def test_task_plan_flow_has_no_state_or_trace_commit_authority() -> None:
     assert "replace_task_plan(" not in source
     assert "TraceDag" not in source
     assert ".transition(" not in source
+
+
+def test_planner_implementations_depend_on_neutral_contract_not_coordinator() -> None:
+    violations: list[str] = []
+    for filename in PLANNER_IMPLEMENTATION_MODULES:
+        tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+        if any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "affordance_runtime.coordinator"
+            for node in ast.walk(tree)
+        ):
+            violations.append(filename)
+    assert violations == []
+
+    from affordance_runtime.coordinator import PlannerDecision as compatibility_decision
+    from affordance_runtime.planning_contracts import PlannerDecision as neutral_decision
+
+    assert compatibility_decision is neutral_decision
+
+
+def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
+    approval_contract_path = SOURCE_ROOT / "approval_contracts.py"
+    assert approval_contract_path.exists()
+    approval_contract_tree = ast.parse(approval_contract_path.read_text(encoding="utf-8"))
+    assert not any(
+        (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "affordance_runtime.coordinator"
+        )
+        or (
+            isinstance(node, ast.Import)
+            and any(alias.name == "affordance_runtime.coordinator" for alias in node.names)
+        )
+        for node in ast.walk(approval_contract_tree)
+    )
+
+    coordinator_tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    coordinator_classes = {
+        node.name for node in coordinator_tree.body if isinstance(node, ast.ClassDef)
+    }
+    assert coordinator_classes.isdisjoint({"ApprovalProvider", "ConfiguredApprovalProvider"})
+
+    violations: list[str] = []
+    for filename in APPROVAL_ENTRYPOINT_MODULES:
+        tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+        assert any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "affordance_runtime.approval_contracts"
+            and any(alias.name == "ConfiguredApprovalProvider" for alias in node.names)
+            for node in ast.walk(tree)
+        ), filename
+        if any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "affordance_runtime.coordinator"
+            and any(
+                alias.name in {"ApprovalProvider", "ConfiguredApprovalProvider"}
+                for alias in node.names
+            )
+            for node in ast.walk(tree)
+        ):
+            violations.append(filename)
+    assert violations == []
+
+    from affordance_runtime.approval_contracts import ApprovalProvider as neutral_protocol
+    from affordance_runtime.approval_contracts import ConfiguredApprovalProvider as neutral_provider
+    from affordance_runtime.coordinator import ApprovalProvider as compatibility_protocol
+    from affordance_runtime.coordinator import ConfiguredApprovalProvider as compatibility_provider
+
+    assert compatibility_protocol is neutral_protocol
+    assert compatibility_provider is neutral_provider
 
 
 def test_strict_planner_does_not_define_compatibility_task_grammar() -> None:

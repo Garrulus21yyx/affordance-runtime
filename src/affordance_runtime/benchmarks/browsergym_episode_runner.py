@@ -195,6 +195,18 @@ class BrowserGymGeneralistPlanner:
             planner_profile=self.planner_profile,
         )
 
+    def planner_context_ref(self) -> str:
+        return self._planner.planner_context_ref()
+
+    def compact_planner_context(self) -> tuple[str, str] | None:
+        return self._planner.compact_planner_context()
+
+    def planner_schema_ref(self) -> str:
+        return self._planner.planner_schema_ref()
+
+    def repair_planner_schema(self) -> tuple[str, str] | None:
+        return self._planner.repair_planner_schema()
+
     @property
     def model_call_count(self) -> int:
         return self._planner.model_call_count
@@ -721,7 +733,7 @@ def run_browsergym_generalist_episode(
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
-            recovery_command_dispatcher=recovery_dispatcher_for_model(model),
+            recovery_command_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
         ).run_sync(TaskEnvelope(task_spec=task_spec), intake_trace)
         planner_error = next(
             (

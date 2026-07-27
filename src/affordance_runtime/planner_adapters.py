@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Mapping, Protocol
 
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.coordinator import PlannerDecision
 from affordance_runtime.generalist_planner import PlannerLimits, build_planner_context
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 

@@ -10,10 +10,18 @@ verification, recovery, or learning. Benchmark-specific task logic is
 prohibited in the generic path.
 
 The [Responsibility Containment Boundary](responsibility-containment-boundary.md)
-is jointly normative. `RunCoordinator` is the sole authoritative state writer,
+is jointly normative. `RunCoordinator` owns authoritative task-execution commit sequencing,
 but phase-specific algorithms belong to typed collaborators. Single-writer
 authority must never be used to justify parser, planner, probe, provider,
 recovery-effect, verifier, benchmark, or learning responsibility inflation.
+Strict physical single-writer closure is not yet claimed: the compatibility
+harness and baselined skill/progress mutation paths are tracked as horizontal
+governance debt and may not spread.
+The independent
+[Horizontal Architecture Governance Track](architecture-governance-track.md)
+overlays every milestone with growth, dependency, and authority gates. It
+baselines existing debt without making a unified rewrite a prerequisite for
+unrelated compliant work.
 
 The operational design for evidence-gap-driven observation and phase-spanning
 recovery is defined in
@@ -28,10 +36,11 @@ canonical obligation compilation, deterministic coverage, and READY admission;
 models and parent agents submit non-authoritative semantic proposals.
 
 The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
-records the current implementation boundary. M8.6 proves the internal protocol
-and configured-path gate; it does not yet prove obligation-complete intake,
-concrete recovery-owner wiring in every normal entrypoint, open-world planner
-generality, or completed responsibility reduction.
+records the historical audit boundary. The current local gate proves canonical
+SG1-SG6 intake/conformance and concrete context/schema owners in BrowserGym and
+`GeneralistTaskPipeline`; it does not yet prove every-entrypoint owner coverage,
+level-4 recovery effectiveness, open-world planner generality, or completed
+responsibility reduction.
 
 ## 1. High-Level System
 
@@ -599,14 +608,12 @@ ContractBuilder, contract execution, verifier, or parent/user boundary.
 
 Current implementation maturity must be reported per entrypoint. Reobserve,
 reground, replan, verifier escalation, loop detection, inspect-before-repeat,
-and safe abort are available on the ordinary Coordinator path. Context
-compaction, provider switching, and model-schema repair currently have a typed
-dispatcher and fault-injection proof, but a runner has those capabilities only
-when it injects concrete owners. An empty dispatcher must be reported as
-`unavailable`; the existence of the port is not an end-to-end recovery claim.
-
-The next architecture slice supplies those production owners without moving
-provider or context policy into the Coordinator.
+and safe abort are available on the ordinary Coordinator path. BrowserGym and
+`GeneralistTaskPipeline` now inject concrete context-compaction and
+model-schema owners; configured multi-profile paths can also inject provider
+switching. Other entrypoints remain capability-inventory dependent, and
+component integration is not level-4 empirical recovery proof. An unavailable
+owner must still be reported as `unavailable`.
 
 Another attempt is accepted only when RecoveryDelta changes evidence,
 assumption, plan, candidate, route, verifier, provider/context, skill use,

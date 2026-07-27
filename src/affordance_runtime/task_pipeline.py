@@ -49,7 +49,7 @@ class GeneralistTaskPipeline:
         model = getattr(self.compiler, "model", None)
         if model is None:
             return
-        model_dispatcher = recovery_dispatcher_for_model(model)
+        model_dispatcher = recovery_dispatcher_for_model(model, planner=self.coordinator.planner)
         if not model_dispatcher.available_commands:
             return
         handlers = dict(self.coordinator.recovery_command_dispatcher.handlers)

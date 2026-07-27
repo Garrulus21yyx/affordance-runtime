@@ -654,8 +654,8 @@ def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Pat
     )
 
     assert result.runtime_status == "done"
-    assert model.calls == 4
-    assert result.model_call_count == 4
+    assert model.calls == 3
+    assert result.model_call_count == 3
 
 
 def test_browsergym_model_stats_counts_repair_model_call_record() -> None:

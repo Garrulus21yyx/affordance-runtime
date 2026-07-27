@@ -10,7 +10,13 @@ from typing import Protocol
 from pydantic import model_validator
 
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
-from affordance_runtime.task_intake import IntentDraft, StrictModel, UserRequest
+from affordance_runtime.source_ledger import SourceLedger
+from affordance_runtime.task_intake import (
+    IntentDraft,
+    StrictModel,
+    UserRequest,
+    _validate_task_obligation_graph,
+)
 
 TASK_OBLIGATION_COVERAGE_PROMPT_VERSION = "task-obligation-coverage-v1"
 
@@ -22,8 +28,9 @@ data dependency, terminal outcome, and constraint in raw_request with the
 candidate claims and obligations.
 
 Return complete only when every required candidate claim is covered by the graph
-and no explicit request clause is absent or unresolved. For complete, list every
-required claim id in covered_claim_ids and leave every issue field empty.
+and no explicit request clause is absent or unresolved. A complete result is
+advisory only: deterministic Runtime validation is the admission authority. For
+complete, leave every issue field empty.
 For needs_clarification, quote each exact ambiguous clause from raw_request in
 unresolved_dependency_quotes. For unsupported, quote each exact uncovered or
 unsupported clause from raw_request in uncovered_source_quotes and identify any
@@ -95,6 +102,64 @@ class TaskObligationCoverageChecker(Protocol):
     ) -> TaskObligationCoverageDecision: ...
 
 
+@dataclass(frozen=True)
+class DeterministicTaskObligationCoverageValidator:
+    """Prove ledger-to-graph coverage without model self-certification.
+
+    A whole-request source unit is an authorized umbrella for its bounded
+    request clauses.  The compiler cannot infer new semantics from that fact;
+    it only proves that all authorized request content has a claim path into a
+    structurally valid, terminal-reaching obligation graph.
+    """
+
+    def validate(
+        self,
+        source_ledger: SourceLedger,
+        draft: IntentDraft,
+    ) -> TaskObligationCoverageDecision:
+        try:
+            _validate_task_obligation_graph(
+                draft.candidate_source_claims,
+                draft.candidate_obligations,
+            )
+        except ValueError as exc:
+            return TaskObligationCoverageDecision(
+                status=TaskObligationCoverageStatus.UNSUPPORTED,
+                issue_code="deterministic_invalid_task_obligation_graph",
+                issue_detail=str(exc),
+            )
+        known_units = {unit.source_unit_id for unit in source_ledger.units}
+        whole_request_unit = source_ledger.raw_text_unit_id
+        required_units = {
+            unit.source_unit_id for unit in source_ledger.units if unit.required_candidate
+        }
+        covered_units: set[str] = set()
+        for claim in draft.candidate_source_claims:
+            source_units = set(claim.source_unit_ids)
+            if not source_units:
+                return TaskObligationCoverageDecision(
+                    status=TaskObligationCoverageStatus.UNSUPPORTED,
+                    issue_code="deterministic_claim_missing_source_units",
+                    issue_detail=claim.claim_id,
+                )
+            if unknown_units := source_units - known_units:
+                return TaskObligationCoverageDecision(
+                    status=TaskObligationCoverageStatus.UNSUPPORTED,
+                    issue_code="deterministic_claim_unknown_source_unit",
+                    issue_detail="; ".join(sorted(unknown_units)),
+                )
+            covered_units.update(source_units)
+            if whole_request_unit in source_units:
+                covered_units.update(required_units)
+        if uncovered_units := required_units - covered_units:
+            return TaskObligationCoverageDecision(
+                status=TaskObligationCoverageStatus.UNSUPPORTED,
+                issue_code="deterministic_uncovered_source_unit",
+                issue_detail="; ".join(sorted(uncovered_units)),
+            )
+        return TaskObligationCoverageDecision(status=TaskObligationCoverageStatus.COMPLETE)
+
+
 def task_obligation_coverage_model_config() -> ModelConfig:
     """Return the bounded, versioned independent-review decoding contract."""
 
@@ -135,9 +200,16 @@ def validate_task_obligation_coverage_review(
 ) -> TaskObligationCoverageDecision:
     """Fail closed unless the independent review is coherent and complete."""
 
-    required_claim_ids = {
-        item.claim_id for item in draft.candidate_source_claims if item.required
-    }
+    # A model's COMPLETE is never an admission proof.  Deterministic coverage
+    # has already established the source-to-terminal path, so COMPLETE has no
+    # claim-reference authority to validate or confer.  Typed non-complete
+    # findings remain a bounded veto and are validated below.
+    if review.status == TaskObligationCoverageStatus.COMPLETE:
+        return TaskObligationCoverageDecision(
+            status=TaskObligationCoverageStatus.COMPLETE,
+            review=review,
+        )
+
     known_claim_ids = {item.claim_id for item in draft.candidate_source_claims}
     review_ids = set(review.covered_claim_ids)
     unsupported_ids = set(review.unsupported_claim_ids)
@@ -152,17 +224,6 @@ def validate_task_obligation_coverage_review(
         return TaskObligationCoverageDecision(
             status=TaskObligationCoverageStatus.UNSUPPORTED,
             issue_code="coverage_review_invalid_quote",
-            review=review,
-        )
-    if review.status == TaskObligationCoverageStatus.COMPLETE:
-        if review_ids != required_claim_ids:
-            return TaskObligationCoverageDecision(
-                status=TaskObligationCoverageStatus.UNSUPPORTED,
-                issue_code="coverage_review_incomplete_claim_set",
-                review=review,
-            )
-        return TaskObligationCoverageDecision(
-            status=TaskObligationCoverageStatus.COMPLETE,
             review=review,
         )
     if review.status == TaskObligationCoverageStatus.NEEDS_CLARIFICATION:

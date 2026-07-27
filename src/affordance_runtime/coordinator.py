@@ -6,9 +6,7 @@ import asyncio
 import inspect
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from time import time
-from typing import Any, Awaitable, Protocol
-from uuid import uuid4
+from typing import Any, Awaitable
 
 from affordance_runtime.active_perception import (
     PerceptionResolutionStatus,
@@ -17,13 +15,18 @@ from affordance_runtime.active_perception_flow import (
     ActivePerceptionFlow,
     ActivePerceptionFlowContext,
 )
+from affordance_runtime.approval_contracts import (
+    ApprovalProvider,
+)
+from affordance_runtime.approval_contracts import (
+    ConfiguredApprovalProvider as ConfiguredApprovalProvider,
+)
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
     ActionContract,
-    ApprovalToken,
     ExecutionReceipt,
     Observation,
     RuntimeErrorCode,
@@ -37,12 +40,11 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
-from affordance_runtime.model_port import ModelCallRecord, ProviderModelError
+from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
-    PlannerProposal,
     PlannerProposalProvenance,
     PlannerProposalSource,
     PlannerProposalValidator,
@@ -52,6 +54,7 @@ from affordance_runtime.planning import (
     proposal_error_code,
     proposal_record,
 )
+from affordance_runtime.planning_contracts import PlannerDecision, PlannerPort
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
@@ -115,56 +118,6 @@ from affordance_runtime.task_planning import (
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
-
-
-@dataclass(frozen=True)
-class PlannerDecision:
-    contract: ActionContract | None = None
-    proposal: PlannerProposal | None = None
-    proposal_provenance: PlannerProposalProvenance | None = None
-    done: bool = False
-    result: dict[str, Any] = field(default_factory=dict)
-    reason: str = ""
-    planner_context: dict[str, Any] = field(default_factory=dict)
-    model_call: ModelCallRecord | None = None
-
-
-class PlannerPort(Protocol):
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision | Awaitable[PlannerDecision]: ...
-
-
-class ApprovalProvider(Protocol):
-    def approve(self, contract: ActionContract) -> ApprovalToken | None: ...
-
-
-@dataclass(frozen=True)
-class ConfiguredApprovalProvider:
-    """Explicit benchmark/CLI approval source; never derives authority from page content."""
-
-    approver: str
-    allowed_capabilities: set[str]
-    ttl_s: float = 60.0
-
-    def approve(self, contract: ActionContract) -> ApprovalToken | None:
-        capabilities = [item for item in contract.required_capabilities if item in self.allowed_capabilities]
-        if not capabilities:
-            return None
-        issued_at = time()
-        return ApprovalToken(
-            token_id=f"approval-{uuid4().hex}",
-            run_id=contract.run_id,
-            contract_hash=contract.contract_hash,
-            page_revision=contract.page_revision,
-            capability=capabilities[0],
-            approver=self.approver,
-            issued_at_s=issued_at,
-            expires_at_s=issued_at + self.ttl_s,
-        )
 
 
 @dataclass(frozen=True)

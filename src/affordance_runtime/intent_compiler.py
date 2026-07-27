@@ -9,6 +9,7 @@ from typing import Callable, Sequence, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
+from affordance_runtime.canonical_obligation_compiler import CanonicalObligationCompiler
 from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
@@ -32,12 +33,16 @@ from affordance_runtime.task_intake import (
     TaskObligationRelation,
     TaskObligationSpec,
     TaskObligationValueSource,
+    TaskStructure,
     UserRequest,
 )
 from affordance_runtime.task_obligation_coverage import (
+    DeterministicTaskObligationCoverageValidator,
     ModelBackedTaskObligationCoverageChecker,
     TaskObligationCoverageChecker,
+    TaskObligationCoverageDecision,
     TaskObligationCoverageStatus,
+    validate_task_obligation_coverage_review,
 )
 from affordance_runtime.trace import TraceDag, TraceNode
 
@@ -231,7 +236,17 @@ class LLMIntentCompiler:
                     parents=[parent.id] if parent else None,
                 )
             raise
-        draft, provider_issues = _decode_provider_draft(model_draft, request, source_ledger)
+        draft, provider_issues, proposal_claim_ids = _decode_provider_draft(
+            model_draft,
+            request,
+            source_ledger,
+        )
+        draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
+            draft,
+            source_ledger,
+        )
+        if canonicalized:
+            provider_issues = canonical_issues
         if trace is not None:
             parent = trace.add(
                 "IntentDraftProduced",
@@ -257,6 +272,11 @@ class LLMIntentCompiler:
             provider_issues,
             revision=revision,
             task_id=task_id,
+        )
+        result = _apply_deterministic_coverage(
+            result,
+            source_ledger,
+            draft,
         )
         repairable_codes = {
             "missing_success_criteria",
@@ -301,11 +321,17 @@ class LLMIntentCompiler:
                         parents=[parent.id] if parent else None,
                     )
             else:
-                draft, provider_issues = _decode_provider_draft(
+                draft, provider_issues, proposal_claim_ids = _decode_provider_draft(
                     repaired_model_draft,
                     request,
                     source_ledger,
                 )
+                draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
+                    draft,
+                    source_ledger,
+                )
+                if canonicalized:
+                    provider_issues = canonical_issues
                 result = _compile_decoded_draft(
                     self.validator,
                     request,
@@ -313,6 +339,11 @@ class LLMIntentCompiler:
                     provider_issues,
                     revision=revision,
                     task_id=task_id,
+                )
+                result = _apply_deterministic_coverage(
+                    result,
+                    source_ledger,
+                    draft,
                 )
                 if trace is not None:
                     parent = trace.add(
@@ -340,19 +371,24 @@ class LLMIntentCompiler:
             except ProviderModelError:
                 raise
             except StructuredModelError as exc:
-                result = CompilationResult(
-                    status=CompilationStatus.UNSUPPORTED,
-                    request_id=request.request_id,
-                    draft=draft,
-                    issues=(
-                        CompilationIssue(
-                            code="coverage_review_unavailable",
-                            field="task_obligation_coverage",
-                            detail=type(exc).__name__,
-                        ),
-                    ),
-                )
+                # The reviewer has negative authority only. Its absence cannot
+                # make a deterministic READY result unsafe or invalid.
+                if trace is not None:
+                    parent = trace.add(
+                        "TaskObligationCoverageAuditUnavailable",
+                        {
+                            "error_type": type(exc).__name__,
+                            "authority": "veto_only",
+                        },
+                        parents=[parent.id] if parent else None,
+                    )
             else:
+                coverage = _normalize_coverage_claim_references(
+                    coverage,
+                    proposal_claim_ids,
+                    request,
+                    draft,
+                )
                 if trace is not None:
                     parent = trace.add(
                         "TaskObligationCoverageReviewed",
@@ -395,11 +431,85 @@ class LLMIntentCompiler:
         return result
 
 
+@dataclass(frozen=True)
+class ParentSemanticProposalCompiler:
+    """Compile an untrusted parent semantic proposal through the intake boundary.
+
+    A parent may provide semantics to avoid a model call, but it is not allowed
+    to provide authoritative source identities or graph handles.  Complete
+    ``TaskSpec`` submission remains a separate typed API; this class is only
+    for the proposal path described by the intent-authority governance record.
+    """
+
+    validator: IntentDraftValidator = field(default_factory=IntentDraftValidator)
+
+    def compile(
+        self,
+        request: UserRequest,
+        proposal: IntentDraft,
+        *,
+        revision: int = 1,
+        task_id: str | None = None,
+        trace: TraceDag | None = None,
+    ) -> CompilationResult:
+        parent = _record_request(trace, request)
+        try:
+            source_ledger = SourceLedgerBuilder().build(request)
+        except ValueError as exc:
+            result = CompilationResult(
+                status=CompilationStatus.UNSUPPORTED,
+                request_id=request.request_id,
+                draft=IntentDraft(),
+                issues=(
+                    CompilationIssue(
+                        code="source_ledger_unavailable",
+                        field="raw_text",
+                        detail=type(exc).__name__,
+                    ),
+                ),
+            )
+            _record_compilation_result(trace, result, parent)
+            return result
+        parent = _record_source_ledger(trace, source_ledger, parent)
+        bound_proposal = _bind_draft_source_lineage(proposal, request, source_ledger)
+        normalized, issues, canonicalized = _canonicalize_flat_draft(
+            bound_proposal,
+            source_ledger,
+        )
+        if not canonicalized:
+            normalized, issues, _ = _normalize_semantic_proposal(
+                bound_proposal,
+                source_ledger,
+                construction_source=GraphConstructionSource.PARENT,
+            )
+        if trace is not None:
+            parent = trace.add(
+                "ParentSemanticProposalNormalized",
+                {
+                    "source": GraphConstructionSource.PARENT.value,
+                    "draft": normalized.model_dump(mode="json"),
+                    "normalization_issue_codes": [item.code for item in issues],
+                },
+                parents=[parent.id] if parent is not None else None,
+            )
+        result = _compile_decoded_draft(
+            self.validator,
+            request,
+            normalized,
+            issues,
+            revision=revision,
+            task_id=task_id,
+        )
+        result = _apply_deterministic_coverage(result, source_ledger, normalized)
+        _record_compilation_result(trace, result, parent)
+        return result
+
+
 def _decode_provider_draft(
     provider_draft: LLMIntentDraft,
     request: UserRequest,
     source_ledger: SourceLedger,
-) -> tuple[IntentDraft, tuple[CompilationIssue, ...]]:
+) -> tuple[IntentDraft, tuple[CompilationIssue, ...], dict[str, str]]:
     """Decode untrusted obligation nodes without allowing them into TaskSpec."""
 
     payload = provider_draft.model_dump(mode="json")
@@ -419,11 +529,105 @@ def _decode_provider_draft(
                 )
             )
     payload["candidate_obligations"] = [item.model_dump(mode="json") for item in obligations]
-    return _bind_draft_source_lineage(
+    bound_draft = _bind_draft_source_lineage(
         IntentDraft.model_validate(payload),
         request,
         source_ledger,
-    ), tuple(issues)
+    )
+    normalized_draft, normalization_issues, proposal_claim_ids = _normalize_semantic_proposal(
+        bound_draft,
+        source_ledger,
+    )
+    return normalized_draft, tuple((*issues, *normalization_issues)), proposal_claim_ids
+
+
+def _normalize_semantic_proposal(
+    draft: IntentDraft,
+    source_ledger: SourceLedger,
+    *,
+    construction_source: GraphConstructionSource = GraphConstructionSource.MODEL_PROPOSAL,
+) -> tuple[IntentDraft, tuple[CompilationIssue, ...], dict[str, str]]:
+    """Compile semantic proposal relations into Runtime-owned graph nodes."""
+
+    compilation = CanonicalObligationCompiler().compile_proposed_graph(
+        source_ledger,
+        draft.candidate_source_claims,
+        draft.candidate_obligations,
+        construction_source=construction_source,
+    )
+    return draft.model_copy(
+        update={
+            "candidate_source_claims": compilation.graph.claims,
+            "candidate_obligations": compilation.graph.obligations,
+        }
+    ), compilation.issues, compilation.proposal_claim_ids
+
+
+def _canonicalize_flat_draft(
+    draft: IntentDraft,
+    source_ledger: SourceLedger,
+) -> tuple[IntentDraft, tuple[CompilationIssue, ...], bool]:
+    """Compile flat effects without retaining any parent proposal graph field."""
+
+    if draft.task_structure != TaskStructure.FLAT:
+        return draft, (), False
+    try:
+        graph = CanonicalObligationCompiler().compile_requested_effects(
+            source_ledger,
+            draft.requested_effects,
+        )
+    except ValueError as exc:
+        return draft, (
+            CompilationIssue(
+                code="canonical_flat_graph_unavailable",
+                field="requested_effects",
+                detail=str(exc),
+            ),
+        ), True
+    return draft.model_copy(
+        update={
+            "candidate_source_claims": graph.claims,
+            "candidate_obligations": graph.obligations,
+            "candidate_evidence_requirements": tuple(
+                item for obligation in graph.obligations for item in obligation.evidence_requirements
+            ),
+        }
+    ), (), True
+
+
+def _normalize_coverage_claim_references(
+    coverage: TaskObligationCoverageDecision,
+    proposal_claim_ids: dict[str, str],
+    request: UserRequest,
+    draft: IntentDraft,
+) -> TaskObligationCoverageDecision:
+    """Accept only the deterministic canonical equivalent of legacy review refs.
+
+    Reviewers normally receive canonical ids.  This narrow bridge preserves
+    replay compatibility for a reviewer response generated before SG3 while
+    ensuring those provider handles never reach ``TaskSpec`` or become graph
+    authority.
+    """
+
+    if coverage.review is None:
+        return coverage
+    review = coverage.review
+    legacy_ids = set(proposal_claim_ids)
+    if not set(review.covered_claim_ids).intersection(legacy_ids) and not set(
+        review.unsupported_claim_ids
+    ).intersection(legacy_ids):
+        return coverage
+    normalized_review = review.model_copy(
+        update={
+            "covered_claim_ids": tuple(
+                proposal_claim_ids.get(item, item) for item in review.covered_claim_ids
+            ),
+            "unsupported_claim_ids": tuple(
+                proposal_claim_ids.get(item, item) for item in review.unsupported_claim_ids
+            ),
+        }
+    )
+    return validate_task_obligation_coverage_review(request, draft, normalized_review)
 
 
 def _provider_obligation_error_code(error: ValidationError) -> str:
@@ -463,6 +667,31 @@ def _compile_decoded_draft(
     )
 
 
+def _apply_deterministic_coverage(
+    result: CompilationResult,
+    source_ledger: SourceLedger,
+    draft: IntentDraft,
+) -> CompilationResult:
+    """Keep READY admission code-owned before any optional model audit."""
+
+    if result.status != CompilationStatus.READY:
+        return result
+    coverage = DeterministicTaskObligationCoverageValidator().validate(source_ledger, draft)
+    if coverage.status == TaskObligationCoverageStatus.COMPLETE:
+        return result
+    issue = CompilationIssue(
+        code=coverage.issue_code,
+        field="deterministic_task_obligation_coverage",
+        detail=coverage.issue_detail,
+    )
+    return CompilationResult(
+        status=CompilationStatus.UNSUPPORTED,
+        request_id=result.request_id,
+        draft=draft,
+        issues=tuple((*result.issues, issue)),
+    )
+
+
 def _bounded_request(request: UserRequest, source_ledger: SourceLedger) -> dict[str, object]:
     """Expose only source-labelled intake fields, never implicit runtime secrets."""
 
@@ -489,7 +718,14 @@ def _bind_draft_source_lineage(
     """Resolve only compiler-owned bounded-input aliases to canonical lineage."""
 
     def source_ref(value: str) -> str:
-        return source_ledger.raw_text_unit_id if value == "raw_text" else value
+        # ``request_id`` was the pre-ledger compatibility reference.  It names
+        # the current request, not a provider-controlled external source, so it
+        # can be deterministically narrowed to the whole-request unit too.
+        return (
+            source_ledger.raw_text_unit_id
+            if value in {"raw_text", request.request_id}
+            else value
+        )
 
     return draft.model_copy(
         update={

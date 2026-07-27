@@ -9,9 +9,9 @@ from urllib.parse import urlsplit
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, RiskLevel, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.fixtures import EXPORT_SHA256
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass

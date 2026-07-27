@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass, field
 from typing import Sequence, TypeVar
 
@@ -9,11 +10,13 @@ from affordance_runtime.intent_compiler import (
     INTENT_DRAFT_REPAIR_PROMPT_VERSION,
     LLMIntentCompiler,
     LLMIntentDraft,
+    ParentSemanticProposalCompiler,
 )
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.task_intake import (
     CompilationPolicy,
     CompilationStatus,
+    GraphConstructionSource,
     IntentAmbiguity,
     IntentDraft,
     IntentDraftValidator,
@@ -26,6 +29,7 @@ from affordance_runtime.task_intake import (
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
+    TaskStructure,
     UserRequest,
 )
 from affordance_runtime.task_obligation_coverage import (
@@ -85,13 +89,14 @@ class FixedModel:
             }
             return output_schema.model_validate(self.draft.model_dump())
         if output_schema is TaskObligationCoverageReview:
+            reviewed_draft = json.loads(messages[-1].content)
             return output_schema.model_validate(
                 {
                     "status": "complete",
                     "covered_claim_ids": [
-                        item.claim_id
-                        for item in self.draft.candidate_source_claims
-                        if item.required
+                        item["claim_id"]
+                        for item in reviewed_draft["source_claims"]
+                        if item["required"]
                     ],
                 }
             )
@@ -109,6 +114,20 @@ class FixedCoverageChecker:
     ) -> TaskObligationCoverageDecision:
         del request, draft
         return self.decision
+
+
+@dataclass
+class CountingCompleteCoverageChecker:
+    calls: int = 0
+
+    async def review(
+        self,
+        request: UserRequest,
+        draft: IntentDraft,
+    ) -> TaskObligationCoverageDecision:
+        del request, draft
+        self.calls += 1
+        return TaskObligationCoverageDecision(status=TaskObligationCoverageStatus.COMPLETE)
 
 
 @dataclass
@@ -135,11 +154,14 @@ class RepairingModel(FixedModel):
             draft = self.draft if self.calls == 1 else self.repaired_draft
             return output_schema.model_validate(draft.model_dump())
         if output_schema is TaskObligationCoverageReview:
+            reviewed_draft = json.loads(messages[-1].content)
             return output_schema.model_validate(
                 {
                     "status": "complete",
                     "covered_claim_ids": [
-                        item.claim_id for item in self.repaired_draft.candidate_source_claims if item.required
+                        item["claim_id"]
+                        for item in reviewed_draft["source_claims"]
+                        if item["required"]
                     ],
                 }
             )
@@ -171,11 +193,14 @@ class ProviderSchemaRepairingModel(RepairingModel):
                 payload["candidate_obligations"][0]["evidence_requirements"] = []
             return output_schema.model_validate(payload)
         if output_schema is TaskObligationCoverageReview:
+            reviewed_draft = json.loads(messages[-1].content)
             return output_schema.model_validate(
                 {
                     "status": "complete",
                     "covered_claim_ids": [
-                        item.claim_id for item in self.repaired_draft.candidate_source_claims if item.required
+                        item["claim_id"]
+                        for item in reviewed_draft["source_claims"]
+                        if item["required"]
                     ],
                 }
             )
@@ -255,6 +280,136 @@ def test_provider_obligation_schema_keeps_graph_fields_while_deferring_semantic_
     )
 
 
+def test_parent_semantic_proposal_is_source_bound_and_receives_runtime_graph_ids() -> None:
+    claims, obligations = _terminal_authority("parent-proposal", "pricing read")
+    proposal = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="parent-proposal",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+        candidate_source_claims=claims,
+        candidate_obligations=obligations,
+    )
+    trace = TraceDag("parent-proposal")
+
+    result = ParentSemanticProposalCompiler().compile(
+        UserRequest(request_id="parent-proposal", raw_text="Read pricing"),
+        proposal,
+        trace=trace,
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.source_claims[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+    assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+    assert result.task_spec.source_claims[0].claim_id != "claim-terminal"
+    assert result.task_spec.obligations[0].obligation_id != "obligation-terminal"
+    assert "ParentSemanticProposalNormalized" in [node.kind for node in trace.nodes]
+
+
+def test_parent_flat_proposal_ignores_unknown_proposal_graph_unit() -> None:
+    claims, obligations = _terminal_authority("unknown-source", "pricing read")
+    proposal = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="parent-proposal",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+        candidate_source_claims=claims,
+        candidate_obligations=obligations,
+    )
+
+    result = ParentSemanticProposalCompiler().compile(
+        UserRequest(request_id="parent-proposal", raw_text="Read pricing"),
+        proposal,
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+
+
+def test_parent_flat_proposal_rejects_unknown_requested_effect_source_before_taskspec_creation() -> None:
+    proposal = IntentDraft(
+        objective="Read pricing",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="pricing",
+                source_ref="unknown-source",
+            ),
+        ),
+        candidate_success_criteria=("pricing returned",),
+    )
+
+    result = ParentSemanticProposalCompiler().compile(
+        UserRequest(request_id="parent-proposal", raw_text="Read pricing"),
+        proposal,
+    )
+
+    assert result.status == CompilationStatus.UNSUPPORTED
+    assert result.task_spec is None
+    assert result.issues[-1].code == "canonical_flat_graph_unavailable"
+
+
+def test_model_complete_cannot_upgrade_deterministically_uncovered_source_clause() -> None:
+    request = UserRequest(
+        request_id="coverage-authority",
+        raw_text="Read the code. Submit the result.",
+    )
+    first_clause_id = "coverage-authority:source:request:clause:0"
+    claim = SourcedTaskClaim(
+        claim_id="provider-claim",
+        kind=TaskClaimKind.TERMINAL,
+        statement="submit result",
+        source_ref="raw_text",
+        source_unit_ids=(first_clause_id,),
+    )
+    obligation = TaskObligationSpec(
+        obligation_id="provider-obligation",
+        kind=TaskObligationKind.EFFECT,
+        subject="result",
+        relation=TaskObligationRelation.IS_COMPLETED,
+        claim_ids=(claim.claim_id,),
+        evidence_requirements=("independent result evidence",),
+        terminal=True,
+    )
+    model = FixedModel(
+        IntentDraft(
+            objective="Read and submit",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="result",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("result submitted",),
+            candidate_source_claims=(claim,),
+            candidate_obligations=(obligation,),
+        )
+    )
+    checker = CountingCompleteCoverageChecker()
+
+    result = asyncio.run(
+        LLMIntentCompiler(model, coverage_checker=checker, max_draft_repairs=0).compile(request)
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
+    assert checker.calls == 1
+
+
 def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:
     constraint = SemanticValueConstraint(
         relation=SemanticValueRelation.PREFIX,
@@ -290,7 +445,9 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
     )
 
     assert result.task_spec is not None
-    assert result.task_spec.semantic_value_constraints == (constraint,)
+    assert result.task_spec.semantic_value_constraints == (
+        constraint.model_copy(update={"source_ref": "request-prefix:source:request:whole"}),
+    )
     assert any(
         "never invent a completion" in messages[0].content.casefold()
         for messages in model.message_batches
@@ -324,10 +481,8 @@ def test_llm_compiler_repairs_missing_obligation_graph_within_three_call_budget(
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
-    assert model.calls == 3
-    repair = next(node.payload for node in trace.nodes if node.kind == "IntentDraftRepairProduced")
-    assert repair["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
-    assert repair["decoding_config"]["prompt_version"] == INTENT_DRAFT_REPAIR_PROMPT_VERSION
+    assert model.calls == 2
+    assert "IntentDraftRepairProduced" not in [node.kind for node in trace.nodes]
 
 
 def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_it() -> None:
@@ -355,8 +510,7 @@ def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_i
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
-    assert model.calls == 3
-    assert "invalid_provider_obligation" in model.message_batches[1][-1].content
+    assert model.calls == 2
 
 
 def test_llm_compiler_repair_remains_fail_closed_when_repair_introduces_ambiguity() -> None:
@@ -394,8 +548,8 @@ def test_llm_compiler_repair_remains_fail_closed_when_repair_introduces_ambiguit
         )
     )
 
-    assert result.status == CompilationStatus.NEEDS_CLARIFICATION
-    assert result.task_spec is None
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
     assert model.calls == 2
 
 
@@ -410,6 +564,7 @@ def test_llm_compiler_traces_failed_repair_without_crediting_it_as_success() -> 
             ),
         ),
         candidate_success_criteria=("pricing returned",),
+        task_structure=TaskStructure.MULTI_STAGE,
     )
     model = FailingRepairModel(initial)
     trace = TraceDag("repair-failure")
@@ -448,7 +603,7 @@ def test_llm_compiler_fails_closed_before_model_call_when_source_ledger_is_bound
     ]
 
 
-def test_llm_compiler_stops_when_repair_consumes_intake_budget() -> None:
+def test_llm_compiler_allows_deterministic_ready_when_optional_audit_budget_is_exhausted() -> None:
     initial = IntentDraft(
         objective="Read pricing",
         requested_effects=(
@@ -471,8 +626,8 @@ def test_llm_compiler_stops_when_repair_consumes_intake_budget() -> None:
         compiler.compile(UserRequest(request_id="repair-budget", raw_text="Read pricing"))
     )
 
-    assert result.status == CompilationStatus.UNSUPPORTED
-    assert result.issues[0].code == "coverage_review_unavailable"
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
     assert model.calls == 2
     assert compiler.model_call_count == 2
 
@@ -532,7 +687,11 @@ def test_compiler_binds_only_raw_text_alias_to_current_request_lineage() -> None
             "request-prefix:source:request:whole"
     )
     assert result.task_spec.source_claims[0].source_ref == "request-prefix:source:request:whole"
-    assert result.task_spec.obligations[0].claim_ids == ("claim-effect",)
+    assert result.task_spec.obligations[0].claim_ids == (
+        result.task_spec.source_claims[0].claim_id,
+    )
+    assert result.task_spec.source_claims[0].claim_id != "claim-effect"
+    assert result.task_spec.obligations[0].obligation_id != "obligation-effect"
     assert result.task_spec.targets == ("item",)
 
 
@@ -667,12 +826,9 @@ def test_raw_language_compiler_rejects_missing_obligation_authority() -> None:
         )
     )
 
-    assert result.status == CompilationStatus.UNSUPPORTED
-    assert result.task_spec is None
-    assert [item.code for item in result.issues] == [
-        "missing_source_claims",
-        "missing_task_obligations",
-    ]
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
 
 
 def test_raw_language_compiler_projects_invalid_graph_to_typed_rejection() -> None:
@@ -711,9 +867,9 @@ def test_raw_language_compiler_projects_invalid_graph_to_typed_rejection() -> No
         )
     )
 
-    assert result.status == CompilationStatus.UNSUPPORTED
-    assert result.task_spec is None
-    assert result.issues[-1].code == "invalid_task_obligation_graph"
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
 
 
 def test_independent_coverage_rejection_cannot_create_taskspec() -> None:

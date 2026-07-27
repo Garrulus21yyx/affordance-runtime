@@ -767,10 +767,16 @@ Recovery claims use four levels:
 4. `empirical_effectiveness`: immutable replay proves improved recovery without
    protected-family or safety regression.
 
-Provider/context/schema recovery is currently at level 2. Lower-half
-reobserve/reground/replan and safe termination have stronger normal-path
-evidence. No unqualified "full-phase online recovery complete" claim is allowed
-until the relevant command reaches levels 3 and 4.
+Configured provider switching, planner-context compaction, and planner model
+schema repair now reach level 3. Ordinary task-pipeline and BrowserGym paths
+install only concrete owners. Context compaction narrows optional context
+windows; schema repair makes the next candidate generation use the existing
+target/value-bound repair schema instead of the action-only initial schema.
+Both expose validated before/after identities and evidence without changing
+TaskSpec authority or Prompt identity. Lower-half reobserve/reground/replan and
+safe termination have stronger normal-path evidence. No unqualified
+"full-phase online recovery complete" claim is allowed until every relevant
+command reaches level 4 empirical effectiveness.
 
 ### AR7: Generalization and benchmark audit
 
