@@ -224,6 +224,26 @@ Admission meanings:
 `fail` blocks only that change. A milestone may proceed through another design
 that passes the same gates.
 
+### 7.1 Module-level semantic owner gate
+
+Line and method ratchets do not prove ownership cleanliness by themselves. A
+change that moves semantic interpretation into module-level helper functions
+still fails admission if it grows the wrong owner.
+
+For strict planner and intake surfaces:
+
+- strict planner module may not add new task-language parser logic unless the
+  change is explicitly admitted as temporary debt;
+- deterministic semantic behavior belongs in a typed resolver or constraint
+  owner with declared applicability, input schema, negative examples, and
+  non-BrowserGym evidence;
+- Generalist Planner should orchestrate bounded proposal selection rather than
+  accumulating raw-language interpretation;
+- intent normalization may use source-bound user language, but it must not
+  directly create READY authority or bypass canonical graph construction;
+- SG7-triggered value-entry, observed-text, and submit fallback paths may not
+  expand until their semantic ownership review is closed or waived.
+
 ## 8. Exceptions and Anti-circumvention
 
 Exceptions are limited to correctness, security, evidence preservation,

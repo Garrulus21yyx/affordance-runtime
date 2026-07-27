@@ -369,5 +369,7 @@ or stale task revision checks.
 Benchmark adapters should submit a canonical `TaskSpec` when evaluating the
 Runtime itself. Raw-language intake is a separately identified intake
 evaluation and may not be merged into a Runtime score. No protected family,
-PR breadth, diagnostic, nightly, or release run is authorized until SG1-SG6
-have passed their local and held-out gates.
+PR breadth, diagnostic, nightly, or release run may claim promotion from the
+historical SG7 targeted result alone. SG1-SG7 targeted confirmation is locally
+complete within its declared scope; protected breadth and fresh diagnostic
+still require clean current-revision evidence and the same authority gates.

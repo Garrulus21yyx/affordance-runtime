@@ -38,6 +38,19 @@ milestone status values.
 | Remote CI | disabled: GitHub Actions is intentionally closed for the current iteration, so no remote-green or remote-fail claim is made for `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Promotion status | held |
 
+```yaml
+status_alignment:
+  snapshot: current
+  state: passing
+  meaning: not a one-time milestone closure
+
+immutable_planner_input:
+  implementation: not_started
+  design: planned
+  standard_path_migrated: false
+  tests: absent
+```
+
 Earlier remote failures were classified and repaired as narrow CI/harness or
 runtime-diagnostic issues: core pytest now runs through the active interpreter,
 the BrowserGym bridge job uses the documented isolated BrowserGym dependency
@@ -93,7 +106,7 @@ milestone maturity labels below.
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; concrete context/schema recovery owners plus neutral Planner/approval contracts remain green in the current dedicated 939-test governance-sync worktree | level-4 recovery effectiveness, planner generalization, and Coordinator responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; concrete context/schema recovery owners plus neutral Planner/approval contracts remain green under the current local equivalent gate at `66747420c4d319d26a10a7c6fb6006871cf3310a` | level-4 recovery effectiveness, planner generalization, immutable Planner input, semantic ownership review, and Coordinator responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -108,7 +121,7 @@ milestone maturity labels below.
 | Approval binding contract | done | single-use token binds run/hash/revision/capability/approver/expiry |
 | Minimum trace event schema | done | state, versions, causal parents, policy/preflight, receipts, verification, and artifact refs |
 | Declarative evolution artifact schema | done | version metadata and direction-aware regression rules |
-| README/status claims match implementation | done | current milestone claims are separated from deferred production-blueprint features |
+| README/status claims match implementation | current | `status_alignment.snapshot=current`; this is a continuing governance assertion, not a one-time milestone closure |
 
 ## M1: Web Gold Path
 

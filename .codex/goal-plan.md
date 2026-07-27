@@ -97,6 +97,10 @@ delivery claims.
 19. `pending` — Continue vertical protected cross-family / PR breadth on a
     clean current revision with local equivalent gates, while keeping immutable
     Planner input as the separate next horizontal lane.
+20. `pending` — Execute the review-driven remediation sequence as separate
+    slices: P1 immutable Planner input, P2 semantic fallback owner extraction,
+    P3 intent semantic normalizer, and P4 protected breadth continuation. Do
+    not batch these into one mixed architecture/product patch.
 
 ## Change Record
 

@@ -69,6 +69,27 @@ means the named entry conditions above are satisfied and no safety, authority,
 architecture, or validation gate is being bypassed; it does not mean waiting
 for a repository-wide refactor.
 
+### Review-driven remediation sequence
+
+The latest architecture review is incorporated as an ordered, non-monolithic
+sequence. These items are not retroactively marked complete and must not be
+batched into a single mixed patch:
+
+1. **P1 immutable Planner input** — introduce frozen `PlannerStateView` /
+   `PlanningRequest` so the standard Planner contract no longer receives
+   mutable `StateKernel`.
+2. **P2 semantic fallback owner extraction** — move SG7-triggered exact-value,
+   page-observed-text, and terminal-submit fallback logic out of
+   `GeneralistLMPlanner` into typed resolver or constraint owners with
+   applicability, negative examples, and non-BrowserGym evidence.
+3. **P3 intent semantic normalizer** — isolate source-bound value-entry lexical
+   normalization from `LLMIntentCompiler`; the normalizer may propose typed
+   semantics but may not create READY authority or bypass canonical graph
+   construction.
+4. **P4 protected breadth continuation** — continue protected cross-family /
+   PR breadth on a clean current revision, with `official_score_claimed=false`
+   and promotion held until a fresh diagnostic is explicitly authorized.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward

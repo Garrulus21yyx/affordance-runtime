@@ -198,6 +198,7 @@ def test_governance_status_and_dual_lane_policy_have_one_current_source() -> Non
     assert "sole authoritative task-execution commit sequencer" in architecture
     assert "sg1-sg7 targeted confirmation is locally complete" in intent
     assert "protected cross-family / pr breadth is the active vertical slice" in intent
+    assert "historical sg7 targeted result alone" in intent
     assert "remains incomplete" in intent
 
 
@@ -219,6 +220,29 @@ def test_reviewed_architecture_debt_and_sg7_admission_record_are_visible() -> No
     assert "semantic_ownership_review:" in record
     assert "status: pending_review" in record
     assert "official_score_claimed: false" in record
+
+
+def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+
+    assert "status_alignment:" in status
+    assert "snapshot: current" in status
+    assert "not a one-time milestone closure" in status
+    assert "immutable_planner_input:" in status
+    assert "implementation: not_started" in status
+    assert "standard_path_migrated: false" in status
+    assert "current local equivalent gate at `66747420c4d319d26a10a7c6fb6006871cf3310a`" in status
+    assert "standard planner contract no longer receives mutable `statekernel`" in current_plan
+    assert "review-driven remediation sequence" in current_plan
+    assert "p1 immutable planner input" in current_plan
+    assert "p2 semantic fallback owner extraction" in current_plan
+    assert "p3 intent semantic normalizer" in current_plan
+    assert "p4 protected breadth continuation" in current_plan
+    assert "module-level semantic owner gate" in governance
+    assert "strict planner module may not add new task-language parser logic" in governance
+    assert "typed resolver or constraint owner" in governance
 
 
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
