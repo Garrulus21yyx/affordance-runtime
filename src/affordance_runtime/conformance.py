@@ -16,7 +16,7 @@ from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.visual import detect_magenta_region
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, Observation, VerifierSpec
+from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, ActionContract, Observation, VerifierSpec
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
@@ -40,6 +40,13 @@ class ConformanceSurfaceResult:
     event_types: list[str]
     trace_path: str
     screenshot_refs: list[str]
+
+
+def _preserves_shared_contract_envelope(item: ConformanceSurfaceResult) -> bool:
+    return (
+        item.contract_capabilities == [CONFORMANCE_CAPABILITY]
+        and item.contract_schema == ACTION_CONTRACT_SCHEMA_VERSION
+    )
 
 
 @dataclass
@@ -254,7 +261,7 @@ def run_cross_surface_conformance(
             errors.append(f"{item.surface} lacks independent verifier evidence")
         if item.backend != item.surface:
             errors.append(f"{item.surface} bypassed its declared backend")
-        if item.contract_capabilities != [CONFORMANCE_CAPABILITY] or item.contract_schema != "1.0":
+        if not _preserves_shared_contract_envelope(item):
             errors.append(f"{item.surface} did not preserve the shared contract envelope")
         if not item.trace_path:
             errors.append(f"{item.surface} trace is missing")

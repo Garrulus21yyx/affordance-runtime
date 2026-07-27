@@ -8,8 +8,13 @@ from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.benchmarks.agreement import compare_benchmark_reports
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.conformance import CONFORMANCE_CAPABILITY, ConformancePlanner
-from affordance_runtime.contracts import Observation
+from affordance_runtime.conformance import (
+    CONFORMANCE_CAPABILITY,
+    ConformancePlanner,
+    ConformanceSurfaceResult,
+    _preserves_shared_contract_envelope,
+)
+from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, Observation
 from affordance_runtime.fixtures import LOCAL_SAAS_FIXTURE_VERSION, create_fixture_server
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -96,6 +101,27 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
     assert all(contract.schema_version == "1.2" for contract in contracts)
     assert all(contract.verifier_plan[0].kind == "http_json" for contract in contracts)
     assert all(contract.verifier_plan[0].target == "http://oracle/state" for contract in contracts)
+
+
+def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
+    item = ConformanceSurfaceResult(
+        surface="dom",
+        backend="dom",
+        status="done",
+        oracle_enabled=True,
+        oracle_source="node-wot-control",
+        verification_status="passed",
+        contract_schema=ACTION_CONTRACT_SCHEMA_VERSION,
+        contract_capabilities=[CONFORMANCE_CAPABILITY],
+        event_types=["PostconditionPassed"],
+        trace_path="/evidence/events.jsonl",
+        screenshot_refs=[],
+    )
+
+    assert _preserves_shared_contract_envelope(item)
+    assert not _preserves_shared_contract_envelope(
+        item.__class__(**{**item.__dict__, "contract_schema": "1.0"})
+    )
 
 
 def test_host_container_agreement_ignores_only_timing_and_trace_paths(tmp_path: Path) -> None:
