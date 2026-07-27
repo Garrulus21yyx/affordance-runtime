@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5A relation/evidence semantics rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after the first V-PRB-5A repair, PR breadth at `0565e2e` remained failed: 12/12 observed, 7/12 official passed, 5/12 official failed, 6 runtime failures, no provider failure/missing/unrun/invalidated case. A second non-BrowserGym RED now covers clicked/activated requested-effect relation semantics, and the canonical compiler repair maps multi-stage clicked navigation targets to `is_completed` effect obligations without changing Coordinator, StateKernel, PlannerPort, prompt, budget, or benchmark-specific logic | commit the second V-PRB-5A repair, then rerun the same clean PR breadth 6-task x 2-seed matrix on the new committed revision; classify `click-button:seed-1` schema incompatibility separately | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5A completed-click progress evidence | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after the second V-PRB-5A repair, clean PR breadth at `e4795c1` completed 12/12 observed with 8 official reward passes, 4 official reward failures, 5 Runtime failures, and no provider failure/missing/unrun/invalidated case. `click-button:seed-1` no longer reproduces the prior `schema_incompatible` failure. `click-button-sequence` now creates `effect / is_completed` obligations, but after the first click Runtime still rejects weak execution/state-delta evidence and the planner asks for clarification with active subgoal `button ONE is completed` | write the next non-BrowserGym RED for verifier-backed completed-click progress evidence / observer-verifier binding, without accepting receipt success as completion; keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -88,9 +88,12 @@ batched into a single mixed patch:
    `0565e2e` showed that this was necessary but insufficient. The second RED
    targets the remaining relation/evidence defect: clicked/activated
    multi-stage navigation targets now canonicalize as `effect / is_completed`
-   obligations rather than `predicate / is_available`. This still does not
-   close V-PRB-5A until the same PR breadth matrix is rerun on the clean
-   committed repair revision.
+   obligations rather than `predicate / is_available`. The clean `e4795c1`
+   PR breadth rerun confirmed this repair is present in BrowserGym traces and
+   improved the matrix to 8/12 official reward passes, but V-PRB-5A remains
+   open: button-sequence still fails because completed-click progress lacks
+   independent verifier/observer evidence after execution, so the strict
+   planner asks for clarification on `button ONE is completed`.
 2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
    slice for slider-like reversible-write action-family selection. Execute it
    after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is
@@ -247,18 +250,21 @@ Latest review refinement:
 
 - V-PRB-5A is now tracked by
   `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml`.
-  Its non-BrowserGym RED showed a compiler-local gap: the requested-effect
-  fallback preserved Runtime graph authority but made every generated effect
-  terminal and omitted ordered dependencies. The local repair keeps flat
-  requested effects independent by default and enables ordered dependency /
-  intermediate-terminal semantics only for multi-stage requested-effect
-  fallback. The clean `0565e2e` PR breadth rerun shows this repair is
-  insufficient by itself: both button-sequence seeds still fail with
-  `planner_waiting_clarification`. Trace classification points to
-  requested-effect relation/evidence semantics, not PlannerContext,
-  Coordinator, StateKernel, or receipt-driven progress. Continue with a new
-  non-BrowserGym RED for clicked/activated effects, not fresh diagnostic or
-  promotion.
+  Its first non-BrowserGym RED showed a compiler-local gap: the
+  requested-effect fallback preserved Runtime graph authority but made every
+  generated effect terminal and omitted ordered dependencies. The first repair
+  keeps flat requested effects independent by default and enables ordered
+  dependency / intermediate-terminal semantics only for multi-stage
+  requested-effect fallback. The clean `0565e2e` PR breadth rerun showed this
+  was insufficient because clicked targets still compiled as
+  `predicate / is_available`. The second RED fixed that generic relation gap:
+  clicked/activated multi-stage navigation targets now compile as
+  `effect / is_completed`. The clean `e4795c1` rerun confirms the repair is in
+  the BrowserGym path and `click-button:seed-1` no longer reproduces the
+  schema-incompatibility failure, but V-PRB-5A remains open because completed
+  click progress still lacks independent observer/verifier evidence after
+  execution. Continue with a new non-BrowserGym RED for completed-click
+  progress evidence, not fresh diagnostic or promotion.
 - V-PRB-5B is tracked by
   `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml` and
   remains independent. Its likely owner is typed TaskPlan action-family

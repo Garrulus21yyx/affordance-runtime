@@ -104,7 +104,7 @@ promotion_status: held
 remote_ci: disabled
 
 result:
-  status: implemented_after_second_red
+  status: rerun_failed_after_second_repair
   production_change_admitted: true
   local_verification:
     - non-BrowserGym RED/GREEN passed
@@ -148,6 +148,27 @@ result:
           relation: is_available
           terminal: true
       rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
+  clean_pr_breadth_second_rerun:
+    revision: e4795c1f25aeebeda63c715829e188e052acdab5
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-e4795c1/
+    expected: 12
+    observed: 12
+    official_passed: 8
+    official_failed: 4
+    runtime_failed: 5
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    official_score_claimed: false
+    impact: clicked relation repair present, but button-sequence mechanism not closed
+    trace_classification:
+      dependency_terminal_boundary: preserved
+      clicked_relation_boundary: effect/is_completed obligations are present
+      remaining_defect: completed-click progress evidence / observer-verifier binding
+      observed_active_subgoal_after_first_click: button ONE is completed
+      rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
+      planner_result_after_rejection: ask_user / waiting_clarification
   next_requirement:
-    - commit the second repair and rerun the same clean PR breadth matrix on the new committed revision before judging button-sequence impact
-    - classify click-button:seed-1 schema_incompatible separately
+    - write a new non-BrowserGym RED for completed-click progress evidence / observer-verifier binding
+    - do not accept receipt success alone as completion evidence
+    - keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate

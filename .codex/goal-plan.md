@@ -196,8 +196,8 @@ delivery claims.
 33. `done` — Classify the failed `0565e2e` rerun before the next
     production repair: inspect button-sequence traces to determine why
     `planner_waiting_clarification` remains after the compiler-local sequence
-    repair, classify the new/remaining `click-button:seed-1`
-    `schema_incompatible` case, and keep V-PRB-5B and V-PRB-6 separate.
+    repair, classify the then-new/remaining `click-button:seed-1`
+    `schema_incompatible` case separately, and keep V-PRB-5B and V-PRB-6 separate.
     Button-sequence dependency/terminal boundaries are now present, but clicked
     targets still compile as `predicate / is_available`; verifier progress
     correctly rejects weak execution/state-delta evidence, so the next owner is
@@ -206,12 +206,22 @@ delivery claims.
 34. `done` — Write the next V-PRB-5A non-BrowserGym RED for
     clicked/activated relation and evidence semantics. The RED failed on
     `predicate` versus expected `effect`, then passed after a compiler-local
-    canonical repair. Keep `click-button:seed-1` schema incompatibility,
-    V-PRB-5B form action-family, V-PRB-6 terminal guard, H2 immutable Planner
-    input, and promotion separate.
-35. `in_progress` — Commit and push the second V-PRB-5A repair, then rerun the
+    canonical repair. Keep V-PRB-5B form action-family, V-PRB-6 terminal guard,
+    H2 immutable Planner input, and promotion separate.
+35. `done` — Commit and push the second V-PRB-5A repair, then rerun the
     same PR breadth 6-task x 2-seed matrix on the clean committed revision
-    before judging button-sequence closure.
+    before judging button-sequence closure. Clean `e4795c1` PR breadth remains
+    negative: 12/12 observed, 8 official reward passes, 4 official reward
+    failures, 5 Runtime failures, no missing/unrun/invalidated/provider
+    failures, and `official_score_claimed=false`. The prior
+    `click-button:seed-1` schema incompatibility no longer reproduces.
+36. `in_progress` — Write the next V-PRB-5A non-BrowserGym RED for
+    completed-click progress evidence / observer-verifier binding. The clean
+    traces show `effect / is_completed` obligations are now present, but after
+    the first click Runtime correctly rejects weak receipt/state-delta evidence,
+    leaves active subgoal `button ONE is completed`, and the strict planner
+    asks for clarification. Do not accept receipt success alone as progress;
+    keep V-PRB-5B, V-PRB-6, immutable Planner input, and promotion separate.
 
 ## Change Record
 
