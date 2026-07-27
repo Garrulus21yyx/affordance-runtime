@@ -37,6 +37,7 @@ def resolve_empty_clarification_action(
         return None
     return (
         _resolve_text_value_entry(context)
+        or _resolve_slider_press_key_entry(context)
         or _resolve_selected_option_terminal(context)
         or _resolve_requested_option_selection(context)
         or _resolve_requested_activation(context)
@@ -63,6 +64,32 @@ def _resolve_text_value_entry(context: PlannerContext) -> SemanticActionResoluti
         action_kind=PlannerActionKind.TYPE_TEXT,
         target_affordance_id=targets[0].id,
         parameters={"text": value},
+        expected_effects=_expected_effects(context),
+        evidence_requirements=_evidence_requirements(context),
+    )
+
+
+def _resolve_slider_press_key_entry(context: PlannerContext) -> SemanticActionResolution | None:
+    if context.active_subgoal_action_family != PlannerActionKind.PRESS_KEY.value:
+        return None
+    targets = [
+        item
+        for item in context.affordances
+        if item.action in {"press", "press_key"}
+        and item.role == "slider"
+        and item.state.get("enabled") is not False
+        and item.state.get("visible") is not False
+    ]
+    if len(targets) != 1:
+        return None
+    requested = _requested_numeric_value(context)
+    current = _current_numeric_value(targets[0])
+    if requested is None or current is None or requested == current:
+        return None
+    return SemanticActionResolution(
+        action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id=targets[0].id,
+        parameters={"key": "ArrowRight" if requested > current else "ArrowLeft"},
         expected_effects=_expected_effects(context),
         evidence_requirements=_evidence_requirements(context),
     )
@@ -249,6 +276,43 @@ def _target_texts(context: PlannerContext) -> tuple[str, ...]:
     if not isinstance(targets, list):
         return ()
     return tuple(str(item) for item in targets if isinstance(item, str) and item.strip())
+
+
+def _requested_numeric_value(context: PlannerContext) -> float | None:
+    for source in (context.active_subgoal, " ".join(_target_texts(context))):
+        value = _single_numeric_value(source)
+        if value is not None:
+            return value
+    criteria = context.task_spec.get("success_criteria")
+    if isinstance(criteria, list):
+        value = _single_numeric_value(" ".join(str(item) for item in criteria if "slider" in str(item).casefold()))
+        if value is not None:
+            return value
+    match = re.search(r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+the\s+slider\b", _objective(context), re.IGNORECASE)
+    return float(match.group(1)) if match is not None else None
+
+
+def _current_numeric_value(affordance: AffordanceSummary) -> float | None:
+    values: list[str] = []
+    for key in ("control_value", "value", "aria_value_now", "valuenow", "context_text"):
+        value = affordance.state.get(key)
+        if isinstance(value, (int, float)):
+            values.append(str(value))
+        elif isinstance(value, str):
+            values.extend(_numeric_strings(value))
+    if not values:
+        values.extend(_numeric_strings(affordance.label))
+    unique = tuple(dict.fromkeys(float(item) for item in values))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _single_numeric_value(value: str) -> float | None:
+    unique = tuple(dict.fromkeys(float(item) for item in _numeric_strings(value)))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _numeric_strings(value: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"(?<![A-Za-z0-9])-?\d+(?:\.\d+)?(?![A-Za-z0-9])", value))
 
 
 def _objective(context: PlannerContext) -> str:

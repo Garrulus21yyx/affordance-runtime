@@ -2916,6 +2916,65 @@ def test_strict_planner_resolves_empty_clarification_to_target_derived_text_valu
     assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
 
 
+def test_strict_planner_resolves_empty_clarification_to_slider_press_key() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<span class="ui-slider-handle" role="slider" tabindex="0">0</span><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    slider = replace(
+        model.affordances[0],
+        state={"context_text": "0 Submit", "enabled": True, "visible": True},
+    )
+    model = replace(model, affordances=[slider, model.affordances[1]])
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Select 7 with the slider, click the 3rd checkbox, then hit Submit.")
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="slider-value:changed",
+                objective="slider_value_7 has changed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.PRESS_KEY,
+                outcome=SubgoalOutcome(
+                    subject="slider_value_7",
+                    relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("slider_value_7",),
+        success_criteria=("slider_value_7_selected",),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.PRESS_KEY
+    assert decision.proposal.target_affordance_id == "dom_span_1"
+    assert decision.proposal.parameters == {"key": "ArrowRight"}
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+
+
 def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarification() -> None:
     model = _authored_dom_adapter().transduce(
         '<div>LO4e</div><input id="tt" type="text"><button>Submit</button>',
