@@ -1,7 +1,8 @@
 slice_id: v-sg7-targeted-protected-family
 base_revision: fa288afa7ba047dd3d0ae186f74e948058928436
 repair_revision: 3d44a9d222decd1de272d7a4d3eb14b025a8738a
-current_revision: 66747420c4d319d26a10a7c6fb6006871cf3310a
+latest_implementation_bearing_baseline: 66747420c4d319d26a10a7c6fb6006871cf3310a
+later_documentation_sync_commits: allowed_without_new_runtime_evidence
 change_type: vertical_evidence_and_generic_repair
 production_change_initially_allowed: false
 
@@ -124,7 +125,7 @@ evidence:
     provider_failures: 0
     runtime_failures: 0
     official_score_claimed: false
-  current_local_equivalent_gate:
+  implementation_bearing_local_equivalent_gate:
     revision: 66747420c4d319d26a10a7c6fb6006871cf3310a
     tests: 957
     ruff: pass

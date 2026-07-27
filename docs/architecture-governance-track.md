@@ -3,10 +3,13 @@
 Status: **active / gate-enforced**  
 Effective: **2026-07-27**  
 Committed governance baseline: `627b5f76900c343d2d0af0ca7fae8645ce2088e0`.
-The executable ratchets are committed at that revision. Its dedicated local
-gate passed. Remote CI is intentionally disabled for the current iteration, so
-this revision has no remote-green or remote-fail claim and is not a promotion
-baseline.
+The executable ratchets were first committed at that revision. The latest
+implementation-bearing local-equivalent baseline is
+`66747420c4d319d26a10a7c6fb6006871cf3310a`; later documentation-only sync
+commits do not inherit broader runtime or promotion evidence unless their own
+gate is recorded. Remote CI is intentionally disabled for the current
+iteration, so these revisions have no remote-green or remote-fail claim and are
+not promotion baselines.
 
 This document owns the execution semantics of the project's **independent
 horizontal governance track**. Structural ownership rules remain normative in
@@ -95,11 +98,13 @@ horizontal architecture --/
 - a horizontal slice is not a vertical prerequisite unless the vertical change
   would otherwise grow, copy, or rely on the governed debt.
 
-The current vertical lane is SG7 targeted protected-family confirmation. The
-active-subgoal read/activation separation is locally closed in the current
-governance-sync worktree; the current horizontal lane is removal of mutable
-`StateKernel` from the standard Planner input. Neither lane authorizes
-promotion while required CI remains red.
+The current vertical lane is protected cross-family / PR breadth confirmation.
+SG7 targeted protected-family confirmation is closed only within its recorded
+2-task x 2-seed scope. The active-subgoal read/activation separation is locally
+closed in the current governance-sync line; the current horizontal lane is
+removal of mutable `StateKernel` from the standard Planner input. Neither lane
+authorizes promotion while remote CI is disabled or required validation is
+unavailable.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

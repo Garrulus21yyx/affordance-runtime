@@ -4,11 +4,13 @@ Status: **normative remediation record**.
 
 Historical audited revision: `bba582c` on
 `agent/migrate-runtime-components`. That revision's verdict remains historical.
-At current committed revision `66747420c4d319d26a10a7c6fb6006871cf3310a`,
-SG1-SG7 targeted confirmation is locally complete within its declared scope.
-Protected cross-family / PR breadth is the active vertical slice and remains
-incomplete. This is local implementation/conformance status, not a remote-CI,
-benchmark-promotion, or release claim.
+At latest implementation-bearing local-equivalent baseline
+`66747420c4d319d26a10a7c6fb6006871cf3310a`, SG1-SG7 targeted confirmation is
+locally complete within its declared scope. Later documentation-only sync
+commits do not expand that runtime evidence. Protected cross-family / PR
+breadth is the active vertical slice and remains incomplete. This is local
+implementation/conformance status, not a remote-CI, benchmark-promotion, or
+release claim.
 
 This document governs the natural-language intake boundary. It is jointly
 normative with:

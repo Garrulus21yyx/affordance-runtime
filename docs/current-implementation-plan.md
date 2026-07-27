@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | protected cross-family / PR breadth confirmation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; current local equivalent gates pass at `66747420c4d319d26a10a7c6fb6006871cf3310a`; remote CI is disabled for this iteration | protected-family breadth result recorded on a clean current revision without task-name/Prompt-only/budget-expansion repair; fresh diagnostic remains separate | unrelated horizontal debt retirement |
+| Vertical | protected cross-family / PR breadth confirmation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; latest implementation-bearing local-equivalent baseline `66747420c4d319d26a10a7c6fb6006871cf3310a` passed its recorded gate; remote CI is disabled for this iteration | protected-family breadth result recorded on a clean current revision without task-name/Prompt-only/budget-expansion repair; fresh diagnostic remains separate | unrelated horizontal debt retirement |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the

@@ -233,7 +233,9 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "immutable_planner_input:" in status
     assert "implementation: not_started" in status
     assert "standard_path_migrated: false" in status
-    assert "current local equivalent gate at `66747420c4d319d26a10a7c6fb6006871cf3310a`" in status
+    assert "latest implementation-bearing baseline" in status
+    assert "later documentation-only sync commits" in status
+    assert "inherit no broader runtime evidence" in status
     assert "standard planner contract no longer receives mutable `statekernel`" in current_plan
     assert "review-driven remediation sequence" in current_plan
     assert "p1 immutable planner input" in current_plan
@@ -243,6 +245,8 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "module-level semantic owner gate" in governance
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
+    assert "current vertical lane is protected cross-family / pr breadth confirmation" in governance
+    assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
 
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
