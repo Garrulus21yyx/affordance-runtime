@@ -31,6 +31,7 @@ from affordance_runtime.task_planning import (
     SubgoalOutcome,
     SubgoalOutcomeRelation,
     SubgoalSpec,
+    TaskObligationOutcomeCompiler,
     TaskPlan,
     TaskPlanActionFamily,
     TaskPlanCandidate,
@@ -76,6 +77,71 @@ def _context(*, state_version: int = 4) -> TaskPlanningContext:
             effectful_actions_remaining=2,
         ),
     )
+
+
+def test_obligation_compiler_infers_type_text_family_for_reversible_value_write() -> None:
+    task = _task().model_copy(
+        update={
+            "source_claims": (
+                SourcedTaskClaim(
+                    claim_id="claim-date",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="date field equals 01/18/2019",
+                    source_ref="request-1",
+                ),
+            ),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-date",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="date_field",
+                    relation=TaskObligationRelation.EQUALS,
+                    value_source=TaskObligationValueSource.LITERAL,
+                    expected_value="01/18/2019",
+                    claim_ids=("claim-date",),
+                    evidence_requirements=("date field value evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(update={"task_spec": task})
+
+    plan = TaskObligationOutcomeCompiler().compile(context)
+
+    assert plan.subgoals[0].objective == "date_field equals 01/18/2019"
+    assert plan.subgoals[0].action_family == TaskPlanActionFamily.TYPE_TEXT
+
+
+def test_obligation_compiler_does_not_infer_text_entry_for_generic_change_target() -> None:
+    task = _task().model_copy(
+        update={
+            "source_claims": (
+                SourcedTaskClaim(
+                    claim_id="claim-click",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="target has changed",
+                    source_ref="request-1",
+                ),
+            ),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-click",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="target",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    claim_ids=("claim-click",),
+                    evidence_requirements=("target changed evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(update={"task_spec": task})
+
+    plan = TaskObligationOutcomeCompiler().compile(context)
+
+    assert plan.subgoals[0].action_family is None
 
 
 def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> None:

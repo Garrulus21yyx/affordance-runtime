@@ -29,6 +29,7 @@ from affordance_runtime.task_intake import (
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
+    TaskObligationValueSource,
     TaskStructure,
     UserRequest,
 )
@@ -128,6 +129,22 @@ class CountingCompleteCoverageChecker:
         del request, draft
         self.calls += 1
         return TaskObligationCoverageDecision(status=TaskObligationCoverageStatus.COMPLETE)
+
+
+@dataclass
+class SequentialCoverageChecker:
+    decisions: tuple[TaskObligationCoverageDecision, ...]
+    calls: int = 0
+
+    async def review(
+        self,
+        request: UserRequest,
+        draft: IntentDraft,
+    ) -> TaskObligationCoverageDecision:
+        del request, draft
+        decision = self.decisions[min(self.calls, len(self.decisions) - 1)]
+        self.calls += 1
+        return decision
 
 
 @dataclass
@@ -451,6 +468,183 @@ def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -
     assert any(
         "never invent a completion" in messages[0].content.casefold()
         for messages in model.message_batches
+    )
+
+
+def test_llm_compiler_canonicalizes_explicit_entry_value_as_write_obligation() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Enter 01/18/2019 as the date and hit submit.",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="date_field",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("The date field contains the value '01/18/2019'.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+        ).compile(
+            UserRequest(
+                request_id="date-entry",
+                raw_text="Enter 01/18/2019 as the date and hit submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
+    assert result.task_spec.semantic_value_constraints[0].value == "01/18/2019"
+    assert result.task_spec.obligations[0].relation == TaskObligationRelation.EQUALS
+    assert result.task_spec.obligations[0].expected_value == "01/18/2019"
+    assert result.task_spec.obligations[0].construction_source == (
+        GraphConstructionSource.CANONICAL_COMPILER
+    )
+
+
+def test_llm_compiler_does_not_literalize_page_sourced_text_below() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Type the text below into the text field and press Submit.",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="text_field",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=(
+                "Text field contains the text 'Type the text below into the text field and press Submit.'",
+            ),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+        ).compile(
+            UserRequest(
+                request_id="text-below",
+                raw_text="Type the text below into the text field and press Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
+    assert result.task_spec.semantic_value_constraints == ()
+    assert result.task_spec.obligations[0].relation == TaskObligationRelation.HAS_CHANGED
+    assert result.task_spec.obligations[0].expected_value == ""
+
+
+def test_llm_compiler_repairs_reviewer_vetoed_unresolved_dependency_before_clarification() -> None:
+    initial = IntentDraft(
+        objective="Type the text below into the text field and press Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="text_field",
+                source_ref="raw_text",
+            ),
+        ),
+        candidate_success_criteria=("Text field contains the text provided below.",),
+    )
+    repaired = IntentDraft(
+        objective="Type the text below into the text field and press Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="text_field",
+                source_ref="raw_text",
+            ),
+        ),
+        candidate_success_criteria=("Text field equals the text observed below after submit.",),
+        task_structure=TaskStructure.MULTI_STAGE,
+        candidate_source_claims=(
+            SourcedTaskClaim(
+                claim_id="provider-observe-text",
+                kind=TaskClaimKind.DEPENDENCY,
+                statement="observe the text below",
+                source_ref="raw_text",
+            ),
+            SourcedTaskClaim(
+                claim_id="provider-enter-text",
+                kind=TaskClaimKind.EFFECT,
+                statement="text field equals the observed text after submit",
+                source_ref="raw_text",
+            ),
+        ),
+        candidate_obligations=(
+            TaskObligationSpec(
+                obligation_id="provider-observe-text-obligation",
+                kind=TaskObligationKind.PREDICATE,
+                subject="text below",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=("provider-observe-text",),
+                evidence_requirements=("provider-authored observation evidence",),
+            ),
+            TaskObligationSpec(
+                obligation_id="provider-enter-text-obligation",
+                kind=TaskObligationKind.EFFECT,
+                subject="text_field",
+                relation=TaskObligationRelation.EQUALS,
+                value_source=TaskObligationValueSource.OBLIGATION_OUTPUT,
+                value_obligation_id="provider-observe-text-obligation",
+                claim_ids=("provider-enter-text",),
+                depends_on=("provider-observe-text-obligation",),
+                evidence_requirements=("provider-authored terminal evidence",),
+                terminal=True,
+            ),
+        ),
+    )
+    model = RepairingModel(initial, repaired_draft=repaired)
+    coverage = SequentialCoverageChecker(
+        (
+            TaskObligationCoverageDecision(
+                status=TaskObligationCoverageStatus.NEEDS_CLARIFICATION,
+                issue_code="unresolved_task_dependency",
+                issue_detail="Type the text below into the text field and press Submit.",
+            ),
+            TaskObligationCoverageDecision(status=TaskObligationCoverageStatus.COMPLETE),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model, coverage_checker=coverage, max_model_calls=3).compile(
+            UserRequest(
+                request_id="coverage-veto-repair",
+                raw_text="Type the text below into the text field and press Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert model.calls == 2
+    assert coverage.calls == 2
+    assert result.task_spec.operation_class == OperationClass.REVERSIBLE_WRITE
+    assert result.task_spec.task_structure == TaskStructure.MULTI_STAGE
+    assert result.task_spec.obligations[1].relation == TaskObligationRelation.EQUALS
+    assert result.task_spec.obligations[1].value_obligation_id == (
+        result.task_spec.obligations[0].obligation_id
+    )
+    assert all(
+        obligation.construction_source == GraphConstructionSource.MODEL_PROPOSAL
+        for obligation in result.task_spec.obligations
+    )
+    assert all(
+        "provider" not in obligation.obligation_id
+        for obligation in result.task_spec.obligations
     )
 
 

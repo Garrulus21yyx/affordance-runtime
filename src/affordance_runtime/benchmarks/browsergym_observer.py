@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
@@ -14,7 +14,7 @@ from affordance_runtime.benchmarks.browsergym_types import (
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
-from affordance_runtime.grounding import GroundingCandidate, PerceptionRequirements
+from affordance_runtime.grounding import ActivePerceptionRequest, GroundingCandidate, PerceptionRequirements
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -56,6 +56,26 @@ class BrowserGymObserver:
                     raise
         else:  # pragma: no cover - loop either returns or raises
             raise RuntimeError("BrowserGym observation capture did not produce a snapshot")
+        return self._attach_browsergym_metadata(snapshot, capture_attempt=attempt)
+
+    def capture_targeted(
+        self,
+        requests: Sequence[ActivePerceptionRequest],
+    ) -> BrowserSnapshot:
+        snapshot = self.session.capture_targeted(tuple(requests))
+        return self._attach_browsergym_metadata(
+            snapshot,
+            capture_attempt=1,
+            capture_mode="targeted",
+        )
+
+    def _attach_browsergym_metadata(
+        self,
+        snapshot: BrowserSnapshot,
+        *,
+        capture_attempt: int,
+        capture_mode: str = "full",
+    ) -> BrowserSnapshot:
         metadata = {
             **snapshot.observation.metadata,
             "browsergym": {
@@ -64,7 +84,8 @@ class BrowserGymObserver:
                 "terminated": self.episode.terminated,
                 "truncated": self.episode.truncated,
                 "task_info": json_safe(self.episode.info.get("task_info", {})),
-                "capture_attempt": attempt,
+                "capture_attempt": capture_attempt,
+                "capture_mode": capture_mode,
             },
         }
         observation = replace(snapshot.observation, metadata=metadata)

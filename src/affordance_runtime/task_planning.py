@@ -1,10 +1,4 @@
-"""Bounded, verifier-oriented task planning above the action planner.
-
-Task plans describe outcomes only.  They never contain executable GUI details,
-capabilities, or approvals; those remain exclusively at the proposal and
-contract boundaries.
-"""
-
+"""Bounded, verifier-oriented task planning above the action planner."""
 from __future__ import annotations
 
 import json
@@ -58,6 +52,11 @@ TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
 TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION = "typed-subject-state-support-v1"
+_VALUE_ENTRY_SUBJECT_TERMS = frozenset(("field", "input", "textbox", "textarea", "text", "date", "value"))
+
+
+def _looks_like_value_entry_subject(subject: str) -> bool:
+    return bool(_VALUE_ENTRY_SUBJECT_TERMS.intersection(re.findall(r"[a-z0-9]+", subject.casefold())))
 
 
 class TaskPlanSource(StrEnum):
@@ -199,7 +198,6 @@ def task_plan_allowed_outcome_relations(
     action_family: TaskPlanActionFamily,
 ) -> frozenset[SubgoalOutcomeRelation]:
     """Return the authoritative semantic relation set for one action family."""
-
     return _ACTION_OUTCOME_RELATIONS[action_family]
 
 
@@ -938,7 +936,6 @@ def task_plan_entry_feasibility_issue(
     context: TaskPlanningContext | None,
 ) -> TaskPlanValidationIssue | None:
     """Return the current-entry issue without revalidating immutable lineage."""
-
     entry = _contextual_entry_subgoal(plan, context)
     if (
         entry is None
@@ -962,7 +959,6 @@ def task_plan_entry_state_issue(
     context: TaskPlanningContext | None,
 ) -> TaskPlanValidationIssue | None:
     """Reject only a uniquely grounded entry predicate already proven current."""
-
     entry = _contextual_entry_subgoal(plan, context)
     if entry is None or entry.outcome is None or context is None:
         return None
@@ -995,7 +991,6 @@ def task_plan_entry_state_support_issue(
     context: TaskPlanningContext | None,
 ) -> TaskPlanValidationIssue | None:
     """Reject a uniquely grounded state predicate only when incompatibility is explicit."""
-
     entry = _contextual_entry_subgoal(plan, context)
     if entry is None or entry.outcome is None or context is None:
         return None
@@ -1233,7 +1228,6 @@ def _action_outcome_relation_compatible(
     relation: SubgoalOutcomeRelation,
 ) -> bool:
     """Enforce the provider-neutral semantic action/outcome relation matrix."""
-
     return relation in task_plan_allowed_outcome_relations(action_family)
 
 
@@ -1241,7 +1235,6 @@ def task_plan_repair_directives(
     issues: tuple[TaskPlanValidationIssue, ...],
 ) -> tuple[TaskPlanRepairDirective, ...]:
     """Project validator issues into bounded model-facing field constraints."""
-
     return tuple(
         TaskPlanRepairDirective(
             subgoal_id=issue.detail,
@@ -1270,7 +1263,6 @@ class SubgoalVerifierPort(Protocol):
 @dataclass(frozen=True)
 class VerifierBackedSubgoalVerifier:
     """Bind fresh independent evidence to the active subgoal's obligations."""
-
     matcher: CriteriaEvidenceMatcher = CriteriaEvidenceMatcher()
 
     def verify(
@@ -1323,9 +1315,10 @@ class TaskObligationOutcomeCompiler:
         obligation: TaskObligationSpec,
         task_operation: OperationClass,
     ) -> SubgoalSpec:
+        relation = SubgoalOutcomeRelation(obligation.relation.value)
         outcome = SubgoalOutcome(
             subject=obligation.subject,
-            relation=SubgoalOutcomeRelation(obligation.relation.value),
+            relation=relation,
             value=(
                 obligation.expected_value
                 if obligation.value_source == TaskObligationValueSource.LITERAL
@@ -1347,6 +1340,13 @@ class TaskObligationOutcomeCompiler:
                 task_operation
                 if obligation.kind == TaskObligationKind.EFFECT
                 else OperationClass.READ_ONLY
+            ),
+            action_family=(
+                TaskPlanActionFamily.TYPE_TEXT
+                if obligation.kind == TaskObligationKind.EFFECT and task_operation == OperationClass.REVERSIBLE_WRITE
+                and relation in _ACTION_OUTCOME_RELATIONS[TaskPlanActionFamily.TYPE_TEXT]
+                and (relation != SubgoalOutcomeRelation.HAS_CHANGED or _looks_like_value_entry_subject(obligation.subject))
+                else None
             ),
             outcome=outcome,
         )

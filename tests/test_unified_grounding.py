@@ -85,6 +85,25 @@ def test_opaque_dom_drop_endpoint_provides_spatial_binding_without_visual_requir
     assert EvidenceKind.VISUAL_APPEARANCE not in candidate.evidence_kinds
 
 
+def test_opaque_dom_text_input_endpoint_provides_spatial_binding_without_coordinates() -> None:
+    observation = _observation()
+    source = replace(
+        _affordance("text-field", Surface.DOM, "dom"),
+        role="textbox",
+        action="type",
+        locator={"backend_handle": "opaque-input"},
+    )
+
+    candidate = candidate_from_affordance(
+        source,
+        observation,
+        semantic_target_id="semantic:text-field",
+    )
+
+    assert EvidenceKind.SPATIAL in candidate.evidence_kinds
+    assert EvidenceKind.VISUAL_APPEARANCE not in candidate.evidence_kinds
+
+
 def test_candidate_retains_bounded_relational_scope_evidence() -> None:
     observation = _observation()
     source = replace(

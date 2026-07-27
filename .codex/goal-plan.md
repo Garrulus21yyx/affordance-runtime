@@ -65,11 +65,14 @@ delivery claims.
     every failure as environmental, scope INV-11 to task-execution commit
     sequencing, and make the vertical/horizontal WIP policy explicit.
 13. `in_progress` — Run one vertical slice (SG7 targeted protected-family
-    confirmation) beside one horizontal slice. The active-subgoal read/mutation
-    separation is locally closed; immutable PlanningRequest / PlannerStateView
-    remains the next horizontal boundary. Each slice has one production writer
-    and passes the same architecture admission gate; neither lane waits for a
-    unified refactor.
+    confirmation) beside the already closed H1 active-subgoal horizontal slice.
+    The first clean `fa288af` SG7 diagnostic failed 0/4 in INTENT / PLANNING;
+    the current dirty-tree generic repair candidate passes the same 2-task x
+    2-seed diagnostic 4/4. This is not promotion evidence until the repair is
+    committed and rerun from a clean tree. Immutable PlanningRequest /
+    PlannerStateView remains the next horizontal boundary after SG7 evidence is
+    frozen, unless a later clean SG7 failure directly implicates mutable
+    planner state.
 14. `done` — Repair classified CI harness/environment failures without
     hiding the remaining benchmark runtime failure: core pytest invocation and
     BrowserGym provisioning are narrow CI fixes; coherent observation epoch
@@ -86,6 +89,9 @@ delivery claims.
     `activate_next_subgoal()`, keep production activation in Coordinator, and
     remove the planner-context hidden-mutation exception from the architecture
     gate.
+18. `pending` — Freeze the SG7 generic repair in a clean revision and rerun the
+    exact targeted matrix (`enter-date`, `text-transform`, seeds 0 and 1)
+    before protected breadth, PR/nightly/release, score, or promotion claims.
 
 ## Change Record
 
@@ -182,3 +188,36 @@ delivery claims.
   189 focused active-subgoal/planner/context/governance gates, the full
   944-test dedicated Python 3.12 suite, Ruff, mypy over 116 source files,
   `uv build`, and diff check. No benchmark/provider/remote CI/promotion claim.
+- Ran the selected SG7 strict-generalist targeted protected-family diagnostic
+  on clean committed `fa288af` after restarting the existing Ollama container
+  to restore NVML and 100% GPU model residency. Pre-run gates passed: 21
+  horizontal architecture/responsibility tests, 40 SG1-SG6 deterministic intake
+  tests, Ruff, mypy, and diff check. The 2-task x 2-seed matrix observed all
+  four episodes with no provider failures, no retries, no missing/unrun/
+  invalidated cases, and `official_score_claimed=false`; SG7 failed 0/4 in
+  INTENT / PLANNING. Three episodes failed before TaskSpec creation with
+  `unresolved_task_dependency`; `enter-date` seed 0 created a canonical
+  compiler TaskSpec and accepted TaskPlan, then strict planner returned
+  `ask_user` / `waiting_clarification`. No production code was changed. The
+  next vertical action is a generic non-BrowserGym intent/planning repair slice,
+  not a PlannerStateView migration unless new evidence ties mutable planner
+  state to the failure.
+- Implemented and diagnosed that generic SG7 repair candidate in the current
+  dirty tree without adding task-family dispatch, selector/URL branches, Prompt
+  changes, budget expansion, Coordinator changes, StateKernel changes, or
+  PlannerStateView migration. The repair covers bounded unresolved-dependency
+  draft repair, explicit value-entry canonicalization, non-literalized
+  page-sourced text, value-entry-only text-action inference, strict planner
+  exact/page-text/submit fallbacks, targeted perception request merging,
+  BrowserGym targeted observation, and executor-local opaque DOM spatial
+  binding. The dirty-tree SG7 run
+  `/tmp/affordance-sg7-fa288af-submit-fallback-dirty-20260727-182502` observed
+  all four requested episodes and passed 4/4 with no provider/runtime failure,
+  no missing/unrun/invalidated cases, `official_success_rate=1.0`, and
+  `official_score_claimed=false`. Because `working_tree_clean=false` and the
+  source tree digest is
+  `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`,
+  this is only validated repair-candidate evidence. The next step is commit or
+  otherwise freeze the candidate, rerun the same matrix from a clean tree, then
+  continue vertical protected breadth. Immutable Planner input remains the next
+  horizontal lane, not this SG7 repair's prerequisite.

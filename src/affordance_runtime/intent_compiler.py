@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Sequence, TypeVar
 
@@ -27,7 +28,10 @@ from affordance_runtime.task_intake import (
     GraphConstructionSource,
     IntentDraft,
     IntentDraftValidator,
+    OperationClass,
     RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
     StrictModel,
     TaskObligationKind,
     TaskObligationRelation,
@@ -166,6 +170,16 @@ class BudgetedIntakeModelPort:
         return result
 
 
+@dataclass(frozen=True)
+class IntentDraftRepairAttempt:
+    draft: IntentDraft
+    provider_issues: tuple[CompilationIssue, ...]
+    proposal_claim_ids: dict[str, str]
+    result: CompilationResult
+    parent: TraceNode | None
+    succeeded: bool
+
+
 @dataclass
 class LLMIntentCompiler:
     model: ModelPort
@@ -244,6 +258,7 @@ class LLMIntentCompiler:
         draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
             draft,
             source_ledger,
+            request,
         )
         if canonicalized:
             provider_issues = canonical_issues
@@ -278,6 +293,8 @@ class LLMIntentCompiler:
             source_ledger,
             draft,
         )
+        repairs_used = 0
+
         repairable_codes = {
             "missing_success_criteria",
             "missing_source_claims",
@@ -290,80 +307,25 @@ class LLMIntentCompiler:
             and self.max_draft_repairs
             and any(item.code in repairable_codes for item in result.issues)
         ):
-            repair_context = {
-                "raw_request": _bounded_request(request, source_ledger),
-                "draft": draft.model_dump(mode="json"),
-                "validation_issues": [item.model_dump(mode="json") for item in result.issues],
-                "instruction": (
-                    "Return one replacement IntentDraft that repairs only the listed deterministic "
-                    "issues. Preserve source-bound user authority; do not add capabilities, page facts, "
-                    "or inferred values. Provide a complete sourced claim ledger and obligation graph."
-                ),
-            }
-            try:
-                repaired_model_draft = await budgeted_model.generate_structured(
-                    [
-                        ModelMessage(role="system", content=_SYSTEM_PROMPT),
-                        ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
-                    ],
-                    LLMIntentDraft,
-                    intent_draft_repair_model_config(),
-                )
-            except StructuredModelError as exc:
-                if trace is not None:
-                    parent = trace.add(
-                        "IntentDraftRepairFailed",
-                        {
-                            "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
-                            "error_type": type(exc).__name__,
-                            "fallback_failures": list(getattr(self.model, "failures", ())),
-                        },
-                        parents=[parent.id] if parent else None,
-                    )
-            else:
-                draft, provider_issues, proposal_claim_ids = _decode_provider_draft(
-                    repaired_model_draft,
-                    request,
-                    source_ledger,
-                )
-                draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
-                    draft,
-                    source_ledger,
-                )
-                if canonicalized:
-                    provider_issues = canonical_issues
-                result = _compile_decoded_draft(
-                    self.validator,
-                    request,
-                    draft,
-                    provider_issues,
-                    revision=revision,
-                    task_id=task_id,
-                )
-                result = _apply_deterministic_coverage(
-                    result,
-                    source_ledger,
-                    draft,
-                )
-                if trace is not None:
-                    parent = trace.add(
-                        "IntentDraftRepairProduced",
-                        {
-                            "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
-                            "decoding_config": intent_draft_repair_model_config().model_dump(
-                                mode="json"
-                            ),
-                            "draft": draft.model_dump(mode="json"),
-                            "status": result.status.value,
-                            "model_call": (
-                                self.model.last_call.model_dump(mode="json")
-                                if self.model.last_call is not None
-                                else None
-                            ),
-                            "fallback_failures": list(getattr(self.model, "failures", ())),
-                        },
-                        parents=[parent.id] if parent else None,
-                    )
+            attempt = await _repair_decoded_draft(
+                model=budgeted_model,
+                validator=self.validator,
+                request=request,
+                source_ledger=source_ledger,
+                draft=draft,
+                validation_issues=result.issues,
+                revision=revision,
+                task_id=task_id,
+                trace=trace,
+                parent=parent,
+            )
+            parent = attempt.parent
+            if attempt.succeeded:
+                repairs_used += 1
+                draft = attempt.draft
+                provider_issues = attempt.provider_issues
+                proposal_claim_ids = attempt.proposal_claim_ids
+                result = attempt.result
         if result.status == CompilationStatus.READY and result.task_spec is not None:
             checker = self.coverage_checker or ModelBackedTaskObligationCoverageChecker(budgeted_model)
             try:
@@ -390,43 +352,85 @@ class LLMIntentCompiler:
                     draft,
                 )
                 if trace is not None:
-                    parent = trace.add(
-                        "TaskObligationCoverageReviewed",
-                        {
-                            "status": coverage.status.value,
-                            "issue_code": coverage.issue_code,
-                            "issue_detail": coverage.issue_detail,
-                            "review": (
-                                coverage.review.model_dump(mode="json")
-                                if coverage.review is not None
-                                else None
-                            ),
-                            "model_call": (
-                                self.model.last_call.model_dump(mode="json")
-                                if self.model.last_call is not None
-                                else None
-                            ),
-                        },
-                        parents=[parent.id] if parent else None,
+                    parent = _record_coverage_review(
+                        trace,
+                        coverage,
+                        self.model.last_call,
+                        parent,
                     )
                 if coverage.status != TaskObligationCoverageStatus.COMPLETE:
-                    result = CompilationResult(
-                        status=(
-                            CompilationStatus.NEEDS_CLARIFICATION
-                            if coverage.status
-                            == TaskObligationCoverageStatus.NEEDS_CLARIFICATION
-                            else CompilationStatus.UNSUPPORTED
-                        ),
-                        request_id=request.request_id,
-                        draft=draft,
-                        issues=(
-                            CompilationIssue(
-                                code=coverage.issue_code,
-                                field="task_obligation_coverage",
-                                detail=coverage.issue_detail,
-                            ),
-                        ),
+                    coverage_issue = CompilationIssue(
+                        code=coverage.issue_code,
+                        field="task_obligation_coverage",
+                        detail=coverage.issue_detail,
                     )
+                    if (
+                        coverage.status == TaskObligationCoverageStatus.NEEDS_CLARIFICATION
+                        and coverage.issue_code == "unresolved_task_dependency"
+                        and repairs_used < self.max_draft_repairs
+                        and (
+                            attempt := await _repair_decoded_draft(
+                                model=budgeted_model,
+                                validator=self.validator,
+                                request=request,
+                                source_ledger=source_ledger,
+                                draft=draft,
+                                validation_issues=(coverage_issue,),
+                                revision=revision,
+                                task_id=task_id,
+                                trace=trace,
+                                parent=parent,
+                            )
+                        ).succeeded
+                        and result.status == CompilationStatus.READY
+                        and result.task_spec is not None
+                    ):
+                        repairs_used += 1
+                        draft = attempt.draft
+                        provider_issues = attempt.provider_issues
+                        proposal_claim_ids = attempt.proposal_claim_ids
+                        result = attempt.result
+                        parent = attempt.parent
+                        try:
+                            coverage = await checker.review(request, draft)
+                        except ProviderModelError:
+                            raise
+                        except StructuredModelError:
+                            coverage = TaskObligationCoverageDecision(
+                                status=TaskObligationCoverageStatus.COMPLETE,
+                            )
+                        else:
+                            coverage = _normalize_coverage_claim_references(
+                                coverage,
+                                proposal_claim_ids,
+                                request,
+                                draft,
+                            )
+                            if trace is not None:
+                                parent = _record_coverage_review(
+                                    trace,
+                                    coverage,
+                                    self.model.last_call,
+                                    parent,
+                                )
+                    if coverage.status != TaskObligationCoverageStatus.COMPLETE:
+                        result = CompilationResult(
+                            status=(
+                                CompilationStatus.NEEDS_CLARIFICATION
+                                if coverage.status
+                                == TaskObligationCoverageStatus.NEEDS_CLARIFICATION
+                                else CompilationStatus.UNSUPPORTED
+                            ),
+                            request_id=request.request_id,
+                            draft=draft,
+                            issues=(
+                                CompilationIssue(
+                                    code=coverage.issue_code,
+                                    field="task_obligation_coverage",
+                                    detail=coverage.issue_detail,
+                                ),
+                            ),
+                        )
         _record_compilation_result(trace, result, parent)
         return result
 
@@ -475,6 +479,7 @@ class ParentSemanticProposalCompiler:
         normalized, issues, canonicalized = _canonicalize_flat_draft(
             bound_proposal,
             source_ledger,
+            request,
         )
         if not canonicalized:
             normalized, issues, _ = _normalize_semantic_proposal(
@@ -541,6 +546,118 @@ def _decode_provider_draft(
     return normalized_draft, tuple((*issues, *normalization_issues)), proposal_claim_ids
 
 
+async def _repair_decoded_draft(
+    *,
+    model: ModelPort,
+    validator: IntentDraftValidator,
+    request: UserRequest,
+    source_ledger: SourceLedger,
+    draft: IntentDraft,
+    validation_issues: tuple[CompilationIssue, ...],
+    revision: int,
+    task_id: str | None,
+    trace: TraceDag | None,
+    parent: TraceNode | None,
+) -> IntentDraftRepairAttempt:
+    repair_context = {
+        "raw_request": _bounded_request(request, source_ledger),
+        "draft": draft.model_dump(mode="json"),
+        "validation_issues": [item.model_dump(mode="json") for item in validation_issues],
+        "instruction": (
+            "Return one replacement IntentDraft that repairs only the listed deterministic "
+            "or veto-review issues. Preserve source-bound user authority; do not add "
+            "capabilities, page facts, or inferred values. Provide a complete sourced "
+            "claim ledger and obligation graph."
+        ),
+    }
+    try:
+        repaired_model_draft = await model.generate_structured(
+            [
+                ModelMessage(role="system", content=_SYSTEM_PROMPT),
+                ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
+            ],
+            LLMIntentDraft,
+            intent_draft_repair_model_config(),
+        )
+    except StructuredModelError as exc:
+        if trace is not None:
+            parent = trace.add(
+                "IntentDraftRepairFailed",
+                {
+                    "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+                    "error_type": type(exc).__name__,
+                    "fallback_failures": list(getattr(model, "failures", ())),
+                },
+                parents=[parent.id] if parent else None,
+            )
+        return IntentDraftRepairAttempt(
+            draft=draft,
+            provider_issues=(),
+            proposal_claim_ids={},
+            result=CompilationResult(
+                status=CompilationStatus.UNSUPPORTED,
+                request_id=request.request_id,
+                draft=draft,
+                issues=validation_issues,
+            ),
+            parent=parent,
+            succeeded=False,
+        )
+
+    repaired_draft, provider_issues, proposal_claim_ids = _decode_provider_draft(
+        repaired_model_draft,
+        request,
+        source_ledger,
+    )
+    repaired_draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
+        repaired_draft,
+        source_ledger,
+        request,
+    )
+    if canonicalized:
+        provider_issues = canonical_issues
+    result = _compile_decoded_draft(
+        validator,
+        request,
+        repaired_draft,
+        provider_issues,
+        revision=revision,
+        task_id=task_id,
+    )
+    result = _apply_deterministic_coverage(
+        result,
+        source_ledger,
+        repaired_draft,
+    )
+    if trace is not None:
+        parent = trace.add(
+            "IntentDraftRepairProduced",
+            {
+                "prompt_version": INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+                "decoding_config": intent_draft_repair_model_config().model_dump(
+                    mode="json"
+                ),
+                "draft": repaired_draft.model_dump(mode="json"),
+                "status": result.status.value,
+                "model_call": (
+                    model.last_call.model_dump(mode="json")
+                    if model.last_call is not None
+                    else None
+                ),
+                "fallback_failures": list(getattr(model, "failures", ())),
+            },
+            parents=[parent.id] if parent else None,
+        )
+    return IntentDraftRepairAttempt(
+        draft=repaired_draft,
+        provider_issues=provider_issues,
+        proposal_claim_ids=proposal_claim_ids,
+        result=result,
+        parent=parent,
+        succeeded=True,
+    )
+
+
 def _normalize_semantic_proposal(
     draft: IntentDraft,
     source_ledger: SourceLedger,
@@ -566,15 +683,18 @@ def _normalize_semantic_proposal(
 def _canonicalize_flat_draft(
     draft: IntentDraft,
     source_ledger: SourceLedger,
+    request: UserRequest,
 ) -> tuple[IntentDraft, tuple[CompilationIssue, ...], bool]:
     """Compile flat effects without retaining any parent proposal graph field."""
 
     if draft.task_structure != TaskStructure.FLAT:
         return draft, (), False
+    draft = _normalize_flat_value_entry_draft(draft, request)
     try:
         graph = CanonicalObligationCompiler().compile_requested_effects(
             source_ledger,
             draft.requested_effects,
+            draft.candidate_semantic_value_constraints,
         )
     except ValueError as exc:
         return draft, (
@@ -593,6 +713,93 @@ def _canonicalize_flat_draft(
             ),
         }
     ), (), True
+
+
+def _normalize_flat_value_entry_draft(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Prevent explicit value-entry imperatives from becoming read-only tasks."""
+
+    if not _looks_like_value_entry_request(request.raw_text):
+        return draft
+    literal_value = _extract_literal_entry_value(
+        request.raw_text,
+        draft.candidate_success_criteria,
+    )
+    updated_effects = tuple(
+        item.model_copy(update={"operation_class": OperationClass.REVERSIBLE_WRITE})
+        if item.operation_class == OperationClass.READ_ONLY
+        else item
+        for item in draft.requested_effects
+    )
+    constraints = draft.candidate_semantic_value_constraints
+    if literal_value and not any(
+        item.relation == SemanticValueRelation.EXACT
+        and item.value == literal_value
+        and item.target in {effect.target for effect in updated_effects}
+        for item in constraints
+    ):
+        target = updated_effects[0].target if updated_effects else ""
+        source_ref = updated_effects[0].source_ref if updated_effects else request.request_id
+        constraints = (
+            *constraints,
+            SemanticValueConstraint(
+                relation=SemanticValueRelation.EXACT,
+                value=literal_value,
+                target=target,
+                source_ref=source_ref,
+            ),
+        )
+    return draft.model_copy(
+        update={
+            "requested_effects": updated_effects,
+            "candidate_semantic_value_constraints": constraints,
+        }
+    )
+
+
+def _looks_like_value_entry_request(raw_text: str) -> bool:
+    lowered = raw_text.casefold()
+    has_entry_verb = any(
+        token in lowered
+        for token in (
+            "enter ",
+            "type ",
+            "fill ",
+            "input ",
+            "write ",
+            "put ",
+        )
+    )
+    has_field_hint = any(
+        token in lowered
+        for token in (
+            " field",
+            " textbox",
+            " input",
+            " as the ",
+            " into ",
+        )
+    )
+    return has_entry_verb and has_field_hint
+
+
+def _extract_literal_entry_value(
+    raw_text: str,
+    success_criteria: tuple[str, ...],
+) -> str:
+    del success_criteria
+    for pattern in (
+        r"\benter\s+(.+?)\s+as\s+",
+        r"\btype\s+['\"]([^'\"]+)['\"]",
+        r"\binput\s+['\"]([^'\"]+)['\"]",
+        r"\bfill\s+['\"]([^'\"]+)['\"]",
+    ):
+        match = re.search(pattern, raw_text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" .,'\"")
+    return ""
 
 
 def _normalize_coverage_claim_references(
@@ -628,6 +835,33 @@ def _normalize_coverage_claim_references(
         }
     )
     return validate_task_obligation_coverage_review(request, draft, normalized_review)
+
+
+def _record_coverage_review(
+    trace: TraceDag,
+    coverage: TaskObligationCoverageDecision,
+    model_call: ModelCallRecord | None,
+    parent: TraceNode | None,
+) -> TraceNode:
+    return trace.add(
+        "TaskObligationCoverageReviewed",
+        {
+            "status": coverage.status.value,
+            "issue_code": coverage.issue_code,
+            "issue_detail": coverage.issue_detail,
+            "review": (
+                coverage.review.model_dump(mode="json")
+                if coverage.review is not None
+                else None
+            ),
+            "model_call": (
+                model_call.model_dump(mode="json")
+                if model_call is not None
+                else None
+            ),
+        },
+        parents=[parent.id] if parent else None,
+    )
 
 
 def _provider_obligation_error_code(error: ValidationError) -> str:

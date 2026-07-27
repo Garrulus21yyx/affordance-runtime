@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 import affordance_runtime.benchmarks.browsergym as browsergym_facade
+from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.benchmarks.browsergym_observer import (
     BrowserGymObserver,
     fuse_visual_candidates,
@@ -15,6 +16,9 @@ from affordance_runtime.benchmarks.browsergym_observer import (
     visual_fallback_affordance,
 )
 from affordance_runtime.benchmarks.browsergym_types import BrowserGymEpisodeState
+from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
+from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 
 
 @dataclass
@@ -26,6 +30,32 @@ class FailingCaptureSession:
         del kwargs
         self.calls += 1
         raise RuntimeError(self.message)
+
+    def bounding_boxes_for_selectors(
+        self,
+        bindings: dict[str, str],
+    ) -> dict[str, tuple[float, float, float, float]]:
+        del bindings
+        return {}
+
+
+@dataclass
+class TargetedCaptureSession:
+    targeted_calls: int = 0
+
+    def capture_targeted(self, requests: tuple[ActivePerceptionRequest, ...]) -> Any:
+        self.targeted_calls += 1
+        assert requests[0].property_key == "spatial"
+        model = DomAdapter().transduce(
+            '<input id="tt">',
+            environment_revision="revision-1",
+            snapshot_id="snapshot-targeted",
+            page_revision="page-1",
+        )
+        return BrowserSnapshot(
+            Observation("revision-1", snapshot_id="snapshot-targeted", page_revision="page-1"),
+            model,
+        )
 
     def bounding_boxes_for_selectors(
         self,
@@ -67,6 +97,23 @@ def test_observer_caps_coherent_epoch_drift_retries(tmp_path: Path) -> None:
         _observer(session, tmp_path).capture()
 
     assert session.calls == 2
+
+
+def test_observer_exposes_targeted_capture_port_with_browsergym_metadata(tmp_path: Path) -> None:
+    session = TargetedCaptureSession()
+    observer = _observer(session, tmp_path)
+    request = ActivePerceptionRequest(
+        "task:required-evidence",
+        "spatial",
+        (GroundingSource.SVG,),
+        "required spatial evidence is absent",
+    )
+
+    snapshot = observer.capture_targeted((request,))
+
+    assert session.targeted_calls == 1
+    assert snapshot.observation.metadata["browsergym"]["goal"] == "Inspect the current control"
+    assert snapshot.observation.metadata["browsergym"]["capture_mode"] == "targeted"
 
 
 def test_observer_metadata_serialization_is_recursive_and_non_executing() -> None:

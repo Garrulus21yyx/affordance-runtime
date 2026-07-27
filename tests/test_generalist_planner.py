@@ -2692,6 +2692,261 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
     assert decision.planner_context["semantic_value_constraint"]["relation"] == "prefix"
 
 
+def test_strict_planner_uses_exact_value_fallback_when_model_asks_empty_clarification() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<input id="tt" type="date"><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Enter 01/18/2019 as the date and hit submit.")
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="date-field:value",
+                objective="date_field equals 01/18/2019",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="date_field",
+                    relation=SubgoalOutcomeRelation.EQUALS,
+                    value="01/18/2019",
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="date-field:value")
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Enter 01/18/2019 as the date and hit submit.",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("date_field",),
+        semantic_value_constraints=(
+            SemanticValueConstraint(
+                relation=SemanticValueRelation.EXACT,
+                value="01/18/2019",
+                target="date_field",
+                source_ref="request-1",
+            ),
+        ),
+        success_criteria=("date_field = '01/18/2019'",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class EmptyClarificationModel:
+        provider: str = "fixed"
+        model: str = "empty-clarification"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate({"action_kind": "ask_user"})
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
+    assert decision.proposal.target_affordance_id == "dom_input_1"
+    assert decision.proposal.parameters == {"text": "01/18/2019"}
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.source == "deterministic_rule"
+
+
+def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarification() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<div>LO4e</div><input id="tt" type="text"><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        metadata={"visible_text": "LO4e\n Submit"},
+    )
+    snapshot = BrowserSnapshot(observation, model)
+    objective = "Type the text below into the text field and press Submit."
+    state = StateKernel("task-1", objective)
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="text-field:changed",
+                objective="text_field has changed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="text_field",
+                    relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("text_field",),
+        success_criteria=("text_field has changed",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class EmptyClarificationModel:
+        provider: str = "fixed"
+        model: str = "empty-clarification"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate({"action_kind": "ask_user"})
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
+    assert decision.proposal.target_affordance_id == "dom_input_1"
+    assert decision.proposal.parameters == {"text": "LO4e"}
+    assert decision.proposal.requires_clarification is False
+
+
+def test_strict_planner_submits_after_verified_page_text_entry_when_model_asks() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<div>LO4e</div><input id="tt" type="text"><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    filled_model = replace(
+        model,
+        affordances=[
+            replace(item, state={**item.state, "control_value": "LO4e"})
+            if item.id == "dom_input_1"
+            else item
+            for item in model.affordances
+        ],
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        metadata={"visible_text": "LO4e\n Submit"},
+    )
+    snapshot = BrowserSnapshot(observation, filled_model)
+    objective = "Type the text below into the text field and press Submit."
+    state = StateKernel("task-1", objective)
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="text-field:changed",
+                objective="text_field has changed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="text_field",
+                    relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    state.record_planner_proposal(
+        {
+            "proposal_id": "previous",
+            "action_kind": "type_text",
+            "target_affordance_id": "dom_input_1",
+            "expected_effects": ["text_field has changed"],
+        }
+    )
+    state.record_action_progress(
+        '{"action_kind":"type_text","target":"dom_input_1","parameters":{"text":"LO4e"}}',
+        "rev-1",
+        verification_passed=True,
+        post_page_revision=model.page_revision,
+    )
+    from affordance_runtime.verification import VerificationReport, VerificationStatus
+
+    state.latest_verification = VerificationReport(VerificationStatus.PASSED)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective=objective,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("text_field",),
+        success_criteria=("submitted",),
+        source_request_ref="request-1",
+    )
+
+    @dataclass
+    class BlockingClarificationModel:
+        provider: str = "fixed"
+        model: str = "blocking-clarification"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate({"action_kind": "ask_user", "reason": "text mismatch"})
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(BlockingClarificationModel()).propose(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert decision.proposal.target_affordance_id == "dom_button_1"
+    assert decision.proposal.requires_clarification is False
+
+
 def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
     model = _authored_dom_adapter().transduce(
         '<input id="tags" class="ui-autocomplete-input" value="Comoros"><button>Submit</button>',

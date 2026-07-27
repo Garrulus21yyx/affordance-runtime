@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
@@ -408,71 +409,48 @@ class GeneralistLMPlanner:
                 compatibility_mode=compatibility_mode,
             )
         )
-        return PlannerDecision(
+        fallback_proposal = None
+        fallback_producer_id = ""
+        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
+            fallback_proposal = _strict_submit_after_text_fallback(context, proposal)
+            fallback_producer_id = "strict-submit-after-text-fallback"
+            if fallback_proposal is None:
+                fallback_proposal = _strict_exact_value_text_fallback(context, proposal)
+                fallback_producer_id = "strict-exact-value-text-fallback"
+            if fallback_proposal is None:
+                fallback_proposal = _strict_page_observed_text_fallback(context, proposal)
+                fallback_producer_id = "strict-page-observed-text-fallback"
+        if fallback_proposal is not None:
+            return _planner_decision(
+                proposal=fallback_proposal,
+                provenance=PlannerProposalProvenance(
+                    source=PlannerProposalSource.DETERMINISTIC_RULE,
+                    producer_id=fallback_producer_id,
+                    profile_id=self.planner_profile.value,
+                    version=self.config.prompt_version,
+                ),
+                context=context,
+                semantic_compilers=semantic_compilers,
+                terminal_readiness=terminal_readiness,
+                constraints=constraints,
+                typed_text_constraint=typed_text_constraint,
+                ordinal_constraint=ordinal_constraint,
+                model_call=self.model.last_call,
+            )
+        return _planner_decision(
             proposal=proposal,
-            proposal_provenance=PlannerProposalProvenance(
+            provenance=PlannerProposalProvenance(
                 source=PlannerProposalSource.MODEL,
                 producer_id=f"{self.model.provider}:{self.model.model}",
                 profile_id=self.planner_profile.value,
                 version=self.config.prompt_version,
             ),
-            reason=proposal.reason,
-            planner_context={
-                "task_revision": context.task_revision,
-                "state_version": context.state_version,
-                "snapshot_id": context.snapshot_id,
-                "affordance_count": len(context.affordances),
-                "granted_capabilities": list(context.granted_capabilities),
-                "remaining_budgets": context.remaining_budgets,
-                "context": json.loads(context.model_dump_json()),
-                "prompt_version": self.config.prompt_version,
-                "planner_profile": self.planner_profile.value,
-                "semantic_compiler_registry_digest": semantic_compilers.digest,
-                **(
-                    {"terminal_readiness": terminal_readiness}
-                    if terminal_readiness
-                    else {}
-                ),
-                **(
-                    {
-                        "semantic_constraints": {
-                            "compiler_id": constraints.compiler_id,
-                            "evidence_ref": constraints.evidence_ref,
-                        }
-                    }
-                    if constraints is not None
-                    else {}
-                ),
-                **(
-                    {
-                        "semantic_value_constraint": {
-                            "relation": typed_text_constraint.relation,
-                            "target_id": typed_text_constraint.target_id,
-                            "status": (
-                                "satisfied"
-                                if typed_text_constraint.satisfied
-                                else "open"
-                            ),
-                        }
-                    }
-                    if typed_text_constraint is not None
-                    else {}
-                ),
-                **(
-                    {
-                        "ordinal_route_constraint": {
-                            "kind": ordinal_constraint.kind.value,
-                            "requested_ordinal": ordinal_constraint.requested_ordinal,
-                            "current_page": ordinal_constraint.current_page,
-                            "target_page": ordinal_constraint.target_page,
-                            "target_id": ordinal_constraint.target_id,
-                            "pagination_owner": ordinal_constraint.pagination_owner,
-                        }
-                    }
-                    if ordinal_constraint is not None
-                    else {}
-                ),
-            },
+            context=context,
+            semantic_compilers=semantic_compilers,
+            terminal_readiness=terminal_readiness,
+            constraints=constraints,
+            typed_text_constraint=typed_text_constraint,
+            ordinal_constraint=ordinal_constraint,
             model_call=self.model.last_call,
         )
 
@@ -598,6 +576,214 @@ class GeneralistLMPlanner:
         before = self.planner_schema_ref()
         self.schema_recovery_generation = 1
         return before, self.planner_schema_ref()
+
+
+def _planner_decision(
+    *,
+    proposal: PlannerProposal,
+    provenance: PlannerProposalProvenance,
+    context: PlannerContext,
+    semantic_compilers: SemanticCompilerRegistry,
+    terminal_readiness: dict[str, object],
+    constraints: Any,
+    typed_text_constraint: Any,
+    ordinal_constraint: Any,
+    model_call: Any,
+) -> PlannerDecision:
+    planner_context: dict[str, Any] = {
+        "task_revision": context.task_revision,
+        "state_version": context.state_version,
+        "snapshot_id": context.snapshot_id,
+        "affordance_count": len(context.affordances),
+        "granted_capabilities": list(context.granted_capabilities),
+        "remaining_budgets": context.remaining_budgets,
+        "context": json.loads(context.model_dump_json()),
+        "prompt_version": provenance.version,
+        "planner_profile": provenance.profile_id,
+        "semantic_compiler_registry_digest": semantic_compilers.digest,
+    }
+    if terminal_readiness:
+        planner_context["terminal_readiness"] = terminal_readiness
+    if constraints is not None:
+        planner_context["semantic_constraints"] = {
+            "compiler_id": constraints.compiler_id,
+            "evidence_ref": constraints.evidence_ref,
+        }
+    if typed_text_constraint is not None:
+        planner_context["semantic_value_constraint"] = {
+            "relation": typed_text_constraint.relation,
+            "target_id": typed_text_constraint.target_id,
+            "status": "satisfied" if typed_text_constraint.satisfied else "open",
+        }
+    if ordinal_constraint is not None:
+        planner_context["ordinal_route_constraint"] = {
+            "kind": ordinal_constraint.kind.value,
+            "requested_ordinal": ordinal_constraint.requested_ordinal,
+            "current_page": ordinal_constraint.current_page,
+            "target_page": ordinal_constraint.target_page,
+            "target_id": ordinal_constraint.target_id,
+            "pagination_owner": ordinal_constraint.pagination_owner,
+        }
+    if provenance.source == PlannerProposalSource.DETERMINISTIC_RULE:
+        planner_context["deterministic_fallback"] = provenance.producer_id
+    return PlannerDecision(
+        proposal=proposal,
+        proposal_provenance=provenance,
+        reason=proposal.reason,
+        planner_context=planner_context,
+        model_call=model_call,
+    )
+
+
+def _strict_exact_value_text_fallback(
+    context: PlannerContext,
+    proposal: PlannerProposal,
+) -> PlannerProposal | None:
+    """Use exact TaskSpec text only when current semantics leave one safe input."""
+
+    if proposal.action_kind != PlannerActionKind.ASK_USER or proposal.reason.strip():
+        return None
+    if context.active_subgoal_action_family != PlannerActionKind.TYPE_TEXT.value:
+        return None
+    value = _single_open_exact_text_value(context)
+    if not value:
+        return None
+    target_ids = [
+        item.id
+        for item in context.affordances
+        if item.id in _compatible_target_ids(context).get(PlannerActionKind.TYPE_TEXT.value, [])
+        and item.state.get("enabled") is not False
+        and item.state.get("control_value") != value
+    ]
+    if len(target_ids) != 1:
+        return None
+    return PlannerProposalCandidate(
+        subgoal=context.active_subgoal,
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=target_ids[0],
+        parameters={"text": value},
+        expected_effects=(context.active_subgoal,),
+        evidence_requirements=tuple(
+            str(item)
+            for item in context.task_spec.get("evidence_requirements", ())
+            if isinstance(item, str) and item
+        ),
+    ).bind(context)
+
+
+def _strict_submit_after_text_fallback(
+    context: PlannerContext,
+    proposal: PlannerProposal,
+) -> PlannerProposal | None:
+    """Activate one terminal control after verifier-backed text entry."""
+
+    if proposal.action_kind != PlannerActionKind.ASK_USER:
+        return None
+    if context.active_subgoal not in context.verified_effects:
+        return None
+    if not context.satisfied_action_targets.get(PlannerActionKind.TYPE_TEXT.value):
+        return None
+    objective = str(context.task_spec.get("objective") or "").casefold()
+    if not any(word in objective for word in ("submit", "save", "done", "confirm", "send")):
+        return None
+    compatible = _compatible_target_ids(context).get(PlannerActionKind.ACTIVATE.value, [])
+    terminal_ids = [
+        item.id
+        for item in context.affordances
+        if item.id in compatible
+        and item.state.get("enabled") is not False
+        and _label_has_terminal_word(item.label)
+    ]
+    if len(terminal_ids) != 1:
+        return None
+    return PlannerProposalCandidate(
+        subgoal=context.active_subgoal,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=terminal_ids[0],
+        expected_effects=("submitted",),
+        evidence_requirements=tuple(
+            str(item)
+            for item in context.task_spec.get("evidence_requirements", ())
+            if isinstance(item, str) and item
+        ),
+    ).bind(context)
+
+
+def _strict_page_observed_text_fallback(
+    context: PlannerContext,
+    proposal: PlannerProposal,
+) -> PlannerProposal | None:
+    """Use one visible page value for deictic text-entry tasks."""
+
+    if proposal.action_kind != PlannerActionKind.ASK_USER or proposal.reason.strip():
+        return None
+    if context.active_subgoal_action_family != PlannerActionKind.TYPE_TEXT.value:
+        return None
+    value = _single_page_observed_text_value(context)
+    if not value:
+        return None
+    target_ids = [
+        item.id
+        for item in context.affordances
+        if item.id in _compatible_target_ids(context).get(PlannerActionKind.TYPE_TEXT.value, [])
+        and item.state.get("enabled") is not False
+        and item.state.get("control_value") != value
+    ]
+    if len(target_ids) != 1:
+        return None
+    return PlannerProposalCandidate(
+        subgoal=context.active_subgoal,
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=target_ids[0],
+        parameters={"text": value},
+        expected_effects=(context.active_subgoal,),
+        evidence_requirements=tuple(
+            str(item)
+            for item in context.task_spec.get("evidence_requirements", ())
+            if isinstance(item, str) and item
+        ),
+    ).bind(context)
+
+
+def _single_page_observed_text_value(context: PlannerContext) -> str:
+    objective = str(context.task_spec.get("objective") or "").casefold()
+    if "text below" not in objective:
+        return ""
+    excluded = {
+        item.label.casefold().strip()
+        for item in context.affordances
+        if item.action in {"activate", "click"} or item.role == "button"
+    }
+    values = tuple(
+        dict.fromkeys(
+            line.strip()
+            for line in context.observed_text.splitlines()
+            if line.strip() and line.casefold().strip() not in excluded
+        )
+    )
+    return values[0] if len(values) == 1 else ""
+
+
+def _label_has_terminal_word(label: str) -> bool:
+    words = ("submit", "save", "done", "confirm", "send", "create", "continue", "next", "ok")
+    return any(re.search(rf"\b{re.escape(word)}\b", label.casefold()) for word in words)
+
+
+def _single_open_exact_text_value(context: PlannerContext) -> str:
+    raw_constraints = context.task_spec.get("semantic_value_constraints")
+    if not isinstance(raw_constraints, list):
+        return ""
+    values = tuple(
+        dict.fromkeys(
+            str(item.get("value"))
+            for item in raw_constraints
+            if isinstance(item, dict)
+            and item.get("relation") == "exact"
+            and isinstance(item.get("value"), str)
+            and str(item.get("value")).strip()
+        )
+    )
+    return values[0] if len(values) == 1 else ""
 
 
 def _strict_candidate_prebind_issue(

@@ -59,13 +59,9 @@ def candidate_from_affordance(
             bbox_xywh=bbox,
         )
         evidence = {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
-        if bbox is not None or (
-            affordance.action in {"drag", "drop"}
-            and bool(affordance.locator.get("backend_handle") or affordance.locator.get("selector"))
-        ):
-            # A current element handle is a trusted spatial binding for
-            # locator-based drag executors even when raw coordinates are not
-            # exposed to the planner.
+        if bbox is not None or bool(payload.backend_handle or payload.selector):
+            # A current element locator is a trusted executor-local spatial
+            # binding even when raw coordinates are not exposed to the planner.
             evidence.add(EvidenceKind.SPATIAL)
         evidence_kinds = frozenset(evidence)
     elif affordance.surface == Surface.VISUAL:

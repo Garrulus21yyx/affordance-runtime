@@ -16,12 +16,15 @@ from affordance_runtime.task_intake import (
     GraphConstructionSource,
     OperationClass,
     RequestedEffect,
+    SemanticValueConstraint,
+    SemanticValueRelation,
     SourcedTaskClaim,
     StrictModel,
     TaskClaimKind,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
+    TaskObligationValueSource,
 )
 
 
@@ -57,6 +60,7 @@ class CanonicalObligationCompiler:
         self,
         source_ledger: SourceLedger,
         effects: tuple[RequestedEffect, ...],
+        semantic_value_constraints: tuple[SemanticValueConstraint, ...] = (),
     ) -> CanonicalObligationGraph:
         """Compile flat source-bound effects without proposal graph structure.
 
@@ -68,14 +72,25 @@ class CanonicalObligationCompiler:
 
         known_units = {unit.source_unit_id for unit in source_ledger.units}
         inputs: list[CanonicalEffectInput] = []
+        exact_values_by_target = {
+            constraint.target: constraint.value
+            for constraint in semantic_value_constraints
+            if constraint.relation == SemanticValueRelation.EXACT
+            and constraint.target
+        }
         for effect in effects:
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
             read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            literal_value = exact_values_by_target.get(effect.target, "")
             relation = (
                 TaskObligationRelation.IS_AVAILABLE
                 if read
-                else TaskObligationRelation.IS_COMPLETED
+                else (
+                    TaskObligationRelation.EQUALS
+                    if literal_value
+                    else TaskObligationRelation.HAS_CHANGED
+                )
             )
             evidence_kind = (
                 EvidenceKind.DOM_STATE
@@ -97,6 +112,7 @@ class CanonicalObligationCompiler:
                             kind=evidence_kind,
                             subject=effect.target,
                             relation=relation,
+                            value_ref=literal_value,
                             minimum_strength="independent",
                             source_constraints=(effect.source_ref,),
                         ),
@@ -124,11 +140,17 @@ class CanonicalObligationCompiler:
             claim_id = f"claim:{identity}"
             obligation_id = f"obligation:{identity}"
             read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-            relation = TaskObligationRelation.IS_AVAILABLE if read else TaskObligationRelation.IS_COMPLETED
+            primary_evidence = effect.evidence[0]
+            relation = primary_evidence.relation
+            literal_value = primary_evidence.value_ref if relation == TaskObligationRelation.EQUALS else ""
             claims.append(SourcedTaskClaim(
                 claim_id=claim_id,
                 kind=TaskClaimKind.EFFECT,
-                statement=f"{effect.operation_class.value}:{effect.target}",
+                statement=(
+                    f"{effect.operation_class.value}:{effect.target}={literal_value}"
+                    if literal_value
+                    else f"{effect.operation_class.value}:{effect.target}"
+                ),
                 source_ref=effect.source_unit_ids[0],
                 source_unit_ids=effect.source_unit_ids,
                 construction_source=GraphConstructionSource.CANONICAL_COMPILER,
@@ -138,6 +160,12 @@ class CanonicalObligationCompiler:
                 kind=TaskObligationKind.PREDICATE if read else TaskObligationKind.EFFECT,
                 subject=effect.target,
                 relation=relation,
+                value_source=(
+                    TaskObligationValueSource.LITERAL
+                    if literal_value
+                    else TaskObligationValueSource.NONE
+                ),
+                expected_value=literal_value,
                 claim_ids=(claim_id,),
                 evidence_requirements=tuple(f"{item.kind.value}:{item.subject}" for item in effect.evidence),
                 typed_evidence_requirements=effect.evidence,

@@ -79,7 +79,7 @@ def test_canonical_compiler_constructs_flat_graph_from_requested_effect_without_
 
     assert graph.claims[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
     assert graph.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
-    assert graph.obligations[0].relation == TaskObligationRelation.IS_COMPLETED
+    assert graph.obligations[0].relation == TaskObligationRelation.HAS_CHANGED
     assert graph.obligations[0].typed_evidence_requirements[0].kind == EvidenceKind.DOM_STATE
     assert graph.obligations[0].evidence_requirements == ("dom_state:requested report",)
 

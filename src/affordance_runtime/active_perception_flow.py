@@ -94,7 +94,7 @@ class ActivePerceptionFlow:
                 ),
                 targeted_capture_available=False,
             )
-        requests = context.snapshot.active_perception_requests or tuple(
+        gap_requests = tuple(
             ActivePerceptionRequest(
                 entity_key=item.entity_key,
                 property_key=item.property_key,
@@ -105,6 +105,7 @@ class ActivePerceptionFlow:
             for item in gaps
             if item.preferred_sources
         )
+        requests = (*context.snapshot.active_perception_requests, *gap_requests)
         capabilities = probe_capabilities_for_requests(requests)
         budget = self.budget_policy.remaining_authority(
             context.snapshot.perception_requirements,

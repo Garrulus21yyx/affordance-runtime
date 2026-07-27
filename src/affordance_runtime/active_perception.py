@@ -369,9 +369,10 @@ class EvidenceGapExtractor:
                         property_key="semantic_target",
                         gap_kind=gap_kind,
                         required_evidence_kind=required_kind,
-                        preferred_sources=(
-                            requirements.preferred_sources
-                            or _preferred_sources(required_kind)
+                        preferred_sources=_required_evidence_sources(
+                            required_kind,
+                            requirements.preferred_sources,
+                            requirements.acceptable_evidence,
                         ),
                         reason="current epoch has no actionable semantic target",
                         material=True,
@@ -384,6 +385,11 @@ class EvidenceGapExtractor:
                     continue
                 gap_kind = _missing_gap_kind(evidence_kind)
                 property_key = evidence_kind.value
+                preferred_sources = _required_evidence_sources(
+                    evidence_kind,
+                    requirements.preferred_sources,
+                    requirements.acceptable_evidence,
+                )
                 gaps.append(
                     EvidenceGap(
                         gap_id=_gap_id(
@@ -402,7 +408,7 @@ class EvidenceGapExtractor:
                         property_key=property_key,
                         gap_kind=gap_kind,
                         required_evidence_kind=evidence_kind,
-                        preferred_sources=_preferred_sources(evidence_kind),
+                        preferred_sources=preferred_sources,
                         reason=f"required {evidence_kind.value} evidence is absent from the current epoch",
                         material=True,
                         risk_relevance=requirements.risk,
@@ -438,7 +444,7 @@ class ActivePerceptionController:
                 ),
             )
         candidates: list[
-            tuple[tuple[int, int, int, int, float, int, str], EvidenceGap, ProbeCapability]
+            tuple[tuple[int, int, int, int, int, float, int, str], EvidenceGap, ProbeCapability]
         ] = []
         for gap in gaps:
             for capability in capabilities:
@@ -461,9 +467,11 @@ class ActivePerceptionController:
                     or capability.source not in _assertion_sources(gap)
                     else 1
                 )
+                required_evidence_rank = 0 if gap.entity_key == "task:required-evidence" else 1
                 priority = (
                     0 if gap.blocks else 1,
                     -_risk_rank(gap.risk_relevance),
+                    required_evidence_rank,
                     independent_rank,
                     source_rank,
                     capability.estimated_cost,
@@ -735,6 +743,15 @@ def _preferred_sources(evidence_kind: EvidenceKind) -> tuple[GroundingSource, ..
         ),
         EvidenceKind.DEVICE_STATE: (GroundingSource.WOT, GroundingSource.API),
     }[evidence_kind]
+
+
+def _required_evidence_sources(
+    evidence_kind: EvidenceKind,
+    preferred_sources: tuple[GroundingSource, ...],
+    acceptable_sources: frozenset[GroundingSource],
+) -> tuple[GroundingSource, ...]:
+    ordered = preferred_sources or _preferred_sources(evidence_kind)
+    return tuple(source for source in ordered if not acceptable_sources or source in acceptable_sources)
 
 
 def _snapshot_has_evidence(snapshot: "BrowserSnapshot", evidence_kind: EvidenceKind) -> bool:
