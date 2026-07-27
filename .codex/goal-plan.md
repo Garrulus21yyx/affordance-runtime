@@ -94,9 +94,14 @@ delivery claims.
 18. `done` — Freeze the SG7 generic repair in a clean revision and rerun the
     exact targeted matrix (`enter-date`, `text-transform`, seeds 0 and 1)
     before protected breadth, PR/nightly/release, score, or promotion claims.
-19. `pending` — Continue vertical protected cross-family / PR breadth on a
+19. `in_progress` — Continue vertical protected cross-family / PR breadth on a
     clean current revision with local equivalent gates, while keeping immutable
-    Planner input as the separate next horizontal lane.
+    Planner input as the separate next horizontal lane. Clean `d66760f` PR
+    breadth ran 12/12 observed with 0/12 passed, no provider failure, and no
+    missing/unrun/invalidated episodes; this is negative diagnostic evidence,
+    not promotion. Next vertical step is generic INTENT / PLANNING root-owner
+    classification/repair, with the single CONTRACT / FIELD_BINDING
+    `schema_incompatible` case tracked separately.
 20. `pending` — Execute the review-driven remediation sequence as separate
     slices: P1 immutable Planner input, P2 semantic fallback owner extraction,
     P3 intent semantic normalizer, and P4 protected breadth continuation. Do

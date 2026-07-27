@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | protected cross-family / PR breadth confirmation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; latest implementation-bearing local-equivalent baseline `66747420c4d319d26a10a7c6fb6006871cf3310a` passed its recorded gate; remote CI is disabled for this iteration | protected-family breadth result recorded on a clean current revision without task-name/Prompt-only/budget-expansion repair; fresh diagnostic remains separate | unrelated horizontal debt retirement |
+| Vertical | classify and repair PR breadth INTENT / PLANNING failures | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; PR breadth failed at `d66760f` with 12/12 observed, 0/12 passed, 0 provider failure, and dominant INTENT / PLANNING clusters; remote CI is disabled for this iteration | one generic root-owner repair slice is identified and verified first outside benchmark specialization, then PR breadth is rerun on a clean revision; fresh diagnostic remains separate | unrelated horizontal debt retirement |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -89,6 +89,14 @@ batched into a single mixed patch:
 4. **P4 protected breadth continuation** — continue protected cross-family /
    PR breadth on a clean current revision, with `official_score_claimed=false`
    and promotion held until a fresh diagnostic is explicitly authorized.
+
+P4 is currently negative: protected cross-family / PR breadth failed at
+`d66760f` with 12/12 observed, 0/12 passed, and no provider/runtime
+provisioning failure. The next vertical action is not PR/nightly/release
+promotion; it is root-owner classification and a bounded generic INTENT /
+PLANNING repair candidate, with the single CONTRACT / FIELD_BINDING
+`schema_incompatible` case tracked separately. The task packet is
+`docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

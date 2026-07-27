@@ -249,6 +249,38 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
 
+def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-d66760f/README.md"
+    repair_record = CHANGE_ADMISSION_DIR / "v-pr-breadth-intent-planning-repair.yaml"
+
+    assert evidence.exists()
+    assert (evidence.parent / "browsergym-report.json").exists()
+    assert (evidence.parent / "matrix-metadata.json").exists()
+    assert repair_record.exists()
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    repair_text = " ".join(repair_record.read_text(encoding="utf-8").split()).casefold()
+
+    assert "pr_breadth_latest:" in status
+    assert "status: failed" in status
+    assert "expected: 12" in status
+    assert "observed: 12" in status
+    assert "passed: 0" in status
+    assert "official_score_claimed: false" in status
+    assert "root_owner_next: intent / planning" in status
+    assert "protected cross-family / pr breadth failed at `d66760f`" in current_plan
+    assert "m8.2a-pr-breadth-d66760f" in status
+    assert "official_score_claimed=false" in evidence_text
+    assert "promotion eligible: no" in evidence_text
+    assert "intent_compilation_rejected" in evidence_text
+    assert "planner_waiting_clarification" in evidence_text
+    assert "architecture_admission: not_evaluated" in repair_text
+    assert "non-browsergym reproduction" in repair_text
+    assert "do not add task-name" in repair_text
+    assert "rerun pr breadth 6-task x 2-seed matrix" in repair_text
+
+
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     compose = COMPOSE_FILE.read_text(encoding="utf-8")

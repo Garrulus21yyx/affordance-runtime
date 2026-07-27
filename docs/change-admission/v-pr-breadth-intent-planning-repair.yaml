@@ -1,0 +1,100 @@
+slice_id: v-pr-breadth-intent-planning-repair
+base_revision: d66760f76bb4668f610d2ebfac2c8ba0bf83c71a
+change_type: vertical_generic_correctness_repair
+production_change_initially_allowed: false
+
+goal: >
+  Classify and repair the PR breadth failures from the clean d66760f
+  strict-generalist run without adding benchmark-specific dispatch or weakening
+  canonical task authority.
+
+triggering_evidence:
+  run: docs/evidence/runs/m8.2a-pr-breadth-d66760f/
+  output_dir: /tmp/affordance-pr-breadth-d66760f-20260727-201632
+  expected: 12
+  observed: 12
+  passed: 0
+  failed: 12
+  provider_failures: 0
+  missing: 0
+  unrun: 0
+  invalidated: 0
+  official_score_claimed: false
+
+failure_clusters:
+  - root_layer: INTENT / PLANNING
+    signature: intent_compilation_rejected
+    episode_count: 6
+    task_count: 4
+    families:
+      - activate
+      - form
+      - text_entry
+      - unresolved:no_action_evidence
+  - root_layer: INTENT / PLANNING
+    signature: planner_waiting_clarification
+    episode_count: 5
+    task_count: 4
+    families:
+      - activate
+      - selection
+      - text_entry
+  - root_layer: CONTRACT / FIELD_BINDING
+    signature: schema_incompatible
+    episode_count: 1
+    task_count: 1
+    families:
+      - activate
+
+single_responsibility: >
+  Convert a cross-family, source-bound imperative task statement into a
+  canonical admissible task graph and planner proposal path when deterministic
+  non-BrowserGym evidence proves the generic semantics; keep the
+  schema-incompatible contract case separate unless the same root cause is
+  proven.
+
+non_goals:
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not tune prompts as the only repair
+  - do not increase model-call, retry, timeout, cost, or execution budgets
+  - do not weaken SourceLedger, canonical compiler, deterministic coverage, or verifier gates
+  - do not migrate PlannerPort to immutable PlanningRequest in this vertical slice
+  - do not change StateKernel, Coordinator ownership, approval, or capability authority
+  - do not claim PR breadth, nightly, release, or official benchmark score
+
+candidate_owner_before:
+  - LLMIntentCompiler
+  - CanonicalObligationCompiler
+  - TaskPlan compiler/admission
+  - GeneralistLMPlanner deterministic fallback
+
+candidate_owner_after:
+  primary:
+    - typed intent semantic normalizer or semantic action resolver
+  consumers:
+    - CanonicalObligationCompiler
+    - TaskPlan compiler/admission
+    - GeneralistLMPlanner
+  constraints:
+    - GeneralistLMPlanner consumes typed constraints or resolver candidates
+    - LLMIntentCompiler may call the normalizer but may not own READY authority
+    - Runtime-owned canonical graph remains the authority crossing into TaskSpec
+
+required_before_production_change:
+  - non-BrowserGym reproduction for each proposed semantic repair
+  - negative controls with distractor targets or ambiguous candidates
+  - proof that model output remains advisory and veto-only where applicable
+  - architecture admission identifying owner_before and owner_after
+
+tests_required:
+  - deterministic intake/TaskPlan tests for source-bound imperative activation
+  - deterministic intake/TaskPlan tests for select-option plus terminal submit
+  - deterministic multi-stage form tests that keep typed operation families
+  - planner proposal tests that consume typed constraints without task names
+  - negative ambiguity and distractor tests
+  - horizontal architecture governance gates
+  - rerun PR breadth 6-task x 2-seed matrix after any repair
+
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled
