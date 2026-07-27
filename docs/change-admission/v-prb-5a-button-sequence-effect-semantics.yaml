@@ -107,7 +107,7 @@ promotion_status: held
 remote_ci: disabled
 
 result:
-  status: implemented_after_progress_red
+  status: closed_for_pr_breadth_matrix
   production_change_admitted: true
   local_verification:
     - non-BrowserGym RED/GREEN passed
@@ -207,7 +207,27 @@ result:
       active_subgoal: button ONE is completed
       active_subgoal_action_family: ""
       remaining_defect: declaration precondition required action_family even though typed outcome and matched click target were sufficient
+  clean_pr_breadth_fourth_rerun:
+    revision: 151fbefc3470b7893eb9f92d4b85c75133bd6750
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-151fbef/
+    expected: 12
+    observed: 12
+    official_passed: 10
+    official_failed: 2
+    runtime_failed: 3
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    official_score_claimed: false
+    impact: button-sequence mechanism closed for both protected PR breadth seeds
+    closed_episodes:
+      - click-button-sequence:seed-0
+      - click-button-sequence:seed-1
+    remaining_failures:
+      - form-sequence:seed-0
+      - form-sequence:seed-1
+      - enter-text:seed-1
   next_requirement:
-    - commit the refined completed-click progress evidence repair
-    - rerun the same clean PR breadth matrix on the committed revision before judging button-sequence closure
+    - close V-PRB-5A for the current PR breadth matrix
+    - continue with V-PRB-5B form action-family resolution or V-PRB-6 terminal guard as a separate slice
     - keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate

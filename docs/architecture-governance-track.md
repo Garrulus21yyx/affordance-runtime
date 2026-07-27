@@ -100,10 +100,10 @@ horizontal architecture --/
 
 The current vertical lane is protected cross-family / PR breadth confirmation.
 SG7 targeted protected-family confirmation is closed only within its recorded
-2-task x 2-seed scope. Current PR breadth evidence is bound to `e4795c1` and
-remains failed at 8/12 official reward, with remaining work split into
-V-PRB-5A completed-click progress evidence, V-PRB-5B entry action-family
-resolution, and V-PRB-6 terminal-completion guard classification. The active-subgoal
+2-task x 2-seed scope. Current PR breadth evidence is bound to `151fbef` and
+remains failed at 10/12 official reward, with V-PRB-5A button-sequence closed
+for this matrix and remaining work split into V-PRB-5B entry action-family
+resolution plus V-PRB-6 terminal-completion guard classification. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
 standard Planner input. That horizontal lane is not a prerequisite for 5A/5B
@@ -192,7 +192,7 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | standard `PlannerPort` still receives mutable `StateKernel` | `pending` | introduce frozen `PlannerStateView` / `PlanningRequest` before claiming immutable planner input |
 | Generalist Planner semantic fallback ownership review | `in_progress` | V-PRB-3 extracted the empty-clarification cluster into `semantic_action_resolver.py`; old SG7 exact-value, page-observed-text, and terminal-submit fallbacks still remain in `GeneralistLMPlanner` and must move only through separate typed owner slices |
 | `semantic_action_resolver.py` output/input boundary | `pending` | resolver is authority-free and executable-gate protected, but `SemanticActionResolution.parameters` is not deeply immutable and resolver input still reads typed shells with dynamic dictionaries; tighten through Mapping/discriminated result types and future PlanningRequest views |
-| PR breadth V-PRB-5A button-sequence semantics | `in_progress` | dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs are locally verified; rerun the same clean PR breadth matrix on the committed progress-evidence repair before judging closure |
+| PR breadth V-PRB-5A button-sequence semantics | `done` | clean `151fbef` PR breadth rerun passed both `click-button-sequence` seeds after dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs |
 | PR breadth V-PRB-5B entry action-family resolution | `pending` | resolve action family from typed obligation plus current affordance evidence; slider-like reversible writes must not be lexical-subject-forced to TYPE_TEXT |
 | PR breadth V-PRB-6 terminal-completion guard | `pending` | classify external reward versus Runtime verifier/terminal authority separately before fresh diagnostic or promotion |
 | `LLMIntentCompiler` contains value-entry lexical normalization | `pending_review` | isolate source-bound value-entry normalization into a typed intent normalizer before declaring intake responsibility clean |

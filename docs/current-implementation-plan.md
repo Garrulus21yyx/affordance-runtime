@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5A progress-evidence rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; clean PR breadth at `e4795c1` showed `click-button-sequence` now creates `effect / is_completed` obligations but lacked independent progress evidence after the first click. The first progress-evidence repair at `c75fc3b` remained negative because real contracts still lacked the new `observation_metadata(active_control == bid)` verifier; trace classification showed active subgoal action-family was empty. A refined RED/GREEN now treats action-family as an optional guard: if present it must match, but absent metadata does not block typed completed-click progress evidence | commit the refined completed-click progress evidence repair, then rerun the same clean PR breadth 6-task x 2-seed matrix on the committed revision before judging button-sequence closure | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5B entry action-family resolution | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; clean PR breadth at `151fbef` completed 12/12 observed with 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider failure/missing/unrun/invalidated case. V-PRB-5A is closed for this matrix: both `click-button-sequence` seeds now pass. Remaining official failures are `form-sequence` seeds 0 and 1 with `entry_action_family_unavailable`; `enter-text:seed-1` remains a separate V-PRB-6 Runtime terminal guard | start V-PRB-5B only: write a non-BrowserGym RED for typed entry action-family resolution using current affordance evidence; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -100,8 +100,10 @@ batched into a single mixed patch:
    that declaration did not enter real button-sequence contracts because
    active action-family metadata is empty in that path. The refined local RED
    makes action-family an optional guard while preserving typed outcome and
-   matched-target checks. V-PRB-5A still requires another clean PR breadth
-   rerun on the committed refined repair revision before any closure claim.
+   matched-target checks. The clean `151fbef` PR breadth rerun confirms
+   button-sequence closure for seeds 0 and 1, raising the matrix to 10/12
+   official reward passes. V-PRB-5A is closed for the current PR breadth
+   matrix; do not extend it to form-sequence or terminal-guard work.
 2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
    slice for slider-like reversible-write action-family selection. Execute it
    after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is

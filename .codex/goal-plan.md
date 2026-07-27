@@ -232,12 +232,20 @@ delivery claims.
     rerun remained negative at 8/12 official reward: the new verifier did not
     enter real button-sequence contracts because active action-family metadata
     is empty in that path.
-38. `in_progress` — Commit and push the refined completed-click progress
+38. `done` — Commit and push the refined completed-click progress
     evidence repair, then rerun the same PR breadth matrix on the clean
     committed revision. The refined RED/GREEN makes action-family an optional
     guard: present action-family must match, but absent metadata does not block
     typed `IS_COMPLETED` click progress evidence when target and concrete click
-    action match.
+    action match. Clean `151fbef` PR breadth is 12/12 observed, 10/12 official
+    reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated
+    failures, and `click-button-sequence` seeds 0 and 1 now pass. V-PRB-5A is
+    closed for this matrix.
+39. `in_progress` — Start V-PRB-5B only: write a non-BrowserGym RED for
+    `form-sequence` entry action-family resolution. Current clean evidence
+    shows `entry_action_family_unavailable` for `form-sequence` seeds 0 and 1.
+    Keep V-PRB-6 `enter-text:seed-1`, immutable Planner input, fresh
+    diagnostic, nightly/release, and promotion separate.
 
 ## Change Record
 
