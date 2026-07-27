@@ -106,6 +106,18 @@ delivery claims.
     slices: P1 immutable Planner input, P2 semantic fallback owner extraction,
     P3 intent semantic normalizer, and P4 protected breadth continuation. Do
     not batch these into one mixed architecture/product patch.
+21. `done` — Record the follow-up review's constraint that the PR breadth
+    repair packet is an umbrella diagnostic, not a production patch. Completed
+    V-PRB-0 failure-attribution fidelity from local traces: 12/12 episodes now
+    have exact mechanism owners, `click-button:seed-1` is classified as
+    structured intent decoding / attribution projection because no TaskSpec was
+    created, coverage audit invalid quotes are separated from graph
+    normalization, and planner clarification cases are routed to typed semantic
+    action constraints.
+22. `pending` — Select exactly one child production slice after non-BrowserGym
+    reproduction: V-PRB-1 invalid coverage audit handling first if deterministic
+    READY was blocked only by invalid optional audit; otherwise V-PRB-2 provider
+    graph proposal normalization. Do not batch V-PRB-1 through V-PRB-4.
 
 ## Change Record
 

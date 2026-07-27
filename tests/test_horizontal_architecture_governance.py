@@ -279,6 +279,36 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "non-browsergym reproduction" in repair_text
     assert "do not add task-name" in repair_text
     assert "rerun pr breadth 6-task x 2-seed matrix" in repair_text
+    assert "packet_role: umbrella_diagnostic" in repair_text
+    assert "may_become_production_slice: false" in repair_text
+    assert "child_slices_required: true" in repair_text
+
+
+def test_pr_breadth_failure_attribution_child_slice_is_recorded() -> None:
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    attribution = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml"
+    child_record = CHANGE_ADMISSION_DIR / "v-prb-0-failure-attribution-fidelity.yaml"
+
+    assert attribution.exists()
+    assert child_record.exists()
+
+    attribution_text = " ".join(attribution.read_text(encoding="utf-8").split()).casefold()
+    child_text = " ".join(child_record.read_text(encoding="utf-8").split()).casefold()
+
+    assert "v-prb-0" in current_plan
+    assert "attribution_classification:" in status
+    assert "episodes_classified: 12" in status
+    assert "unclassified: 0" in status
+    assert "actual_owner: intent structured decoding" in attribution_text
+    assert "click-button:seed-1" in attribution_text
+    assert "task_spec_created: false" in attribution_text
+    assert "reported_layer_correction: contract / field_binding -> intent structured decoding" in attribution_text
+    assert "coverage audit validator" in attribution_text
+    assert "semantic action resolver" in attribution_text
+    assert "packet_role: child_diagnostic" in child_text
+    assert "production_change_allowed: false" in child_text
+    assert "12/12 episodes have exact mechanism owner" in child_text
 
 
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:

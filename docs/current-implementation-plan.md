@@ -98,6 +98,31 @@ PLANNING repair candidate, with the single CONTRACT / FIELD_BINDING
 `schema_incompatible` case tracked separately. The task packet is
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`.
 
+The umbrella packet is diagnostic only and may not become a production patch.
+V-PRB-0 failure-attribution fidelity is complete: 12/12 episodes now have an
+exact mechanism owner in
+`docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml`.
+The resulting child lanes are:
+
+1. **V-PRB-1 invalid coverage audit handling** — `click-dialog:seed-0` and
+   `enter-text:seed-0`; candidate owner is the coverage audit validator.
+2. **V-PRB-2 provider graph proposal normalization** —
+   `click-button-sequence` and `form-sequence`; candidate owner is the
+   source-bound multi-effect proposal normalizer/canonical compiler boundary.
+3. **V-PRB-3 typed semantic action constraints** — `choose-list`,
+   `click-button`, `click-dialog`, and `enter-text` clarification cases;
+   candidate owner is a semantic action resolver, not new task-name fallback in
+   `GeneralistLMPlanner`.
+4. **V-PRB-4 structured decoding / attribution projection** —
+   `click-button:seed-1`; TaskSpec was not created, so the current
+   `CONTRACT / FIELD_BINDING` report layer is projection debt until proven
+   otherwise.
+
+Next implementation selection should choose one child slice only. The first
+candidate remains V-PRB-1 if non-BrowserGym reproduction proves deterministic
+READY was blocked only by an invalid optional coverage audit; otherwise select
+V-PRB-2. Do not batch V-PRB-1 through V-PRB-4.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward
