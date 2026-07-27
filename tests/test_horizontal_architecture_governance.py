@@ -202,6 +202,8 @@ def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
 
     assert "- run: python -m pytest -q" in workflow
     assert "- run: pytest -q" not in workflow
+    assert "python -m pip install -e '.[dev,web,parent]'" in workflow
+    assert "python -m playwright install --with-deps chromium" in workflow
     assert "browsergym-bridge:\n    runs-on: ubuntu-22.04" in workflow
     assert "python -m pip install -e . -r requirements/constraints-browsergym.txt" in workflow
     assert "affordance-runtime benchmark --output evidence/benchmark --seeds 3 --allow-acceptance-fail" in workflow

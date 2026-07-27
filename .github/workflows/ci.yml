@@ -16,7 +16,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: python -m pip install -e '.[dev,parent]'
+      - run: python -m pip install -e '.[dev,web,parent]'
+      - run: python -m playwright install --with-deps chromium
       - run: python -m pytest -q
       - run: ruff check src tests
       - run: mypy src
