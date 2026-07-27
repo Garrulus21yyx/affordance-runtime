@@ -3,11 +3,14 @@ parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
 packet_role: child_diagnostic
 
 base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
+implementation_revisions:
+  - a805f0dfd1b58b76951003b9d12b9561b19d40e1
+latest_rerun_revision: a805f0dfd1b58b76951003b9d12b9561b19d40e1
 change_type: vertical_failure_classification
 agent_mode: single_agent
-production_change_allowed: false
+production_change_allowed: true
 
-single_primary_owner: not_selected
+single_primary_owner: semantic_action_resolver
 mechanism: strict planner proposal generation for press_key value-change entries
 
 source_evidence:
@@ -71,6 +74,45 @@ done_when:
   - no task grammar, Prompt, budget, adapter-specific, Coordinator, or StateKernel change is added
   - clean PR breadth matrix is rerun after any production repair commit
 
-architecture_admission: not_evaluated
+implementation:
+  first_repair:
+    revision: a805f0dfd1b58b76951003b9d12b9561b19d40e1
+    summary: >
+      Added a bounded strict semantic action resolver path for empty
+      clarification proposals when the active subgoal action family is
+      press_key, exactly one enabled visible slider press target is current,
+      and both requested and current numeric values can be inferred. The repair
+      emits only semantic press_key proposals and does not use task name, URL,
+      selector, coordinate, Coordinator, StateKernel, Prompt, or budget changes.
+  first_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+    result: >
+      Negative PR breadth evidence: 12/12 observed, 10/12 official reward
+      passed, 2/12 official reward failed, 3 Runtime failures, no
+      provider/missing/unrun/invalidated cases. The resolver entered the real
+      form-sequence path and produced verified press_key slider actions, but
+      both form-sequence seeds still later failed with empty ask_user proposals
+      after replan/progress normalized the active slider subgoal to a generic
+      slider_value has changed form. V-PRB-5C therefore remains open, narrowed
+      to post-replan slider value/progress semantics.
+
+verification:
+  focused_tests:
+    - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_slider_press_key
+  local_gates:
+    - full pytest: 982 passed
+    - ruff: passed
+    - mypy: passed over 118 source files
+    - diff check: passed
+    - architecture gates: passed
+  clean_rerun:
+    - docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+
+architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
+closure_status: open_after_first_repair
+next_requirement: >
+  Continue V-PRB-5C only with a new non-BrowserGym RED for the post-replan
+  slider value/progress case. Do not mix V-PRB-6, immutable PlanningRequest,
+  fresh diagnostic, nightly, release, or promotion into the same slice.

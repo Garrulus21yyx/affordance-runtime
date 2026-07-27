@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5C form-sequence strict-planner proposal generation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`. Clean `3daf779` PR breadth completed 12/12 observed, 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider/missing/unrun/invalidated case. Remaining form failures are strict planner empty `ask_user` proposals after accepted TaskPlans with `press_key` permitted | start V-PRB-5C only: classify and RED/GREEN the generic strict-planner empty-clarification issue for `has_changed` / `press_key` entries; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5C form-sequence strict-planner proposal generation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`. The first V-PRB-5C repair at `a805f0d` is admitted and rerun cleanly, but PR breadth remains 12/12 observed, 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider/missing/unrun/invalidated case. The resolver enters the real form path; residual failures occur after replan/progress normalizes the slider subgoal | continue V-PRB-5C only: write the next non-BrowserGym RED for post-replan slider value/progress semantics; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -114,11 +114,16 @@ batched into a single mixed patch:
    value-entry inference. The clean `3daf779` rerun restores `enter-text:seed-0`
    and confirms V-PRB-5B is closed for action-family resolution in the current
    matrix.
-3. **V-PRB-5C form-sequence strict-planner proposal generation** — new child
-   slice for the remaining `form-sequence` seeds. TaskPlan acceptance and
-   `press_key` permission are present; the strict planner returns an empty
-   `ask_user` proposal for the active slider `has_changed` subgoal. This must
-   be reproduced with a non-BrowserGym RED before any production repair.
+3. **V-PRB-5C form-sequence strict-planner proposal generation** — active child
+   slice for the remaining `form-sequence` seeds. The first repair at
+   `a805f0d` added a bounded slider `press_key` resolver for empty
+   clarification proposals and passed local gates. Clean PR breadth evidence at
+   `a805f0d` shows the resolver enters the real form path and produces verified
+   slider `press_key` actions, but both form seeds still later fail with empty
+   `ask_user` after replan/progress normalizes the active slider subgoal to a
+   generic `slider_value has changed` form. Continue 5C with a new
+   non-BrowserGym RED for that post-replan slider value/progress semantic; do
+   not reopen V-PRB-5B action-family availability.
 4. **V-PRB-6 terminal completion guard classification** — track
    `enter-text:seed-1` separately because BrowserGym official reward is 1.0
    while Runtime still records a terminal guard. External reward is not Runtime
@@ -283,9 +288,10 @@ Latest review refinement:
   inference is restored.
 - V-PRB-5C is tracked by
   `docs/change-admission/v-prb-5c-form-sequence-strict-planner-proposal.yaml`
-  and is the next selectable vertical slice. It covers only the remaining
-  `form-sequence` strict-planner empty `ask_user` proposal after accepted
-  TaskPlans with `press_key` permitted.
+  and remains the active vertical slice after the first `a805f0d` repair. It
+  covers only the remaining `form-sequence` strict-planner empty `ask_user`
+  proposal after accepted TaskPlans with `press_key` permitted and verified
+  slider `press_key` actions have already occurred.
 - V-PRB-6 is tracked by
   `docs/change-admission/v-prb-6-terminal-completion-guard.yaml` and must not
   be mixed into either 5A or 5B. Runtime success, verifier success, and

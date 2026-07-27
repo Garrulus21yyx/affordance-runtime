@@ -259,6 +259,16 @@ delivery claims.
     accepted TaskPlan with `press_key` permitted. Keep V-PRB-6
     `enter-text:seed-1`, immutable Planner input, fresh diagnostic,
     nightly/release, and promotion separate.
+42. `done` — Implemented the first V-PRB-5C bounded slider `press_key`
+    resolver as `a805f0d` and reran the same PR breadth 6-task x 2-seed matrix
+    on a clean committed revision. Evidence is 12/12 observed, 10/12 official
+    reward passed, 3 Runtime failures, and no provider/missing/unrun/
+    invalidated cases. The resolver enters the real form path and verifies
+    slider `press_key` actions, but V-PRB-5C remains open because both
+    `form-sequence` seeds later fail with empty `ask_user` after replan/
+    progress normalizes the active slider subgoal. Continue V-PRB-5C with a
+    new non-BrowserGym RED for that residual; keep V-PRB-6, immutable Planner
+    input, fresh diagnostic, nightly/release, and promotion separate.
 
 ## Change Record
 
