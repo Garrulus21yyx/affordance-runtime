@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5A clean PR breadth rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-2, PR breadth at `c24b277` remains 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure, with invalid provider graph closed and remaining official failures now in downstream planning/admission; V-PRB-5A is implemented locally as a compiler-local requested-effect sequence repair; remote CI is disabled for this iteration | same 6-task x 2-seed PR breadth matrix rerun on the clean V-PRB-5A commit; classify impact before selecting V-PRB-5B, V-PRB-6, H2, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5A relation/evidence semantics RED | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-5A, PR breadth at `0565e2e` remains failed: 12/12 observed, 7/12 official passed, 5/12 official failed, 6 runtime failures, no provider failure/missing/unrun/invalidated case; dependency/terminal boundary is now preserved, but button-sequence still compiles clicked targets as `is_available` predicates and Runtime correctly rejects weak execution evidence | write a new non-BrowserGym RED for clicked/activated requested-effect relation and evidence semantics, then repair in requested-effect normalization/canonical compiler if owner remains local; classify `click-button:seed-1` schema incompatibility separately | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -85,8 +85,14 @@ batched into a single mixed patch:
    compiler-local requested-effect sequence repair after a non-BrowserGym RED
    test. Flat default behavior remains unchanged; multi-stage requested-effect
    fallback now explicitly preserves intermediate/final terminal boundaries and
-   sequential dependency. Do not judge impact until the same clean PR breadth
-   matrix is rerun.
+   sequential dependency. Clean PR breadth rerun at `0565e2e` remained
+   negative: both button-sequence seeds still fail with
+  `planner_waiting_clarification`, so V-PRB-5A is not closed.
+  Trace classification shows dependency/terminal boundaries are now present;
+  the remaining button-sequence defect is that clicked targets are still
+  canonicalized as `predicate / is_available`, and verifier progress correctly
+  rejects weak execution evidence. The next 5A RED must target
+  clicked/activated relation and evidence semantics.
 2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
    slice for slider-like reversible-write action-family selection. Execute it
    after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is
@@ -248,7 +254,13 @@ Latest review refinement:
   terminal and omitted ordered dependencies. The local repair keeps flat
   requested effects independent by default and enables ordered dependency /
   intermediate-terminal semantics only for multi-stage requested-effect
-  fallback. Rerun PR breadth on the clean commit before judging matrix impact.
+  fallback. The clean `0565e2e` PR breadth rerun shows this repair is
+  insufficient by itself: both button-sequence seeds still fail with
+  `planner_waiting_clarification`. Trace classification points to
+  requested-effect relation/evidence semantics, not PlannerContext,
+  Coordinator, StateKernel, or receipt-driven progress. Continue with a new
+  non-BrowserGym RED for clicked/activated effects, not fresh diagnostic or
+  promotion.
 - V-PRB-5B is tracked by
   `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml` and
   remains independent. Its likely owner is typed TaskPlan action-family

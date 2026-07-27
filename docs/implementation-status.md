@@ -71,13 +71,14 @@ pr_breadth_initial_negative:
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 pr_breadth_latest:
-  revision: c24b277a93712191c626a1db87cc1f3fc1c166bd
-  evidence: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  revision: 0565e2ef3f5d082cdc13652b8ca399a393ef4074
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-0565e2e/
   status: failed
   expected: 12
   observed: 12
-  passed: 8
-  failed: 4
+  passed: 7
+  failed: 5
+  runtime_failed: 6
   provider_failures: 0
   missing: 0
   unrun: 0
@@ -86,9 +87,12 @@ pr_breadth_latest:
   promotion_status: held
   root_owner_next: INTENT / PLANNING
   remaining_official_failed_mechanisms:
+    schema_incompatible: 1
     waiting_clarification: 2
     entry_action_family_unavailable: 2
-  next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
+  separate_runtime_guard:
+    planner_terminal_completion_guard: 1
+  next_change_admission: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
 
 attribution_classification:
   evidence: docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml
@@ -235,7 +239,7 @@ v_prb_5_downstream_planning_follow_up:
   mechanisms:
     v_prb_5a_button_sequence_progress_next_subgoal:
       child_record: docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml
-      status: implemented_locally
+      status: rerun_failed
       production_change_admitted: true
       episodes:
         - click-button-sequence:seed-0
@@ -243,7 +247,9 @@ v_prb_5_downstream_planning_follow_up:
       candidate_owner: source-bound requested-effect semantics / canonical obligation relation-dependency boundary
       observed_failure: first activation succeeds, active subgoal remains button ONE is available, planner returns ask_user
       review_refinement: non-BrowserGym RED proved compiler-local missing dependency/intermediate terminal semantics; repair preserves sequence only when multi-stage requested-effect fallback opts in
-      rerun_required: PR breadth 6-task x 2-seed matrix on a clean committed revision
+      rerun_result: docs/evidence/runs/m8.2a-pr-breadth-0565e2e/
+      rerun_impact: mechanism not closed; both click-button-sequence seeds still fail with planner_waiting_clarification
+      rerun_trace_classification: dependency/terminal boundaries are present, but clicked targets are still predicate/is_available obligations and weak execution evidence is correctly rejected
     v_prb_5b_form_sequence_entry_action_family:
       child_record: docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml
       episodes:
@@ -259,7 +265,7 @@ v_prb_5_downstream_planning_follow_up:
       candidate_owner: not_selected
       observed_failure: official_reward is 1.0 while Runtime records planner_terminal_completion_guard
       review_refinement: track separately; BrowserGym reward is not Runtime completion authority
-  next_requirement: commit V-PRB-5A and rerun the same PR breadth matrix on the clean revision before selecting V-PRB-5B, V-PRB-6, H2, fresh diagnostic, or promotion
+  next_requirement: write a new V-PRB-5A non-BrowserGym RED for clicked/activated relation and evidence semantics, and classify click-button:seed-1 schema_incompatible separately before any breadth completion or promotion claim
   promotion_status: held
 
 v_prb_3_architecture_follow_up:
@@ -716,6 +722,7 @@ Clean-checkout M0-M8 gate:
 | --- | --- | --- | --- | --- |
 | 2026-07-28 | V-PRB-5 review governance refinement | Incorporated the latest review as governance and planning state before any further production repair: split V-PRB-5 into child diagnostic records for 5A button-sequence effect semantics and 5B entry action-family resolution, added V-PRB-6 terminal-completion guard classification, and recorded that V-PRB-3's semantic resolver must be executable-gate protected while deeper immutable output/input typing remains future debt. | `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml`, `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml`, `docs/change-admission/v-prb-6-terminal-completion-guard.yaml`, current/status/horizontal-governance records, horizontal governance test | documentation/governance slice only; no production behavior, provider run, benchmark episode, remote CI, score, or promotion claim. Focused governance gates must pass before commit. |
 | 2026-07-28 | V-PRB-5A requested-effect sequence repair | Added a compiler-local sequence-preservation switch for multi-stage requested-effect fallback. Runtime still owns canonical graph ids and node construction; flat requested-effect defaults remain independent terminal effects. The repair does not modify Coordinator, StateKernel, PlannerPort, Prompt, budget, task grammar, benchmark-specific logic, or verifier authority. | `canonical_obligation_compiler.py`, `intent_compiler.py`, canonical compiler tests, V-PRB-5A admission/status records | non-BrowserGym RED `test_requested_effect_sequence_preserves_dependency_and_terminal_boundary` failed before the repair and passes after it; flat-default regression added. Focused compiler/intake/planning/governance tests passed 152/152; full local pytest passed 975/975; Ruff, mypy over 117 source files, and diff check passed. PR breadth rerun is required on the clean committed revision before judging button-sequence impact. |
+| 2026-07-28 | V-PRB-5A clean PR breadth rerun | Reran the same PR breadth 6-task x 2-seed matrix on clean committed `0565e2ef3f5d082cdc13652b8ca399a393ef4074` after the compiler-local V-PRB-5A repair. | `docs/evidence/runs/m8.2a-pr-breadth-0565e2e/`, `/tmp/affordance-pr-breadth-0565e2e-20260728-005603` | Negative evidence: 12 expected, 12 observed, 7 official reward passed, 5 official reward failed, 6 runtime failures, no missing/unrun/invalidated cases, `official_score_claimed=false`. V-PRB-5A is not closed: both `click-button-sequence` seeds still fail with `planner_waiting_clarification`. Trace classification shows dependency/terminal boundaries are now present, but clicked targets remain `predicate / is_available` obligations and weak execution evidence is correctly rejected. `form-sequence` remains V-PRB-5B, `enter-text:seed-1` remains V-PRB-6 terminal guard, and `click-button:seed-1` now requires separate `schema_incompatible` classification. |
 | 2026-07-27 | Remote CI disabled and local equivalent gate | Recorded that GitHub Actions was intentionally closed after the latest remote attempt was blocked by account billing/spending limits. The current tree therefore has no remote-green or remote-fail claim; development validation uses the local equivalent gate while promotion remains held. | status, current plan, horizontal governance, active goal records | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a`; local equivalent gate passed: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check. Diagnostic benchmark acceptance remains failed by design and `official_score_claimed=false`; no remote-CI or promotion claim. |
 | 2026-07-27 | Review governance alignment | Applied the latest architecture review as governance state rather than broad implementation permission: preserved SG7 targeted evidence as historical immutable evidence, made semantic ownership review debt visible, kept immutable Planner input `not_started`, and separated implementation-bearing local-equivalent evidence from later documentation-only synchronization commits. | current/status/horizontal governance documents, SG7 admission record, horizontal governance tests | focused governance/document gates must pass for each documentation-sync commit; no production behavior, benchmark/provider episode, remote CI, score, or promotion claim. |
 | 2026-07-27 | M8.2A PR breadth diagnostic | Ran the active vertical protected cross-family / PR breadth slice on clean `d66760f76bb4668f610d2ebfac2c8ba0bf83c71a` using `profile=pr`, strict-generalist planning, local Ollama `qwen2.5:7b`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, and seeds 0 and 1 across `click-button`, `enter-text`, `choose-list`, `click-dialog`, `click-button-sequence`, and `form-sequence`. | `docs/evidence/runs/m8.2a-pr-breadth-d66760f/`, `/tmp/affordance-pr-breadth-d66760f-20260727-201632` | Negative evidence: 12 expected, 12 observed, 0 passed, 12 failed, 0 provider failures, 0 missing/unrun/invalidated, `official_score_claimed=false`. Runtime-owner clusters: 6 `intent_compilation_rejected` across 4 tasks/families, 5 `planner_waiting_clarification` across 4 tasks/families, and 1 `schema_incompatible` CONTRACT / FIELD_BINDING case. Promotion remains held; next repair owner is INTENT / PLANNING unless deeper trace classification narrows it. |

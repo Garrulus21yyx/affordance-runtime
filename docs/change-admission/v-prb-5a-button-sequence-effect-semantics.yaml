@@ -102,7 +102,41 @@ promotion_status: held
 remote_ci: disabled
 
 result:
-  status: implemented_locally
+  status: rerun_failed
   production_change_admitted: true
-  rerun_required:
-    - PR breadth 6-task x 2-seed matrix on a clean committed revision
+  local_verification:
+    - non-BrowserGym RED/GREEN passed
+    - focused compiler/intake/planning/governance tests passed 152/152
+    - full local pytest passed 975/975
+    - Ruff, mypy, and diff check passed
+  clean_pr_breadth_rerun:
+    revision: 0565e2ef3f5d082cdc13652b8ca399a393ef4074
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-0565e2e/
+    expected: 12
+    observed: 12
+    official_passed: 7
+    official_failed: 5
+    runtime_failed: 6
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    official_score_claimed: false
+    impact: button-sequence mechanism not closed; both affected seeds still fail with planner_waiting_clarification
+    trace_classification:
+      dependency_terminal_boundary: preserved
+      remaining_defect: requested-effect relation/evidence semantics
+      observed_obligations:
+        - subject: button ONE
+          kind: predicate
+          relation: is_available
+          terminal: false
+        - subject: button TWO
+          kind: predicate
+          relation: is_available
+          terminal: true
+      rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
+  next_requirement:
+    - inspect clean rerun traces before any further production repair
+    - write a new non-BrowserGym RED for clicked/activated requested-effect relation and evidence semantics
+    - keep the owner in requested-effect normalization / canonical compiler unless new evidence proves otherwise
+    - classify click-button:seed-1 schema_incompatible separately

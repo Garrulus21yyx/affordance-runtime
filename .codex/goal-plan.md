@@ -186,10 +186,27 @@ delivery claims.
     requested-effect sequence gap and was repaired without touching
     Coordinator, StateKernel, PlannerPort, Prompt, budget, task grammar, or
     benchmark-specific logic.
-32. `in_progress` — Commit V-PRB-5A after focused gates, then rerun the same
+32. `done` — Commit V-PRB-5A after focused gates, then rerun the same
     PR breadth 6-task x 2-seed matrix on the clean committed revision. Only
     after that rerun classify whether the button-sequence mechanism closed and
-    whether the next slice is V-PRB-5B, V-PRB-6, or a different owner.
+    whether the next slice is V-PRB-5B, V-PRB-6, or a different owner. Clean
+    `0565e2e` rerun is negative: 12/12 observed, 7/12 official passed, 5/12
+    official failed, 6 runtime failures, no missing/unrun/invalidated cases,
+    and `official_score_claimed=false`.
+33. `done` — Classify the failed `0565e2e` rerun before the next
+    production repair: inspect button-sequence traces to determine why
+    `planner_waiting_clarification` remains after the compiler-local sequence
+    repair, classify the new/remaining `click-button:seed-1`
+    `schema_incompatible` case, and keep V-PRB-5B and V-PRB-6 separate.
+    Button-sequence dependency/terminal boundaries are now present, but clicked
+    targets still compile as `predicate / is_available`; verifier progress
+    correctly rejects weak execution/state-delta evidence, so the next owner is
+    requested-effect relation/evidence semantics rather than Coordinator,
+    StateKernel, PlannerContext, or receipt-driven progress.
+34. `in_progress` — Write the next V-PRB-5A non-BrowserGym RED for
+    clicked/activated relation and evidence semantics. Keep
+    `click-button:seed-1` schema incompatibility, V-PRB-5B form action-family,
+    V-PRB-6 terminal guard, H2 immutable Planner input, and promotion separate.
 
 ## Change Record
 
