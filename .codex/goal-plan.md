@@ -96,12 +96,14 @@ delivery claims.
     before protected breadth, PR/nightly/release, score, or promotion claims.
 19. `in_progress` — Continue vertical protected cross-family / PR breadth on a
     clean current revision with local equivalent gates, while keeping immutable
-    Planner input as the separate next horizontal lane. Clean `d66760f` PR
-    breadth ran 12/12 observed with 0/12 passed, no provider failure, and no
-    missing/unrun/invalidated episodes; this is negative diagnostic evidence,
-    not promotion. Next vertical step is generic INTENT / PLANNING root-owner
-    classification/repair, with the single CONTRACT / FIELD_BINDING
-    `schema_incompatible` case tracked separately.
+    Planner input as the separate next horizontal lane. Clean `9b951ed` PR
+    breadth now stands at 12/12 observed, 8/12 official reward passed, 4/12
+    official reward failed, no provider failure, and no missing/unrun/
+    invalidated episodes; this is still negative diagnostic evidence, not
+    promotion. Next vertical step is V-PRB-2 provider graph proposal
+    normalization for the remaining official-failed INTENT / PLANNING cluster,
+    with the single runtime terminal-completion guard observation tracked
+    separately.
 20. `pending` — Execute the review-driven remediation sequence as separate
     slices: P1 immutable Planner input, P2 semantic fallback owner extraction,
     P3 intent semantic normalizer, and P4 protected breadth continuation. Do
@@ -133,9 +135,20 @@ delivery claims.
     selected and implemented as a strict semantic action resolver with
     non-BrowserGym red tests for unique activation, selected-option terminal
     submit, and target-derived text entry. Do not batch.
-25. `pending` — After local gates and commit, rerun the same PR breadth 6-task
+25. `done` — After local gates and commit, rerun the same PR breadth 6-task
     x 2-seed matrix on the clean committed revision and classify impact; no
-    promotion or official score claim.
+    promotion or official score claim. Clean `9b951ed` rerun observed 12/12
+    episodes, passed 8/12 official reward, failed 4/12 official reward, and
+    showed V-PRB-3 closed the typed semantic action constraint cluster for this
+    matrix. One additional `enter-text:seed-1` runtime terminal-completion
+    guard observation has `official_reward=1.0` and is tracked separately from
+    official failed episodes.
+26. `pending` — Select one next child production slice only: V-PRB-2 provider
+    graph proposal normalization for the four remaining official-failed
+    `click-button-sequence` and `form-sequence` episodes. First create a
+    non-BrowserGym reproduction for source-bound multi-effect provider graph
+    normalization; do not batch PlanningRequest migration, terminal-completion
+    guard handling, fresh diagnostic, or PR/nightly/release promotion.
 
 ## Change Record
 

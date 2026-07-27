@@ -262,7 +262,7 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
     repair_text = " ".join(repair_record.read_text(encoding="utf-8").split()).casefold()
 
-    assert "pr_breadth_latest:" in status
+    assert "pr_breadth_initial_negative:" in status
     assert "status: failed" in status
     assert "expected: 12" in status
     assert "observed: 12" in status
@@ -369,6 +369,32 @@ def test_pr_breadth_typed_semantic_action_child_slice_is_scoped() -> None:
     assert "do not modify statekernel" in child_text
     assert "do not add task-name" in child_text
     assert "do not modify prompt" in child_text
+
+
+def test_v_prb_3_clean_pr_breadth_rerun_is_recorded() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-9b951ed/README.md"
+
+    assert evidence.exists()
+    assert (evidence.parent / "browsergym-report.json").exists()
+    assert (evidence.parent / "matrix-metadata.json").exists()
+
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    assert "v_prb_3_clean_rerun:" in status
+    assert "revision: 9b951ed968314aa7a139611d00256adb17b3cbb7" in status
+    assert "passed: 8" in status
+    assert "failed: 4" in status
+    assert "typed_semantic_action_constraints_closed: true" in status
+    assert "remaining_mechanisms:" in status
+    assert "invalid_provider_graph: 4" in status
+    assert "planner_terminal_completion_guard: 1" in status
+    assert "next_selectable_child_slice: v-prb-2 provider graph proposal normalization" in status
+    assert "m8.2a-pr-breadth-9b951ed" in current_plan
+    assert "official_score_claimed=false" in evidence_text
+    assert "promotion eligible: no" in evidence_text
+    assert "passed: 8" in evidence_text
+    assert "next selectable repair: v-prb-2" in evidence_text
 
 
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:

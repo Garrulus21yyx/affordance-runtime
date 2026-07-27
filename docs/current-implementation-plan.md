@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | classify and repair PR breadth INTENT / PLANNING failures | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; PR breadth failed at `d66760f` with 12/12 observed, 0/12 passed, 0 provider failure, and dominant INTENT / PLANNING clusters; remote CI is disabled for this iteration | one generic root-owner repair slice is identified and verified first outside benchmark specialization, then PR breadth is rerun on a clean revision; fresh diagnostic remains separate | unrelated horizontal debt retirement |
+| Vertical | classify and repair remaining PR breadth INTENT / PLANNING failures | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-3, PR breadth at `9b951ed` improved to 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure, with remaining official failures rooted in invalid provider obligation graphs; remote CI is disabled for this iteration | V-PRB-2 provider graph proposal normalization is reproduced and repaired generically, then PR breadth is rerun on a clean revision; fresh diagnostic remains separate | unrelated horizontal debt retirement |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -149,6 +149,21 @@ fallback and does not modify Coordinator, StateKernel, PlannerPort, Prompt,
 budget, benchmark-specific logic, provider graph normalization, or structured
 decoding. After local gates and commit, rerun the same PR breadth 6-task x
 2-seed matrix on the clean committed revision.
+
+The clean V-PRB-3 PR breadth rerun at `9b951ed`
+(`docs/evidence/runs/m8.2a-pr-breadth-9b951ed/`) improved the matrix to 12/12
+observed, 8/12 official success, 4/12 official failure, with no provider
+failure, missing/unrun/invalidated case, or promotion claim. The typed semantic
+action constraint cluster is closed for this matrix. The remaining
+official-failed mechanism is V-PRB-2 provider graph proposal normalization:
+`click-button-sequence` and `form-sequence`, seeds 0 and 1, still fail before
+TaskSpec creation with invalid provider obligation graphs. `enter-text:seed-1`
+also records a runtime terminal-completion guard observation while receiving
+`official_reward=1.0`; classify it separately and do not count it as an
+official failed episode. Select exactly one next production slice: V-PRB-2
+provider graph proposal normalization, with non-BrowserGym reproduction first.
+Do not batch it with PlanningRequest migration, terminal completion guards,
+fresh diagnostic, PR/nightly/release promotion, or benchmark-family patches.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

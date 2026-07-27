@@ -50,7 +50,7 @@ immutable_planner_input:
   standard_path_migrated: false
   tests: absent
 
-pr_breadth_latest:
+pr_breadth_initial_negative:
   revision: d66760f76bb4668f610d2ebfac2c8ba0bf83c71a
   evidence: docs/evidence/runs/m8.2a-pr-breadth-d66760f/
   status: failed
@@ -65,6 +65,24 @@ pr_breadth_latest:
   official_score_claimed: false
   promotion_status: held
   root_owner_next: INTENT / PLANNING
+  next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
+
+pr_breadth_latest:
+  revision: 9b951ed968314aa7a139611d00256adb17b3cbb7
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-9b951ed/
+  status: failed
+  expected: 12
+  observed: 12
+  passed: 8
+  failed: 4
+  provider_failures: 0
+  missing: 0
+  unrun: 0
+  invalidated: 0
+  official_score_claimed: false
+  promotion_status: held
+  root_owner_next: INTENT / PLANNING
+  remaining_official_failed_mechanism: invalid_provider_graph
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 attribution_classification:
@@ -139,6 +157,26 @@ v_prb_3_typed_semantic_action_constraints:
     benchmark_specific_logic_added: false
   promotion_status: held
   rerun_required: PR breadth 6-task x 2-seed matrix on a clean committed revision
+
+v_prb_3_clean_rerun:
+  revision: 9b951ed968314aa7a139611d00256adb17b3cbb7
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-9b951ed/
+  status: failed
+  expected: 12
+  observed: 12
+  passed: 8
+  failed: 4
+  provider_failures: 0
+  missing: 0
+  unrun: 0
+  invalidated: 0
+  official_score_claimed: false
+  promotion_status: held
+  typed_semantic_action_constraints_closed: true
+  remaining_mechanisms:
+    invalid_provider_graph: 4
+    planner_terminal_completion_guard: 1
+  next_selectable_child_slice: V-PRB-2 provider graph proposal normalization
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or
@@ -191,8 +229,8 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` then completed 12/12 observed with 0/12 passed, 0 provider failure, and failure clusters rooted mainly in INTENT / PLANNING. | classify and repair the PR breadth INTENT / PLANNING failures generically before rerunning protected cross-family / PR breadth; promotion held |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `d66760f` fails 0/12 and blocks fresh diagnostic promotion | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1 and V-PRB-3, clean PR breadth at `9b951ed` improved to 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure. | repair the remaining V-PRB-2 invalid provider graph failures generically before rerunning protected cross-family / PR breadth; promotion held |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `9b951ed` remains failed at 8/12 with four invalid provider graph episodes and no promotion claim | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
@@ -587,6 +625,7 @@ Clean-checkout M0-M8 gate:
 | 2026-07-27 | V-PRB-0 failure attribution fidelity | Split the broad PR breadth root-layer buckets into exact episode-level mechanisms before admitting production repair. The umbrella repair packet remains diagnostic-only and cannot become a production slice. | `docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml`, `docs/change-admission/v-prb-0-failure-attribution-fidelity.yaml` | 12/12 episodes have exact mechanism owner: 2 invalid coverage-audit cases, 4 provider graph proposal-normalization cases, 5 typed semantic action-constraint cases, and 1 structured decoding / attribution-projection case. `click-button:seed-1` created no TaskSpec, so it must not be repaired first as ContractBuilder field binding without further proof. No production change admitted. |
 | 2026-07-27 | V-PRB-1 invalid coverage audit handling | Implemented the first child production slice after a non-BrowserGym red test reproduced that an invalid optional coverage audit quote could veto deterministic READY. | `docs/change-admission/v-prb-1-invalid-coverage-audit-handling.yaml`, `tests/test_intent_compiler.py::test_invalid_coverage_audit_quote_cannot_veto_deterministic_ready`, intent coverage admission | The compiler now records `coverage_review_invalid_quote` audit evidence but drops that incoherent audit as an invalid veto, preserving deterministic READY. Valid uncovered-clause and unresolved-dependency audit decisions remain vetoes. No Coordinator, StateKernel, PlannerPort, prompt, budget, task grammar, or benchmark-specific logic change. PR breadth rerun is required on the clean committed revision before judging the matrix impact. |
 | 2026-07-27 | V-PRB-1 clean PR breadth rerun | Reran the same PR breadth 6-task x 2-seed matrix on clean committed `d40f8f1792e85f391fe6c94dd88f9b5e0235d481` after V-PRB-1. | `docs/evidence/runs/m8.2a-pr-breadth-d40f8f1/`, `/tmp/affordance-pr-breadth-d40f8f1-20260727-234649` | Negative evidence: 12 expected, 12 observed, 0 passed, 12 failed, no provider failures, no missing/unrun/invalidated cases, `official_score_claimed=false`. V-PRB-1 closed the invalid coverage-audit mechanism: the previous two `coverage_review_invalid_quote` episodes now reach planner clarification. Remaining clusters are 7 `planner_waiting_clarification`, 4 invalid provider graph, and 1 structured decoding / attribution projection. Promotion remains held; next selectable repair is V-PRB-3 or V-PRB-2, one at a time. |
+| 2026-07-27 | V-PRB-3 clean PR breadth rerun | Reran the same PR breadth 6-task x 2-seed matrix on clean committed `9b951ed968314aa7a139611d00256adb17b3cbb7` after V-PRB-3 typed semantic action constraints. | `docs/evidence/runs/m8.2a-pr-breadth-9b951ed/`, `/tmp/affordance-pr-breadth-9b951ed-20260727-235739` | Diagnostic evidence: 12 expected, 12 observed, 8 official reward passed, 4 official reward failed, no provider failures, no missing/unrun/invalidated cases, `official_score_claimed=false`. V-PRB-3 closed the typed semantic action constraint cluster for this matrix. Remaining official-failed episodes are four invalid provider graph rejections in `click-button-sequence` and `form-sequence`; `enter-text:seed-1` also has a runtime terminal-completion guard observation with `official_reward=1.0` and is tracked separately. Promotion remains held; next selectable repair is V-PRB-2 provider graph proposal normalization. |
 | 2026-07-27 | M8.2A SG7 clean targeted protected-family confirmation | Reran the exact SG7 matrix after committing the generic repair as `3d44a9d222decd1de272d7a4d3eb14b025a8738a`. This clean run preserves the selected scope (`enter-date`, `text-transform`, seeds 0 and 1), strict-generalist planner profile, local Ollama `qwen2.5:7b`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, existing 15-call episode budget, and `official_score_claimed=false`. | `docs/evidence/runs/m8.2a-sg7-3d44a9d/`, `/tmp/affordance-sg7-3d44a9d-20260727-184535` | Clean-tree result: expected 4, observed 4, passed 4, failed 0, missing 0, invalidated 0, unrun 0, runtime failures 0, provider failures 0, rate-limit retries 0, transient retries 0, official success rate 1.0, mean official reward 1.0. Run identity digest `sha256:d09d403f6976b246ff614f5f288e8bc7a7bca6719529e934919973ade608309d`; source tree digest `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`; report sha256 `cea708f3971a85bf231448b5f5cdab182629d54c2449694c8c69cb9f0ff84eed`; matrix metadata sha256 `0ad2bb171b6d8d41aa2c827057e07ba2a8c185fcc6c45cfba10d0ce0936171a1`. This closes SG7 targeted confirmation only; it is not PR breadth, nightly/release, M8.2B promotion, or a formal benchmark score. |
 | 2026-07-27 | M8.2A SG7 generic repair candidate | Repaired the clean `fa288af` SG7 protected-family failure without adding task-name, URL, selector, Prompt-only, budget, Coordinator, StateKernel, or PlannerStateView changes. The repair remains generic: unresolved dependency drafts can be boundedly repaired and rechecked before reviewer admission; explicit imperative field entry is canonicalized as reversible write with exact literal value only when the raw request provides that value; page-sourced "text below" is not literalized; reversible generic `HAS_CHANGED` obligations no longer infer text entry unless the subject is a value-entry field; strict planner fallback handles exact value entry, single page-observed text entry, and verifier-backed terminal submit; targeted active perception can preserve requested probes while adding required evidence gaps; the BrowserGym observer exposes targeted capture; opaque DOM/accessibility locators can satisfy executor-local spatial binding without raw coordinates. | intent compiler, canonical compiler, task planning, strict generalist planner, active perception flow, BrowserGym observer, unified grounding, focused regressions, status/goal records | Dirty-tree SG7 diagnostic `/tmp/affordance-sg7-fa288af-submit-fallback-dirty-20260727-182502/browsergym-report.json` passed 4/4 for `enter-date` and `text-transform`, seeds 0 and 1: expected 4, observed 4, failed 0, missing 0, invalidated 0, unrun 0, runtime failures 0, provider failures 0, official success rate 1.0, mean official reward 1.0, `official_score_claimed=false`; report sha256 `0b2313a2356c2411ce5a77db9bd1469227a6d404af5f3be97657cbeec94fc953`, matrix metadata sha256 `26006f8f025e645c3e109615aafa27f127c60bcad20df3f24defc5efd47c63d6`, source tree digest `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`, `working_tree_clean=false`. The result is a validated repair candidate, not clean SG7 evidence, not PR breadth, not nightly/release, and not a promoted score. Focused repair/gate verification passed: 429 planner/intake/perception/grounding/governance tests, Ruff, mypy over 116 source files, and diff check. |
 | 2026-07-27 | M8.2A SG7 targeted protected-family diagnostic | Ran the requested strict-generalist targeted confirmation for `enter-date` and `text-transform`, seeds 0 and 1, after repairing the local Ollama GPU environment by restarting the existing container. The run is bound to clean committed revision `fa288afa7ba047dd3d0ae186f74e948058928436`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, local Ollama `qwen2.5:7b`, profile `diagnostic`, and `official_score_claimed=false`. All four scheduled episodes were observed with no missing/unrun/invalidated cases, no provider failures, and no rate-limit/transient retries. Result: SG7 did not pass. Three episodes failed before TaskSpec creation with `unresolved_task_dependency`; `enter-date` seed 0 produced a canonical compiler TaskSpec and accepted TaskPlan, then the strict planner returned `ask_user` / `waiting_clarification`. | `/tmp/affordance-sg7-fa288af-20260727-173720`, preflight artifacts, BrowserGym traces, status/goal records | preflight after restart passed: BrowserGym runtime ready and Ollama model resident on 100% GPU. Pre-run gates passed: 21 horizontal architecture/responsibility tests, 40 SG1-SG6 deterministic intake tests, Ruff, mypy over 116 source files, and diff check. Decision-tree classification: case B for three episodes and case C for one episode; root owner remains INTENT / PLANNING. No production code change, no PlannerStateView migration, no PR breadth/nightly/release, no score or promotion claim. |
