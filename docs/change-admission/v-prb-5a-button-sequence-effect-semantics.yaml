@@ -1,0 +1,84 @@
+slice_id: v-prb-5a-button-sequence-effect-semantics
+parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
+packet_role: child_diagnostic
+
+base_revision: 03e6463d8e410aec57a75385f9792fc6d2cc0fc2
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: false
+
+single_primary_owner: not_selected
+mechanism: button sequence effect semantics and canonical dependency
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  affected_episodes:
+    - click-button-sequence:seed-0
+    - click-button-sequence:seed-1
+  observed_path:
+    - TaskSpec is created
+    - TaskPlan is accepted with two subgoals
+    - first activate proposal targets button ONE
+    - subsequent planner context still reports active_subgoal as button ONE is available
+    - strict planner returns ask_user / waiting_clarification instead of progressing to button TWO
+
+review_refinement:
+  current_hypothesis: >
+    The failure should not be repaired by receipt-driven PlanProgress,
+    Coordinator special-casing, or StateKernel auto-advance. The likely missing
+    semantics are upstream: activation effects are compiled as availability,
+    explicit "then" ordering is not represented as canonical dependency, and
+    intermediate versus terminal effects are not separated.
+  primary_risks:
+    - OperationClass must not carry risk level, effect semantics, completion condition, action family, and dependency ordering at the same time
+    - multi-stage dependency may be lost when provider graph authority is replaced by requested_effect canonicalization
+    - every canonical effect being terminal would conflate intermediate progress with final task completion
+
+non_goals:
+  - do not modify production code in this diagnostic packet
+  - do not modify Coordinator
+  - do not modify StateKernel
+  - do not infer progress from ExecutionReceipt.success
+  - do not auto-advance a subgoal from action progress alone
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not modify Prompt, model-call budget, retry budget, timeout, or cost
+  - do not combine with V-PRB-5B or V-PRB-6
+  - do not start immutable PlanningRequest unless evidence shows mutable planner input is the root cause
+
+required_non_browsergym_red_tests:
+  - activation effect must not be compiled as mere IS_AVAILABLE when post-action evidence is required
+  - explicit sequential language must create canonical dependency from first effect to second effect
+  - the first effect without verifier-backed evidence must not complete
+  - ExecutionReceipt.success alone must not complete the first subgoal
+  - verifier-backed first effect completion must make the next active subgoal the second effect
+  - ambiguous or implicit ordering must fail closed instead of guessing a dependency
+  - multiple similar targets must remain ambiguous/fail-closed
+
+owner_selection_rule:
+  - if provider supplied legal relation/dependency and Runtime normalization dropped it, select CanonicalObligationCompiler / proposal normalization
+  - if provider graph is absent but source-bound effects express order, select a source-bound effect-semantics normalizer feeding CanonicalObligationCompiler
+  - if neither source nor proposal contains enough information, keep fail-closed and write an ADR before extending the semantic proposal contract
+
+target_canonical_shape:
+  first_effect:
+    blocking: true
+    terminal: false
+    depends_on: []
+    relation: verifier_backed_post_action_effect
+  second_effect:
+    blocking: true
+    terminal: true
+    depends_on:
+      - first_effect
+
+done_when:
+  - non-BrowserGym RED turns GREEN
+  - provider does not regain graph authority
+  - explicit dependency and intermediate/final terminal semantics are preserved
+  - receipt success remains insufficient for task/subgoal completion
+  - no Coordinator or StateKernel special case is added
+  - clean PR breadth matrix is rerun after a production repair commit
+
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled

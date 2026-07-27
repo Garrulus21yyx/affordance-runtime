@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | classify and repair remaining PR breadth INTENT / PLANNING failures | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-2, PR breadth at `c24b277` remains 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure, with invalid provider graph closed and remaining official failures now in downstream planning/admission; remote CI is disabled for this iteration | the next downstream planning/planner constraint slice is classified with non-BrowserGym reproduction, then PR breadth is rerun on a clean revision; fresh diagnostic remains separate | unrelated horizontal debt retirement |
+| Vertical | V-PRB-5A button-sequence effect semantics RED classification | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-2, PR breadth at `c24b277` remains 12/12 observed, 8/12 passed, 4/12 failed, 0 provider failure, with invalid provider graph closed and remaining official failures now in downstream planning/admission; remote CI is disabled for this iteration | V-PRB-5A has a non-BrowserGym RED reproduction and a selected owner, or it is paused for ADR because the fix requires public semantic/schema expansion; V-PRB-5B and V-PRB-6 remain separate | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -75,20 +75,42 @@ The latest architecture review is incorporated as an ordered, non-monolithic
 sequence. These items are not retroactively marked complete and must not be
 batched into a single mixed patch:
 
-1. **P1 immutable Planner input** — introduce frozen `PlannerStateView` /
-   `PlanningRequest` so the standard Planner contract no longer receives
-   mutable `StateKernel`.
-2. **P2 semantic fallback owner extraction** — move SG7-triggered exact-value,
-   page-observed-text, and terminal-submit fallback logic out of
-   `GeneralistLMPlanner` into typed resolver or constraint owners with
-   applicability, negative examples, and non-BrowserGym evidence.
-3. **P3 intent semantic normalizer** — isolate source-bound value-entry lexical
+0. **P0 governance and validation baseline** — keep current revision identity
+   split between current HEAD, latest production repair, latest PR-breadth
+   evidence, and the last full local-equivalent gate. New authority-free
+   collaborators must enter the executable manifest in the same change. Remote
+   CI is disabled for this iteration, so local equivalent gates support
+   development but not remote-green or promotion claims.
+1. **V-PRB-5A button-sequence effect semantics** — first write a
+   non-BrowserGym RED reproduction for activation effect relation,
+   dependency, verifier evidence, and intermediate/final terminal semantics.
+   Do not repair by receipt-driven PlanProgress, Coordinator special-casing, or
+   StateKernel auto-advance.
+2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
+   slice for slider-like reversible-write action-family selection. Execute it
+   after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is
+   required before implementation.
+3. **V-PRB-6 terminal completion guard classification** — track
+   `enter-text:seed-1` separately because BrowserGym official reward is 1.0
+   while Runtime still records a terminal guard. External reward is not Runtime
+   completion authority.
+4. **H2 immutable Planner input** — after the current vertical evidence is
+   frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
+   is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
+   so the standard Planner contract no longer receives mutable `StateKernel`.
+5. **P2 semantic fallback owner extraction** — continue extracting the
+   remaining SG7-triggered exact-value, page-observed-text, and terminal-submit
+   fallbacks out of `GeneralistLMPlanner`; V-PRB-3's
+   `semantic_action_resolver.py` is only one extracted cluster and still has
+   deep-immutability/input-typing debt.
+6. **P3 intent semantic normalizer** — isolate source-bound value-entry lexical
    normalization from `LLMIntentCompiler`; the normalizer may propose typed
    semantics but may not create READY authority or bypass canonical graph
    construction.
-4. **P4 protected breadth continuation** — continue protected cross-family /
-   PR breadth on a clean current revision, with `official_score_claimed=false`
-   and promotion held until a fresh diagnostic is explicitly authorized.
+7. **Fresh diagnostic / promotion decision** — only after PR breadth reaches
+   its defined acceptance with all guard observations classified, run a
+   current-revision fresh diagnostic. Keep `official_score_claimed=false`
+   unless promotion is explicitly authorized.
 
 P4 is currently negative: protected cross-family / PR breadth failed at
 `d66760f` with 12/12 observed, 0/12 passed, and no provider/runtime
@@ -216,9 +238,28 @@ mixed production patch:
   reversible-write obligation while the environment offers slider `press_key`;
   context/schema/task-plan recovery attempts do not clear the rejection.
 
-Choose exactly one of V-PRB-5A or V-PRB-5B next, write a non-BrowserGym red
-test first, and keep immutable PlanningRequest separate unless the evidence
-shows mutable planner input is the root cause.
+Latest review refinement:
+
+- V-PRB-5A is now tracked by
+  `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml`.
+  Start here by writing non-BrowserGym RED tests for activation effect
+  semantics, explicit dependency, verifier-backed progress, and
+  intermediate/final terminal flags. If the RED evidence shows only a
+  compiler-local mapping/dependency repair is needed, continue 5A as the next
+  production slice. If it requires public semantic proposal or TaskSpec schema
+  expansion, pause 5A and write an ADR before implementation.
+- V-PRB-5B is tracked by
+  `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml` and
+  remains independent. Its likely owner is typed TaskPlan action-family
+  resolution from obligation plus current affordance, not Prompt repair,
+  context compaction, or lexical subject matching alone.
+- V-PRB-6 is tracked by
+  `docs/change-admission/v-prb-6-terminal-completion-guard.yaml` and must not
+  be mixed into either 5A or 5B. Runtime success, verifier success, and
+  BrowserGym reward stay separate.
+- Immutable PlanningRequest / PlannerStateView remains the next horizontal
+  lane, but it is not a prerequisite for 5A/5B unless the new RED evidence
+  directly implicates mutable planner input or hidden state mutation.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

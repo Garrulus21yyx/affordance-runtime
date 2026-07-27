@@ -169,10 +169,20 @@ delivery claims.
     remaining official failures into V-PRB-5A button sequence progress /
     next-subgoal gating and V-PRB-5B form sequence entry action family
     availability. No production repair is admitted by the umbrella diagnostic.
-30. `pending` — Choose exactly one of V-PRB-5A or V-PRB-5B for the next
-    production slice, write the non-BrowserGym red test first, then implement
-    the smallest owner-local repair and rerun PR breadth on a clean committed
-    revision.
+30. `done` — Incorporate the latest review into governance state before any
+    new production repair. Add executable manifest coverage for
+    `semantic_action_resolver.py`, split V-PRB-5 into child diagnostic records
+    for V-PRB-5A button-sequence effect semantics and V-PRB-5B entry
+    action-family resolution, and create V-PRB-6 terminal-completion guard
+    classification. Keep immutable Planner input separate unless RED evidence
+    directly implicates mutable `StateKernel` input.
+31. `in_progress` — Start V-PRB-5A only: write non-BrowserGym RED tests for
+    activation effect relation, explicit dependency, verifier-backed progress,
+    and intermediate/final terminal flags. If the owner is compiler-local,
+    continue 5A; if it requires public semantic/schema expansion, pause for an
+    ADR and optionally select V-PRB-5B as the narrower next slice. Do not mix
+    V-PRB-5B, V-PRB-6, H2 immutable PlanningRequest, PR/nightly/release, or
+    promotion into the same patch.
 
 ## Change Record
 

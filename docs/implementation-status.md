@@ -29,9 +29,12 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
+| Current HEAD | `03e6463d8e410aec57a75385f9792fc6d2cc0fc2` (`docs: classify v-prb-5 planning failures`), documentation/classification only |
+| Latest production repair revision | `c24b277a93712191c626a1db87cc1f3fc1c166bd` (`fix: canonicalize incomplete multistage provider graphs`) |
+| Latest PR breadth evidence revision | `c24b277a93712191c626a1db87cc1f3fc1c166bd`: 12/12 observed, 8/12 passed, 4/12 official failed, invalid provider graph closed, downstream planning/admission failures remain |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
-| Current documentation-sync identity | documentation-only commits may follow the implementation-bearing baseline; they inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
+| Current documentation-sync identity | documentation-only commits after `c24b277` classify evidence and plans; they inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
 | Current worktree local gate | must be checked for the active change; do not infer full local-equivalent or promotion evidence from an older implementation-bearing baseline |
 | Architecture admission | mechanical gates passed for the recorded implementation-bearing baseline; SG7 targeted protected-family confirmation remains bound to clean repair revision `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, while PR breadth/nightly/release promotion remains held |
 | Semantic ownership review | `pending_review`: SG7 generic repair preserved the benchmark/authority hard boundaries, but introduced deterministic semantic fallback in Generalist Planner and value-entry lexical normalization in intent/task-planning surfaces; these are baselined as ownership-review debt rather than declared architecturally clean |
@@ -231,19 +234,41 @@ v_prb_5_downstream_planning_follow_up:
   source_evidence: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
   mechanisms:
     v_prb_5a_button_sequence_progress_next_subgoal:
+      child_record: docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml
       episodes:
         - click-button-sequence:seed-0
         - click-button-sequence:seed-1
-      candidate_owner: task progress / planner context active subgoal boundary
+      candidate_owner: source-bound requested-effect semantics / canonical obligation relation-dependency boundary
       observed_failure: first activation succeeds, active subgoal remains button ONE is available, planner returns ask_user
+      review_refinement: do not repair by receipt-driven PlanProgress, Coordinator special-casing, or StateKernel auto-advance; first prove activation relation, dependency, verifier evidence, and terminal semantics with non-BrowserGym RED tests
     v_prb_5b_form_sequence_entry_action_family:
+      child_record: docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml
       episodes:
         - form-sequence:seed-0
         - form-sequence:seed-1
-      candidate_owner: task planning action-family inference / typed affordance mapping
+      candidate_owner: typed TaskPlan action-family resolution / current affordance mapping
       observed_failure: slider reversible_write requires type_text while environment affords press_key
-  next_requirement: choose exactly one mechanism and write a non-BrowserGym red test
+      review_refinement: lexical subject-to-TYPE_TEXT inference must yield to typed current affordance evidence or fail closed when ambiguous
+    v_prb_6_terminal_completion_guard:
+      child_record: docs/change-admission/v-prb-6-terminal-completion-guard.yaml
+      episodes:
+        - enter-text:seed-1
+      candidate_owner: not_selected
+      observed_failure: official_reward is 1.0 while Runtime records planner_terminal_completion_guard
+      review_refinement: track separately; BrowserGym reward is not Runtime completion authority
+  next_requirement: start with V-PRB-5A non-BrowserGym RED tests; pause for ADR if public semantic/schema expansion is required, otherwise keep V-PRB-5B and V-PRB-6 separate
   promotion_status: held
+
+v_prb_3_architecture_follow_up:
+  status: in_progress
+  resolver_manifest: semantic_action_resolver.py must be listed in the executable authority-free collaborator manifest
+  deep_immutable_output: pending
+  typed_input_boundary: pending
+  extracted_cluster: V-PRB-3 empty clarification resolution
+  still_in_generalist_planner:
+    - strict-submit-after-text-fallback
+    - strict-exact-value-text-fallback
+    - strict-page-observed-text-fallback
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or
@@ -686,6 +711,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Workstream / milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-28 | V-PRB-5 review governance refinement | Incorporated the latest review as governance and planning state before any further production repair: split V-PRB-5 into child diagnostic records for 5A button-sequence effect semantics and 5B entry action-family resolution, added V-PRB-6 terminal-completion guard classification, and recorded that V-PRB-3's semantic resolver must be executable-gate protected while deeper immutable output/input typing remains future debt. | `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml`, `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml`, `docs/change-admission/v-prb-6-terminal-completion-guard.yaml`, current/status/horizontal-governance records, horizontal governance test | documentation/governance slice only; no production behavior, provider run, benchmark episode, remote CI, score, or promotion claim. Focused governance gates must pass before commit. |
 | 2026-07-27 | Remote CI disabled and local equivalent gate | Recorded that GitHub Actions was intentionally closed after the latest remote attempt was blocked by account billing/spending limits. The current tree therefore has no remote-green or remote-fail claim; development validation uses the local equivalent gate while promotion remains held. | status, current plan, horizontal governance, active goal records | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a`; local equivalent gate passed: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check. Diagnostic benchmark acceptance remains failed by design and `official_score_claimed=false`; no remote-CI or promotion claim. |
 | 2026-07-27 | Review governance alignment | Applied the latest architecture review as governance state rather than broad implementation permission: preserved SG7 targeted evidence as historical immutable evidence, made semantic ownership review debt visible, kept immutable Planner input `not_started`, and separated implementation-bearing local-equivalent evidence from later documentation-only synchronization commits. | current/status/horizontal governance documents, SG7 admission record, horizontal governance tests | focused governance/document gates must pass for each documentation-sync commit; no production behavior, benchmark/provider episode, remote CI, score, or promotion claim. |
 | 2026-07-27 | M8.2A PR breadth diagnostic | Ran the active vertical protected cross-family / PR breadth slice on clean `d66760f76bb4668f610d2ebfac2c8ba0bf83c71a` using `profile=pr`, strict-generalist planning, local Ollama `qwen2.5:7b`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, and seeds 0 and 1 across `click-button`, `enter-text`, `choose-list`, `click-dialog`, `click-button-sequence`, and `form-sequence`. | `docs/evidence/runs/m8.2a-pr-breadth-d66760f/`, `/tmp/affordance-pr-breadth-d66760f-20260727-201632` | Negative evidence: 12 expected, 12 observed, 0 passed, 12 failed, 0 provider failures, 0 missing/unrun/invalidated, `official_score_claimed=false`. Runtime-owner clusters: 6 `intent_compilation_rejected` across 4 tasks/families, 5 `planner_waiting_clarification` across 4 tasks/families, and 1 `schema_incompatible` CONTRACT / FIELD_BINDING case. Promotion remains held; next repair owner is INTENT / PLANNING unless deeper trace classification narrows it. |

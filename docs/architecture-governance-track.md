@@ -100,11 +100,16 @@ horizontal architecture --/
 
 The current vertical lane is protected cross-family / PR breadth confirmation.
 SG7 targeted protected-family confirmation is closed only within its recorded
-2-task x 2-seed scope. The active-subgoal read/activation separation is locally
-closed in the current governance-sync line; the current horizontal lane is
-removal of mutable `StateKernel` from the standard Planner input. Neither lane
-authorizes promotion while remote CI is disabled or required validation is
-unavailable.
+2-task x 2-seed scope. Current PR breadth evidence is bound to `c24b277` and
+remains failed at 8/12, with remaining work split into V-PRB-5A
+button-sequence effect semantics, V-PRB-5B entry action-family resolution, and
+V-PRB-6 terminal-completion guard classification. The active-subgoal
+read/activation separation is locally closed in the current governance-sync
+line; the current horizontal lane is removal of mutable `StateKernel` from the
+standard Planner input. That horizontal lane is not a prerequisite for 5A/5B
+unless the RED evidence directly implicates mutable planner input or hidden
+state mutation. Neither lane authorizes promotion while remote CI is disabled
+or required validation is unavailable.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
@@ -185,7 +190,11 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | --- | --- | --- |
 | `RunCoordinator.run_sync` contains multiple phase algorithms | `in_progress` | extract one named responsibility at a time through immutable context and typed result |
 | standard `PlannerPort` still receives mutable `StateKernel` | `pending` | introduce frozen `PlannerStateView` / `PlanningRequest` before claiming immutable planner input |
-| Generalist Planner semantic fallback ownership review | `pending_review` | move SG7-triggered deterministic semantic fallback ownership toward typed resolver/constraint owners when the next planning slice touches it |
+| Generalist Planner semantic fallback ownership review | `in_progress` | V-PRB-3 extracted the empty-clarification cluster into `semantic_action_resolver.py`; old SG7 exact-value, page-observed-text, and terminal-submit fallbacks still remain in `GeneralistLMPlanner` and must move only through separate typed owner slices |
+| `semantic_action_resolver.py` output/input boundary | `pending` | resolver is authority-free and executable-gate protected, but `SemanticActionResolution.parameters` is not deeply immutable and resolver input still reads typed shells with dynamic dictionaries; tighten through Mapping/discriminated result types and future PlanningRequest views |
+| PR breadth V-PRB-5A button-sequence semantics | `pending` | first write non-BrowserGym RED tests for activation relation, explicit dependency, verifier-backed progress, and intermediate/final terminal flags; do not patch PlanProgress/Coordinator from receipt success |
+| PR breadth V-PRB-5B entry action-family resolution | `pending` | resolve action family from typed obligation plus current affordance evidence; slider-like reversible writes must not be lexical-subject-forced to TYPE_TEXT |
+| PR breadth V-PRB-6 terminal-completion guard | `pending` | classify external reward versus Runtime verifier/terminal authority separately before fresh diagnostic or promotion |
 | `LLMIntentCompiler` contains value-entry lexical normalization | `pending_review` | isolate source-bound value-entry normalization into a typed intent normalizer before declaring intake responsibility clean |
 | `task_planning.py` combines models, provider schema, validation, routing, and implementations | `pending` | split by change reason when the relevant planning slice is touched |
 | `LLMIntentCompiler.compile` is 253 lines | `pending` | isolate a typed phase without changing the three-call/authority boundary |

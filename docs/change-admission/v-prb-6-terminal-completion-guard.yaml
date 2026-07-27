@@ -1,0 +1,42 @@
+slice_id: v-prb-6-terminal-completion-guard
+parent_packet: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
+packet_role: child_diagnostic
+
+base_revision: 03e6463d8e410aec57a75385f9792fc6d2cc0fc2
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: false
+
+single_primary_owner: not_selected
+mechanism: runtime terminal completion guard classification
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  affected_observation:
+    - enter-text:seed-1
+  observed_path:
+    - BrowserGym official_reward is 1.0
+    - Runtime records planner_terminal_completion_guard
+    - the observation is not an official failed episode but blocks promotion-quality accounting
+
+classification_questions:
+  - does Runtime lack verifier-backed terminal evidence?
+  - is TaskPlan complete while task-level terminal criterion remains unsatisfied?
+  - is the external evaluator broader than the Runtime verifier authority?
+  - is a single-subgoal PlanningRouter completion special case involved?
+
+non_goals:
+  - do not mark Runtime done only because official_reward is 1.0
+  - do not weaken independent verifier authority
+  - do not modify Coordinator, StateKernel, Prompt, budget, task grammar, or benchmark-specific logic in this diagnostic packet
+  - do not combine with V-PRB-5A or V-PRB-5B
+  - do not claim PR breadth, nightly, release, promotion, or official score
+
+done_when:
+  - the guard is classified with a non-BrowserGym reproduction or clear trace evidence
+  - Runtime success, verification success, and BrowserGym reward remain separately accounted
+  - any production repair has its own child production slice and clean rerun
+
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled

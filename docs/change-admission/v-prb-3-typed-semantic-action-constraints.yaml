@@ -85,9 +85,21 @@ architecture_admission:
   statekernel_touched: false
   planner_port_touched: false
   benchmark_dependency_added: false
+  executable_authority_free_manifest: semantic_action_resolver.py
+  strict_no_statekernel_or_benchmark_import_gate: required
   planner_task_grammar_added: false
   prompt_or_budget_changed: false
   waiver: none
+
+architecture_follow_up:
+  status: in_progress
+  closed_by_current_review_sync:
+    - semantic_action_resolver.py is listed in the executable authority-free collaborator manifest
+    - semantic_action_resolver.py is separately guarded against importing StateKernel, Coordinator, TraceDag, or benchmarks
+  remaining_debt:
+    - SemanticActionResolution.parameters is outer-frozen but not deeply immutable
+    - resolver input uses typed PlannerContext shells while still reading dynamic task_spec and affordance state dictionaries
+    - strict-submit-after-text, strict-exact-value-text, and strict-page-observed-text fallback clusters remain in GeneralistLMPlanner
 
 result:
   status: implemented_locally

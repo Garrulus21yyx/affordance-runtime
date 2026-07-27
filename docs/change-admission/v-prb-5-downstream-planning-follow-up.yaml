@@ -23,8 +23,9 @@ source_evidence:
 
 classification:
   - id: V-PRB-5A
-    mechanism: button sequence progress / next-subgoal gating
-    candidate_owner: task progress / planner context active subgoal boundary
+    child_record: docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml
+    mechanism: button sequence effect semantics and canonical dependency
+    candidate_owner: source-bound requested-effect semantics / canonical obligation relation-dependency boundary
     episodes:
       - click-button-sequence:seed-0
       - click-button-sequence:seed-1
@@ -35,10 +36,11 @@ classification:
       - subsequent planner context still reports active_subgoal as button ONE is available
       - strict planner returns ask_user / waiting_clarification instead of progressing to button TWO
     production_change_allowed: false
-    next_requirement: non-BrowserGym reproduction proving whether verified action progress should advance the active subgoal after the first activation
+    next_requirement: non-BrowserGym reproduction proving whether activation effect relation, dependency, evidence, and intermediate/terminal semantics are complete; do not repair by receipt-driven or Coordinator-driven subgoal progress
   - id: V-PRB-5B
+    child_record: docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml
     mechanism: form sequence entry action family availability
-    candidate_owner: task planning action-family inference / typed affordance mapping
+    candidate_owner: typed TaskPlan action-family resolution / current affordance mapping
     episodes:
       - form-sequence:seed-0
       - form-sequence:seed-1
@@ -50,7 +52,19 @@ classification:
       - page affords slider press_key, checkbox activate, submit activate
       - recovery compact_context / repair_model_schema / replan_task does not change the rejection
     production_change_allowed: false
-    next_requirement: non-BrowserGym reproduction proving whether slider-like reversible_write should admit press_key or another typed action family without adding benchmark-specific task grammar
+    next_requirement: non-BrowserGym reproduction proving whether slider-like reversible_write should admit press_key or remain unresolved without lexical TYPE_TEXT overreach or benchmark-specific task grammar
+
+separate_tracking:
+  - id: V-PRB-6
+    child_record: docs/change-admission/v-prb-6-terminal-completion-guard.yaml
+    mechanism: terminal completion guard classification
+    episodes:
+      - enter-text:seed-1
+    observed_path:
+      - BrowserGym official_reward is 1.0
+      - Runtime records planner_terminal_completion_guard
+    production_change_allowed: false
+    next_requirement: classify Runtime verifier / terminal readiness authority separately; never mark Runtime success solely from external reward
 
 non_goals:
   - do not modify production code in this diagnostic packet
@@ -63,10 +77,14 @@ non_goals:
   - do not run fresh diagnostic, PR/nightly/release, or claim an official score
 
 selection_rule:
-  Choose exactly one of V-PRB-5A or V-PRB-5B for the next production slice
-  after writing a non-BrowserGym red test. If evidence shows mutable planner
-  input or hidden state mutation is the root cause, escalate the corresponding
-  horizontal remediation; otherwise keep immutable PlanningRequest separate.
+  First write the V-PRB-5A non-BrowserGym RED tests. If those tests show a
+  compiler-local relation/dependency/terminal-semantics repair, continue 5A as
+  the next production slice. If 5A requires a public semantic proposal/schema
+  expansion, pause 5A for an ADR and optionally select the narrower V-PRB-5B
+  action-family slice. V-PRB-6 remains separate. If evidence shows mutable
+  planner input or hidden state mutation is the root cause, escalate the
+  corresponding horizontal remediation; otherwise keep immutable PlanningRequest
+  separate.
 
 architecture_admission: not_evaluated
 promotion_status: held

@@ -56,6 +56,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_command_dispatcher.py",
     "recovery_handler.py",
     "recovery_trace_projection.py",
+    "semantic_action_resolver.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )
@@ -65,6 +66,17 @@ FORBIDDEN_NEUTRAL_DEPENDENCIES = (
     "affordance_runtime.benchmarks",
     "affordance_runtime.cli",
     "affordance_runtime.coordinator",
+)
+
+STRICT_AUTHORITY_FREE_COLLABORATORS = (
+    "semantic_action_resolver.py",
+)
+
+FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES = (
+    "affordance_runtime.benchmarks",
+    "affordance_runtime.coordinator",
+    "affordance_runtime.state_kernel",
+    "affordance_runtime.trace",
 )
 
 STATE_KERNEL_MUTATIONS = {
@@ -238,10 +250,12 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "inherit no broader runtime evidence" in status
     assert "standard planner contract no longer receives mutable `statekernel`" in current_plan
     assert "review-driven remediation sequence" in current_plan
-    assert "p1 immutable planner input" in current_plan
+    assert "v-prb-5a button-sequence effect semantics" in current_plan
+    assert "v-prb-5b entry action-family resolution" in current_plan
+    assert "v-prb-6 terminal completion guard classification" in current_plan
+    assert "h2 immutable planner input" in current_plan
     assert "p2 semantic fallback owner extraction" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
-    assert "p4 protected breadth continuation" in current_plan
     assert "module-level semantic owner gate" in governance
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
@@ -545,6 +559,20 @@ def test_extracted_collaborators_cannot_reacquire_state_or_trace_authority() -> 
                     violations.append((filename, node.lineno, node.func.attr))
     assert violations == []
     assert mutation_debt == EXTRACTED_MUTATION_DEBT
+
+
+def test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks() -> None:
+    violations: list[tuple[str, int, str]] = []
+    for filename in STRICT_AUTHORITY_FREE_COLLABORATORS:
+        tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            for dependency in _import_dependencies(node):
+                if any(
+                    _matches_module(dependency, prefix)
+                    for prefix in FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES
+                ):
+                    violations.append((filename, getattr(node, "lineno", 0), dependency))
+    assert violations == []
 
 
 def test_every_state_kernel_method_is_classified_as_read_or_mutation() -> None:
