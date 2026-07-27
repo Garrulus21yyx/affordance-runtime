@@ -241,11 +241,18 @@ delivery claims.
     reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated
     failures, and `click-button-sequence` seeds 0 and 1 now pass. V-PRB-5A is
     closed for this matrix.
-39. `in_progress` — Start V-PRB-5B only: write a non-BrowserGym RED for
-    `form-sequence` entry action-family resolution. Current clean evidence
-    shows `entry_action_family_unavailable` for `form-sequence` seeds 0 and 1.
-    Keep V-PRB-6 `enter-text:seed-1`, immutable Planner input, fresh
-    diagnostic, nightly/release, and promotion separate.
+39. `done` — Implement V-PRB-5B entry action-family resolution as a
+    non-BrowserGym RED/GREEN slice. The first repair made slider-like
+    reversible writes use current `press_key` affordance evidence and kept
+    ambiguous mappings unresolved. The clean `5c7a2ab` rerun proved the
+    original `entry_action_family_unavailable` form-sequence rejection no
+    longer reproduces, but exposed a textbox fallback regression. The
+    follow-up `2b67ffd` repair restores textbox value-entry inference.
+40. `in_progress` — Rerun the same PR breadth matrix on the clean committed
+    V-PRB-5B follow-up repair lineage. Keep any remaining strict-planner empty
+    `ask_user` / `planner_waiting_clarification` failure as a new child slice;
+    do not mix immutable Planner input, fresh diagnostic, nightly/release, or
+    promotion.
 
 ## Change Record
 

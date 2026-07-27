@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5B entry action-family resolution | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; clean PR breadth at `151fbef` completed 12/12 observed with 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider failure/missing/unrun/invalidated case. V-PRB-5A is closed for this matrix: both `click-button-sequence` seeds now pass. Remaining official failures are `form-sequence` seeds 0 and 1 with `entry_action_family_unavailable`; `enter-text:seed-1` remains a separate V-PRB-6 Runtime terminal guard | start V-PRB-5B only: write a non-BrowserGym RED for typed entry action-family resolution using current affordance evidence; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5B entry action-family resolution | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`. The first clean V-PRB-5B rerun at `5c7a2ab` showed that `form-sequence` no longer fails with `entry_action_family_unavailable`, but it also exposed an over-narrow textbox fallback regression: `enter-text` seeds 0 and 1 moved to empty `ask_user` / `planner_waiting_clarification`. `2b67ffd` restores textbox value-entry inference and requires a clean PR breadth rerun before any closure claim | rerun the same PR breadth matrix on the clean committed `2b67ffd` lineage; if form/enter-text still fail, classify the remaining strict-planner empty-clarification owner as a new child slice rather than expanding V-PRB-5B | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -104,10 +104,14 @@ batched into a single mixed patch:
    button-sequence closure for seeds 0 and 1, raising the matrix to 10/12
    official reward passes. V-PRB-5A is closed for the current PR breadth
    matrix; do not extend it to form-sequence or terminal-guard work.
-2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
-   slice for slider-like reversible-write action-family selection. Execute it
-   after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is
-   required before implementation.
+2. **V-PRB-5B entry action-family resolution** — implemented as a typed,
+   authority-free action-family resolver slice. The first repair makes
+   slider-like reversible writes use current `press_key` affordance evidence
+   instead of lexical `TYPE_TEXT`; ambiguity remains unresolved. The clean
+   `5c7a2ab` PR breadth rerun confirms the original form-sequence
+   `entry_action_family_unavailable` rejection is gone, but exposed a textbox
+   fallback regression in `enter-text`. `2b67ffd` restores textbox
+   value-entry inference; rerun clean before closing this slice.
 3. **V-PRB-6 terminal completion guard classification** — track
    `enter-text:seed-1` separately because BrowserGym official reward is 1.0
    while Runtime still records a terminal guard. External reward is not Runtime

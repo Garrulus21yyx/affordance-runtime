@@ -2,12 +2,15 @@ slice_id: v-prb-5b-entry-action-family-resolution
 parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
 packet_role: child_diagnostic
 
-base_revision: 03e6463d8e410aec57a75385f9792fc6d2cc0fc2
-change_type: vertical_failure_classification
+base_revision: c072bdf
+implementation_revisions:
+  - 5c7a2abf17c6e15f497cb613856730ddd9080242
+  - 2b67ffd
+change_type: vertical_repair
 agent_mode: single_agent
-production_change_allowed: false
+production_change_allowed: true
 
-single_primary_owner: not_selected
+single_primary_owner: task_action_family_resolution
 mechanism: typed entry action-family resolution
 
 source_evidence:
@@ -35,7 +38,6 @@ review_refinement:
     - ambiguous affordance support must fail closed instead of guessing an executable family
 
 non_goals:
-  - do not modify production code in this diagnostic packet
   - do not modify Coordinator
   - do not modify StateKernel
   - do not modify PlannerPort or introduce PlanningRequest
@@ -52,8 +54,8 @@ required_non_browsergym_red_tests:
   - no current affordance means no executable family is generated
 
 candidate_owner:
-  module: task_action_family_resolver.py
-  output_type: TaskActionFamilyResolution
+  module: task_action_family_resolution.py
+  output_type: action family value or unresolved
   allowed_inputs:
     - TaskObligationSpec
     - typed current planning environment / affordance summary
@@ -73,6 +75,42 @@ done_when:
   - no task grammar, Prompt, budget, adapter-specific, Coordinator, or StateKernel change is added
   - clean PR breadth matrix is rerun after a production repair commit
 
-architecture_admission: not_evaluated
+implementation:
+  first_repair:
+    revision: 5c7a2abf17c6e15f497cb613856730ddd9080242
+    summary: >
+      Introduced an authority-free resolver and made reversible-write
+      obligations prefer unique current affordance evidence; slider value
+      changes with a typed press_key affordance no longer infer TYPE_TEXT.
+  first_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-5c7a2ab/
+    result: >
+      Negative PR breadth evidence: 12/12 observed, 8/12 official reward
+      passed, 4 Runtime failures, no provider/missing/unrun/invalidated cases.
+      The original form-sequence entry_action_family_unavailable rejection no
+      longer reproduces, but enter-text regressed to empty ask_user /
+      planner_waiting_clarification because textbox affordances with labels
+      such as "tt" did not match text_field subjects.
+  second_repair:
+    revision: 2b67ffd
+    summary: >
+      Restored textbox value-entry inference from typed current affordance
+      role/support when lexical subject and label tokens do not overlap.
+
+verification:
+  focused_tests:
+    - tests/test_task_planning.py::test_obligation_compiler_uses_current_affordance_for_slider_value_change
+    - tests/test_task_planning.py::test_obligation_compiler_uses_textbox_affordance_for_text_field_change
+    - tests/test_task_planning.py::test_obligation_compiler_leaves_ambiguous_current_affordance_family_unresolved
+  local_gates:
+    - full pytest: 981 passed
+    - ruff: passed
+    - mypy: passed over 118 source files
+    - diff check: passed
+    - task_planning.py line ceiling: 1641 <= 1642
+  build_gate: environment-blocked; isolated build cannot create python3.12 venv because ensurepip/python3.12-venv is missing, and the BrowserGym venv lacks setuptools.build_meta
+
+architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
+closure_status: rerun_pending
