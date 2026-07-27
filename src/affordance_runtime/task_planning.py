@@ -12,6 +12,7 @@ from uuid import uuid4
 from pydantic import Field, model_validator
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 
+from affordance_runtime import task_action_family_resolution as action_family_resolution
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import (
     CriteriaEvidenceMatcher,
@@ -52,13 +53,6 @@ TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
 TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION = "typed-subject-state-support-v1"
-_VALUE_ENTRY_SUBJECT_TERMS = frozenset(("field", "input", "textbox", "textarea", "text", "date", "value"))
-
-
-def _looks_like_value_entry_subject(subject: str) -> bool:
-    return bool(_VALUE_ENTRY_SUBJECT_TERMS.intersection(re.findall(r"[a-z0-9]+", subject.casefold())))
-
-
 class TaskPlanSource(StrEnum):
     RULE = "rule"
     LLM = "llm"
@@ -1202,24 +1196,13 @@ def _contextual_entry_subgoal(
 def _context_action_families(
     context: TaskPlanningContext,
 ) -> frozenset[TaskPlanActionFamily]:
-    aliases = {
-        "click": TaskPlanActionFamily.ACTIVATE,
-        "fill": TaskPlanActionFamily.TYPE_TEXT,
-        "type": TaskPlanActionFamily.TYPE_TEXT,
-        "select": TaskPlanActionFamily.SELECT_OPTION,
-        "press": TaskPlanActionFamily.PRESS_KEY,
-        "drop": TaskPlanActionFamily.DRAG,
-    }
     families: set[TaskPlanActionFamily] = set()
     for affordance in context.environment.affordances:
         for action in affordance.supported_actions:
-            normalized = action.strip().lower()
             try:
-                families.add(TaskPlanActionFamily(normalized))
+                families.add(TaskPlanActionFamily(action_family_resolution.action_family_value(action)))
             except ValueError:
-                alias = aliases.get(normalized)
-                if alias is not None:
-                    families.add(alias)
+                pass
     return frozenset(families)
 
 
@@ -1229,6 +1212,23 @@ def _action_outcome_relation_compatible(
 ) -> bool:
     """Enforce the provider-neutral semantic action/outcome relation matrix."""
     return relation in task_plan_allowed_outcome_relations(action_family)
+
+
+def _infer_obligation_action_family(
+    obligation: TaskObligationSpec,
+    task_operation: OperationClass,
+    relation: SubgoalOutcomeRelation,
+    context: TaskPlanningContext | None,
+) -> TaskPlanActionFamily | None:
+    value = action_family_resolution.infer_obligation_action_family_value(
+        obligation_kind=obligation.kind.value,
+        task_operation=task_operation.value,
+        subject=obligation.subject,
+        relation=relation.value,
+        affordances=context.environment.affordances if context is not None else (),
+        allowed_relations_by_family={family.value: frozenset(item.value for item in relations) for family, relations in _ACTION_OUTCOME_RELATIONS.items()},
+    )
+    return TaskPlanActionFamily(value) if value is not None else None
 
 
 def task_plan_repair_directives(
@@ -1304,7 +1304,11 @@ class TaskObligationOutcomeCompiler:
             based_on_state_version=context.state_version,
             generated_by=TaskPlanSource.RULE,
             subgoals=tuple(
-                self._compile_obligation(item, task_spec.operation_class)
+                self._compile_obligation(
+                    item,
+                    task_spec.operation_class,
+                    context,
+                )
                 for item in obligations
             ),
             assumptions=(),
@@ -1314,6 +1318,7 @@ class TaskObligationOutcomeCompiler:
     def _compile_obligation(
         obligation: TaskObligationSpec,
         task_operation: OperationClass,
+        context: TaskPlanningContext | None = None,
     ) -> SubgoalSpec:
         relation = SubgoalOutcomeRelation(obligation.relation.value)
         outcome = SubgoalOutcome(
@@ -1341,13 +1346,7 @@ class TaskObligationOutcomeCompiler:
                 if obligation.kind == TaskObligationKind.EFFECT
                 else OperationClass.READ_ONLY
             ),
-            action_family=(
-                TaskPlanActionFamily.TYPE_TEXT
-                if obligation.kind == TaskObligationKind.EFFECT and task_operation == OperationClass.REVERSIBLE_WRITE
-                and relation in _ACTION_OUTCOME_RELATIONS[TaskPlanActionFamily.TYPE_TEXT]
-                and (relation != SubgoalOutcomeRelation.HAS_CHANGED or _looks_like_value_entry_subject(obligation.subject))
-                else None
-            ),
+            action_family=_infer_obligation_action_family(obligation, task_operation, relation, context),
             outcome=outcome,
         )
 

@@ -144,6 +144,106 @@ def test_obligation_compiler_does_not_infer_text_entry_for_generic_change_target
     assert plan.subgoals[0].action_family is None
 
 
+def test_obligation_compiler_uses_current_affordance_for_slider_value_change() -> None:
+    task = _task().model_copy(
+        update={
+            "task_structure": TaskStructure.MULTI_STAGE,
+            "source_claims": (
+                SourcedTaskClaim(
+                    claim_id="claim-slider",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="slider value changes to 7",
+                    source_ref="request-1",
+                ),
+            ),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-slider",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="slider_value_7",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    claim_ids=("claim-slider",),
+                    evidence_requirements=("slider value evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:ui-slider-handle:1",
+                        role="slider",
+                        label="ui-slider-handle",
+                        supported_actions=("press_key",),
+                    ),
+                )
+            ),
+        }
+    )
+
+    plan = TaskObligationOutcomeCompiler().compile(context)
+
+    assert plan.subgoals[0].action_family == TaskPlanActionFamily.PRESS_KEY
+    assert (
+        TaskPlanValidator().validate(
+            plan,
+            task,
+            state_version=context.state_version,
+            planning_context=context,
+        ).status
+        == TaskPlanValidationStatus.ACCEPT
+    )
+
+
+def test_obligation_compiler_leaves_ambiguous_current_affordance_family_unresolved() -> None:
+    task = _task().model_copy(
+        update={
+            "source_claims": (
+                SourcedTaskClaim(
+                    claim_id="claim-slider",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="slider value changes",
+                    source_ref="request-1",
+                ),
+            ),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-slider",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="slider_value",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    claim_ids=("claim-slider",),
+                    evidence_requirements=("slider value evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:ui-slider-handle:1",
+                        role="slider",
+                        label="ui-slider-handle",
+                        supported_actions=("press_key", "drag"),
+                    ),
+                )
+            ),
+        }
+    )
+
+    plan = TaskObligationOutcomeCompiler().compile(context)
+
+    assert plan.subgoals[0].action_family is None
+
+
 def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> None:
     plan = PlanningRouter().plan(_context())
 
