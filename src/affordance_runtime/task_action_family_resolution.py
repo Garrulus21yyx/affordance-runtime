@@ -50,6 +50,15 @@ def current_bindable_action_family_values(
             family = action_family_value(str(action))
             if relation in allowed_relations_by_family.get(family, frozenset()):
                 families.add(family)
+    if not families and _looks_like_value_entry_subject(subject):
+        for affordance in affordances:
+            role = str(getattr(affordance, "role", "")).strip().casefold()
+            if role not in {"textbox", "input", "textarea"}:
+                continue
+            for action in getattr(affordance, "supported_actions", ()):
+                family = action_family_value(str(action))
+                if family == "type_text" and relation in allowed_relations_by_family.get(family, frozenset()):
+                    families.add(family)
     return frozenset(families)
 
 

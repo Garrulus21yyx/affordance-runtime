@@ -199,6 +199,51 @@ def test_obligation_compiler_uses_current_affordance_for_slider_value_change() -
     )
 
 
+def test_obligation_compiler_uses_textbox_affordance_for_text_field_change() -> None:
+    task = _task().model_copy(
+        update={
+            "source_claims": (
+                SourcedTaskClaim(
+                    claim_id="claim-text",
+                    kind=TaskClaimKind.EFFECT,
+                    statement="text field changes to Myron",
+                    source_ref="request-1",
+                ),
+            ),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-text",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="text_field:Myron",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    claim_ids=("claim-text",),
+                    evidence_requirements=("text field evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="semantic:tt:1",
+                        role="textbox",
+                        label="tt",
+                        supported_actions=("type_text",),
+                    ),
+                )
+            ),
+        }
+    )
+
+    plan = TaskObligationOutcomeCompiler().compile(context)
+
+    assert plan.subgoals[0].action_family == TaskPlanActionFamily.TYPE_TEXT
+
+
 def test_obligation_compiler_leaves_ambiguous_current_affordance_family_unresolved() -> None:
     task = _task().model_copy(
         update={
