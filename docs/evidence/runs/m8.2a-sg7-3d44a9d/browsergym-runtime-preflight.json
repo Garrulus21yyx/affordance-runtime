@@ -1,0 +1,8 @@
+{
+  "browsergym_miniwob": "0.14.3",
+  "playwright": "1.44.0",
+  "python_version": "3.12.3",
+  "ready": true,
+  "schema_version": "browsergym-runtime-preflight-v1",
+  "sys_executable": "/home/yang/.venvs/affordance-browsergym-py312/bin/python"
+}

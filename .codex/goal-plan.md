@@ -64,15 +64,14 @@ delivery claims.
     promotion/admission/CI axes, record the failed remote CI without treating
     every failure as environmental, scope INV-11 to task-execution commit
     sequencing, and make the vertical/horizontal WIP policy explicit.
-13. `in_progress` — Run one vertical slice (SG7 targeted protected-family
+13. `done` — Run one vertical slice (SG7 targeted protected-family
     confirmation) beside the already closed H1 active-subgoal horizontal slice.
     The first clean `fa288af` SG7 diagnostic failed 0/4 in INTENT / PLANNING;
-    the current dirty-tree generic repair candidate passes the same 2-task x
-    2-seed diagnostic 4/4. This is not promotion evidence until the repair is
-    committed and rerun from a clean tree. Immutable PlanningRequest /
-    PlannerStateView remains the next horizontal boundary after SG7 evidence is
-    frozen, unless a later clean SG7 failure directly implicates mutable
-    planner state.
+    the generic repair was committed as `3d44a9d` and the clean rerun of the
+    same 2-task x 2-seed diagnostic passed 4/4. This is SG7 targeted evidence
+    only, not PR breadth, nightly/release, or a promoted score. Immutable
+    PlanningRequest / PlannerStateView remains the next horizontal boundary and
+    must not be mixed into the same evidence identity.
 14. `done` — Repair classified CI harness/environment failures without
     hiding the remaining benchmark runtime failure: core pytest invocation and
     BrowserGym provisioning are narrow CI fixes; coherent observation epoch
@@ -89,9 +88,12 @@ delivery claims.
     `activate_next_subgoal()`, keep production activation in Coordinator, and
     remove the planner-context hidden-mutation exception from the architecture
     gate.
-18. `pending` — Freeze the SG7 generic repair in a clean revision and rerun the
+18. `done` — Freeze the SG7 generic repair in a clean revision and rerun the
     exact targeted matrix (`enter-date`, `text-transform`, seeds 0 and 1)
     before protected breadth, PR/nightly/release, score, or promotion claims.
+19. `pending` — Continue vertical protected cross-family / PR breadth from the
+    clean `3d44a9d` evidence identity, while keeping immutable Planner input as
+    the separate next horizontal lane.
 
 ## Change Record
 
@@ -221,3 +223,14 @@ delivery claims.
   otherwise freeze the candidate, rerun the same matrix from a clean tree, then
   continue vertical protected breadth. Immutable Planner input remains the next
   horizontal lane, not this SG7 repair's prerequisite.
+- Committed the SG7 generic repair as
+  `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, pushed it to
+  `origin/agent/migrate-runtime-components`, and reran the exact clean SG7
+  targeted matrix. The clean run
+  `/tmp/affordance-sg7-3d44a9d-20260727-184535` observed and passed all four
+  requested episodes with no provider/runtime failure, no missing/unrun/
+  invalidated cases, no rate-limit/transient retries, `official_success_rate=1.0`,
+  `mean_official_reward=1.0`, and `official_score_claimed=false`. Compact
+  evidence is archived under `docs/evidence/runs/m8.2a-sg7-3d44a9d/`. This
+  closes SG7 targeted confirmation only; protected breadth remains next and
+  promotion remains held.
