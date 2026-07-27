@@ -200,6 +200,26 @@ task-planning/planner constraint follow-up, starting with exact owner
 classification and non-BrowserGym reproduction. Do not batch it with
 PlanningRequest migration, fresh diagnostic, or promotion.
 
+V-PRB-5 has been opened as diagnostic-only packet
+`docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml`. It splits
+the remaining official failures into two candidate mechanisms and forbids a
+mixed production patch:
+
+- **V-PRB-5A button sequence progress / next-subgoal gating** —
+  `click-button-sequence` seeds 0 and 1 create a TaskSpec and accepted
+  two-subgoal TaskPlan, execute the first `ONE` activation, then still present
+  `button ONE is available` as active subgoal and return `ask_user` /
+  `waiting_clarification` instead of progressing to `button TWO`.
+- **V-PRB-5B form sequence entry action family availability** —
+  `form-sequence` seeds 0 and 1 create a TaskSpec and proposed three-subgoal
+  plan, but TaskPlan validation requires `type_text` for the slider
+  reversible-write obligation while the environment offers slider `press_key`;
+  context/schema/task-plan recovery attempts do not clear the rejection.
+
+Choose exactly one of V-PRB-5A or V-PRB-5B next, write a non-BrowserGym red
+test first, and keep immutable PlanningRequest separate unless the evidence
+shows mutable planner input is the root cause.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward

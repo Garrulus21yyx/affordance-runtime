@@ -158,12 +158,21 @@ delivery claims.
     remaining official failures advanced downstream: two
     `click-button-sequence` planner clarification cases and two
     `form-sequence` task-planning `entry_action_family_unavailable` cases.
-28. `pending` — Select one next child slice only: V-PRB-5 downstream
+28. `done` — Select one next child slice only: V-PRB-5 downstream
     task-planning/planner constraint follow-up. First classify exact owner and
     create non-BrowserGym reproduction for either click-button-sequence
     continuation planning or form-sequence entry action family availability; do
     not batch them together and do not start immutable PlanningRequest unless
-    the evidence shows mutable planner input is the root cause.
+    the evidence shows mutable planner input is the root cause. V-PRB-5 was
+    opened as diagnostic-only packet with two candidate mechanisms.
+29. `done` — Open V-PRB-5 as diagnostic-only classification packet. Split the
+    remaining official failures into V-PRB-5A button sequence progress /
+    next-subgoal gating and V-PRB-5B form sequence entry action family
+    availability. No production repair is admitted by the umbrella diagnostic.
+30. `pending` — Choose exactly one of V-PRB-5A or V-PRB-5B for the next
+    production slice, write the non-BrowserGym red test first, then implement
+    the smallest owner-local repair and rerun PR breadth on a clean committed
+    revision.
 
 ## Change Record
 

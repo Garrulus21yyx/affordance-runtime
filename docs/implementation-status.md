@@ -223,6 +223,27 @@ v_prb_2_clean_rerun:
     entry_action_family_unavailable: 2
     planner_terminal_completion_guard: 1
   next_selectable_child_slice: V-PRB-5 task planning / planner constraint follow-up
+
+v_prb_5_downstream_planning_follow_up:
+  child_record: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
+  status: diagnostic_open
+  production_change_admitted: false
+  source_evidence: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  mechanisms:
+    v_prb_5a_button_sequence_progress_next_subgoal:
+      episodes:
+        - click-button-sequence:seed-0
+        - click-button-sequence:seed-1
+      candidate_owner: task progress / planner context active subgoal boundary
+      observed_failure: first activation succeeds, active subgoal remains button ONE is available, planner returns ask_user
+    v_prb_5b_form_sequence_entry_action_family:
+      episodes:
+        - form-sequence:seed-0
+        - form-sequence:seed-1
+      candidate_owner: task planning action-family inference / typed affordance mapping
+      observed_failure: slider reversible_write requires type_text while environment affords press_key
+  next_requirement: choose exactly one mechanism and write a non-BrowserGym red test
+  promotion_status: held
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or
