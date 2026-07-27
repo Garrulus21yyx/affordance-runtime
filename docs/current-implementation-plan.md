@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5B entry action-family resolution | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`. The first clean V-PRB-5B rerun at `5c7a2ab` showed that `form-sequence` no longer fails with `entry_action_family_unavailable`, but it also exposed an over-narrow textbox fallback regression: `enter-text` seeds 0 and 1 moved to empty `ask_user` / `planner_waiting_clarification`. `2b67ffd` restores textbox value-entry inference and requires a clean PR breadth rerun before any closure claim | rerun the same PR breadth matrix on the clean committed `2b67ffd` lineage; if form/enter-text still fail, classify the remaining strict-planner empty-clarification owner as a new child slice rather than expanding V-PRB-5B | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5C form-sequence strict-planner proposal generation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`. Clean `3daf779` PR breadth completed 12/12 observed, 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider/missing/unrun/invalidated case. Remaining form failures are strict planner empty `ask_user` proposals after accepted TaskPlans with `press_key` permitted | start V-PRB-5C only: classify and RED/GREEN the generic strict-planner empty-clarification issue for `has_changed` / `press_key` entries; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -111,12 +111,19 @@ batched into a single mixed patch:
    `5c7a2ab` PR breadth rerun confirms the original form-sequence
    `entry_action_family_unavailable` rejection is gone, but exposed a textbox
    fallback regression in `enter-text`. `2b67ffd` restores textbox
-   value-entry inference; rerun clean before closing this slice.
-3. **V-PRB-6 terminal completion guard classification** — track
+   value-entry inference. The clean `3daf779` rerun restores `enter-text:seed-0`
+   and confirms V-PRB-5B is closed for action-family resolution in the current
+   matrix.
+3. **V-PRB-5C form-sequence strict-planner proposal generation** — new child
+   slice for the remaining `form-sequence` seeds. TaskPlan acceptance and
+   `press_key` permission are present; the strict planner returns an empty
+   `ask_user` proposal for the active slider `has_changed` subgoal. This must
+   be reproduced with a non-BrowserGym RED before any production repair.
+4. **V-PRB-6 terminal completion guard classification** — track
    `enter-text:seed-1` separately because BrowserGym official reward is 1.0
    while Runtime still records a terminal guard. External reward is not Runtime
    completion authority.
-4. **H2 immutable Planner input** — after the current vertical evidence is
+5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
    so the standard Planner contract no longer receives mutable `StateKernel`.
@@ -262,34 +269,29 @@ mixed production patch:
 
 Latest review refinement:
 
-- V-PRB-5A is now tracked by
-  `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml`.
-  Its first non-BrowserGym RED showed a compiler-local gap: the
-  requested-effect fallback preserved Runtime graph authority but made every
-  generated effect terminal and omitted ordered dependencies. The first repair
-  keeps flat requested effects independent by default and enables ordered
-  dependency / intermediate-terminal semantics only for multi-stage
-  requested-effect fallback. The clean `0565e2e` PR breadth rerun showed this
-  was insufficient because clicked targets still compiled as
-  `predicate / is_available`. The second RED fixed that generic relation gap:
-  clicked/activated multi-stage navigation targets now compile as
-  `effect / is_completed`. The clean `e4795c1` rerun confirms the repair is in
-  the BrowserGym path and `click-button:seed-1` no longer reproduces the
-  schema-incompatibility failure, but V-PRB-5A remains open because completed
-  click progress still lacks independent observer/verifier evidence after
-  execution. Continue with a new non-BrowserGym RED for completed-click
-  progress evidence, not fresh diagnostic or promotion.
+- V-PRB-5A is tracked by
+  `docs/change-admission/v-prb-5a-button-sequence-effect-semantics.yaml` and
+  is closed for the current PR breadth matrix. Its repairs covered
+  dependency/terminal semantics, clicked-target `effect / is_completed`
+  relation, and completed-click active-subgoal progress evidence. Clean
+  `151fbef` evidence confirms both `click-button-sequence` seeds now pass.
 - V-PRB-5B is tracked by
-  `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml` and
-  remains independent. Its likely owner is typed TaskPlan action-family
-  resolution from obligation plus current affordance, not Prompt repair,
-  context compaction, or lexical subject matching alone.
+  `docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml` and is
+  closed for action-family resolution in the current PR breadth matrix. Clean
+  `3daf779` evidence confirms the original `form-sequence`
+  `entry_action_family_unavailable` rejection is gone and textbox value-entry
+  inference is restored.
+- V-PRB-5C is tracked by
+  `docs/change-admission/v-prb-5c-form-sequence-strict-planner-proposal.yaml`
+  and is the next selectable vertical slice. It covers only the remaining
+  `form-sequence` strict-planner empty `ask_user` proposal after accepted
+  TaskPlans with `press_key` permitted.
 - V-PRB-6 is tracked by
   `docs/change-admission/v-prb-6-terminal-completion-guard.yaml` and must not
   be mixed into either 5A or 5B. Runtime success, verifier success, and
   BrowserGym reward stay separate.
 - Immutable PlanningRequest / PlannerStateView remains the next horizontal
-  lane, but it is not a prerequisite for 5A/5B unless the new RED evidence
+  lane, but it is not a prerequisite for 5C unless the new RED evidence
   directly implicates mutable planner input or hidden state mutation.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,

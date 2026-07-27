@@ -100,13 +100,14 @@ horizontal architecture --/
 
 The current vertical lane is protected cross-family / PR breadth confirmation.
 SG7 targeted protected-family confirmation is closed only within its recorded
-2-task x 2-seed scope. Current PR breadth evidence is bound to `151fbef` and
-remains failed at 10/12 official reward, with V-PRB-5A button-sequence closed
-for this matrix and remaining work split into V-PRB-5B entry action-family
-resolution plus V-PRB-6 terminal-completion guard classification. The active-subgoal
+2-task x 2-seed scope. Current PR breadth evidence is bound to `3daf779` and
+remains failed at 10/12 official reward, with V-PRB-5A button-sequence and
+V-PRB-5B entry action-family resolution closed for this matrix. Remaining work
+is split into V-PRB-5C form-sequence strict-planner proposal generation and
+V-PRB-6 terminal-completion guard classification. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
-standard Planner input. That horizontal lane is not a prerequisite for 5A/5B
+standard Planner input. That horizontal lane is not a prerequisite for 5C
 unless the RED evidence directly implicates mutable planner input or hidden
 state mutation. Neither lane authorizes promotion while remote CI is disabled
 or required validation is unavailable.
@@ -193,7 +194,8 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | Generalist Planner semantic fallback ownership review | `in_progress` | V-PRB-3 extracted the empty-clarification cluster into `semantic_action_resolver.py`; old SG7 exact-value, page-observed-text, and terminal-submit fallbacks still remain in `GeneralistLMPlanner` and must move only through separate typed owner slices |
 | `semantic_action_resolver.py` output/input boundary | `pending` | resolver is authority-free and executable-gate protected, but `SemanticActionResolution.parameters` is not deeply immutable and resolver input still reads typed shells with dynamic dictionaries; tighten through Mapping/discriminated result types and future PlanningRequest views |
 | PR breadth V-PRB-5A button-sequence semantics | `done` | clean `151fbef` PR breadth rerun passed both `click-button-sequence` seeds after dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs |
-| PR breadth V-PRB-5B entry action-family resolution | `in_progress` | typed action-family resolver committed; clean `5c7a2ab` rerun removed the original `entry_action_family_unavailable` rejection but exposed a textbox fallback regression; `2b67ffd` restores textbox value-entry inference and requires a clean PR breadth rerun before closure |
+| PR breadth V-PRB-5B entry action-family resolution | `done` | clean `3daf779` PR breadth rerun confirms the original `entry_action_family_unavailable` rejection is gone and textbox value-entry inference is restored; remaining form failures moved to V-PRB-5C strict-planner empty proposal generation |
+| PR breadth V-PRB-5C form-sequence strict-planner proposal generation | `pending` | accepted TaskPlan with `press_key` permitted still yields empty `ask_user` proposals for slider `has_changed` entries; reproduce generically before any production repair |
 | PR breadth V-PRB-6 terminal-completion guard | `pending` | classify external reward versus Runtime verifier/terminal authority separately before fresh diagnostic or promotion |
 | `LLMIntentCompiler` contains value-entry lexical normalization | `pending_review` | isolate source-bound value-entry normalization into a typed intent normalizer before declaring intake responsibility clean |
 | `task_planning.py` combines models, provider schema, validation, routing, and implementations | `pending` | split by change reason when the relevant planning slice is touched |

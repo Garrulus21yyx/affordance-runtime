@@ -1,0 +1,76 @@
+slice_id: v-prb-5c-form-sequence-strict-planner-proposal
+parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
+packet_role: child_diagnostic
+
+base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
+change_type: vertical_failure_classification
+agent_mode: single_agent
+production_change_allowed: false
+
+single_primary_owner: not_selected
+mechanism: strict planner proposal generation for press_key value-change entries
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-3daf779/
+  affected_episodes:
+    - form-sequence:seed-0
+    - form-sequence:seed-1
+  observed_path:
+    - TaskSpec is created
+    - TaskPlan is accepted
+    - active subgoal is the slider value has_changed obligation
+    - planner context permits press_key
+    - strict planner returns an empty ask_user proposal
+    - runtime records planner_waiting_clarification
+
+review_refinement:
+  current_hypothesis: >
+    V-PRB-5B closed the action-family availability failure. The remaining
+    form-sequence failure is a strict planner proposal-generation issue for a
+    typed has_changed subgoal whose currently bindable action family is
+    press_key.
+  primary_risks:
+    - repairing by task name, URL, selector, coordinate, or benchmark-family branch
+    - expanding Prompt or model-call budget instead of adding a generic typed behavior
+    - weakening verifier or accepting ask_user as progress
+    - mixing with immutable Planner input or enter-text terminal guard work
+
+non_goals:
+  - do not modify Coordinator
+  - do not modify StateKernel
+  - do not modify PlannerPort or introduce PlanningRequest
+  - do not modify Prompt, model-call budget, retry budget, timeout, or cost
+  - do not add task-name, URL, selector, coordinate, or benchmark-family branches
+  - do not combine with V-PRB-6 terminal-completion guard
+  - do not run fresh diagnostic, nightly, release, or promotion
+
+required_non_browsergym_red_tests:
+  - accepted TaskPlan with active has_changed subgoal and press_key permitted must not yield empty ask_user
+  - proposed action must remain semantic and handle-free
+  - ambiguous press_key/drag family remains unresolved or asks for clarification with a non-empty reason
+  - no verifier progress is claimed before independent evidence
+
+candidate_owner:
+  module: not_selected
+  allowed_inputs:
+    - PlannerContext
+    - active TaskPlan subgoal summary
+    - typed current affordance summary
+  forbidden_inputs:
+    - task name
+    - URL
+    - selector
+    - coordinate
+    - StateKernel
+    - Coordinator
+
+done_when:
+  - non-BrowserGym RED turns GREEN
+  - form-sequence no longer returns empty ask_user for the active slider has_changed subgoal
+  - ambiguity remains fail-closed
+  - no task grammar, Prompt, budget, adapter-specific, Coordinator, or StateKernel change is added
+  - clean PR breadth matrix is rerun after any production repair commit
+
+architecture_admission: not_evaluated
+promotion_status: held
+remote_ci: disabled

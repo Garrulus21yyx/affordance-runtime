@@ -248,11 +248,17 @@ delivery claims.
     original `entry_action_family_unavailable` form-sequence rejection no
     longer reproduces, but exposed a textbox fallback regression. The
     follow-up `2b67ffd` repair restores textbox value-entry inference.
-40. `in_progress` — Rerun the same PR breadth matrix on the clean committed
-    V-PRB-5B follow-up repair lineage. Keep any remaining strict-planner empty
-    `ask_user` / `planner_waiting_clarification` failure as a new child slice;
-    do not mix immutable Planner input, fresh diagnostic, nightly/release, or
-    promotion.
+40. `done` — Rerun the same PR breadth matrix on the clean committed V-PRB-5B
+    follow-up repair lineage. Clean `3daf779` evidence is 12/12 observed,
+    10/12 official reward passed, 3 Runtime failures, no provider/missing/
+    unrun/invalidated cases. V-PRB-5B is closed for action-family resolution:
+    `form-sequence` no longer rejects with `entry_action_family_unavailable`
+    and `enter-text:seed-0` is restored.
+41. `in_progress` — Start V-PRB-5C only: write a non-BrowserGym RED for the
+    remaining `form-sequence` strict-planner empty `ask_user` proposal after an
+    accepted TaskPlan with `press_key` permitted. Keep V-PRB-6
+    `enter-text:seed-1`, immutable Planner input, fresh diagnostic,
+    nightly/release, and promotion separate.
 
 ## Change Record
 
