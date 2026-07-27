@@ -1,13 +1,13 @@
 slice_id: v-prb-5a-button-sequence-effect-semantics
 parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
-packet_role: child_diagnostic
+packet_role: child_production_slice
 
 base_revision: 03e6463d8e410aec57a75385f9792fc6d2cc0fc2
-change_type: vertical_failure_classification
+change_type: vertical_correctness_repair
 agent_mode: single_agent
-production_change_allowed: false
+production_change_allowed: true
 
-single_primary_owner: not_selected
+single_primary_owner: canonical obligation compiler boundary
 mechanism: button sequence effect semantics and canonical dependency
 
 source_evidence:
@@ -55,6 +55,14 @@ required_non_browsergym_red_tests:
   - multiple similar targets must remain ambiguous/fail-closed
 
 owner_selection_rule:
+  selected: CanonicalObligationCompiler / requested-effect fallback normalization
+  rationale: >
+    The non-BrowserGym RED showed compile_requested_effects preserved Runtime
+    authority but made every generated effect terminal and did not express
+    ordered dependencies. The repair is compiler-local: flat default behavior
+    remains unchanged, while multi-stage requested-effect fallback explicitly
+    asks the compiler to preserve sequence.
+  alternatives:
   - if provider supplied legal relation/dependency and Runtime normalization dropped it, select CanonicalObligationCompiler / proposal normalization
   - if provider graph is absent but source-bound effects express order, select a source-bound effect-semantics normalizer feeding CanonicalObligationCompiler
   - if neither source nor proposal contains enough information, keep fail-closed and write an ADR before extending the semantic proposal contract
@@ -74,11 +82,27 @@ target_canonical_shape:
 done_when:
   - non-BrowserGym RED turns GREEN
   - provider does not regain graph authority
-  - explicit dependency and intermediate/final terminal semantics are preserved
+  - explicit dependency and intermediate/final terminal semantics are preserved for multi-stage requested-effect fallback
+  - flat requested-effect default behavior remains independent terminal effects
   - receipt success remains insufficient for task/subgoal completion
   - no Coordinator or StateKernel special case is added
   - clean PR breadth matrix is rerun after a production repair commit
 
-architecture_admission: not_evaluated
+non_browsergym_red_tests:
+  - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_preserves_dependency_and_terminal_boundary
+regression_tests:
+  - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_default_preserves_independent_flat_effects
+  - tests/test_canonical_obligation_compiler.py
+  - tests/test_intent_compiler.py
+  - tests/test_task_obligation_coverage.py
+  - tests/test_task_planning.py
+
+architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
+
+result:
+  status: implemented_locally
+  production_change_admitted: true
+  rerun_required:
+    - PR breadth 6-task x 2-seed matrix on a clean committed revision

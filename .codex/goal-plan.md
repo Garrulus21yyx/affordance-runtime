@@ -176,13 +176,20 @@ delivery claims.
     action-family resolution, and create V-PRB-6 terminal-completion guard
     classification. Keep immutable Planner input separate unless RED evidence
     directly implicates mutable `StateKernel` input.
-31. `in_progress` — Start V-PRB-5A only: write non-BrowserGym RED tests for
+31. `done` — Start V-PRB-5A only: write non-BrowserGym RED tests for
     activation effect relation, explicit dependency, verifier-backed progress,
     and intermediate/final terminal flags. If the owner is compiler-local,
     continue 5A; if it requires public semantic/schema expansion, pause for an
     ADR and optionally select V-PRB-5B as the narrower next slice. Do not mix
     V-PRB-5B, V-PRB-6, H2 immutable PlanningRequest, PR/nightly/release, or
-    promotion into the same patch.
+    promotion into the same patch. The RED test showed a compiler-local
+    requested-effect sequence gap and was repaired without touching
+    Coordinator, StateKernel, PlannerPort, Prompt, budget, task grammar, or
+    benchmark-specific logic.
+32. `in_progress` — Commit V-PRB-5A after focused gates, then rerun the same
+    PR breadth 6-task x 2-seed matrix on the clean committed revision. Only
+    after that rerun classify whether the button-sequence mechanism closed and
+    whether the next slice is V-PRB-5B, V-PRB-6, or a different owner.
 
 ## Change Record
 

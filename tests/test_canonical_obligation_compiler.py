@@ -28,6 +28,16 @@ def _ledger():
     )
 
 
+def _ledger_for(raw_text: str):
+    return SourceLedgerBuilder().build(
+        UserRequest(request_id="canonical-sequence", raw_text=raw_text)
+    )
+
+
+def _required_clause_units(ledger) -> tuple[str, ...]:
+    return tuple(unit.source_unit_id for unit in ledger.units if unit.required_candidate)
+
+
 def _effect(unit_id: str) -> CanonicalEffectInput:
     return CanonicalEffectInput(
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -82,6 +92,57 @@ def test_canonical_compiler_constructs_flat_graph_from_requested_effect_without_
     assert graph.obligations[0].relation == TaskObligationRelation.HAS_CHANGED
     assert graph.obligations[0].typed_evidence_requirements[0].kind == EvidenceKind.DOM_STATE
     assert graph.obligations[0].evidence_requirements == ("dom_state:requested report",)
+
+
+def test_requested_effect_sequence_preserves_dependency_and_terminal_boundary() -> None:
+    ledger = _ledger_for("Activate Alpha. Then activate Beta.")
+    alpha_source, beta_source = _required_clause_units(ledger)
+
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="Alpha activation",
+                source_ref=alpha_source,
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="Beta activation",
+                source_ref=beta_source,
+            ),
+        ),
+        preserve_sequence=True,
+    )
+
+    alpha, beta = graph.obligations
+    assert alpha.relation != TaskObligationRelation.IS_AVAILABLE
+    assert not alpha.terminal
+    assert beta.terminal
+    assert beta.depends_on == (alpha.obligation_id,)
+
+
+def test_requested_effect_sequence_default_preserves_independent_flat_effects() -> None:
+    ledger = _ledger_for("Activate Alpha and activate Beta.")
+
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="Alpha activation",
+                source_ref=ledger.raw_text_unit_id,
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="Beta activation",
+                source_ref=ledger.raw_text_unit_id,
+            ),
+        ),
+    )
+
+    assert tuple(item.terminal for item in graph.obligations) == (True, True)
+    assert all(not item.depends_on for item in graph.obligations)
 
 
 def test_canonical_compiler_rebuilds_multistage_proposal_nodes_and_value_flow() -> None:

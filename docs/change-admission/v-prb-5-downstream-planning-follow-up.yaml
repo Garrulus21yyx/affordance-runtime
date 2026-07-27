@@ -36,7 +36,7 @@ classification:
       - subsequent planner context still reports active_subgoal as button ONE is available
       - strict planner returns ask_user / waiting_clarification instead of progressing to button TWO
     production_change_allowed: false
-    next_requirement: non-BrowserGym reproduction proving whether activation effect relation, dependency, evidence, and intermediate/terminal semantics are complete; do not repair by receipt-driven or Coordinator-driven subgoal progress
+    next_requirement: implemented locally as V-PRB-5A compiler-local repair; rerun the clean PR breadth matrix before judging impact
   - id: V-PRB-5B
     child_record: docs/change-admission/v-prb-5b-entry-action-family-resolution.yaml
     mechanism: form sequence entry action family availability
@@ -77,14 +77,12 @@ non_goals:
   - do not run fresh diagnostic, PR/nightly/release, or claim an official score
 
 selection_rule:
-  First write the V-PRB-5A non-BrowserGym RED tests. If those tests show a
-  compiler-local relation/dependency/terminal-semantics repair, continue 5A as
-  the next production slice. If 5A requires a public semantic proposal/schema
-  expansion, pause 5A for an ADR and optionally select the narrower V-PRB-5B
-  action-family slice. V-PRB-6 remains separate. If evidence shows mutable
-  planner input or hidden state mutation is the root cause, escalate the
-  corresponding horizontal remediation; otherwise keep immutable PlanningRequest
-  separate.
+  V-PRB-5A was selected first and implemented locally as a compiler-local
+  requested-effect sequence repair. Rerun the same clean PR breadth matrix
+  before judging whether the button-sequence mechanism is closed. Keep V-PRB-5B
+  and V-PRB-6 separate, and keep immutable PlanningRequest separate unless
+  rerun evidence directly implicates mutable planner input or hidden state
+  mutation.
 
 architecture_admission: not_evaluated
 promotion_status: held

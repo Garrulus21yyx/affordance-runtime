@@ -33,6 +33,8 @@ class CanonicalEffectInput(StrictModel):
     target: str = Field(min_length=1, max_length=480)
     source_unit_ids: tuple[str, ...] = Field(min_length=1)
     evidence: tuple[EvidenceRequirement, ...] = Field(min_length=1)
+    depends_on_effect_indexes: tuple[int, ...] = ()
+    terminal: bool = True
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -61,6 +63,8 @@ class CanonicalObligationCompiler:
         source_ledger: SourceLedger,
         effects: tuple[RequestedEffect, ...],
         semantic_value_constraints: tuple[SemanticValueConstraint, ...] = (),
+        *,
+        preserve_sequence: bool = False,
     ) -> CanonicalObligationGraph:
         """Compile flat source-bound effects without proposal graph structure.
 
@@ -117,6 +121,8 @@ class CanonicalObligationCompiler:
                             source_constraints=(effect.source_ref,),
                         ),
                     ),
+                    depends_on_effect_indexes=((len(inputs) - 1,) if preserve_sequence and inputs else ()),
+                    terminal=(not preserve_sequence or len(inputs) == len(effects) - 1),
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -131,14 +137,17 @@ class CanonicalObligationCompiler:
         known_units = {unit.source_unit_id for unit in source_ledger.units}
         claims: list[SourcedTaskClaim] = []
         obligations: list[TaskObligationSpec] = []
-        for effect in effects:
+        obligation_ids = tuple(f"obligation:{_identity(effect)}" for effect in effects)
+        for index, effect in enumerate(effects):
             if set(effect.source_unit_ids) - known_units:
                 raise ValueError("canonical effect references unknown source unit")
             if any(set(item.source_constraints) - known_units for item in effect.evidence):
                 raise ValueError("canonical evidence references unknown source unit")
+            if any(item < 0 or item >= index for item in effect.depends_on_effect_indexes):
+                raise ValueError("canonical effect dependency must reference an earlier effect")
             identity = _identity(effect)
             claim_id = f"claim:{identity}"
-            obligation_id = f"obligation:{identity}"
+            obligation_id = obligation_ids[index]
             read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
             primary_evidence = effect.evidence[0]
             relation = primary_evidence.relation
@@ -167,9 +176,10 @@ class CanonicalObligationCompiler:
                 ),
                 expected_value=literal_value,
                 claim_ids=(claim_id,),
+                depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
                 evidence_requirements=tuple(f"{item.kind.value}:{item.subject}" for item in effect.evidence),
                 typed_evidence_requirements=effect.evidence,
-                terminal=True,
+                terminal=effect.terminal,
                 construction_source=GraphConstructionSource.CANONICAL_COMPILER,
             ))
         return CanonicalObligationGraph(
