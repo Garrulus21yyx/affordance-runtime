@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5A relation/evidence semantics RED | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after V-PRB-5A, PR breadth at `0565e2e` remains failed: 12/12 observed, 7/12 official passed, 5/12 official failed, 6 runtime failures, no provider failure/missing/unrun/invalidated case; dependency/terminal boundary is now preserved, but button-sequence still compiles clicked targets as `is_available` predicates and Runtime correctly rejects weak execution evidence | write a new non-BrowserGym RED for clicked/activated requested-effect relation and evidence semantics, then repair in requested-effect normalization/canonical compiler if owner remains local; classify `click-button:seed-1` schema incompatibility separately | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5A relation/evidence semantics rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after the first V-PRB-5A repair, PR breadth at `0565e2e` remained failed: 12/12 observed, 7/12 official passed, 5/12 official failed, 6 runtime failures, no provider failure/missing/unrun/invalidated case. A second non-BrowserGym RED now covers clicked/activated requested-effect relation semantics, and the canonical compiler repair maps multi-stage clicked navigation targets to `is_completed` effect obligations without changing Coordinator, StateKernel, PlannerPort, prompt, budget, or benchmark-specific logic | commit the second V-PRB-5A repair, then rerun the same clean PR breadth 6-task x 2-seed matrix on the new committed revision; classify `click-button:seed-1` schema incompatibility separately | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -81,18 +81,16 @@ batched into a single mixed patch:
    collaborators must enter the executable manifest in the same change. Remote
    CI is disabled for this iteration, so local equivalent gates support
    development but not remote-green or promotion claims.
-1. **V-PRB-5A button-sequence effect semantics** — implemented locally as a
-   compiler-local requested-effect sequence repair after a non-BrowserGym RED
-   test. Flat default behavior remains unchanged; multi-stage requested-effect
-   fallback now explicitly preserves intermediate/final terminal boundaries and
-   sequential dependency. Clean PR breadth rerun at `0565e2e` remained
-   negative: both button-sequence seeds still fail with
-  `planner_waiting_clarification`, so V-PRB-5A is not closed.
-  Trace classification shows dependency/terminal boundaries are now present;
-  the remaining button-sequence defect is that clicked targets are still
-  canonicalized as `predicate / is_available`, and verifier progress correctly
-  rejects weak execution evidence. The next 5A RED must target
-  clicked/activated relation and evidence semantics.
+1. **V-PRB-5A button-sequence effect semantics** — implemented as two
+   compiler-local, non-BrowserGym RED/GREEN repairs. The first repair preserves
+   intermediate/final terminal boundaries and sequential dependency for
+   multi-stage requested-effect fallback; the clean PR breadth rerun at
+   `0565e2e` showed that this was necessary but insufficient. The second RED
+   targets the remaining relation/evidence defect: clicked/activated
+   multi-stage navigation targets now canonicalize as `effect / is_completed`
+   obligations rather than `predicate / is_available`. This still does not
+   close V-PRB-5A until the same PR breadth matrix is rerun on the clean
+   committed repair revision.
 2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
    slice for slider-like reversible-write action-family selection. Execute it
    after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is

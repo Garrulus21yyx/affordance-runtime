@@ -203,10 +203,15 @@ delivery claims.
     correctly rejects weak execution/state-delta evidence, so the next owner is
     requested-effect relation/evidence semantics rather than Coordinator,
     StateKernel, PlannerContext, or receipt-driven progress.
-34. `in_progress` — Write the next V-PRB-5A non-BrowserGym RED for
-    clicked/activated relation and evidence semantics. Keep
-    `click-button:seed-1` schema incompatibility, V-PRB-5B form action-family,
-    V-PRB-6 terminal guard, H2 immutable Planner input, and promotion separate.
+34. `done` — Write the next V-PRB-5A non-BrowserGym RED for
+    clicked/activated relation and evidence semantics. The RED failed on
+    `predicate` versus expected `effect`, then passed after a compiler-local
+    canonical repair. Keep `click-button:seed-1` schema incompatibility,
+    V-PRB-5B form action-family, V-PRB-6 terminal guard, H2 immutable Planner
+    input, and promotion separate.
+35. `in_progress` — Commit and push the second V-PRB-5A repair, then rerun the
+    same PR breadth 6-task x 2-seed matrix on the clean committed revision
+    before judging button-sequence closure.
 
 ## Change Record
 

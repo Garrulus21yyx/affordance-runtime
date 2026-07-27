@@ -746,6 +746,49 @@ def test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_g
     )
 
 
+def test_llm_compiler_canonicalizes_clicked_navigation_effects_as_completed_actions() -> None:
+    draft = IntentDraft(
+        objective="Click button Alpha, then click button Beta.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button Alpha",
+                source_ref="button-sequence",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button Beta",
+                source_ref="button-sequence",
+            ),
+        ),
+        candidate_success_criteria=("Button Alpha was clicked.", "Button Beta was clicked."),
+        task_structure=TaskStructure.MULTI_STAGE,
+    )
+    model = FixedModel(draft)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="button-sequence",
+                raw_text="Click button Alpha, then click button Beta.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    alpha, beta = result.task_spec.obligations
+    assert alpha.kind == TaskObligationKind.EFFECT
+    assert beta.kind == TaskObligationKind.EFFECT
+    assert alpha.relation == TaskObligationRelation.IS_COMPLETED
+    assert beta.relation == TaskObligationRelation.IS_COMPLETED
+    assert alpha.typed_evidence_requirements[0].relation == TaskObligationRelation.IS_COMPLETED
+    assert beta.typed_evidence_requirements[0].relation == TaskObligationRelation.IS_COMPLETED
+    assert not alpha.terminal
+    assert beta.terminal
+    assert beta.depends_on == (alpha.obligation_id,)
+
+
 def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_it() -> None:
     claims, obligations = _terminal_authority("provider-schema", "pricing read")
     repaired = IntentDraft(

@@ -83,6 +83,7 @@ done_when:
   - non-BrowserGym RED turns GREEN
   - provider does not regain graph authority
   - explicit dependency and intermediate/final terminal semantics are preserved for multi-stage requested-effect fallback
+  - clicked/activated multi-stage navigation effects compile as completed effect obligations rather than availability predicates
   - flat requested-effect default behavior remains independent terminal effects
   - receipt success remains insufficient for task/subgoal completion
   - no Coordinator or StateKernel special case is added
@@ -90,6 +91,7 @@ done_when:
 
 non_browsergym_red_tests:
   - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_preserves_dependency_and_terminal_boundary
+  - tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_clicked_navigation_effects_as_completed_actions
 regression_tests:
   - tests/test_canonical_obligation_compiler.py::test_requested_effect_sequence_default_preserves_independent_flat_effects
   - tests/test_canonical_obligation_compiler.py
@@ -102,13 +104,24 @@ promotion_status: held
 remote_ci: disabled
 
 result:
-  status: rerun_failed
+  status: implemented_after_second_red
   production_change_admitted: true
   local_verification:
     - non-BrowserGym RED/GREEN passed
-    - focused compiler/intake/planning/governance tests passed 152/152
-    - full local pytest passed 975/975
+    - clicked/activated navigation RED/GREEN passed
+    - focused compiler/intake/planning/governance tests passed 143/143
+    - full local pytest passed 976/976
     - Ruff, mypy, and diff check passed
+  second_repair:
+    scope: requested-effect relation/evidence semantics
+    behavior:
+      - multi-stage NAVIGATION requested effects whose success criteria mark the target as clicked/activated/pressed/selected/submitted compile to is_completed effect obligations
+      - sequence dependency and intermediate/final terminal boundary remain compiler-owned
+      - flat requested-effect default behavior is not widened by this repair
+    forbidden_changes:
+      - no Coordinator or StateKernel modification
+      - no PlannerPort or PlannerStateView migration
+      - no prompt, budget, task-name, URL, selector, or benchmark-family branch
   clean_pr_breadth_rerun:
     revision: 0565e2ef3f5d082cdc13652b8ca399a393ef4074
     evidence: docs/evidence/runs/m8.2a-pr-breadth-0565e2e/
@@ -136,7 +149,5 @@ result:
           terminal: true
       rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
   next_requirement:
-    - inspect clean rerun traces before any further production repair
-    - write a new non-BrowserGym RED for clicked/activated requested-effect relation and evidence semantics
-    - keep the owner in requested-effect normalization / canonical compiler unless new evidence proves otherwise
+    - commit the second repair and rerun the same clean PR breadth matrix on the new committed revision before judging button-sequence impact
     - classify click-button:seed-1 schema_incompatible separately

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 
 from pydantic import Field
@@ -65,6 +66,7 @@ class CanonicalObligationCompiler:
         semantic_value_constraints: tuple[SemanticValueConstraint, ...] = (),
         *,
         preserve_sequence: bool = False,
+        success_criteria: tuple[str, ...] = (),
     ) -> CanonicalObligationGraph:
         """Compile flat source-bound effects without proposal graph structure.
 
@@ -85,15 +87,31 @@ class CanonicalObligationCompiler:
         for effect in effects:
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
-            read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            completed_navigation_action = (
+                preserve_sequence
+                and effect.operation_class == OperationClass.NAVIGATION
+                and _success_criteria_marks_action_completed(
+                    target=effect.target,
+                    success_criteria=success_criteria,
+                )
+            )
+            read = (
+                effect.operation_class
+                in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+                and not completed_navigation_action
+            )
             literal_value = exact_values_by_target.get(effect.target, "")
             relation = (
                 TaskObligationRelation.IS_AVAILABLE
                 if read
                 else (
-                    TaskObligationRelation.EQUALS
-                    if literal_value
-                    else TaskObligationRelation.HAS_CHANGED
+                    TaskObligationRelation.IS_COMPLETED
+                    if completed_navigation_action
+                    else (
+                        TaskObligationRelation.EQUALS
+                        if literal_value
+                        else TaskObligationRelation.HAS_CHANGED
+                    )
                 )
             )
             evidence_kind = (
@@ -148,10 +166,14 @@ class CanonicalObligationCompiler:
             identity = _identity(effect)
             claim_id = f"claim:{identity}"
             obligation_id = obligation_ids[index]
-            read = effect.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
             primary_evidence = effect.evidence[0]
             relation = primary_evidence.relation
             literal_value = primary_evidence.value_ref if relation == TaskObligationRelation.EQUALS else ""
+            read = (
+                effect.operation_class
+                in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+                and relation != TaskObligationRelation.IS_COMPLETED
+            )
             claims.append(SourcedTaskClaim(
                 claim_id=claim_id,
                 kind=TaskClaimKind.EFFECT,
@@ -349,6 +371,39 @@ class CanonicalObligationCompiler:
 def _identity(effect: CanonicalEffectInput) -> str:
     payload = json.dumps(effect.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+
+def _success_criteria_marks_action_completed(
+    *,
+    target: str,
+    success_criteria: tuple[str, ...],
+) -> bool:
+    normalized_target = _semantic_tokens(target)
+    if not normalized_target:
+        return False
+    completion_words = {
+        "activate",
+        "activated",
+        "click",
+        "clicked",
+        "complete",
+        "completed",
+        "press",
+        "pressed",
+        "select",
+        "selected",
+        "submit",
+        "submitted",
+    }
+    return any(
+        normalized_target.issubset(tokens)
+        and completion_words.intersection(tokens)
+        for tokens in (_semantic_tokens(criterion) for criterion in success_criteria)
+    )
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
 def _proposal_identity(kind: str, payload: dict[str, object]) -> str:

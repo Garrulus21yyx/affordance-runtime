@@ -710,6 +710,7 @@ def _canonicalize_requested_effects_draft(
             draft.requested_effects,
             draft.candidate_semantic_value_constraints,
             preserve_sequence=draft.task_structure != TaskStructure.FLAT,
+            success_criteria=draft.candidate_success_criteria,
         )
     except ValueError as exc:
         return draft, (
