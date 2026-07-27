@@ -57,14 +57,17 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | SG7 targeted `text-transform` / `enter-date` confirmation | SG1-SG6 local canonical intake complete; dedicated local gates current | generic non-BrowserGym proof, original failures accounted, protected-family result recorded without task-name/Prompt-only/budget-expansion repair | unrelated horizontal debt retirement |
+| Vertical | protected cross-family / PR breadth confirmation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; current local equivalent gates pass at `66747420c4d319d26a10a7c6fb6006871cf3310a`; remote CI is disabled for this iteration | protected-family breadth result recorded on a clean current revision without task-name/Prompt-only/budget-expansion repair; fresh diagnostic remains separate | unrelated horizontal debt retirement |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
-Promotion remains held until required remote CI is green and the relevant
-vertical evidence is bound to the same committed revision. “When authorized”
+Promotion remains held until the relevant vertical evidence is bound to the
+same committed revision and the required validation channel is available. When
+remote CI is enabled, that means remote-green required checks; when remote CI
+is intentionally disabled, local equivalent gates may support development
+continuation but cannot be promoted as remote-green evidence. “When authorized”
 means the named entry conditions above are satisfied and no safety, authority,
-architecture, or CI gate is being bypassed; it does not mean waiting for a
-repository-wide refactor.
+architecture, or validation gate is being bypassed; it does not mean waiting
+for a repository-wide refactor.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

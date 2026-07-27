@@ -4,8 +4,9 @@ Status: **active / gate-enforced**
 Effective: **2026-07-27**  
 Committed governance baseline: `627b5f76900c343d2d0af0ca7fae8645ce2088e0`.
 The executable ratchets are committed at that revision. Its dedicated local
-gate passed, while the associated GitHub Actions push and pull-request runs
-failed; therefore this revision is not a remote-green or promotion baseline.
+gate passed. Remote CI is intentionally disabled for the current iteration, so
+this revision has no remote-green or remote-fail claim and is not a promotion
+baseline.
 
 This document owns the execution semantics of the project's **independent
 horizontal governance track**. Structural ownership rules remain normative in

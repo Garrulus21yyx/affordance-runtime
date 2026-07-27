@@ -14,9 +14,10 @@ delivery claims.
   not a repository-wide rewrite prerequisite.
 - The normative track is `docs/architecture-governance-track.md`; this plan
   records execution progress but does not redefine its admission semantics.
-- M8.2A SG1-SG6 are locally complete. SG7 remains the next vertical intake/
-  benchmark step when authorized; Coordinator containment proceeds as a
-  parallel horizontal track and is not a unified-refactor prerequisite.
+- M8.2A SG1-SG7 targeted confirmation is locally complete within its declared
+  scope. Protected cross-family / PR breadth is the next vertical lane when
+  authorized; Coordinator containment proceeds as a parallel horizontal track
+  and is not a unified-refactor prerequisite.
 - Keep the three-call intake ceiling and fail closed on unsupported authority.
 
 ## Steps
@@ -80,9 +81,11 @@ delivery claims.
     benchmark execution from promotion acceptance: true semantic DOM drift must
     still fail, transient affordance-state stabilization may be recaptured once,
     and release acceptance failures remain visible.
-16. `pending` — Re-run the repaired workflow remotely and classify any remaining
-    failures against the current diff. Local diagnostic benchmark success is not
-    a release/promotion claim while benchmark acceptance remains failed.
+16. `done` — Remote CI was intentionally closed after the repaired workflow
+    reached GitHub billing/spending limits. The current validation channel is
+    local equivalent gates, not remote-green evidence; local diagnostic
+    benchmark success is not a release/promotion claim while benchmark
+    acceptance remains failed.
 17. `done` — Close the H1 active-subgoal hidden-mutation debt in project code:
     make `StateKernel.active_subgoal()` read-only, add explicit
     `activate_next_subgoal()`, keep production activation in Coordinator, and
@@ -91,9 +94,9 @@ delivery claims.
 18. `done` — Freeze the SG7 generic repair in a clean revision and rerun the
     exact targeted matrix (`enter-date`, `text-transform`, seeds 0 and 1)
     before protected breadth, PR/nightly/release, score, or promotion claims.
-19. `pending` — Continue vertical protected cross-family / PR breadth from the
-    clean `3d44a9d` evidence identity, while keeping immutable Planner input as
-    the separate next horizontal lane.
+19. `pending` — Continue vertical protected cross-family / PR breadth on a
+    clean current revision with local equivalent gates, while keeping immutable
+    Planner input as the separate next horizontal lane.
 
 ## Change Record
 

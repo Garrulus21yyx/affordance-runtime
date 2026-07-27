@@ -23,35 +23,31 @@ milestone status values.
 | Evidence maturity | `none`, `protocol`, `injectable`, `normal_entrypoint`, `local_reproducible`, `ci_reproduced`, `immutable_empirical` | strongest current evidence level |
 | Promotion status | `held`, `eligible`, `promoted`, `not_applicable` | whether broader claims or runs are authorized |
 | Architecture admission | `pass`, `fail`, `waived`, `not_evaluated` | result of the horizontal gate for the change |
-| Remote CI | `pass`, `fail`, `pending`, `not_run` | state of CI for the exact committed revision |
+| Remote CI | `pass`, `fail`, `pending`, `not_run`, `disabled` | state of CI for the exact committed revision |
 
 ### Current Evidence Identity
 
 | Field | Current value |
 | --- | --- |
-| Committed source revision | `3d44a9d222decd1de272d7a4d3eb14b025a8738a` |
-| Committed baseline local gate | pass for targeted SG7 repair set: 429 focused planner/intake/perception/grounding/governance tests, Ruff, mypy over 116 source files, and diff check before commit |
-| Current worktree identity | SG7 clean-evidence ledger/archive diff based on committed `3d44a9d`; no production-code change |
-| Current worktree local gate | pass for documentation/evidence archive diff: file digests rechecked and `git diff --check` passed |
-| Architecture admission | pass for the committed targeted repair; SG7 targeted protected-family confirmation passed cleanly, while PR breadth/nightly/release promotion remains held |
-| Remote CI | fail: [push run 30271191621](https://github.com/Garrulus21yyx/affordance-runtime/actions/runs/30271191621) and [PR run 30271194148](https://github.com/Garrulus21yyx/affordance-runtime/actions/runs/30271194148) |
+| Committed source revision | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
+| Committed baseline local gate | pass for the current local equivalent gate: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
+| Current worktree identity | clean worktree at committed `66747420c4d319d26a10a7c6fb6006871cf3310a` |
+| Current worktree local gate | pass; no local production or documentation diff is pending |
+| Architecture admission | mechanical gates pass for the current tree; SG7 targeted protected-family confirmation remains bound to clean repair revision `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, while PR breadth/nightly/release promotion remains held |
+| Remote CI | disabled: GitHub Actions is intentionally closed for the current iteration, so no remote-green or remote-fail claim is made for `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Promotion status | held |
 
-The remote failures are not one undifferentiated environment failure. Verified
-logs show a Python 3.12 collection/package-path failure (`scripts` not
-importable), matching Chromium/container benchmark failures caused by coherent
-observation epoch drift, and a BrowserGym Playwright dependency-provisioning
-failure (`libasound2` unavailable on Ubuntu Noble); Python 3.11 was cancelled
-after another matrix failure. The current local diff repairs the core pytest
-invocation (`python -m pytest -q`) and the BrowserGym runner/profile
-provisioning (`ubuntu-22.04` plus `requirements/constraints-browsergym.txt`).
-The coherent observation epoch drift crash is repaired by bounded semantic
-stabilization in `BrowserSession.capture`; true semantic DOM drift is still
-rejected. The local benchmark now completes and writes all 63 run records under
-the explicit diagnostic flag, while its release acceptance remains failed
-because settings/recovery effectiveness is still below the promotion threshold.
-Local success must not be described as remote-CI or immutable promotion
-evidence.
+Earlier remote failures were classified and repaired as narrow CI/harness or
+runtime-diagnostic issues: core pytest now runs through the active interpreter,
+the BrowserGym bridge job uses the documented isolated BrowserGym dependency
+profile, diagnostic benchmark execution is separated from promotion
+acceptance, and cross-surface conformance checks the authoritative
+`ACTION_CONTRACT_SCHEMA_VERSION` instead of a stale hard-coded schema value.
+After those commits, a subsequent GitHub Actions attempt did not start jobs
+because account billing/spending limits were exhausted. Remote CI has now been
+closed for this iteration, so the current status is `disabled`, not a code
+failure. Local success must not be described as remote-CI or immutable
+promotion evidence.
 
 ## Horizontal Architecture Governance
 
@@ -63,7 +59,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | committed `3d44a9d` targeted SG7 confirmation passing locally / prior remote CI pending rerun | Coordinator 3473 lines / 26 methods; `run_sync` 2039 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | protected cross-family / PR breadth is the next vertical lane; immutable Planner input is the next horizontal lane and should not be mixed into the same evidence identity |
+| `active` | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a` passing local equivalent gates; remote CI disabled | Coordinator 3473 lines / 26 methods; `run_sync` 2039 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | protected cross-family / PR breadth is the next vertical lane; immutable Planner input is the next horizontal lane and should not be mixed into the same evidence identity |
 
 Change admission uses `pass | fail | waived | not_evaluated`; remediation items
 use `pending | in_progress | done | blocked`. These states do not replace the
@@ -84,7 +80,7 @@ milestone maturity labels below.
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
 | M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. | continue to protected cross-family / PR breadth under the same architecture gates; promotion held |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; later protected recheck isolates a shared local-provider obligation-graph intake failure | hold PR/nightly/release; establish provider-neutral obligation-complete intake before breadth promotion |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1 | hold PR/nightly/release; continue protected cross-family / PR breadth and then a current-revision fresh diagnostic before any promotion claim |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
@@ -390,12 +386,14 @@ Current verified facts:
   context/schema owners, while configured multi-profile paths can also switch a
   fallback provider through a real owner;
 - complete-run accounting continues after ordinary failures;
-- immutable historical evidence remains bound to its recorded revisions; the
-  committed revision `627b5f7` passes 938 tests, including 18 focused
-  horizontal/existing architecture gates, plus Ruff and mypy over 116 source
-  files in the dedicated Python 3.12 environment. Its associated remote CI
-  fails, so this is locally reproducible committed evidence, not remote-green
-  or immutable promotion evidence.
+- immutable historical evidence remains bound to its recorded revisions. The
+  current committed revision `66747420c4d319d26a10a7c6fb6006871cf3310a` passes
+  the local equivalent gate: 957 tests, Ruff, mypy over 116 source files,
+  `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark
+  smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT
+  conformance, and diff check. Remote CI is disabled for this iteration, so
+  this is locally reproducible committed evidence, not remote-green or
+  immutable promotion evidence.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
 close the broader product work. Entrypoints still explicitly own dispatcher
@@ -409,8 +407,8 @@ parallel and is not an arrow in this sequence):
 ~~~text
 SG1-SG6 canonical intake and local conformance complete
   -> context/schema normal-entrypoint owners complete at component level
-  -> targeted SG7 protected-family confirmation
-  -> cross-family and fresh diagnostic confirmation
+  -> targeted SG7 protected-family confirmation complete
+  -> protected cross-family / PR breadth and fresh diagnostic confirmation
 ~~~
 
 The broader product claim may be promoted only when enabled recovery actions
@@ -468,6 +466,7 @@ Clean-checkout M0-M8 gate:
 
 | Date | Workstream / milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-27 | Remote CI disabled and local equivalent gate | Recorded that GitHub Actions was intentionally closed after the latest remote attempt was blocked by account billing/spending limits. The current tree therefore has no remote-green or remote-fail claim; development validation uses the local equivalent gate while promotion remains held. | status, current plan, horizontal governance, active goal records | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a`; local equivalent gate passed: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check. Diagnostic benchmark acceptance remains failed by design and `official_score_claimed=false`; no remote-CI or promotion claim. |
 | 2026-07-27 | M8.2A SG7 clean targeted protected-family confirmation | Reran the exact SG7 matrix after committing the generic repair as `3d44a9d222decd1de272d7a4d3eb14b025a8738a`. This clean run preserves the selected scope (`enter-date`, `text-transform`, seeds 0 and 1), strict-generalist planner profile, local Ollama `qwen2.5:7b`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, existing 15-call episode budget, and `official_score_claimed=false`. | `docs/evidence/runs/m8.2a-sg7-3d44a9d/`, `/tmp/affordance-sg7-3d44a9d-20260727-184535` | Clean-tree result: expected 4, observed 4, passed 4, failed 0, missing 0, invalidated 0, unrun 0, runtime failures 0, provider failures 0, rate-limit retries 0, transient retries 0, official success rate 1.0, mean official reward 1.0. Run identity digest `sha256:d09d403f6976b246ff614f5f288e8bc7a7bca6719529e934919973ade608309d`; source tree digest `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`; report sha256 `cea708f3971a85bf231448b5f5cdab182629d54c2449694c8c69cb9f0ff84eed`; matrix metadata sha256 `0ad2bb171b6d8d41aa2c827057e07ba2a8c185fcc6c45cfba10d0ce0936171a1`. This closes SG7 targeted confirmation only; it is not PR breadth, nightly/release, M8.2B promotion, or a formal benchmark score. |
 | 2026-07-27 | M8.2A SG7 generic repair candidate | Repaired the clean `fa288af` SG7 protected-family failure without adding task-name, URL, selector, Prompt-only, budget, Coordinator, StateKernel, or PlannerStateView changes. The repair remains generic: unresolved dependency drafts can be boundedly repaired and rechecked before reviewer admission; explicit imperative field entry is canonicalized as reversible write with exact literal value only when the raw request provides that value; page-sourced "text below" is not literalized; reversible generic `HAS_CHANGED` obligations no longer infer text entry unless the subject is a value-entry field; strict planner fallback handles exact value entry, single page-observed text entry, and verifier-backed terminal submit; targeted active perception can preserve requested probes while adding required evidence gaps; the BrowserGym observer exposes targeted capture; opaque DOM/accessibility locators can satisfy executor-local spatial binding without raw coordinates. | intent compiler, canonical compiler, task planning, strict generalist planner, active perception flow, BrowserGym observer, unified grounding, focused regressions, status/goal records | Dirty-tree SG7 diagnostic `/tmp/affordance-sg7-fa288af-submit-fallback-dirty-20260727-182502/browsergym-report.json` passed 4/4 for `enter-date` and `text-transform`, seeds 0 and 1: expected 4, observed 4, failed 0, missing 0, invalidated 0, unrun 0, runtime failures 0, provider failures 0, official success rate 1.0, mean official reward 1.0, `official_score_claimed=false`; report sha256 `0b2313a2356c2411ce5a77db9bd1469227a6d404af5f3be97657cbeec94fc953`, matrix metadata sha256 `26006f8f025e645c3e109615aafa27f127c60bcad20df3f24defc5efd47c63d6`, source tree digest `sha256:cb4dd50f8cf2376fce30673d813e1ca895f44b67a2c46860022902c163fa8403`, `working_tree_clean=false`. The result is a validated repair candidate, not clean SG7 evidence, not PR breadth, not nightly/release, and not a promoted score. Focused repair/gate verification passed: 429 planner/intake/perception/grounding/governance tests, Ruff, mypy over 116 source files, and diff check. |
 | 2026-07-27 | M8.2A SG7 targeted protected-family diagnostic | Ran the requested strict-generalist targeted confirmation for `enter-date` and `text-transform`, seeds 0 and 1, after repairing the local Ollama GPU environment by restarting the existing container. The run is bound to clean committed revision `fa288afa7ba047dd3d0ae186f74e948058928436`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, local Ollama `qwen2.5:7b`, profile `diagnostic`, and `official_score_claimed=false`. All four scheduled episodes were observed with no missing/unrun/invalidated cases, no provider failures, and no rate-limit/transient retries. Result: SG7 did not pass. Three episodes failed before TaskSpec creation with `unresolved_task_dependency`; `enter-date` seed 0 produced a canonical compiler TaskSpec and accepted TaskPlan, then the strict planner returned `ask_user` / `waiting_clarification`. | `/tmp/affordance-sg7-fa288af-20260727-173720`, preflight artifacts, BrowserGym traces, status/goal records | preflight after restart passed: BrowserGym runtime ready and Ollama model resident on 100% GPU. Pre-run gates passed: 21 horizontal architecture/responsibility tests, 40 SG1-SG6 deterministic intake tests, Ruff, mypy over 116 source files, and diff check. Decision-tree classification: case B for three episodes and case C for one episode; root owner remains INTENT / PLANNING. No production code change, no PlannerStateView migration, no PR breadth/nightly/release, no score or promotion claim. |
