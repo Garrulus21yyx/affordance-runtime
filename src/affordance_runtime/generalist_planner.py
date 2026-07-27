@@ -41,6 +41,7 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.semantic_action_resolver import resolve_empty_clarification_action
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
 
@@ -412,8 +413,21 @@ class GeneralistLMPlanner:
         fallback_proposal = None
         fallback_producer_id = ""
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            fallback_proposal = _strict_submit_after_text_fallback(context, proposal)
-            fallback_producer_id = "strict-submit-after-text-fallback"
+            semantic_resolution = resolve_empty_clarification_action(context, proposal)
+            if semantic_resolution is not None:
+                fallback_proposal = PlannerProposalCandidate(
+                    subgoal=context.active_subgoal,
+                    action_kind=semantic_resolution.action_kind,
+                    target_affordance_id=semantic_resolution.target_affordance_id,
+                    destination_affordance_id=semantic_resolution.destination_affordance_id,
+                    parameters=semantic_resolution.parameters,
+                    expected_effects=semantic_resolution.expected_effects,
+                    evidence_requirements=semantic_resolution.evidence_requirements,
+                ).bind(context)
+                fallback_producer_id = "strict-semantic-action-resolver"
+            if fallback_proposal is None:
+                fallback_proposal = _strict_submit_after_text_fallback(context, proposal)
+                fallback_producer_id = "strict-submit-after-text-fallback"
             if fallback_proposal is None:
                 fallback_proposal = _strict_exact_value_text_fallback(context, proposal)
                 fallback_producer_id = "strict-exact-value-text-fallback"

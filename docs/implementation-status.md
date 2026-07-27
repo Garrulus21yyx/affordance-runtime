@@ -112,6 +112,33 @@ v_prb_1_clean_rerun:
     invalid_provider_graph: 4
     structured_decoding_or_attribution_projection: 1
   next_selectable_child_slice: V-PRB-3 typed semantic action constraints
+
+v_prb_3_typed_semantic_action_constraints:
+  child_record: docs/change-admission/v-prb-3-typed-semantic-action-constraints.yaml
+  status: implemented_locally
+  production_change_admitted: true
+  mechanism: typed_semantic_action_constraints
+  affected_prior_episodes:
+    - choose-list:seed-0
+    - choose-list:seed-1
+    - click-button:seed-0
+    - click-dialog:seed-0
+    - click-dialog:seed-1
+    - enter-text:seed-0
+    - enter-text:seed-1
+  non_browsergym_red_tests:
+    - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_unique_requested_button
+    - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_selected_option_submit
+    - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_target_derived_text_value
+  owner: strict semantic action resolver
+  production_boundaries:
+    coordinator_touched: false
+    statekernel_touched: false
+    planner_port_touched: false
+    prompt_or_budget_changed: false
+    benchmark_specific_logic_added: false
+  promotion_status: held
+  rerun_required: PR breadth 6-task x 2-seed matrix on a clean committed revision
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or

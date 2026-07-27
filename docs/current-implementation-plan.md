@@ -139,6 +139,17 @@ V-PRB-3 typed semantic action constraints with 7 episodes; V-PRB-2 provider
 graph proposal normalization remains the alternative next child slice with 4
 episodes. Select exactly one of these next; do not batch.
 
+V-PRB-3 typed semantic action constraints is selected next as the largest
+remaining mechanism. The child slice adds a strict semantic action resolver:
+when the strict model returns an empty `ask_user`, the resolver may choose one
+current typed action from immutable `PlannerContext` only if TaskSpec fields and
+current affordance summaries identify a unique safe activation, selected-option
+terminal submit, or target-derived text-entry value. This is not a task-name
+fallback and does not modify Coordinator, StateKernel, PlannerPort, Prompt,
+budget, benchmark-specific logic, provider graph normalization, or structured
+decoding. After local gates and commit, rerun the same PR breadth 6-task x
+2-seed matrix on the clean committed revision.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward

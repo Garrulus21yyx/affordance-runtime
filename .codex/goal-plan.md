@@ -126,10 +126,16 @@ delivery claims.
     no promotion or official score claim. Clean `d40f8f1` rerun observed 12/12
     episodes, passed 0/12, and showed V-PRB-1 closed invalid coverage-audit
     vetoes by advancing the two affected episodes to planner clarification.
-24. `pending` — Select one next child slice only: V-PRB-3 typed semantic
+24. `done` — Select one next child slice only: V-PRB-3 typed semantic
     action constraints first if prioritizing the largest 7-episode
     `planner_waiting_clarification` cluster, otherwise V-PRB-2 provider graph
-    proposal normalization for the 4 invalid graph episodes. Do not batch.
+    proposal normalization for the 4 invalid graph episodes. V-PRB-3 was
+    selected and implemented as a strict semantic action resolver with
+    non-BrowserGym red tests for unique activation, selected-option terminal
+    submit, and target-derived text entry. Do not batch.
+25. `pending` — After local gates and commit, rerun the same PR breadth 6-task
+    x 2-seed matrix on the clean committed revision and classify impact; no
+    promotion or official score claim.
 
 ## Change Record
 

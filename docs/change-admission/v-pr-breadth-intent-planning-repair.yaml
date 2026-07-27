@@ -104,6 +104,7 @@ child_slices:
       - form-sequence:seed-0
       - form-sequence:seed-1
   - id: V-PRB-3
+    record: docs/change-admission/v-prb-3-typed-semantic-action-constraints.yaml
     mechanism: typed semantic action constraints
     candidates:
       - choose-list:seed-0

@@ -924,6 +924,23 @@ class ProposalModel:
         )
 
 
+@dataclass
+class EmptyClarificationModel:
+    provider: str = "fixed"
+    model: str = "empty-clarification"
+    endpoint_class: str = "test"
+    last_call: ModelCallRecord | None = None
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del messages, config
+        return output_schema.model_validate({"action_kind": "ask_user"})
+
+
 def test_generalist_context_is_bounded_semantic_and_authority_separated() -> None:
     model = _authored_dom_adapter().transduce(
         '<button id="save" data-runtime-handle="secret-backend-handle">Save</button>',
@@ -2770,6 +2787,133 @@ def test_strict_planner_uses_exact_value_fallback_when_model_asks_empty_clarific
     assert decision.proposal.requires_clarification is False
     assert decision.proposal_provenance is not None
     assert decision.proposal_provenance.source == "deterministic_rule"
+
+
+def test_strict_planner_resolves_empty_clarification_to_unique_requested_button() -> None:
+    model = _authored_dom_adapter().transduce(
+        "<button>No</button><button>OK</button><button>Submit</button><input>",
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Click on the 'No' button.")
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Click on the 'No' button.",
+        operation_class=OperationClass.NAVIGATION,
+        targets=("button[text()='No']",),
+        success_criteria=("Clicked on the 'No' button.",),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert decision.proposal.target_affordance_id == "dom_button_1"
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+
+
+def test_strict_planner_resolves_empty_clarification_to_selected_option_submit() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<select><option selected>Ertha</option><option>Merridie</option></select><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    model = replace(
+        model,
+        affordances=[
+            replace(item, state={**item.state, "selected_options": ["Ertha"]})
+            if item.id == "dom_select_1"
+            else item
+            for item in model.affordances
+        ],
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Select Ertha from the list and click Submit.")
+    state.remember_observation(observation)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Select Ertha from the list and click Submit.",
+        operation_class=OperationClass.NAVIGATION,
+        targets=("Ertha",),
+        success_criteria=("Ertha is selected from the list and Submit is clicked.",),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert decision.proposal.target_affordance_id == "dom_button_1"
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+
+
+def test_strict_planner_resolves_empty_clarification_to_target_derived_text_value() -> None:
+    model = _authored_dom_adapter().transduce(
+        "<input id='tt' type='text'><button>Submit</button>",
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Enter 'Myron' into the text field and press Submit.")
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="text-field:changed",
+                objective="text_field:Myron has changed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="text_field:Myron",
+                    relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Enter 'Myron' into the text field and press Submit.",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("text_field:Myron",),
+        success_criteria=("Text field contains 'Myron' and is focused.",),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
+    assert decision.proposal.target_affordance_id == "dom_input_1"
+    assert decision.proposal.parameters == {"text": "Myron"}
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
 
 
 def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarification() -> None:
