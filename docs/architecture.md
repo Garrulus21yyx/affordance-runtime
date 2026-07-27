@@ -135,7 +135,7 @@ migration scaffolding, not the final intent/planner contract.
 | INV-08 | Recovery is bounded by step, retry, time, cost, and side-effect budgets. |
 | INV-09 | Approval is bound to run id, contract hash, environment state, capability, approver, and expiration. |
 | INV-10 | The acting model cannot be the sole authority for benchmark success. |
-| INV-11 | RunCoordinator is the only authoritative RunState writer. |
+| INV-11 | RunCoordinator is the sole authoritative task-execution commit sequencer. The compatibility harness and explicitly baselined skill/progress mutation paths are temporary non-expanding exceptions; strict physical single-writer closure may be claimed only after those exceptions are removed. |
 | INV-12 | Observation probes are read-only; any environment-changing inspection uses an ActionContract. |
 | INV-13 | Active perception produces a new coherent epoch and preserves source provenance. |
 | INV-14 | Another attempt requires a non-empty RecoveryDelta over evidence, assumption, plan, route, verifier, context, authority, or user input. |

@@ -475,6 +475,30 @@ def test_browser_session_rejects_semantic_dom_drift_within_epoch(tmp_path) -> No
         )
 
 
+def test_browser_session_retries_transient_affordance_state_drift_within_epoch(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class StabilizingControlPage(FakePage):
+        captures = 0
+
+        def content(self) -> str:
+            self.captures += 1
+            disabled = " disabled" if self.captures == 1 else ""
+            return f"<main><button id='action'{disabled}>Save</button></main>"
+
+    requirements = PerceptionRequirements(
+        required_properties=frozenset({EvidenceKind.SPATIAL}),
+        acceptable_evidence=frozenset({GroundingSource.DOM}),
+    )
+
+    snapshot = BrowserSession(StabilizingControlPage()).capture(
+        page_id="stabilizing",
+        screenshot_path=str(tmp_path / "stabilizing.png"),
+        perception_requirements=requirements,
+    )
+
+    assert snapshot.affordance_model.affordances[0].label == "Save"
+    assert snapshot.affordance_model.affordances[0].state["enabled"] is True
+
+
 def test_generic_visual_orchestrator_produces_current_candidate_and_assertions(
     tmp_path: Path,
 ) -> None:

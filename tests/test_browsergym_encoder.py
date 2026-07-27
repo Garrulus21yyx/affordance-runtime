@@ -211,7 +211,7 @@ def _active_typed_outcome_state(
             ),
         )
     )
-    state.active_subgoal()
+    state.activate_next_subgoal()
     return state
 
 

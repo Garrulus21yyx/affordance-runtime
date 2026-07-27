@@ -1606,7 +1606,8 @@ def test_state_kernel_keeps_plan_immutable_and_tracks_progress_separately() -> N
 
     state.install_task_plan(plan)
     assert state.task_plan == plan
-    assert state.active_subgoal() == task.objective
+    assert state.active_subgoal() == ""
+    assert state.activate_next_subgoal() == task.objective
     state.complete_subgoal("subgoal-1", ("settings-api-receipt",))
 
     assert state.task_plan == plan

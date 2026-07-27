@@ -316,7 +316,16 @@ class StateKernel:
     def active_subgoal(self) -> str:
         if self.task_plan is None or self.plan_progress is None:
             return self.subgoals[-1] if self.subgoals else ""
+        identifier = self.plan_progress.active_subgoal_id
+        return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
+
+    def activate_next_subgoal(self) -> str:
+        if self.task_plan is None or self.plan_progress is None:
+            return self.subgoals[-1] if self.subgoals else ""
+        previous = self.plan_progress.active_subgoal_id
         identifier = self.plan_progress.activate_next(self.task_plan)
+        if identifier != previous:
+            self.version += 1
         return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
 
     def complete_subgoal(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
@@ -333,7 +342,7 @@ class StateKernel:
     def record_subgoal_action(self) -> None:
         if self.task_plan is None or self.plan_progress is None:
             return
-        subgoal_id = self.plan_progress.active_subgoal_id or self.plan_progress.activate_next(self.task_plan)
+        subgoal_id = self.plan_progress.active_subgoal_id
         if subgoal_id:
             self.plan_progress.record_action(subgoal_id)
             self.version += 1

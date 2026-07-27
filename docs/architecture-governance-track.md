@@ -2,10 +2,10 @@
 
 Status: **active / gate-enforced**  
 Effective: **2026-07-27**  
-Baseline source: local working-tree snapshot derived from `db0d877a0fda`; the
-executable ratchets record the later uncommitted containment slices. This is a
-locally reproducible snapshot, not immutable revision evidence; immutable
-status requires the same committed tree to be reverified.
+Committed governance baseline: `627b5f76900c343d2d0af0ca7fae8645ce2088e0`.
+The executable ratchets are committed at that revision. Its dedicated local
+gate passed, while the associated GitHub Actions push and pull-request runs
+failed; therefore this revision is not a remote-green or promotion baseline.
 
 This document owns the execution semantics of the project's **independent
 horizontal governance track**. Structural ownership rules remain normative in
@@ -72,6 +72,41 @@ remediation item either `done` or transferred to another normative gate,
 current full-tree structural evidence, and a recorded architecture-owner
 decision. LOC thresholds alone cannot authorize retirement.
 
+## 3.1 Double-track, One-gate Execution
+
+Work is scheduled through two independent lanes and one shared admission gate:
+
+```text
+vertical product lane ----\
+                           -> architecture change admission -> integration
+horizontal architecture --/
+```
+
+- the vertical lane advances the next user-observable capability or evidence
+  gate;
+- the horizontal lane removes one named ownership, dependency, mutation, or
+  typing debt;
+- every slice passes the same dependency, authority, growth, behavior, and
+  evidence checks;
+- at most one active vertical slice and one active horizontal slice may exist;
+- each slice has a single production writer, although bounded read-only
+  investigation and final diff review may run independently;
+- a horizontal slice is not a vertical prerequisite unless the vertical change
+  would otherwise grow, copy, or rely on the governed debt.
+
+The current vertical lane is SG7 targeted protected-family confirmation. The
+active-subgoal read/activation separation is locally closed in the current
+governance-sync worktree; the current horizontal lane is removal of mutable
+`StateKernel` from the standard Planner input. Neither lane authorizes
+promotion while required CI remains red.
+
+The token-minimizing default is one integrator agent carrying the slice from
+interface decision through implementation and final acceptance. Subagents are
+reserved for bounded, low-overlap, read-only investigation or a diff-first
+independent review; they do not become parallel production writers for
+Coordinator, StateKernel, public Planner contracts, canonical task schemas, or
+state/trace authority.
+
 ## 4. Immediate Growth Freeze
 
 The following ceilings are the active ratchets. They are measured physical
@@ -119,8 +154,9 @@ must also pass these semantic gates:
    append canonical execution trace. It must be added to the executable
    authority-free collaborator manifest in the same change. Coordinator
    validates and commits its result. The manifest classifies every public
-   `StateKernel` method as read or mutation and freezes the known
-   `planner_context.active_subgoal()` hidden-mutation debt.
+  `StateKernel` method as read or mutation. The former
+  `planner_context.active_subgoal()` hidden-mutation exception is closed and
+  remains protected against reintroduction.
 4. **Benchmark isolation.** Existing non-adapter benchmark import debt is
    frozen to `cli.py`, `conformance.py`, `evolution.py`, and
    `evolution_replay.py`. The allowlist may shrink, not spread to a new module.
@@ -144,7 +180,7 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | `RunCoordinator.run_sync` contains multiple phase algorithms | `in_progress` | extract one named responsibility at a time through immutable context and typed result |
 | `task_planning.py` combines models, provider schema, validation, routing, and implementations | `pending` | split by change reason when the relevant planning slice is touched |
 | `LLMIntentCompiler.compile` is 253 lines | `pending` | isolate a typed phase without changing the three-call/authority boundary |
-| `StateKernel.active_subgoal()` has a hidden progress mutation used by read-oriented consumers | `pending` | separate read view from activation command before claiming strict single-writer semantics |
+| `StateKernel.active_subgoal()` had a hidden progress mutation used by read-oriented consumers | `done` locally | `active_subgoal()` is read-only; `activate_next_subgoal()` is explicit and Coordinator-owned in production; planner context construction no longer activates progress |
 | non-adapter benchmark imports remain in four allowlisted entry/core/evolution modules | `pending` | move shared contracts out of benchmark packages and shrink the allowlist |
 | broad `dict[str, Any]` remains at locator/parameter/evidence boundaries | `pending` | introduce tagged types incrementally at authority, persistence, and adapter boundaries |
 
@@ -163,6 +199,14 @@ Each production change records:
 6. behavior and architecture tests;
 7. the old path or duplicated responsibility removed;
 8. admission result: `pass`, `fail`, or `waived`.
+
+The record may live in the active plan for a documentation-only or very small
+slice. A production or public-contract slice must create a compact admission
+record that includes `base_revision`, `single_responsibility`, `non_goals`,
+`owner_before`, `owner_after`, `typed_input`, `typed_output`, `state_writer`,
+`trace_writer`, authority/budget sources, dependency changes, removed old path,
+required tests, and final admission status. This record is the task packet for
+the single production writer and the contract for independent review.
 
 Admission meanings:
 

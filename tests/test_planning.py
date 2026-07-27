@@ -67,7 +67,7 @@ def _active_plan_state() -> StateKernel:
             ),
         )
     )
-    state.active_subgoal()
+    state.activate_next_subgoal()
     return state
 
 

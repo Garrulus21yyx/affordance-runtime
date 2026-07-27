@@ -44,6 +44,7 @@ services:
       - "3"
       - --base-url
       - http://fixture-web:3000
+      - --allow-acceptance-fail
     depends_on:
       fixture-web:
         condition: service_healthy

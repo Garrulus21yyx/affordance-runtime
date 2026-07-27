@@ -1,6 +1,7 @@
 # Current Implementation Plan
 
-Implementation status: the controlled harness components through M8.6 exist,
+Derived status summary (`implementation-status.md` remains authoritative): the
+controlled harness components through M8.6 exist,
 but only the scoped internal governance gate is closed. The 2026-07-24 closure
 audit reopened G2.5 budget/evidence semantics, G3 owning-port recovery effects,
 G5 empirical profile evidence, and responsibility containment. The scoped
@@ -45,6 +46,25 @@ milestone in the sequence: existing architecture debt does not block unrelated
 work, while a proposed change that grows a frozen control surface, introduces a
 reverse dependency, or duplicates authority fails admission. Named debt is
 reduced incrementally when the active feature/correctness slice touches it.
+
+## Active Double-track Queue
+
+The current scheduler allows one active vertical slice and one active
+horizontal slice. Both pass the same architecture change-admission gate and
+each has one production writer. Read-only investigation and final diff review
+may be delegated, but interface decisions and final acceptance remain with the
+integrator.
+
+| Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
+| --- | --- | --- | --- | --- |
+| Vertical | SG7 targeted `text-transform` / `enter-date` confirmation | SG1-SG6 local canonical intake complete; dedicated local gates current | generic non-BrowserGym proof, original failures accounted, protected-family result recorded without task-name/Prompt-only/budget-expansion repair | unrelated horizontal debt retirement |
+| Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
+
+Promotion remains held until required remote CI is green and the relevant
+vertical evidence is bound to the same committed revision. “When authorized”
+means the named entry conditions above are satisfied and no safety, authority,
+architecture, or CI gate is being bypassed; it does not mean waiting for a
+repository-wide refactor.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`

@@ -118,10 +118,48 @@ def test_builder_exposes_typed_active_subgoal_action_family() -> None:
         )
     )
 
+    state.activate_next_subgoal()
+
     context = PlannerContextBuilder().build(envelope, state, snapshot)
 
     assert context.active_subgoal == "display name input equals Ada"
     assert context.active_subgoal_action_family == "type_text"
+
+
+def test_builder_does_not_activate_next_subgoal_while_building_read_only_context() -> None:
+    envelope, state, snapshot = _fixture()
+    task = envelope.task_spec
+    assert task is not None
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-context",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="enter-name",
+                    objective="display name input equals Ada",
+                    success_criteria=("display name input equals Ada",),
+                    evidence_requirements=("fresh input-value observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                ),
+            ),
+        )
+    )
+    assert state.plan_progress is not None
+    assert state.plan_progress.active_subgoal_id == ""
+    before_version = state.version
+
+    context = PlannerContextBuilder().build(envelope, state, snapshot)
+
+    assert context.active_subgoal == task.objective
+    assert context.active_subgoal_action_family == ""
+    assert state.plan_progress.active_subgoal_id == ""
+    assert state.version == before_version
 
 
 def test_builder_exposes_current_recoverable_proposal_rejection() -> None:

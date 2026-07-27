@@ -76,7 +76,8 @@ def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> N
     assert state.plan_progress is None
 
     state.install_task_plan(transition.plan)
-    assert state.active_subgoal() == task.objective
+    assert state.active_subgoal() == ""
+    assert state.activate_next_subgoal() == task.objective
     assert lifecycle.active_subgoal_spec(state) == transition.plan.subgoals[0]
     assert not lifecycle.completed(state)
 
@@ -223,7 +224,7 @@ def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[Task
         action_family=second_family,
     )
     state.install_task_plan(base.model_copy(update={"subgoals": (first, second)}))
-    assert state.active_subgoal() == first.objective
+    assert state.activate_next_subgoal() == first.objective
     state.complete_subgoal("first", ("evidence:first",))
     return task, state
 
@@ -362,7 +363,7 @@ def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replannin
         ),
     )
     unknown = lifecycle.evaluate_replacement(task, state, empty_snapshot, Limits())
-    assert state.active_subgoal() == "setting control is selected"
+    assert state.activate_next_subgoal() == "setting control is selected"
     state.complete_subgoal("second", ("evidence:second",))
     completed = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
 
@@ -444,7 +445,7 @@ def test_replacement_carries_forward_exact_completed_spec_without_mutating_state
     assert state.plan_progress is not None
     assert state.plan_progress.completed_subgoal_ids == ["first"]
     assert state.plan_progress.evidence_by_subgoal == {"first": ["evidence:first"]}
-    assert state.active_subgoal() == "setting control is saved"
+    assert state.activate_next_subgoal() == "setting control is saved"
 
 
 def test_replacement_discards_model_redefinition_of_completed_spec() -> None:

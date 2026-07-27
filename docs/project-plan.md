@@ -154,36 +154,19 @@ The agent should not only decide what to do. The runtime must know:
 
 ## 4. Current Status
 
-The controlled web profile is complete through M8.1, with claims split by
-evidence level. See
-[Implementation Status and Forward Gates](implementation-status.md).
+Current milestone status is maintained exclusively in
+[Implementation Status and Forward Gates](implementation-status.md). The active
+vertical queue and its entry/exit conditions are maintained in
+[Current Implementation Plan](current-implementation-plan.md). This stable
+project plan defines milestone intent and exit criteria; it does not duplicate
+the live completion, evidence, promotion, architecture-admission, or CI state.
 
-| Area | Status | Evidence boundary |
-| --- | --- | --- |
-| M0 Design Freeze | done | contracts, state machine, trace schema, scenarios, and gates are tested |
-| M1 Web Gold Path | done | real Chromium pricing path, artifacts, verification, and baseline |
-| M2 Local Reliability | done | three local scenarios and 3 x 7 comparison matrix pass |
-| M3/M6 Assisted Evolution | done | SHA-bound executable verifier artifact passes fresh mandatory replay and persisted rollback |
-| M4/M7 Integration Boundary | done | external task RPC and real LangGraph parent complete pricing and gated export |
-| M5 Evidence Freeze | done | CI, package build, manifests, versioned reports, and clean-checkout reproduction |
-| M8 Generalization | done | distinct and held-out layouts, real screenshot grounding, and 18 pinned official MiniWoB++ episodes |
-| M8.1 Container Reproducibility | done | digest-pinned non-root Compose profile, 63-run host/container agreement, real DOM/visual/WoT conformance at `40fd93b` |
-| M8.2A Task Intake and Planner Contracts | partial / reopened | typed TaskSpec 1.3, structural graph rejection, bounded repair, outcome compilation, and code-owned bounded source lineage exist; canonical obligation compilation, deterministic semantic coverage, typed evidence requirements, and veto-only model audit remain open |
-| M8.2B Public Benchmark Audit | diagnostic complete / repair required | strict 30 x 2 diagnostic at `df5b820` completed 60/60 with 24 successes, no provider failure/retry, and 36 attributable residuals; frozen nightly is held |
-| M8.3 Recovery-Cascade Components | partial | incident detection, lower-half recovery, injectable typed dispatch, executable artifacts, replay, and rollback exist; normal entrypoints still need concrete context/schema/provider owners |
-| M8.4 Adaptive Shallow Task Planning | component done | TaskPlan, validation, criteria-bound progress, lineage, and reference evidence exist; normal benchmark entrypoint integration waits for M8.6 |
-| M8.5 Unified Adaptive Routing and Skill Internalization | component done | unified candidates, routes, gestures, visual/WoT paths, trace mining, accepted profiles, fallthrough, and rollback exist |
-| M8.6 Generalist Planner, Active Perception, and Full-Phase Recovery Governance | internal gate done | scoped G0-G5 budget/evidence/injectable-dispatch gate and immutable 11-case Runtime rollout pass at `c939051`; operational follow-through remains open |
-
-The [Current Governance Critical Audit](current-governance-critical-audit-20260725.md)
-is the current claim boundary. The next required work is sourced obligation
-completeness, typed decision constraints outside the step planner, concrete
-recovery-owner wiring, and continued responsibility reduction. M9 durable
-single-run recovery remains conditional on a measured restart or waiting failure.
-The
-[Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md)
-further requires Runtime-owned canonical graph construction before M8.2A or a
-new public intake score can be promoted.
+The [Horizontal Architecture Governance Track](architecture-governance-track.md)
+applies to every milestone as a synchronous admission gate. It prevents new
+architecture debt while allowing unrelated compliant milestone work to
+continue; it is not a unified-refactor prerequisite. Historical audits remain
+evidence for their named revisions and do not override the current status
+ledger.
 
 Current seeds create deterministic distinct local variants, and M8 adds unseen
 layouts and screenshot grounding. SoM and WoT also prove common contract reuse

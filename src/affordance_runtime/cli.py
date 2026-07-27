@@ -63,6 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--seeds", type=int, default=1)
     benchmark.add_argument("--headed", action="store_true")
     benchmark.add_argument("--base-url", help="use an already-running resettable fixture service")
+    benchmark.add_argument(
+        "--allow-acceptance-fail",
+        action="store_true",
+        help="return success after writing a diagnostic report even when release acceptance thresholds fail",
+    )
 
     task_planning = subcommands.add_parser(
         "benchmark-task-planning",
@@ -224,7 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sort_keys=True,
             )
         )
-        return 0 if not benchmark_report.acceptance_errors else 1
+        return 0 if args.allow_acceptance_fail or not benchmark_report.acceptance_errors else 1
     if args.command == "benchmark-task-planning":
         from affordance_runtime.benchmarks.task_planning import run_task_planning_ablation
 

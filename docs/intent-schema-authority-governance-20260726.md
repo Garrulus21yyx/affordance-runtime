@@ -2,8 +2,13 @@
 
 Status: **normative remediation record**.
 
-Audited revision: bba582c on agent/migrate-runtime-components. SG1 source-ledger
-implementation is delivered at the succeeding revision; SG2-SG7 remain open.
+Historical audited revision: `bba582c` on
+`agent/migrate-runtime-components`. That revision's verdict remains historical.
+At current committed revision `627b5f7`, SG1-SG6 are locally complete. SG7
+targeted protected-family confirmation is the active vertical slice and remains
+incomplete. This is local
+implementation/conformance status, not a remote-CI, benchmark-promotion, or
+release claim.
 
 This document governs the natural-language intake boundary. It is jointly
 normative with:

@@ -12,6 +12,47 @@ Status values:
 - `done`: exit criteria are covered by code, tests, and reproducible commands
 - `blocked`: external input or state is required
 
+Live state is represented on separate axes; compound labels such as `done
+locally` or `component done` are explanatory headings only and are not valid
+milestone status values.
+
+| Axis | Values | Purpose |
+| --- | --- | --- |
+| Milestone status | `pending`, `in_progress`, `done`, `blocked` | progress against the milestone's declared exit criteria |
+| Completed scope | concise factual scope | what is actually implemented or verified |
+| Evidence maturity | `none`, `protocol`, `injectable`, `normal_entrypoint`, `local_reproducible`, `ci_reproduced`, `immutable_empirical` | strongest current evidence level |
+| Promotion status | `held`, `eligible`, `promoted`, `not_applicable` | whether broader claims or runs are authorized |
+| Architecture admission | `pass`, `fail`, `waived`, `not_evaluated` | result of the horizontal gate for the change |
+| Remote CI | `pass`, `fail`, `pending`, `not_run` | state of CI for the exact committed revision |
+
+### Current Evidence Identity
+
+| Field | Current value |
+| --- | --- |
+| Committed source revision | `627b5f76900c343d2d0af0ca7fae8645ce2088e0` |
+| Committed baseline local gate | pass: 938 tests, Ruff, mypy over 116 source files, and diff check on the then-clean tree |
+| Current worktree identity | documentation/test governance-sync plus CI-harness, benchmark-diagnostic repair, and active-subgoal read/activation split diff based on `627b5f7`; not an immutable revision |
+| Current worktree local gate | pass: 944 tests, 189 focused active-subgoal/planner/context/governance gates, Ruff, mypy over 116 source files, `uv build`, and diff check |
+| Architecture admission | pass locally for both the committed baseline and current governance-sync diff |
+| Remote CI | fail: [push run 30271191621](https://github.com/Garrulus21yyx/affordance-runtime/actions/runs/30271191621) and [PR run 30271194148](https://github.com/Garrulus21yyx/affordance-runtime/actions/runs/30271194148) |
+| Promotion status | held |
+
+The remote failures are not one undifferentiated environment failure. Verified
+logs show a Python 3.12 collection/package-path failure (`scripts` not
+importable), matching Chromium/container benchmark failures caused by coherent
+observation epoch drift, and a BrowserGym Playwright dependency-provisioning
+failure (`libasound2` unavailable on Ubuntu Noble); Python 3.11 was cancelled
+after another matrix failure. The current local diff repairs the core pytest
+invocation (`python -m pytest -q`) and the BrowserGym runner/profile
+provisioning (`ubuntu-22.04` plus `requirements/constraints-browsergym.txt`).
+The coherent observation epoch drift crash is repaired by bounded semantic
+stabilization in `BrowserSession.capture`; true semantic DOM drift is still
+rejected. The local benchmark now completes and writes all 63 run records under
+the explicit diagnostic flag, while its release acceptance remains failed
+because settings/recovery effectiveness is still below the promotion threshold.
+Local success must not be described as remote-CI or immutable promotion
+evidence.
+
 ## Horizontal Architecture Governance
 
 This is an independent, always-active track rather than an `M*` milestone. Its
@@ -22,7 +63,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | `passing` locally | Coordinator 3473 lines / 26 methods; `run_sync` 2039 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | choose the next named Coordinator phase responsibility; LOC is an auxiliary metric, not closure evidence |
+| `active` | governance-sync worktree `passing` locally / baseline remote CI failed | Coordinator 3473 lines / 26 methods; `run_sync` 2039 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | remove mutable Planner state input; LOC is auxiliary, not closure evidence |
 
 Change admission uses `pass | fail | waived | not_evaluated`; remediation items
 use `pending | in_progress | done | blocked`. These states do not replace the
@@ -42,12 +83,12 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | done locally | code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal structural coverage, model/parent proposal normalization, veto-only coverage audit, bounded repair with accurate accounting/Prompt identity, local held-out non-BrowserGym conformance, outcome compiler, terminal evidence, and stateless DecisionConstraintSet | dedicated Python 3.12 BrowserGym environment: 921 tests, Ruff, mypy, and diff check pass; no benchmark/provider/release claim |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance | SG7 targeted protected-family confirmation; promotion held |
 | M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; later protected recheck isolates a shared local-provider obligation-graph intake failure | hold PR/nightly/release; establish provider-neutral obligation-complete intake before breadth promotion |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
-| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; concrete context/schema recovery owners plus neutral Planner/approval contracts remain green in the current dedicated 938-test local tree | level-4 recovery effectiveness, planner generalization, and Coordinator responsibility reduction remain open |
+| M8.6 Planner, Active Perception, and Recovery Governance | in_progress | `c939051` closes the scoped internal gate/rollout; concrete context/schema recovery owners plus neutral Planner/approval contracts remain green in the current dedicated 939-test governance-sync worktree | level-4 recovery effectiveness, planner generalization, and Coordinator responsibility reduction remain open |
 | M9 Durable Single Run | pending | in-memory state only | conditional on a measured restart/waiting failure |
 
 ## M0: Design Freeze and Status Alignment
@@ -350,10 +391,11 @@ Current verified facts:
   fallback provider through a real owner;
 - complete-run accounting continues after ordinary failures;
 - immutable historical evidence remains bound to its recorded revisions; the
-  current uncommitted local snapshot passes 938 tests, including 18 focused
+  committed revision `627b5f7` passes 938 tests, including 18 focused
   horizontal/existing architecture gates, plus Ruff and mypy over 116 source
-  files in the dedicated Python 3.12 environment. This is local snapshot
-  evidence, not immutable revision or remote-CI evidence.
+  files in the dedicated Python 3.12 environment. Its associated remote CI
+  fails, so this is locally reproducible committed evidence, not remote-green
+  or immutable promotion evidence.
 
 Current blockers for the scoped `c939051` internal gate: none. This does not
 close the broader product work. Entrypoints still explicitly own dispatcher
@@ -426,6 +468,10 @@ Clean-checkout M0-M8 gate:
 
 | Date | Workstream / milestone | Change | Files | Verification |
 | --- | --- | --- | --- | --- |
+| 2026-07-27 | Active-subgoal read/activation boundary | Split the formerly hidden `StateKernel.active_subgoal()` progress mutation into a read-only `active_subgoal()` query and an explicit `activate_next_subgoal()` command. Production activation is Coordinator-owned; planner context construction now remains read-only and no longer advances plan progress while building untrusted planner context. The old planner-context hidden-mutation exception was removed from the architecture gate instead of being kept as an allowlist waiver. | `state_kernel.py`, `coordinator.py`, planner context/task-plan/planning/browsergym tests, horizontal governance test, governance/current/status/goal records | new planner-context no-mutation test and architecture debt-closure test failed before the implementation and pass after it; 189 focused active-subgoal/planner/context/governance tests pass; full dedicated Python 3.12 suite 944 passed; Ruff, mypy over 116 source files, `uv build`, and diff check pass. No benchmark/provider/remote CI/promotion claim. |
+| 2026-07-27 | Benchmark epoch stabilization and diagnostic CI split | Added bounded BrowserSession recapture for transient affordance-state stabilization during multi-source observation epochs. The retry is allowed only when URL is unchanged and the semantic affordance inventory is unchanged; semantic DOM drift still raises. Split local benchmark CLI semantics so default `benchmark` remains a release acceptance gate, while CI smoke jobs use explicit `--allow-acceptance-fail` to prove the benchmark runs and writes reports without claiming promotion. Container benchmark uses the same explicit diagnostic flag. | `browser_session.py`, CLI benchmark command, CI workflow, compose benchmark command, browser/session/CLI/governance tests, status/goal records | new transient-state-drift test failed before the BrowserSession change and passes after it; semantic DOM drift rejection still passes; CLI diagnostic flag test passes; workflow/compose governance test passes; `affordance-runtime benchmark --seeds 3 --allow-acceptance-fail` completes 63 runs and exits 0 while reporting release acceptance failed; full dedicated Python 3.12 suite 942 passed; 13 focused CLI/browser/governance gates passed; Ruff, mypy over 116 source files, `uv build`, and diff check pass. No new remote CI run yet. |
+| 2026-07-27 | CI failure classification and harness repair | Converted two classified CI failures into narrow harness repairs: core CI now invokes pytest through the active interpreter so repo-root script imports remain available, and the BrowserGym bridge job uses the documented isolated BrowserGym dependency profile on an Ubuntu runner compatible with Playwright 1.44 dependency names. Added an executable governance test that failed against the old workflow and passes with the repaired workflow. The Chromium/container `coherent observation epoch drifted during multi-source capture` failure is intentionally left open as a benchmark/runtime diagnostic rather than relabeled as environment. | `.github/workflows/ci.yml`, horizontal architecture governance test, status/goal records | focused CI workflow contract test passed; `tests/test_generalization_evidence.py` passed under `python -m pytest`; `scripts/chromium_smoke.py` passed; focused epoch-drift behavior tests passed; full dedicated Python 3.12 suite 940 passed; 10 focused horizontal governance gates passed; Ruff, mypy over 116 source files, `uv build`, and diff check pass. The dedicated local interpreter lacks `pip`, so BrowserGym pip dry-run could not be executed there; no new remote CI run yet. |
+| 2026-07-27 | Governance baseline self-calibration | Removed duplicated live milestone state from the stable project plan; established the vertical/horizontal `1 + 1` WIP and single-production-writer policy; separated milestone, completed-scope, evidence-maturity, promotion, architecture-admission, and remote-CI axes; bound the current evidence to committed revision `627b5f7`; classified the associated failed push/PR jobs from verified logs; scoped INV-11 to authoritative task-execution commit sequencing with non-expanding compatibility/skill/progress exceptions; and added an executable document-drift gate. | project/current plans, architecture governance/status/intent documents, architecture test, active goal plan | new drift test observed failing before documentation changes and then passed; 19 focused architecture gates; full dedicated Python 3.12 suite 939 passed; Ruff, mypy over 116 source files, `uv build`, and diff check pass. The dedicated interpreter cannot run isolated `python -m build` because its host Python lacks `ensurepip/python3.12-venv`; no production code, benchmark/provider episode, promotion, push, or new remote CI run. |
 | 2026-07-27 | Horizontal architecture governance activation | Established an independent always-active change-admission track rather than a new serial milestone. Froze current control-module and long-method growth, classified every public StateKernel method as read/mutation, prohibited neutral/extracted collaborator reverse dependencies and authority reacquisition, recorded the existing hidden mutation debt, normalized absolute/relative import scanning, froze existing non-adapter benchmark import debt, documented prior-waiver/anti-circumvention semantics, and synchronized the current plan, architecture, responsibility boundary, and status axes. Existing debt is baselined but not declared healthy; gate failure blocks the violating change rather than requiring a unified rewrite first. | horizontal governance normative document, four governed documents, executable architecture tests, active goal plan | 18 focused horizontal/existing architecture gates; full dedicated Python 3.12 suite 938 passed; Ruff, mypy over 116 source files, and diff check pass. Local snapshot only; no benchmark/provider/remote CI/score claim. |
 | 2026-07-27 | M8.6 neutral approval-source boundary | Moved `ApprovalProvider` and `ConfiguredApprovalProvider` out of Coordinator into a neutral approval-contract module. CLI and local benchmark entrypoints now depend directly on neutral approval and planning contracts; Coordinator consumes the approval protocol and preserves compatibility re-exports. Added executable neutral-ownership/direct-import/compatibility gates plus provider token-binding, TTL, no-match, and first-allowed-capability regressions; lowered the Coordinator line ratchet from 3499 to 3473 without moving state, trace, policy, or capability-gate authority. | approval contracts, Coordinator/entrypoint imports, architecture/behavior/containment tests | 20 focused approval/boundary tests; full dedicated Python 3.12 suite 930 passed; Ruff, mypy over 116 source files, and diff check pass. No benchmark/provider/CI run or score claim. |
 | 2026-07-27 | M8.6 neutral Planner contract boundary | Moved `PlannerDecision` and `PlannerPort` definitions out of Coordinator into a neutral planning-contract module. Generalist, parent adapter, and deterministic planners now depend on that module; Coordinator consumes the same contracts and retains compatibility re-exports. Added an AST import-boundary gate and lowered the Coordinator line ratchet from 3520 to 3499 without moving state/trace authority. | planning contracts, Coordinator/planner imports, architecture and containment tests | 106 focused architecture/Coordinator/planner tests; full dedicated Python 3.12 suite 924 passed; Ruff, mypy over 115 source files, and diff check pass. No benchmark/provider/CI run or score claim. |

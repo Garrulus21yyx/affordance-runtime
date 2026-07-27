@@ -59,10 +59,33 @@ delivery claims.
     tests. Freeze growth at measured control-module/method baselines; enforce
     dependency direction and state/trace authority without blocking unrelated
     milestone work on a unified rewrite.
-12. `in_progress` — Select the next named Coordinator responsibility for semantic
-    ownership reduction under the horizontal gates. LOC is an auxiliary
-    ratchet; the 2,000/1,500 thresholds neither select the slice nor prove it
-    complete.
+12. `done` — Calibrate governance against committed revision `627b5f7`:
+    remove duplicated live-status authority, separate milestone/evidence/
+    promotion/admission/CI axes, record the failed remote CI without treating
+    every failure as environmental, scope INV-11 to task-execution commit
+    sequencing, and make the vertical/horizontal WIP policy explicit.
+13. `in_progress` — Run one vertical slice (SG7 targeted protected-family
+    confirmation) beside one horizontal slice. The active-subgoal read/mutation
+    separation is locally closed; immutable PlanningRequest / PlannerStateView
+    remains the next horizontal boundary. Each slice has one production writer
+    and passes the same architecture admission gate; neither lane waits for a
+    unified refactor.
+14. `done` — Repair classified CI harness/environment failures without
+    hiding the remaining benchmark runtime failure: core pytest invocation and
+    BrowserGym provisioning are narrow CI fixes; coherent observation epoch
+    drift stays open as the next benchmark diagnostic.
+15. `done` — Close the benchmark epoch-drift crash and split diagnostic
+    benchmark execution from promotion acceptance: true semantic DOM drift must
+    still fail, transient affordance-state stabilization may be recaptured once,
+    and release acceptance failures remain visible.
+16. `pending` — Re-run the repaired workflow remotely and classify any remaining
+    failures against the current diff. Local diagnostic benchmark success is not
+    a release/promotion claim while benchmark acceptance remains failed.
+17. `done` — Close the H1 active-subgoal hidden-mutation debt in project code:
+    make `StateKernel.active_subgoal()` read-only, add explicit
+    `activate_next_subgoal()`, keep production activation in Coordinator, and
+    remove the planner-context hidden-mutation exception from the architecture
+    gate.
 
 ## Change Record
 
@@ -120,3 +143,42 @@ delivery claims.
   architecture gates and the 938-test dedicated full suite pass; Ruff, mypy
   over 116 source files, and diff check pass. Existing debt remains explicit
   and does not make a unified rewrite a vertical milestone prerequisite.
+- Calibrated the committed governance baseline and removed duplicated live
+  status from the stable project plan. Added the double-track `1 + 1` WIP,
+  single-production-writer policy, separate status/evidence/promotion/
+  admission/CI axes, exact failed remote-run identities and classification,
+  scoped INV-11 exceptions, and an executable document-drift test. The new
+  test failed before the document changes and then passed; 19 focused gates,
+  the 939-test full suite, Ruff, mypy over 116 source files, `uv build`, and
+  diff check pass. Isolated `python -m build` remains unavailable in the
+  dedicated interpreter because host `ensurepip/python3.12-venv` is absent.
+- Repaired the two CI failure classes that were harness/environment problems:
+  core CI now runs `python -m pytest -q`, and BrowserGym bridge uses the
+  isolated BrowserGym constraints on `ubuntu-22.04`. Added a governance test
+  that failed before the workflow repair and passes after it. Kept the
+  Chromium/container coherent observation epoch drift classified as an open
+  benchmark/runtime diagnostic rather than marking the PR green by wording.
+  Verified with the focused CI workflow contract test, the generalization
+  evidence import-path test, the local Chromium smoke, focused epoch-drift
+  behavior tests, the full 940-test suite, Ruff, mypy, `uv build`, and diff
+  check. No new remote CI run has been triggered.
+- Added a bounded BrowserSession stabilization retry for transient
+  affordance-state drift during multi-source capture, with semantic DOM drift
+  still rejected. Added `--allow-acceptance-fail` so CI benchmark smoke can
+  complete and publish all run artifacts without pretending release acceptance
+  passed; default `benchmark` still returns non-zero on acceptance failures.
+  The local `--seeds 3 --allow-acceptance-fail` benchmark completes 63 runs and
+  exits 0 while reporting acceptance failed, preserving the settings/recovery
+  promotion gap for follow-up. Verified with the full 942-test dedicated
+  Python 3.12 suite, 13 focused CLI/browser/governance gates, Ruff, mypy over
+  116 source files, `uv build`, and diff check. No new remote CI run has been
+  triggered.
+- Split active-subgoal reading from activation: `active_subgoal()` is now
+  read-only, `activate_next_subgoal()` is explicit, Coordinator owns the
+  production activation call, and planner-context construction no longer
+  advances progress. The architecture gate now treats the old
+  planner-context hidden mutation as closed rather than allowlisted. Verified
+  with the RED-to-green planner-context no-mutation and debt-closure tests,
+  189 focused active-subgoal/planner/context/governance gates, the full
+  944-test dedicated Python 3.12 suite, Ruff, mypy over 116 source files,
+  `uv build`, and diff check. No benchmark/provider/remote CI/promotion claim.

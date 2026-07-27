@@ -132,6 +132,20 @@ def _environment_family(url: str) -> str:
     return "web:unknown"
 
 
+def _semantic_affordance_inventory(model: PageAffordanceModel) -> tuple[tuple[str, str, str, str], ...]:
+    return tuple(
+        sorted(
+            (
+                affordance.action,
+                affordance.role,
+                affordance.label,
+                str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or ""),
+            )
+            for affordance in model.affordances
+        )
+    )
+
+
 def _bounded_accessibility_tree(page: PageDriver, *, max_nodes: int = 256) -> dict[str, Any] | None:
     """Capture a bounded browser accessibility tree when the driver exposes it."""
 
@@ -400,6 +414,7 @@ class BrowserSession:
         perception_requirements: PerceptionRequirements | None = None,
         task_terms: tuple[str, ...] = (),
         task_instruction: str = "",
+        _stabilization_retries: int = 1,
     ) -> BrowserSnapshot:
         """Capture one coherent, selectively multi-source observation epoch."""
 
@@ -516,7 +531,22 @@ class BrowserSession:
             # epoch impossible even though the actionable DOM inventory and
             # page identity are stable.  Fail only when the URL or semantic
             # DOM revision changed while the extra sources were captured.
-            if final_url != url or final_model.page_revision != model.page_revision:
+            if final_url != url:
+                raise RuntimeError("coherent observation epoch drifted during multi-source capture")
+            if final_model.page_revision != model.page_revision:
+                if (
+                    _stabilization_retries > 0
+                    and _semantic_affordance_inventory(final_model) == _semantic_affordance_inventory(model)
+                ):
+                    return self.capture(
+                        page_id=page_id,
+                        ttl_ms=ttl_ms,
+                        screenshot_path=screenshot_path,
+                        perception_requirements=perception_requirements,
+                        task_terms=task_terms,
+                        task_instruction=task_instruction,
+                        _stabilization_retries=_stabilization_retries - 1,
+                    )
                 raise RuntimeError("coherent observation epoch drifted during multi-source capture")
         enriched_affordances = []
         grounding_candidates: list[GroundingCandidate] = []

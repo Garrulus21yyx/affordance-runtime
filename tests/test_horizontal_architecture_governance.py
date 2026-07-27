@@ -6,6 +6,15 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src" / "affordance_runtime"
 GOVERNANCE_DOC = REPOSITORY_ROOT / "docs" / "architecture-governance-track.md"
+PROJECT_PLAN = REPOSITORY_ROOT / "docs" / "project-plan.md"
+CURRENT_PLAN = REPOSITORY_ROOT / "docs" / "current-implementation-plan.md"
+IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
+ARCHITECTURE_DOC = REPOSITORY_ROOT / "docs" / "architecture.md"
+INTENT_GOVERNANCE = (
+    REPOSITORY_ROOT / "docs" / "intent-schema-authority-governance-20260726.md"
+)
+CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
+COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
 GOVERNED_DOCUMENTS = (
     REPOSITORY_ROOT / "docs" / "architecture.md",
     REPOSITORY_ROOT / "docs" / "current-implementation-plan.md",
@@ -59,7 +68,7 @@ FORBIDDEN_NEUTRAL_DEPENDENCIES = (
 
 STATE_KERNEL_MUTATIONS = {
     "activate_task_skill",
-    "active_subgoal",
+    "activate_next_subgoal",
     "add_obligation",
     "checkpoint_task_skill_step",
     "complete_grounding_recovery",
@@ -82,6 +91,7 @@ STATE_KERNEL_MUTATIONS = {
 }
 
 STATE_KERNEL_READS = {
+    "active_subgoal",
     "check_progress_guard",
     "constraint_summary",
     "current_page_revision",
@@ -109,9 +119,7 @@ LEGACY_NON_ADAPTER_BENCHMARK_IMPORTERS = {
     "evolution_replay.py",
 }
 
-EXTRACTED_MUTATION_DEBT = {
-    ("planner_context.py", "active_subgoal"),
-}
+EXTRACTED_MUTATION_DEBT: set[tuple[str, str]] = set()
 
 
 def _import_dependencies(node: ast.AST) -> tuple[str, ...]:
@@ -162,6 +170,48 @@ def test_horizontal_governance_document_is_active_and_non_blocking() -> None:
     for ceiling in CONTROL_METHOD_LINE_CEILINGS.values():
         assert f"{ceiling:,}" in text
     assert f"{RUN_COORDINATOR_METHOD_CEILING} `runcoordinator` methods" in text
+
+
+def test_governance_status_and_dual_lane_policy_have_one_current_source() -> None:
+    project_plan = " ".join(PROJECT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+    architecture = " ".join(ARCHITECTURE_DOC.read_text(encoding="utf-8").split()).casefold()
+    intent = " ".join(INTENT_GOVERNANCE.read_text(encoding="utf-8").split()).casefold()
+
+    assert "current milestone status is maintained exclusively" in project_plan
+    assert "one active vertical slice" in current_plan
+    assert "one active horizontal slice" in current_plan
+    assert "milestone status" in status
+    assert "evidence maturity" in status
+    assert "promotion status" in status
+    assert "architecture admission" in status
+    assert "remote ci" in status
+    assert "double-track, one-gate" in governance
+    assert "single production writer" in governance
+    assert "sole authoritative task-execution commit sequencer" in architecture
+    assert "sg1-sg6 are locally complete" in intent
+    assert "sg7 targeted protected-family confirmation is the active vertical slice" in intent
+    assert "remains incomplete" in intent
+
+
+def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    compose = COMPOSE_FILE.read_text(encoding="utf-8")
+
+    assert "- run: python -m pytest -q" in workflow
+    assert "- run: pytest -q" not in workflow
+    assert "browsergym-bridge:\n    runs-on: ubuntu-22.04" in workflow
+    assert "python -m pip install -e . -r requirements/constraints-browsergym.txt" in workflow
+    assert "affordance-runtime benchmark --output evidence/benchmark --seeds 3 --allow-acceptance-fail" in workflow
+    assert "--allow-acceptance-fail" in compose
+
+
+def test_active_subgoal_is_read_only_and_no_longer_a_planner_context_debt() -> None:
+    assert "active_subgoal" not in STATE_KERNEL_MUTATIONS
+    assert "active_subgoal" in STATE_KERNEL_READS
+    assert ("planner_context.py", "active_subgoal") not in EXTRACTED_MUTATION_DEBT
 
 
 def test_control_module_growth_ratchets_cannot_expand() -> None:

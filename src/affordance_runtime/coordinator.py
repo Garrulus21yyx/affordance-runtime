@@ -501,7 +501,7 @@ class RunCoordinator:
                     assert transition is not None
                     task_plan = transition.plan
                     committed = TaskPlanCommitStateView(
-                        active_subgoal=state.active_subgoal(),
+                        active_subgoal=state.activate_next_subgoal(),
                         completed_subgoal_ids=(
                             tuple(state.plan_progress.completed_subgoal_ids)
                             if state.plan_progress is not None
@@ -523,7 +523,7 @@ class RunCoordinator:
 
             state.transition(RuntimeStep.PLANNING.value)
             if state.task_plan is not None:
-                state.active_subgoal()
+                state.activate_next_subgoal()
             skill_decision: TaskSkillRuntimeDecision | None = None
             skill_step_id = ""
             try:
