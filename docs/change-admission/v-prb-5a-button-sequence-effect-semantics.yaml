@@ -129,6 +129,7 @@ result:
     scope: completed-click progress evidence / observer-verifier binding
     behavior:
       - completed click outcomes add an observation_metadata active_control verifier scoped to the active subgoal
+      - an explicit active action_family must match, but absent action_family metadata does not block typed is_completed click progress evidence
       - generic state_delta_or_terminal remains terminal-only and weak for progress
       - receipt success remains insufficient for subgoal completion
     forbidden_changes:
@@ -136,8 +137,8 @@ result:
       - no PlannerPort or PlannerStateView migration
       - no verifier weakening or receipt-driven progress
     local_verification:
-      - focused browsergym/criteria/planning/governance tests passed 99/99
-      - full local pytest passed 977/977
+      - focused browsergym/criteria/planning/governance tests passed 100/100
+      - full local pytest passed 978/978
       - Ruff, mypy, and diff check passed
   clean_pr_breadth_rerun:
     revision: 0565e2ef3f5d082cdc13652b8ca399a393ef4074
@@ -185,7 +186,28 @@ result:
       observed_active_subgoal_after_first_click: button ONE is completed
       rejected_progress_evidence: weak execution/state_delta_or_terminal evidence is not independent
       planner_result_after_rejection: ask_user / waiting_clarification
+  clean_pr_breadth_third_rerun:
+    revision: c75fc3b32b737180a3bf39d948811ad5e7730724
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-c75fc3b/
+    expected: 12
+    observed: 12
+    official_passed: 8
+    official_failed: 4
+    runtime_failed: 5
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    official_score_claimed: false
+    impact: progress verifier design did not enter real button-sequence contracts
+    trace_classification:
+      missing_contract_verifier: observation_metadata active_control active-subgoal verifier
+      present_contract_verifiers:
+        - evidence:last_action_error
+        - state_delta_or_terminal:12
+      active_subgoal: button ONE is completed
+      active_subgoal_action_family: ""
+      remaining_defect: declaration precondition required action_family even though typed outcome and matched click target were sufficient
   next_requirement:
-    - commit the completed-click progress evidence repair
+    - commit the refined completed-click progress evidence repair
     - rerun the same clean PR breadth matrix on the committed revision before judging button-sequence closure
     - keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate

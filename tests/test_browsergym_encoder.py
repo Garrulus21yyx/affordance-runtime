@@ -215,7 +215,10 @@ def _active_typed_outcome_state(
     return state
 
 
-def _active_completed_click_outcome_state() -> StateKernel:
+def _active_completed_click_outcome_state(
+    *,
+    action_family: TaskPlanActionFamily | None = TaskPlanActionFamily.ACTIVATE,
+) -> StateKernel:
     state = StateKernel("task-1", "Click button ONE, then click button TWO")
     state.install_task_plan(
         TaskPlan(
@@ -232,7 +235,7 @@ def _active_completed_click_outcome_state() -> StateKernel:
                     success_criteria=("button ONE is completed",),
                     evidence_requirements=("post-click observation for button ONE",),
                     operation_class=OperationClass.NAVIGATION,
-                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    action_family=action_family,
                     outcome=SubgoalOutcome(
                         subject="button ONE",
                         relation=SubgoalOutcomeRelation.IS_COMPLETED,
@@ -460,6 +463,46 @@ def test_browsergym_click_completed_outcome_declares_independent_progress_eviden
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
     assert declared[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+
+
+def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_family() -> None:
+    state = _active_completed_click_outcome_state(action_family=None)
+    affordance = _affordance(
+        "semantic:one",
+        action="activate",
+        locator={"backend_handle": "12"},
+        role="button",
+        label="ONE",
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-one",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=affordance.id,
+    )
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        [
+            VerifierSpec("evidence", "last_action_error", ""),
+            VerifierSpec(
+                "state_delta_or_terminal",
+                "12",
+                True,
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+            ),
+        ],
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("click", {"bid": "12"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].kind == "observation_metadata"
+    assert declared[-1].target == "active_control"
+    assert declared[-1].expected == "12"
+    assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
 
 
 @pytest.mark.parametrize(

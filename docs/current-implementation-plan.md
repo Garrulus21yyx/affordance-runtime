@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5A progress-evidence rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; after the second V-PRB-5A repair, clean PR breadth at `e4795c1` completed 12/12 observed with 8 official reward passes, 4 official reward failures, 5 Runtime failures, and no provider failure/missing/unrun/invalidated case. `click-button-sequence` now creates `effect / is_completed` obligations but lacked independent progress evidence after the first click. A third non-BrowserGym RED now covers completed-click observer/verifier binding: completed click outcomes add `observation_metadata(active_control == bid)` active-subgoal evidence, while generic `state_delta_or_terminal` remains terminal-only and weak | commit the completed-click progress evidence repair, then rerun the same clean PR breadth 6-task x 2-seed matrix on the committed revision before judging button-sequence closure | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-5A progress-evidence rerun | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; clean PR breadth at `e4795c1` showed `click-button-sequence` now creates `effect / is_completed` obligations but lacked independent progress evidence after the first click. The first progress-evidence repair at `c75fc3b` remained negative because real contracts still lacked the new `observation_metadata(active_control == bid)` verifier; trace classification showed active subgoal action-family was empty. A refined RED/GREEN now treats action-family as an optional guard: if present it must match, but absent metadata does not block typed completed-click progress evidence | commit the refined completed-click progress evidence repair, then rerun the same clean PR breadth 6-task x 2-seed matrix on the committed revision before judging button-sequence closure | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -96,8 +96,12 @@ batched into a single mixed patch:
    planner asks for clarification on `button ONE is completed`. The third
    RED/GREEN repair keeps `state_delta_or_terminal` weak and terminal-only, but
    adds an active-subgoal `observation_metadata(active_control == bid)`
-   verifier for completed click outcomes. V-PRB-5A still requires a clean PR
-   breadth rerun on the committed repair revision before any closure claim.
+   verifier for completed click outcomes. The clean `c75fc3b` rerun proved
+   that declaration did not enter real button-sequence contracts because
+   active action-family metadata is empty in that path. The refined local RED
+   makes action-family an optional guard while preserving typed outcome and
+   matched-target checks. V-PRB-5A still requires another clean PR breadth
+   rerun on the committed refined repair revision before any closure claim.
 2. **V-PRB-5B entry action-family resolution** — keep this as a separate child
    slice for slider-like reversible-write action-family selection. Execute it
    after 5A, or earlier only if 5A RED proves a public semantic/schema ADR is

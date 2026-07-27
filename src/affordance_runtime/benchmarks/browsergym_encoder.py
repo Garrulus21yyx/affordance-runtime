@@ -436,8 +436,10 @@ def declare_browsergym_active_subgoal_evidence(
     if (
         active is None
         or active.outcome is None
-        or active.action_family is None
-        or active.action_family.value != proposal.action_kind.value
+        or (
+            active.action_family is not None
+            and active.action_family.value != proposal.action_kind.value
+        )
         or not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
     ):
         return verifier_plan

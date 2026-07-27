@@ -226,9 +226,18 @@ delivery claims.
     completed click outcomes. Generic `state_delta_or_terminal` remains weak
     and terminal-only. Do not accept receipt success alone as progress; keep
     V-PRB-5B, V-PRB-6, immutable Planner input, and promotion separate.
-37. `in_progress` — Commit and push the completed-click progress evidence
+37. `done` — Commit and push the completed-click progress evidence
     repair, then rerun the same PR breadth 6-task x 2-seed matrix on the clean
-    committed revision before judging button-sequence closure.
+    committed revision before judging button-sequence closure. Clean `c75fc3b`
+    rerun remained negative at 8/12 official reward: the new verifier did not
+    enter real button-sequence contracts because active action-family metadata
+    is empty in that path.
+38. `in_progress` — Commit and push the refined completed-click progress
+    evidence repair, then rerun the same PR breadth matrix on the clean
+    committed revision. The refined RED/GREEN makes action-family an optional
+    guard: present action-family must match, but absent metadata does not block
+    typed `IS_COMPLETED` click progress evidence when target and concrete click
+    action match.
 
 ## Change Record
 
