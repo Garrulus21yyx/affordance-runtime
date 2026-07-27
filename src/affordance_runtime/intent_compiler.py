@@ -255,7 +255,7 @@ class LLMIntentCompiler:
             request,
             source_ledger,
         )
-        draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
+        draft, canonical_issues, canonicalized = _canonicalize_requested_effects_draft(
             draft,
             source_ledger,
             request,
@@ -478,7 +478,7 @@ class ParentSemanticProposalCompiler:
             return result
         parent = _record_source_ledger(trace, source_ledger, parent)
         bound_proposal = _bind_draft_source_lineage(proposal, request, source_ledger)
-        normalized, issues, canonicalized = _canonicalize_flat_draft(
+        normalized, issues, canonicalized = _canonicalize_requested_effects_draft(
             bound_proposal,
             source_ledger,
             request,
@@ -611,7 +611,7 @@ async def _repair_decoded_draft(
         request,
         source_ledger,
     )
-    repaired_draft, canonical_issues, canonicalized = _canonicalize_flat_draft(
+    repaired_draft, canonical_issues, canonicalized = _canonicalize_requested_effects_draft(
         repaired_draft,
         source_ledger,
         request,
@@ -682,16 +682,28 @@ def _normalize_semantic_proposal(
     ), compilation.issues, compilation.proposal_claim_ids
 
 
-def _canonicalize_flat_draft(
+def _canonicalize_requested_effects_draft(
     draft: IntentDraft,
     source_ledger: SourceLedger,
     request: UserRequest,
 ) -> tuple[IntentDraft, tuple[CompilationIssue, ...], bool]:
-    """Compile flat effects without retaining any parent proposal graph field."""
+    """Compile source-bound effects when provider graph authority is absent.
 
-    if draft.task_structure != TaskStructure.FLAT:
+    Flat tasks always use Runtime-owned canonical graph construction. Multi-stage
+    drafts keep a complete provider semantic graph when present, but incomplete
+    provider graphs may not become the authority prerequisite when source-bound
+    requested effects are already available.
+    """
+
+    incomplete_provider_graph = not draft.candidate_source_claims or not draft.candidate_obligations
+    multi_effect_sequence = len(draft.requested_effects) > 1
+    if (
+        draft.task_structure != TaskStructure.FLAT
+        and (not incomplete_provider_graph or not multi_effect_sequence)
+    ):
         return draft, (), False
-    draft = _normalize_flat_value_entry_draft(draft, request)
+    if draft.task_structure == TaskStructure.FLAT:
+        draft = _normalize_flat_value_entry_draft(draft, request)
     try:
         graph = CanonicalObligationCompiler().compile_requested_effects(
             source_ledger,

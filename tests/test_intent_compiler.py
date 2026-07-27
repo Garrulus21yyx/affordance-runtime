@@ -679,6 +679,73 @@ def test_llm_compiler_repairs_missing_obligation_graph_within_three_call_budget(
     assert "IntentDraftRepairProduced" not in [node.kind for node in trace.nodes]
 
 
+def test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_graph_is_incomplete() -> None:
+    draft = IntentDraft(
+        objective="Click button ONE, then click button TWO.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button ONE",
+                source_ref="button-sequence",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button TWO",
+                source_ref="button-sequence",
+            ),
+        ),
+        candidate_success_criteria=("Button ONE was clicked.", "Button TWO was clicked."),
+        task_structure=TaskStructure.MULTI_STAGE,
+        candidate_source_claims=(
+            SourcedTaskClaim(
+                claim_id="provider-one",
+                kind=TaskClaimKind.EFFECT,
+                statement="Click button ONE",
+                source_ref="button-sequence",
+            ),
+            SourcedTaskClaim(
+                claim_id="provider-two",
+                kind=TaskClaimKind.EFFECT,
+                statement="Click button TWO",
+                source_ref="button-sequence",
+            ),
+        ),
+    )
+    model = RepairingModel(draft, repaired_draft=draft)
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+            max_model_calls=1,
+        ).compile(
+            UserRequest(
+                request_id="button-sequence",
+                raw_text="Click button ONE, then click button TWO.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert model.calls == 1
+    assert result.task_spec.task_structure == TaskStructure.MULTI_STAGE
+    assert len(result.task_spec.obligations) == 2
+    assert all(
+        claim.construction_source == GraphConstructionSource.CANONICAL_COMPILER
+        for claim in result.task_spec.source_claims
+    )
+    assert all(
+        obligation.construction_source == GraphConstructionSource.CANONICAL_COMPILER
+        for obligation in result.task_spec.obligations
+    )
+    assert all("provider" not in claim.claim_id for claim in result.task_spec.source_claims)
+    assert all(
+        "provider" not in obligation.obligation_id
+        for obligation in result.task_spec.obligations
+    )
+
+
 def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_it() -> None:
     claims, obligations = _terminal_authority("provider-schema", "pricing read")
     repaired = IntentDraft(

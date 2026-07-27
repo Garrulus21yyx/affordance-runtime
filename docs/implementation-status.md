@@ -177,6 +177,28 @@ v_prb_3_clean_rerun:
     invalid_provider_graph: 4
     planner_terminal_completion_guard: 1
   next_selectable_child_slice: V-PRB-2 provider graph proposal normalization
+
+v_prb_2_provider_graph_proposal_normalization:
+  child_record: docs/change-admission/v-prb-2-provider-graph-proposal-normalization.yaml
+  status: implemented_locally
+  production_change_admitted: true
+  mechanism: provider graph proposal normalization
+  affected_current_episodes:
+    - click-button-sequence:seed-0
+    - click-button-sequence:seed-1
+    - form-sequence:seed-0
+    - form-sequence:seed-1
+  non_browsergym_red_tests:
+    - tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_graph_is_incomplete
+  owner: canonical obligation compiler boundary
+  production_boundaries:
+    coordinator_touched: false
+    statekernel_touched: false
+    planner_port_touched: false
+    prompt_or_budget_changed: false
+    benchmark_specific_logic_added: false
+  promotion_status: held
+  rerun_required: PR breadth 6-task x 2-seed matrix on a clean committed revision
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or

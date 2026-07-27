@@ -165,6 +165,26 @@ provider graph proposal normalization, with non-BrowserGym reproduction first.
 Do not batch it with PlanningRequest migration, terminal completion guards,
 fresh diagnostic, PR/nightly/release promotion, or benchmark-family patches.
 
+V-PRB-2 provider graph proposal normalization is now selected as the next
+single production slice. Its packet is
+`docs/change-admission/v-prb-2-provider-graph-proposal-normalization.yaml`.
+The first required non-BrowserGym reproduction is
+`tests/test_intent_compiler.py::test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_graph_is_incomplete`.
+The intended owner is the canonical obligation compiler boundary: preserve
+valid provider proposal graph normalization, but when a multi-stage draft has
+source-bound `requested_effects` and an incomplete provider graph, generate
+Runtime-owned canonical claims and obligations from `requested_effects` instead
+of making provider graph completeness the READY authority.
+
+V-PRB-2 has now been implemented locally with a non-BrowserGym red/green test.
+The repair is intentionally narrow: flat tasks remain canonicalized as before;
+multi-stage drafts only fall back to requested-effect canonicalization when
+they contain multiple source-bound requested effects and the provider proposal
+graph is incomplete. Single-effect multi-stage repair-failure tracing and valid
+provider proposal graph normalization remain unchanged. After local gates and
+commit, rerun the same PR breadth matrix on the clean committed revision before
+judging matrix impact.
+
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,
 proposal, TaskPlan, and provider-arity repair slices, clean SHA `df5b820`
 completed a new seed-major 30 x 2 diagnostic at 24/60 official success/reward

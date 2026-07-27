@@ -397,6 +397,26 @@ def test_v_prb_3_clean_pr_breadth_rerun_is_recorded() -> None:
     assert "next selectable repair: v-prb-2" in evidence_text
 
 
+def test_pr_breadth_provider_graph_normalization_child_slice_is_scoped() -> None:
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    child_record = CHANGE_ADMISSION_DIR / "v-prb-2-provider-graph-proposal-normalization.yaml"
+
+    assert child_record.exists()
+
+    child_text = " ".join(child_record.read_text(encoding="utf-8").split()).casefold()
+    assert "v-prb-2 provider graph proposal normalization" in current_plan
+    assert "v_prb_2_provider_graph_proposal_normalization:" in status
+    assert "single_primary_owner: canonical obligation compiler boundary" in child_text
+    assert "production_change_allowed: true" in child_text
+    assert "non_browsergym_red_tests:" in child_text
+    assert "compile_requested_effects" in child_text
+    assert "do not modify coordinator" in child_text
+    assert "do not modify statekernel" in child_text
+    assert "do not add task-name" in child_text
+    assert "do not modify prompt" in child_text
+
+
 def test_ci_keeps_reproducible_python_and_browsergym_profiles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
