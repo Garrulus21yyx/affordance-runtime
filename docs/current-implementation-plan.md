@@ -179,8 +179,11 @@ batched into a single mixed patch:
    `docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml`:
    BrowserGym exact typed text postconditions now declare active-subgoal
    progress evidence for `HAS_CHANGED` when the concrete value equals the
-   Runtime-owned typed outcome. This local repair is pending clean PR breadth
-   rerun and does not close V-PRB-6B yet.
+   Runtime-owned typed outcome. Clean PR breadth at `c382592` is still
+   negative with the same 11/12 official reward and 4 Runtime failures, so this
+   adapter evidence-scope repair is safe but insufficient. Do not continue
+   broadening BrowserGym text evidence declarations without a new TaskPlan /
+   progress replacement root classification.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

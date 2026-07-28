@@ -78,7 +78,7 @@ verification:
   remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
 
 implementation_result:
-  status: implemented_locally_pending_clean_rerun
+  status: matrix_negative_insufficient
   production_change: >
     BrowserGym exact typed text postconditions now declare active-subgoal
     progress evidence for HAS_CHANGED when the concrete postcondition value
@@ -89,6 +89,16 @@ implementation_result:
     - PlannerPort / PlannerStateView
     - Prompt, budget, retry, timeout, and provider settings
     - BrowserGym official reward remains separate from Runtime completion authority
+  clean_pr_breadth_rerun:
+    revision: c382592d6d614e5784730fa2ff0347a9a1b09548
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-c382592/
+    result: negative; 12 expected, 12 observed, 11 official reward passed, 1 official reward failed, 4 Runtime failures
+    impact: >
+      The HAS_CHANGED text progress binding repair did not change the PR
+      breadth matrix result. `enter-text:seed-1` still fails in task planning
+      with entry_outcome_already_satisfied. Next V-PRB-6B work should classify
+      TaskPlan/progress replacement accounting before another production
+      repair.
 
 architecture_admission: pass
 promotion_status: held
@@ -100,3 +110,5 @@ done_when:
   - architecture gates remain green
   - static gates pass
   - clean PR breadth rerun classifies matrix impact before any closure claim
+  - negative rerun is recorded without PR breadth, fresh diagnostic, promotion,
+    or official score claims

@@ -339,8 +339,12 @@ delivery claims.
     The RED failed with task-terminal-only evidence and now passes after
     BrowserGym exact typed text postconditions declare active-subgoal evidence
     for `HAS_CHANGED` when the concrete value equals the Runtime-owned typed
-    outcome. Focused regression is `49 passed, 1 xfailed`. Next commit/push,
-    then rerun the same PR breadth matrix before any closure claim.
+    outcome. Focused regression is `49 passed, 1 xfailed`. Clean `c382592`
+    PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-c382592/` and is still negative:
+    12/12 observed, 11/12 official reward, 4 Runtime failures. This repair is
+    safe but insufficient; next V-PRB-6B work must classify TaskPlan/progress
+    replacement accounting before another production repair.
 
 ## Change Record
 
