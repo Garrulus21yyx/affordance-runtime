@@ -59,6 +59,12 @@ green_implementation:
     - CurrentStateEvidence
     - SubgoalCompletionPreparation
     - CurrentStateSubgoalCompletionEvaluator
+  hardened_contracts:
+    - real symbolic target shape submit_button matches unique Submit button affordance
+    - criterion and requirement ids use affordance_runtime.criteria helpers
+    - plan-based state identity is separated from evaluated-at state identity
+    - stale snapshot, page revision, and environment revision fail closed when expected identity is supplied
+    - SubgoalCompletionPreparation returns typed CurrentStateEvidence instead of evaluator-local string refs
   implemented_relations:
     - is_available
     - is_visible
@@ -69,10 +75,10 @@ green_implementation:
 green_tests:
   focused:
     command: "$PY -m pytest -q tests/test_task_plan_progress.py"
-    result: "6 passed"
+    result: "8 passed"
   related_regression:
     command: "$PY -m pytest -q tests/test_planning.py tests/test_task_plan_flow.py tests/test_task_plan_lifecycle.py tests/test_task_plan_progress.py"
-    result: "58 passed"
+    result: "60 passed"
   architecture:
     command: "$PY -m pytest -q tests/test_horizontal_architecture_governance.py tests/test_r8_architecture_boundaries.py tests/test_responsibility_containment.py tests/test_generalist_governance_matrix.py"
     result: "41 passed"

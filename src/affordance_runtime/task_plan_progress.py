@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.task_planning import (
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
@@ -22,7 +23,8 @@ from affordance_runtime.task_planning import (
 class TaskPlanProgressStateView:
     plan_id: str
     plan_version: int
-    based_on_state_version: int
+    plan_based_on_state_version: int
+    evaluated_at_state_version: int
     active_subgoal_id: str
     completed_subgoal_ids: tuple[str, ...]
     failed_subgoal_ids: tuple[str, ...]
@@ -36,19 +38,18 @@ class CurrentStateEvidence:
     semantic_target_id: str
     relation: SubgoalOutcomeRelation
     observed_value: str | bool | int | float | None
-    artifact_refs: tuple[str, ...]
+    artifact_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class SubgoalCompletionPreparation:
     plan_id: str
     plan_version: int
-    based_on_state_version: int
-    snapshot_id: str
+    evaluated_at_state_version: int
     subgoal_id: str
     criterion_ids: tuple[str, ...]
     requirement_ids: tuple[str, ...]
-    evidence_refs: tuple[str, ...]
+    evidence: tuple[CurrentStateEvidence, ...]
     source: Literal["current_observation"]
 
 
@@ -66,8 +67,24 @@ class CurrentStateSubgoalCompletionEvaluator:
         plan: TaskPlan,
         progress: TaskPlanProgressStateView,
         environment: PlanningEnvironmentSummary,
+        evaluated_at_state_version: int | None = None,
+        snapshot_id: str = "",
+        page_revision: str = "",
+        environment_revision: str = "",
     ) -> SubgoalCompletionPreparation | None:
         if not _identity_current(plan, progress):
+            return None
+        if (
+            evaluated_at_state_version is not None
+            and progress.evaluated_at_state_version != evaluated_at_state_version
+        ):
+            return None
+        if not _observation_identity_current(
+            environment,
+            snapshot_id=snapshot_id,
+            page_revision=page_revision,
+            environment_revision=environment_revision,
+        ):
             return None
         subgoal = next(
             (
@@ -92,26 +109,28 @@ class CurrentStateSubgoalCompletionEvaluator:
             return None
         if not _relation_satisfied(subgoal.outcome.relation, match):
             return None
-        evidence_ref = _evidence_ref(
-            environment,
-            match.semantic_target_id,
-            subgoal.outcome.relation,
+        evidence = CurrentStateEvidence(
+            snapshot_id=environment.snapshot_id,
+            page_revision=environment.page_revision,
+            environment_revision=environment.environment_revision,
+            semantic_target_id=match.semantic_target_id,
+            relation=subgoal.outcome.relation,
+            observed_value=_observed_value(subgoal.outcome.relation, match),
         )
         return SubgoalCompletionPreparation(
             plan_id=plan.plan_id,
             plan_version=plan.plan_version,
-            based_on_state_version=plan.based_on_state_version,
-            snapshot_id=environment.snapshot_id,
+            evaluated_at_state_version=progress.evaluated_at_state_version,
             subgoal_id=subgoal.subgoal_id,
             criterion_ids=tuple(
-                f"task_plan:{subgoal.subgoal_id}:criterion:{index}"
+                criterion_id("subgoal", subgoal.subgoal_id, index)
                 for index, _ in enumerate(subgoal.success_criteria)
             ),
             requirement_ids=tuple(
-                f"task_plan:{subgoal.subgoal_id}:requirement:{index}"
+                evidence_requirement_id("subgoal", subgoal.subgoal_id, index)
                 for index, _ in enumerate(subgoal.evidence_requirements)
             ),
-            evidence_refs=(evidence_ref,),
+            evidence=(evidence,),
             source="current_observation",
         )
 
@@ -120,7 +139,24 @@ def _identity_current(plan: TaskPlan, progress: TaskPlanProgressStateView) -> bo
     return (
         progress.plan_id == plan.plan_id
         and progress.plan_version == plan.plan_version
-        and progress.based_on_state_version == plan.based_on_state_version
+        and progress.plan_based_on_state_version == plan.based_on_state_version
+    )
+
+
+def _observation_identity_current(
+    environment: PlanningEnvironmentSummary,
+    *,
+    snapshot_id: str,
+    page_revision: str,
+    environment_revision: str,
+) -> bool:
+    return (
+        (not snapshot_id or snapshot_id == environment.snapshot_id)
+        and (not page_revision or page_revision == environment.page_revision)
+        and (
+            not environment_revision
+            or environment_revision == environment.environment_revision
+        )
     )
 
 
@@ -128,12 +164,17 @@ def _unique_target(
     subject: str,
     affordances: tuple[PlanningAffordanceSummary, ...],
 ) -> PlanningAffordanceSummary | None:
-    normalized = subject.casefold().strip()
+    subject_tokens = _label_tokens(subject)
+    if not subject_tokens:
+        return None
     matches = tuple(
         item
         for item in affordances
-        if item.label.casefold().strip() == normalized
-        or item.semantic_target_id.casefold().strip() == normalized
+        if subject_tokens.issubset(
+            _label_tokens(item.label)
+            | _label_tokens(item.semantic_target_id)
+            | _label_tokens(item.role)
+        )
     )
     if len(matches) != 1:
         return None
@@ -154,17 +195,22 @@ def _relation_satisfied(
     return False
 
 
-def _evidence_ref(
-    environment: PlanningEnvironmentSummary,
-    semantic_target_id: str,
+def _observed_value(
     relation: SubgoalOutcomeRelation,
-) -> str:
-    return ":".join(
-        (
-            "current_observation",
-            environment.snapshot_id,
-            environment.page_revision,
-            semantic_target_id,
-            relation.value,
+    affordance: PlanningAffordanceSummary,
+) -> bool | None:
+    if relation == SubgoalOutcomeRelation.IS_VISIBLE:
+        return affordance.current_state.visible
+    if relation == SubgoalOutcomeRelation.IS_AVAILABLE:
+        return (
+            affordance.current_state.visible is True
+            and affordance.current_state.enabled is True
         )
+    return None
+
+
+def _label_tokens(value: str) -> set[str]:
+    normalized = "".join(
+        character.casefold() if character.isalnum() else " " for character in value
     )
+    return {item for item in normalized.split() if item}

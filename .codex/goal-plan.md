@@ -405,6 +405,16 @@ delivery claims.
     pass. Next step is a separate Coordinator integration slice that commits the
     typed preparation through `StateKernel.complete_subgoal()` and disables the
     required-obligation deletion path before any clean PR breadth rerun.
+52. `done` — Applied pre-integration V6B contract hardening from review. The
+    progress evaluator now covers the real residual target shape
+    `submit_button -> label=Submit, role=button`, uses shared
+    `criterion_id()` / `evidence_requirement_id()` helpers, separates
+    `plan_based_on_state_version` from `evaluated_at_state_version`, rejects
+    stale supplied observation identity, and returns typed `CurrentStateEvidence`
+    instead of evaluator-local evidence strings. Verification: progress tests
+    8/8, related planning/flow/lifecycle/progress tests 60/60, architecture
+    gates 41/41, Ruff, mypy over 119 source files, and diff check pass. Next
+    remains Coordinator integration, not PR breadth yet.
 
 ## Change Record
 

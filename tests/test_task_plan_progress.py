@@ -1,5 +1,6 @@
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_progress import (
+    CurrentStateEvidence,
     CurrentStateSubgoalCompletionEvaluator,
     TaskPlanProgressStateView,
 )
@@ -19,6 +20,7 @@ from affordance_runtime.task_planning import (
 def _plan(
     *,
     relation: SubgoalOutcomeRelation = SubgoalOutcomeRelation.IS_AVAILABLE,
+    subject: str = "Submit",
 ) -> TaskPlan:
     text_subgoal = SubgoalSpec(
         subgoal_id="text-field-changed",
@@ -41,7 +43,7 @@ def _plan(
         operation_class=OperationClass.READ_ONLY,
         action_family=TaskPlanActionFamily.WAIT,
         outcome=SubgoalOutcome(
-            subject="Submit",
+            subject=subject,
             relation=relation,
         ),
     )
@@ -67,9 +69,10 @@ def _progress(
     progress = TaskPlanProgressStateView(
         plan_id=plan.plan_id if plan_id is None else plan_id,
         plan_version=plan.plan_version if plan_version is None else plan_version,
-        based_on_state_version=(
+        plan_based_on_state_version=(
             plan.based_on_state_version if state_version is None else state_version
         ),
+        evaluated_at_state_version=9,
         active_subgoal_id="submit-button-available",
         completed_subgoal_ids=completed,
         failed_subgoal_ids=(),
@@ -83,6 +86,8 @@ def _environment(
     enabled: bool | None = True,
     duplicate: bool = False,
     snapshot_id: str = "snapshot-1",
+    page_revision: str = "page-1",
+    environment_revision: str = "env-1",
 ) -> PlanningEnvironmentSummary:
     affordance = PlanningAffordanceSummary(
         semantic_target_id="submit-button",
@@ -98,9 +103,9 @@ def _environment(
             affordance.model_copy(update={"semantic_target_id": "submit-button-2"}),
         )
     return PlanningEnvironmentSummary(
-        environment_revision="env-1",
+        environment_revision=environment_revision,
         snapshot_id=snapshot_id,
-        page_revision="page-1",
+        page_revision=page_revision,
         affordances=affordances,
     )
 
@@ -111,20 +116,49 @@ def test_required_available_subgoal_is_completed_without_deleting_obligation() -
         plan=plan,
         progress=_progress(plan),
         environment=_environment(),
+        evaluated_at_state_version=9,
     )
 
     assert preparation is not None
     assert preparation.plan_id == plan.plan_id
     assert preparation.plan_version == plan.plan_version
-    assert preparation.based_on_state_version == 7
-    assert preparation.snapshot_id == "snapshot-1"
+    assert preparation.evaluated_at_state_version == 9
     assert preparation.subgoal_id == "submit-button-available"
     assert preparation.source == "current_observation"
-    assert preparation.evidence_refs
+    assert preparation.criterion_ids == (
+        "subgoal:submit-button-available:criterion:0",
+    )
+    assert preparation.requirement_ids == (
+        "subgoal:submit-button-available:evidence-requirement:0",
+    )
+    assert preparation.evidence == (
+        CurrentStateEvidence(
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+            semantic_target_id="submit-button",
+            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+            observed_value=True,
+            artifact_refs=(),
+        ),
+    )
     assert tuple(item.subgoal_id for item in plan.subgoals) == (
         "text-field-changed",
         "submit-button-available",
     )
+
+
+def test_symbolic_submit_button_subject_matches_unique_submit_button() -> None:
+    plan = _plan(subject="submit_button")
+
+    preparation = CurrentStateSubgoalCompletionEvaluator().evaluate(
+        plan=plan,
+        progress=_progress(plan),
+        environment=_environment(),
+    )
+
+    assert preparation is not None
+    assert preparation.evidence[0].semantic_target_id == "submit-button"
 
 
 def test_visible_subgoal_can_be_completed_from_current_observation() -> None:
@@ -200,4 +234,41 @@ def test_stale_progress_identity_is_rejected() -> None:
         plan=plan,
         progress=_progress(plan, state_version=6),
         environment=_environment(),
+    ) is None
+    assert evaluator.evaluate(
+        plan=plan,
+        progress=_progress(plan),
+        environment=_environment(),
+        evaluated_at_state_version=10,
+    ) is None
+
+
+def test_stale_observation_identity_is_rejected() -> None:
+    plan = _plan()
+    progress = _progress(plan)
+    evaluator = CurrentStateSubgoalCompletionEvaluator()
+
+    assert evaluator.evaluate(
+        plan=plan,
+        progress=progress,
+        environment=_environment(snapshot_id="older-snapshot"),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    ) is None
+    assert evaluator.evaluate(
+        plan=plan,
+        progress=progress,
+        environment=_environment(page_revision="older-page"),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    ) is None
+    assert evaluator.evaluate(
+        plan=plan,
+        progress=progress,
+        environment=_environment(environment_revision="older-env"),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
     ) is None
