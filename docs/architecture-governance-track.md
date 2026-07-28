@@ -100,15 +100,16 @@ horizontal architecture --/
 
 The current vertical lane is protected cross-family / PR breadth confirmation.
 SG7 targeted protected-family confirmation is closed only within its recorded
-2-task x 2-seed scope. Current PR breadth evidence is bound to `d50a631` and
-reaches 12/12 official reward, with V-PRB-5A button-sequence, V-PRB-5B entry
-action-family resolution, and V-PRB-5C form-sequence strict-planner proposal
-generation closed for this matrix. PR breadth acceptance remains held because
-three episodes still abort at the Runtime terminal-completion guard after
-external reward succeeds. First trace classification narrows the form cases to
-stale subgoal/progress evidence binding rather than permission to relax finish
-admission. Remaining vertical work is V-PRB-6 terminal-completion guard
-classification and repair. The active-subgoal
+2-task x 2-seed scope. Current PR breadth evidence is bound to `407133d`: 12/12
+observed, 11/12 official reward passed, and 3 Runtime failures. The
+V-PRB-6B verifier-backed progress accounting integration closes the prior
+`enter-text:seed-1` required read-only availability failure, but PR breadth
+acceptance remains held because both `form-sequence` seeds still abort at the
+Runtime terminal-completion guard and `click-button:seed-1` reappears as a
+structured intent-draft `json_invalid` robustness failure before TaskSpec
+creation. Remaining vertical work is V-PRB-6A dependent-subgoal
+progress-scope binding plus a separate click-button schema/provider robustness
+slice. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
 standard Planner input. That horizontal lane is not a prerequisite for V-PRB-6

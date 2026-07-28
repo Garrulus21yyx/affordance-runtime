@@ -569,3 +569,15 @@ delivery claims.
   41 architecture governance gates, Ruff, mypy over 121 source files, and diff
   check. Clean PR breadth rerun remains the next evidence step before any
   capability, fresh diagnostic, nightly/release, or promotion claim.
+- Reran the clean PR breadth 6-task x 2-seed matrix at
+  `407133d1a1c902436ae2576175f834a7a74b1367` after the V-PRB-6B integration.
+  The run observed all 12 scheduled episodes with no missing, unrun,
+  invalidated, or provider-failure cases. Result: 11/12 official reward
+  passed and 9/12 Runtime passed; PR breadth acceptance remains failed and
+  `official_score_claimed=false`. V-PRB-6B closed the prior
+  `enter-text:seed-1` required read-only availability failure. Remaining work
+  is split: V-PRB-6A covers `form-sequence` dependent-subgoal progress-scope /
+  finish-guard accounting, while `click-button:seed-1` is a separate
+  structured intent-draft `json_invalid` schema/provider robustness cluster.
+  Fresh diagnostic, nightly/release, remote-CI green, and promotion remain
+  held.

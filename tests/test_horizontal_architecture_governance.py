@@ -286,9 +286,9 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "official_score_claimed: false" in status
     assert "root_owner_next: intent / planning" in status
     assert "historical initial p4 diagnostic at `d66760f`" in current_plan
-    assert "current pr breadth evidence at `9ad1288`" in current_plan
+    assert "current pr breadth evidence at `407133d`" in current_plan
     assert "11/12 official reward passed" in current_plan
-    assert "4 runtime failures" in current_plan
+    assert "3 runtime failures" in current_plan
     assert "m8.2a-pr-breadth-d66760f" in status
     assert "official_score_claimed=false" in evidence_text
     assert "promotion eligible: no" in evidence_text
@@ -301,6 +301,31 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "packet_role: umbrella_diagnostic" in repair_text
     assert "may_become_production_slice: false" in repair_text
     assert "child_slices_required: true" in repair_text
+
+
+def test_v_prb_6b_407133d_rerun_is_recorded_without_promotion_claim() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/m8.2a-pr-breadth-407133d/README.md"
+
+    assert evidence.exists()
+    assert (evidence.parent / "browsergym-report.json").exists()
+    assert (evidence.parent / "matrix-metadata.json").exists()
+
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    assert "pr_breadth_latest:" in status
+    assert "revision: 407133d1a1c902436ae2576175f834a7a74b1367" in status
+    assert "passed: 11" in status
+    assert "runtime_failed: 3" in status
+    assert "v_prb_6b_enter_text_closed: true" in status
+    assert "click-button:seed-1" in status
+    assert "form-sequence:seed-0" in status
+    assert "form-sequence:seed-1" in status
+    assert "v-prb-6a form-sequence" in current_plan
+    assert "`click-button:seed-1` structured intent-draft `json_invalid`" in current_plan
+    assert "official_score_claimed=false" in evidence_text
+    assert "promotion_status: held" in evidence_text
+    assert "pr_breadth_acceptance: failed" in evidence_text
 
 
 def test_pr_breadth_child_packet_lifecycle_matches_review_approval() -> None:

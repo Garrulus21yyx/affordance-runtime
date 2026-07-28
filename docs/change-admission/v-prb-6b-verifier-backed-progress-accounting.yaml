@@ -108,5 +108,21 @@ architecture_admission:
 
 promotion:
   official_score_claimed: false
-  pr_breadth_acceptance: pending_clean_rerun
+  pr_breadth_acceptance: failed_after_clean_407133d_rerun
+  clean_rerun:
+    revision: 407133d1a1c902436ae2576175f834a7a74b1367
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-407133d/
+    expected: 12
+    observed: 12
+    official_reward_passed: 11
+    runtime_passed: 9
+    runtime_failed: 3
+    provider_failures: 0
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    v_prb_6b_enter_text_closed: true
+    remaining_clusters:
+      - V-PRB-6A form-sequence dependent-subgoal progress-scope binding
+      - click-button:seed-1 structured intent-draft json_invalid robustness
   fresh_diagnostic: not_authorized
