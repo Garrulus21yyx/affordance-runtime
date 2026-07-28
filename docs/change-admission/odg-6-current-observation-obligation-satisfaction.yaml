@@ -20,14 +20,18 @@ goal: >
 included:
   - CurrentObservationAffordanceFact
   - CurrentObservationObligationSatisfactionEvaluator
+  - CurrentObservationSatisfactionResult
+  - CurrentObservationSatisfactionSource
   - role-aware filtering through TaskObligationExecutionView
   - canonical TaskSpec identity validation through ObligationProgressStateView
   - IS_AVAILABLE current-observation satisfaction
   - IS_VISIBLE current-observation satisfaction
+  - typed evidence kind / strength / source compatibility
   - unique target matching by typed subject and relation
   - dependency-ready fail-closed checks
   - stale task/progress/observation identity rejection
   - ambiguity fail-closed behavior
+  - multiple independent satisfaction classification
   - ObligationSatisfactionPreparation with source current_observation
 
 excluded:
@@ -68,6 +72,8 @@ authority_rules:
   supported_relations:
     - IS_AVAILABLE
     - IS_VISIBLE
+  minimum_evidence_strength: independent
+  typed_evidence_requirement_match: required
   unsupported_relations:
     - HAS_CHANGED
     - IS_CHECKED
@@ -94,12 +100,11 @@ tests:
     - tests/test_responsibility_containment.py
 
 architecture_admission: pass
-closure_status: foundation_evaluator_only
+closure_status: foundation_evaluator_only_hardened
 promotion_status: held
 
 next_requirement: >
-  Continue with ODG-7 attribution ticket or an explicitly authorized ODG-6
-  shadow diagnostic hookup only after preserving the same boundaries. Standard
-  obligation satisfaction commit remains ODG-10, finish authority remains
-  ODG-11, and immutable Planner input remains deferred until the obligation
-  projection shape is stable.
+  Continue with ODG-7 attribution action view and candidate ticket resolver as
+  a separate foundation-only slice. Standard obligation satisfaction commit
+  remains ODG-10, finish authority remains ODG-11, and immutable Planner input
+  remains deferred until the obligation projection shape is stable.

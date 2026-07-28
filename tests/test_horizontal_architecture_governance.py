@@ -297,6 +297,10 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         CHANGE_ADMISSION_DIR
         / "odg-6-current-observation-obligation-satisfaction.yaml"
     )
+    odg_6_1_record = (
+        CHANGE_ADMISSION_DIR
+        / "odg-6-1-shared-attribution-contract-hardening.yaml"
+    )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -305,6 +309,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_4_record.exists()
     assert odg_5_record.exists()
     assert odg_6_record.exists()
+    assert odg_6_1_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -312,6 +317,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_4 = " ".join(odg_4_record.read_text(encoding="utf-8").split()).casefold()
     odg_5 = " ".join(odg_5_record.read_text(encoding="utf-8").split()).casefold()
     odg_6 = " ".join(odg_6_record.read_text(encoding="utf-8").split()).casefold()
+    odg_6_1 = " ".join(odg_6_1_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -350,7 +356,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "browsergym official reward" in odg_6
     assert "writes_state: false" in odg_6
     assert "writes_trace: false" in odg_6
-    assert "closure_status: foundation_evaluator_only" in odg_6
+    assert "closure_status: foundation_evaluator_only_hardened" in odg_6
+    assert "synthetic_contract_id_for_current_observation: prohibited" in odg_6_1
+    assert "progressattributionticket.task_spec_identity" in odg_6_1
+    assert "obligationsatisfactionpreparation.task_spec_identity" in odg_6_1
+    assert "currentobservationsatisfactionresult" in odg_6_1
+    assert "closure_status: shared_contract_hardening" in odg_6_1
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -367,7 +378,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "ledger: foundation_storage_only" in status
     assert "ready_projection: authority_free_foundation" in status
     assert "shadow_comparison: post_observation_trace_hookup" in status
-    assert "current_observation_satisfaction: foundation_evaluator_only" in status
+    assert "current_observation_satisfaction: foundation_evaluator_only_hardened" in status
+    assert "shared_attribution_contract_hardening: complete" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -376,6 +388,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg-4 may add executable role decisions" in governance
     assert "odg-5 may add authority-free shadow comparison" in governance
     assert "odg-6 may add a typed, authority-free current-observation" in governance
+    assert "odg-6.1 hardens shared attribution contracts" in governance
+    assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
     assert "fail_closed_pending_rule" in audit

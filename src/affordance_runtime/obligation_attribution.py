@@ -16,10 +16,37 @@ class EvidenceStrength(StrEnum):
 
 
 @dataclass(frozen=True)
+class CurrentObservationSatisfactionSource:
+    snapshot_id: str
+    page_revision: str
+    environment_revision: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank("snapshot_id", self.snapshot_id)
+        _require_nonblank("page_revision", self.page_revision)
+        _require_nonblank("environment_revision", self.environment_revision)
+
+
+@dataclass(frozen=True)
+class PostVerificationSatisfactionSource:
+    contract_id: str
+    post_snapshot_id: str
+    post_page_revision: str
+    post_environment_revision: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank("contract_id", self.contract_id)
+        _require_nonblank("post_snapshot_id", self.post_snapshot_id)
+        _require_nonblank("post_page_revision", self.post_page_revision)
+        _require_nonblank("post_environment_revision", self.post_environment_revision)
+
+
+@dataclass(frozen=True)
 class ProgressAttributionTicket:
     """Pre-action candidate scope for later verifier-owned attribution."""
 
     ticket_id: str
+    task_spec_identity: str
     task_revision: int
     issued_at_state_version: int
     contract_id: str
@@ -34,6 +61,7 @@ class ProgressAttributionTicket:
 
     def __post_init__(self) -> None:
         _require_nonblank("ticket_id", self.ticket_id)
+        _require_nonblank("task spec identity", self.task_spec_identity)
         if self.task_revision < 1:
             raise ValueError("task revision must be positive")
         if self.issued_at_state_version < 0:
@@ -104,22 +132,20 @@ class ObligationAttributionResult:
 class ObligationSatisfactionPreparation:
     """Coordinator-owned command payload for committing obligation progress."""
 
+    task_spec_identity: str
     task_revision: int
     evaluated_at_state_version: int
     obligation_id: str
-    contract_id: str
-    post_snapshot_id: str
     evidence_refs: tuple[str, ...]
-    source: Literal["post_verification", "current_observation"]
+    source: CurrentObservationSatisfactionSource | PostVerificationSatisfactionSource
 
     def __post_init__(self) -> None:
+        _require_nonblank("task spec identity", self.task_spec_identity)
         if self.task_revision < 1:
             raise ValueError("task revision must be positive")
         if self.evaluated_at_state_version < 0:
             raise ValueError("evaluated state version cannot be negative")
         _require_nonblank("obligation_id", self.obligation_id)
-        _require_nonblank("contract_id", self.contract_id)
-        _require_nonblank("post_snapshot_id", self.post_snapshot_id)
         if not self.evidence_refs:
             raise ValueError("satisfaction evidence refs cannot be empty")
         _require_unique_nonblank("satisfaction evidence refs", self.evidence_refs)

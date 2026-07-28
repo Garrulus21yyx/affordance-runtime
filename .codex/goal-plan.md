@@ -656,3 +656,10 @@ delivery claims.
   authority. Coordinator commit, StateKernel / obligation-ledger mutation,
   finish authority, PlannerContext, TaskPlan behavior, benchmark rerun, and
   promotion remain unauthorized in this slice.
+- Started ODG-6.1 / ODG-2.1 shared attribution-contract hardening before
+  ODG-7. The REDs require TaskSpec identity on attribution tickets and
+  satisfaction preparations, typed satisfaction source objects instead of
+  synthetic current-observation contract IDs, evidence kind/strength/source
+  compatibility for current observation facts, and distinct result states for
+  multiple independent satisfactions versus ambiguous targets. ODG-7 ticket
+  resolution remains a separate next slice.

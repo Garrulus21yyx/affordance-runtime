@@ -170,6 +170,14 @@ task names, URLs, selectors, coordinates, or model proposals as completion
 authority. Coordinator commit remains ODG-10 and finish-gate authority remains
 ODG-11.
 
+ODG-6.1 hardens shared attribution contracts before ODG-7. Attribution tickets
+and satisfaction preparations must carry `task_spec_identity`; current
+observation satisfaction must use a typed source object rather than a synthetic
+contract ID; and current observation facts must include evidence kind, strength,
+and source identity compatible with the canonical typed evidence requirement.
+Multiple independent current-observation satisfactions are not ambiguity, but
+multiple targets for one obligation remain fail-closed.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

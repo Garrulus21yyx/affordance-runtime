@@ -5,6 +5,7 @@ from affordance_runtime.obligation_attribution import (
     ObligationAttributionResult,
     ObligationSatisfactionPreparation,
     PostActionEvidenceFact,
+    PostVerificationSatisfactionSource,
     ProgressAttributionTicket,
 )
 from affordance_runtime.obligation_progress import (
@@ -357,6 +358,7 @@ def test_progress_state_view_uses_immutable_ledger_entries() -> None:
 def test_attribution_ticket_and_satisfaction_preparation_are_identity_bound() -> None:
     ticket = ProgressAttributionTicket(
         ticket_id="ticket-1",
+        task_spec_identity="sha256:test-task",
         task_revision=3,
         issued_at_state_version=8,
         contract_id="contract-1",
@@ -381,24 +383,31 @@ def test_attribution_ticket_and_satisfaction_preparation_are_identity_bound() ->
         evidence_refs=("verification:1",),
     )
     preparation = ObligationSatisfactionPreparation(
+        task_spec_identity=ticket.task_spec_identity,
         task_revision=ticket.task_revision,
         evaluated_at_state_version=9,
         obligation_id="obligation:first",
-        contract_id=ticket.contract_id,
-        post_snapshot_id=fact.post_snapshot_id,
         evidence_refs=fact.evidence_refs,
-        source="post_verification",
+        source=PostVerificationSatisfactionSource(
+            contract_id=ticket.contract_id,
+            post_snapshot_id=fact.post_snapshot_id,
+            post_page_revision=fact.post_page_revision,
+            post_environment_revision=fact.post_environment_revision,
+        ),
     )
 
     assert ticket.candidate_obligation_ids == ("obligation:first",)
+    assert ticket.task_spec_identity == "sha256:test-task"
+    assert preparation.task_spec_identity == "sha256:test-task"
     assert preparation.evidence_refs == ("verification:1",)
-    assert preparation.source == "post_verification"
+    assert preparation.source.contract_id == "contract-1"
 
 
 def test_attribution_contracts_fail_closed_on_blank_or_duplicate_identity() -> None:
     with pytest.raises(ValueError, match="candidate obligation ids cannot be empty"):
         ProgressAttributionTicket(
             ticket_id="ticket-1",
+            task_spec_identity="sha256:test-task",
             task_revision=3,
             issued_at_state_version=8,
             contract_id="contract-1",
@@ -413,6 +422,7 @@ def test_attribution_contracts_fail_closed_on_blank_or_duplicate_identity() -> N
     with pytest.raises(ValueError, match="candidate obligation ids must be unique"):
         ProgressAttributionTicket(
             ticket_id="ticket-1",
+            task_spec_identity="sha256:test-task",
             task_revision=3,
             issued_at_state_version=8,
             contract_id="contract-1",
@@ -426,25 +436,48 @@ def test_attribution_contracts_fail_closed_on_blank_or_duplicate_identity() -> N
 
     with pytest.raises(ValueError, match="satisfaction evidence refs cannot be empty"):
         ObligationSatisfactionPreparation(
+            task_spec_identity="sha256:test-task",
             task_revision=3,
             evaluated_at_state_version=9,
             obligation_id="obligation:first",
-            contract_id="contract-1",
-            post_snapshot_id="snapshot-post",
             evidence_refs=(),
-            source="post_verification",
+            source=PostVerificationSatisfactionSource(
+                contract_id="contract-1",
+                post_snapshot_id="snapshot-post",
+                post_page_revision="page-post",
+                post_environment_revision="env-post",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="task spec identity cannot be blank"):
+        ProgressAttributionTicket(
+            ticket_id="ticket-1",
+            task_spec_identity="",
+            task_revision=3,
+            issued_at_state_version=8,
+            contract_id="contract-1",
+            semantic_target_id="semantic:field",
+            action_kind="type_text",
+            candidate_obligation_ids=("obligation:first",),
+            pre_snapshot_id="snapshot-pre",
+            pre_page_revision="page-pre",
+            pre_environment_revision="env-pre",
         )
 
 
 def test_attribution_result_status_matches_satisfaction_preparation() -> None:
     preparation = ObligationSatisfactionPreparation(
+        task_spec_identity="sha256:test-task",
         task_revision=3,
         evaluated_at_state_version=9,
         obligation_id="obligation:first",
-        contract_id="contract-1",
-        post_snapshot_id="snapshot-post",
         evidence_refs=("verification:1",),
-        source="post_verification",
+        source=PostVerificationSatisfactionSource(
+            contract_id="contract-1",
+            post_snapshot_id="snapshot-post",
+            post_page_revision="page-post",
+            post_environment_revision="env-post",
+        ),
     )
 
     assert ObligationAttributionResult(

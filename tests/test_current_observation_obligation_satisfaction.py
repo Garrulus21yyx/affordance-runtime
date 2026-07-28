@@ -1,9 +1,14 @@
 import pytest
 
-from affordance_runtime.obligation_attribution import ObligationSatisfactionPreparation
+from affordance_runtime.obligation_attribution import (
+    CurrentObservationSatisfactionSource,
+    EvidenceStrength,
+    ObligationSatisfactionPreparation,
+)
 from affordance_runtime.obligation_current_state import (
     CurrentObservationAffordanceFact,
     CurrentObservationObligationSatisfactionEvaluator,
+    CurrentObservationSatisfactionResult,
 )
 from affordance_runtime.obligation_progress import (
     ObligationEvidenceLedgerEntry,
@@ -145,6 +150,9 @@ def _fact(
     page_revision: str = "page-1",
     environment_revision: str = "env-1",
     evidence_refs: tuple[str, ...] = ("current-observation:submit-button",),
+    evidence_kind: EvidenceKind = EvidenceKind.DOM_STATE,
+    strength: EvidenceStrength = EvidenceStrength.INDEPENDENT,
+    source_ref: str = "source:request:clause:0",
 ) -> CurrentObservationAffordanceFact:
     return CurrentObservationAffordanceFact(
         snapshot_id=snapshot_id,
@@ -155,6 +163,9 @@ def _fact(
         relation=relation,
         visible=visible,
         enabled=enabled,
+        evidence_kind=evidence_kind,
+        strength=strength,
+        source_ref=source_ref,
         evidence_refs=evidence_refs,
     )
 
@@ -164,7 +175,7 @@ def test_current_available_obligation_can_prepare_satisfaction_without_taskplan(
         (_obligation("obligation:submit-available"),),
     )
 
-    preparation = CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
         task_spec=task_spec,
         progress=_progress(task_spec),
         execution_views=_views(task_spec),
@@ -174,14 +185,51 @@ def test_current_available_obligation_can_prepare_satisfaction_without_taskplan(
         environment_revision="env-1",
     )
 
+    assert result == CurrentObservationSatisfactionResult(
+        status="satisfied",
+        preparations=(
+            ObligationSatisfactionPreparation(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=13,
+                obligation_id="obligation:submit-available",
+                evidence_refs=("current-observation:submit-button",),
+                source=CurrentObservationSatisfactionSource(
+                    snapshot_id="snapshot-1",
+                    page_revision="page-1",
+                    environment_revision="env-1",
+                ),
+            ),
+        ),
+    )
+
+
+def test_current_observation_preparation_has_no_synthetic_contract_id() -> None:
+    task_spec = _task_spec((_obligation("obligation:submit-available"),))
+
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        execution_views=_views(task_spec),
+        facts=(_fact(),),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    )
+
+    assert result.status == "satisfied"
+    preparation = result.preparations[0]
     assert preparation == ObligationSatisfactionPreparation(
+        task_spec_identity=task_spec.identity,
         task_revision=task_spec.revision,
         evaluated_at_state_version=13,
         obligation_id="obligation:submit-available",
-        contract_id="current-observation:snapshot-1",
-        post_snapshot_id="snapshot-1",
         evidence_refs=("current-observation:submit-button",),
-        source="current_observation",
+        source=CurrentObservationSatisfactionSource(
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+        ),
     )
 
 
@@ -195,7 +243,7 @@ def test_current_visible_obligation_can_prepare_satisfaction() -> None:
         ),
     )
 
-    preparation = CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
         task_spec=task_spec,
         progress=_progress(task_spec),
         execution_views=_views(task_spec),
@@ -210,8 +258,8 @@ def test_current_visible_obligation_can_prepare_satisfaction() -> None:
         environment_revision="env-1",
     )
 
-    assert preparation is not None
-    assert preparation.obligation_id == "obligation:submit-visible"
+    assert result.status == "satisfied"
+    assert result.preparations[0].obligation_id == "obligation:submit-visible"
 
 
 @pytest.mark.parametrize(
@@ -226,8 +274,7 @@ def test_non_progress_roles_do_not_prepare_satisfaction(
 ) -> None:
     task_spec = _task_spec((_obligation("obligation:submit-available"),))
 
-    assert (
-        CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
             task_spec=task_spec,
             progress=_progress(task_spec),
             execution_views=_views(task_spec, role=role),
@@ -236,8 +283,8 @@ def test_non_progress_roles_do_not_prepare_satisfaction(
             page_revision="page-1",
             environment_revision="env-1",
         )
-        is None
-    )
+    assert result.status == "none"
+    assert result.preparations == ()
 
 
 def test_dependency_must_be_satisfied_before_current_observation_completion() -> None:
@@ -257,8 +304,7 @@ def test_dependency_must_be_satisfied_before_current_observation_completion() ->
         ),
     )
 
-    assert (
-        CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
             task_spec=task_spec,
             progress=_progress(task_spec),
             execution_views=(
@@ -276,15 +322,13 @@ def test_dependency_must_be_satisfied_before_current_observation_completion() ->
             page_revision="page-1",
             environment_revision="env-1",
         )
-        is None
-    )
+    assert result.status == "none"
 
 
 def test_current_observation_satisfaction_fails_closed_for_ambiguous_targets() -> None:
     task_spec = _task_spec((_obligation("obligation:submit-available"),))
 
-    assert (
-        CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
             task_spec=task_spec,
             progress=_progress(task_spec),
             execution_views=_views(task_spec),
@@ -296,8 +340,8 @@ def test_current_observation_satisfaction_fails_closed_for_ambiguous_targets() -
             page_revision="page-1",
             environment_revision="env-1",
         )
-        is None
-    )
+    assert result.status == "ambiguous_target"
+    assert result.preparations == ()
 
 
 def test_hidden_or_disabled_affordance_does_not_satisfy_availability() -> None:
@@ -312,7 +356,7 @@ def test_hidden_or_disabled_affordance_does_not_satisfy_availability() -> None:
         snapshot_id="snapshot-1",
         page_revision="page-1",
         environment_revision="env-1",
-    ) is None
+    ).status == "none"
     assert evaluator.evaluate(
         task_spec=task_spec,
         progress=_progress(task_spec),
@@ -321,7 +365,7 @@ def test_hidden_or_disabled_affordance_does_not_satisfy_availability() -> None:
         snapshot_id="snapshot-1",
         page_revision="page-1",
         environment_revision="env-1",
-    ) is None
+    ).status == "none"
 
 
 def test_stale_task_or_observation_identity_is_rejected() -> None:
@@ -336,7 +380,7 @@ def test_stale_task_or_observation_identity_is_rejected() -> None:
         snapshot_id="snapshot-1",
         page_revision="page-1",
         environment_revision="env-1",
-    ) is None
+    ).status == "stale"
     assert evaluator.evaluate(
         task_spec=task_spec,
         progress=_progress(task_spec, task_revision=task_spec.revision + 1),
@@ -345,7 +389,7 @@ def test_stale_task_or_observation_identity_is_rejected() -> None:
         snapshot_id="snapshot-1",
         page_revision="page-1",
         environment_revision="env-1",
-    ) is None
+    ).status == "stale"
     assert evaluator.evaluate(
         task_spec=task_spec,
         progress=_progress(task_spec),
@@ -354,7 +398,7 @@ def test_stale_task_or_observation_identity_is_rejected() -> None:
         snapshot_id="snapshot-1",
         page_revision="page-1",
         environment_revision="env-1",
-    ) is None
+    ).status == "stale"
 
 
 def test_unsupported_relations_are_not_completed_from_current_observation() -> None:
@@ -370,8 +414,7 @@ def test_unsupported_relations_are_not_completed_from_current_observation() -> N
         ),
     )
 
-    assert (
-        CurrentObservationObligationSatisfactionEvaluator().evaluate(
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
             task_spec=task_spec,
             progress=_progress(task_spec),
             execution_views=_views(task_spec),
@@ -385,5 +428,62 @@ def test_unsupported_relations_are_not_completed_from_current_observation() -> N
             page_revision="page-1",
             environment_revision="env-1",
         )
-        is None
+    assert result.status == "none"
+
+
+def test_weak_or_incompatible_evidence_is_rejected() -> None:
+    task_spec = _task_spec((_obligation("obligation:submit-available"),))
+    evaluator = CurrentObservationObligationSatisfactionEvaluator()
+
+    weak = evaluator.evaluate(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        execution_views=_views(task_spec),
+        facts=(_fact(strength=EvidenceStrength.WEAK),),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    )
+    incompatible_kind = evaluator.evaluate(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        execution_views=_views(task_spec),
+        facts=(_fact(evidence_kind=EvidenceKind.VISUAL_STATE),),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    )
+
+    assert weak.status == "weak_evidence"
+    assert incompatible_kind.status == "weak_evidence"
+
+
+def test_multiple_independent_obligations_are_not_ambiguity() -> None:
+    task_spec = _task_spec(
+        (
+            _obligation("obligation:submit-visible", relation=TaskObligationRelation.IS_VISIBLE),
+            _obligation("obligation:submit-available"),
+        ),
+    )
+
+    result = CurrentObservationObligationSatisfactionEvaluator().evaluate(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        execution_views=_views(task_spec),
+        facts=(
+            _fact(
+                relation=TaskObligationRelation.IS_VISIBLE,
+                evidence_refs=("current-observation:submit-visible",),
+            ),
+            _fact(evidence_refs=("current-observation:submit-available",)),
+        ),
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+    )
+
+    assert result.status == "multiple_satisfied"
+    assert tuple(item.obligation_id for item in result.preparations) == (
+        "obligation:submit-visible",
+        "obligation:submit-available",
     )
