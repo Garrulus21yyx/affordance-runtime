@@ -142,10 +142,13 @@ batched into a single mixed patch:
    evidence remains `task_terminal`, not `active_subgoal`. The same compact
    projection reclassifies `enter-text:seed-1`: the trace has two subgoals, not
    one, and the incomplete unit is an independent read-only `submit_button is
-   available` subgoal. Do not open a V-PRB-6B production repair as
-   "single-subgoal terminal completion" unless a separate RED proves that
-   shape; next write the read-only availability/cardinality RED before any
-   production repair.
+   available` subgoal. V-PRB-6B now has a strict-xfail executable RED as
+   `tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress`;
+   forced `--runxfail` execution fails because TaskPlanValidator accepts the
+   already-current read-only availability subgoal instead of marking it
+   repairable/resolved before finish. Do not open a V-PRB-6B production repair
+   as "single-subgoal terminal completion"; if selecting 6B, create a child
+   production slice for TaskPlan current-state/cardinality handling.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
@@ -320,8 +323,9 @@ Latest review refinement:
 - V-PRB-6 compact projection is archived at
   `docs/evidence/runs/v-prb-6-compact-d50a631/`. V-PRB-6A has a strict xfail
   executable RED for checkbox `HAS_CHANGED` progress-scope declaration. V-PRB-6B
-  is reclassified before RED from "single-subgoal terminal completion" to
-  read-only terminal-availability progress/cardinality.
+  is reclassified from "single-subgoal terminal completion" to read-only
+  terminal-availability progress/cardinality and has a strict xfail executable
+  RED in `tests/test_task_planning.py`.
 - Immutable PlanningRequest / PlannerStateView remains the next horizontal
   lane, but it is not a prerequisite for V-PRB-6 unless the new RED evidence
   directly implicates mutable planner input or hidden state mutation.

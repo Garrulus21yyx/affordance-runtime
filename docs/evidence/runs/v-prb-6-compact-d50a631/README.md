@@ -142,7 +142,31 @@ v_prb_6a:
 
 v_prb_6b:
   red_name: read-only availability subgoal must be resolved before finish or excluded from serial action progress
-  expected_current_result: not_written
-  current_reason: evidence reclassified the case away from single-subgoal terminal completion
+  executable_red: tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+  expected_current_result: fail under --runxfail
+  current_failure_reason: >
+    TaskPlanValidator currently accepts the active read-only
+    `submit_button is available` subgoal even when the current Submit control
+    is visible/enabled, so Runtime later lets the unfinished availability
+    subgoal block finish.
 ```
 
+## V-PRB-6B RED result
+
+Forced RED command:
+
+```text
+python -m pytest -q \
+  tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress \
+  --runxfail
+```
+
+Observed result:
+
+```text
+FAILED ... assert accept == repairable
+```
+
+This narrows the owner to TaskPlan current-state/cardinality handling. It does
+not authorize weakening the Coordinator finish guard, substituting BrowserGym
+official reward for Runtime completion, or opening immutable Planner input work.

@@ -44,6 +44,7 @@ non_goals:
   - do not combine with V-PRB-6A unless the RED proves an identical root cause
 
 required_non_browsergym_red_tests:
+  - tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
   - read-only availability subgoal must be resolved before finish or excluded from serial action progress
   - text action verification passes with criterion and requirement IDs bound to the unique subgoal
   - completed_subgoal_ids contains the unique subgoal before finish
@@ -62,6 +63,25 @@ classification_questions:
 architecture_admission: not_evaluated
 promotion_status: held
 remote_ci: disabled
+
+diagnostic_status:
+  compact_trace_projection: archived
+  executable_red: strict_xfail
+  forced_red_command: >
+    python -m pytest -q
+    tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+    --runxfail
+  forced_red_result: >
+    fails because TaskPlanValidator currently accepts a plan where the active
+    read-only `submit_button is available` subgoal is already visible/enabled
+    in the current observation, leaving it to block Runtime finish later.
+  owner_narrowing: >
+    The RED implicates TaskPlan current-state/cardinality handling rather than
+    Coordinator finish admission, BrowserGym official reward, Prompt, budget,
+    StateKernel mutation, or immutable Planner input.
+  normal_gate_behavior: >
+    xfail is strict; ordinary focused test runs remain green until a separate
+    child production slice turns the RED green and removes the xfail marker.
 
 done_when:
   - compact trace projection is archived for the affected episode

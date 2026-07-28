@@ -294,13 +294,17 @@ delivery claims.
     `active_subgoal`. The same projection reclassifies V-PRB-6B before RED:
     `enter-text:seed-1` has two subgoals, not one; the completed unit is the
     text-change subgoal and the incomplete unit is independent read-only
-    `submit_button is available`. Next write the V-PRB-6B read-only
-    availability/cardinality RED before any production repair. Keep Runtime
-    success, verifier success, and BrowserGym reward separate; do not
-    substitute official reward for Runtime completion authority, accept finish
-    with incomplete TaskPlan progress, weaken the verifier, start immutable
-    Planner input, or run fresh diagnostic, nightly/release, or promotion in
-    this slice.
+    `submit_button is available`. V-PRB-6B now has a strict-xfail executable
+    RED in `tests/test_task_planning.py`: forced `--runxfail` fails because
+    TaskPlanValidator accepts the already-current read-only availability
+    subgoal instead of marking it repairable/resolved before finish. Next
+    select exactly one owner, either 6A progress-scope binding or 6B TaskPlan
+    current-state/cardinality, and open a child production packet before any
+    production repair. Keep Runtime success, verifier success, and BrowserGym
+    reward separate; do not substitute official reward for Runtime completion
+    authority, accept finish with incomplete TaskPlan progress, weaken the
+    verifier, start immutable Planner input, or run fresh diagnostic,
+    nightly/release, or promotion in this slice.
 
 ## Change Record
 

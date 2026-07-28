@@ -1224,6 +1224,83 @@ def test_validator_detects_satisfied_subject_independently_of_action_target() ->
     assert report.issues[0].code == "entry_outcome_already_satisfied"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "V-PRB-6B RED: submit_button availability remains an unfinished "
+        "serial subgoal even when the current Submit control is visible/enabled"
+    ),
+)
+def test_validator_repairs_current_submit_button_availability_after_text_progress() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    first = SubgoalSpec(
+        subgoal_id="text-changed",
+        objective="text field has changed",
+        success_criteria=("text field has changed",),
+        evidence_requirements=("post-text observation",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.TYPE_TEXT,
+        outcome=SubgoalOutcome(
+            subject="text_field:Kanesha",
+            relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        ),
+    )
+    availability = SubgoalSpec(
+        subgoal_id="submit-available",
+        objective="submit_button is available",
+        success_criteria=("submit_button is available",),
+        evidence_requirements=("current submit-button observation",),
+        operation_class=OperationClass.READ_ONLY,
+        action_family=None,
+        outcome=SubgoalOutcome(
+            subject="submit_button",
+            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+        ),
+    )
+    plan = TaskPlan(
+        plan_id="plan-enter-text",
+        task_id=task.task_id,
+        task_revision=task.revision,
+        plan_version=1,
+        based_on_state_version=4,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(first, availability),
+    )
+    context = _context().model_copy(
+        update={
+            "task_spec": task,
+            "active_subgoal_id": availability.subgoal_id,
+            "completed_subgoal_ids": (first.subgoal_id,),
+            "criteria_evidence_ledger": (),
+            "environment": PlanningEnvironmentSummary(
+                affordances=(
+                    PlanningAffordanceSummary(
+                        semantic_target_id="submit-button",
+                        role="button",
+                        label="Submit",
+                        supported_actions=("activate",),
+                        current_state=PlanningAffordanceState(
+                            visible=True,
+                            enabled=True,
+                        ),
+                    ),
+                )
+            ),
+        }
+    )
+
+    report = TaskPlanValidator().validate(
+        plan,
+        task,
+        state_version=4,
+        planning_context=context,
+    )
+
+    assert report.status == TaskPlanValidationStatus.REPAIRABLE
+    assert report.issues[0].code == "entry_outcome_already_satisfied"
+    assert report.issues[0].detail == availability.subgoal_id
+
+
 @pytest.mark.parametrize(
     ("role", "relation"),
     (
