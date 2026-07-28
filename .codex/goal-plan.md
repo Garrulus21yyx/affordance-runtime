@@ -350,8 +350,13 @@ delivery claims.
     adds a non-BrowserGym RED/GREEN for the trace shape where verified text
     progress clears active projection and the ready `submit_button is available`
     subgoal is already current-state satisfied. The local RED/GREEN and
-    adjacent replacement controls pass; clean committed PR breadth rerun is
-    still required before any matrix-impact claim.
+    adjacent replacement controls pass. Clean committed PR breadth rerun at
+    `66dae07` is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-66dae07/`: 12/12 observed,
+    12/12 official reward, 3 Runtime failures. This is partial positive
+    evidence, not PR breadth acceptance. Next slice must choose either the
+    `enter-text:seed-1` `obligation_subgoal_missing` accounting residual or the
+    separate V-PRB-6A form-sequence progress-scope cluster.
 
 ## Change Record
 

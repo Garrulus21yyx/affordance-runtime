@@ -190,8 +190,13 @@ batched into a single mixed patch:
    dependency-complete read-only availability/visibility subgoal that is already
    current-state satisfied may be discarded through the existing replacement
    commit path. The non-BrowserGym RED/GREEN passes locally, and adjacent
-   replacement controls pass, but clean committed PR breadth rerun is still
-   required before judging matrix impact.
+   replacement controls pass. Clean committed PR breadth rerun at `66dae07` is
+   archived at `docs/evidence/runs/m8.2a-pr-breadth-66dae07/`: 12/12 observed,
+   12/12 official reward, and 3 Runtime failures. This is partial positive
+   evidence because the previous `click-button:seed-1` JSON-invalid cluster no
+   longer reproduces, but PR breadth acceptance is still failed. Next work must
+   split `enter-text:seed-1` `obligation_subgoal_missing` from the V-PRB-6A
+   form-sequence progress-scope / finish-guard cluster; do not batch them.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

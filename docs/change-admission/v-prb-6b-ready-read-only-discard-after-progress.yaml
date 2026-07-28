@@ -84,7 +84,7 @@ verification:
     result: 11 passed
 
 implementation_result:
-  status: pending_clean_pr_breadth_rerun
+  status: partial_positive_matrix_negative
   production_change: >
     TaskPlanFlow now resolves the already-current read-only discard target from
     the replacement decision when the active projection is empty, provided the
@@ -96,8 +96,16 @@ implementation_result:
     - Prompt, budget, retry, timeout, and provider settings
     - BrowserGym official reward remains separate from Runtime completion authority
   clean_pr_breadth_rerun:
-    required: true
-    result: not_run
+    revision: 66dae07eb6de259a17c8f9604e30189a74fcc357
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-66dae07/
+    result: negative; 12 expected, 12 observed, 12 official reward passed, 0 official reward failed, 3 Runtime failures
+    impact: >
+      The repair is partially positive because the prior click-button JSON
+      invalid/schema-provider cluster no longer reproduces and external reward
+      breadth reaches 12/12. It is insufficient for PR breadth acceptance:
+      `enter-text:seed-1` now fails as obligation_subgoal_missing, while both
+      form-sequence seeds remain the separate V-PRB-6A finish-guard
+      progress-scope cluster.
 
 architecture_admission: pass
 promotion_status: held
