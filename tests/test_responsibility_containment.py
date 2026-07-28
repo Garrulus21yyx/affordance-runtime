@@ -6,9 +6,9 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).parents[1]
 COORDINATOR_PATH = REPOSITORY_ROOT / "src" / "affordance_runtime" / "coordinator.py"
 
-# Ratchet from the audited f4c3308 tree. Lower both ceilings as ownership is
+# Ratchet from the latest governed ODG-5.3 slice. Lower both ceilings as ownership is
 # extracted; do not raise them to admit new feature work.
-COORDINATOR_LINE_CEILING = 3_473
+COORDINATOR_LINE_CEILING = 3_461
 COORDINATOR_METHOD_CEILING = 26
 
 

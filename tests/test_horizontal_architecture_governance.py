@@ -26,13 +26,13 @@ GOVERNED_DOCUMENTS = (
 # Horizontal ratchets freeze current control hotspots. Ceilings may decrease as
 # ownership is extracted; increases require an explicit, time-bounded exception.
 CONTROL_MODULE_LINE_CEILINGS = {
-    "coordinator.py": 3_473,
+    "coordinator.py": 3_461,
     "compatibility_planner_algorithms.py": 2_042,
     "task_planning.py": 1_642,
 }
 
 CONTROL_METHOD_LINE_CEILINGS = {
-    ("coordinator.py", "RunCoordinator", "run_sync"): 2_039,
+    ("coordinator.py", "RunCoordinator", "run_sync"): 2_034,
     ("generalist_planner.py", "GeneralistLMPlanner", "propose"): 222,
     ("intent_compiler.py", "LLMIntentCompiler", "compile"): 253,
     ("task_planning.py", "TaskPlanValidator", "validate"): 239,
@@ -327,13 +327,14 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "production_behavior_change: false" in odg_5
     assert "trace identity envelope" in odg_5
     assert "legacy_verified_projection" in odg_5
-    assert "coordinator trace write" in odg_5
+    assert "obligationprogressshadowcompared trace event" in odg_5
+    assert "obligationprogressshadowfailed diagnostic event" in odg_5
     assert "statekernel initialization" in odg_5
     assert "exact-id mapping" in odg_5
     assert "completed_without_evidence_is_satisfied: false" in odg_5
     assert "writes_state: false" in odg_5
-    assert "writes_trace: false" in odg_5
-    assert "closure_status: runtime_projection_foundation_only" in odg_5
+    assert "writes_trace: diagnostic_only" in odg_5
+    assert "closure_status: post_observation_trace_hookup" in odg_5
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -343,13 +344,13 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg-2 adds the typed progress/attribution contracts" in current_plan
     assert "odg-3 adds statekernel obligation ledger foundation" in current_plan
     assert "odg-4a/4b: executable role decisions" in current_plan
-    assert "odg-5 shadow comparison foundation" in current_plan
+    assert "odg-5 adds typed divergence classification" in current_plan
     assert "taskplan becomes an optional execution strategy view" in current_plan
     assert "obligation_driven_progress:" in status
     assert "contracts: foundation_only" in status
     assert "ledger: foundation_storage_only" in status
     assert "ready_projection: authority_free_foundation" in status
-    assert "shadow_comparison: runtime_projection_foundation_only" in status
+    assert "shadow_comparison: post_observation_trace_hookup" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -442,7 +443,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-5 post-observation trace hookup" in status
+    assert "current_next_change_admission: odg-5 divergence diagnostic collection before odg-6" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

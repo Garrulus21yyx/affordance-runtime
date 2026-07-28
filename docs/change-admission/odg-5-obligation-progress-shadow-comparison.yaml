@@ -2,7 +2,7 @@ slice_id: odg-5-obligation-progress-shadow-comparison
 parent_decision: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
 decision_date: 2026-07-28
 base_revision: 65532962732ca3f3b4baff66af966cd1324ca23f
-change_type: architecture_shadow_diagnostic_foundation
+change_type: architecture_shadow_diagnostic_foundation_and_runtime_hookup
 agent_mode: single_agent
 production_behavior_change: false
 production_writers: 1
@@ -12,11 +12,10 @@ single_primary_owner: Obligation progress shadow comparison diagnostics
 
 goal: >
   Harden the authority-free diagnostic comparator between legacy TaskPlan
-  progress projection and canonical obligation ready projection, then add a
-  read-only runtime projection seam. This slice prepares the later
-  post-observation trace hookup by producing a typed comparison, trace identity
-  envelope, and legacy-verified progress projection without mutating
-  StateKernel, initializing the obligation ledger, writing trace, committing
+  progress projection and canonical obligation ready projection, add a
+  read-only runtime projection seam, then hook the diagnostic into the existing
+  post-observation progress seam. The hookup writes versioned trace diagnostics
+  without mutating StateKernel, initializing the obligation ledger, committing
   obligation progress, changing finish authority, or altering Planner input.
 
 included:
@@ -29,6 +28,10 @@ included:
   - legacy_verified_projection source marker
   - project_verified_legacy_progress()
   - prepare_obligation_progress_shadow_trace()
+  - PostObservationProgressCommit
+  - commit_post_observation_progress()
+  - ObligationProgressShadowCompared trace event
+  - ObligationProgressShadowFailed diagnostic event
   - exact-id mapping from legacy subgoals to canonical obligations
   - many TaskPlan strategy steps may map to one canonical obligation
   - aligned classification
@@ -40,7 +43,6 @@ included:
   - invalid_progress diagnostic classification
 
 excluded:
-  - Coordinator trace write
   - StateKernel initialization
   - StateKernel mutation
   - Coordinator satisfaction commit
@@ -80,9 +82,11 @@ authority_rules:
   initializes_obligation_ledger: false
   mutates_obligation_ledger: false
   writes_state: false
-  writes_trace: false
+  writes_trace: diagnostic_only
   standard_path_authority: not_authorized
   dual_authority: false
+  trace_event: ObligationProgressShadowCompared
+  diagnostic_failure_event: ObligationProgressShadowFailed
 
 diagnostic_classifications:
   aligned: legacy active subgoal maps to the canonical ready obligation
@@ -94,7 +98,6 @@ diagnostic_classifications:
   invalid_progress: obligation projection input was invalid
 
 forbidden:
-  - call trace.add
   - call StateKernel.initialize_obligation_progress
   - call StateKernel obligation mutation
   - add Coordinator control flow
@@ -118,19 +121,26 @@ tests:
     - tests/test_obligation_ready_projection.py
     - tests/test_obligation_progress.py
     - tests/test_obligation_progress_ledger.py
+    - tests/test_post_observation_progress_flow.py
   architecture:
     - tests/test_horizontal_architecture_governance.py
     - tests/test_r8_architecture_boundaries.py
     - tests/test_responsibility_containment.py
 
 architecture_admission: pass
-closure_status: runtime_projection_foundation_only
+closure_status: post_observation_trace_hookup
 promotion_status: held
+runtime_line_ratchet:
+  coordinator_py_before: 3466
+  coordinator_py_after: 3461
+  run_sync_before: 2039
+  run_sync_after: 2034
+  run_coordinator_methods_after: 26
+  ceiling_increase: prohibited
 
 next_requirement: >
-  Continue with ODG-5 post-observation trace hookup only after this runtime
-  projection foundation passes local gates. The hookup must replace the existing
-  post-observation inline block rather than add new run_sync control flow, must
-  reduce the run_sync line count below 2039, and still must not commit
-  obligation satisfaction, replace finish authority, initialize/mutate the
-  obligation ledger, or change PlannerContext.
+  Continue with focused diagnostic collection and divergence analysis before
+  starting ODG-6. ODG-6 must remain based on real shadow comparison data and
+  still must not commit obligation satisfaction, replace finish authority,
+  initialize/mutate the obligation ledger outside its authorized slice, or
+  change PlannerContext.

@@ -110,7 +110,7 @@ from affordance_runtime.task_plan_flow import (
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
-    commit_current_state_completion,
+    commit_post_observation_progress,
 )
 from affordance_runtime.task_planning import (
     PlanningRouter,
@@ -407,16 +407,11 @@ class RunCoordinator:
                     RuntimeErrorCode.PRECONDITION_FAILED,
                     latest_verification,
                 )
-            current_state_parent = commit_current_state_completion(
-                envelope.task_spec,
-                state,
-                snapshot,
-                self.budget,
-                trace,
-                parent,
+            progress_commit = commit_post_observation_progress(
+                envelope.task_spec, state, snapshot, self.budget, trace, parent
             )
-            if current_state_parent is not None:
-                parent = current_state_parent
+            parent = progress_commit.parent
+            if progress_commit.legacy_completion_committed:
                 continue
             if self.task_plan_flow is not None and envelope.task_spec is not None:
                 flow_result = self.task_plan_flow.prepare(

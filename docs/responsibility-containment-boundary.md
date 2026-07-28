@@ -154,7 +154,7 @@ Coordinator task-execution commit sequencing at that slice. This is a successful
 non-expansion checkpoint, not responsibility closure. The
 historical ratchets began at 3813 lines / 29 methods and have only decreased.
 The current executable ratchet in
-`tests/test_responsibility_containment.py` is 3473 lines and 26 methods. These numbers are gates,
+`tests/test_responsibility_containment.py` is 3461 lines and 26 methods. These numbers are gates,
 not a reason to create one-file-per-class packages.
 
 `compatibility_planner_algorithms.py` is historical compatibility containment,

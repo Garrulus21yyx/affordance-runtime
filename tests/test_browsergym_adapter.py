@@ -505,7 +505,8 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     assert result.unsupported_actions == []
     assert result.policy_stopped is False
     assert environment.closed and policy.closed
-    events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
+    trace_events = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
+    events = [item["event_type"] for item in trace_events]
     assert events == [
         "TaskCreated",
         "ObservationCaptured",
@@ -532,11 +533,23 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
             "ObservationCaptured",
         "SourceAssertionsCollected",
         "SourceAssertionsArbitrated",
+        "ObligationProgressShadowCompared",
         "PlanProposed",
         "PlannerProposalValidated",
         "PlannerProposalProduced",
         "TaskCompleted",
     ]
+    shadow = trace_events[events.index("ObligationProgressShadowCompared")]["payload"]
+    assert shadow["obligation_progress_source"] == "legacy_verified_projection"
+    assert shadow["comparison"]["classification"] in {
+        "aligned",
+        "legacy_active_non_progress_predicate",
+        "obligation_ready_without_subgoal",
+        "subgoal_without_obligation",
+        "dependency_divergence",
+        "stale_progress",
+        "invalid_progress",
+    }
 
 
 def test_disabling_browsergym_observation_profile_preserves_declared_runtime_actions() -> None:

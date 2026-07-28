@@ -635,6 +635,10 @@ delivery claims.
 - Review-approved ODG-5.1/5.2 scope: harden the comparator by allowing multiple
   strategy subgoals to map to one obligation and wrapping comparisons in a
   versioned trace identity envelope; add read-only runtime projection from
-  legacy verified PlanProgress using exact-ID mapping only. The next slice is
-  post-observation trace hookup through a replacement seam that must reduce
-  `run_sync()` rather than add inline logic.
+  legacy verified PlanProgress using exact-ID mapping only.
+- Implemented ODG-5.3 post-observation diagnostic trace hookup through
+  `commit_post_observation_progress()`. The old inline current-state completion
+  block is replaced rather than expanded, `coordinator.py` is now 3461 lines,
+  and `RunCoordinator.run_sync()` is now 2034 lines. Coordinator progress
+  commit, finish authority, PlannerContext, TaskPlan semantics, and benchmark
+  promotion remain unchanged.

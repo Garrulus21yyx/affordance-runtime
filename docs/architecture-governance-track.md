@@ -147,15 +147,18 @@ progress obligations until an explicit source-derived rule is added.
 
 ODG-5 may add authority-free shadow comparison between a legacy TaskPlan
 projection and the canonical obligation ready projection. The comparator may
-produce stable trace payload data, but this foundation slice must not call
-`trace.add`, initialize or mutate StateKernel, alter Coordinator control flow,
-change PlannerContext, replace TaskPlan semantics, or affect finish authority.
-The comparison exists to classify divergence; it is not a second progress
-authority. ODG-5.1/5.2 may harden that contract with a trace identity envelope
-and add a read-only runtime projection seam using
+produce stable trace payload data, but must not initialize or mutate
+StateKernel, change PlannerContext, replace TaskPlan semantics, or affect finish
+authority. The comparison exists to classify divergence; it is not a second
+progress authority. ODG-5.1/5.2 harden that contract with a trace identity
+envelope and add a read-only runtime projection seam using
 `legacy_verified_projection`: exact-ID mapping only, no lexical subject/objective
 mapping, no obligation-ledger initialization, and no completed-without-evidence
-credit.
+credit. ODG-5.3 may write exactly one diagnostic
+`ObligationProgressShadowCompared` event through the existing post-observation
+progress seam, or `ObligationProgressShadowFailed` if the diagnostic projector
+unexpectedly fails. This hookup must replace existing inline Coordinator
+control flow, reduce `run_sync()`, and remain diagnostic-only.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
@@ -177,7 +180,7 @@ naming the approver and immutable baseline; the governed implementation remains
 
 | Module | Active ceiling | Governance reason |
 | --- | ---: | --- |
-| `coordinator.py` | 3,473 lines / 26 `RunCoordinator` methods | feature-frozen task-level control center |
+| `coordinator.py` | 3,461 lines / 26 `RunCoordinator` methods | feature-frozen task-level control center |
 | `compatibility_planner_algorithms.py` | 2,042 lines | frozen historical compatibility quarantine |
 | `task_planning.py` | 1,642 lines | growth-controlled mixed planning surface |
 
@@ -185,7 +188,7 @@ naming the approver and immutable baseline; the governed implementation remains
 
 | Method | Active ceiling | Governance reason |
 | --- | ---: | --- |
-| `RunCoordinator.run_sync` | 2,039 lines | known long-method debt; may only shrink |
+| `RunCoordinator.run_sync` | 2,034 lines | known long-method debt; may only shrink |
 | every other/new `RunCoordinator` method | 250 lines | prevents moving new phase algorithms into another Coordinator method |
 | `GeneralistLMPlanner.propose` | 222 lines | preserves the extracted model-orchestration boundary |
 | `LLMIntentCompiler.compile` | 253 lines | grandfathered over-threshold intake method; may only shrink |

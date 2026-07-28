@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.obligation_progress_shadow_flow import (
+    prepare_obligation_progress_shadow_trace,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits, TaskPlanLifecycle
@@ -48,6 +51,12 @@ class CurrentStateSubgoalCompletionCommit:
             "task_plan_id": self.preparation.plan_id,
             "completed_subgoal_ids": list(self.completed_subgoal_ids),
         }
+
+
+@dataclass(frozen=True)
+class PostObservationProgressCommit:
+    parent: TraceNode
+    legacy_completion_committed: bool
 
 
 def prepare_current_state_subgoal_completion(
@@ -141,6 +150,66 @@ def commit_current_state_completion(
             parents=[parent.id],
         )
     return parent
+
+
+def commit_post_observation_progress(
+    task_spec: TaskSpec | None,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+    budget: TaskPlanBudgetLimits,
+    trace: TraceDag,
+    parent: TraceNode,
+) -> PostObservationProgressCommit:
+    current_state_parent = commit_current_state_completion(
+        task_spec,
+        state,
+        snapshot,
+        budget,
+        trace,
+        parent,
+    )
+    legacy_completion_committed = current_state_parent is not None
+    parent = current_state_parent or parent
+    try:
+        projection = prepare_obligation_progress_shadow_trace(
+            task_spec,
+            state,
+            snapshot,
+        )
+    except Exception as exc:
+        parent = trace.add(
+            "ObligationProgressShadowFailed",
+            {
+                "state": state.phase,
+                "error_type": type(exc).__name__,
+                "reason": str(exc)[:500],
+                "task_id": state.task_id,
+                "state_version": state.version,
+                "snapshot_id": snapshot.observation.snapshot_id,
+                "page_revision": snapshot.observation.page_revision,
+                "environment_revision": snapshot.observation.environment_revision,
+            },
+            parents=[parent.id],
+        )
+        return PostObservationProgressCommit(
+            parent=parent,
+            legacy_completion_committed=legacy_completion_committed,
+        )
+    if projection is None:
+        return PostObservationProgressCommit(
+            parent=parent,
+            legacy_completion_committed=legacy_completion_committed,
+        )
+    payload = {"state": state.phase, **projection.to_trace_payload()}
+    parent = trace.add(
+        "ObligationProgressShadowCompared",
+        payload,
+        parents=[parent.id],
+    )
+    return PostObservationProgressCommit(
+        parent=parent,
+        legacy_completion_committed=legacy_completion_committed,
+    )
 
 
 def _still_current(

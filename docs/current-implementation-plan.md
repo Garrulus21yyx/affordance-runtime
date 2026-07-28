@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | ODG-5 post-observation trace hookup | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-0 freezes the Canonical Obligation Graph as the sole target progress authority; ODG-1 records the initial execution-role audit; ODG-2 adds authority-free progress/attribution contracts at `d6e2cb3`; ODG-3 adds StateKernel-local storage foundation at `4af7c19`; ODG-4 adds executable role decisions and safe ready projection at `6553296`; ODG-5.1/5.2 add hardened shadow contracts and read-only runtime projection after `3a6fc8a`. | Replace the current post-observation progress inline block with a seam that can write `ObligationProgressShadowCompared` diagnostics while keeping `run_sync()` below its current ceiling. Do not initialize/mutate obligation ledger, commit obligation satisfaction, change finish-gate authority, change PlannerContext, replace TaskPlan behavior, run BrowserGym breadth, or claim promotion. | unrelated horizontal debt retirement |
+| Vertical | ODG-5 divergence diagnostic collection | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-0 freezes the Canonical Obligation Graph as the sole target progress authority; ODG-1 records the initial execution-role audit; ODG-2 adds authority-free progress/attribution contracts at `d6e2cb3`; ODG-3 adds StateKernel-local storage foundation at `4af7c19`; ODG-4 adds executable role decisions and safe ready projection at `6553296`; ODG-5.1/5.2 add hardened shadow contracts and read-only runtime projection after `3a6fc8a`; ODG-5.3 hooks post-observation shadow trace through `commit_post_observation_progress()` without changing progress authority. | Collect focused `ObligationProgressShadowCompared` diagnostics and classify divergence before ODG-6. Do not initialize/mutate obligation ledger, commit obligation satisfaction, change finish-gate authority, change PlannerContext, replace TaskPlan behavior, run BrowserGym breadth, or claim promotion. | unrelated horizontal debt retirement |
 | Horizontal | immutable Planner input, deferred until ODG standard path | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined, but H2 should be designed around ready obligation projection rather than TaskPlan/PlanProgress authority | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen obligation/request/view data after ODG projection exists | ODG-0/ODG-1 and role-audit documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -266,12 +266,13 @@ ODG-2 adds the typed progress/attribution contracts without connecting them to
 Coordinator or finish authority. ODG-3 adds StateKernel obligation ledger
 foundation as storage, identity, ledger-local mutation invariants, and
 immutable projection only. ODG-4A/4B: executable role decisions and a safe
-ready-obligation projection result. The selected next slice is ODG-5 shadow
-comparison foundation: typed divergence classification, trace identity envelope,
-and read-only runtime projection from `legacy_verified_projection`. The selected
-next slice is ODG-5 post-observation trace hookup through a replacement seam
-that reduces `run_sync()` rather than adding inline logic. Coordinator progress
-commit / finish authority remain unauthorized until ODG-10/ODG-11.
+ready-obligation projection result. ODG-5 adds typed divergence classification,
+a trace identity envelope, read-only runtime projection from
+`legacy_verified_projection`, and a post-observation diagnostic trace hookup
+through `commit_post_observation_progress()` that reduces `run_sync()` rather
+than adding inline logic. The selected next slice is focused divergence
+diagnostic collection before ODG-6. Coordinator progress commit / finish
+authority remain unauthorized until ODG-10/ODG-11.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
 decision record is
@@ -1032,7 +1033,7 @@ Execute in this order:
    flow, recovery command dispatch, evidence projections, and stateless
    TaskPlanFlow are extracted while preserving one authoritative task-execution state/trace
    commit sequence; the Coordinator feature freeze remains and its active
-   ratchet is 3473/26;
+   ratchet is 3461/26 after ODG-5.3;
 5. **completed** - publish fresh four-profile non-BrowserGym Runtime runs with
    trace, contract, receipt, verifier, environment, and artifact identities;
 6. **current** - run one new strict frozen diagnostic matrix,
