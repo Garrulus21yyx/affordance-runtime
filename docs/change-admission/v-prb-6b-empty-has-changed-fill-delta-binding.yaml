@@ -84,21 +84,50 @@ verification:
     result: 51 passed, 1 xfailed
 
 implementation_result:
-  status: pending_clean_pr_breadth_rerun
+  status: rejected_after_clean_pr_breadth_negative_regression
   production_change: >
-    BrowserGym fill/type_text DOM attribute evidence now declares active
-    subgoal progress for empty-value HAS_CHANGED only when the post-action
-    value equals the concrete action value and the pre-action control value was
-    different.
+    BrowserGym fill/type_text DOM attribute evidence declared active subgoal
+    progress for empty-value HAS_CHANGED only when the post-action value
+    matched the concrete action value and the pre-action control value was
+    different. The local unit contract passed, but clean PR breadth showed the
+    change was behaviorally unsafe for the current matrix.
   clean_pr_breadth_rerun:
     required: true
-    result: not_run
+    revision: 21f44b09d409902252615747badf27dc60238f95
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-21f44b0/
+    result: negative_regression
+    expected_episode_count: 12
+    observed_episode_count: 12
+    external_reward:
+      passed: 11
+      failed: 1
+    runtime_failures: 3
+    provider_failures: 0
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    acceptance_errors:
+      - enter-text:seed-1: execution_failed
+      - form-sequence:seed-0: planner cannot finish before verifier-backed subgoal completion
+      - form-sequence:seed-1: planner cannot finish before verifier-backed subgoal completion
+    comparison: >
+      The prior clean 66dae07 rerun reached 12/12 external reward with 3
+      Runtime failures. This attempted repair regressed external reward to
+      11/12 and must not remain in production.
+  disposition:
+    production_behavior: reverted
+    tests_for_rejected_behavior: removed_with_revert
+    next_owner: >
+      Return to V-PRB-6B required read-only obligation completion/accounting
+      from docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml,
+      or select the separate V-PRB-6A progress-scope RED. Do not continue by
+      broadening BrowserGym text evidence declarations.
 
-architecture_admission: pass
+architecture_admission: rejected
 promotion_status: held
 remote_ci: disabled
 
 done_when:
-  - executable RED and no-op negative control are green
-  - BrowserGym encoder and architecture focused gates remain green
-  - no PR breadth acceptance, fresh diagnostic, promotion, or official score claim is made before a clean committed rerun
+  - negative PR breadth evidence is archived
+  - attempted production behavior is reverted
+  - no PR breadth acceptance, fresh diagnostic, promotion, or official score claim is made

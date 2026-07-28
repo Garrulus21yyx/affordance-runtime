@@ -203,14 +203,13 @@ batched into a single mixed patch:
    rejecting a replacement that erases a required `submit_button is available`
    obligation. The next V-PRB-6B production slice must start with a
    non-BrowserGym RED for required read-only obligation completion/accounting,
-   not by weakening obligation coverage or the finish guard. Trace inspection
-   then narrowed the immediate source again: the first type_text action has
-   strong DOM value evidence but no active-subgoal links because canonical
-   HAS_CHANGED text outcomes carry an empty value. Child production slice
-   `docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml`
-   binds only exact non-no-op fill deltas as active-subgoal evidence; clean
-   committed PR breadth rerun is required before judging whether this closes
-   the `enter-text` accounting residual.
+   not by weakening obligation coverage or the finish guard. A later attempted
+   BrowserGym empty-value `HAS_CHANGED` fill-delta evidence-binding slice
+   (`docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml`)
+   was tested on clean `21f44b0` and rejected: PR breadth regressed from the
+   prior `66dae07` 12/12 external reward baseline to 11/12 external reward
+   while retaining 3 Runtime failures. That attempted production behavior is
+   reverted and must not be continued as the next repair path.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

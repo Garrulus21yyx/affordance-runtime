@@ -526,20 +526,6 @@ def _browsergym_postcondition_proves_outcome(
     normalized_outcome = browsergym_fill_value(affordance.state, outcome_value.strip())
     if action.name in {"fill", "type_text_with_events"} and verifier.kind == "dom_attribute":
         actual = str(expected.get("value", ""))
-        action_value = browsergym_fill_value(
-            affordance.state,
-            str(action.arguments.get("value", action.arguments.get("text", ""))).strip(),
-        )
-        previous_value = browsergym_fill_value(
-            affordance.state,
-            str(affordance.state.get("control_value", "")).strip(),
-        )
-        if (
-            relation == SubgoalOutcomeRelation.HAS_CHANGED
-            and not normalized_outcome
-            and bool(action_value)
-        ):
-            return actual == action_value and previous_value != action_value
         return (
             relation
             in {
