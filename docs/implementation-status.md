@@ -31,7 +31,7 @@ milestone status values.
 | --- | --- |
 | Current HEAD | check `git rev-parse HEAD`; current workstream is V-PRB-6 terminal-completion guard classification after clean `d50a631` PR breadth |
 | Latest production repair revision | `d50a631` (`fix: stop form slider at requested value`) |
-| Latest PR breadth evidence revision | `d50a631a2e67b294db4b6273106df85fd941b3b7`: 12/12 observed, 12/12 official reward passed, 3 Runtime failures, no provider failure/missing/unrun/invalidated case; V-PRB-5C is closed for the current PR breadth matrix, but PR breadth acceptance remains held because `enter-text:seed-1` and both `form-sequence` seeds still abort at the Runtime terminal-completion guard after external reward succeeds |
+| Latest PR breadth evidence revision | `d50a631a2e67b294db4b6273106df85fd941b3b7`: 12/12 observed, 12/12 official reward passed, 3 Runtime failures, no provider failure/missing/unrun/invalidated case; V-PRB-5C is closed for the current PR breadth matrix, but PR breadth acceptance remains held because `enter-text:seed-1` and both `form-sequence` seeds still abort at the Runtime terminal-completion guard after external reward succeeds. Form trace inspection narrows the residual toward stale subgoal/progress evidence binding rather than a license to relax finish admission. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `d50a631` classify the V-PRB-5C closure rerun and V-PRB-6 terminal guard residual; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -308,7 +308,7 @@ v_prb_5_downstream_planning_follow_up:
       candidate_owner: not_selected
       latest_evidence: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
       observed_failure: official_reward is 1.0 while Runtime records planner cannot finish before verifier-backed subgoal completion
-      review_refinement: track separately; BrowserGym reward is not Runtime completion authority
+      review_refinement: track separately; BrowserGym reward is not Runtime completion authority; form traces show dependent checkbox/submit progress is not credited before finish, so the first RED should target stale subgoal/progress evidence binding rather than accepting finish with incomplete TaskPlan progress
   next_requirement: start V-PRB-6 terminal-completion guard classification and repair as a separate non-BrowserGym RED/GREEN slice before any breadth completion, fresh diagnostic, or promotion claim
   promotion_status: held
 

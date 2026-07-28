@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-6 terminal-completion guard | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean PR breadth is now 12/12 observed and 12/12 official reward passed, but Runtime still aborts 3 episodes at `planner cannot finish before verifier-backed subgoal completion`; no provider/missing/unrun/invalidated case | classify V-PRB-6 only: write a non-BrowserGym RED for a finish proposal after all TaskPlan subgoals/effects have verifier-backed evidence but task-level terminal completion remains unaccepted; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-6 terminal-completion guard | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean PR breadth is now 12/12 observed and 12/12 official reward passed, but Runtime still aborts 3 episodes at `planner cannot finish before verifier-backed subgoal completion`; no provider/missing/unrun/invalidated case | classify V-PRB-6 only: write a non-BrowserGym RED for stale subgoal/progress evidence binding before `finish`; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -131,8 +131,11 @@ batched into a single mixed patch:
    `enter-text:seed-1` and both `form-sequence` seeds now have BrowserGym
    official reward 1.0 while Runtime still rejects a `finish` proposal with
    `planner cannot finish before verifier-backed subgoal completion`. External
-   reward is not Runtime completion authority. Classify the guard with a
-   non-BrowserGym RED before any production repair.
+   reward is not Runtime completion authority. The first trace classification
+   narrows the form-sequence cases to stale progress binding: final actions
+   succeed externally, but dependent checkbox/submit subgoals are not credited
+   before finish. Classify the guard/progress path with a non-BrowserGym RED
+   before any production repair; do not merely relax finish admission.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

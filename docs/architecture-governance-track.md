@@ -105,8 +105,10 @@ reaches 12/12 official reward, with V-PRB-5A button-sequence, V-PRB-5B entry
 action-family resolution, and V-PRB-5C form-sequence strict-planner proposal
 generation closed for this matrix. PR breadth acceptance remains held because
 three episodes still abort at the Runtime terminal-completion guard after
-external reward succeeds. Remaining vertical work is V-PRB-6
-terminal-completion guard classification and repair. The active-subgoal
+external reward succeeds. First trace classification narrows the form cases to
+stale subgoal/progress evidence binding rather than permission to relax finish
+admission. Remaining vertical work is V-PRB-6 terminal-completion guard
+classification and repair. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
 standard Planner input. That horizontal lane is not a prerequisite for V-PRB-6
@@ -198,7 +200,7 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | PR breadth V-PRB-5A button-sequence semantics | `done` | clean `151fbef` PR breadth rerun passed both `click-button-sequence` seeds after dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs |
 | PR breadth V-PRB-5B entry action-family resolution | `done` | clean `3daf779` PR breadth rerun confirms the original `entry_action_family_unavailable` rejection is gone and textbox value-entry inference is restored; remaining form failures moved to V-PRB-5C strict-planner empty proposal generation |
 | PR breadth V-PRB-5C form-sequence strict-planner proposal generation | `done` | `a805f0d`, `9c1b58c`, and `d50a631` resolver repairs are admitted and cleanly rerun; clean `d50a631` PR breadth reaches 12/12 official reward, and the prior form terminal-submit / negative-slider official failures no longer reproduce |
-| PR breadth V-PRB-6 terminal-completion guard | `in_progress` | clean `d50a631` PR breadth still has 3 Runtime aborts after external reward succeeds; classify external reward versus Runtime verifier/terminal authority separately before fresh diagnostic or promotion |
+| PR breadth V-PRB-6 terminal-completion guard | `in_progress` | clean `d50a631` PR breadth still has 3 Runtime aborts after external reward succeeds; first trace classification narrows form cases to stale subgoal/progress evidence binding; classify external reward versus Runtime verifier/terminal authority separately before fresh diagnostic or promotion |
 | `LLMIntentCompiler` contains value-entry lexical normalization | `pending_review` | isolate source-bound value-entry normalization into a typed intent normalizer before declaring intake responsibility clean |
 | `task_planning.py` combines models, provider schema, validation, routing, and implementations | `pending` | split by change reason when the relevant planning slice is touched |
 | `LLMIntentCompiler.compile` is 253 lines | `pending` | isolate a typed phase without changing the three-call/authority boundary |

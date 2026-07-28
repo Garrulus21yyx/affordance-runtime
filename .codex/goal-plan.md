@@ -289,10 +289,14 @@ delivery claims.
     `planner cannot finish before verifier-backed subgoal completion`.
 45. `in_progress` — Start V-PRB-6 only: classify the Runtime terminal
     completion guard with a non-BrowserGym RED before any production repair.
-    Keep Runtime success, verifier success, and BrowserGym reward separate; do
-    not substitute official reward for Runtime completion authority, weaken the
-    verifier, start immutable Planner input, or run fresh diagnostic,
-    nightly/release, or promotion in this slice.
+    Initial trace inspection narrows the form-sequence residual toward stale
+    subgoal/progress evidence binding: external reward succeeds, but dependent
+    checkbox/submit subgoals are not credited before finish. Keep Runtime
+    success, verifier success, and BrowserGym reward separate; do not
+    substitute official reward for Runtime completion authority, accept finish
+    with incomplete TaskPlan progress, weaken the verifier, start immutable
+    Planner input, or run fresh diagnostic, nightly/release, or promotion in
+    this slice.
 
 ## Change Record
 
