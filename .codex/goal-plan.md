@@ -595,3 +595,14 @@ delivery claims.
   negative. The next RED should target post-verification progress attribution,
   not BrowserGym adapter broadening, Coordinator growth, or immutable Planner
   input migration.
+- Froze the post-`fa1037e` architecture decision as ODG-0: the Canonical
+  Obligation Graph becomes the only target progress authority, TaskPlan is
+  downgraded to optional execution strategy / compatibility view, and the
+  V-PRB-6A `TaskPlanProgressTarget` foundation is retained but no longer
+  expanded through Coordinator as the standard path. Created
+  `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`
+  and `docs/audits/obligation-execution-role-audit.md`. The immediate next
+  production work must start from ODG role/projection/attribution REDs rather
+  than BrowserGym adapter evidence broadening, TaskPlan subgoal deletion,
+  finish-guard weakening, receipt/reward completion, or pre-action final
+  subgoal ownership.

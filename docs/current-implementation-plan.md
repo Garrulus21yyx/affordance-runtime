@@ -57,8 +57,8 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-6A dependent-subgoal progress-scope binding | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated cases, and `enter-text:seed-1` is closed. A targeted post-`407133d` recheck reran `click-button` seeds 0 and 1 at `47932a2` and did not reproduce the JSON-invalid failure. V-PRB-6A now has a Core progress-target foundation packet at `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`, but it is not a closure. | start V-PRB-6A / continue V-PRB-6A with a narrower post-verification progress-attribution RED for the stable `form-sequence` dependent-subgoal progress-scope / finish-guard cluster. Keep `click-button:seed-1` structured intent-draft `json_invalid` under monitoring until stronger reproducibility evidence exists. No BrowserGym adapter evidence broadening, finish-guard weakening, receipt/reward authority, immutable Planner input, fresh diagnostic, nightly/release, or promotion. | unrelated horizontal debt retirement and immutable Planner input |
-| Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
+| Vertical | ODG-0 / ODG-1 obligation-driven progress authority freeze and execution-role audit | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. The V-PRB-6A progress-target foundation at `fa1037e` is retained as compatibility scaffolding only. | Freeze the new decision that the Canonical Obligation Graph is the sole progress authority, record `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`, and complete `docs/audits/obligation-execution-role-audit.md` before any new production progress slice. Do not continue pre-action final-subgoal attribution through TaskPlanProgressTarget. | unrelated horizontal debt retirement |
+| Horizontal | immutable Planner input, deferred until ODG standard path | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined, but H2 should be designed around ready obligation projection rather than TaskPlan/PlanProgress authority | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen obligation/request/view data after ODG projection exists | ODG-0/ODG-1 and role-audit documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -256,10 +256,17 @@ negative after the V-PRB-6B verifier-backed progress accounting integration:
 `enter-text:seed-1` required read-only availability cluster is closed. A
 targeted post-`407133d` `click-button` recheck passed seeds 0 and 1, so the
 JSON-invalid cluster remains monitored rather than production-admitted. The
-next vertical action is not PR/nightly/release promotion; it is V-PRB-6A
-form-sequence dependent-subgoal progress-scope binding. The umbrella task
-packet remains
-`docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`.
+`fa1037e` V-PRB-6A progress-target foundation is retained as compatibility-only
+scaffolding, but the next vertical action is no longer to extend pre-action
+TaskPlan subgoal attribution. The current decision freezes an
+obligation-driven progress architecture: the Canonical Obligation Graph becomes
+the only formal progress authority, TaskPlan becomes an optional execution
+strategy view, and the next executable work is ODG-1 obligation execution-role
+audit followed by non-BrowserGym REDs for obligation projection/attribution.
+The umbrella task packet remains
+`docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
+decision record is
+`docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`.
 
 The umbrella packet is diagnostic only and may not become a production patch.
 V-PRB-0 failure-attribution fidelity is complete: 12/12 episodes now have an

@@ -239,7 +239,6 @@ def test_reviewed_architecture_debt_and_sg7_admission_record_are_visible() -> No
 def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit() -> None:
     status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
     current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
-    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
 
     assert "status_alignment:" in status
     assert "snapshot: current" in status
@@ -258,10 +257,39 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "h2 immutable planner input" in current_plan
     assert "p2 semantic fallback owner extraction" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
+
+
+def test_obligation_driven_progress_decision_is_current_and_non_promotional() -> None:
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+    odg_record = CHANGE_ADMISSION_DIR / "odg-0-obligation-driven-progress-architecture.yaml"
+    role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
+
+    assert odg_record.exists()
+    assert role_audit.exists()
+    record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
+    audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
+
+    assert "canonical obligation graph is the sole authoritative progress model" in record
+    assert "production_change_allowed: false" in record
+    assert "taskplanprogresstarget:" in record
+    assert "status: compatibility_foundation" in record
+    assert "subgoalevidencebinder_progress_target:" in record
+    assert "coordinator_integration: status: not_authorized" in record
+    assert "promotion_status: held" in record
+
+    assert "odg-0 / odg-1 obligation-driven progress authority freeze" in current_plan
+    assert "taskplan becomes an optional execution strategy view" in current_plan
+    assert "obligation_driven_progress:" in status
+    assert "taskplan_authority: compatibility_only_target" in status
+    assert "future standard-path completion must be attributed to obligation ids" in governance
+    assert "submit_button_is_available:" in audit
+    assert "fail_closed_pending_rule" in audit
     assert "module-level semantic owner gate" in governance
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
-    assert "current vertical lane is protected cross-family / pr breadth confirmation" in governance
+    assert "canonical obligation graph is the sole target progress authority" in governance
     assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
 
@@ -322,8 +350,9 @@ def test_v_prb_6b_407133d_rerun_is_recorded_without_promotion_claim() -> None:
     assert "click-button:seed-1" in status
     assert "form-sequence:seed-0" in status
     assert "form-sequence:seed-1" in status
-    assert "v-prb-6a form-sequence" in current_plan
-    assert "did not reproduce the json-invalid failure" in current_plan
+    assert "v-prb-6a progress-target foundation is retained as compatibility-only" in current_plan
+    assert "json-invalid cluster remains monitored" in current_plan
+    assert "obligation-driven progress architecture" in current_plan
     assert "official_score_claimed=false" in evidence_text
     assert "promotion_status: held" in evidence_text
     assert "pr_breadth_acceptance: failed" in evidence_text
@@ -343,7 +372,8 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
-    assert "start v-prb-6a" in current_plan
+    assert "do not continue pre-action final-subgoal attribution" in current_plan
+    assert "odg-1 obligation execution-role audit" in current_plan
 
 
 def test_pr_breadth_child_packet_lifecycle_matches_review_approval() -> None:

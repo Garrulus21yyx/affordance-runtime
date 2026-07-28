@@ -108,19 +108,19 @@ acceptance remains held because both `form-sequence` seeds still abort at the
 Runtime terminal-completion guard. `click-button:seed-1` reappeared as a
 structured intent-draft `json_invalid` failure in the breadth matrix, but a
 targeted post-`407133d` click-button recheck passed seeds 0 and 1, so that
-cluster remains monitored rather than production-admitted. Remaining vertical
-work is V-PRB-6A dependent-subgoal progress-scope binding. The active-subgoal
+cluster remains monitored rather than production-admitted. The prior
+V-PRB-6A dependent-subgoal progress-target foundation is retained, but only as
+compatibility scaffolding. The active decision record is now
+`docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`:
+the Canonical Obligation Graph is the sole target progress authority, TaskPlan
+is an optional execution strategy view, and future standard-path completion
+must be attributed to obligation IDs after verification. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
-line; the current horizontal lane is removal of mutable `StateKernel` from the
-standard Planner input. That horizontal lane is not a prerequisite for V-PRB-6
-unless the RED evidence directly implicates mutable planner input or hidden
-state mutation. A Core-only V-PRB-6A progress-target foundation is recorded in
-`docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; it does not
-integrate through Coordinator and does not close the remaining form-sequence
-PR breadth failures. The next admitted 6A work must target post-verification
-progress attribution with typed evidence and fail-closed identity checks.
-Neither lane authorizes promotion while remote CI is disabled
-or required validation is unavailable.
+line. Immutable Planner input remains real horizontal debt, but it is deferred
+until PlannerContext can expose ready obligation projection rather than
+freezing a TaskPlan/PlanProgress-shaped view that ODG intends to retire.
+Neither lane authorizes promotion while remote CI is disabled or required
+validation is unavailable.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

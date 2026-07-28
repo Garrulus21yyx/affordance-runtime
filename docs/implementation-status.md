@@ -29,10 +29,11 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | V-PRB-6A progress-target foundation after clean `407133d1a1c902436ae2576175f834a7a74b1367` PR breadth rerun and targeted `47932a2` click-button recheck; V-PRB-6A remains open |
+| Current HEAD | ODG-0 obligation-driven progress architecture freeze after `fa1037e2788261a1c76edce96a80b02df1461a3d`; V-PRB-6A progress-target foundation is retained as compatibility scaffolding only, not the next standard-path expansion |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
-| Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative, so this does not close PR breadth or V-PRB-6A. |
+| Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
+| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy; next work is ODG-1 execution-role audit and then obligation projection/attribution REDs. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -53,6 +54,14 @@ immutable_planner_input:
   design: planned
   standard_path_migrated: false
   tests: absent
+
+obligation_driven_progress:
+  decision: frozen
+  decision_record: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
+  role_audit: docs/audits/obligation-execution-role-audit.md
+  standard_path_migrated: false
+  taskplan_authority: compatibility_only_target
+  promotion_status: held
 
 pr_breadth_initial_negative:
   revision: d66760f76bb4668f610d2ebfac2c8ba0bf83c71a
