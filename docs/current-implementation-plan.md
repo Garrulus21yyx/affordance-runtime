@@ -132,13 +132,20 @@ batched into a single mixed patch:
    `enter-text:seed-1` and both `form-sequence` seeds now have BrowserGym
    official reward 1.0 while Runtime still rejects a `finish` proposal with
    `planner cannot finish before verifier-backed subgoal completion`. External
-   reward is not Runtime completion authority. The first trace classification
-   narrows the form-sequence cases to stale progress binding: final actions
-   succeed externally, but dependent checkbox/submit subgoals are not credited
-   before finish. Split V-PRB-6 into V-PRB-6A dependent-subgoal evidence
-   binding and V-PRB-6B single-subgoal terminal completion. Classify each with
-   compact trace projection and a non-BrowserGym RED before any production
-   repair; do not merely relax finish admission.
+   reward is not Runtime completion authority. Compact trace projection is
+   archived at `docs/evidence/runs/v-prb-6-compact-d50a631/`. It narrows the
+   form-sequence cases to stale/progress-scope binding: final actions succeed
+   externally, but dependent checkbox/submit subgoals are not credited before
+   finish. The V-PRB-6A executable RED is strict-xfailed as
+   `tests/test_browsergym_encoder.py::test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress`;
+   forced `--runxfail` execution fails because checkbox `HAS_CHANGED` click
+   evidence remains `task_terminal`, not `active_subgoal`. The same compact
+   projection reclassifies `enter-text:seed-1`: the trace has two subgoals, not
+   one, and the incomplete unit is an independent read-only `submit_button is
+   available` subgoal. Do not open a V-PRB-6B production repair as
+   "single-subgoal terminal completion" unless a separate RED proves that
+   shape; next write the read-only availability/cardinality RED before any
+   production repair.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
@@ -310,6 +317,11 @@ Latest review refinement:
   `docs/change-admission/v-prb-6-terminal-completion-guard.yaml` and must not
   be mixed into 5A, 5B, or 5C. Runtime success, verifier success, and
   BrowserGym reward stay separate.
+- V-PRB-6 compact projection is archived at
+  `docs/evidence/runs/v-prb-6-compact-d50a631/`. V-PRB-6A has a strict xfail
+  executable RED for checkbox `HAS_CHANGED` progress-scope declaration. V-PRB-6B
+  is reclassified before RED from "single-subgoal terminal completion" to
+  read-only terminal-availability progress/cardinality.
 - Immutable PlanningRequest / PlannerStateView remains the next horizontal
   lane, but it is not a prerequisite for V-PRB-6 unless the new RED evidence
   directly implicates mutable planner input or hidden state mutation.

@@ -287,12 +287,15 @@ delivery claims.
     breadth acceptance remains held because `enter-text:seed-1` and both
     `form-sequence` seeds still abort after external reward succeeds with
     `planner cannot finish before verifier-backed subgoal completion`.
-45. `in_progress` — Start V-PRB-6 diagnostics only: split the Runtime terminal
-    completion guard into V-PRB-6A dependent-subgoal evidence binding and
-    V-PRB-6B single-subgoal terminal completion before any production repair.
-    Initial trace inspection narrows the form-sequence residual toward stale
-    subgoal/progress evidence binding: external reward succeeds, but dependent
-    checkbox/submit subgoals are not credited before finish. Keep Runtime
+45. `in_progress` — Continue V-PRB-6 diagnostics only. Compact trace
+    projection is archived at `docs/evidence/runs/v-prb-6-compact-d50a631/`.
+    V-PRB-6A now has a strict-xfail executable RED for dependent checkbox
+    `HAS_CHANGED` evidence remaining `task_terminal` instead of
+    `active_subgoal`. The same projection reclassifies V-PRB-6B before RED:
+    `enter-text:seed-1` has two subgoals, not one; the completed unit is the
+    text-change subgoal and the incomplete unit is independent read-only
+    `submit_button is available`. Next write the V-PRB-6B read-only
+    availability/cardinality RED before any production repair. Keep Runtime
     success, verifier success, and BrowserGym reward separate; do not
     substitute official reward for Runtime completion authority, accept finish
     with incomplete TaskPlan progress, weaken the verifier, start immutable

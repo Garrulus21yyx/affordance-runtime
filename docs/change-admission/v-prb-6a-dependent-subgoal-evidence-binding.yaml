@@ -13,6 +13,7 @@ mechanism: dependent subgoal evidence attribution after semantic follow-up
 
 source_evidence:
   clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+  compact_projection: docs/evidence/runs/v-prb-6-compact-d50a631/
   affected_episodes:
     - form-sequence:seed-0
     - form-sequence:seed-1
@@ -35,6 +36,7 @@ non_goals:
   - do not start immutable PlanningRequest unless the RED proves mutable planner input is the root cause
 
 required_non_browsergym_red_tests:
+  - tests/test_browsergym_encoder.py::test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress
   - later action evidence must not be rebound to a stale active subgoal
   - verifier-backed flag/checkbox evidence completes the intended dependent subgoal, not the previous completed subgoal
   - verifier-backed submit evidence completes the intended terminal dependent subgoal
@@ -54,6 +56,20 @@ owner_selection_questions:
 architecture_admission: not_evaluated
 promotion_status: held
 remote_ci: disabled
+
+diagnostic_status:
+  compact_trace_projection: archived
+  executable_red: strict_xfail
+  forced_red_command: >
+    python -m pytest -q
+    tests/test_browsergym_encoder.py::test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress
+    --runxfail
+  forced_red_result: >
+    fails because checkbox HAS_CHANGED click evidence remains task_terminal
+    instead of ACTIVE_SUBGOAL
+  normal_gate_behavior: >
+    xfail is strict; ordinary focused test runs remain green until a separate
+    child production slice turns the RED green and removes the xfail marker
 
 done_when:
   - compact trace projection is archived for both affected episodes

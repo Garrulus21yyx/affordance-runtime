@@ -13,13 +13,26 @@ mechanism: single-subgoal finish rejection after external success
 
 source_evidence:
   clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+  compact_projection: docs/evidence/runs/v-prb-6-compact-d50a631/
   affected_episodes:
     - enter-text:seed-1
   observed_path:
     - BrowserGym official_reward is 1.0
     - Runtime records verifier-backed text action evidence
+    - compact projection shows the TaskPlan has two subgoals, not one
+    - text-change subgoal is completed
+    - independent read-only submit_button availability subgoal remains incomplete
     - strict planner proposes finish
     - Runtime rejects finish with planner cannot finish before verifier-backed subgoal completion
+
+classification_update:
+  status: reclassified_before_red
+  previous_label: single-subgoal terminal completion
+  current_evidence_label: read-only terminal-availability progress binding / TaskPlan cardinality
+  reason: >
+    The d50a631 trace shows `enter-text:seed-1` has a completed text-change
+    subgoal plus an incomplete independent `submit_button is available`
+    subgoal. It is therefore not evidence for a single-subgoal completion bug.
 
 non_goals:
   - do not modify production code in this diagnostic packet
@@ -31,6 +44,7 @@ non_goals:
   - do not combine with V-PRB-6A unless the RED proves an identical root cause
 
 required_non_browsergym_red_tests:
+  - read-only availability subgoal must be resolved before finish or excluded from serial action progress
   - text action verification passes with criterion and requirement IDs bound to the unique subgoal
   - completed_subgoal_ids contains the unique subgoal before finish
   - TaskPlanLifecycle.completed(state) is true before finish
@@ -51,6 +65,6 @@ remote_ci: disabled
 
 done_when:
   - compact trace projection is archived for the affected episode
-  - a non-BrowserGym RED reproduces the single-subgoal terminal failure
+  - a non-BrowserGym RED reproduces the reclassified read-only availability / cardinality failure
   - one primary owner is selected
   - any production repair is moved to a separate child_production_slice packet

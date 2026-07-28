@@ -505,6 +505,91 @@ def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_fa
     assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "V-PRB-6A RED: dependent checkbox HAS_CHANGED follow-up remains "
+        "terminal-only, so TaskPlan progress is not credited before finish"
+    ),
+)
+def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress() -> None:
+    state = StateKernel("task-1", "Move slider, then check the requested box")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.LLM,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="slider-changed",
+                    objective="slider value has changed",
+                    success_criteria=("slider value has changed",),
+                    evidence_requirements=("post-slider observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.PRESS_KEY,
+                    outcome=SubgoalOutcome(
+                        subject="slider value",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+                SubgoalSpec(
+                    subgoal_id="checkbox-changed",
+                    objective="checkbox state has changed",
+                    depends_on=("slider-changed",),
+                    success_criteria=("checkbox state has changed",),
+                    evidence_requirements=("post-checkbox observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject="checkbox state",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    state.complete_subgoal("slider-changed", ("evidence:slider",))
+    state.activate_next_subgoal()
+    affordance = _affordance(
+        "checkbox",
+        action="activate",
+        locator={"backend_handle": "17"},
+        role="checkbox",
+        label="Checkbox state",
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-checkbox",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=affordance.id,
+    )
+    verifiers = [
+        VerifierSpec("evidence", "last_action_error", ""),
+        VerifierSpec(
+            "control_state",
+            "17",
+            {"field": "checked", "changed_from": False},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        ),
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("click", {"bid": "17"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+
+
 @pytest.mark.parametrize(
     ("outcome_value", "label"),
     [("Ada", "Search"), ("Myron", "Display name")],
