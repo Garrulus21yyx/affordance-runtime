@@ -382,15 +382,21 @@ delivery claims.
     `docs/evidence/runs/v-prb-6-post-95fe00b-classification/` and diagnostic
     packet
     `docs/change-admission/v-prb-6-post-95fe00b-residual-classification.yaml`.
-    `form-sequence:seed-0` is routed to V-PRB-6A explicit progress target:
-    resolver selected checkbox/submit actions while the proposal subgoal still
-    named the stale slider subgoal, so verifier evidence was credited to the
-    wrong subgoal and finish guard correctly rejected completion.
-    `form-sequence:seed-1` is a rejected-path regression symptom and should not
-    define a standalone next production owner. Next production candidate is a
-    non-BrowserGym RED for Runtime-owned explicit progress target binding,
-    based on accepted `66dae07` evidence or a fresh clean rerun on current
-    reverted code. No production behavior was changed.
+    `form-sequence:seed-0` is a V-PRB-6A explicit progress-target candidate,
+    but the latest review reorders execution: V-PRB-6B Core progress accounting
+    is primary because `enter-text:seed-1` shows a required ready read-only
+    obligation should be completed from current observation rather than deleted
+    from the authoritative TaskPlan. V-PRB-6A remains second lane after 6B clean
+    rerun evidence.
+50. `done` — Replaced the uncommitted V-PRB-6A RED direction with the accepted
+    V-PRB-6B RED/admission:
+    `tests/test_task_plan_progress.py::test_required_available_subgoal_is_completed_without_deleting_obligation`
+    and
+    `docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml`.
+    This is a red-only packet for Core verifier-backed progress accounting; no
+    production behavior is admitted. Next step is GREEN for a narrow
+    `IS_AVAILABLE` / `IS_VISIBLE` `TaskPlanProgressReconciler` or
+    `CurrentStateSubgoalCompletionFlow`, then a clean PR breadth rerun.
 
 ## Change Record
 
