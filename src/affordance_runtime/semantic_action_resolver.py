@@ -97,16 +97,17 @@ def _resolve_slider_press_key_entry(context: PlannerContext) -> SemanticActionRe
 
 
 def _resolve_verified_effect_followup(context: PlannerContext) -> SemanticActionResolution | None:
-    if not context.active_subgoal or context.active_subgoal not in context.verified_effects:
+    if not context.verified_effects:
         return None
-    checkbox = _requested_checkbox_activation(context)
-    if checkbox is not None:
-        return SemanticActionResolution(
-            action_kind=PlannerActionKind.ACTIVATE,
-            target_affordance_id=checkbox.id,
-            expected_effects=(f"{checkbox.label} checked",),
-            evidence_requirements=_evidence_requirements(context),
-        )
+    if context.active_subgoal and context.active_subgoal in context.verified_effects:
+        checkbox = _requested_checkbox_activation(context)
+        if checkbox is not None:
+            return SemanticActionResolution(
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=checkbox.id,
+                expected_effects=(f"{checkbox.label} checked",),
+                evidence_requirements=_evidence_requirements(context),
+            )
     if not _requested_checkbox_satisfied(context):
         return None
     terminals = _terminal_activation_targets(context)
@@ -356,7 +357,7 @@ def _target_texts(context: PlannerContext) -> tuple[str, ...]:
 
 
 def _requested_numeric_value(context: PlannerContext) -> float | None:
-    for source in (context.active_subgoal, " ".join(_target_texts(context))):
+    for source in (context.active_subgoal, " ".join(_slider_target_texts(context))):
         value = _single_numeric_value(source)
         if value is not None:
             return value
@@ -367,6 +368,10 @@ def _requested_numeric_value(context: PlannerContext) -> float | None:
             return value
     match = re.search(r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+the\s+slider\b", _objective(context), re.IGNORECASE)
     return float(match.group(1)) if match is not None else None
+
+
+def _slider_target_texts(context: PlannerContext) -> tuple[str, ...]:
+    return tuple(item for item in _target_texts(context) if "slider" in item.casefold())
 
 
 def _current_numeric_value(affordance: AffordanceSummary) -> float | None:
