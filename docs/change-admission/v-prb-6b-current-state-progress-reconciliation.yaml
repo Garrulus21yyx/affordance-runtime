@@ -1,0 +1,97 @@
+slice_id: v-prb-6b-current-state-progress-reconciliation
+parent_packet: docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml
+packet_role: child_production_slice
+
+base_revision: c89254b991fb6a64edb102fd20080e6636d3ed5a
+change_type: vertical_repair
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: Core TaskPlan current-state progress reconciliation
+owner_before:
+  - TaskPlanFlow treated active/current-state-satisfied read-only subgoals as replacement-plan repair input.
+  - The replacement path could remove a required obligation subgoal from the plan.
+  - TaskPlanValidator correctly rejected replacement plans that erased required obligation coverage.
+owner_after:
+  - CurrentStateSubgoalCompletionEvaluator prepares typed completion for ready read-only IS_AVAILABLE / IS_VISIBLE subgoals proven by current observation.
+  - TaskPlanFlow returns a progress_completion preparation instead of deleting the required subgoal.
+  - RunCoordinator remains the StateKernel writer and commits completion with StateKernel.complete_subgoal().
+  - TaskPlan and required obligation subgoal identity remain intact.
+
+allowed_writes:
+  - src/affordance_runtime/task_plan_progress.py
+  - src/affordance_runtime/task_plan_flow.py
+  - src/affordance_runtime/coordinator.py
+  - tests/test_task_plan_progress.py
+  - tests/test_task_plan_flow.py
+  - docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml
+  - docs/current-implementation-plan.md
+  - docs/implementation-status.md
+  - .codex/goal-plan.md
+
+forbidden_changes:
+  - BrowserGym text evidence broadening
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - deleting required TaskPlan obligation subgoals
+  - TaskPlanValidator obligation coverage weakening
+  - RunCoordinator finish guard weakening
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration
+  - V-PRB-6A checkbox/submit progress-scope binding changes
+
+typed_boundary:
+  input:
+    - TaskPlan
+    - immutable TaskPlanProgressStateView
+    - PlanningEnvironmentSummary current observation
+  output:
+    - SubgoalCompletionPreparation
+  supported_relations:
+    - is_available
+    - is_visible
+  unsupported_in_this_slice:
+    - has_changed
+    - is_checked
+    - is_selected
+    - is_completed
+
+verification:
+  red:
+    command: >
+      python -m pytest -q tests/test_task_plan_progress.py
+    result: 14 failed because affordance_runtime.task_plan_progress did not exist
+  green:
+    command: >
+      python -m pytest -q tests/test_task_plan_progress.py tests/test_task_plan_flow.py
+    result: 23 passed
+  focused_regression:
+    command: >
+      python -m pytest -q tests/test_task_plan_progress.py tests/test_task_plan_flow.py
+      tests/test_task_plan_lifecycle.py tests/test_task_planning.py tests/test_coordinator.py
+      tests/test_horizontal_architecture_governance.py tests/test_responsibility_containment.py
+    result: 169 passed
+
+implementation_result:
+  status: implemented_locally_pending_full_gate_and_clean_pr_breadth_rerun
+  production_change: >
+    Added authority-free current-state progress reconciliation for ready
+    read-only IS_AVAILABLE / IS_VISIBLE TaskPlan subgoals. The evaluator
+    fail-closes on stale identity, unmet dependencies, multiple matching
+    controls, hidden controls, disabled availability, and unsupported
+    relations. RunCoordinator commits the typed preparation through existing
+    StateKernel.complete_subgoal().
+  clean_pr_breadth_rerun:
+    required: true
+    result: not_run
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+done_when:
+  - full local gate passes
+  - clean committed PR breadth rerun is archived
+  - enter-text:seed-1 improves without external reward regression
+  - no PR breadth acceptance, fresh diagnostic, promotion, or official score claim is made before clean rerun evidence

@@ -209,7 +209,15 @@ batched into a single mixed patch:
    was tested on clean `21f44b0` and rejected: PR breadth regressed from the
    prior `66dae07` 12/12 external reward baseline to 11/12 external reward
    while retaining 3 Runtime failures. That attempted production behavior is
-   reverted and must not be continued as the next repair path.
+   reverted and must not be continued as the next repair path. The selected
+   replacement owner is
+   `docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml`:
+   Core `CurrentStateSubgoalCompletionEvaluator` prepares verifier-backed
+   current-observation completion for ready read-only `IS_AVAILABLE` /
+   `IS_VISIBLE` subgoals, and Coordinator commits it with
+   `StateKernel.complete_subgoal()` while preserving the original TaskPlan and
+   obligation coverage. Clean PR breadth rerun is still required before any
+   closure claim.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
