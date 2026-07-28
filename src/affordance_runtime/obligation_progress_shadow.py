@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 from affordance_runtime.obligation_progress import ReadyObligationProjection
 
@@ -35,14 +36,11 @@ class TaskPlanShadowProjection:
         _require_unique_nonblank("ready subgoal ids", self.ready_subgoal_ids)
         _require_unique_nonblank("completed subgoal ids", self.completed_subgoal_ids)
         subgoal_ids: list[str] = []
-        obligation_ids: list[str] = []
         for subgoal_id, obligation_id in self.subgoal_obligation_ids:
             _require_nonblank("subgoal id", subgoal_id)
             _require_nonblank("obligation id", obligation_id)
             subgoal_ids.append(subgoal_id)
-            obligation_ids.append(obligation_id)
         _require_unique("subgoal obligation subgoal ids", tuple(subgoal_ids))
-        _require_unique("subgoal obligation ids", tuple(obligation_ids))
 
 
 @dataclass(frozen=True)
@@ -76,6 +74,60 @@ class ObligationProgressShadowComparison:
             "divergent_subgoal_ids": list(self.divergent_subgoal_ids),
             "divergent_obligation_ids": list(self.divergent_obligation_ids),
             "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class ObligationProgressShadowTraceProjection:
+    schema_version: str = "1.0"
+    task_spec_identity: str = ""
+    task_revision: int = 0
+    evaluated_at_state_version: int = 0
+    snapshot_id: str = ""
+    page_revision: str = ""
+    environment_revision: str = ""
+    task_plan_id: str = ""
+    task_plan_version: int = 0
+    obligation_progress_source: Literal[
+        "legacy_verified_projection",
+        "statekernel_shadow_ledger",
+    ] = "legacy_verified_projection"
+    comparison: ObligationProgressShadowComparison | None = None
+
+    def __post_init__(self) -> None:
+        _require_nonblank("schema version", self.schema_version)
+        _require_nonblank("task spec identity", self.task_spec_identity)
+        if self.task_revision < 1:
+            raise ValueError("task revision must be positive")
+        if self.evaluated_at_state_version < 0:
+            raise ValueError("evaluated state version cannot be negative")
+        _require_nonblank("snapshot id", self.snapshot_id)
+        _require_nonblank("page revision", self.page_revision)
+        _require_nonblank("environment revision", self.environment_revision)
+        _require_nonblank("task plan id", self.task_plan_id)
+        if self.task_plan_version < 1:
+            raise ValueError("task plan version must be positive")
+        if self.comparison is None:
+            raise ValueError("shadow trace projection requires comparison")
+
+    def to_trace_payload(self) -> dict[str, object]:
+        assert self.comparison is not None
+        return {
+            "schema_version": self.schema_version,
+            "task_spec_identity": self.task_spec_identity,
+            "task_revision": self.task_revision,
+            "evaluated_at_state_version": self.evaluated_at_state_version,
+            "snapshot": {
+                "snapshot_id": self.snapshot_id,
+                "page_revision": self.page_revision,
+                "environment_revision": self.environment_revision,
+            },
+            "task_plan": {
+                "plan_id": self.task_plan_id,
+                "plan_version": self.task_plan_version,
+            },
+            "obligation_progress_source": self.obligation_progress_source,
+            "comparison": self.comparison.to_trace_payload(),
         }
 
 

@@ -5,6 +5,7 @@ from affordance_runtime.obligation_progress import (
 )
 from affordance_runtime.obligation_progress_shadow import (
     ObligationProgressShadowClassification,
+    ObligationProgressShadowTraceProjection,
     TaskPlanShadowProjection,
     compare_obligation_progress_shadow,
 )
@@ -161,3 +162,68 @@ def test_shadow_comparison_reports_dependency_divergence_when_active_is_not_read
     )
     assert comparison.active_subgoal_obligation_id == "obligation:submit"
     assert comparison.ready_obligation_ids == ("obligation:type-name",)
+
+
+def test_shadow_projection_allows_many_strategy_steps_for_one_obligation() -> None:
+    projection = TaskPlanShadowProjection(
+        active_subgoal_id="subgoal:type-part-one",
+        ready_subgoal_ids=("subgoal:type-part-one", "subgoal:type-part-two"),
+        completed_subgoal_ids=(),
+        subgoal_obligation_ids=(
+            ("subgoal:type-part-one", "obligation:type-name"),
+            ("subgoal:type-part-two", "obligation:type-name"),
+        ),
+    )
+
+    assert projection.subgoal_obligation_ids == (
+        ("subgoal:type-part-one", "obligation:type-name"),
+        ("subgoal:type-part-two", "obligation:type-name"),
+    )
+
+
+def test_shadow_trace_projection_wraps_comparison_with_runtime_identity() -> None:
+    comparison = compare_obligation_progress_shadow(
+        legacy=TaskPlanShadowProjection(
+            active_subgoal_id="subgoal:type-name",
+            ready_subgoal_ids=("subgoal:type-name",),
+            completed_subgoal_ids=(),
+            subgoal_obligation_ids=(("subgoal:type-name", "obligation:type-name"),),
+        ),
+        obligation_projection=ReadyObligationProjection(
+            status="ready",
+            ready_obligations=(_ready_view("obligation:type-name"),),
+            pending_role_obligation_ids=(),
+        ),
+        satisfied_obligation_ids=(),
+    )
+
+    trace_projection = ObligationProgressShadowTraceProjection(
+        task_spec_identity="sha256:task",
+        task_revision=3,
+        evaluated_at_state_version=8,
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        environment_revision="env-1",
+        task_plan_id="plan-1",
+        task_plan_version=2,
+        obligation_progress_source="legacy_verified_projection",
+        comparison=comparison,
+    )
+
+    assert trace_projection.to_trace_payload() == {
+        "schema_version": "1.0",
+        "task_spec_identity": "sha256:task",
+        "task_revision": 3,
+        "evaluated_at_state_version": 8,
+        "snapshot": {
+            "snapshot_id": "snapshot-1",
+            "page_revision": "page-1",
+            "environment_revision": "env-1",
+        },
+        "task_plan": {
+            "plan_id": "plan-1",
+            "plan_version": 2,
+        },
+        "obligation_progress_source": "legacy_verified_projection",
+        "comparison": comparison.to_trace_payload(),
+    }
