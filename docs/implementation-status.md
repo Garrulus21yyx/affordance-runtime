@@ -33,7 +33,7 @@ milestone status values.
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
-| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, and ODG-3 StateKernel obligation ledger foundation is the selected storage-only slice before any shadow comparison, Coordinator commit, finish migration, PlannerContext change, or benchmark rerun. |
+| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, and ODG-4 executable role decisions / safe ready projection is the selected authority-free slice before any shadow comparison, Coordinator commit, finish migration, PlannerContext change, or benchmark rerun. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -63,6 +63,8 @@ obligation_driven_progress:
   contracts: foundation_only
   ledger_record: docs/change-admission/odg-3-statekernel-obligation-ledger-foundation.yaml
   ledger: foundation_storage_only
+  ready_projection_record: docs/change-admission/odg-4-role-decisions-ready-projection.yaml
+  ready_projection: authority_free_foundation
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
@@ -136,7 +138,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: ODG-3 StateKernel obligation ledger foundation; ODG-4 ready projection waits for a validated progress state source
+  current_next_change_admission: ODG-4 executable role decisions and safe ready projection; ODG-5 shadow comparison waits for this non-throwing projection result
   immutable_planner_input: deferred until ODG ready-obligation projection shapes the standard Planner view
 
 active_local_repair:

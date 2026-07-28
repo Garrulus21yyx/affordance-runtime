@@ -622,3 +622,8 @@ delivery claims.
   run loop, commit obligation satisfaction through Coordinator, change finish,
   alter PlannerContext, replace TaskPlan behavior, write trace, run benchmark,
   or make a promotion claim.
+- Started ODG-4A/4B: add executable, fail-closed obligation role decisions and
+  a non-throwing ready-obligation projection result for future ODG-5 shadow
+  comparison. The role resolver may only use canonical obligation fields; it
+  must not read task names, URLs, selectors, benchmark families, Planner state,
+  TaskPlan state, or model-authored progress.

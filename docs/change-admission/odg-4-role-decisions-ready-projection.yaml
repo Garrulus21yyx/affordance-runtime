@@ -1,0 +1,109 @@
+slice_id: odg-4-role-decisions-ready-projection
+parent_decision: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
+decision_date: 2026-07-28
+base_revision: 4af7c195c0826ab3c268efcff3ed121eff710afb
+change_type: architecture_projection_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+single_primary_owner: Canonical obligation role and ready projection contracts
+
+goal: >
+  Add executable role decisions and a safe ready-obligation projection result
+  after ODG-3 ledger storage. This slice prepares ODG-5 shadow comparison by
+  returning typed projection statuses instead of throwing from ambiguous roles
+  or stale/invalid progress state. It does not make the projection runtime
+  authority.
+
+included:
+  - ObligationRoleDecisionStatus
+  - ObligationRoleDecision
+  - decide_obligation_execution_roles()
+  - ReadyObligationProjection
+  - project_ready_obligations()
+  - fail-closed pending role decisions for ambiguous availability/visibility predicates
+  - stale_progress projection status
+  - invalid_progress projection status
+  - role_pending projection status
+
+excluded:
+  - Coordinator satisfaction commit
+  - StateKernel.satisfy_task_obligation()
+  - finish gate change
+  - PlannerContext ready-obligation projection
+  - TaskPlan replacement or deletion semantics
+  - TaskPlanLifecycle authority change
+  - runtime shadow divergence trace
+  - Recovery behavior
+  - BrowserGym adapter changes
+  - benchmark rerun
+  - fresh diagnostic
+  - promotion claim
+
+authority_rules:
+  role_input_allowed:
+    - TaskSpec.obligations
+    - TaskObligationSpec.kind
+    - TaskObligationSpec.relation
+    - TaskObligationSpec.blocking
+    - TaskObligationSpec.terminal
+    - TaskObligationSpec.depends_on
+    - canonical source lineage already carried by TaskSpec
+  role_input_forbidden:
+    - task name
+    - URL
+    - selector
+    - coordinate
+    - benchmark family
+    - Planner state
+    - TaskPlan state
+    - model-authored progress
+    - receipt success
+    - external reward
+  effect_nonterminal: PROGRESS_EFFECT
+  effect_terminal: TERMINAL_EFFECT
+  nonblocking_availability_predicate: PRECONDITION
+  blocking_availability_predicate: role_pending
+  unknown_predicate: role_pending
+  standard_path_authority: not_authorized
+  dual_authority: false
+
+projection_statuses:
+  ready: all roles assigned and progress state valid
+  role_pending: at least one obligation has no executable role rule
+  stale_progress: task identity or revision mismatch
+  invalid_progress: malformed progress state or role decision inventory
+
+forbidden:
+  - add Coordinator obligation commit
+  - add finish authority from ready projection
+  - alter PlannerContext
+  - alter StateKernel
+  - alter TaskPlanFlow
+  - alter TaskPlanLifecycle
+  - alter BrowserGym evidence declarations
+  - call benchmarks or promote score
+  - infer roles from lexical task family names
+  - turn ambiguous availability predicates into terminal progress
+
+tests:
+  focused:
+    - tests/test_obligation_ready_projection.py
+    - tests/test_obligation_progress.py
+    - tests/test_obligation_progress_ledger.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_r8_architecture_boundaries.py
+    - tests/test_responsibility_containment.py
+
+architecture_admission: pass
+closure_status: foundation_projection_only
+promotion_status: held
+
+next_requirement: >
+  Continue with ODG-5 shadow comparison after this projection foundation has
+  passed local gates. ODG-5 may initialize and compare projections for trace
+  diagnostics only; it still must not commit obligation satisfaction, replace
+  finish authority, or change PlannerContext.

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Mapping
+from typing import Literal, Mapping
 
 from affordance_runtime.task_intake import (
+    TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
     TaskSpec,
@@ -20,12 +21,33 @@ class ObligationExecutionRole(StrEnum):
     EVIDENCE_ONLY = "evidence_only"
 
 
+class ObligationRoleDecisionStatus(StrEnum):
+    ASSIGNED = "assigned"
+    PENDING = "pending"
+
+
 PROGRESS_ROLES = frozenset(
     {
         ObligationExecutionRole.PROGRESS_EFFECT,
         ObligationExecutionRole.TERMINAL_EFFECT,
     }
 )
+
+
+@dataclass(frozen=True)
+class ObligationRoleDecision:
+    obligation_id: str
+    status: ObligationRoleDecisionStatus
+    role: ObligationExecutionRole | None
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank("obligation_id", self.obligation_id)
+        _require_nonblank("reason_code", self.reason_code)
+        if self.status == ObligationRoleDecisionStatus.ASSIGNED and self.role is None:
+            raise ValueError("assigned role decision requires role")
+        if self.status == ObligationRoleDecisionStatus.PENDING and self.role is not None:
+            raise ValueError("pending role decision cannot include role")
 
 
 @dataclass(frozen=True)
@@ -285,6 +307,39 @@ class ReadyObligationView:
     terminal: bool
 
 
+@dataclass(frozen=True)
+class ReadyObligationProjection:
+    status: Literal[
+        "ready",
+        "role_pending",
+        "stale_progress",
+        "invalid_progress",
+    ]
+    ready_obligations: tuple[ReadyObligationView, ...]
+    pending_role_obligation_ids: tuple[str, ...]
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        _require_unique_nonblank(
+            "pending role obligation ids",
+            self.pending_role_obligation_ids,
+        )
+        if self.status == "ready" and self.pending_role_obligation_ids:
+            raise ValueError("ready projection cannot include pending role ids")
+        if self.status == "role_pending" and not self.pending_role_obligation_ids:
+            raise ValueError("role_pending projection requires pending role ids")
+        if self.status != "ready" and self.ready_obligations:
+            raise ValueError("non-ready projection cannot include ready obligations")
+
+
+def decide_obligation_execution_roles(
+    task_spec: TaskSpec,
+) -> tuple[ObligationRoleDecision, ...]:
+    """Derive conservative execution-role decisions from canonical fields only."""
+
+    return tuple(_decide_obligation_execution_role(obligation) for obligation in task_spec.obligations)
+
+
 def task_obligation_execution_views(
     task_spec: TaskSpec,
     roles_by_obligation_id: Mapping[str, ObligationExecutionRole],
@@ -305,6 +360,81 @@ def task_obligation_execution_views(
             role=roles_by_obligation_id[obligation.obligation_id],
         )
         for obligation in task_spec.obligations
+    )
+
+
+def project_ready_obligations(
+    task_spec: TaskSpec,
+    progress: ObligationProgressStateView,
+    role_decisions: tuple[ObligationRoleDecision, ...],
+) -> ReadyObligationProjection:
+    """Safely project ready obligations without throwing into shadow integration."""
+
+    try:
+        validate_obligation_progress_state(task_spec, progress)
+    except ValueError as exc:
+        reason = str(exc)
+        if "task spec identity" in reason or "task revision" in reason:
+            return ReadyObligationProjection(
+                status="stale_progress",
+                ready_obligations=(),
+                pending_role_obligation_ids=(),
+                reason=reason,
+            )
+        return ReadyObligationProjection(
+            status="invalid_progress",
+            ready_obligations=(),
+            pending_role_obligation_ids=(),
+            reason=reason,
+        )
+
+    try:
+        decisions_by_id = _validated_role_decisions_by_id(task_spec, role_decisions)
+    except ValueError as exc:
+        return ReadyObligationProjection(
+            status="invalid_progress",
+            ready_obligations=(),
+            pending_role_obligation_ids=(),
+            reason=str(exc),
+        )
+
+    pending = tuple(
+        obligation.obligation_id
+        for obligation in task_spec.obligations
+        if decisions_by_id[obligation.obligation_id].status
+        == ObligationRoleDecisionStatus.PENDING
+    )
+    if pending:
+        reasons = tuple(
+            decisions_by_id[obligation_id].reason_code for obligation_id in pending
+        )
+        return ReadyObligationProjection(
+            status="role_pending",
+            ready_obligations=(),
+            pending_role_obligation_ids=pending,
+            reason=", ".join(_dedupe(reasons)),
+        )
+
+    execution_views_list: list[TaskObligationExecutionView] = []
+    for obligation in task_spec.obligations:
+        role = decisions_by_id[obligation.obligation_id].role
+        if role is None:
+            continue
+        execution_views_list.append(
+            TaskObligationExecutionView.from_obligation(
+                obligation,
+                role=role,
+            )
+        )
+    execution_views = tuple(execution_views_list)
+    return ReadyObligationProjection(
+        status="ready",
+        ready_obligations=ready_obligation_views(
+            task_spec,
+            progress,
+            execution_views,
+        ),
+        pending_role_obligation_ids=(),
     )
 
 
@@ -403,6 +533,68 @@ def validate_obligation_progress_state(
     unknown = sorted(supplied_ids - known_ids)
     if unknown:
         raise ValueError(f"unknown obligation progress id: {', '.join(unknown)}")
+
+
+def _decide_obligation_execution_role(
+    obligation: TaskObligationSpec,
+) -> ObligationRoleDecision:
+    if obligation.kind == TaskObligationKind.EFFECT:
+        if obligation.terminal:
+            return ObligationRoleDecision(
+                obligation_id=obligation.obligation_id,
+                status=ObligationRoleDecisionStatus.ASSIGNED,
+                role=ObligationExecutionRole.TERMINAL_EFFECT,
+                reason_code="effect_terminal",
+            )
+        return ObligationRoleDecision(
+            obligation_id=obligation.obligation_id,
+            status=ObligationRoleDecisionStatus.ASSIGNED,
+            role=ObligationExecutionRole.PROGRESS_EFFECT,
+            reason_code="effect_nonterminal",
+        )
+
+    if obligation.relation in {
+        TaskObligationRelation.IS_AVAILABLE,
+        TaskObligationRelation.IS_VISIBLE,
+    }:
+        if not obligation.blocking and not obligation.terminal:
+            return ObligationRoleDecision(
+                obligation_id=obligation.obligation_id,
+                status=ObligationRoleDecisionStatus.ASSIGNED,
+                role=ObligationExecutionRole.PRECONDITION,
+                reason_code="nonblocking_availability_predicate",
+            )
+        return ObligationRoleDecision(
+            obligation_id=obligation.obligation_id,
+            status=ObligationRoleDecisionStatus.PENDING,
+            role=None,
+            reason_code="blocking_availability_predicate_pending",
+        )
+
+    return ObligationRoleDecision(
+        obligation_id=obligation.obligation_id,
+        status=ObligationRoleDecisionStatus.PENDING,
+        role=None,
+        reason_code="predicate_role_pending",
+    )
+
+
+def _validated_role_decisions_by_id(
+    task_spec: TaskSpec,
+    role_decisions: tuple[ObligationRoleDecision, ...],
+) -> dict[str, ObligationRoleDecision]:
+    decisions_by_id = {item.obligation_id: item for item in role_decisions}
+    if len(decisions_by_id) != len(role_decisions):
+        raise ValueError("obligation role decision ids must be unique")
+    expected_ids = {item.obligation_id for item in task_spec.obligations}
+    supplied_ids = set(decisions_by_id)
+    missing = sorted(expected_ids - supplied_ids)
+    if missing:
+        raise ValueError(f"missing obligation role decision: {', '.join(missing)}")
+    extra = sorted(supplied_ids - expected_ids)
+    if extra:
+        raise ValueError(f"unknown obligation role decision: {', '.join(extra)}")
+    return decisions_by_id
 
 
 def _validated_views_by_id(

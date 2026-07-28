@@ -137,6 +137,14 @@ finish-gate replacement, PlannerContext projection, TaskPlan replacement,
 trace shadow comparison, recovery behavior, BrowserGym changes, benchmark
 reruns, or promotion claims.
 
+ODG-4 may add executable role decisions and a safe ready-obligation projection
+result inside the obligation progress contract module. Role decisions must be
+derived from canonical `TaskObligationSpec` fields and source-lineage-compatible
+metadata only; task names, URLs, selectors, coordinates, benchmark families,
+Planner state, TaskPlan state, and model-authored progress are forbidden
+inputs. Ambiguous predicates remain `role_pending` and must not become ready
+progress obligations until an explicit source-derived rule is added.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first
