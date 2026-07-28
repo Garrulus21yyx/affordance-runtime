@@ -183,7 +183,15 @@ batched into a single mixed patch:
    negative with the same 11/12 official reward and 4 Runtime failures, so this
    adapter evidence-scope repair is safe but insufficient. Do not continue
    broadening BrowserGym text evidence declarations without a new TaskPlan /
-   progress replacement root classification.
+   progress replacement root classification. Follow-up child production slice
+   `docs/change-admission/v-prb-6b-ready-read-only-discard-after-progress.yaml`
+   selects TaskPlanFlow replacement convergence as that next owner: when
+   verified prior progress leaves the active projection empty, a ready
+   dependency-complete read-only availability/visibility subgoal that is already
+   current-state satisfied may be discarded through the existing replacement
+   commit path. The non-BrowserGym RED/GREEN passes locally, and adjacent
+   replacement controls pass, but clean committed PR breadth rerun is still
+   required before judging matrix impact.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

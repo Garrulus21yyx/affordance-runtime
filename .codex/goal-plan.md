@@ -343,8 +343,15 @@ delivery claims.
     PR breadth rerun is archived at
     `docs/evidence/runs/m8.2a-pr-breadth-c382592/` and is still negative:
     12/12 observed, 11/12 official reward, 4 Runtime failures. This repair is
-    safe but insufficient; next V-PRB-6B work must classify TaskPlan/progress
-    replacement accounting before another production repair.
+    safe but insufficient; TaskPlan/progress replacement accounting was then
+    narrowed to active-empty ready read-only convergence. Child production
+    packet
+    `docs/change-admission/v-prb-6b-ready-read-only-discard-after-progress.yaml`
+    adds a non-BrowserGym RED/GREEN for the trace shape where verified text
+    progress clears active projection and the ready `submit_button is available`
+    subgoal is already current-state satisfied. The local RED/GREEN and
+    adjacent replacement controls pass; clean committed PR breadth rerun is
+    still required before any matrix-impact claim.
 
 ## Change Record
 

@@ -23,6 +23,7 @@ from affordance_runtime.task_plan_lifecycle import (
 )
 from affordance_runtime.task_planning import (
     SubgoalOutcomeRelation,
+    SubgoalSpec,
     TaskPlanValidationIssue,
     TaskPlanValidationStatus,
     task_planning_context_summary,
@@ -254,6 +255,8 @@ class TaskPlanFlow:
         assert replacement.reason is not None
         previous_plan = state.task_plan
         subgoal = self.lifecycle.active_subgoal_spec(state)
+        if subgoal is None:
+            subgoal = _ready_replacement_subgoal(state, replacement)
         if (
             previous_plan is None
             or subgoal is None
@@ -361,6 +364,31 @@ class TaskPlanFlow:
             transition,
             replacement=replacement,
         )
+
+
+def _ready_replacement_subgoal(
+    state: StateKernel,
+    replacement: TaskPlanReplacementDecision,
+) -> SubgoalSpec | None:
+    if (
+        state.task_plan is None
+        or state.plan_progress is None
+        or state.plan_progress.active_subgoal_id
+        or not replacement.subgoal_id
+    ):
+        return None
+    completed = set(state.plan_progress.completed_subgoal_ids)
+    failed = set(state.plan_progress.failed_subgoal_ids)
+    return next(
+        (
+            item
+            for item in state.task_plan.subgoals
+            if item.subgoal_id == replacement.subgoal_id
+            and item.subgoal_id not in completed | failed
+            and all(dependency in completed for dependency in item.depends_on)
+        ),
+        None,
+    )
 
 
 def _validated_result(
