@@ -178,6 +178,16 @@ and source identity compatible with the canonical typed evidence requirement.
 Multiple independent current-observation satisfactions are not ambiguity, but
 multiple targets for one obligation remain fail-closed.
 
+ODG-7 may add an authority-free attribution action view and candidate ticket
+resolver. The resolver scopes which ready canonical obligations an accepted
+action may later satisfy, but it must not decide completion, save tickets
+through Coordinator, mutate StateKernel or the obligation ledger, change
+ActionContract/Executor/Verifier interfaces, read TaskPlan active subgoals, or
+consume PlannerProposal, task names, URLs, selectors, coordinates, BrowserGym
+reward, or benchmark family. Multiple candidate obligations in one ticket are
+allowed because post-action evidence, not pre-action planning, chooses the
+final satisfaction target.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

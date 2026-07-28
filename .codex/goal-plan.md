@@ -663,3 +663,11 @@ delivery claims.
   compatibility for current observation facts, and distinct result states for
   multiple independent satisfactions versus ambiguous targets. ODG-7 ticket
   resolution remains a separate next slice.
+- Started ODG-7 as a separate foundation-only slice. The REDs require an
+  authority-free `AttributionActionView`, a non-throwing ticket resolution
+  result, deterministic ticket identity, multiple candidate obligations per
+  action, stale identity handling, role-pending propagation, dependency and
+  progress-role filtering, and action/target compatibility checks. This slice
+  must not save tickets through Coordinator, change ActionContract / Executor /
+  Verifier interfaces, mutate the obligation ledger, change finish authority,
+  change PlannerContext, run PR breadth, or claim promotion.
