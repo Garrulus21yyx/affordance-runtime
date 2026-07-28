@@ -1,0 +1,76 @@
+slice_id: v-prb-6-post-95fe00b-residual-classification
+packet_role: read_only_diagnostic
+
+base_revision: 204ca17de9706f3109c45e68795ca72b4f8da776
+classified_revision: 95fe00b7c069c4f45b6d32e07de4921dba07e02b
+evidence:
+  pr_breadth_report: docs/evidence/runs/m8.2a-pr-breadth-95fe00b/browsergym-report.json
+  compact_classification: docs/evidence/runs/v-prb-6-post-95fe00b-classification/
+  local_output_dir: /tmp/affordance-pr-breadth-95fe00b-rerun-20260728-140235
+
+change_type: diagnostic
+agent_mode: single_agent
+production_change_allowed: false
+
+scope:
+  included:
+    - form-sequence:seed-0
+    - form-sequence:seed-1
+  excluded:
+    - PR breadth acceptance
+    - fresh diagnostic
+    - nightly
+    - release
+    - official score
+    - immutable Planner input
+    - production repair
+
+classification:
+  form-sequence:seed-0:
+    runtime_status: aborted
+    official_reward: 1.0
+    root_owner: V-PRB-6A
+    mechanism: progress_target_mismatch
+    evidence_summary:
+      - Planner selected checkbox and submit targets while proposal.subgoal still named the slider subgoal.
+      - Submit verifier evidence completed the slider subgoal, not the dependent checkbox or submit obligation.
+      - Finish guard correctly rejected completion because the checkbox subgoal remained incomplete.
+    next_red: >
+      Runtime-owned explicit progress target should allow verifier evidence to
+      bind to the intended dependency-unlocked subgoal when the active
+      projection is stale.
+  form-sequence:seed-1:
+    runtime_status: waiting_clarification
+    official_reward: 0.0
+    root_owner: rejected_path_regression_symptom
+    mechanism: planner_waiting_clarification_after_uncredited_active_slider_progress
+    evidence_summary:
+      - Repeated slider progress evidence was strong enough as observation, but unlinked to mandatory progress criteria.
+      - The planner then emitted empty ask_user before external success.
+      - This happened on a rejected production path and must not define the next production owner alone.
+
+decision:
+  production_admission: not_admitted
+  recommended_next_slice: v-prb-6a-explicit-progress-target
+  recommended_entry_baseline: >
+    Use the accepted 66dae07 diagnostic baseline, or first rerun a clean matrix
+    on the current reverted code, before admitting production repair.
+  rationale: >
+    The accepted 66dae07 baseline preserved 12/12 external reward with three
+    Runtime failures. The rejected 95fe00b path reduced Runtime failures to two
+    but regressed external reward. Therefore the next repair should target the
+    stable V-PRB-6A progress-binding mechanism rather than continuing the
+    rejected V-PRB-6B evaluator path.
+
+forbidden_next_steps:
+  - Continue the rejected current-state progress reconciliation implementation.
+  - Broaden BrowserGym adapter evidence as a substitute for Runtime progress targeting.
+  - Use BrowserGym official reward or ExecutionReceipt.success as completion authority.
+  - Weaken the finish guard.
+  - Delete required obligation subgoals.
+  - Mix immutable Planner input / PlannerStateView migration into this vertical repair.
+  - Claim PR breadth, fresh diagnostic, promotion, or official score readiness.
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled

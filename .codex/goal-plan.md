@@ -377,6 +377,20 @@ delivery claims.
     reclassification for form-sequence seed-0/seed-1 before any new production
     slice. No PR breadth acceptance, fresh diagnostic, promotion, immutable
     Planner input, or official score claim is made.
+49. `done` — Completed read-only post-`95fe00b` residual classification.
+    Evidence is archived at
+    `docs/evidence/runs/v-prb-6-post-95fe00b-classification/` and diagnostic
+    packet
+    `docs/change-admission/v-prb-6-post-95fe00b-residual-classification.yaml`.
+    `form-sequence:seed-0` is routed to V-PRB-6A explicit progress target:
+    resolver selected checkbox/submit actions while the proposal subgoal still
+    named the stale slider subgoal, so verifier evidence was credited to the
+    wrong subgoal and finish guard correctly rejected completion.
+    `form-sequence:seed-1` is a rejected-path regression symptom and should not
+    define a standalone next production owner. Next production candidate is a
+    non-BrowserGym RED for Runtime-owned explicit progress target binding,
+    based on accepted `66dae07` evidence or a fresh clean rerun on current
+    reverted code. No production behavior was changed.
 
 ## Change Record
 

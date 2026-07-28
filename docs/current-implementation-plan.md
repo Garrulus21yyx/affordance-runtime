@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | Post-`95fe00b` residual reclassification | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean `66dae07` remains the latest better diagnostic baseline with 12/12 official reward and 3 Runtime failures. Later V-PRB-6B repair attempts at `21f44b0` and `95fe00b` are both rejected because each regressed external reward to 11/12. | reclassify the post-`95fe00b` residuals before another production repair: form-sequence seed-0 still hits the verifier-backed finish guard, while form-sequence seed-1 now reaches `planner_waiting_clarification` and external reward 0. Do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, delete required obligations, broaden BrowserGym evidence, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-6A explicit progress target RED | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean `66dae07` remains the latest better diagnostic baseline with 12/12 official reward and 3 Runtime failures. Later V-PRB-6B repair attempts at `21f44b0` and `95fe00b` are both rejected because each regressed external reward to 11/12. Post-`95fe00b` classification routes seed-0 to V-PRB-6A progress-target mismatch. | write a non-BrowserGym RED for Runtime-owned explicit progress target binding: when resolver intentionally selects a dependency-unlocked checkbox/submit action while active projection is stale, verifier evidence must bind to the intended subgoal rather than stale active subgoal. Use accepted `66dae07` evidence or a fresh clean rerun on current reverted code before production admission. Do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, delete required obligations, broaden BrowserGym evidence, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -219,7 +219,16 @@ batched into a single mixed patch:
    `docs/evidence/runs/m8.2a-pr-breadth-95fe00b/`. Next work must reclassify
    the residual form-sequence mechanism before opening another production
    slice; do not keep extending the rejected evaluator path, do not delete
-   required obligations, and do not broaden BrowserGym evidence.
+   required obligations, and do not broaden BrowserGym evidence. The
+   post-`95fe00b` read-only classification is now archived at
+   `docs/evidence/runs/v-prb-6-post-95fe00b-classification/` with diagnostic
+   packet
+   `docs/change-admission/v-prb-6-post-95fe00b-residual-classification.yaml`.
+   It routes `form-sequence:seed-0` to V-PRB-6A explicit progress target
+   binding: checkbox/submit actions were selected while the proposal subgoal
+   still named the stale slider subgoal, so verifier evidence was credited to
+   the wrong subgoal. `form-sequence:seed-1` is treated as a rejected-path
+   regression symptom, not a standalone next production owner.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
