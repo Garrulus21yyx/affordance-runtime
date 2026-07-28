@@ -356,7 +356,12 @@ delivery claims.
     12/12 official reward, 3 Runtime failures. This is partial positive
     evidence, not PR breadth acceptance. Next slice must choose either the
     `enter-text:seed-1` `obligation_subgoal_missing` accounting residual or the
-    separate V-PRB-6A form-sequence progress-scope cluster.
+    separate V-PRB-6A form-sequence progress-scope cluster. Diagnostic packet
+    `docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml`
+    records the `enter-text` update: TaskPlanValidator correctly rejects a
+    replacement that removes a required `submit_button is available` obligation.
+    A future V-PRB-6B production slice must start from a new RED for required
+    read-only obligation completion/accounting.
 
 ## Change Record
 

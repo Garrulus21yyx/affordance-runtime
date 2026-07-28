@@ -197,6 +197,13 @@ batched into a single mixed patch:
    longer reproduces, but PR breadth acceptance is still failed. Next work must
    split `enter-text:seed-1` `obligation_subgoal_missing` from the V-PRB-6A
    form-sequence progress-scope / finish-guard cluster; do not batch them.
+   Diagnostic packet
+   `docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml`
+   records the `enter-text` root-owner update: TaskPlanValidator is correctly
+   rejecting a replacement that erases a required `submit_button is available`
+   obligation. The next V-PRB-6B production slice must start with a
+   non-BrowserGym RED for required read-only obligation completion/accounting,
+   not by weakening obligation coverage or the finish guard.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
