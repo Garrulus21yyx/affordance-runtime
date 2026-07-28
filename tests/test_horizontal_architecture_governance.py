@@ -134,6 +134,24 @@ LEGACY_NON_ADAPTER_BENCHMARK_IMPORTERS = {
     "evolution_replay.py",
 }
 
+OBLIGATION_PROGRESS_CONTRACT_MODULES = {
+    "obligation_attribution.py",
+    "obligation_progress.py",
+}
+
+FORBIDDEN_OBLIGATION_PROGRESS_DEPENDENCIES = (
+    "affordance_runtime.adapters",
+    "affordance_runtime.benchmarks",
+    "affordance_runtime.cli",
+    "affordance_runtime.coordinator",
+    "affordance_runtime.planner_context",
+    "affordance_runtime.planners",
+    "affordance_runtime.state_kernel",
+    "affordance_runtime.task_plan_progress",
+    "affordance_runtime.task_planning",
+    "affordance_runtime.trace",
+)
+
 EXTRACTED_MUTATION_DEBT: set[tuple[str, str]] = set()
 
 
@@ -264,26 +282,34 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
     governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
     odg_record = CHANGE_ADMISSION_DIR / "odg-0-obligation-driven-progress-architecture.yaml"
+    odg_2_record = CHANGE_ADMISSION_DIR / "odg-2-obligation-progress-contracts.yaml"
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
+    assert odg_2_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
+    odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
     assert "production_change_allowed: false" in record
+    assert "production_behavior_change: false" in odg_2
+    assert "statekernel mutation" in odg_2
+    assert "closure_status: foundation_only" in odg_2
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
     assert "coordinator_integration: status: not_authorized" in record
     assert "promotion_status: held" in record
 
-    assert "odg-0 / odg-1 obligation-driven progress authority freeze" in current_plan
+    assert "odg-2 obligation progress contracts" in current_plan
     assert "taskplan becomes an optional execution strategy view" in current_plan
     assert "obligation_driven_progress:" in status
+    assert "contracts: foundation_only" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
+    assert "must not import coordinator, statekernel, taskplan" in governance
     assert "submit_button_is_available:" in audit
     assert "fail_closed_pending_rule" in audit
     assert "module-level semantic owner gate" in governance
@@ -368,12 +394,13 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "click_button_recheck:" in status
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
-    assert "next_change_admission: v-prb-6a form-sequence" in status
+    assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
+    assert "current_next_change_admission: odg-2 obligation progress contracts" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
-    assert "do not continue pre-action final-subgoal attribution" in current_plan
-    assert "odg-1 obligation execution-role audit" in current_plan
+    assert "no longer to extend pre-action taskplan subgoal attribution" in current_plan
+    assert "odg-1 records the initial obligation execution-role audit" in current_plan
 
 
 def test_pr_breadth_child_packet_lifecycle_matches_review_approval() -> None:
@@ -668,6 +695,20 @@ def test_neutral_contracts_do_not_depend_on_orchestration_or_adapters() -> None:
                     for prefix in FORBIDDEN_NEUTRAL_DEPENDENCIES
                 ):
                     violations.append((filename, dependency))
+    assert violations == []
+
+
+def test_obligation_progress_contracts_do_not_import_taskplan_or_runtime_authority() -> None:
+    violations: list[tuple[str, int, str]] = []
+    for filename in OBLIGATION_PROGRESS_CONTRACT_MODULES:
+        tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            for dependency in _import_dependencies(node):
+                if any(
+                    _matches_module(dependency, prefix)
+                    for prefix in FORBIDDEN_OBLIGATION_PROGRESS_DEPENDENCIES
+                ):
+                    violations.append((filename, getattr(node, "lineno", 0), dependency))
     assert violations == []
 
 

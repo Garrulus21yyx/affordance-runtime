@@ -122,6 +122,13 @@ freezing a TaskPlan/PlanProgress-shaped view that ODG intends to retire.
 Neither lane authorizes promotion while remote CI is disabled or required
 validation is unavailable.
 
+ODG-2 may add typed, authority-free progress and attribution contracts, but
+those contracts are not progress authority until later slices add shadow
+comparison and Coordinator commit gates. A module defining obligation progress
+contracts may depend on canonical task-intake types, but must not import
+Coordinator, StateKernel, TaskPlan, BrowserGym, CLI, trace writers, or planner
+implementations.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

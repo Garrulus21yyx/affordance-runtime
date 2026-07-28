@@ -606,3 +606,13 @@ delivery claims.
   than BrowserGym adapter evidence broadening, TaskPlan subgoal deletion,
   finish-guard weakening, receipt/reward completion, or pre-action final
   subgoal ownership.
+- Started ODG-2 with TDD: added RED coverage for canonical dependency-based
+  ready obligations, explicit role-view fail-closed behavior, completion from
+  blocking progress obligations rather than TaskPlan state, and identity-bound
+  attribution ticket / satisfaction preparation contracts. Implemented
+  `src/affordance_runtime/obligation_progress.py` and
+  `src/affordance_runtime/obligation_attribution.py` as authority-free
+  foundation modules only. They do not mutate StateKernel, write trace, invoke
+  Planner, connect through Coordinator, replace finish authority, or change
+  BrowserGym behavior. Recorded
+  `docs/change-admission/odg-2-obligation-progress-contracts.yaml`.
