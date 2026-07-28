@@ -589,4 +589,9 @@ delivery claims.
   result at `407133d`; it only means the click-button JSON-invalid cluster is
   monitored rather than selected as the next production owner. The next
   production lane is V-PRB-6A for the stable `form-sequence` dependent-subgoal
-  progress-scope / finish-guard cluster.
+  progress-scope / finish-guard cluster. A Core-only progress-target foundation
+  is recorded in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`;
+  it is not a closure because the dirty-tree form-sequence diagnostic remained
+  negative. The next RED should target post-verification progress attribution,
+  not BrowserGym adapter broadening, Coordinator growth, or immutable Planner
+  input migration.

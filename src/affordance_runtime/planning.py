@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -394,6 +395,16 @@ class ContractRequirements:
 
 
 @dataclass(frozen=True)
+class TaskPlanProgressTarget:
+    """Runtime-owned target for binding verifier evidence to a TaskPlan subgoal."""
+
+    plan_id: str
+    plan_version: int
+    subgoal_id: str
+    based_on_state_version: int
+
+
+@dataclass(frozen=True)
 class SubgoalEvidenceBinder:
     """Validate explicit verifier-to-subgoal links without inferring by timing."""
 
@@ -401,15 +412,30 @@ class SubgoalEvidenceBinder:
         self,
         verifier_plan: tuple[VerifierSpec, ...],
         state: StateKernel,
+        *,
+        progress_target: TaskPlanProgressTarget | None = None,
     ) -> tuple[VerifierSpec, ...]:
         if state.task_plan is None or state.plan_progress is None:
             return verifier_plan
-        active_id = state.plan_progress.active_subgoal_id
+        if progress_target is not None and not _progress_target_current(
+            progress_target,
+            state,
+        ):
+            return tuple(self._strip_subgoal_links(item) for item in verifier_plan)
+        active_id = (
+            progress_target.subgoal_id
+            if progress_target is not None
+            else state.plan_progress.active_subgoal_id
+        )
         subgoal = next(
             (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
             None,
         )
         if subgoal is None:
+            return verifier_plan
+        if progress_target is not None and not set(subgoal.depends_on).issubset(
+            state.plan_progress.completed_subgoal_ids
+        ):
             return verifier_plan
         criterion_prefix = f"subgoal:{subgoal.subgoal_id}:criterion:"
         requirement_prefix = f"subgoal:{subgoal.subgoal_id}:evidence-requirement:"
@@ -422,7 +448,12 @@ class SubgoalEvidenceBinder:
             for index, _description in enumerate(subgoal.evidence_requirements)
         }
         return tuple(
-            self._validate_spec(item, allowed_criteria, allowed_requirements)
+            self._validate_spec(
+                item,
+                allowed_criteria,
+                allowed_requirements,
+                materialize_as_active=progress_target is not None,
+            )
             for item in verifier_plan
         )
 
@@ -431,6 +462,8 @@ class SubgoalEvidenceBinder:
         spec: VerifierSpec,
         allowed_criteria: set[str],
         allowed_requirements: set[str],
+        *,
+        materialize_as_active: bool = False,
     ) -> VerifierSpec:
         subgoal_criteria = {
             value for value in spec.criterion_ids if value.startswith("subgoal:")
@@ -441,12 +474,18 @@ class SubgoalEvidenceBinder:
         if not subgoal_criteria and not subgoal_requirements:
             if spec.progress_scope == ProgressEvidenceScope.NONE:
                 return spec
+            progress_scope = (
+                ProgressEvidenceScope.ACTIVE_SUBGOAL
+                if materialize_as_active
+                else spec.progress_scope
+            )
             return replace(
                 spec,
                 criterion_ids=tuple((*spec.criterion_ids, *sorted(allowed_criteria))),
                 requirement_ids=tuple(
                     (*spec.requirement_ids, *sorted(allowed_requirements))
                 ),
+                progress_scope=progress_scope,
             )
         if (
             subgoal_criteria
@@ -465,14 +504,133 @@ class SubgoalEvidenceBinder:
             ),
         )
 
+    @staticmethod
+    def _strip_subgoal_links(spec: VerifierSpec) -> VerifierSpec:
+        return replace(
+            spec,
+            criterion_ids=tuple(
+                value for value in spec.criterion_ids if not value.startswith("subgoal:")
+            ),
+            requirement_ids=tuple(
+                value for value in spec.requirement_ids if not value.startswith("subgoal:")
+            ),
+        )
+
+
+def _progress_target_current(
+    progress_target: TaskPlanProgressTarget | None,
+    state: StateKernel,
+) -> bool:
+    if (
+        progress_target is None
+        or state.task_plan is None
+        or state.plan_progress is None
+    ):
+        return False
+    return (
+        progress_target.plan_id == state.task_plan.plan_id
+        and progress_target.plan_version == state.task_plan.plan_version
+        and progress_target.based_on_state_version == state.version
+        and progress_target.subgoal_id
+        not in set(state.plan_progress.completed_subgoal_ids)
+        | set(state.plan_progress.failed_subgoal_ids)
+    )
+
 
 def bind_active_subgoal_verifiers(
     verifier_plan: tuple[VerifierSpec, ...],
     state: StateKernel,
+    *,
+    progress_target: TaskPlanProgressTarget | None = None,
 ) -> tuple[VerifierSpec, ...]:
     """Compatibility entrypoint for explicit subgoal evidence validation."""
 
-    return SubgoalEvidenceBinder().bind(verifier_plan, state)
+    return SubgoalEvidenceBinder().bind(
+        verifier_plan,
+        state,
+        progress_target=progress_target,
+    )
+
+
+def resolve_task_plan_progress_target(
+    proposal: PlannerProposal,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> TaskPlanProgressTarget | None:
+    """Resolve a Runtime-owned verifier progress target for a semantic action."""
+
+    if (
+        proposal.action_kind not in _TARGET_ACTIONS
+        or state.task_plan is None
+        or state.plan_progress is None
+        or proposal.based_on_state_version != state.version
+        or proposal.snapshot_id != snapshot.observation.snapshot_id
+    ):
+        return None
+    target_tokens = _progress_target_tokens(
+        _progress_target_description(proposal.target_affordance_id, snapshot)
+    )
+    if not target_tokens:
+        return None
+    completed = set(state.plan_progress.completed_subgoal_ids)
+    unavailable = completed | set(state.plan_progress.failed_subgoal_ids)
+    candidates = tuple(
+        item
+        for item in state.task_plan.subgoals
+        if item.subgoal_id not in unavailable
+        and set(item.depends_on).issubset(completed)
+        and (
+            item.action_family is None
+            or item.action_family.value == proposal.action_kind.value
+        )
+        and item.outcome is not None
+        and _progress_target_tokens(item.outcome.subject).issubset(target_tokens)
+    )
+    if len(candidates) != 1:
+        return None
+    return TaskPlanProgressTarget(
+        plan_id=state.task_plan.plan_id,
+        plan_version=state.task_plan.plan_version,
+        subgoal_id=candidates[0].subgoal_id,
+        based_on_state_version=state.version,
+    )
+
+
+def _progress_target_tokens(value: str) -> set[str]:
+    ignored = {
+        "semantic",
+        "state",
+        "value",
+        "control",
+        "field",
+        "button",
+    }
+    return {
+        token
+        for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
+        if token and token not in ignored
+    }
+
+
+def _progress_target_description(
+    semantic_target_id: str,
+    snapshot: BrowserSnapshot,
+) -> str:
+    label, role = _semantic_target_label_role(semantic_target_id, snapshot)
+    state_values: list[str] = []
+    affordance = next(
+        (item for item in snapshot.affordance_model.affordances if item.id == semantic_target_id),
+        None,
+    )
+    if affordance is not None:
+        state_values.extend(str(value) for value in affordance.state.values())
+    unified = next(
+        (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
+        None,
+    )
+    if unified is not None:
+        state_values.extend(value for _key, value in unified.accepted_state)
+    return " ".join((semantic_target_id, label, role, *state_values))
 
 
 @dataclass(frozen=True)

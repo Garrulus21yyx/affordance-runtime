@@ -1,0 +1,71 @@
+slice_id: v-prb-6a-progress-target-foundation
+parent_packet: docs/change-admission/v-prb-6a-dependent-subgoal-evidence-binding.yaml
+packet_role: child_foundation
+
+base_revision: 2806e7e076780b60398c0cc91df425cca2098278
+change_type: vertical_core_contract_foundation
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: SubgoalEvidenceBinder / TaskPlan progress target contract
+mechanism: >
+  Introduce a Runtime-owned TaskPlanProgressTarget and conservative resolver
+  tests so verifier evidence can later be attributed to an intended TaskPlan
+  subgoal without trusting model-authored proposal.subgoal text.
+
+scope:
+  included:
+    - Core typed progress-target identity
+    - SubgoalEvidenceBinder target-current validation
+    - stale target fail-closed guard
+    - dependency-not-ready fail-closed guard
+    - resolver tests proving Runtime target/action/state matching ignores stale proposal.subgoal prose
+  excluded:
+    - Coordinator integration
+    - BrowserGym adapter evidence broadening
+    - finish guard changes
+    - receipt/reward completion authority
+    - immutable Planner input / PlannerStateView migration
+    - PR breadth acceptance
+    - fresh diagnostic
+    - promotion or official score claim
+
+dirty_tree_diagnostic:
+  output_dir: /tmp/affordance-v-prb-6a-form-sequence-2806e7e-20260728-170709
+  evidence_level: dirty_tree_diagnostic
+  promotion_eligible: false
+  result: >
+    Negative and non-promotable: form-sequence seed 0 still aborted at the
+    verifier-backed finish guard, while seed 1 failed earlier with
+    task_planning entry_outcome_already_satisfied and external reward 0.0.
+  conclusion: >
+    Pre-contract progress-target binding is insufficient for the current
+    form-sequence residual because the decisive slider value appears in the
+    post-action observation. The next production RED must target
+    post-verification progress attribution or current-state reconciliation
+    after verification, not Coordinator growth or adapter evidence widening.
+
+tests:
+  red_to_green:
+    - tests/test_planning.py::test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target
+    - tests/test_planning.py::test_subgoal_evidence_binder_rejects_stale_progress_target_without_active_fallback
+    - tests/test_planning.py::test_subgoal_evidence_binder_rejects_progress_target_until_dependencies_complete
+    - tests/test_planning.py::test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposal_subgoal
+    - tests/test_planning.py::test_resolve_task_plan_progress_target_uses_current_target_state_for_value_subject
+  local_gate:
+    - 72 focused planning/governance tests passed
+    - ruff passed
+    - mypy passed over 121 source files
+    - git diff --check passed
+
+architecture_admission: pass
+closure_status: foundation_only
+promotion_status: held
+remote_ci: disabled
+
+next_requirement: >
+  Keep V-PRB-6A open. Write the next RED around post-verification progress
+  attribution: a strong post-action observation that proves the intended
+  subgoal must produce SubgoalCompleted for that subgoal, while stale
+  identities, unmet dependencies, weak receipt evidence, external reward, and
+  ambiguous target matches remain rejected.

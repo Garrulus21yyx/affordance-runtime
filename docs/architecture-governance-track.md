@@ -114,7 +114,12 @@ read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
 standard Planner input. That horizontal lane is not a prerequisite for V-PRB-6
 unless the RED evidence directly implicates mutable planner input or hidden
-state mutation. Neither lane authorizes promotion while remote CI is disabled
+state mutation. A Core-only V-PRB-6A progress-target foundation is recorded in
+`docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; it does not
+integrate through Coordinator and does not close the remaining form-sequence
+PR breadth failures. The next admitted 6A work must target post-verification
+progress attribution with typed evidence and fail-closed identity checks.
+Neither lane authorizes promotion while remote CI is disabled
 or required validation is unavailable.
 
 The token-minimizing default is one integrator agent carrying the slice from

@@ -5,7 +5,7 @@ from typing import Callable
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
     Affordance,
@@ -29,10 +29,19 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
     SubgoalEvidenceBinder,
+    TaskPlanProgressTarget,
+    resolve_task_plan_progress_target,
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
+from affordance_runtime.task_planning import (
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanActionFamily,
+    TaskPlanSource,
+)
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -166,6 +175,299 @@ def test_subgoal_evidence_binder_removes_one_sided_active_links(
 
     assert validated.criterion_ids == ()
     assert validated.requirement_ids == ()
+
+
+def test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target() -> None:
+    state = StateKernel("task-1", "Move slider, then check the box")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=0,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="slider-changed",
+                    objective="slider value has changed",
+                    success_criteria=("slider value has changed",),
+                    evidence_requirements=("post-slider observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                SubgoalSpec(
+                    subgoal_id="checkbox-changed",
+                    objective="checkbox state has changed",
+                    depends_on=("slider-changed",),
+                    success_criteria=("checkbox state has changed",),
+                    evidence_requirements=("post-checkbox observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    state.complete_subgoal("slider-changed", ("evidence:slider",))
+    state.activate_next_subgoal()
+    verifier = VerifierSpec(
+        "control_state",
+        "checkbox-3",
+        {"field": "checked", "changed_from": False},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+    )
+    target = TaskPlanProgressTarget(
+        plan_id="plan-1",
+        plan_version=1,
+        subgoal_id="checkbox-changed",
+        based_on_state_version=state.version,
+    )
+
+    (bound,) = SubgoalEvidenceBinder().bind(
+        (verifier,),
+        state,
+        progress_target=target,
+    )
+
+    assert bound.progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+    assert bound.criterion_ids == (criterion_id("subgoal", "checkbox-changed", 0),)
+    assert bound.requirement_ids == (
+        evidence_requirement_id("subgoal", "checkbox-changed", 0),
+    )
+
+
+def test_subgoal_evidence_binder_rejects_stale_progress_target_without_active_fallback() -> None:
+    state = _active_plan_state()
+    verifier = VerifierSpec(
+        "observation_metadata",
+        "saved",
+        True,
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+    stale_target = TaskPlanProgressTarget(
+        plan_id="plan-1",
+        plan_version=1,
+        subgoal_id="observe",
+        based_on_state_version=state.version + 1,
+    )
+
+    (bound,) = SubgoalEvidenceBinder().bind(
+        (verifier,),
+        state,
+        progress_target=stale_target,
+    )
+
+    assert bound.criterion_ids == ()
+    assert bound.requirement_ids == ()
+
+
+def test_subgoal_evidence_binder_rejects_progress_target_until_dependencies_complete() -> None:
+    state = StateKernel("task-1", "Move slider, then check the box")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=0,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="slider-changed",
+                    objective="slider value has changed",
+                    success_criteria=("slider value has changed",),
+                    evidence_requirements=("post-slider observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                SubgoalSpec(
+                    subgoal_id="checkbox-changed",
+                    objective="checkbox state has changed",
+                    depends_on=("slider-changed",),
+                    success_criteria=("checkbox state has changed",),
+                    evidence_requirements=("post-checkbox observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    verifier = VerifierSpec(
+        "control_state",
+        "checkbox-3",
+        {"field": "checked", "changed_from": False},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+    )
+    target = TaskPlanProgressTarget(
+        plan_id="plan-1",
+        plan_version=1,
+        subgoal_id="checkbox-changed",
+        based_on_state_version=state.version,
+    )
+
+    (bound,) = SubgoalEvidenceBinder().bind(
+        (verifier,),
+        state,
+        progress_target=target,
+    )
+
+    assert bound.criterion_ids == ()
+    assert bound.requirement_ids == ()
+
+
+def test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposal_subgoal() -> None:
+    state = StateKernel("task-1", "Move slider, then check checkbox-3")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=0,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="slider-changed",
+                    objective="slider value has changed",
+                    success_criteria=("slider value has changed",),
+                    evidence_requirements=("post-slider observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.PRESS_KEY,
+                    outcome=SubgoalOutcome(
+                        subject="slider value",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+                SubgoalSpec(
+                    subgoal_id="checkbox-changed",
+                    objective="checkbox-3 state has changed",
+                    depends_on=("slider-changed",),
+                    success_criteria=("checkbox-3 state has changed",),
+                    evidence_requirements=("post-checkbox observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject="checkbox-3 state",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    state.complete_subgoal("slider-changed", ("evidence:slider",))
+    checkbox = Affordance(
+        "semantic:checkbox-3",
+        Surface.DOM,
+        "checkbox",
+        "checkbox-3",
+        "activate",
+        {"selector": "#checkbox-3"},
+        AffordanceLease.issue(
+            environment_revision="rev-1",
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+        ),
+    )
+    snapshot = BrowserSnapshot(
+        Observation("rev-1", snapshot_id="snapshot-1", page_revision="page-1"),
+        PageAffordanceModel(
+            "page-1",
+            "http://example.test",
+            "rev-1",
+            "snapshot-1",
+            "page-1",
+            [checkbox],
+            1,
+            1,
+        ),
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-checkbox",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        subgoal="slider value has changed",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=checkbox.id,
+    )
+
+    target = resolve_task_plan_progress_target(proposal, state, snapshot)
+
+    assert target == TaskPlanProgressTarget(
+        plan_id="plan-1",
+        plan_version=1,
+        subgoal_id="checkbox-changed",
+        based_on_state_version=state.version,
+    )
+
+
+def test_resolve_task_plan_progress_target_uses_current_target_state_for_value_subject() -> None:
+    state = StateKernel("task-1", "Select 7 with the slider")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-1",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=0,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="slider-value-7",
+                    objective="slider_value_7 has changed",
+                    success_criteria=("slider_value_7 has changed",),
+                    evidence_requirements=("post-slider observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.PRESS_KEY,
+                    outcome=SubgoalOutcome(
+                        subject="slider_value_7",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    slider = Affordance(
+        "semantic:ui-slider-handle",
+        Surface.DOM,
+        "slider",
+        "ui-slider-handle",
+        "press",
+        {"selector": ".ui-slider-handle"},
+        AffordanceLease.issue(
+            environment_revision="rev-1",
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+        ),
+        state={"context_text": "7"},
+    )
+    snapshot = BrowserSnapshot(
+        Observation("rev-1", snapshot_id="snapshot-1", page_revision="page-1"),
+        PageAffordanceModel(
+            "page-1",
+            "http://example.test",
+            "rev-1",
+            "snapshot-1",
+            "page-1",
+            [slider],
+            1,
+            1,
+        ),
+    )
+    proposal = PlannerProposal(
+        proposal_id="press-slider",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id=slider.id,
+        parameters={"key": "ArrowRight"},
+    )
+
+    target = resolve_task_plan_progress_target(proposal, state, snapshot)
+
+    assert target is not None
+    assert target.subgoal_id == "slider-value-7"
 
 
 def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:
