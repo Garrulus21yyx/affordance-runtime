@@ -616,3 +616,9 @@ delivery claims.
   Planner, connect through Coordinator, replace finish authority, or change
   BrowserGym behavior. Recorded
   `docs/change-admission/odg-2-obligation-progress-contracts.yaml`.
+- Started ODG-3 after approval: harden ODG-2 identity/immutability contracts
+  first, then add StateKernel-local optional obligation ledger storage and
+  immutable projection only. This slice must not initialize the standard
+  run loop, commit obligation satisfaction through Coordinator, change finish,
+  alter PlannerContext, replace TaskPlan behavior, write trace, run benchmark,
+  or make a promotion claim.

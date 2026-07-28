@@ -67,30 +67,209 @@ class TaskObligationExecutionView:
 
 
 @dataclass(frozen=True)
-class ObligationProgressStateView:
-    task_revision: int
-    evaluated_at_state_version: int
-    satisfied_obligation_ids: tuple[str, ...] = ()
-    failed_obligation_ids: tuple[str, ...] = ()
-    evidence_by_obligation: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    attempt_count_by_obligation: Mapping[str, int] = field(default_factory=dict)
+class ObligationEvidenceLedgerEntry:
+    obligation_id: str
+    evidence_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        _require_nonblank("evidence obligation id", self.obligation_id)
+        _require_unique_nonblank("evidence refs", self.evidence_refs)
+
+
+@dataclass(frozen=True)
+class ObligationAttemptCount:
+    obligation_id: str
+    attempt_count: int
+
+    def __post_init__(self) -> None:
+        _require_nonblank("attempt obligation id", self.obligation_id)
+        if self.attempt_count < 0:
+            raise ValueError("obligation attempt count cannot be negative")
+
+
+@dataclass(frozen=True)
+class ObligationProgressStateView:
+    task_spec_identity: str
+    task_revision: int
+    evaluated_at_state_version: int
+    known_obligation_ids: tuple[str, ...]
+    satisfied_obligation_ids: tuple[str, ...] = ()
+    failed_obligation_ids: tuple[str, ...] = ()
+    evidence_by_obligation: tuple[ObligationEvidenceLedgerEntry, ...] = ()
+    attempt_count_by_obligation: tuple[ObligationAttemptCount, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_nonblank("task spec identity", self.task_spec_identity)
         if self.task_revision < 1:
             raise ValueError("task revision must be positive")
         if self.evaluated_at_state_version < 0:
             raise ValueError("evaluated state version cannot be negative")
+        _require_unique_nonblank("known obligation ids", self.known_obligation_ids)
         _require_unique_nonblank("satisfied obligation ids", self.satisfied_obligation_ids)
         _require_unique_nonblank("failed obligation ids", self.failed_obligation_ids)
         overlap = set(self.satisfied_obligation_ids) & set(self.failed_obligation_ids)
         if overlap:
             raise ValueError("obligation cannot be both satisfied and failed")
-        for obligation_id, evidence_refs in self.evidence_by_obligation.items():
-            _require_nonblank("evidence obligation id", obligation_id)
-            _require_unique_nonblank("evidence refs", evidence_refs)
-        for obligation_id, count in self.attempt_count_by_obligation.items():
-            _require_nonblank("attempt obligation id", obligation_id)
-            if count < 0:
+        evidence_ids = tuple(item.obligation_id for item in self.evidence_by_obligation)
+        attempt_ids = tuple(item.obligation_id for item in self.attempt_count_by_obligation)
+        _require_unique_nonblank("evidence obligation ids", evidence_ids)
+        _require_unique_nonblank("attempt obligation ids", attempt_ids)
+        known_ids = set(self.known_obligation_ids)
+        supplied_ids = (
+            set(self.satisfied_obligation_ids)
+            | set(self.failed_obligation_ids)
+            | set(evidence_ids)
+            | set(attempt_ids)
+        )
+        unknown = sorted(supplied_ids - known_ids)
+        if unknown:
+            raise ValueError(f"unknown obligation progress id: {', '.join(unknown)}")
+
+
+@dataclass
+class ObligationProgressLedger:
+    """Mutable StateKernel storage for canonical-obligation progress.
+
+    This object is storage foundation only. It does not decide runtime finish,
+    planner input, recovery, trace, or standard-path progress authority.
+    """
+
+    task_spec_identity: str
+    task_revision: int
+    known_obligation_ids: tuple[str, ...]
+    satisfied_obligation_ids: list[str] = field(default_factory=list)
+    failed_obligation_ids: list[str] = field(default_factory=list)
+    evidence_by_obligation: dict[str, list[str]] = field(default_factory=dict)
+    attempt_count_by_obligation: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_nonblank("task spec identity", self.task_spec_identity)
+        if self.task_revision < 1:
+            raise ValueError("task revision must be positive")
+        _require_unique_nonblank("known obligation ids", self.known_obligation_ids)
+        if not self.known_obligation_ids:
+            raise ValueError("known obligation ids cannot be empty")
+        self._validate_storage()
+
+    @classmethod
+    def from_task_spec(cls, task_spec: TaskSpec) -> "ObligationProgressLedger":
+        return cls(
+            task_spec_identity=task_spec.identity,
+            task_revision=task_spec.revision,
+            known_obligation_ids=tuple(
+                obligation.obligation_id for obligation in task_spec.obligations
+            ),
+        )
+
+    def record_attempt(self, obligation_id: str) -> None:
+        self._require_known_obligation(obligation_id)
+        self.attempt_count_by_obligation[obligation_id] = (
+            self.attempt_count_by_obligation.get(obligation_id, 0) + 1
+        )
+        self._validate_storage()
+
+    def record_satisfaction(
+        self,
+        obligation_id: str,
+        evidence_refs: tuple[str, ...],
+    ) -> None:
+        self._require_known_obligation(obligation_id)
+        if not evidence_refs:
+            raise ValueError("satisfaction evidence refs cannot be empty")
+        _require_unique_nonblank("satisfaction evidence refs", _dedupe(evidence_refs))
+        if obligation_id in self.failed_obligation_ids:
+            raise ValueError("obligation is already failed")
+        if obligation_id not in self.satisfied_obligation_ids:
+            self.satisfied_obligation_ids.append(obligation_id)
+        self._append_evidence(obligation_id, evidence_refs)
+        self._validate_storage()
+
+    def record_failure(
+        self,
+        obligation_id: str,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> None:
+        self._require_known_obligation(obligation_id)
+        if obligation_id in self.satisfied_obligation_ids:
+            raise ValueError("obligation is already satisfied")
+        if obligation_id not in self.failed_obligation_ids:
+            self.failed_obligation_ids.append(obligation_id)
+        if evidence_refs:
+            self._append_evidence(obligation_id, evidence_refs)
+        self._validate_storage()
+
+    def to_view(
+        self,
+        *,
+        evaluated_at_state_version: int,
+    ) -> ObligationProgressStateView:
+        self._validate_storage()
+        return ObligationProgressStateView(
+            task_spec_identity=self.task_spec_identity,
+            task_revision=self.task_revision,
+            evaluated_at_state_version=evaluated_at_state_version,
+            known_obligation_ids=tuple(self.known_obligation_ids),
+            satisfied_obligation_ids=tuple(self.satisfied_obligation_ids),
+            failed_obligation_ids=tuple(self.failed_obligation_ids),
+            evidence_by_obligation=tuple(
+                ObligationEvidenceLedgerEntry(
+                    obligation_id=obligation_id,
+                    evidence_refs=tuple(self.evidence_by_obligation[obligation_id]),
+                )
+                for obligation_id in self.known_obligation_ids
+                if obligation_id in self.evidence_by_obligation
+            ),
+            attempt_count_by_obligation=tuple(
+                ObligationAttemptCount(
+                    obligation_id=obligation_id,
+                    attempt_count=self.attempt_count_by_obligation[obligation_id],
+                )
+                for obligation_id in self.known_obligation_ids
+                if obligation_id in self.attempt_count_by_obligation
+            ),
+        )
+
+    def _append_evidence(
+        self,
+        obligation_id: str,
+        evidence_refs: tuple[str, ...],
+    ) -> None:
+        refs = self.evidence_by_obligation.setdefault(obligation_id, [])
+        for evidence_ref in _dedupe(evidence_refs):
+            if evidence_ref not in refs:
+                refs.append(evidence_ref)
+
+    def _require_known_obligation(self, obligation_id: str) -> None:
+        _require_nonblank("obligation id", obligation_id)
+        if obligation_id not in self.known_obligation_ids:
+            raise ValueError(f"unknown obligation id: {obligation_id}")
+
+    def _validate_storage(self) -> None:
+        known_ids = set(self.known_obligation_ids)
+        _require_unique_nonblank(
+            "satisfied obligation ids",
+            tuple(self.satisfied_obligation_ids),
+        )
+        _require_unique_nonblank(
+            "failed obligation ids",
+            tuple(self.failed_obligation_ids),
+        )
+        overlap = set(self.satisfied_obligation_ids) & set(self.failed_obligation_ids)
+        if overlap:
+            raise ValueError("obligation cannot be both satisfied and failed")
+        supplied_ids = (
+            set(self.satisfied_obligation_ids)
+            | set(self.failed_obligation_ids)
+            | set(self.evidence_by_obligation)
+            | set(self.attempt_count_by_obligation)
+        )
+        unknown = sorted(supplied_ids - known_ids)
+        if unknown:
+            raise ValueError(f"unknown obligation id: {', '.join(unknown)}")
+        for evidence_refs in self.evidence_by_obligation.values():
+            _require_unique_nonblank("evidence refs", tuple(evidence_refs))
+        for attempt_count in self.attempt_count_by_obligation.values():
+            if attempt_count < 0:
                 raise ValueError("obligation attempt count cannot be negative")
 
 
@@ -136,6 +315,7 @@ def ready_obligation_ids(
 ) -> tuple[str, ...]:
     """Return graph-ordered ready progress obligations from canonical state."""
 
+    validate_obligation_progress_state(task_spec, progress)
     views_by_id = _validated_views_by_id(task_spec, execution_views)
     satisfied = set(progress.satisfied_obligation_ids)
     failed = set(progress.failed_obligation_ids)
@@ -156,6 +336,7 @@ def ready_obligation_views(
 ) -> tuple[ReadyObligationView, ...]:
     """Return immutable Planner-facing views for ready obligations."""
 
+    validate_obligation_progress_state(task_spec, progress)
     views_by_id = _validated_views_by_id(task_spec, execution_views)
     ready_ids = set(ready_obligation_ids(task_spec, progress, execution_views))
     return tuple(
@@ -181,6 +362,7 @@ def task_obligations_completed(
 ) -> bool:
     """Evaluate task completion from blocking progress obligations only."""
 
+    validate_obligation_progress_state(task_spec, progress)
     views_by_id = _validated_views_by_id(task_spec, execution_views)
     blocking_progress = tuple(
         views_by_id[obligation.obligation_id]
@@ -196,6 +378,31 @@ def task_obligations_completed(
         and item.obligation_id in satisfied
         for item in blocking_progress
     )
+
+
+def validate_obligation_progress_state(
+    task_spec: TaskSpec,
+    progress: ObligationProgressStateView,
+) -> None:
+    """Validate that progress belongs to exactly this canonical TaskSpec graph."""
+
+    if progress.task_spec_identity != task_spec.identity:
+        raise ValueError("task spec identity does not match obligation progress")
+    if progress.task_revision != task_spec.revision:
+        raise ValueError("task revision does not match obligation progress")
+    expected_ids = tuple(obligation.obligation_id for obligation in task_spec.obligations)
+    if progress.known_obligation_ids != expected_ids:
+        raise ValueError("known obligation ids do not match canonical graph")
+    known_ids = set(expected_ids)
+    supplied_ids = (
+        set(progress.satisfied_obligation_ids)
+        | set(progress.failed_obligation_ids)
+        | {item.obligation_id for item in progress.evidence_by_obligation}
+        | {item.obligation_id for item in progress.attempt_count_by_obligation}
+    )
+    unknown = sorted(supplied_ids - known_ids)
+    if unknown:
+        raise ValueError(f"unknown obligation progress id: {', '.join(unknown)}")
 
 
 def _validated_views_by_id(
@@ -226,3 +433,11 @@ def _require_unique_nonblank(field_name: str, values: tuple[str, ...]) -> None:
         raise ValueError(f"{field_name} must be unique")
     if any(not item.strip() for item in values):
         raise ValueError(f"{field_name} cannot contain blank values")
+
+
+def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return tuple(result)

@@ -2,17 +2,21 @@ import pytest
 
 from affordance_runtime.obligation_attribution import (
     EvidenceStrength,
+    ObligationAttributionResult,
     ObligationSatisfactionPreparation,
     PostActionEvidenceFact,
     ProgressAttributionTicket,
 )
 from affordance_runtime.obligation_progress import (
+    ObligationAttemptCount,
+    ObligationEvidenceLedgerEntry,
     ObligationExecutionRole,
     ObligationProgressStateView,
     TaskObligationExecutionView,
     ready_obligation_ids,
     task_obligation_execution_views,
     task_obligations_completed,
+    validate_obligation_progress_state,
 )
 from affordance_runtime.task_intake import (
     EvidenceKind,
@@ -106,17 +110,38 @@ def _task_spec(obligations: tuple[TaskObligationSpec, ...]) -> TaskSpec:
 
 
 def _progress(
+    task_spec: TaskSpec | None = None,
     *,
     satisfied: tuple[str, ...] = (),
     failed: tuple[str, ...] = (),
 ) -> ObligationProgressStateView:
+    known_ids = (
+        tuple(obligation.obligation_id for obligation in task_spec.obligations)
+        if task_spec is not None
+        else (
+            "obligation:precondition",
+            "obligation:first",
+            "obligation:second",
+            "obligation:evidence-only",
+            "obligation:optional",
+            "obligation:terminal",
+        )
+    )
     return ObligationProgressStateView(
+        task_spec_identity=task_spec.identity if task_spec is not None else "sha256:test-task",
         task_revision=3,
         evaluated_at_state_version=8,
+        known_obligation_ids=known_ids,
         satisfied_obligation_ids=satisfied,
         failed_obligation_ids=failed,
-        evidence_by_obligation={item: (f"evidence-ref:{item}",) for item in satisfied},
-        attempt_count_by_obligation={},
+        evidence_by_obligation=tuple(
+            ObligationEvidenceLedgerEntry(
+                obligation_id=item,
+                evidence_refs=(f"evidence-ref:{item}",),
+            )
+            for item in satisfied
+        ),
+        attempt_count_by_obligation=(),
     )
 
 
@@ -158,8 +183,8 @@ def test_ready_obligations_come_from_graph_dependencies_and_progress_roles() -> 
         ),
     )
 
-    assert ready_obligation_ids(task_spec, _progress(), views) == ("obligation:first",)
-    assert ready_obligation_ids(task_spec, _progress(satisfied=("obligation:first",)), views) == (
+    assert ready_obligation_ids(task_spec, _progress(task_spec), views) == ("obligation:first",)
+    assert ready_obligation_ids(task_spec, _progress(task_spec, satisfied=("obligation:first",)), views) == (
         "obligation:second",
     )
 
@@ -172,7 +197,7 @@ def test_ready_projection_rejects_missing_or_extra_execution_role_views() -> Non
     )
 
     with pytest.raises(ValueError, match="missing obligation execution role"):
-        ready_obligation_ids(task_spec, _progress(), ())
+        ready_obligation_ids(task_spec, _progress(task_spec), ())
 
     extra = TaskObligationExecutionView(
         obligation_id="obligation:extra",
@@ -186,7 +211,7 @@ def test_ready_projection_rejects_missing_or_extra_execution_role_views() -> Non
         blocking=True,
     )
     with pytest.raises(ValueError, match="unknown obligation execution role"):
-        ready_obligation_ids(task_spec, _progress(), (view, extra))
+        ready_obligation_ids(task_spec, _progress(task_spec), (view, extra))
 
 
 def test_task_completion_uses_blocking_effect_obligations_not_taskplan_state() -> None:
@@ -208,14 +233,125 @@ def test_task_completion_uses_blocking_effect_obligations_not_taskplan_state() -
 
     assert not task_obligations_completed(
         task_spec,
-        _progress(satisfied=("obligation:first", "obligation:optional")),
+        _progress(task_spec, satisfied=("obligation:first", "obligation:optional")),
         views,
     )
     assert task_obligations_completed(
         task_spec,
-        _progress(satisfied=("obligation:first", "obligation:terminal")),
+        _progress(task_spec, satisfied=("obligation:first", "obligation:terminal")),
         views,
     )
+
+
+def test_progress_state_is_bound_to_exact_task_spec_identity_and_graph_ids() -> None:
+    task_spec = _task_spec((_obligation("obligation:first", terminal=True),))
+
+    with pytest.raises(ValueError, match="task spec identity"):
+        validate_obligation_progress_state(
+            task_spec,
+            ObligationProgressStateView(
+                task_spec_identity="sha256:wrong",
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=8,
+                known_obligation_ids=("obligation:first",),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="task revision"):
+        validate_obligation_progress_state(
+            task_spec,
+            ObligationProgressStateView(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision + 1,
+                evaluated_at_state_version=8,
+                known_obligation_ids=("obligation:first",),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="known obligation ids"):
+        validate_obligation_progress_state(
+            task_spec,
+            ObligationProgressStateView(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=8,
+                known_obligation_ids=("obligation:typo",),
+            ),
+        )
+
+
+def test_ready_and_completion_reject_unknown_progress_ids() -> None:
+    task_spec = _task_spec((_obligation("obligation:first", terminal=True),))
+    views = task_obligation_execution_views(
+        task_spec,
+        {"obligation:first": ObligationExecutionRole.TERMINAL_EFFECT},
+    )
+
+    invalid_cases = (
+        {"satisfied_obligation_ids": ("obligation:typo",)},
+        {"failed_obligation_ids": ("obligation:typo",)},
+        {
+            "evidence_by_obligation": (
+                ObligationEvidenceLedgerEntry(
+                    obligation_id="obligation:typo",
+                    evidence_refs=("evidence:1",),
+                ),
+            )
+        },
+        {
+            "attempt_count_by_obligation": (
+                ObligationAttemptCount(
+                    obligation_id="obligation:typo",
+                    attempt_count=1,
+                ),
+            )
+        },
+    )
+    for invalid in invalid_cases:
+        with pytest.raises(ValueError, match="unknown obligation progress id"):
+            ObligationProgressStateView(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=8,
+                known_obligation_ids=("obligation:first",),
+                **invalid,
+            )
+
+    stale_known_graph = ObligationProgressStateView(
+        task_spec_identity=task_spec.identity,
+        task_revision=task_spec.revision,
+        evaluated_at_state_version=8,
+        known_obligation_ids=("obligation:first", "obligation:stale"),
+    )
+    with pytest.raises(ValueError, match="known obligation ids"):
+        ready_obligation_ids(task_spec, stale_known_graph, views)
+    with pytest.raises(ValueError, match="known obligation ids"):
+        task_obligations_completed(task_spec, stale_known_graph, views)
+
+
+def test_progress_state_view_uses_immutable_ledger_entries() -> None:
+    task_spec = _task_spec((_obligation("obligation:first", terminal=True),))
+    progress = ObligationProgressStateView(
+        task_spec_identity=task_spec.identity,
+        task_revision=task_spec.revision,
+        evaluated_at_state_version=8,
+        known_obligation_ids=("obligation:first",),
+        evidence_by_obligation=(
+            ObligationEvidenceLedgerEntry(
+                obligation_id="obligation:first",
+                evidence_refs=("evidence:1",),
+            ),
+        ),
+        attempt_count_by_obligation=(
+            ObligationAttemptCount(
+                obligation_id="obligation:first",
+                attempt_count=1,
+            ),
+        ),
+    )
+
+    assert progress.evidence_by_obligation[0].evidence_refs == ("evidence:1",)
+    assert progress.attempt_count_by_obligation[0].attempt_count == 1
 
 
 def test_attribution_ticket_and_satisfaction_preparation_are_identity_bound() -> None:
@@ -260,6 +396,20 @@ def test_attribution_ticket_and_satisfaction_preparation_are_identity_bound() ->
 
 
 def test_attribution_contracts_fail_closed_on_blank_or_duplicate_identity() -> None:
+    with pytest.raises(ValueError, match="candidate obligation ids cannot be empty"):
+        ProgressAttributionTicket(
+            ticket_id="ticket-1",
+            task_revision=3,
+            issued_at_state_version=8,
+            contract_id="contract-1",
+            semantic_target_id="semantic:field",
+            action_kind="type_text",
+            candidate_obligation_ids=(),
+            pre_snapshot_id="snapshot-pre",
+            pre_page_revision="page-pre",
+            pre_environment_revision="env-pre",
+        )
+
     with pytest.raises(ValueError, match="candidate obligation ids must be unique"):
         ProgressAttributionTicket(
             ticket_id="ticket-1",
@@ -284,3 +434,26 @@ def test_attribution_contracts_fail_closed_on_blank_or_duplicate_identity() -> N
             evidence_refs=(),
             source="post_verification",
         )
+
+
+def test_attribution_result_status_matches_satisfaction_preparation() -> None:
+    preparation = ObligationSatisfactionPreparation(
+        task_revision=3,
+        evaluated_at_state_version=9,
+        obligation_id="obligation:first",
+        contract_id="contract-1",
+        post_snapshot_id="snapshot-post",
+        evidence_refs=("verification:1",),
+        source="post_verification",
+    )
+
+    assert ObligationAttributionResult(
+        status="satisfied",
+        preparation=preparation,
+    ).preparation == preparation
+
+    with pytest.raises(ValueError, match="satisfied attribution requires preparation"):
+        ObligationAttributionResult(status="satisfied")
+
+    with pytest.raises(ValueError, match="non-satisfied attribution cannot include preparation"):
+        ObligationAttributionResult(status="no_match", preparation=preparation)

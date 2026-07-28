@@ -90,6 +90,7 @@ STATE_KERNEL_MUTATIONS = {
     "complete_subgoal",
     "expose_task_skill_step",
     "fall_through_task_skill",
+    "initialize_obligation_progress",
     "install_task_plan",
     "remember_observation",
     "record_action_progress",
@@ -113,6 +114,7 @@ STATE_KERNEL_READS = {
     "current_revision",
     "excluded_candidates_for",
     "fallback_lineage_for",
+    "obligation_progress_view",
 }
 
 EXECUTION_COMMIT_MUTATIONS = {
@@ -283,13 +285,18 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
     odg_record = CHANGE_ADMISSION_DIR / "odg-0-obligation-driven-progress-architecture.yaml"
     odg_2_record = CHANGE_ADMISSION_DIR / "odg-2-obligation-progress-contracts.yaml"
+    odg_3_record = (
+        CHANGE_ADMISSION_DIR / "odg-3-statekernel-obligation-ledger-foundation.yaml"
+    )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
     assert odg_2_record.exists()
+    assert odg_3_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
+    odg_3 = " ".join(odg_3_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -297,19 +304,28 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "production_behavior_change: false" in odg_2
     assert "statekernel mutation" in odg_2
     assert "closure_status: foundation_only" in odg_2
+    assert "production_behavior_change: false" in odg_3
+    assert "coordinator satisfaction commit" in odg_3
+    assert "finish gate change" in odg_3
+    assert "plannercontext ready-obligation projection" in odg_3
+    assert "closure_status: foundation_storage_only" in odg_3
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
     assert "coordinator_integration: status: not_authorized" in record
     assert "promotion_status: held" in record
 
-    assert "odg-2 obligation progress contracts" in current_plan
+    assert "odg-2 adds the typed progress/attribution contracts" in current_plan
+    assert "odg-3 statekernel obligation ledger foundation" in current_plan
     assert "taskplan becomes an optional execution strategy view" in current_plan
     assert "obligation_driven_progress:" in status
     assert "contracts: foundation_only" in status
+    assert "ledger: foundation_storage_only" in status
+    assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
     assert "must not import coordinator, statekernel, taskplan" in governance
+    assert "statekernel to the obligation progress contracts" in governance
     assert "submit_button_is_available:" in audit
     assert "fail_closed_pending_rule" in audit
     assert "module-level semantic owner gate" in governance
@@ -395,7 +411,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-2 obligation progress contracts" in status
+    assert "current_next_change_admission: odg-3 statekernel obligation ledger foundation" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

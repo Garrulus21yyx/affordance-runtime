@@ -129,6 +129,14 @@ contracts may depend on canonical task-intake types, but must not import
 Coordinator, StateKernel, TaskPlan, BrowserGym, CLI, trace writers, or planner
 implementations.
 
+ODG-3 may let StateKernel hold an optional obligation progress ledger and
+return an immutable progress view. This is a one-way dependency from
+StateKernel to the obligation progress contracts; the reverse dependency
+remains forbidden. ODG-3 does not authorize Coordinator satisfaction commit,
+finish-gate replacement, PlannerContext projection, TaskPlan replacement,
+trace shadow comparison, recovery behavior, BrowserGym changes, benchmark
+reruns, or promotion claims.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

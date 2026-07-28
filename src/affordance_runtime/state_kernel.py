@@ -19,9 +19,14 @@ from affordance_runtime.active_perception import (
 )
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.failure_envelope import FailureEnvelope
+from affordance_runtime.obligation_progress import (
+    ObligationProgressLedger,
+    ObligationProgressStateView,
+)
 from affordance_runtime.recovery import RecoveryIncident
 from affordance_runtime.recovery_commands import RecoveryDelta, RecoveryPlan, RecoveryReceipt
 from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
+from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import PlanProgress, TaskPlan
 from affordance_runtime.verification import VerificationReport
 
@@ -92,6 +97,7 @@ class StateKernel:
     subgoals: list[str] = field(default_factory=list)
     task_plan: TaskPlan | None = None
     plan_progress: PlanProgress | None = None
+    obligation_progress: ObligationProgressLedger | None = None
     evidence: list[str] = field(default_factory=list)
     hidden_state_hypotheses: list[str] = field(default_factory=list)
     disproved_assumptions: list[str] = field(default_factory=list)
@@ -376,6 +382,24 @@ class StateKernel:
         )
         self.subgoals = [item.objective for item in plan.subgoals]
         self.version += 1
+
+    def initialize_obligation_progress(self, task_spec: TaskSpec) -> None:
+        """Attach ODG-3 shadow storage without changing runtime authority."""
+
+        if self.obligation_progress is not None:
+            if self.obligation_progress.task_spec_identity != task_spec.identity:
+                raise ValueError("obligation progress already belongs to another TaskSpec")
+            if self.obligation_progress.task_revision != task_spec.revision:
+                raise ValueError("obligation progress already belongs to another revision")
+            return
+        self.obligation_progress = ObligationProgressLedger.from_task_spec(task_spec)
+
+    def obligation_progress_view(self) -> ObligationProgressStateView | None:
+        if self.obligation_progress is None:
+            return None
+        return self.obligation_progress.to_view(
+            evaluated_at_state_version=self.version,
+        )
 
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""

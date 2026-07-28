@@ -41,6 +41,8 @@ class ProgressAttributionTicket:
         _require_nonblank("contract_id", self.contract_id)
         _require_nonblank("semantic_target_id", self.semantic_target_id)
         _require_nonblank("action_kind", self.action_kind)
+        if not self.candidate_obligation_ids:
+            raise ValueError("candidate obligation ids cannot be empty")
         _require_unique_nonblank(
             "candidate obligation ids",
             self.candidate_obligation_ids,
@@ -90,6 +92,12 @@ class ObligationAttributionResult:
     ]
     preparation: "ObligationSatisfactionPreparation | None" = None
     reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.status == "satisfied" and self.preparation is None:
+            raise ValueError("satisfied attribution requires preparation")
+        if self.status != "satisfied" and self.preparation is not None:
+            raise ValueError("non-satisfied attribution cannot include preparation")
 
 
 @dataclass(frozen=True)
