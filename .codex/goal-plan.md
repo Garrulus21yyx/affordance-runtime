@@ -269,6 +269,16 @@ delivery claims.
     progress normalizes the active slider subgoal. Continue V-PRB-5C with a
     new non-BrowserGym RED for that residual; keep V-PRB-6, immutable Planner
     input, fresh diagnostic, nightly/release, and promotion separate.
+43. `done` — Implemented the second V-PRB-5C verified-form follow-up repair as
+    `9c1b58c` and reran the same PR breadth matrix on a clean committed
+    revision. Evidence remains 12/12 observed, 10/12 official reward passed,
+    3 Runtime failures, and no provider/missing/unrun/invalidated cases. Seed
+    0 now advances from the verified slider effect to the requested checkbox,
+    but still stops before terminal submit; seed 1 still repeats slider
+    keypresses through the negative target boundary. Continue V-PRB-5C with
+    narrower REDs for terminal submit after verified checkbox completion and
+    negative slider stop/direction. Keep V-PRB-6, immutable Planner input,
+    fresh diagnostic, nightly/release, and promotion separate.
 
 ## Change Record
 

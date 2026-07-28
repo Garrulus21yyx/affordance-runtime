@@ -5,7 +5,8 @@ packet_role: child_diagnostic
 base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
 implementation_revisions:
   - a805f0dfd1b58b76951003b9d12b9561b19d40e1
-latest_rerun_revision: a805f0dfd1b58b76951003b9d12b9561b19d40e1
+  - 9c1b58c33f20e2690221516a953ce96f910ef2d3
+latest_rerun_revision: 9c1b58c33f20e2690221516a953ce96f910ef2d3
 change_type: vertical_failure_classification
 agent_mode: single_agent
 production_change_allowed: true
@@ -95,24 +96,46 @@ implementation:
       after replan/progress normalized the active slider subgoal to a generic
       slider_value has changed form. V-PRB-5C therefore remains open, narrowed
       to post-replan slider value/progress semantics.
+  second_repair:
+    revision: 9c1b58c33f20e2690221516a953ce96f910ef2d3
+    summary: >
+      Added verifier-backed follow-up resolution for the post-slider form
+      sequence: after the active subgoal is present in verified_effects, the
+      resolver may activate the uniquely requested checkbox, and after that
+      checkbox is current-state satisfied it may activate a unique terminal
+      submit control. The repair remains bounded to current PlannerContext and
+      typed affordance summaries.
+  second_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
+    result: >
+      Negative PR breadth evidence: 12/12 observed, 10/12 official reward
+      passed, 2/12 official reward failed, 3 Runtime failures, no
+      provider/missing/unrun/invalidated cases. The seed-0 form trace now
+      reaches the requested checkbox after verified slider progress, but still
+      stops before terminal submit. The seed-1 form trace still repeats
+      press_key through the negative target boundary and stops at
+      clarification. V-PRB-5C remains open, now split into terminal-submit
+      follow-up and negative slider stop/direction residuals.
 
 verification:
   focused_tests:
     - tests/test_generalist_planner.py::test_strict_planner_resolves_empty_clarification_to_slider_press_key
   local_gates:
-    - full pytest: 982 passed
+    - full pytest: 984 passed
     - ruff: passed
     - mypy: passed over 118 source files
     - diff check: passed
     - architecture gates: passed
   clean_rerun:
     - docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+    - docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
 
 architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
-closure_status: open_after_first_repair
+closure_status: open_after_second_repair
 next_requirement: >
-  Continue V-PRB-5C only with a new non-BrowserGym RED for the post-replan
-  slider value/progress case. Do not mix V-PRB-6, immutable PlanningRequest,
-  fresh diagnostic, nightly, release, or promotion into the same slice.
+  Continue V-PRB-5C only with new non-BrowserGym REDs for terminal submit after
+  verified checkbox completion and negative slider stop/direction at the
+  requested value. Do not mix V-PRB-6, immutable PlanningRequest, fresh
+  diagnostic, nightly, release, or promotion into the same slice.

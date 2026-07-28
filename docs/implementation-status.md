@@ -29,12 +29,12 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | check `git rev-parse HEAD`; current workstream is V-PRB-5C evidence/status synchronization after clean `a805f0d` PR breadth |
-| Latest production repair revision | `a805f0d` (`fix: resolve slider press-key clarification`) |
-| Latest PR breadth evidence revision | `a805f0dfd1b58b76951003b9d12b9561b19d40e1`: 12/12 observed, 10/12 official reward passed, 2/12 official reward failed, 3 Runtime failures, no provider failure/missing/unrun/invalidated case; V-PRB-5C first repair entered the real form path and verified slider `press_key` actions, but the matrix remains failed with post-replan form strict-planner empty proposals and the separate V-PRB-6 enter-text terminal guard remaining |
+| Current HEAD | check `git rev-parse HEAD`; current workstream is V-PRB-5C evidence/status synchronization after clean `9c1b58c` PR breadth |
+| Latest production repair revision | `9c1b58c` (`fix: advance verified form followups`) |
+| Latest PR breadth evidence revision | `9c1b58c33f20e2690221516a953ce96f910ef2d3`: 12/12 observed, 10/12 official reward passed, 2/12 official reward failed, 3 Runtime failures, no provider failure/missing/unrun/invalidated case; V-PRB-5C second repair advanced form seed 0 from verified slider to the requested checkbox, but the matrix remains failed with form terminal-submit/negative-slider residuals and the separate V-PRB-6 enter-text terminal guard remaining |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
-| Current documentation-sync identity | documentation/evidence commits after `a805f0d` classify the V-PRB-5C first repair rerun; they inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
+| Current documentation-sync identity | documentation/evidence commits after `9c1b58c` classify the V-PRB-5C second repair rerun; they inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
 | Current worktree local gate | must be checked for the active change; do not infer full local-equivalent or promotion evidence from an older implementation-bearing baseline |
 | Architecture admission | mechanical gates passed for the recorded implementation-bearing baseline; SG7 targeted protected-family confirmation remains bound to clean repair revision `3d44a9d222decd1de272d7a4d3eb14b025a8738a`, while PR breadth/nightly/release promotion remains held |
 | Semantic ownership review | `pending_review`: SG7 generic repair preserved the benchmark/authority hard boundaries, but introduced deterministic semantic fallback in Generalist Planner and value-entry lexical normalization in intent/task-planning surfaces; these are baselined as ownership-review debt rather than declared architecturally clean |
@@ -71,8 +71,8 @@ pr_breadth_initial_negative:
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 pr_breadth_latest:
-  revision: a805f0dfd1b58b76951003b9d12b9561b19d40e1
-  evidence: docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
+  revision: 9c1b58c33f20e2690221516a953ce96f910ef2d3
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
   status: failed
   expected: 12
   observed: 12
@@ -87,7 +87,7 @@ pr_breadth_latest:
   promotion_status: held
   root_owner_next: INTENT / PLANNING
   remaining_official_failed_mechanisms:
-    post_replan_form_sequence_empty_clarification: 2
+    form_sequence_terminal_submit_and_negative_slider_residual: 2
   separate_runtime_guard:
     planner_terminal_completion_guard: 1
   next_change_admission: docs/change-admission/v-prb-5c-form-sequence-strict-planner-proposal.yaml
@@ -286,8 +286,12 @@ v_prb_5_downstream_planning_follow_up:
       first_repair_verification: non-BrowserGym RED/GREEN, focused generalist planner suite, architecture gates, full local pytest 982/982, Ruff, mypy, and diff check passed
       first_rerun_result: docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
       first_rerun_impact: PR breadth remains failed at 10/12 official reward with 3 Runtime failures; the resolver enters the real form path and verifies slider press_key actions, but both form seeds later fail with empty ask_user after replan/progress normalizes the active slider subgoal
-      status: open_after_first_repair
-      next_requirement: write a new non-BrowserGym RED for the post-replan slider value/progress residual before any further production repair
+      second_repair: 9c1b58c advances from a verifier-backed slider effect to the uniquely requested checkbox, and from a current-state satisfied requested checkbox to unique terminal submit, using only current PlannerContext and typed affordance summaries
+      second_repair_verification: non-BrowserGym RED/GREEN plus focused generalist/architecture suite, full local pytest 984/984, Ruff, mypy, and diff check passed
+      second_rerun_result: docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
+      second_rerun_impact: PR breadth remains failed at 10/12 official reward with 3 Runtime failures; seed 0 now reaches the requested checkbox after verified slider progress but stops before terminal submit, while seed 1 still repeats press_key through the negative target boundary
+      status: open_after_second_repair
+      next_requirement: write new non-BrowserGym REDs for terminal submit after verified checkbox completion and negative slider stop/direction at the requested value before any further production repair
     v_prb_6_terminal_completion_guard:
       child_record: docs/change-admission/v-prb-6-terminal-completion-guard.yaml
       episodes:
@@ -295,7 +299,7 @@ v_prb_5_downstream_planning_follow_up:
       candidate_owner: not_selected
       observed_failure: official_reward is 1.0 while Runtime records planner_terminal_completion_guard
       review_refinement: track separately; BrowserGym reward is not Runtime completion authority
-  next_requirement: continue V-PRB-5C form-sequence strict-planner proposal generation as a separate non-BrowserGym RED/GREEN slice, narrowed to the post-replan slider value/progress residual, while keeping V-PRB-6 terminal guard separate before any breadth completion or promotion claim
+  next_requirement: continue V-PRB-5C form-sequence strict-planner proposal generation as a separate non-BrowserGym RED/GREEN slice, narrowed to terminal-submit follow-up and negative-slider stop/direction residuals, while keeping V-PRB-6 terminal guard separate before any breadth completion or promotion claim
   promotion_status: held
 
 v_prb_3_architecture_follow_up:
@@ -360,8 +364,8 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, and the first V-PRB-5C repair, clean PR breadth at `a805f0d` remains 12/12 observed, 10/12 official reward passed, 2/12 official reward failed, 3 Runtime failures, 0 provider failure. Button-sequence and entry action-family resolution are closed for this matrix; V-PRB-5C remains open as a post-replan form slider proposal/progress residual, with V-PRB-6 terminal guard separate. | repair the remaining root-owner failures generically before rerunning protected cross-family / PR breadth; promotion held |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `a805f0d` remains failed at 10/12 official reward with two official failures and no promotion claim | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, and two V-PRB-5C repairs, clean PR breadth at `9c1b58c` remains 12/12 observed, 10/12 official reward passed, 2/12 official reward failed, 3 Runtime failures, 0 provider failure. Button-sequence and entry action-family resolution are closed for this matrix; V-PRB-5C remains open as form terminal-submit/negative-slider residuals, with V-PRB-6 terminal guard separate. | repair the remaining root-owner failures generically before rerunning protected cross-family / PR breadth; promotion held |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `9c1b58c` remains failed at 10/12 official reward with two official failures and no promotion claim | hold PR/nightly/release; first repair PR breadth root-owner failures, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
