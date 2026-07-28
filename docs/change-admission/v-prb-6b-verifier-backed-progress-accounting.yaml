@@ -3,6 +3,7 @@ packet_role: child_green_contract
 base_revision: 238cfee26cdf133c0fd7b4d936b0e2cfa49e7176
 change_type: vertical_correctness
 production_change_allowed: true
+implementation_revision: d17a1f3cf9f3190e3188ad5a9f5bfbc2ef017e2c
 
 goal: >
   Establish a Core authority-free progress accounting contract for a ready,
@@ -68,9 +69,9 @@ green_implementation:
   implemented_relations:
     - is_available
     - is_visible
-  current_integration: evaluator_only
-  coordinator_commit_path: not_connected_in_this_slice
-  old_replacement_path_removed: false
+  current_integration: coordinator_commit_connected_locally
+  coordinator_commit_path: StateKernel.complete_subgoal via current-state progress commit
+  old_replacement_path_removed: true_for_required_task_spec_obligations
 
 green_tests:
   focused:
@@ -85,13 +86,27 @@ green_tests:
   static:
     command: "$PY -m ruff check src tests scripts && $PY -m mypy --ignore-missing-imports src && git diff --check"
     result: "pass; mypy checked 119 source files"
+  coordinator_integration:
+    command: "$PY -m pytest -q tests/test_coordinator.py::test_coordinator_completes_current_state_read_only_subgoal_without_replanning"
+    result: "1 passed"
+    revision: d17a1f3cf9f3190e3188ad5a9f5bfbc2ef017e2c
+  integration_regression:
+    command: "$PY -m pytest -q tests/test_coordinator.py tests/test_task_plan_progress.py tests/test_task_plan_flow.py tests/test_task_plan_lifecycle.py"
+    result: "52 passed"
+  integration_architecture:
+    command: "$PY -m pytest -q tests/test_horizontal_architecture_governance.py tests/test_r8_architecture_boundaries.py tests/test_responsibility_containment.py tests/test_generalist_governance_matrix.py"
+    result: "41 passed; coordinator.py 3466 lines; RunCoordinator.run_sync 2039 lines"
+  integration_static:
+    command: "$PY -m ruff check src tests scripts && $PY -m mypy --ignore-missing-imports src && git diff --check"
+    result: "pass; mypy checked 121 source files"
 
 architecture_admission:
   required: true
   waiver_allowed: false
   initial_status: pass_local_focused
+  coordinator_integration_status: pass_local_focused
 
 promotion:
   official_score_claimed: false
-  pr_breadth_acceptance: held
+  pr_breadth_acceptance: pending_clean_rerun
   fresh_diagnostic: not_authorized

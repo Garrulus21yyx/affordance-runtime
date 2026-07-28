@@ -555,3 +555,17 @@ delivery claims.
   evidence is archived under `docs/evidence/runs/m8.2a-sg7-3d44a9d/`. This
   closes SG7 targeted confirmation only; protected breadth remains next and
   promotion remains held.
+- Integrated V-PRB-6B verifier-backed current-state progress accounting into
+  the Coordinator path without changing BrowserGym adapter evidence, Prompt,
+  budgets, finish guard, V-PRB-6A progress targeting, or immutable Planner
+  input. The production repair is committed as
+  `d17a1f3cf9f3190e3188ad5a9f5bfbc2ef017e2c`. A ready required read-only
+  `IS_AVAILABLE` / `IS_VISIBLE` subgoal can
+  now be completed from typed current observation evidence through
+  `StateKernel.complete_subgoal()`, while required TaskPlan obligation subgoals
+  remain in the authoritative plan and the old current-state discard path is
+  stopped for TaskSpecs with obligations. Verified locally with the focused
+  Coordinator integration test, 52 related Coordinator/TaskPlan/progress tests,
+  41 architecture governance gates, Ruff, mypy over 121 source files, and diff
+  check. Clean PR breadth rerun remains the next evidence step before any
+  capability, fresh diagnostic, nightly/release, or promotion claim.
