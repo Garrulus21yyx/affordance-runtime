@@ -154,11 +154,17 @@ batched into a single mixed patch:
    `task_planning ... entry_outcome_already_satisfied`, then exhausts the
    repair loop. Next V-PRB-6B work must decide whether an already-current
    read-only availability subgoal is completed from current-state evidence
-   instead of merely model-replan repairable. V-PRB-6A remains the separate
-   strict-xfail diagnostic for dependent checkbox/submit progress-scope
-   binding. A new `click-button:seed-1` JSON-invalid intent draft failure is a
-   separate schema/provider robustness cluster and must not be mixed into 6A or
-   6B.
+   instead of merely model-replan repairable. Follow-up child slice
+   `docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml`
+   implements the chosen discard semantics: preserve verified prior subgoals
+   and prepare an accepted replacement that removes the already-current
+   read-only availability/visibility subgoal through the existing
+   `TaskReplanned` / `StateKernel.replace_task_plan` path. This local repair is
+   not matrix evidence yet; rerun the same PR breadth matrix after commit.
+   V-PRB-6A remains the separate strict-xfail diagnostic for dependent
+   checkbox/submit progress-scope binding. A new `click-button:seed-1`
+   JSON-invalid intent draft failure is a separate schema/provider robustness
+   cluster and must not be mixed into 6A or 6B.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

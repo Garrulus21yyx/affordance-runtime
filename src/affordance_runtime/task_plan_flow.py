@@ -18,9 +18,11 @@ from affordance_runtime.task_plan_lifecycle import (
     TaskPlanBudgetLimits,
     TaskPlanLifecycle,
     TaskPlanReplacementDecision,
+    TaskPlanReplacementReason,
     TaskPlanTransition,
 )
 from affordance_runtime.task_planning import (
+    SubgoalOutcomeRelation,
     TaskPlanValidationIssue,
     TaskPlanValidationStatus,
     task_planning_context_summary,
@@ -192,6 +194,14 @@ class TaskPlanCommitPreparation:
         )
 
 
+_CURRENT_STATE_COMPLETABLE_RELATIONS = frozenset(
+    {
+        SubgoalOutcomeRelation.IS_AVAILABLE,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+    }
+)
+
+
 @dataclass(frozen=True)
 class TaskPlanFlow:
     """Prepare an initial plan or required replacement through one typed port."""
@@ -215,12 +225,80 @@ class TaskPlanFlow:
         )
         if not replacement.required:
             return TaskPlanFlowResult()
+        if replacement.reason == TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED:
+            discarded = self._prepare_current_state_discard(
+                task_spec,
+                state,
+                snapshot,
+                budget,
+                replacement,
+            )
+            if discarded is not None:
+                return discarded
         return self._prepare_replacement(
             task_spec,
             state,
             snapshot,
             budget,
             replacement,
+        )
+
+    def _prepare_current_state_discard(
+        self,
+        task_spec: TaskSpec,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        budget: TaskPlanBudgetLimits,
+        replacement: TaskPlanReplacementDecision,
+    ) -> TaskPlanFlowResult | None:
+        assert replacement.reason is not None
+        previous_plan = state.task_plan
+        subgoal = self.lifecycle.active_subgoal_spec(state)
+        if (
+            previous_plan is None
+            or subgoal is None
+            or subgoal.subgoal_id != replacement.subgoal_id
+            or subgoal.outcome is None
+            or subgoal.outcome.relation not in _CURRENT_STATE_COMPLETABLE_RELATIONS
+        ):
+            return None
+        remaining = tuple(
+            item for item in previous_plan.subgoals if item.subgoal_id != subgoal.subgoal_id
+        )
+        if not remaining:
+            return None
+        context = self.lifecycle.build_context(
+            task_spec,
+            state,
+            snapshot,
+            budget,
+            reason=replacement.reason.value,
+        )
+        plan = previous_plan.model_copy(
+            update={
+                "plan_id": f"{previous_plan.plan_id}-current-state-discard",
+                "plan_version": previous_plan.plan_version + 1,
+                "supersedes_plan_id": previous_plan.plan_id,
+                "based_on_state_version": state.version,
+                "subgoals": remaining,
+            }
+        )
+        transition = TaskPlanTransition(
+            context=context,
+            plan=plan,
+            validation=self.lifecycle.validator.validate(
+                plan,
+                task_spec,
+                state_version=state.version,
+                previous_plan=previous_plan,
+                planning_context=context,
+            ),
+            previous_plan=previous_plan,
+        )
+        return _validated_result(
+            TaskPlanFlowKind.REPLACEMENT,
+            transition,
+            replacement=replacement,
         )
 
     def _prepare_initial(

@@ -765,7 +765,8 @@ class TaskPlanValidator:
                 item.subgoal_id for item in previous_plan.subgoals
             } - completed_ids
             replacement_unfinished = replacement_by_id.keys() - completed_ids
-            if previous_unfinished and not replacement_unfinished:
+            issue = task_plan_entry_state_issue(previous_plan, planning_context)
+            if not replacement_unfinished and previous_unfinished - ({issue.detail} if issue is not None else set()):
                 repairable.append(
                     TaskPlanValidationIssue(
                         code="replacement_missing_unfinished_subgoal",
@@ -832,9 +833,7 @@ class TaskPlanValidator:
             if not subgoal.success_criteria:
                 repairable.append(TaskPlanValidationIssue(code="missing_success_criteria", detail=subgoal.subgoal_id))
             if not subgoal.evidence_requirements:
-                repairable.append(
-                    TaskPlanValidationIssue(code="missing_evidence_requirements", detail=subgoal.subgoal_id)
-                )
+                repairable.append(TaskPlanValidationIssue(code="missing_evidence_requirements", detail=subgoal.subgoal_id))
             if (
                 subgoal.outcome is not None
                 and subgoal.action_family is not None

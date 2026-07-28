@@ -306,14 +306,20 @@ delivery claims.
     observed, 11/12 official reward, 4 Runtime failures. V-PRB-6B changed
     shape but is not closed: `enter-text:seed-1` now fails earlier with
     `task_planning ... entry_outcome_already_satisfied`, then exhausts the
-    repair loop. Next open a follow-up 6B child slice for already-current
-    read-only availability completion/discard semantics. Keep Runtime success,
-    verifier success, and BrowserGym reward separate; do not substitute
-    official reward for Runtime completion authority, accept finish with
-    incomplete TaskPlan progress, weaken the verifier, start immutable Planner
-    input, or run fresh diagnostic, nightly/release, or promotion in this
-    slice. Keep the new `click-button:seed-1` JSON-invalid/schema robustness
-    cluster separate from V-PRB-6A/V-PRB-6B.
+    repair loop. Follow-up 6B child slice
+    `docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml`
+    is implemented locally: TaskPlanFlow prepares an accepted replacement that
+    preserves verified prior subgoals and discards an already-current read-only
+    availability/visibility subgoal through the existing replacement-plan
+    commit path. Focused gate is `155 passed, 1 xfailed`; static gates pass.
+    Next commit/push this local repair and rerun the same PR breadth matrix on
+    the clean committed revision. Keep Runtime success, verifier success, and
+    BrowserGym reward separate; do not substitute official reward for Runtime
+    completion authority, accept finish with incomplete TaskPlan progress,
+    weaken the verifier, start immutable Planner input, or run fresh
+    diagnostic, nightly/release, or promotion in this slice. Keep the new
+    `click-button:seed-1` JSON-invalid/schema robustness cluster separate from
+    V-PRB-6A/V-PRB-6B.
 
 ## Change Record
 

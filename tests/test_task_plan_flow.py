@@ -276,6 +276,61 @@ def test_flow_preserves_replacement_reason_and_validation_issue() -> None:
     assert state.task_plan.plan_id == "original-plan"
 
 
+def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning() -> None:
+    state = _state()
+    first = SubgoalSpec(
+        subgoal_id="first",
+        objective="setting preparation changed",
+        success_criteria=("setting preparation changed",),
+        evidence_requirements=("preparation evidence",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.ACTIVATE,
+        outcome=SubgoalOutcome(
+            subject="setting preparation",
+            relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        ),
+    )
+    visible = SubgoalSpec(
+        subgoal_id="visible",
+        objective="Save setting is visible",
+        depends_on=("first",),
+        success_criteria=("Save setting is visible",),
+        evidence_requirements=("current button visibility",),
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        action_family=TaskPlanActionFamily.ACTIVATE,
+        outcome=SubgoalOutcome(
+            subject="Save setting",
+            relation=SubgoalOutcomeRelation.IS_VISIBLE,
+        ),
+    )
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="original-plan",
+            task_id=_task().task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.LLM,
+            subgoals=(first, visible),
+        )
+    )
+    state.complete_subgoal("first", ("evidence:first",))
+    state.activate_next_subgoal()
+
+    result = TaskPlanFlow(
+        TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.HAS_CHANGED))
+    ).prepare(_task(), state, _snapshot(), Limits())
+
+    assert result.kind == TaskPlanFlowKind.REPLACEMENT
+    assert result.accepted
+    assert result.transition is not None
+    assert result.transition.previous_plan is state.task_plan
+    assert [item.subgoal_id for item in result.transition.plan.subgoals] == ["first"]
+    assert result.failure is None
+    assert state.plan_progress is not None
+    assert state.plan_progress.completed_subgoal_ids == ["first"]
+
+
 def test_flow_prepares_valid_replacement_without_committing_it() -> None:
     state = _state_requiring_replacement()
     result = TaskPlanFlow(

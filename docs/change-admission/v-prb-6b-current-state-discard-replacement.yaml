@@ -1,0 +1,127 @@
+slice_id: v-prb-6b-current-state-discard-replacement
+parent_packet: docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
+packet_role: child_production_slice
+
+base_revision: 428580b1cb3cd6b9b300ec47c34a16541c059f2a
+change_type: vertical_repair
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: TaskPlanFlow current-state discard replacement
+owner_before:
+  - TaskPlanFlow routed already-current read-only availability through model replan
+  - TaskPlanValidator marked replacement-without-unfinished-work repairable even when the missing unfinished unit was already current-state satisfied
+owner_after:
+  - TaskPlanFlow prepares an accepted replacement that preserves verified subgoals and discards the already-current read-only availability subgoal
+  - TaskPlanValidator permits that replacement only when the previous unfinished entry is proven already current-state satisfied
+  - RunCoordinator uses the existing TaskReplanned / StateKernel.replace_task_plan commit path
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-17f2e50/
+  parent_repair: docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
+  failing_runtime_cluster: enter-text:seed-1 task_planning repairable entry_outcome_already_satisfied loop
+  executable_red: tests/test_task_plan_flow.py::test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning
+
+problem_statement: >
+  The first V-PRB-6B repair correctly recognized the active read-only
+  `submit_button is available` subgoal as already current-state satisfied, but
+  it only surfaced a repairable validation issue. Runtime then repeatedly asked
+  the model to replan and exhausted repair budget. For read-only availability
+  or visibility subgoals that are already current-state satisfied, the bounded
+  flow should preserve verified progress and discard that serial precondition
+  subgoal through the existing replacement-plan commit path.
+
+allowed_writes:
+  - src/affordance_runtime/task_plan_flow.py
+  - src/affordance_runtime/task_planning.py
+  - tests/test_task_plan_flow.py
+  - docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml
+  - docs/current-implementation-plan.md
+  - docs/implementation-status.md
+  - .codex/goal-plan.md
+
+forbidden_changes:
+  - Coordinator finish guard weakening
+  - new RunCoordinator responsibility or growth
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - external evaluator based subgoal completion
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration
+  - StateKernel mutation ownership changes
+  - V-PRB-6A progress-scope binding changes
+  - click-button JSON-invalid/schema robustness changes
+
+typed_boundary:
+  input:
+    - TaskPlanFlowResult
+    - TaskPlanReplacementDecision(active_subgoal_outcome_already_satisfied)
+    - TaskPlanValidationReport
+  output:
+    - accepted TaskPlanFlow replacement transition
+    - TaskReplanned projection via existing commit path
+
+required_tests:
+  red_to_green:
+    - tests/test_task_plan_flow.py::test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning
+  negative_control:
+    - tests/test_task_plan_lifecycle.py::test_replacement_without_unfinished_work_is_repairable
+  focused_regression:
+    - tests/test_task_plan_flow.py
+    - tests/test_task_planning.py
+    - tests/test_task_plan_lifecycle.py
+    - tests/test_browsergym_encoder.py
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_responsibility_containment.py
+  static:
+    - ruff
+    - mypy
+    - git diff --check
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+implementation_result:
+  status: implemented_locally_pending_clean_rerun
+  owner_confirmed: TaskPlanFlow current-state discard replacement
+  production_change: >
+    TaskPlanFlow now prepares an accepted replacement plan that removes an
+    active already-current read-only `is_available` / `is_visible` subgoal
+    while preserving verified prior subgoals. TaskPlanValidator allows this
+    replacement only when the previous unfinished subgoal is the current-state
+    satisfied entry; ordinary replacement-without-unfinished-work remains
+    repairable.
+  unchanged_boundaries:
+    - RunCoordinator finish guard and line/method ratchets
+    - StateKernel mutation ownership
+    - PlannerPort / PlannerStateView
+    - Prompt, budget, retry, timeout, and provider settings
+    - BrowserGym official reward remains separate from Runtime completion authority
+
+verification:
+  red_to_green:
+    command: >
+      python -m pytest -q
+      tests/test_task_plan_flow.py::test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning
+    result: 1 passed
+  focused_regression:
+    command: >
+      python -m pytest -q tests/test_task_plan_flow.py tests/test_task_planning.py
+      tests/test_task_plan_lifecycle.py tests/test_browsergym_encoder.py
+      tests/test_horizontal_architecture_governance.py
+      tests/test_responsibility_containment.py
+    result: 155 passed, 1 xfailed
+  static:
+    ruff: pass
+    mypy: pass
+    diff_check: pass
+  remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
+
+done_when:
+  - executable RED turns green
+  - ordinary replacement-without-unfinished-work negative control remains repairable
+  - Coordinator growth ratchets remain green
+  - no promotion, fresh diagnostic, or official score claim is made
+  - clean committed PR breadth rerun classifies matrix impact
