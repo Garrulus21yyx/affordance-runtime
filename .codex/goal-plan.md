@@ -393,10 +393,18 @@ delivery claims.
     `tests/test_task_plan_progress.py::test_required_available_subgoal_is_completed_without_deleting_obligation`
     and
     `docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml`.
-    This is a red-only packet for Core verifier-backed progress accounting; no
-    production behavior is admitted. Next step is GREEN for a narrow
-    `IS_AVAILABLE` / `IS_VISIBLE` `TaskPlanProgressReconciler` or
-    `CurrentStateSubgoalCompletionFlow`, then a clean PR breadth rerun.
+    The forced RED failed on the missing `task_plan_progress` contract before
+    production implementation.
+51. `done` — Implemented the narrow GREEN for authority-free Core progress
+    accounting in `src/affordance_runtime/task_plan_progress.py`. The evaluator
+    prepares `SubgoalCompletionPreparation` for ready, dependency-unlocked
+    `IS_AVAILABLE` / `IS_VISIBLE` subgoals from current observation while
+    preserving the TaskPlan and obligation identities. Verification: progress
+    tests 6/6, related planning/flow/lifecycle/progress tests 58/58,
+    architecture gates 41/41, Ruff, mypy over 119 source files, and diff check
+    pass. Next step is a separate Coordinator integration slice that commits the
+    typed preparation through `StateKernel.complete_subgoal()` and disables the
+    required-obligation deletion path before any clean PR breadth rerun.
 
 ## Change Record
 
