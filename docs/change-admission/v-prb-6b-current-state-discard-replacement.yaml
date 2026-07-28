@@ -18,6 +18,7 @@ owner_after:
 
 source_evidence:
   clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-17f2e50/
+  followup_clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-9ad1288/
   parent_repair: docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
   failing_runtime_cluster: enter-text:seed-1 task_planning repairable entry_outcome_already_satisfied loop
   executable_red: tests/test_task_plan_flow.py::test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning
@@ -84,7 +85,7 @@ promotion_status: held
 remote_ci: disabled
 
 implementation_result:
-  status: implemented_locally_pending_clean_rerun
+  status: matrix_negative_insufficient
   owner_confirmed: TaskPlanFlow current-state discard replacement
   production_change: >
     TaskPlanFlow now prepares an accepted replacement plan that removes an
@@ -118,6 +119,16 @@ verification:
     mypy: pass
     diff_check: pass
   remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
+  clean_pr_breadth_rerun:
+    revision: 9ad128848a070ba1026f3696e2ea5a9edc55a592
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-9ad1288/
+    result: negative; 12 expected, 12 observed, 11 official reward passed, 1 official reward failed, 4 Runtime failures
+    impact: >
+      The current-state discard replacement is safe but insufficient for PR
+      breadth closure. `enter-text:seed-1` still fails Runtime completion,
+      both form-sequence seeds remain separate V-PRB-6A terminal-guard
+      failures, and `click-button:seed-1` remains a separate JSON-invalid
+      schema/provider robustness cluster.
 
 done_when:
   - executable RED turns green
@@ -125,3 +136,5 @@ done_when:
   - Coordinator growth ratchets remain green
   - no promotion, fresh diagnostic, or official score claim is made
   - clean committed PR breadth rerun classifies matrix impact
+  - negative rerun is recorded without PR breadth, fresh diagnostic, promotion,
+    or official score claims

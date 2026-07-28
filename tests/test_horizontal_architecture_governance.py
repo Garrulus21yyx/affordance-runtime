@@ -286,8 +286,9 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "official_score_claimed: false" in status
     assert "root_owner_next: intent / planning" in status
     assert "historical initial p4 diagnostic at `d66760f`" in current_plan
-    assert "current pr breadth evidence at `d50a631`" in current_plan
-    assert "3 runtime guard failures" in current_plan
+    assert "current pr breadth evidence at `9ad1288`" in current_plan
+    assert "11/12 official reward passed" in current_plan
+    assert "4 runtime failures" in current_plan
     assert "m8.2a-pr-breadth-d66760f" in status
     assert "official_score_claimed=false" in evidence_text
     assert "promotion eligible: no" in evidence_text

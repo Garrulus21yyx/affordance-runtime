@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-6 terminal-completion guard diagnostics | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean PR breadth is now 12/12 observed and 12/12 official reward passed, but Runtime still aborts 3 episodes at `planner cannot finish before verifier-backed subgoal completion`; no provider/missing/unrun/invalidated case | classify V-PRB-6A dependent-subgoal evidence binding and V-PRB-6B single-subgoal terminal completion separately; write non-BrowserGym REDs before any production packet; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | Post-V-PRB-6B residual classification | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. The latest clean PR breadth rerun at `9ad1288` is still negative: 12/12 observed, 11/12 official reward passed, 4 Runtime failures, no missing/unrun/invalidated case | reclassify the post-`9ad1288` residuals before another production repair: V-PRB-6A dependent-subgoal progress-scope binding, residual V-PRB-6B `enter-text:seed-1` Runtime completion, and the separate `click-button:seed-1` JSON-invalid schema/provider robustness cluster must stay separate; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -159,8 +159,13 @@ batched into a single mixed patch:
    implements the chosen discard semantics: preserve verified prior subgoals
    and prepare an accepted replacement that removes the already-current
    read-only availability/visibility subgoal through the existing
-   `TaskReplanned` / `StateKernel.replace_task_plan` path. This local repair is
-   not matrix evidence yet; rerun the same PR breadth matrix after commit.
+   `TaskReplanned` / `StateKernel.replace_task_plan` path. The clean `9ad1288`
+   PR breadth rerun is archived at
+   `docs/evidence/runs/m8.2a-pr-breadth-9ad1288/` and is still negative:
+   12/12 observed, 11/12 official reward, and 4 Runtime failures. This proves
+   the 6B discard replacement is safe but insufficient for PR breadth closure;
+   `enter-text:seed-1` still does not reach Runtime completion. Do not keep
+   iterating on 6B without a new root-owner trace classification and RED.
    V-PRB-6A remains the separate strict-xfail diagnostic for dependent
    checkbox/submit progress-scope binding. A new `click-button:seed-1`
    JSON-invalid intent draft failure is a separate schema/provider robustness
@@ -185,11 +190,13 @@ batched into a single mixed patch:
 
 Historical initial P4 diagnostic at `d66760f` failed with 12/12 observed,
 0/12 official reward passed, and no provider/runtime provisioning failure.
-Current PR breadth evidence at `d50a631` is 12/12 external reward with 3
-Runtime guard failures. The next vertical action is not PR/nightly/release
-promotion; it is V-PRB-6A/V-PRB-6B diagnostic classification, compact trace
-projection, and non-BrowserGym RED construction before selecting any
-production owner. The umbrella task packet remains
+Historical PR breadth evidence at `d50a631` reached 12/12 external reward with
+3 Runtime guard failures. Current PR breadth evidence at `9ad1288` is still
+negative after the V-PRB-6B current-state discard replacement: 12/12 observed,
+11/12 official reward passed, and 4 Runtime failures. The next vertical action
+is not PR/nightly/release promotion; it is post-`9ad1288` root-owner
+classification before selecting any further production owner. The umbrella task
+packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`.
 
 The umbrella packet is diagnostic only and may not become a production patch.

@@ -287,7 +287,7 @@ delivery claims.
     breadth acceptance remains held because `enter-text:seed-1` and both
     `form-sequence` seeds still abort after external reward succeeds with
     `planner cannot finish before verifier-backed subgoal completion`.
-45. `in_progress` — Continue V-PRB-6 diagnostics and the selected V-PRB-6B
+45. `done` — Continue V-PRB-6 diagnostics and the selected V-PRB-6B
     child production slice only. Compact trace
     projection is archived at `docs/evidence/runs/v-prb-6-compact-d50a631/`.
     V-PRB-6A now has a strict-xfail executable RED for dependent checkbox
@@ -312,14 +312,23 @@ delivery claims.
     preserves verified prior subgoals and discards an already-current read-only
     availability/visibility subgoal through the existing replacement-plan
     commit path. Focused gate is `155 passed, 1 xfailed`; static gates pass.
-    Next commit/push this local repair and rerun the same PR breadth matrix on
-    the clean committed revision. Keep Runtime success, verifier success, and
-    BrowserGym reward separate; do not substitute official reward for Runtime
-    completion authority, accept finish with incomplete TaskPlan progress,
-    weaken the verifier, start immutable Planner input, or run fresh
-    diagnostic, nightly/release, or promotion in this slice. Keep the new
-    `click-button:seed-1` JSON-invalid/schema robustness cluster separate from
-    V-PRB-6A/V-PRB-6B.
+    Clean `9ad1288` PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-9ad1288/` and is still negative:
+    12/12 observed, 11/12 official reward, 4 Runtime failures. The local
+    6B discard replacement is safe but insufficient: `enter-text:seed-1` still
+    fails Runtime completion, both `form-sequence` seeds remain V-PRB-6A
+    terminal-guard failures, and `click-button:seed-1` remains a separate
+    JSON-invalid/schema robustness cluster. Runtime success, verifier success,
+    and BrowserGym reward remain separate; no breadth completion, fresh
+    diagnostic, nightly/release, promotion, immutable Planner input, or
+    official score claim is made.
+46. `in_progress` — Reclassify the post-`9ad1288` PR breadth residuals before
+    any new production repair. The next slice must start from compact trace /
+    root-owner evidence and choose exactly one owner: V-PRB-6A progress-scope
+    binding, V-PRB-6B residual Runtime completion for `enter-text:seed-1`, or
+    the separate click-button JSON-invalid schema/provider robustness cluster.
+    Do not batch these and do not start immutable Planner input unless evidence
+    directly implicates mutable Planner state.
 
 ## Change Record
 
