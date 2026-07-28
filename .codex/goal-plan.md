@@ -642,3 +642,10 @@ delivery claims.
   and `RunCoordinator.run_sync()` is now 2034 lines. Coordinator progress
   commit, finish authority, PlannerContext, TaskPlan semantics, and benchmark
   promotion remain unchanged.
+- Ran and archived focused ODG-5 shadow diagnostics at `04a2fcd` for
+  `enter-text` and `form-sequence`, seeds 0/1. Results: 4/4 observed, 4/4
+  external reward, 2/4 Runtime pass, 2/4 Runtime fail; no shadow failed events.
+  `form-sequence` shadow projection is aligned at failure, while
+  `enter-text:seed-1` remains `role_pending` for blocking availability. Next
+  slice is ODG-6 current-observation obligation satisfaction for role-resolved
+  `IS_AVAILABLE` / `IS_VISIBLE`, not form-sequence post-action attribution yet.

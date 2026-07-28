@@ -130,6 +130,24 @@ tests:
 architecture_admission: pass
 closure_status: post_observation_trace_hookup
 promotion_status: held
+focused_diagnostic:
+  revision: 04a2fcd310f8af246b23fb4bfced6a0fad8519fb
+  evidence: docs/evidence/runs/odg-5-shadow-diagnostic-04a2fcd/
+  expected_episode_count: 4
+  observed_episode_count: 4
+  external_reward_passed: 4
+  runtime_passed: 2
+  runtime_failed: 2
+  shadow_failed_events: 0
+  classification_summary:
+    enter-text:seed-0:
+      aligned: 2
+    enter-text:seed-1:
+      role_pending: 3
+    form-sequence:seed-0:
+      aligned: 10
+    form-sequence:seed-1:
+      aligned: 8
 runtime_line_ratchet:
   coordinator_py_before: 3466
   coordinator_py_after: 3461
@@ -139,8 +157,9 @@ runtime_line_ratchet:
   ceiling_increase: prohibited
 
 next_requirement: >
-  Continue with focused diagnostic collection and divergence analysis before
-  starting ODG-6. ODG-6 must remain based on real shadow comparison data and
-  still must not commit obligation satisfaction, replace finish authority,
-  initialize/mutate the obligation ledger outside its authorized slice, or
-  change PlannerContext.
+  Continue with ODG-6 current-observation obligation satisfaction for explicitly
+  role-resolved IS_AVAILABLE / IS_VISIBLE obligations. ODG-6 must remain based
+  on the archived shadow comparison data and still must not solve form-sequence
+  post-action attribution, commit standard obligation satisfaction through
+  Coordinator, replace finish authority, initialize/mutate the obligation ledger
+  outside its authorized slice, or change PlannerContext.
