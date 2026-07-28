@@ -76,7 +76,7 @@ promotion_status: held
 remote_ci: disabled
 
 implementation_result:
-  status: implemented_locally
+  status: implemented_locally_matrix_negative
   owner_confirmed: TaskPlan current-state/cardinality handling
   production_change: >
     TaskPlan current-state matching now treats symbolic subject tokens such as
@@ -109,6 +109,33 @@ verification:
     mypy: pass
     diff_check: pass
   remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
+
+clean_pr_breadth_rerun:
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-17f2e50/
+  revision: 17f2e5021bc0c1eab8d1302bc01aa77b82323459
+  result: negative
+  expected_episode_count: 12
+  observed_episode_count: 12
+  official_reward:
+    passed: 11
+    failed: 1
+  runtime_failure_count: 4
+  v_prb_6b_impact: >
+    `enter-text:seed-1` no longer reaches the terminal-completion guard. It now
+    fails earlier in TaskPlan validation with
+    `entry_outcome_already_satisfied`, and the repair loop exhausts budget.
+    This proves the child repair surfaced the already-current availability
+    condition but did not yet complete or discard that read-only subgoal.
+  remaining_failures:
+    - click-button:seed-1 json_invalid intent draft / schema robustness cluster
+    - enter-text:seed-1 TaskPlan repairable already-current availability loop
+    - form-sequence:seed-0 V-PRB-6A terminal-completion guard
+    - form-sequence:seed-1 V-PRB-6A terminal-completion guard
+  next_requirement: >
+    Open a follow-up V-PRB-6B child slice that decides whether an
+    already-current read-only availability subgoal should be completed from
+    current-state evidence instead of remaining a model-replan repairable
+    issue. Keep V-PRB-6A and the click-button JSON-invalid cluster separate.
 
 done_when:
   - executable RED turns green without xfail

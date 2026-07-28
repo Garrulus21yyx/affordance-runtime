@@ -147,10 +147,18 @@ batched into a single mixed patch:
    its non-BrowserGym RED
    `tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress`
    now passes without xfail after generic TaskPlan current-state/cardinality
-   repair. This does not yet close PR breadth: rerun the same PR breadth matrix
-   on the clean committed revision before claiming matrix impact. V-PRB-6A
-   remains the separate strict-xfail diagnostic for dependent checkbox/submit
-   progress-scope binding.
+   repair. The clean `17f2e50` PR breadth rerun is archived at
+   `docs/evidence/runs/m8.2a-pr-breadth-17f2e50/` and is still negative:
+   12/12 observed, 11/12 official reward, 4 Runtime failures. V-PRB-6B changed
+   shape but is not closed: `enter-text:seed-1` now fails earlier as
+   `task_planning ... entry_outcome_already_satisfied`, then exhausts the
+   repair loop. Next V-PRB-6B work must decide whether an already-current
+   read-only availability subgoal is completed from current-state evidence
+   instead of merely model-replan repairable. V-PRB-6A remains the separate
+   strict-xfail diagnostic for dependent checkbox/submit progress-scope
+   binding. A new `click-button:seed-1` JSON-invalid intent draft failure is a
+   separate schema/provider robustness cluster and must not be mixed into 6A or
+   6B.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

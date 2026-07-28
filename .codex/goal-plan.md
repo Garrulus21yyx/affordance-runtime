@@ -301,12 +301,19 @@ delivery claims.
     former strict-xfail RED in `tests/test_task_planning.py` passes locally
     without xfail after generic symbolic subject-to-affordance matching.
     Focused gate is `147 passed, 1 xfailed`; the remaining xfail is V-PRB-6A.
-    Next commit/push this slice and rerun the same PR breadth matrix on the
-    clean committed revision. Keep Runtime success, verifier success, and
-    BrowserGym reward separate; do not substitute official reward for Runtime
-    completion authority, accept finish with incomplete TaskPlan progress,
-    weaken the verifier, start immutable Planner input, or run fresh
-    diagnostic, nightly/release, or promotion in this slice.
+    The clean `17f2e50` PR breadth rerun is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-17f2e50/` and is negative: 12/12
+    observed, 11/12 official reward, 4 Runtime failures. V-PRB-6B changed
+    shape but is not closed: `enter-text:seed-1` now fails earlier with
+    `task_planning ... entry_outcome_already_satisfied`, then exhausts the
+    repair loop. Next open a follow-up 6B child slice for already-current
+    read-only availability completion/discard semantics. Keep Runtime success,
+    verifier success, and BrowserGym reward separate; do not substitute
+    official reward for Runtime completion authority, accept finish with
+    incomplete TaskPlan progress, weaken the verifier, start immutable Planner
+    input, or run fresh diagnostic, nightly/release, or promotion in this
+    slice. Keep the new `click-button:seed-1` JSON-invalid/schema robustness
+    cluster separate from V-PRB-6A/V-PRB-6B.
 
 ## Change Record
 
