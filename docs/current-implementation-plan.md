@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-5C form-sequence strict-planner proposal generation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`. Two V-PRB-5C repairs are admitted and rerun cleanly through `9c1b58c`, but PR breadth remains 12/12 observed, 10 official reward passes, 2 official reward failures, 3 Runtime failures, and no provider/missing/unrun/invalidated case. The resolver now reaches the requested checkbox in seed 0; residual failures split into terminal-submit follow-up and negative-slider stop/direction semantics | continue V-PRB-5C only: write the next non-BrowserGym REDs for terminal submit after verified checkbox completion and negative slider stop/direction at the requested value; do not mix V-PRB-6, immutable Planner input, fresh diagnostic, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-6 terminal-completion guard | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean PR breadth is now 12/12 observed and 12/12 official reward passed, but Runtime still aborts 3 episodes at `planner cannot finish before verifier-backed subgoal completion`; no provider/missing/unrun/invalidated case | classify V-PRB-6 only: write a non-BrowserGym RED for a finish proposal after all TaskPlan subgoals/effects have verifier-backed evidence but task-level terminal completion remains unaccepted; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -114,22 +114,25 @@ batched into a single mixed patch:
    value-entry inference. The clean `3daf779` rerun restores `enter-text:seed-0`
    and confirms V-PRB-5B is closed for action-family resolution in the current
    matrix.
-3. **V-PRB-5C form-sequence strict-planner proposal generation** — active child
-   slice for the remaining `form-sequence` seeds. The first repair at
+3. **V-PRB-5C form-sequence strict-planner proposal generation** — closed for
+   the current PR breadth matrix. The first repair at
    `a805f0d` added a bounded slider `press_key` resolver for empty
    clarification proposals and passed local gates. `9c1b58c` added
    verifier-backed follow-up resolution from a verified slider effect to the
    requested checkbox and from a satisfied requested checkbox to terminal
-   submit. Clean PR breadth evidence at `9c1b58c` remains negative: seed 0 now
-   reaches the requested checkbox but stops before terminal submit, while seed
-   1 still repeats slider keypresses through the negative target boundary.
-   Continue 5C with narrower REDs for terminal-submit follow-up and negative
-   slider stop/direction semantics; do not reopen V-PRB-5B action-family
-   availability.
-4. **V-PRB-6 terminal completion guard classification** — track
-   `enter-text:seed-1` separately because BrowserGym official reward is 1.0
-   while Runtime still records a terminal guard. External reward is not Runtime
-   completion authority.
+   submit. `d50a631` stopped negative slider repetition at the requested value
+   and allowed terminal submit after a requested checkbox is current-state
+   satisfied even when the active subgoal projection is stale. Clean PR breadth
+   evidence at `d50a631` reaches 12/12 official reward; the former
+   form-sequence official failures no longer reproduce. Do not continue
+   form-specific planner proposal repairs unless a new official reward failure
+   appears.
+4. **V-PRB-6 terminal completion guard classification** — active child slice.
+   `enter-text:seed-1` and both `form-sequence` seeds now have BrowserGym
+   official reward 1.0 while Runtime still rejects a `finish` proposal with
+   `planner cannot finish before verifier-backed subgoal completion`. External
+   reward is not Runtime completion authority. Classify the guard with a
+   non-BrowserGym RED before any production repair.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
@@ -290,16 +293,16 @@ Latest review refinement:
   inference is restored.
 - V-PRB-5C is tracked by
   `docs/change-admission/v-prb-5c-form-sequence-strict-planner-proposal.yaml`
-  and remains the active vertical slice after the `9c1b58c` repair. It covers
-  only the remaining `form-sequence` strict-planner empty `ask_user` proposal
+  and is closed for the current PR breadth matrix after the `d50a631` repair.
+  It covered only the remaining `form-sequence` strict-planner proposal
   after accepted TaskPlans, verified slider `press_key` actions, and partial
   checkbox follow-up have already occurred.
 - V-PRB-6 is tracked by
   `docs/change-admission/v-prb-6-terminal-completion-guard.yaml` and must not
-  be mixed into either 5A or 5B. Runtime success, verifier success, and
+  be mixed into 5A, 5B, or 5C. Runtime success, verifier success, and
   BrowserGym reward stay separate.
 - Immutable PlanningRequest / PlannerStateView remains the next horizontal
-  lane, but it is not a prerequisite for 5C unless the new RED evidence
+  lane, but it is not a prerequisite for V-PRB-6 unless the new RED evidence
   directly implicates mutable planner input or hidden state mutation.
 
 Current M8.2B diagnostic position (2026-07-25): after the typed ownership,

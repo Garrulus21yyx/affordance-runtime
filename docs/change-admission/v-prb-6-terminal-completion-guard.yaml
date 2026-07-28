@@ -2,28 +2,45 @@ slice_id: v-prb-6-terminal-completion-guard
 parent_packet: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 packet_role: child_diagnostic
 
-base_revision: 03e6463d8e410aec57a75385f9792fc6d2cc0fc2
+base_revision: d50a631a2e67b294db4b6273106df85fd941b3b7
 change_type: vertical_failure_classification
 agent_mode: single_agent
-production_change_allowed: false
+production_change_allowed: true
 
 single_primary_owner: not_selected
 mechanism: runtime terminal completion guard classification
 
 source_evidence:
-  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-c24b277/
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
   affected_observation:
     - enter-text:seed-1
+    - form-sequence:seed-0
+    - form-sequence:seed-1
   observed_path:
     - BrowserGym official_reward is 1.0
-    - Runtime records planner_terminal_completion_guard
-    - the observation is not an official failed episode but blocks promotion-quality accounting
+    - Runtime has just recorded verifier-backed subgoal completion for the active plan
+    - strict planner proposes finish
+    - Runtime rejects finish with planner cannot finish before verifier-backed subgoal completion
+    - the observation is not an official failed episode but blocks Runtime acceptance and promotion-quality accounting
+  latest_matrix:
+    expected: 12
+    observed: 12
+    official_reward_passed: 12
+    official_reward_failed: 0
+    runtime_failure_count: 3
+    provider_failures: 0
+    missing: 0
+    unrun: 0
+    invalidated: 0
+    evaluation_run_identity: sha256:6855a4359c435386f7abfbfbbabe2b5b63d5661ee8da199d2e4658fa9c1b562d
 
 classification_questions:
   - does Runtime lack verifier-backed terminal evidence?
   - is TaskPlan complete while task-level terminal criterion remains unsatisfied?
   - is the external evaluator broader than the Runtime verifier authority?
   - is a single-subgoal PlanningRouter completion special case involved?
+  - is the Runtime terminal guard checking a stale active-subgoal projection after subgoal completion?
+  - should finish admission depend on completed TaskPlan obligations, task-level terminal verifier evidence, or both?
 
 non_goals:
   - do not mark Runtime done only because official_reward is 1.0
@@ -36,7 +53,9 @@ done_when:
   - the guard is classified with a non-BrowserGym reproduction or clear trace evidence
   - Runtime success, verification success, and BrowserGym reward remain separately accounted
   - any production repair has its own child production slice and clean rerun
+  - clean PR breadth rerun has 12/12 observed, 12/12 official reward, and zero Runtime terminal-completion guard aborts
 
+classification_status: in_progress
 architecture_admission: not_evaluated
 promotion_status: held
 remote_ci: disabled

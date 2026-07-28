@@ -6,7 +6,8 @@ base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
 implementation_revisions:
   - a805f0dfd1b58b76951003b9d12b9561b19d40e1
   - 9c1b58c33f20e2690221516a953ce96f910ef2d3
-latest_rerun_revision: 9c1b58c33f20e2690221516a953ce96f910ef2d3
+  - d50a631a2e67b294db4b6273106df85fd941b3b7
+latest_rerun_revision: d50a631a2e67b294db4b6273106df85fd941b3b7
 change_type: vertical_failure_classification
 agent_mode: single_agent
 production_change_allowed: true
@@ -116,6 +117,26 @@ implementation:
       press_key through the negative target boundary and stops at
       clarification. V-PRB-5C remains open, now split into terminal-submit
       follow-up and negative slider stop/direction residuals.
+  third_repair:
+    revision: d50a631a2e67b294db4b6273106df85fd941b3b7
+    summary: >
+      Stopped requested numeric extraction from reading checkbox ordinal text
+      as a slider target, and allowed the semantic resolver to choose terminal
+      submit after the requested checkbox is current-state satisfied even when
+      the projected active subgoal remains stale. The repair keeps the same
+      bounded PlannerContext / typed-affordance input boundary and does not add
+      task-name, URL, selector, coordinate, Coordinator, StateKernel, Prompt,
+      or budget changes.
+  third_rerun:
+    evidence: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+    result: >
+      PR breadth evidence: 12/12 observed, 12/12 official reward passed, 3
+      Runtime failures, no provider/missing/unrun/invalidated cases. The prior
+      form-sequence official failures no longer reproduce. Runtime still
+      aborts both form-sequence seeds after external reward succeeds because
+      a terminal `finish` proposal is rejected by the Runtime
+      terminal-completion guard. That residual belongs to V-PRB-6, not further
+      form-specific planner proposal generation.
 
 verification:
   focused_tests:
@@ -129,13 +150,14 @@ verification:
   clean_rerun:
     - docs/evidence/runs/m8.2a-pr-breadth-a805f0d/
     - docs/evidence/runs/m8.2a-pr-breadth-9c1b58c/
+    - docs/evidence/runs/m8.2a-pr-breadth-d50a631/
 
 architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
-closure_status: open_after_second_repair
+closure_status: closed_for_current_pr_breadth_matrix
 next_requirement: >
-  Continue V-PRB-5C only with new non-BrowserGym REDs for terminal submit after
-  verified checkbox completion and negative slider stop/direction at the
-  requested value. Do not mix V-PRB-6, immutable PlanningRequest, fresh
-  diagnostic, nightly, release, or promotion into the same slice.
+  Stop V-PRB-5C unless a new form-sequence official reward failure appears.
+  Route the remaining PR breadth acceptance blocker to V-PRB-6 terminal
+  completion guard classification. Do not mix immutable PlanningRequest, fresh
+  diagnostic, nightly, release, or promotion into this slice.

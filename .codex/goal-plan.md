@@ -279,6 +279,20 @@ delivery claims.
     narrower REDs for terminal submit after verified checkbox completion and
     negative slider stop/direction. Keep V-PRB-6, immutable Planner input,
     fresh diagnostic, nightly/release, and promotion separate.
+44. `done` — Implemented the third V-PRB-5C repair as `d50a631` and reran the
+    same PR breadth matrix on a clean committed revision. Evidence is 12/12
+    observed, 12/12 official reward passed, 3 Runtime failures, and no
+    provider/missing/unrun/invalidated cases. The prior form-sequence official
+    failures no longer reproduce, so V-PRB-5C is closed for this matrix. PR
+    breadth acceptance remains held because `enter-text:seed-1` and both
+    `form-sequence` seeds still abort after external reward succeeds with
+    `planner cannot finish before verifier-backed subgoal completion`.
+45. `in_progress` — Start V-PRB-6 only: classify the Runtime terminal
+    completion guard with a non-BrowserGym RED before any production repair.
+    Keep Runtime success, verifier success, and BrowserGym reward separate; do
+    not substitute official reward for Runtime completion authority, weaken the
+    verifier, start immutable Planner input, or run fresh diagnostic,
+    nightly/release, or promotion in this slice.
 
 ## Change Record
 
