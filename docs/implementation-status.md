@@ -29,8 +29,8 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | check `git rev-parse HEAD`; current workstream is post-`c382592` V-PRB-6B TaskPlanFlow convergence repair |
-| Latest production repair revision | current local change: V-PRB-6B ready read-only discard after verified progress; clean PR breadth rerun still required after commit |
+| Current HEAD | check `git rev-parse HEAD`; current workstream is post-`9a63262` V-PRB-6B TaskPlanFlow convergence repair |
+| Latest production repair revision | `9a63262` (`fix: discard ready read-only subgoal after progress`); clean PR breadth rerun still required |
 | Latest PR breadth evidence revision | `c382592d6d614e5784730fa2ff0347a9a1b09548`: 12/12 observed, 11/12 official reward passed, 4 Runtime failures, no missing/unrun/invalidated case; V-PRB-6B HAS_CHANGED text progress binding is safe but insufficient for PR breadth closure. PR breadth acceptance remains held because `enter-text:seed-1` still fails Runtime completion, both `form-sequence` seeds still abort at the Runtime terminal-completion guard after external reward succeeds, and `click-button:seed-1` remains a separate JSON-invalid schema/provider robustness cluster. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
@@ -105,6 +105,7 @@ remaining_runtime_guard:
 
 active_local_repair:
   slice: v-prb-6b-ready-read-only-discard-after-progress
+  revision: 9a63262
   status: pending_clean_pr_breadth_rerun
   red: tests/test_task_plan_flow.py::test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_active_projection_empty
   adjacent_regression: tests/test_task_plan_flow.py plus targeted lifecycle/planning controls
