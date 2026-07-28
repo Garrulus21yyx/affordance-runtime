@@ -318,14 +318,32 @@ def test_v_prb_6b_407133d_rerun_is_recorded_without_promotion_claim() -> None:
     assert "passed: 11" in status
     assert "runtime_failed: 3" in status
     assert "v_prb_6b_enter_text_closed: true" in status
+    assert "monitored_nonreproduced_episode:" in status
     assert "click-button:seed-1" in status
     assert "form-sequence:seed-0" in status
     assert "form-sequence:seed-1" in status
     assert "v-prb-6a form-sequence" in current_plan
-    assert "`click-button:seed-1` structured intent-draft `json_invalid`" in current_plan
+    assert "did not reproduce the json-invalid failure" in current_plan
     assert "official_score_claimed=false" in evidence_text
     assert "promotion_status: held" in evidence_text
     assert "pr_breadth_acceptance: failed" in evidence_text
+
+
+def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    evidence = REPOSITORY_ROOT / "docs/evidence/runs/v-prb-6-post-407133d-click-button-recheck/README.md"
+
+    assert evidence.exists()
+    evidence_text = " ".join(evidence.read_text(encoding="utf-8").split()).casefold()
+    assert "click_button_recheck:" in status
+    assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
+    assert "json_invalid did not reproduce" in status
+    assert "next_change_admission: v-prb-6a form-sequence" in status
+    assert "official_score_claimed=false" in evidence_text
+    assert "passed: 2" in evidence_text
+    assert "too weak to authorize a production repair" in evidence_text
+    assert "start v-prb-6a" in current_plan
 
 
 def test_pr_breadth_child_packet_lifecycle_matches_review_approval() -> None:

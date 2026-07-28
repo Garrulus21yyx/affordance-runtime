@@ -29,9 +29,9 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | evidence/status sync after clean `407133d1a1c902436ae2576175f834a7a74b1367` PR breadth rerun; next workstream is selecting one remaining post-6B owner |
+| Current HEAD | evidence/status sync after clean `407133d1a1c902436ae2576175f834a7a74b1367` PR breadth rerun and targeted `47932a2` click-button recheck; next workstream is V-PRB-6A |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
-| Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures and `click-button:seed-1` reappears as structured intent-draft `json_invalid`. |
+| Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -85,7 +85,7 @@ pr_breadth_latest:
   invalidated: 0
   official_score_claimed: false
   promotion_status: held
-  root_owner_next: split_remaining_v_prb_6a_and_click_button_json_invalid
+  root_owner_next: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
   external_reward_closed: false
   v_prb_6b_enter_text_closed: true
   failed_official_episode:
@@ -98,9 +98,10 @@ pr_breadth_latest:
   remaining_runtime_guard:
     planner_cannot_finish_before_verifier_backed_subgoal_completion: 2
   affected_episodes:
-    - click-button:seed-1
     - form-sequence:seed-0
     - form-sequence:seed-1
+  monitored_nonreproduced_episode:
+    - click-button:seed-1
   latest_negative_repair: docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml
   latest_negative_repair_2: docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml
   latest_rejected_repair: docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml
@@ -111,7 +112,12 @@ pr_breadth_latest:
   latest_red_contract: docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml
   latest_green_contract: docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml
   latest_clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-407133d/
-  next_change_admission: select exactly one post-6B owner; V-PRB-6A form-sequence dependent-subgoal progress-scope binding is primary, click-button json_invalid is separate, and immutable Planner input remains horizontal
+  click_button_recheck:
+    revision: 47932a2d84266983c632258afdfacae9b1cdcd94
+    evidence: docs/evidence/runs/v-prb-6-post-407133d-click-button-recheck/
+    result: 2 observed, 2 official reward passed, 2 Runtime passed
+    interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
+  next_change_admission: V-PRB-6A form-sequence dependent-subgoal progress-scope binding; immutable Planner input remains horizontal
 
 active_local_repair:
   slice: v-prb-6b-progress-accounting-integration
@@ -132,7 +138,7 @@ active_local_repair:
     evidence: docs/evidence/runs/m8.2a-pr-breadth-407133d/
     result: 12 observed, 11 official reward passed, 3 Runtime failures
     interpretation: V-PRB-6B closes enter-text:seed-1 but PR breadth remains failed
-  disposition: close V-PRB-6B for enter-text required read-only availability; choose one remaining post-6B owner next. V-PRB-6A is primary for form-sequence. click-button json_invalid is separate schema/provider robustness work.
+  disposition: close V-PRB-6B for enter-text required read-only availability; V-PRB-6A is the next production owner for form-sequence. click-button json_invalid remains monitored until stronger reproducibility evidence exists.
 
 attribution_classification:
   evidence: docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml
@@ -387,8 +393,8 @@ v_prb_5_downstream_planning_follow_up:
           progress_accounting_slice: docs/change-admission/v-prb-6b-verifier-backed-progress-accounting.yaml
           progress_accounting_rerun: docs/evidence/runs/m8.2a-pr-breadth-407133d/
           progress_accounting_rerun_result: mixed; 12 observed, 11 official reward passed, 3 Runtime failures
-          progress_accounting_impact: enter-text:seed-1 is closed; form-sequence remains V-PRB-6A and click-button:seed-1 remains separate json_invalid robustness
-  next_requirement: keep V-PRB-6B closed for enter-text required read-only availability unless it regresses; select exactly one remaining owner next; keep V-PRB-6A form-sequence progress-scope binding and the click-button json_invalid schema/provider robustness cluster separate; do not claim breadth completion, fresh diagnostic, or promotion
+          progress_accounting_impact: enter-text:seed-1 is closed; form-sequence remains V-PRB-6A; click-button:seed-1 json_invalid did not reproduce in targeted recheck
+  next_requirement: keep V-PRB-6B closed for enter-text required read-only availability unless it regresses; start V-PRB-6A form-sequence progress-scope binding; monitor the click-button json_invalid schema/provider robustness cluster separately; do not claim breadth completion, fresh diagnostic, or promotion
   promotion_status: held
 
 v_prb_3_architecture_follow_up:
@@ -454,8 +460,8 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, three V-PRB-5C repairs, and V-PRB-6B progress accounting through clean `407133d`, the current matrix is 12/12 observed, 11/12 official reward passed, and 3 Runtime failures. V-PRB-6B closes `enter-text:seed-1`; remaining failures are V-PRB-6A `form-sequence` dependent-subgoal progress-scope binding and separate `click-button:seed-1` structured intent-draft `json_invalid` robustness. | select one remaining post-6B owner; no breadth acceptance, fresh diagnostic, or promotion claim |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; latest PR breadth evidence at `407133d` remains promotion-held with 11/12 official reward and 3 Runtime failures after V-PRB-6B closed `enter-text:seed-1`. | hold PR/nightly/release; next production candidate is either V-PRB-6A form-sequence progress-scope binding or separate click-button json_invalid robustness, one at a time |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, three V-PRB-5C repairs, and V-PRB-6B progress accounting through clean `407133d`, the current matrix is 12/12 observed, 11/12 official reward passed, and 3 Runtime failures. V-PRB-6B closes `enter-text:seed-1`; remaining stable failures are V-PRB-6A `form-sequence` dependent-subgoal progress-scope binding. `click-button:seed-1` JSON-invalid is monitored after a targeted clean recheck passed. | start V-PRB-6A; no breadth acceptance, fresh diagnostic, or promotion claim |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; latest PR breadth evidence at `407133d` remains promotion-held with 11/12 official reward and 3 Runtime failures after V-PRB-6B closed `enter-text:seed-1`; targeted click-button recheck at `47932a2` did not reproduce the JSON-invalid case. | hold PR/nightly/release; next production candidate is V-PRB-6A form-sequence progress-scope binding |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |

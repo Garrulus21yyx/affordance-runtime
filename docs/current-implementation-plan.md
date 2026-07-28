@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | V-PRB-6A dependent-subgoal progress-scope binding plus click-button schema/provider robustness | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated cases, and `enter-text:seed-1` is closed. | select the next single production owner from the remaining clean `407133d` clusters. Primary: V-PRB-6A for `form-sequence` dependent-subgoal progress-scope / finish-guard accounting. Separate: `click-button:seed-1` structured intent-draft `json_invalid` robustness before TaskSpec creation. No BrowserGym adapter evidence broadening, finish-guard weakening, receipt/reward authority, immutable Planner input, fresh diagnostic, nightly/release, or promotion. | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | V-PRB-6A dependent-subgoal progress-scope binding | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no provider/missing/unrun/invalidated cases, and `enter-text:seed-1` is closed. A targeted post-`407133d` recheck reran `click-button` seeds 0 and 1 at `47932a2` and did not reproduce the JSON-invalid failure. | start V-PRB-6A for the stable `form-sequence` dependent-subgoal progress-scope / finish-guard cluster. Keep `click-button:seed-1` structured intent-draft `json_invalid` under monitoring until stronger reproducibility evidence exists. No BrowserGym adapter evidence broadening, finish-guard weakening, receipt/reward authority, immutable Planner input, fresh diagnostic, nightly/release, or promotion. | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -253,11 +253,12 @@ Historical PR breadth evidence at `d50a631` reached 12/12 external reward with
 3 Runtime guard failures. Current PR breadth evidence at `407133d` is still
 negative after the V-PRB-6B verifier-backed progress accounting integration:
 12/12 observed, 11/12 official reward passed, and 3 Runtime failures. The
-`enter-text:seed-1` required read-only availability cluster is closed; the next
-vertical action is not PR/nightly/release promotion, but selection of one
-remaining owner: V-PRB-6A form-sequence dependent-subgoal progress-scope
-binding or the separate `click-button:seed-1` structured intent-draft
-`json_invalid` robustness cluster. The umbrella task packet remains
+`enter-text:seed-1` required read-only availability cluster is closed. A
+targeted post-`407133d` `click-button` recheck passed seeds 0 and 1, so the
+JSON-invalid cluster remains monitored rather than production-admitted. The
+next vertical action is not PR/nightly/release promotion; it is V-PRB-6A
+form-sequence dependent-subgoal progress-scope binding. The umbrella task
+packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`.
 
 The umbrella packet is diagnostic only and may not become a production patch.

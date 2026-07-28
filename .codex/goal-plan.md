@@ -581,3 +581,12 @@ delivery claims.
   structured intent-draft `json_invalid` schema/provider robustness cluster.
   Fresh diagnostic, nightly/release, remote-CI green, and promotion remain
   held.
+- Reran a targeted clean `click-button` recheck at
+  `47932a2d84266983c632258afdfacae9b1cdcd94` to test whether the
+  `click-button:seed-1` JSON-invalid case was stable enough to admit a
+  production repair. Both seeds passed with no Runtime, provider, missing,
+  unrun, or invalidated failure. This does not change the failed PR breadth
+  result at `407133d`; it only means the click-button JSON-invalid cluster is
+  monitored rather than selected as the next production owner. The next
+  production lane is V-PRB-6A for the stable `form-sequence` dependent-subgoal
+  progress-scope / finish-guard cluster.

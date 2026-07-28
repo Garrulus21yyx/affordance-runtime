@@ -105,11 +105,11 @@ observed, 11/12 official reward passed, and 3 Runtime failures. The
 V-PRB-6B verifier-backed progress accounting integration closes the prior
 `enter-text:seed-1` required read-only availability failure, but PR breadth
 acceptance remains held because both `form-sequence` seeds still abort at the
-Runtime terminal-completion guard and `click-button:seed-1` reappears as a
-structured intent-draft `json_invalid` robustness failure before TaskSpec
-creation. Remaining vertical work is V-PRB-6A dependent-subgoal
-progress-scope binding plus a separate click-button schema/provider robustness
-slice. The active-subgoal
+Runtime terminal-completion guard. `click-button:seed-1` reappeared as a
+structured intent-draft `json_invalid` failure in the breadth matrix, but a
+targeted post-`407133d` click-button recheck passed seeds 0 and 1, so that
+cluster remains monitored rather than production-admitted. Remaining vertical
+work is V-PRB-6A dependent-subgoal progress-scope binding. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line; the current horizontal lane is removal of mutable `StateKernel` from the
 standard Planner input. That horizontal lane is not a prerequisite for V-PRB-6
