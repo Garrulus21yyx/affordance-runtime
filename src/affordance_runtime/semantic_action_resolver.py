@@ -38,6 +38,7 @@ def resolve_empty_clarification_action(
     return (
         _resolve_text_value_entry(context)
         or _resolve_slider_press_key_entry(context)
+        or _resolve_verified_effect_followup(context)
         or _resolve_selected_option_terminal(context)
         or _resolve_requested_option_selection(context)
         or _resolve_requested_activation(context)
@@ -93,6 +94,82 @@ def _resolve_slider_press_key_entry(context: PlannerContext) -> SemanticActionRe
         expected_effects=_expected_effects(context),
         evidence_requirements=_evidence_requirements(context),
     )
+
+
+def _resolve_verified_effect_followup(context: PlannerContext) -> SemanticActionResolution | None:
+    if not context.active_subgoal or context.active_subgoal not in context.verified_effects:
+        return None
+    checkbox = _requested_checkbox_activation(context)
+    if checkbox is not None:
+        return SemanticActionResolution(
+            action_kind=PlannerActionKind.ACTIVATE,
+            target_affordance_id=checkbox.id,
+            expected_effects=(f"{checkbox.label} checked",),
+            evidence_requirements=_evidence_requirements(context),
+        )
+    if not _requested_checkbox_satisfied(context):
+        return None
+    terminals = _terminal_activation_targets(context)
+    if len(terminals) != 1 or not _mentions_terminal_submission(context):
+        return None
+    return SemanticActionResolution(
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=terminals[0].id,
+        expected_effects=("submitted",),
+        evidence_requirements=_evidence_requirements(context),
+    )
+
+
+def _requested_checkbox_activation(context: PlannerContext) -> AffordanceSummary | None:
+    checkbox = _requested_checkbox(context)
+    if checkbox is None:
+        return None
+    if checkbox.state.get("checked") is True:
+        return None
+    return checkbox
+
+
+def _requested_checkbox_satisfied(context: PlannerContext) -> bool:
+    checkbox = _requested_checkbox(context)
+    return checkbox is None or checkbox.state.get("checked") is True
+
+
+def _requested_checkbox(context: PlannerContext) -> AffordanceSummary | None:
+    number = _requested_checkbox_number(context)
+    if number is None:
+        return None
+    checkboxes = tuple(
+        item
+        for item in context.affordances
+        if item.action in {"activate", "click"}
+        and item.role == "checkbox"
+        and item.state.get("enabled") is not False
+        and item.state.get("visible") is not False
+    )
+    if not 1 <= number <= len(checkboxes):
+        return None
+    return checkboxes[number - 1]
+
+
+def _requested_checkbox_number(context: PlannerContext) -> int | None:
+    values: list[int] = []
+    corpus = _text_corpus(context)
+    for match in re.findall(r"\bcheckbox[_\s-]*(\d+)\b", corpus, flags=re.IGNORECASE):
+        values.append(int(match))
+    for match in re.findall(r"\b(\d+)(?:st|nd|rd|th)?\s+checkbox\b", corpus, flags=re.IGNORECASE):
+        values.append(int(match))
+    ordinal_words = {
+        "first": 1,
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+    }
+    for word, number in ordinal_words.items():
+        if re.search(rf"\b{word}\s+checkbox\b", corpus, flags=re.IGNORECASE):
+            values.append(number)
+    unique = tuple(dict.fromkeys(values))
+    return unique[0] if len(unique) == 1 else None
 
 
 def _resolve_selected_option_terminal(context: PlannerContext) -> SemanticActionResolution | None:
