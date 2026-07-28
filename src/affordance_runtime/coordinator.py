@@ -98,6 +98,7 @@ from affordance_runtime.runtime_evidence import (
     verification_confirms_effect_absent,
     verification_satisfies_effect,
 )
+from affordance_runtime.runtime_terminal import is_safe_incomplete_terminal
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
@@ -108,6 +109,9 @@ from affordance_runtime.task_plan_flow import (
     TaskPlanFlowKind,
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
+from affordance_runtime.task_plan_progress_flow import (
+    commit_current_state_completion,
+)
 from affordance_runtime.task_planning import (
     PlanningRouter,
     SubgoalVerifierPort,
@@ -148,17 +152,6 @@ class CoordinatorResult:
     error_code: RuntimeErrorCode | None = None
     verification: VerificationReport | None = None
     artifacts: list[ArtifactRef] = field(default_factory=list)
-
-
-def _is_safe_incomplete_terminal(decision: PlannerDecision, state: StateKernel) -> bool:
-    """Allow an evidence-explicit non-success stop without claiming plan completion."""
-
-    status = str(decision.result.get("status") or "").casefold()
-    return (
-        status in {"blocked", "incomplete", "inconclusive", "unsupported"}
-        and not state.receipts
-        and state.effectful_action_count == 0
-    )
 
 
 @dataclass
@@ -232,7 +225,6 @@ class RunCoordinator:
 
     def run_sync(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Execute one task with serial state mutation and action semantics."""
-
         state = StateKernel(task_id=envelope.task_id, goal=envelope.goal, constraints=dict(envelope.constraints))
         if upstream_trace is not None and upstream_trace.run_id != envelope.task_id:
             raise ValueError("upstream trace run_id does not match task")
@@ -251,7 +243,6 @@ class RunCoordinator:
             parents=[upstream_parent.id] if upstream_parent else None,
         )
         latest_verification: VerificationReport | None = None
-
         while True:
             budget_error = self._budget_error(state)
             if budget_error is not None:
@@ -264,10 +255,8 @@ class RunCoordinator:
                 return self._finish(
                     envelope, state, trace, RuntimeStep.FAILED, parent, budget_error, latest_verification
                 )
-
             if state.phase in {RuntimeStep.CREATED.value, RuntimeStep.RECOVERING.value}:
                 state.transition(RuntimeStep.OBSERVING.value)
-
             try:
                 snapshot = self.perception_session.capture(
                     envelope,
@@ -418,7 +407,17 @@ class RunCoordinator:
                     RuntimeErrorCode.PRECONDITION_FAILED,
                     latest_verification,
                 )
-
+            current_state_parent = commit_current_state_completion(
+                envelope.task_spec,
+                state,
+                snapshot,
+                self.budget,
+                trace,
+                parent,
+            )
+            if current_state_parent is not None:
+                parent = current_state_parent
+                continue
             if self.task_plan_flow is not None and envelope.task_spec is not None:
                 flow_result = self.task_plan_flow.prepare(
                     envelope.task_spec,
@@ -520,7 +519,6 @@ class RunCoordinator:
                         kind=RecoveryCommandKind.REPLAN_TASK,
                         plan_or_route_ref=task_plan.plan_id,
                     )
-
             state.transition(RuntimeStep.PLANNING.value)
             if state.task_plan is not None:
                 state.activate_next_subgoal()
@@ -948,7 +946,7 @@ class RunCoordinator:
                 )
             if decision.done:
                 if state.task_plan is not None and not TaskPlanLifecycle.completed(state):
-                    if _is_safe_incomplete_terminal(decision, state):
+                    if is_safe_incomplete_terminal(decision, state):
                         parent = trace.add(
                             "TaskPlanStoppedIncomplete",
                             {
@@ -1171,7 +1169,6 @@ class RunCoordinator:
                     RuntimeErrorCode.PLANNER_FAILED,
                     latest_verification,
                 )
-
             contract = self.contract_execution_loop.bind_contract(
                 contract,
                 envelope,
@@ -1655,7 +1652,6 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error, latest_verification)
-
             authorization_error = effective_gate.authorize(contract) if self.features.capability_gate else None
             if authorization_error is not None:
                 _recovery_command, parent = self._recover_phase_failure(
@@ -1709,7 +1705,6 @@ class RunCoordinator:
                     retry_error,
                     latest_verification,
                 )
-
             state.transition(RuntimeStep.ACTING.value)
             parent = trace.add("ActionStarted", {"state": state.phase, "contract_id": contract.id}, parents=[parent.id])
             receipt = self.contract_execution_loop.execute(contract, execution_observation)
@@ -1861,7 +1856,6 @@ class RunCoordinator:
                     receipt.error_code or RuntimeErrorCode.EXECUTION_FAILED,
                     latest_verification,
                 )
-
             state.transition(RuntimeStep.VERIFYING.value)
             post_snapshot = self.perception_session.capture(
                 envelope,
@@ -2177,7 +2171,6 @@ class RunCoordinator:
                 state.replan_count += 1
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue
-
             if skill_step_id and self.task_skill_runtime is not None:
                 reason = f"TaskSkill step verification {latest_verification.status.value}"
                 self.task_skill_runtime.fallthrough(state, reason)

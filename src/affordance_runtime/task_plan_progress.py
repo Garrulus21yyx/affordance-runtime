@@ -53,6 +53,14 @@ class SubgoalCompletionPreparation:
     source: Literal["current_observation"]
 
 
+def current_state_evidence_refs(
+    evidence: tuple[CurrentStateEvidence, ...],
+) -> tuple[str, ...]:
+    """Project typed current-state evidence into stable StateKernel refs."""
+
+    return tuple(_evidence_ref(item) for item in evidence)
+
+
 class CurrentStateSubgoalCompletionEvaluator:
     """Prepare completion for ready read-only subgoals satisfied now."""
 
@@ -207,6 +215,18 @@ def _observed_value(
             and affordance.current_state.enabled is True
         )
     return None
+
+
+def _evidence_ref(evidence: CurrentStateEvidence) -> str:
+    return ":".join(
+        (
+            "current_observation",
+            evidence.snapshot_id,
+            evidence.page_revision,
+            evidence.semantic_target_id,
+            evidence.relation.value,
+        )
+    )
 
 
 def _label_tokens(value: str) -> set[str]:

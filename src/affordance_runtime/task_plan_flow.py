@@ -260,6 +260,7 @@ class TaskPlanFlow:
         if (
             previous_plan is None
             or subgoal is None
+            or task_spec.obligations
             or subgoal.subgoal_id != replacement.subgoal_id
             or subgoal.outcome is None
             or subgoal.outcome.relation not in _CURRENT_STATE_COMPLETABLE_RELATIONS

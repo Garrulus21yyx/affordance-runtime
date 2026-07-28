@@ -40,6 +40,7 @@ from affordance_runtime.task_intake import (
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
+    TaskObligationValueSource,
     TaskSpec,
     UserRequest,
 )
@@ -501,6 +502,169 @@ class SubgoalAwarePlanner:
         )
 
 
+class CurrentStateReadOnlyTaskPlanner:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        return TaskPlan(
+            plan_id="plan-current-read-only",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=1,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="text-field-changed",
+                    objective="text field has changed",
+                    success_criteria=("text field has changed",),
+                    evidence_requirements=("post-text evidence",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                    outcome=SubgoalOutcome(
+                        subject="text field",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+                SubgoalSpec(
+                    subgoal_id="submit-button-available",
+                    objective="submit button is available",
+                    depends_on=("text-field-changed",),
+                    success_criteria=("submit button is available",),
+                    evidence_requirements=("current submit button observation",),
+                    operation_class=OperationClass.READ_ONLY,
+                    action_family=TaskPlanActionFamily.WAIT,
+                    outcome=SubgoalOutcome(
+                        subject="submit_button",
+                        relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                    ),
+                ),
+            ),
+        )
+
+
+class CurrentStateReadOnlyPlanner:
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope
+        active_objective = state.active_subgoal()
+        active_id = state.plan_progress.active_subgoal_id if state.plan_progress else ""
+        if active_id == "text-field-changed":
+            return PlannerDecision(
+                contract=ActionContract.from_affordance(
+                    snapshot.affordance_model.affordances[0],
+                    intent=active_objective,
+                    backend="fake",
+                    verifier_plan=[
+                        VerifierSpec(
+                            "observation_metadata",
+                            "text_changed",
+                            True,
+                            criterion_ids=(criterion_id("subgoal", active_id, 0),),
+                            requirement_ids=(
+                                evidence_requirement_id("subgoal", active_id, 0),
+                            ),
+                        )
+                    ],
+                )
+            )
+        return PlannerDecision(done=True, result={"completed_active_subgoal": active_id})
+
+
+class CurrentStateReadOnlyObserver:
+    def __init__(self) -> None:
+        self.snapshots = [
+            _current_state_read_only_snapshot(1, text_changed=False),
+            _current_state_read_only_snapshot(1, text_changed=False),
+            _current_state_read_only_snapshot(2, text_changed=True),
+            _current_state_read_only_snapshot(2, text_changed=True),
+            _current_state_read_only_snapshot(2, text_changed=True),
+        ]
+
+    def capture(self) -> BrowserSnapshot:
+        return self.snapshots.pop(0)
+
+
+def _current_state_read_only_snapshot(
+    sequence: int,
+    *,
+    text_changed: bool,
+) -> BrowserSnapshot:
+    environment_revision = f"environment-read-only-{sequence}"
+    snapshot_id = f"snapshot-read-only-{sequence}"
+    model = DomAdapter().transduce(
+        """
+        <main>
+          <input id='text-field' value='Kanesha'>
+          <button id='submit-button'>Submit</button>
+        </main>
+        """,
+        environment_revision=environment_revision,
+        snapshot_id=snapshot_id,
+        page_revision=f"page-read-only-{sequence}",
+    )
+    observation = Observation(
+        environment_revision=environment_revision,
+        snapshot_id=snapshot_id,
+        page_revision=f"page-read-only-{sequence}",
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+        metadata={"text_changed": text_changed},
+    )
+    return BrowserSnapshot(observation, model)
+
+
+def _current_state_read_only_task() -> TaskSpec:
+    text_claim = SourcedTaskClaim(
+        claim_id="claim-text-changed",
+        kind=TaskClaimKind.EFFECT,
+        statement="text field has changed",
+        source_ref="current-state-read-only-request",
+    )
+    submit_claim = SourcedTaskClaim(
+        claim_id="claim-submit-available",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="submit button is available",
+        source_ref="current-state-read-only-request",
+    )
+    return TaskSpec(
+        task_id="current-state-read-only",
+        revision=1,
+        objective="Enter text and submit",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("text field", "submit button"),
+        success_criteria=("text field has changed", "submit button is available"),
+        evidence_requirements=("post-text evidence", "current submit button observation"),
+        requested_capabilities=("text.write",),
+        source_request_ref="current-state-read-only-request",
+        source_claims=(text_claim, submit_claim),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="text-field-changed",
+                kind=TaskObligationKind.EFFECT,
+                subject="text field",
+                relation=TaskObligationRelation.HAS_CHANGED,
+                claim_ids=(text_claim.claim_id,),
+                evidence_requirements=("post-text evidence",),
+                blocking=True,
+            ),
+            TaskObligationSpec(
+                obligation_id="submit-button-available",
+                kind=TaskObligationKind.PREDICATE,
+                subject="submit_button",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=(submit_claim.claim_id,),
+                depends_on=("text-field-changed",),
+                evidence_requirements=("current submit button observation",),
+                blocking=True,
+                terminal=True,
+            ),
+        ),
+    )
+
+
 def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() -> None:
     result = RunCoordinator(
         observer=TwoStageObserver(),
@@ -518,6 +682,32 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     assert events.index("TaskPlanAccepted") < events.index("SubgoalCompleted")
     completed = [node for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
     assert all(node.payload["criterion_evidence_links"] for node in completed)
+
+
+def test_coordinator_completes_current_state_read_only_subgoal_without_replanning() -> None:
+    result = RunCoordinator(
+        observer=CurrentStateReadOnlyObserver(),
+        planner=CurrentStateReadOnlyPlanner(),
+        executor=FakeExecutor(),
+        task_planner=CurrentStateReadOnlyTaskPlanner(),
+    ).run_sync(TaskEnvelope(task_spec=_current_state_read_only_task()))
+
+    assert result.status == RuntimeStep.DONE
+    assert result.state.task_plan is not None
+    assert result.state.task_plan.plan_id == "plan-current-read-only"
+    assert result.state.plan_progress is not None
+    assert result.state.plan_progress.completed_subgoal_ids == [
+        "text-field-changed",
+        "submit-button-available",
+    ]
+    events = [node.kind for node in result.trace.nodes]
+    assert "TaskReplanned" not in events
+    current_state_completion = next(
+        node
+        for node in result.trace.nodes
+        if node.kind == "SubgoalCompletedFromCurrentObservation"
+    )
+    assert current_state_completion.payload["subgoal_id"] == "submit-button-available"
 
 
 def test_coordinator_commits_typed_task_plan_flow_replacement_reason() -> None:
