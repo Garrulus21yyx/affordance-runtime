@@ -57,6 +57,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_handler.py",
     "recovery_trace_projection.py",
     "semantic_action_resolver.py",
+    "task_action_family_resolution.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )
@@ -70,6 +71,7 @@ FORBIDDEN_NEUTRAL_DEPENDENCIES = (
 
 STRICT_AUTHORITY_FREE_COLLABORATORS = (
     "semantic_action_resolver.py",
+    "task_action_family_resolution.py",
 )
 
 FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES = (
@@ -283,7 +285,9 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "passed: 0" in status
     assert "official_score_claimed: false" in status
     assert "root_owner_next: intent / planning" in status
-    assert "protected cross-family / pr breadth failed at `d66760f`" in current_plan
+    assert "historical initial p4 diagnostic at `d66760f`" in current_plan
+    assert "current pr breadth evidence at `d50a631`" in current_plan
+    assert "3 runtime guard failures" in current_plan
     assert "m8.2a-pr-breadth-d66760f" in status
     assert "official_score_claimed=false" in evidence_text
     assert "promotion eligible: no" in evidence_text
@@ -296,6 +300,67 @@ def test_pr_breadth_negative_evidence_is_recorded_without_promotion_claim() -> N
     assert "packet_role: umbrella_diagnostic" in repair_text
     assert "may_become_production_slice: false" in repair_text
     assert "child_slices_required: true" in repair_text
+
+
+def test_pr_breadth_child_packet_lifecycle_matches_review_approval() -> None:
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+
+    record_5a = CHANGE_ADMISSION_DIR / "v-prb-5a-button-sequence-effect-semantics.yaml"
+    record_5b = CHANGE_ADMISSION_DIR / "v-prb-5b-entry-action-family-resolution.yaml"
+    record_5c = CHANGE_ADMISSION_DIR / "v-prb-5c-form-sequence-strict-planner-proposal.yaml"
+    record_6 = CHANGE_ADMISSION_DIR / "v-prb-6-terminal-completion-guard.yaml"
+    record_6a = CHANGE_ADMISSION_DIR / "v-prb-6a-dependent-subgoal-evidence-binding.yaml"
+    record_6b = CHANGE_ADMISSION_DIR / "v-prb-6b-single-subgoal-terminal-completion.yaml"
+
+    for path in (record_5a, record_5b, record_5c, record_6, record_6a, record_6b):
+        assert path.exists(), path
+
+    text_5a = " ".join(record_5a.read_text(encoding="utf-8").split()).casefold()
+    text_5b = " ".join(record_5b.read_text(encoding="utf-8").split()).casefold()
+    text_5c = " ".join(record_5c.read_text(encoding="utf-8").split()).casefold()
+    text_6 = " ".join(record_6.read_text(encoding="utf-8").split()).casefold()
+    text_6a = " ".join(record_6a.read_text(encoding="utf-8").split()).casefold()
+    text_6b = " ".join(record_6b.read_text(encoding="utf-8").split()).casefold()
+
+    assert "packet_role: child_production_slice" in text_5a
+    assert "do not modify production code in this diagnostic packet" not in text_5a
+    assert "next_requirement:" in text_5a
+    assert "close v-prb-5a" not in text_5a
+
+    assert "packet_role: child_production_slice" in text_5b
+    assert "task_action_family_resolution.py" in text_5b
+    assert "executable_authority_free_manifest: task_action_family_resolution.py" in text_5b
+    assert "architecture_admission: pass" in text_5b
+
+    assert "packet_role: child_production_slice" in text_5c
+    assert "closure_status: closed_for_current_pr_breadth_matrix" in text_5c
+
+    assert "packet_role: child_diagnostic" in text_6
+    assert "production_change_allowed: false" in text_6
+    assert "architecture_admission: not_evaluated" in text_6
+    assert "child_diagnostics:" in text_6
+    assert "v-prb-6a-dependent-subgoal-evidence-binding.yaml" in text_6
+    assert "v-prb-6b-single-subgoal-terminal-completion.yaml" in text_6
+
+    assert "packet_role: child_diagnostic" in text_6a
+    assert "production_change_allowed: false" in text_6a
+    assert "form-sequence:seed-0" in text_6a
+    assert "form-sequence:seed-1" in text_6a
+    assert "receipt success alone must not complete any subgoal" in text_6a
+
+    assert "packet_role: child_diagnostic" in text_6b
+    assert "production_change_allowed: false" in text_6b
+    assert "enter-text:seed-1" in text_6b
+    assert "single-subgoal" in text_6b
+
+    assert "v-prb-5c is closed for the current pr breadth matrix" in current_plan
+    assert "v-prb-6a" in current_plan
+    assert "v-prb-6b" in current_plan
+    assert "v-prb-5b" in governance
+    assert "task_action_family_resolution.py" in governance
+    assert "executable_authority_free_manifest: incomplete" not in status
 
 
 def test_pr_breadth_failure_attribution_child_slice_is_recorded() -> None:

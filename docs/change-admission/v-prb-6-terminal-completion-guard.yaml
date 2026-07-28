@@ -5,7 +5,7 @@ packet_role: child_diagnostic
 base_revision: d50a631a2e67b294db4b6273106df85fd941b3b7
 change_type: vertical_failure_classification
 agent_mode: single_agent
-production_change_allowed: true
+production_change_allowed: false
 
 single_primary_owner: not_selected
 candidate_owner: subgoal evidence binding / TaskPlan progress accounting
@@ -79,3 +79,13 @@ classification_status: in_progress
 architecture_admission: not_evaluated
 promotion_status: held
 remote_ci: disabled
+
+child_diagnostics:
+  - docs/change-admission/v-prb-6a-dependent-subgoal-evidence-binding.yaml
+  - docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+
+production_slice_rule: >
+  This diagnostic packet may not be used directly as a production repair task.
+  After a non-BrowserGym RED identifies one primary owner, create a separate
+  child production admission record for that owner and rerun clean PR breadth
+  on the committed repair revision.

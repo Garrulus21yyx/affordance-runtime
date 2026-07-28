@@ -1,6 +1,6 @@
 slice_id: v-prb-5c-form-sequence-strict-planner-proposal
 parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
-packet_role: child_diagnostic
+packet_role: child_production_slice
 
 base_revision: 3daf779bb8d1b6fb6c4e8a73c31fd00c514668fd
 implementation_revisions:

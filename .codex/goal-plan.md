@@ -254,7 +254,7 @@ delivery claims.
     unrun/invalidated cases. V-PRB-5B is closed for action-family resolution:
     `form-sequence` no longer rejects with `entry_action_family_unavailable`
     and `enter-text:seed-0` is restored.
-41. `in_progress` — Start V-PRB-5C only: write a non-BrowserGym RED for the
+41. `done` — Start V-PRB-5C only: write a non-BrowserGym RED for the
     remaining `form-sequence` strict-planner empty `ask_user` proposal after an
     accepted TaskPlan with `press_key` permitted. Keep V-PRB-6
     `enter-text:seed-1`, immutable Planner input, fresh diagnostic,
@@ -287,8 +287,9 @@ delivery claims.
     breadth acceptance remains held because `enter-text:seed-1` and both
     `form-sequence` seeds still abort after external reward succeeds with
     `planner cannot finish before verifier-backed subgoal completion`.
-45. `in_progress` — Start V-PRB-6 only: classify the Runtime terminal
-    completion guard with a non-BrowserGym RED before any production repair.
+45. `in_progress` — Start V-PRB-6 diagnostics only: split the Runtime terminal
+    completion guard into V-PRB-6A dependent-subgoal evidence binding and
+    V-PRB-6B single-subgoal terminal completion before any production repair.
     Initial trace inspection narrows the form-sequence residual toward stale
     subgoal/progress evidence binding: external reward succeeds, but dependent
     checkbox/submit subgoals are not credited before finish. Keep Runtime

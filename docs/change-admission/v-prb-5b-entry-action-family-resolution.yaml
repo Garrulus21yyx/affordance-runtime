@@ -1,6 +1,6 @@
 slice_id: v-prb-5b-entry-action-family-resolution
 parent_packet: docs/change-admission/v-prb-5-downstream-planning-follow-up.yaml
-packet_role: child_diagnostic
+packet_role: child_production_slice
 
 base_revision: c072bdf
 implementation_revisions:
@@ -122,9 +122,14 @@ verification:
   build_gate: environment-blocked; isolated build cannot create python3.12 venv because ensurepip/python3.12-venv is missing, and the BrowserGym venv lacks setuptools.build_meta
 
 architecture_admission: pass
+executable_authority_free_manifest: task_action_family_resolution.py
 promotion_status: held
 remote_ci: disabled
 closure_status: done_for_current_pr_breadth_matrix
+architecture_admission_details:
+  behavior: pass
+  dependency_direction: pass
+  executable_manifest_registration: complete
 follow_up:
   - V-PRB-5C form-sequence strict-planner empty proposal generation
   - V-PRB-6 enter-text seed-1 terminal completion guard

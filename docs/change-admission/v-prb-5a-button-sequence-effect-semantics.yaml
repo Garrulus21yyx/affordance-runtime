@@ -35,7 +35,6 @@ review_refinement:
     - every canonical effect being terminal would conflate intermediate progress with final task completion
 
 non_goals:
-  - do not modify production code in this diagnostic packet
   - do not modify Coordinator
   - do not modify StateKernel
   - do not infer progress from ExecutionReceipt.success
@@ -228,6 +227,6 @@ result:
       - form-sequence:seed-1
       - enter-text:seed-1
   next_requirement:
-    - close V-PRB-5A for the current PR breadth matrix
+    - keep V-PRB-5A closed only for the current PR breadth matrix unless a new button-sequence failure appears
     - continue with V-PRB-5B form action-family resolution or V-PRB-6 terminal guard as a separate slice
     - keep V-PRB-5B form action-family and V-PRB-6 terminal guard separate

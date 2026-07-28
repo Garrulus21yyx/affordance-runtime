@@ -277,6 +277,7 @@ v_prb_5_downstream_planning_follow_up:
       followup_repair: 2b67ffd restores textbox value-entry inference from typed current textbox affordance evidence after the first rerun exposed an enter-text regression
       closure_rerun_result: docs/evidence/runs/m8.2a-pr-breadth-3daf779/
       closure_rerun_impact: V-PRB-5B is closed for action-family resolution in the current matrix; original form-sequence entry_action_family_unavailable remains gone and enter-text seed 0 is restored
+      architecture_manifest: complete; task_action_family_resolution.py is listed in the executable authority-free collaborator manifest and strict pure-owner dependency gate
       status: done_for_current_pr_breadth_matrix
     v_prb_5c_form_sequence_strict_planner_proposal:
       child_record: docs/change-admission/v-prb-5c-form-sequence-strict-planner-proposal.yaml
@@ -309,12 +310,26 @@ v_prb_5_downstream_planning_follow_up:
       latest_evidence: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
       observed_failure: official_reward is 1.0 while Runtime records planner cannot finish before verifier-backed subgoal completion
       review_refinement: track separately; BrowserGym reward is not Runtime completion authority; form traces show dependent checkbox/submit progress is not credited before finish, so the first RED should target stale subgoal/progress evidence binding rather than accepting finish with incomplete TaskPlan progress
-  next_requirement: start V-PRB-6 terminal-completion guard classification and repair as a separate non-BrowserGym RED/GREEN slice before any breadth completion, fresh diagnostic, or promotion claim
+      packet_lifecycle: diagnostic_parent_only; production_change_allowed is false until a child production packet selects one typed owner after RED evidence
+      child_diagnostics:
+        v_prb_6a_dependent_subgoal_evidence_binding:
+          child_record: docs/change-admission/v-prb-6a-dependent-subgoal-evidence-binding.yaml
+          episodes:
+            - form-sequence:seed-0
+            - form-sequence:seed-1
+          status: diagnostic_open
+        v_prb_6b_single_subgoal_terminal_completion:
+          child_record: docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+          episodes:
+            - enter-text:seed-1
+          status: diagnostic_open
+  next_requirement: classify V-PRB-6A and V-PRB-6B separately with compact trace projection and non-BrowserGym REDs before selecting any production owner or claiming breadth completion, fresh diagnostic, or promotion
   promotion_status: held
 
 v_prb_3_architecture_follow_up:
   status: in_progress
   resolver_manifest: done; semantic_action_resolver.py is listed in the executable authority-free collaborator manifest
+  action_family_resolver_manifest: done; task_action_family_resolution.py is listed in the executable authority-free collaborator manifest and strict pure-owner dependency gate
   deep_immutable_output: pending
   typed_input_boundary: pending
   extracted_cluster: V-PRB-3 empty clarification resolution

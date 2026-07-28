@@ -68,12 +68,15 @@ class CanonicalObligationCompiler:
         preserve_sequence: bool = False,
         success_criteria: tuple[str, ...] = (),
     ) -> CanonicalObligationGraph:
-        """Compile flat source-bound effects without proposal graph structure.
+        """Compile source-bound effects without provider graph authority.
 
-        This is intentionally generic: operation class determines only the
-        terminal relation and broad independent evidence surface. It never
-        derives a benchmark family, GUI target, dependency, or literal value.
-        Multi-stage dataflow remains a separate canonical-template migration.
+        Flat/default calls keep effects independent and terminal unless the
+        caller supplies explicit source-bound value constraints. When
+        ``preserve_sequence`` is true, the compiler preserves the ordered
+        source effect sequence as Runtime-owned dependency edges and marks only
+        the final effect terminal. It still never derives a benchmark family,
+        GUI target, provider graph id, or dependency from task names, selectors,
+        URLs, coordinates, or benchmark metadata.
         """
 
         known_units = {unit.source_unit_id for unit in source_ledger.units}
