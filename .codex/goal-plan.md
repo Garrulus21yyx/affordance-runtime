@@ -365,12 +365,18 @@ delivery claims.
     empty-value `HAS_CHANGED` fill-delta evidence-binding slice was clean-rerun
     at `21f44b0` and rejected because it regressed external reward to 11/12
     while retaining 3 Runtime failures; its production behavior is reverted and
-    must not be used as the next V-PRB-6B path. The selected replacement owner
-    is Core current-state progress reconciliation:
-    `docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml`.
-    It adds typed `SubgoalCompletionPreparation` for ready read-only
-    `IS_AVAILABLE` / `IS_VISIBLE` subgoals and keeps Coordinator as the only
-    StateKernel completion writer. Clean PR breadth rerun is still required.
+    must not be used as the next V-PRB-6B path.
+48. `done` — Implemented and clean-reran the approved Core current-state
+    progress reconciliation attempt at `95fe00b`; evidence is archived at
+    `docs/evidence/runs/m8.2a-pr-breadth-95fe00b/`. The comparable rerun was
+    12/12 observed, 11/12 external reward, and 2 Runtime failures. Because the
+    external reward baseline regressed from the better `66dae07` diagnostic
+    baseline, the child production slice is rejected and its production
+    behavior is reverted. Do not continue the rejected evaluator path without a
+    new root-cause classification. Next vertical work is residual
+    reclassification for form-sequence seed-0/seed-1 before any new production
+    slice. No PR breadth acceptance, fresh diagnostic, promotion, immutable
+    Planner input, or official score claim is made.
 
 ## Change Record
 

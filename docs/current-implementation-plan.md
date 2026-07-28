@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | Post-V-PRB-6B residual classification | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. The latest clean PR breadth rerun at `9ad1288` is still negative: 12/12 observed, 11/12 official reward passed, 4 Runtime failures, no missing/unrun/invalidated case | reclassify the post-`9ad1288` residuals before another production repair: V-PRB-6A dependent-subgoal progress-scope binding, residual V-PRB-6B `enter-text:seed-1` Runtime completion, and the separate `click-button:seed-1` JSON-invalid schema/provider robustness cluster must stay separate; do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
+| Vertical | Post-`95fe00b` residual reclassification | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A is closed for this matrix at `151fbef`; V-PRB-5B action-family resolution is closed for this matrix at `3daf779`; V-PRB-5C form-sequence strict-planner proposal generation is closed for this matrix at `d50a631`. Clean `66dae07` remains the latest better diagnostic baseline with 12/12 official reward and 3 Runtime failures. Later V-PRB-6B repair attempts at `21f44b0` and `95fe00b` are both rejected because each regressed external reward to 11/12. | reclassify the post-`95fe00b` residuals before another production repair: form-sequence seed-0 still hits the verifier-backed finish guard, while form-sequence seed-1 now reaches `planner_waiting_clarification` and external reward 0. Do not weaken verifier authority, substitute BrowserGym reward for Runtime completion, accept finish while TaskPlan progress is incomplete, delete required obligations, broaden BrowserGym evidence, or mix immutable Planner input, fresh diagnostic, nightly/release, or promotion | unrelated horizontal debt retirement and immutable Planner input |
 | Horizontal | introduce immutable Planner input | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen request/view data | SG7 unless SG7 would expand or depend on that debt |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -209,15 +209,17 @@ batched into a single mixed patch:
    was tested on clean `21f44b0` and rejected: PR breadth regressed from the
    prior `66dae07` 12/12 external reward baseline to 11/12 external reward
    while retaining 3 Runtime failures. That attempted production behavior is
-   reverted and must not be continued as the next repair path. The selected
-   replacement owner is
-   `docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml`:
-   Core `CurrentStateSubgoalCompletionEvaluator` prepares verifier-backed
-   current-observation completion for ready read-only `IS_AVAILABLE` /
-   `IS_VISIBLE` subgoals, and Coordinator commits it with
-   `StateKernel.complete_subgoal()` while preserving the original TaskPlan and
-   obligation coverage. Clean PR breadth rerun is still required before any
-   closure claim.
+   reverted and must not be continued as the next repair path. A subsequent
+   Core current-state progress reconciliation attempt
+   (`docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml`)
+   was tested on clean `95fe00b` and also rejected after PR breadth rerun:
+   12/12 observed, 11/12 external reward, 2 Runtime failures. The attempt
+   reduced Runtime failures but regressed the external reward baseline, so its
+   production behavior is reverted and its evidence is archived at
+   `docs/evidence/runs/m8.2a-pr-breadth-95fe00b/`. Next work must reclassify
+   the residual form-sequence mechanism before opening another production
+   slice; do not keep extending the rejected evaluator path, do not delete
+   required obligations, and do not broaden BrowserGym evidence.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

@@ -29,9 +29,9 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | check `git rev-parse HEAD`; current workstream is V-PRB-6B Core current-state progress reconciliation after the rejected empty-value `HAS_CHANGED` fill-delta repair was reverted |
-| Latest admitted production repair revision | pending current-state progress reconciliation commit; prior admitted repair `9a63262` (`fix: discard ready read-only subgoal after progress`) remains bound to clean `66dae07` diagnostic evidence until the new clean PR breadth rerun is archived |
-| Latest PR breadth evidence revision | `21f44b09d409902252615747badf27dc60238f95`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure; this is negative-regression evidence for the attempted empty-value `HAS_CHANGED` fill-delta repair and is not a new accepted baseline. The prior `66dae07` rerun remains the better diagnostic baseline: 12/12 external reward with 3 Runtime failures. |
+| Current HEAD | check `git rev-parse HEAD`; current workstream records the rejected V-PRB-6B Core current-state progress reconciliation repair, its clean PR breadth negative regression, and the revert of that production behavior |
+| Latest admitted production repair revision | `9a63262` (`fix: discard ready read-only subgoal after progress`); its clean `66dae07` rerun remains the latest useful V-PRB-6B diagnostic baseline |
+| Latest PR breadth evidence revision | `95fe00b7c069c4f45b6d32e07de4921dba07e02b`: 12/12 observed, 11/12 official reward passed, 2 Runtime failures, no missing/unrun/invalidated/provider failure; this is negative-regression evidence for the attempted V-PRB-6B Core current-state progress reconciliation repair and is not a new accepted baseline. The prior `66dae07` rerun remains the better diagnostic baseline: 12/12 external reward with 3 Runtime failures. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -71,51 +71,49 @@ pr_breadth_initial_negative:
   next_change_admission: docs/change-admission/v-pr-breadth-intent-planning-repair.yaml
 
 pr_breadth_latest:
-  revision: 21f44b09d409902252615747badf27dc60238f95
-  evidence: docs/evidence/runs/m8.2a-pr-breadth-21f44b0/
+  revision: 95fe00b7c069c4f45b6d32e07de4921dba07e02b
+  evidence: docs/evidence/runs/m8.2a-pr-breadth-95fe00b/
   status: failed
   expected: 12
   observed: 12
   passed: 11
   failed: 1
-  runtime_failed: 3
+  runtime_failed: 2
   provider_failures: 0
   missing: 0
   unrun: 0
   invalidated: 0
   official_score_claimed: false
   promotion_status: held
-  root_owner_next: revert_rejected_empty_has_changed_fill_delta_repair
+  root_owner_next: revert_rejected_current_state_progress_reconciliation_repair
   external_reward_closed: false
   failed_official_episode:
-    - enter-text:seed-1
+    - form-sequence:seed-1
   comparison_baseline:
     revision: 66dae07eb6de259a17c8f9604e30189a74fcc357
     evidence: docs/evidence/runs/m8.2a-pr-breadth-66dae07/
     result: 12/12 external reward, 3 Runtime failures
-    interpretation: better diagnostic baseline; attempted 21f44b0 repair regressed external reward to 11/12
+    interpretation: better diagnostic baseline; attempted 95fe00b repair reduced Runtime failures to 2 but regressed external reward to 11/12
   remaining_runtime_guard:
-    planner_cannot_finish_before_verifier_backed_subgoal_completion: 2
-    execution_failed: 1
+    planner_cannot_finish_before_verifier_backed_subgoal_completion: 1
+    planner_waiting_clarification: 1
   affected_episodes:
-    - enter-text:seed-1
     - form-sequence:seed-0
     - form-sequence:seed-1
   latest_negative_repair: docs/change-admission/v-prb-6b-current-state-discard-replacement.yaml
   latest_negative_repair_2: docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml
   latest_rejected_repair: docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml
+  latest_rejected_repair_2: docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml
   latest_residual_classification: docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml
   latest_residual_classification_2: docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml
-  next_change_admission: finish local gate for V-PRB-6B current-state progress reconciliation, commit it, then run a clean PR breadth rerun; keep V-PRB-6A separate
+  next_change_admission: first revert the rejected Core current-state progress reconciliation production behavior; then reclassify the form-sequence residuals before choosing a new V-PRB-6A or V-PRB-6B child slice; do not batch
 
 active_local_repair:
   slice: v-prb-6b-current-state-progress-reconciliation
-  base_revision: c89254b991fb6a64edb102fd20080e6636d3ed5a
-  status: implemented_locally_pending_full_gate_and_clean_pr_breadth_rerun
-  red: tests/test_task_plan_progress.py
-  focused_regression: 169 passed across task-plan progress/flow/lifecycle/planning/coordinator/governance
-  parent_diagnostic: docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml
-  rejected_predecessor: docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml
+  revision: 95fe00b
+  status: rejected_after_clean_pr_breadth_negative_regression
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-95fe00b/
+  disposition: production behavior reverted; do not continue this Core progress reconciliation slice without a new root-cause classification
 
 attribution_classification:
   evidence: docs/evidence/runs/m8.2a-pr-breadth-d66760f/episode-attribution.yaml
@@ -433,8 +431,8 @@ milestone maturity labels below.
 | M7 External Integration | done | separate runtime process plus real LangGraph 1.2.9 parent completes pricing and approval export at `9a9796e` | none |
 | M8 Generalization Eval | done | three distinct training layouts, six held-out runs, five visual runs, and 18 pinned official MiniWoB++ episodes at `e463e16` | none |
 | M8.1 Container Reproducibility | done | digest-pinned non-root profile, exact 63-run host/container agreement, and real DOM/visual/WoT conformance at `40fd93b` | none |
-| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, three V-PRB-5C repairs, and V-PRB-6B repairs through `66dae07`, clean PR breadth remains negative: 12/12 observed, 12/12 official reward passed, 3 Runtime failures. Button-sequence, entry action-family resolution, form-sequence planner proposal generation, and external reward breadth are closed for this matrix; V-PRB-6A and the `enter-text:seed-1` obligation/subgoal accounting residual remain open. | classify `enter-text:seed-1` obligation_subgoal_missing and V-PRB-6A progress-scope failures separately; no breadth acceptance, fresh diagnostic, or promotion claim |
-| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; current PR breadth at `66dae07` remains promotion-held with 12/12 official reward and 3 Runtime failures | hold PR/nightly/release; first classify and repair current PR breadth residuals, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
+| M8.2A Task Intake and Planner Contracts | in_progress | SG1-SG6 complete locally: code-owned schemas, bounded SourceLedger lineage, canonical flat/multi-stage graph reconstruction with typed evidence, deterministic source-to-terminal coverage, proposal normalization, veto-only audit, bounded repair, and held-out non-BrowserGym conformance. SG7 targeted protected-family confirmation passed cleanly at `3d44a9d`: `enter-date` and `text-transform`, seeds 0 and 1, 4/4 observed and passed, no provider/runtime failure, `official_score_claimed=false`. PR breadth diagnostic at `d66760f` completed 12/12 observed with 0/12 passed; after V-PRB-1, V-PRB-3, V-PRB-2, V-PRB-5A, V-PRB-5B, three V-PRB-5C repairs, and V-PRB-6B repairs through `66dae07`, clean PR breadth reached 12/12 official reward with 3 Runtime failures. Later attempted V-PRB-6B repairs at `21f44b0` and `95fe00b` are rejected because they regress external reward to 11/12. Button-sequence, entry action-family resolution, and form-sequence planner proposal generation remain closed for this matrix, but PR breadth acceptance is not closed. | revert the rejected `95fe00b` production behavior, then reclassify the latest form-sequence residuals before any new production slice; no breadth acceptance, fresh diagnostic, or promotion claim |
+| M8.2B Public Benchmark Audit | in_progress | clean `df5b820` 30 x 2 diagnostic completed 60/60 at 24/60 success with zero provider failure/retry and 36 attributed residuals; SG1-SG7 later closed the targeted protected-family intake/planning failure for `enter-date` and `text-transform` seeds 0 and 1; latest PR breadth evidence at `95fe00b` remains promotion-held with 11/12 official reward and 2 Runtime failures after a rejected production repair. The better diagnostic baseline remains `66dae07`: 12/12 official reward and 3 Runtime failures. | hold PR/nightly/release; first revert rejected production behavior and reclassify current PR breadth residuals, then rerun PR breadth and only then a current-revision fresh diagnostic before any promotion claim |
 | M8.3 Recovery-Cascade Components | in_progress | incident/loop detection, lower-half online recovery, typed dispatch, configured provider-switch owner, planner-context compaction owner, and target-bound planner-schema repair owner wired in BrowserGym and `GeneralistTaskPipeline` normal entrypoints | level-4 empirical effectiveness remains open; do not claim full-phase recovery |
 | M8.4 Adaptive Shallow Task Planning | in_progress | TaskPlan contracts, criteria-bound progress, obligation outcomes/evidence, deterministic cross-scenario controls, and stateless decision admission | prove held-out behavior |
 | M8.5 Unified Adaptive Routing and Skill Internalization | in_progress | unified candidates, routes, gestures, safe fallback, active perception, trace mining, accepted profile loading, fallthrough, and rollback | preserve generic main path while planner/recovery operational gaps close |
@@ -851,7 +849,7 @@ Clean-checkout M0-M8 gate:
 | 2026-07-28 | V-PRB-6B clean PR breadth rerun after active-empty discard repair | Reran the same PR breadth 6-task x 2-seed matrix on clean committed `66dae07eb6de259a17c8f9604e30189a74fcc357` after the V-PRB-6B active-empty ready read-only discard repair and revision-binding docs sync. | `docs/evidence/runs/m8.2a-pr-breadth-66dae07/`, `/tmp/affordance-pr-breadth-66dae07-20260728-130459` | Negative but partially positive evidence: 12 expected, 12 observed, 12 official reward passed, 0 official reward failed, 3 Runtime failures, no missing/unrun/invalidated/provider failures, `official_score_claimed=false`; report sha256 `a5c5945d35959aba6a89d5cb079182c3abdffe57593948ea3d8b2da95b566878`. The earlier `click-button:seed-1` JSON-invalid/schema-provider cluster no longer reproduces. `enter-text:seed-1` now fails as `task_planning ... obligation_subgoal_missing`, so V-PRB-6B is still not closed. Both form-sequence seeds remain V-PRB-6A / finish-guard progress-scope failures. PR breadth acceptance, fresh diagnostic, promotion, and official score remain held. |
 | 2026-07-28 | V-PRB-6B obligation-subgoal-missing diagnostic | Classified the post-`66dae07` `enter-text:seed-1` residual without production changes. | `docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml`, `/tmp/affordance-pr-breadth-66dae07-20260728-130459/artifacts/runs/browsergym-generalist-enter-text-seed-1/events.jsonl` | Diagnostic only: the previous repair eliminated the `entry_outcome_already_satisfied` loop, but the replacement plan now omits a required `submit_button is available` obligation and TaskPlanValidator correctly rejects it with `obligation_subgoal_missing`. Next V-PRB-6B production work must start from a new non-BrowserGym RED for required read-only obligation completion/accounting; it must not weaken TaskPlanValidator obligation coverage, RunCoordinator finish guard, verifier authority, Prompt/budget constraints, or mix with V-PRB-6A. |
 | 2026-07-28 | V-PRB-6B empty-value HAS_CHANGED fill-delta negative rerun and revert | Archived the clean PR breadth rerun for the attempted `f6d053b` / `21f44b0` BrowserGym fill-delta active-subgoal evidence repair, then reverted the production behavior because the clean matrix regressed externally. | `docs/evidence/runs/m8.2a-pr-breadth-21f44b0/`, `docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml`, revert of `src/affordance_runtime/benchmarks/browsergym_encoder.py` and rejected tests | Negative-regression evidence: 12 expected, 12 observed, 11 official reward passed, 1 official reward failed, 3 Runtime failures, no missing/unrun/invalidated/provider failures, `official_score_claimed=false`; report sha256 `09e940792c4faa0d0a8d40aeaa31453b8684d4053dea73585fcd4fb3906ede1c`. The prior clean `66dae07` rerun had 12/12 external reward with the same 3 Runtime failures, so this attempted repair is rejected and reverted. Next V-PRB-6B work returns to required read-only obligation completion/accounting from a non-BrowserGym RED; V-PRB-6A remains separate. |
-| 2026-07-28 | V-PRB-6B current-state progress reconciliation | Added the Core owner selected after the rejected fill-delta slice: current observation can now prepare typed completion for ready read-only `IS_AVAILABLE` / `IS_VISIBLE` TaskPlan subgoals without deleting required obligation subgoals or weakening finish guard. | `src/affordance_runtime/task_plan_progress.py`, `src/affordance_runtime/task_plan_flow.py`, `src/affordance_runtime/coordinator.py`, `tests/test_task_plan_progress.py`, `tests/test_task_plan_flow.py`, `docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml` | RED: `tests/test_task_plan_progress.py` failed 14/14 because the Core progress contract did not exist. GREEN: progress/flow focused tests pass 23/23. Related regression including task-plan lifecycle, planning, coordinator, and architecture governance passes 169/169. The implementation keeps Coordinator as the only StateKernel writer and does not broaden BrowserGym adapter evidence, delete required subgoals, weaken TaskPlanValidator, weaken finish guard, change Prompt/budget, or mix V-PRB-6A. Full local gate and clean committed PR breadth rerun are still required; no PR breadth acceptance, fresh diagnostic, promotion, or official score claim. |
+| 2026-07-28 | V-PRB-6B current-state progress reconciliation negative rerun and revert | Archived the clean PR breadth rerun for the attempted `95fe00b` Core current-state progress reconciliation repair, then reverted the production behavior because the clean matrix regressed externally. | `docs/evidence/runs/m8.2a-pr-breadth-95fe00b/`, `docs/change-admission/v-prb-6b-current-state-progress-reconciliation.yaml`, revert of `src/affordance_runtime/task_plan_progress.py`, related `task_plan_flow.py` / `coordinator.py` integration, and rejected tests | Negative-regression evidence: 12 expected, 12 observed, 11 official reward passed, 1 official reward failed, 2 Runtime failures, no missing/unrun/invalidated/provider failures, `official_score_claimed=false`; report sha256 `a563f1fe452e60178f8b03aabcba94e8e93ee87f8ca5e59c3e4c7069217840b9`. The prior clean `66dae07` rerun had 12/12 external reward with 3 Runtime failures. The attempted repair reduced Runtime failures but regressed external reward, so it is rejected and reverted. Next work must reclassify the form-sequence residuals before another production slice; do not broaden BrowserGym evidence, delete required obligations, weaken finish guard, or claim PR breadth/fresh diagnostic/promotion. |
 | 2026-07-27 | Remote CI disabled and local equivalent gate | Recorded that GitHub Actions was intentionally closed after the latest remote attempt was blocked by account billing/spending limits. The current tree therefore has no remote-green or remote-fail claim; development validation uses the local equivalent gate while promotion remains held. | status, current plan, horizontal governance, active goal records | clean committed `66747420c4d319d26a10a7c6fb6006871cf3310a`; local equivalent gate passed: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check. Diagnostic benchmark acceptance remains failed by design and `official_score_claimed=false`; no remote-CI or promotion claim. |
 | 2026-07-27 | Review governance alignment | Applied the latest architecture review as governance state rather than broad implementation permission: preserved SG7 targeted evidence as historical immutable evidence, made semantic ownership review debt visible, kept immutable Planner input `not_started`, and separated implementation-bearing local-equivalent evidence from later documentation-only synchronization commits. | current/status/horizontal governance documents, SG7 admission record, horizontal governance tests | focused governance/document gates must pass for each documentation-sync commit; no production behavior, benchmark/provider episode, remote CI, score, or promotion claim. |
 | 2026-07-27 | M8.2A PR breadth diagnostic | Ran the active vertical protected cross-family / PR breadth slice on clean `d66760f76bb4668f610d2ebfac2c8ba0bf83c71a` using `profile=pr`, strict-generalist planning, local Ollama `qwen2.5:7b`, BrowserGym MiniWoB 0.14.3, Playwright 1.44.0, and seeds 0 and 1 across `click-button`, `enter-text`, `choose-list`, `click-dialog`, `click-button-sequence`, and `form-sequence`. | `docs/evidence/runs/m8.2a-pr-breadth-d66760f/`, `/tmp/affordance-pr-breadth-d66760f-20260727-201632` | Negative evidence: 12 expected, 12 observed, 0 passed, 12 failed, 0 provider failures, 0 missing/unrun/invalidated, `official_score_claimed=false`. Runtime-owner clusters: 6 `intent_compilation_rejected` across 4 tasks/families, 5 `planner_waiting_clarification` across 4 tasks/families, and 1 `schema_incompatible` CONTRACT / FIELD_BINDING case. Promotion remains held; next repair owner is INTENT / PLANNING unless deeper trace classification narrows it. |

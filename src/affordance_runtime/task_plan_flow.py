@@ -6,7 +6,7 @@ The flow owns planner/lifecycle orchestration only.  It never mutates
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -21,12 +21,9 @@ from affordance_runtime.task_plan_lifecycle import (
     TaskPlanReplacementReason,
     TaskPlanTransition,
 )
-from affordance_runtime.task_plan_progress import (
-    CurrentStateSubgoalCompletionEvaluator,
-    SubgoalCompletionPreparation,
-    TaskPlanProgressStateView,
-)
 from affordance_runtime.task_planning import (
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
     TaskPlanValidationIssue,
     TaskPlanValidationStatus,
     task_planning_context_summary,
@@ -37,7 +34,6 @@ class TaskPlanFlowKind(StrEnum):
     NONE = "none"
     INITIAL = "initial"
     REPLACEMENT = "replacement"
-    PROGRESS_COMPLETION = "progress_completion"
 
 
 @dataclass(frozen=True)
@@ -58,7 +54,6 @@ class TaskPlanFlowResult:
     kind: TaskPlanFlowKind = TaskPlanFlowKind.NONE
     transition: TaskPlanTransition | None = None
     replacement: TaskPlanReplacementDecision | None = None
-    progress_completion: SubgoalCompletionPreparation | None = None
     failure: TaskPlanFlowFailure | None = None
 
     @property
@@ -67,11 +62,7 @@ class TaskPlanFlowResult:
 
     @property
     def accepted(self) -> bool:
-        return (
-            self.required
-            and self.failure is None
-            and (self.transition is not None or self.progress_completion is not None)
-        )
+        return self.required and self.transition is not None and self.failure is None
 
 
 @dataclass(frozen=True)
@@ -99,10 +90,6 @@ class TaskPlanCommitPreparation:
     @property
     def transition(self) -> TaskPlanTransition | None:
         return self.result.transition
-
-    @property
-    def progress_completion(self) -> SubgoalCompletionPreparation | None:
-        return self.result.progress_completion
 
     @property
     def failure(self) -> TaskPlanFlowFailure | None:
@@ -141,7 +128,6 @@ class TaskPlanCommitPreparation:
                 kind=self.result.kind,
                 transition=self.transition,
                 replacement=self.result.replacement,
-                progress_completion=self.progress_completion,
                 failure=TaskPlanFlowFailure(
                     error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                     failure_class=FailureClass.VALIDATION,
@@ -150,26 +136,13 @@ class TaskPlanCommitPreparation:
             )
         )
 
-    def plan_or_route_ref(self) -> str:
-        completion = self.progress_completion
-        if completion is not None:
-            return completion.plan_id
-        transition = self.transition
-        return transition.plan.plan_id if transition is not None else ""
-
     def failure_projection(self, *, state_phase: str) -> TaskPlanTraceProjection:
         failure = self.failure
         if failure is None:
             raise ValueError("a failure projection requires a TaskPlanFlow failure")
         replacement = self.result.replacement
         return TaskPlanTraceProjection(
-            (
-                "TaskReplanRejected"
-                if self.result.kind == TaskPlanFlowKind.REPLACEMENT
-                else "TaskProgressRejected"
-                if self.result.kind == TaskPlanFlowKind.PROGRESS_COMPLETION
-                else "TaskPlanRejected"
-            ),
+            "TaskReplanRejected" if self.result.kind == TaskPlanFlowKind.REPLACEMENT else "TaskPlanRejected",
             {
                 "state": state_phase,
                 "error_code": failure.error_code.value,
@@ -189,25 +162,7 @@ class TaskPlanCommitPreparation:
         committed: TaskPlanCommitStateView,
     ) -> TaskPlanTraceProjection:
         if not self.accepted or self.transition is None:
-            completion = self.progress_completion
-            if completion is None:
-                raise ValueError("an acceptance projection requires an accepted TaskPlanFlow result")
-            return TaskPlanTraceProjection(
-                "SubgoalCompletedFromCurrentObservation",
-                {
-                    "state": state_phase,
-                    "plan_id": completion.plan_id,
-                    "plan_version": completion.plan_version,
-                    "subgoal_id": completion.subgoal_id,
-                    "snapshot_id": completion.snapshot_id,
-                    "evidence": list(completion.evidence_refs),
-                    "criterion_ids": list(completion.criterion_ids),
-                    "requirement_ids": list(completion.requirement_ids),
-                    "source": completion.source,
-                    "active_subgoal": committed.active_subgoal,
-                    "completed_subgoal_ids": list(committed.completed_subgoal_ids),
-                },
-            )
+            raise ValueError("an acceptance projection requires an accepted TaskPlanFlow result")
         task_plan = self.transition.plan
         if self.result.kind == TaskPlanFlowKind.REPLACEMENT:
             previous = self.transition.previous_plan
@@ -240,14 +195,19 @@ class TaskPlanCommitPreparation:
         )
 
 
+_CURRENT_STATE_COMPLETABLE_RELATIONS = frozenset(
+    {
+        SubgoalOutcomeRelation.IS_AVAILABLE,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+    }
+)
+
+
 @dataclass(frozen=True)
 class TaskPlanFlow:
     """Prepare an initial plan or required replacement through one typed port."""
 
     lifecycle: TaskPlanLifecycle
-    progress_evaluator: CurrentStateSubgoalCompletionEvaluator = field(
-        default_factory=CurrentStateSubgoalCompletionEvaluator
-    )
 
     def prepare(
         self,
@@ -267,15 +227,15 @@ class TaskPlanFlow:
         if not replacement.required:
             return TaskPlanFlowResult()
         if replacement.reason == TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED:
-            completion = self._prepare_current_state_completion(
+            discarded = self._prepare_current_state_discard(
                 task_spec,
                 state,
                 snapshot,
                 budget,
                 replacement,
             )
-            if completion is not None:
-                return completion
+            if discarded is not None:
+                return discarded
         return self._prepare_replacement(
             task_spec,
             state,
@@ -284,7 +244,7 @@ class TaskPlanFlow:
             replacement,
         )
 
-    def _prepare_current_state_completion(
+    def _prepare_current_state_discard(
         self,
         task_spec: TaskSpec,
         state: StateKernel,
@@ -293,7 +253,22 @@ class TaskPlanFlow:
         replacement: TaskPlanReplacementDecision,
     ) -> TaskPlanFlowResult | None:
         assert replacement.reason is not None
-        if state.task_plan is None or state.plan_progress is None:
+        previous_plan = state.task_plan
+        subgoal = self.lifecycle.active_subgoal_spec(state)
+        if subgoal is None:
+            subgoal = _ready_replacement_subgoal(state, replacement)
+        if (
+            previous_plan is None
+            or subgoal is None
+            or subgoal.subgoal_id != replacement.subgoal_id
+            or subgoal.outcome is None
+            or subgoal.outcome.relation not in _CURRENT_STATE_COMPLETABLE_RELATIONS
+        ):
+            return None
+        remaining = tuple(
+            item for item in previous_plan.subgoals if item.subgoal_id != subgoal.subgoal_id
+        )
+        if not remaining:
             return None
         context = self.lifecycle.build_context(
             task_spec,
@@ -302,22 +277,31 @@ class TaskPlanFlow:
             budget,
             reason=replacement.reason.value,
         )
-        completion = self.progress_evaluator.evaluate(
-            plan=state.task_plan,
-            progress=TaskPlanProgressStateView.from_state(
-                state,
-                snapshot_id=snapshot.observation.snapshot_id,
-                environment_revision=snapshot.observation.environment_revision,
-                page_revision=snapshot.observation.page_revision,
-            ),
-            environment=context.environment,
+        plan = previous_plan.model_copy(
+            update={
+                "plan_id": f"{previous_plan.plan_id}-current-state-discard",
+                "plan_version": previous_plan.plan_version + 1,
+                "supersedes_plan_id": previous_plan.plan_id,
+                "based_on_state_version": state.version,
+                "subgoals": remaining,
+            }
         )
-        if completion is None or completion.subgoal_id != replacement.subgoal_id:
-            return None
-        return TaskPlanFlowResult(
-            kind=TaskPlanFlowKind.PROGRESS_COMPLETION,
+        transition = TaskPlanTransition(
+            context=context,
+            plan=plan,
+            validation=self.lifecycle.validator.validate(
+                plan,
+                task_spec,
+                state_version=state.version,
+                previous_plan=previous_plan,
+                planning_context=context,
+            ),
+            previous_plan=previous_plan,
+        )
+        return _validated_result(
+            TaskPlanFlowKind.REPLACEMENT,
+            transition,
             replacement=replacement,
-            progress_completion=completion,
         )
 
     def _prepare_initial(
@@ -380,6 +364,32 @@ class TaskPlanFlow:
             transition,
             replacement=replacement,
         )
+
+
+def _ready_replacement_subgoal(
+    state: StateKernel,
+    replacement: TaskPlanReplacementDecision,
+) -> SubgoalSpec | None:
+    if (
+        state.task_plan is None
+        or state.plan_progress is None
+        or state.plan_progress.active_subgoal_id
+        or not replacement.subgoal_id
+    ):
+        return None
+    completed = set(state.plan_progress.completed_subgoal_ids)
+    failed = set(state.plan_progress.failed_subgoal_ids)
+    return next(
+        (
+            item
+            for item in state.task_plan.subgoals
+            if item.subgoal_id == replacement.subgoal_id
+            and item.subgoal_id not in completed | failed
+            and all(dependency in completed for dependency in item.depends_on)
+        ),
+        None,
+    )
+
 
 def _validated_result(
     kind: TaskPlanFlowKind,

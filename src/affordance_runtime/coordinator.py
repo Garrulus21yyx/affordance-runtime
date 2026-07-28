@@ -427,6 +427,7 @@ class RunCoordinator:
                     self.budget,
                 )
                 plan_commit = TaskPlanCommitPreparation(flow_result)
+                transition = plan_commit.transition
                 pre_commit = plan_commit.pre_commit_projection(state_phase=state.phase)
                 if pre_commit is not None:
                     parent = trace.add(
@@ -436,16 +437,13 @@ class RunCoordinator:
                     )
                 flow_failure = plan_commit.failure
                 if plan_commit.accepted:
+                    assert transition is not None
+                    task_plan = transition.plan
                     try:
-                        if (progress_completion := plan_commit.progress_completion) is not None:
-                            state.complete_subgoal(progress_completion.subgoal_id, progress_completion.evidence_refs)
+                        if flow_result.kind == TaskPlanFlowKind.REPLACEMENT:
+                            state.replace_task_plan(task_plan)
                         else:
-                            assert (transition := plan_commit.transition) is not None
-                            (
-                                state.replace_task_plan
-                                if flow_result.kind == TaskPlanFlowKind.REPLACEMENT
-                                else state.install_task_plan
-                            )(transition.plan)
+                            state.install_task_plan(task_plan)
                     except Exception as exc:
                         plan_commit = plan_commit.with_commit_failure(exc)
                         flow_failure = plan_commit.failure
@@ -500,6 +498,8 @@ class RunCoordinator:
                         latest_verification,
                     )
                 if plan_commit.accepted:
+                    assert transition is not None
+                    task_plan = transition.plan
                     committed = TaskPlanCommitStateView(
                         active_subgoal=state.activate_next_subgoal(),
                         completed_subgoal_ids=(
@@ -518,7 +518,7 @@ class RunCoordinator:
                         trace,
                         parent,
                         kind=RecoveryCommandKind.REPLAN_TASK,
-                        plan_or_route_ref=plan_commit.plan_or_route_ref(),
+                        plan_or_route_ref=task_plan.plan_id,
                     )
 
             state.transition(RuntimeStep.PLANNING.value)

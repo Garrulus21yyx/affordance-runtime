@@ -276,7 +276,7 @@ def test_flow_preserves_replacement_reason_and_validation_issue() -> None:
     assert state.task_plan.plan_id == "original-plan"
 
 
-def test_flow_completes_current_state_satisfied_read_only_subgoal_without_replanning() -> None:
+def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replanning() -> None:
     state = _state()
     first = SubgoalSpec(
         subgoal_id="first",
@@ -321,19 +321,17 @@ def test_flow_completes_current_state_satisfied_read_only_subgoal_without_replan
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.HAS_CHANGED))
     ).prepare(_task(), state, _snapshot(), Limits())
 
-    assert result.kind == TaskPlanFlowKind.PROGRESS_COMPLETION
+    assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.accepted
-    assert result.transition is None
-    assert result.progress_completion is not None
-    assert result.progress_completion.subgoal_id == "visible"
+    assert result.transition is not None
+    assert result.transition.previous_plan is state.task_plan
+    assert [item.subgoal_id for item in result.transition.plan.subgoals] == ["first"]
     assert result.failure is None
-    assert state.task_plan is not None
-    assert [item.subgoal_id for item in state.task_plan.subgoals] == ["first", "visible"]
     assert state.plan_progress is not None
     assert state.plan_progress.completed_subgoal_ids == ["first"]
 
 
-def test_flow_completes_ready_current_state_satisfied_read_only_subgoal_when_active_projection_empty() -> None:
+def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_active_projection_empty() -> None:
     state = _state()
     first = SubgoalSpec(
         subgoal_id="first",
@@ -379,14 +377,12 @@ def test_flow_completes_ready_current_state_satisfied_read_only_subgoal_when_act
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.IS_AVAILABLE))
     ).prepare(_task(), state, _snapshot(), Limits())
 
-    assert result.kind == TaskPlanFlowKind.PROGRESS_COMPLETION
+    assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.accepted
-    assert result.transition is None
-    assert result.progress_completion is not None
-    assert result.progress_completion.subgoal_id == "submit-available"
+    assert result.transition is not None
+    assert result.transition.previous_plan is state.task_plan
+    assert [item.subgoal_id for item in result.transition.plan.subgoals] == ["first"]
     assert result.failure is None
-    assert state.task_plan is not None
-    assert [item.subgoal_id for item in state.task_plan.subgoals] == ["first", "submit-available"]
     assert state.plan_progress.completed_subgoal_ids == ["first"]
 
 
