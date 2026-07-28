@@ -58,6 +58,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_trace_projection.py",
     "semantic_action_resolver.py",
     "task_action_family_resolution.py",
+    "obligation_progress_shadow_flow.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )
@@ -324,12 +325,15 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "taskplan state" in odg_4
     assert "closure_status: foundation_projection_only" in odg_4
     assert "production_behavior_change: false" in odg_5
-    assert "stable trace payload projection" in odg_5
+    assert "trace identity envelope" in odg_5
+    assert "legacy_verified_projection" in odg_5
     assert "coordinator trace write" in odg_5
     assert "statekernel initialization" in odg_5
+    assert "exact-id mapping" in odg_5
+    assert "completed_without_evidence_is_satisfied: false" in odg_5
     assert "writes_state: false" in odg_5
     assert "writes_trace: false" in odg_5
-    assert "closure_status: foundation_shadow_comparison_only" in odg_5
+    assert "closure_status: runtime_projection_foundation_only" in odg_5
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -345,7 +349,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "contracts: foundation_only" in status
     assert "ledger: foundation_storage_only" in status
     assert "ready_projection: authority_free_foundation" in status
-    assert "shadow_comparison: foundation_payload_only" in status
+    assert "shadow_comparison: runtime_projection_foundation_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -438,7 +442,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-5 runtime shadow trace hookup" in status
+    assert "current_next_change_admission: odg-5 post-observation trace hookup" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -752,6 +756,31 @@ def test_obligation_progress_contracts_do_not_import_taskplan_or_runtime_authori
                     for prefix in FORBIDDEN_OBLIGATION_PROGRESS_DEPENDENCIES
                 ):
                     violations.append((filename, getattr(node, "lineno", 0), dependency))
+    assert violations == []
+
+
+def test_obligation_shadow_flow_is_read_only_runtime_projection() -> None:
+    filename = "obligation_progress_shadow_flow.py"
+    tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+    violations: list[tuple[str, int, str]] = []
+    for node in ast.walk(tree):
+        for dependency in _import_dependencies(node):
+            if any(
+                _matches_module(dependency, prefix)
+                for prefix in (
+                    "affordance_runtime.adapters",
+                    "affordance_runtime.benchmarks",
+                    "affordance_runtime.coordinator",
+                    "affordance_runtime.trace",
+                )
+            ):
+                violations.append((filename, getattr(node, "lineno", 0), dependency))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in STATE_KERNEL_MUTATIONS
+        ):
+            violations.append((filename, node.lineno, node.func.attr))
     assert violations == []
 
 

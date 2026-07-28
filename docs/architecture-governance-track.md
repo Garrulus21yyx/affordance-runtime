@@ -151,7 +151,11 @@ produce stable trace payload data, but this foundation slice must not call
 `trace.add`, initialize or mutate StateKernel, alter Coordinator control flow,
 change PlannerContext, replace TaskPlan semantics, or affect finish authority.
 The comparison exists to classify divergence; it is not a second progress
-authority.
+authority. ODG-5.1/5.2 may harden that contract with a trace identity envelope
+and add a read-only runtime projection seam using
+`legacy_verified_projection`: exact-ID mapping only, no lexical subject/objective
+mapping, no obligation-ledger initialization, and no completed-without-evidence
+credit.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

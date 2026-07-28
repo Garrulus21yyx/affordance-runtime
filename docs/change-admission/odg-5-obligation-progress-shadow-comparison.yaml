@@ -11,18 +11,26 @@ remote_ci: disabled
 single_primary_owner: Obligation progress shadow comparison diagnostics
 
 goal: >
-  Add an authority-free diagnostic comparator between legacy TaskPlan progress
-  projection and canonical obligation ready projection. This slice prepares the
-  later runtime shadow trace event by producing a typed comparison and stable
-  payload without mutating StateKernel, committing obligation progress, changing
-  finish authority, or altering Planner input.
+  Harden the authority-free diagnostic comparator between legacy TaskPlan
+  progress projection and canonical obligation ready projection, then add a
+  read-only runtime projection seam. This slice prepares the later
+  post-observation trace hookup by producing a typed comparison, trace identity
+  envelope, and legacy-verified progress projection without mutating
+  StateKernel, initializing the obligation ledger, writing trace, committing
+  obligation progress, changing finish authority, or altering Planner input.
 
 included:
   - TaskPlanShadowProjection
   - ObligationProgressShadowClassification
   - ObligationProgressShadowComparison
+  - ObligationProgressShadowTraceProjection
   - compare_obligation_progress_shadow()
-  - stable trace payload projection
+  - trace identity envelope
+  - legacy_verified_projection source marker
+  - project_verified_legacy_progress()
+  - prepare_obligation_progress_shadow_trace()
+  - exact-id mapping from legacy subgoals to canonical obligations
+  - many TaskPlan strategy steps may map to one canonical obligation
   - aligned classification
   - legacy_active_non_progress_predicate classification
   - obligation_ready_without_subgoal classification
@@ -65,6 +73,12 @@ authority_rules:
     - model-authored progress
     - receipt success
     - external reward
+  runtime_projection_source: legacy_verified_projection
+  exact-id mapping: true
+  lexical_mapping: prohibited
+  completed_without_evidence_is_satisfied: false
+  initializes_obligation_ledger: false
+  mutates_obligation_ledger: false
   writes_state: false
   writes_trace: false
   standard_path_authority: not_authorized
@@ -92,10 +106,15 @@ forbidden:
   - alter BrowserGym evidence declarations
   - call benchmarks or promote score
   - infer divergence from lexical task family names
+  - map subgoals by subject text
+  - map subgoals by objective text
+  - map subgoals by active control
+  - treat completed subgoals without verifier evidence as satisfied obligations
 
 tests:
   focused:
     - tests/test_obligation_progress_shadow.py
+    - tests/test_obligation_progress_shadow_flow.py
     - tests/test_obligation_ready_projection.py
     - tests/test_obligation_progress.py
     - tests/test_obligation_progress_ledger.py
@@ -105,11 +124,13 @@ tests:
     - tests/test_responsibility_containment.py
 
 architecture_admission: pass
-closure_status: foundation_shadow_comparison_only
+closure_status: runtime_projection_foundation_only
 promotion_status: held
 
 next_requirement: >
-  Continue with ODG-5 runtime shadow trace hookup only after this comparator
-  foundation passes local gates. The hookup must be small enough to respect the
-  Coordinator growth freeze and still must not commit obligation satisfaction,
-  replace finish authority, or change PlannerContext.
+  Continue with ODG-5 post-observation trace hookup only after this runtime
+  projection foundation passes local gates. The hookup must replace the existing
+  post-observation inline block rather than add new run_sync control flow, must
+  reduce the run_sync line count below 2039, and still must not commit
+  obligation satisfaction, replace finish authority, initialize/mutate the
+  obligation ledger, or change PlannerContext.

@@ -632,3 +632,9 @@ delivery claims.
   This slice may produce stable trace payload data, but it must not write trace,
   mutate StateKernel, change Coordinator control flow, alter PlannerContext,
   change finish authority, or rerun/promise benchmark promotion.
+- Review-approved ODG-5.1/5.2 scope: harden the comparator by allowing multiple
+  strategy subgoals to map to one obligation and wrapping comparisons in a
+  versioned trace identity envelope; add read-only runtime projection from
+  legacy verified PlanProgress using exact-ID mapping only. The next slice is
+  post-observation trace hookup through a replacement seam that must reduce
+  `run_sync()` rather than add inline logic.
