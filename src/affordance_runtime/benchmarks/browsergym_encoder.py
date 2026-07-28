@@ -530,6 +530,7 @@ def _browsergym_postcondition_proves_outcome(
             relation
             in {
                 SubgoalOutcomeRelation.EQUALS,
+                SubgoalOutcomeRelation.HAS_CHANGED,
                 SubgoalOutcomeRelation.MATCHES,
             }
             and bool(normalized_outcome)

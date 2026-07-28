@@ -288,6 +288,47 @@ def test_browsergym_exact_typed_value_declares_active_subgoal_evidence() -> None
     assert verifiers[-1].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
 
 
+def test_browsergym_has_changed_text_value_declares_active_subgoal_evidence() -> None:
+    state = _active_typed_outcome_state(
+        value="Kanesha",
+        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+    )
+    affordance = _affordance(
+        "tt",
+        action="fill",
+        locator={"backend_handle": "14"},
+        role="textbox",
+        label="tt",
+    )
+    proposal = PlannerProposal(
+        proposal_id="fill-tt",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=affordance.id,
+        parameters={"text": "Kanesha"},
+    )
+    verifiers = [
+        VerifierSpec(
+            "dom_attribute",
+            "14",
+            {"target_attribute": "bid", "attribute": "value", "value": "Kanesha"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        )
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("fill", {"bid": "14", "value": "Kanesha"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+
+
 @pytest.mark.parametrize(
     ("outcome_value", "expected_scope"),
     (

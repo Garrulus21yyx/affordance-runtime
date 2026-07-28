@@ -175,6 +175,12 @@ batched into a single mixed patch:
    packet
    `docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml`;
    it admits no production code and requires exactly one next RED/owner.
+   The selected narrow child slice is
+   `docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml`:
+   BrowserGym exact typed text postconditions now declare active-subgoal
+   progress evidence for `HAS_CHANGED` when the concrete value equals the
+   Runtime-owned typed outcome. This local repair is pending clean PR breadth
+   rerun and does not close V-PRB-6B yet.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`

@@ -332,7 +332,15 @@ delivery claims.
     packet
     `docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml`.
     Do not batch these and do not start immutable Planner input unless evidence
-    directly implicates mutable Planner state. Next select exactly one RED.
+    directly implicates mutable Planner state.
+47. `in_progress` — Selected the smallest next RED: V-PRB-6B HAS_CHANGED text
+    progress binding for `enter-text:seed-1`, recorded at
+    `docs/change-admission/v-prb-6b-has-changed-text-progress-binding.yaml`.
+    The RED failed with task-terminal-only evidence and now passes after
+    BrowserGym exact typed text postconditions declare active-subgoal evidence
+    for `HAS_CHANGED` when the concrete value equals the Runtime-owned typed
+    outcome. Focused regression is `49 passed, 1 xfailed`. Next commit/push,
+    then rerun the same PR breadth matrix before any closure claim.
 
 ## Change Record
 
