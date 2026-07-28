@@ -29,8 +29,8 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | check `git rev-parse HEAD`; current workstream is V-PRB-6B empty-value HAS_CHANGED fill-delta evidence binding |
-| Latest production repair revision | current local change: V-PRB-6B empty-value HAS_CHANGED fill-delta evidence binding; clean PR breadth rerun still required after commit |
+| Current HEAD | check `git rev-parse HEAD`; current workstream is post-`f6d053b` V-PRB-6B empty-value HAS_CHANGED fill-delta evidence binding |
+| Latest production repair revision | `f6d053b` (`fix: bind empty has-changed fill deltas`); clean PR breadth rerun still required |
 | Latest PR breadth evidence revision | `66dae07eb6de259a17c8f9604e30189a74fcc357`: 12/12 observed, 12/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated case; V-PRB-6B ready read-only discard is partially positive because the prior `click-button:seed-1` JSON-invalid/schema-provider failure no longer reproduces, but PR breadth acceptance remains held because `enter-text:seed-1` still fails in task planning with `obligation_subgoal_missing` and both `form-sequence` seeds still abort at the Runtime terminal-completion guard after external reward succeeds. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
@@ -103,6 +103,7 @@ pr_breadth_latest:
 
 active_local_repair:
   slice: v-prb-6b-empty-has-changed-fill-delta-binding
+  revision: f6d053b
   status: pending_clean_pr_breadth_rerun
   red: tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_uses_fill_delta_for_active_subgoal_evidence
   negative_control: tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_keeps_noop_fill_terminal_only
