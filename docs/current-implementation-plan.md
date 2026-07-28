@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | ODG-4 executable role decisions and safe ready projection | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-0 freezes the Canonical Obligation Graph as the sole target progress authority; ODG-1 records the initial execution-role audit; ODG-2 adds authority-free progress/attribution contracts at `d6e2cb3`; ODG-3 adds StateKernel-local storage foundation at `4af7c19`. | Add executable, fail-closed role decisions from canonical obligation fields and a non-throwing ready projection result for future shadow comparison. Do not add Coordinator satisfaction commit, finish-gate authority, PlannerContext projection, TaskPlan replacement, BrowserGym changes, benchmark rerun, or promotion claims. | unrelated horizontal debt retirement |
+| Vertical | ODG-5 shadow comparison foundation | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-0 freezes the Canonical Obligation Graph as the sole target progress authority; ODG-1 records the initial execution-role audit; ODG-2 adds authority-free progress/attribution contracts at `d6e2cb3`; ODG-3 adds StateKernel-local storage foundation at `4af7c19`; ODG-4 adds executable role decisions and safe ready projection at `6553296`. | Add an authority-free comparator between legacy TaskPlan progress projection and canonical obligation ready projection, with stable trace payload data only. Do not add Coordinator trace write, StateKernel initialization/mutation, Coordinator satisfaction commit, finish-gate authority, PlannerContext projection, TaskPlan replacement, BrowserGym changes, benchmark rerun, or promotion claims. | unrelated horizontal debt retirement |
 | Horizontal | immutable Planner input, deferred until ODG standard path | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined, but H2 should be designed around ready obligation projection rather than TaskPlan/PlanProgress authority | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen obligation/request/view data after ODG projection exists | ODG-0/ODG-1 and role-audit documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -265,10 +265,11 @@ strategy view. ODG-1 records the initial obligation execution-role audit, and
 ODG-2 adds the typed progress/attribution contracts without connecting them to
 Coordinator or finish authority. ODG-3 adds StateKernel obligation ledger
 foundation as storage, identity, ledger-local mutation invariants, and
-immutable projection only. The selected next slice is ODG-4A/4B: executable
-role decisions and a safe ready-obligation projection result. Runtime shadow
-comparison remains ODG-5, and Coordinator progress commit / finish authority
-remain unauthorized until ODG-10/ODG-11.
+immutable projection only. ODG-4A/4B: executable role decisions and a safe
+ready-obligation projection result. The selected next slice is ODG-5 shadow
+comparison foundation: typed divergence classification and trace payload data
+only. Runtime trace hookup is still a follow-up, and Coordinator progress
+commit / finish authority remain unauthorized until ODG-10/ODG-11.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
 decision record is

@@ -627,3 +627,8 @@ delivery claims.
   comparison. The role resolver may only use canonical obligation fields; it
   must not read task names, URLs, selectors, benchmark families, Planner state,
   TaskPlan state, or model-authored progress.
+- Started ODG-5 shadow comparison foundation: add an authority-free comparator
+  between legacy TaskPlan projection and canonical obligation ready projection.
+  This slice may produce stable trace payload data, but it must not write trace,
+  mutate StateKernel, change Coordinator control flow, alter PlannerContext,
+  change finish authority, or rerun/promise benchmark promotion.

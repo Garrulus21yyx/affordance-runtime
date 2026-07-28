@@ -145,6 +145,14 @@ Planner state, TaskPlan state, and model-authored progress are forbidden
 inputs. Ambiguous predicates remain `role_pending` and must not become ready
 progress obligations until an explicit source-derived rule is added.
 
+ODG-5 may add authority-free shadow comparison between a legacy TaskPlan
+projection and the canonical obligation ready projection. The comparator may
+produce stable trace payload data, but this foundation slice must not call
+`trace.add`, initialize or mutate StateKernel, alter Coordinator control flow,
+change PlannerContext, replace TaskPlan semantics, or affect finish authority.
+The comparison exists to classify divergence; it is not a second progress
+authority.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first
