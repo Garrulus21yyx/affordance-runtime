@@ -60,9 +60,19 @@ classification_questions:
   - is the single-subgoal PlanningRouter completion special case too narrow?
   - is task-level terminal evidence stricter than subgoal evidence in this path?
 
-architecture_admission: not_evaluated
+architecture_admission: pass
 promotion_status: held
 remote_ci: disabled
+
+child_production_slice:
+  record: docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
+  selected_owner: TaskPlan current-state/cardinality handling
+  status: implemented_locally_red_green
+  result: >
+    The strict-xfail diagnostic RED was moved into a child production slice and
+    turned green by generic symbolic subject-to-affordance matching. This
+    diagnostic packet remains the parent classification record and does not
+    claim PR breadth completion, fresh diagnostic readiness, or promotion.
 
 diagnostic_status:
   compact_trace_projection: archived
@@ -80,8 +90,8 @@ diagnostic_status:
     Coordinator finish admission, BrowserGym official reward, Prompt, budget,
     StateKernel mutation, or immutable Planner input.
   normal_gate_behavior: >
-    xfail is strict; ordinary focused test runs remain green until a separate
-    child production slice turns the RED green and removes the xfail marker.
+    the V-PRB-6B xfail marker has been removed by the child production slice;
+    the remaining strict xfail in the focused gate is V-PRB-6A.
 
 done_when:
   - compact trace projection is archived for the affected episode

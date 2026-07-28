@@ -959,11 +959,7 @@ def task_plan_entry_state_issue(
     subject_tokens = planning_semantic_tokens(entry.outcome.subject)
     if not subject_tokens:
         return None
-    matches = tuple(
-        item
-        for item in context.environment.affordances
-        if planning_semantic_tokens(item.label) == subject_tokens
-    )
+    matches = tuple(item for item in context.environment.affordances if _planning_affordance_matches_subject(subject_tokens, item))
     if len(matches) != 1 or not _planning_outcome_is_current(
         entry.outcome,
         matches[0],
@@ -990,9 +986,7 @@ def task_plan_entry_state_support_issue(
         return None
     subject_tokens = planning_semantic_tokens(entry.outcome.subject)
     matches = tuple(
-        item
-        for item in context.environment.affordances
-        if subject_tokens and planning_semantic_tokens(item.label) == subject_tokens
+        item for item in context.environment.affordances if subject_tokens and _planning_affordance_matches_subject(subject_tokens, item)
     )
     if len(matches) != 1:
         return None
@@ -1134,17 +1128,21 @@ def _planning_outcome_is_current(
 
 
 def planning_semantic_tokens(value: str) -> tuple[str, ...]:
-    aliases = {
-        "box": "input",
-        "field": "input",
-        "text": "input",
-        "textbox": "input",
-    }
+    aliases = {"box": "input", "field": "input", "text": "input", "textbox": "input"}
     return tuple(
         aliases.get(token, token)
         for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
         if token
     )
+
+
+def _planning_affordance_matches_subject(
+    subject_tokens: tuple[str, ...],
+    affordance: PlanningAffordanceSummary,
+) -> bool:
+    label_tokens = planning_semantic_tokens(affordance.label)
+    current_tokens = {*label_tokens, *planning_semantic_tokens(affordance.role)}
+    return label_tokens == subject_tokens or bool(subject_tokens) and set(subject_tokens).issubset(current_tokens)
 
 
 def _planning_normalized_value(value: str) -> str:

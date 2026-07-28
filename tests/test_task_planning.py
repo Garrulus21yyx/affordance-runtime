@@ -1224,13 +1224,6 @@ def test_validator_detects_satisfied_subject_independently_of_action_target() ->
     assert report.issues[0].code == "entry_outcome_already_satisfied"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "V-PRB-6B RED: submit_button availability remains an unfinished "
-        "serial subgoal even when the current Submit control is visible/enabled"
-    ),
-)
 def test_validator_repairs_current_submit_button_availability_after_text_progress() -> None:
     task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
     first = SubgoalSpec(

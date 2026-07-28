@@ -1,0 +1,118 @@
+slice_id: v-prb-6b-read-only-availability-cardinality
+parent_packet: docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+packet_role: child_production_slice
+
+base_revision: 8fa96288451483c10ee839e988c269d3ba14e67c
+change_type: vertical_repair
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: TaskPlan current-state/cardinality handling
+owner_before:
+  - TaskPlanValidator current-entry state matching
+owner_after:
+  - TaskPlanValidator recognizes already-current read-only availability entries
+  - RunCoordinator finish guard remains unchanged
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-d50a631/
+  compact_projection: docs/evidence/runs/v-prb-6-compact-d50a631/
+  diagnostic_parent: docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+  executable_red: tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+
+problem_statement: >
+  `enter-text:seed-1` completed the text-change subgoal, then Runtime kept an
+  independent read-only `submit_button is available` subgoal active. The current
+  observation already contained a visible/enabled Submit button, but TaskPlan
+  current-entry state matching did not treat `submit_button` as matching the
+  `Submit` button role/label, so the plan remained incomplete and the
+  Coordinator finish guard correctly rejected finish.
+
+allowed_writes:
+  - src/affordance_runtime/task_planning.py
+  - tests/test_task_planning.py
+  - docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml
+  - docs/change-admission/v-prb-6b-single-subgoal-terminal-completion.yaml
+  - docs/current-implementation-plan.md
+  - docs/implementation-status.md
+  - .codex/goal-plan.md
+
+forbidden_changes:
+  - Coordinator finish guard weakening
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - external evaluator based subgoal completion
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration
+  - StateKernel mutation ownership changes
+  - V-PRB-6A progress-scope binding changes
+
+typed_boundary:
+  input:
+    - TaskPlan
+    - TaskPlanningContext
+    - PlanningAffordanceSummary
+    - PlanningAffordanceState
+  output:
+    - TaskPlanValidationReport
+    - TaskPlanValidationIssue(entry_outcome_already_satisfied)
+
+required_tests:
+  red_to_green:
+    - tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+  focused_regression:
+    - tests/test_task_planning.py
+    - tests/test_browsergym_encoder.py
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_responsibility_containment.py
+  static:
+    - ruff
+    - mypy
+    - git diff --check
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+implementation_result:
+  status: implemented_locally
+  owner_confirmed: TaskPlan current-state/cardinality handling
+  production_change: >
+    TaskPlan current-state matching now treats symbolic subject tokens such as
+    `submit_button` as matching the current affordance label/role pair
+    `Submit` / `button`, allowing already-current read-only availability
+    entries to be reported as repairable/resolved before Runtime finish.
+  xfail_removed: true
+  unchanged_boundaries:
+    - RunCoordinator finish guard
+    - StateKernel mutation ownership
+    - PlannerPort / PlannerStateView
+    - Prompt, budget, retry, timeout, and provider settings
+    - BrowserGym official reward remains separate from Runtime completion authority
+
+verification:
+  red_to_green:
+    command: >
+      python -m pytest -q
+      tests/test_task_planning.py::test_validator_repairs_current_submit_button_availability_after_text_progress
+    result: 1 passed
+  focused_regression:
+    command: >
+      python -m pytest -q tests/test_task_planning.py
+      tests/test_task_plan_lifecycle.py tests/test_browsergym_encoder.py
+      tests/test_horizontal_architecture_governance.py
+      tests/test_responsibility_containment.py
+    result: 147 passed, 1 xfailed
+  static:
+    ruff: pass
+    mypy: pass
+    diff_check: pass
+  remaining_xfail: V-PRB-6A dependent checkbox/submit progress-scope binding
+
+done_when:
+  - executable RED turns green without xfail
+  - TaskPlanValidator remains the selected owner
+  - Coordinator finish guard is unchanged
+  - ordinary focused gates pass
+  - no promotion, fresh diagnostic, or official score claim is made

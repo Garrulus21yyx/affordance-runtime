@@ -287,24 +287,26 @@ delivery claims.
     breadth acceptance remains held because `enter-text:seed-1` and both
     `form-sequence` seeds still abort after external reward succeeds with
     `planner cannot finish before verifier-backed subgoal completion`.
-45. `in_progress` — Continue V-PRB-6 diagnostics only. Compact trace
+45. `in_progress` — Continue V-PRB-6 diagnostics and the selected V-PRB-6B
+    child production slice only. Compact trace
     projection is archived at `docs/evidence/runs/v-prb-6-compact-d50a631/`.
     V-PRB-6A now has a strict-xfail executable RED for dependent checkbox
     `HAS_CHANGED` evidence remaining `task_terminal` instead of
     `active_subgoal`. The same projection reclassifies V-PRB-6B before RED:
     `enter-text:seed-1` has two subgoals, not one; the completed unit is the
     text-change subgoal and the incomplete unit is independent read-only
-    `submit_button is available`. V-PRB-6B now has a strict-xfail executable
-    RED in `tests/test_task_planning.py`: forced `--runxfail` fails because
-    TaskPlanValidator accepts the already-current read-only availability
-    subgoal instead of marking it repairable/resolved before finish. Next
-    select exactly one owner, either 6A progress-scope binding or 6B TaskPlan
-    current-state/cardinality, and open a child production packet before any
-    production repair. Keep Runtime success, verifier success, and BrowserGym
-    reward separate; do not substitute official reward for Runtime completion
-    authority, accept finish with incomplete TaskPlan progress, weaken the
-    verifier, start immutable Planner input, or run fresh diagnostic,
-    nightly/release, or promotion in this slice.
+    `submit_button is available`. V-PRB-6B now has child production packet
+    `docs/change-admission/v-prb-6b-read-only-availability-cardinality.yaml`;
+    TaskPlan current-state/cardinality handling is the selected owner, and the
+    former strict-xfail RED in `tests/test_task_planning.py` passes locally
+    without xfail after generic symbolic subject-to-affordance matching.
+    Focused gate is `147 passed, 1 xfailed`; the remaining xfail is V-PRB-6A.
+    Next commit/push this slice and rerun the same PR breadth matrix on the
+    clean committed revision. Keep Runtime success, verifier success, and
+    BrowserGym reward separate; do not substitute official reward for Runtime
+    completion authority, accept finish with incomplete TaskPlan progress,
+    weaken the verifier, start immutable Planner input, or run fresh
+    diagnostic, nightly/release, or promotion in this slice.
 
 ## Change Record
 
