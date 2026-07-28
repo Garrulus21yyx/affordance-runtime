@@ -671,3 +671,12 @@ delivery claims.
   must not save tickets through Coordinator, change ActionContract / Executor /
   Verifier interfaces, mutate the obligation ledger, change finish authority,
   change PlannerContext, run PR breadth, or claim promotion.
+- Started ODG-7.1 / ODG-8 after approval. ODG-7.1 hardens ticket contracts:
+  stale/invalid ready-projection statuses stay distinct, ready views must match
+  the current canonical obligation, ticket IDs use canonical JSON hashing, and
+  target matching uses Runtime-supplied canonical subject IDs rather than
+  lexical matching. ODG-8 adds pure post-action evidence normalization with
+  immutable verifier evidence views and semantic evidence declarations. It
+  produces `PostActionEvidenceFact` values only; no obligation ID, Coordinator
+  commit, StateKernel mutation, finish authority, PlannerContext change,
+  BrowserGym rerun, or promotion claim is authorized.

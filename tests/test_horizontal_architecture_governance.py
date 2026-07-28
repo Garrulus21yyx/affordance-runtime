@@ -302,6 +302,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         / "odg-6-1-shared-attribution-contract-hardening.yaml"
     )
     odg_7_record = CHANGE_ADMISSION_DIR / "odg-7-attribution-ticket-resolver.yaml"
+    odg_8_record = CHANGE_ADMISSION_DIR / "odg-8-post-action-evidence-normalization.yaml"
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -312,6 +313,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_6_record.exists()
     assert odg_6_1_record.exists()
     assert odg_7_record.exists()
+    assert odg_8_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -321,6 +323,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_6 = " ".join(odg_6_record.read_text(encoding="utf-8").split()).casefold()
     odg_6_1 = " ".join(odg_6_1_record.read_text(encoding="utf-8").split()).casefold()
     odg_7 = " ".join(odg_7_record.read_text(encoding="utf-8").split()).casefold()
+    odg_8 = " ".join(odg_8_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -368,10 +371,25 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "production_behavior_change: false" in odg_7
     assert "attributionactionview" in odg_7
     assert "progressattributionticketresolver" in odg_7
+    assert "attributiontargetview" in odg_7
+    assert "canonical-json ticket_id generation" in odg_7
+    assert "stale_progress and invalid_progress projection classification split" in odg_7
+    assert "ready-view canonical consistency validation" in odg_7
+    assert "runtime supplied target-to-canonical-subject binding" in odg_7
     assert "multiple_candidates_allowed: true" in odg_7
     assert "ticket_completion_authority: none" in odg_7
     assert "actioncontract schema changes" in odg_7
     assert "closure_status: ticket_resolver_foundation_only" in odg_7
+    assert "production_behavior_change: false" in odg_8
+    assert "verificationevidenceview" in odg_8
+    assert "verificationreportview" in odg_8
+    assert "verifiersemanticevidencedeclaration" in odg_8
+    assert "postactionevidencenormalizer" in odg_8
+    assert "fact_obligation_id: prohibited" in odg_8
+    assert "receipt_success_completion: prohibited" in odg_8
+    assert "external_reward_completion: prohibited" in odg_8
+    assert "source_strength_policy:" in odg_8
+    assert "closure_status: evidence_normalization_foundation_only" in odg_8
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -390,7 +408,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "shadow_comparison: post_observation_trace_hookup" in status
     assert "current_observation_satisfaction: foundation_evaluator_only_hardened" in status
     assert "shared_attribution_contract_hardening: complete" in status
-    assert "attribution_ticket_resolver: foundation_only" in status
+    assert "attribution_ticket_resolver: foundation_only_hardened" in status
+    assert "post_action_evidence_normalization: foundation_only" in status
+    assert "next_odg_slice: odg-9-post-verification-obligation-attribution" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -402,6 +422,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg-6.1 hardens shared attribution contracts" in governance
     assert "odg-7 may add an authority-free attribution action view" in governance
     assert "multiple candidate obligations in one ticket are allowed" in governance
+    assert "odg-8 may add authority-free post-action evidence normalization" in governance
+    assert "must not persist tickets" in governance
+    assert "receipt and external-evaluator sources remain weak" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -489,7 +512,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-6 current-observation obligation satisfaction" in status
+    assert "current_next_change_admission: odg-9 post-verification obligation attribution" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

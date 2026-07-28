@@ -1,5 +1,6 @@
 from affordance_runtime.obligation_attribution import (
     AttributionActionView,
+    AttributionTargetView,
     ProgressAttributionTicketResolution,
     ProgressAttributionTicketResolver,
 )
@@ -119,6 +120,7 @@ def _ready_projection(
     *,
     roles: tuple[ObligationExecutionRole, ...] | None = None,
     status: str = "ready",
+    override_view: ReadyObligationView | None = None,
 ) -> ReadyObligationProjection:
     if status == "role_pending":
         return ReadyObligationProjection(
@@ -126,6 +128,20 @@ def _ready_projection(
             ready_obligations=(),
             pending_role_obligation_ids=(task_spec.obligations[0].obligation_id,),
             reason="role pending",
+        )
+    if status == "stale_progress":
+        return ReadyObligationProjection(
+            status="stale_progress",
+            ready_obligations=(),
+            pending_role_obligation_ids=(),
+            reason="stale progress",
+        )
+    if status == "invalid_progress":
+        return ReadyObligationProjection(
+            status="invalid_progress",
+            ready_obligations=(),
+            pending_role_obligation_ids=(),
+            reason="invalid progress",
         )
     resolved_roles = roles or tuple(
         ObligationExecutionRole.TERMINAL_EFFECT
@@ -135,7 +151,9 @@ def _ready_projection(
     )
     return ReadyObligationProjection(
         status="ready",
-        ready_obligations=tuple(
+        ready_obligations=(override_view,)
+        if override_view is not None
+        else tuple(
             ReadyObligationView(
                 obligation_id=obligation.obligation_id,
                 role=role,
@@ -156,17 +174,23 @@ def _action(
     task_spec: TaskSpec,
     *,
     semantic_target_id: str = "semantic:field",
+    canonical_subject_ids: tuple[str, ...] | None = None,
     action_kind: str = "type_text",
     state_version: int = 17,
     snapshot_id: str = "snapshot-pre",
+    contract_id: str = "contract-1",
+    contract_hash: str = "sha256:contract-1",
 ) -> AttributionActionView:
     return AttributionActionView(
-        contract_id="contract-1",
-        contract_hash="sha256:contract-1",
+        contract_id=contract_id,
+        contract_hash=contract_hash,
         task_spec_identity=task_spec.identity,
         task_revision=task_spec.revision,
         issued_at_state_version=state_version,
-        semantic_target_id=semantic_target_id,
+        target=AttributionTargetView(
+            semantic_target_id=semantic_target_id,
+            canonical_subject_ids=canonical_subject_ids or (semantic_target_id,),
+        ),
         action_kind=action_kind,
         pre_snapshot_id=snapshot_id,
         pre_page_revision="page-pre",
@@ -341,10 +365,24 @@ def test_stale_identity_or_projection_is_reported_without_ticket() -> None:
         ready_projection=_ready_projection(task_spec, status="role_pending"),
         action=_action(task_spec),
     )
+    stale_projection = resolver.resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec, status="stale_progress"),
+        action=_action(task_spec),
+    )
+    invalid_projection = resolver.resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec, status="invalid_progress"),
+        action=_action(task_spec),
+    )
 
     assert stale_task.status == "stale"
     assert stale_state.status == "stale"
     assert role_pending.status == "role_pending"
+    assert stale_projection.status == "stale"
+    assert invalid_projection.status == "invalid"
 
 
 def test_incompatible_action_or_target_has_no_candidate() -> None:
@@ -361,8 +399,94 @@ def test_incompatible_action_or_target_has_no_candidate() -> None:
         task_spec=task_spec,
         progress=_progress(task_spec),
         ready_projection=_ready_projection(task_spec),
-        action=_action(task_spec, semantic_target_id="semantic:other"),
+        action=_action(
+            task_spec,
+            semantic_target_id="semantic:other",
+            canonical_subject_ids=("semantic:other",),
+        ),
     )
 
     assert wrong_action.status == "no_candidate"
     assert wrong_target.status == "no_candidate"
+
+
+def test_target_binding_uses_runtime_supplied_canonical_subject_ids() -> None:
+    task_spec = _task_spec(
+        (
+            _obligation(
+                "obligation:text",
+                subject="source-derived-text-field",
+                terminal=True,
+            ),
+        ),
+    )
+
+    result = ProgressAttributionTicketResolver().resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec),
+        action=_action(
+            task_spec,
+            semantic_target_id="semantic:field",
+            canonical_subject_ids=("source-derived-text-field",),
+        ),
+    )
+
+    assert result.status == "ticket_created"
+    assert result.ticket is not None
+    assert result.ticket.semantic_target_id == "semantic:field"
+    assert result.ticket.candidate_obligation_ids == ("obligation:text",)
+
+
+def test_ready_projection_must_match_current_canonical_obligation() -> None:
+    task_spec = _task_spec((_obligation("obligation:text", terminal=True),))
+    mismatched_view = ReadyObligationView(
+        obligation_id="obligation:text",
+        role=ObligationExecutionRole.TERMINAL_EFFECT,
+        subject="semantic:field",
+        relation=TaskObligationRelation.HAS_CHANGED,
+        expected_value="Alice",
+        evidence_requirements=("evidence:obligation:text",),
+        dependency_ids=(),
+        terminal=True,
+    )
+
+    result = ProgressAttributionTicketResolver().resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec, override_view=mismatched_view),
+        action=_action(task_spec),
+    )
+
+    assert result.status == "invalid"
+    assert result.ticket is None
+
+
+def test_ticket_id_uses_canonical_json_not_delimiter_concatenation() -> None:
+    task_spec = _task_spec((_obligation("obligation:text", terminal=True),))
+    resolver = ProgressAttributionTicketResolver()
+
+    first = resolver.resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec),
+        action=_action(
+            task_spec,
+            contract_id="contract|1",
+            contract_hash="hash",
+        ),
+    )
+    second = resolver.resolve(
+        task_spec=task_spec,
+        progress=_progress(task_spec),
+        ready_projection=_ready_projection(task_spec),
+        action=_action(
+            task_spec,
+            contract_id="contract",
+            contract_hash="1|hash",
+        ),
+    )
+
+    assert first.ticket is not None
+    assert second.ticket is not None
+    assert first.ticket.ticket_id != second.ticket.ticket_id

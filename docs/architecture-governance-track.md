@@ -186,7 +186,24 @@ ActionContract/Executor/Verifier interfaces, read TaskPlan active subgoals, or
 consume PlannerProposal, task names, URLs, selectors, coordinates, BrowserGym
 reward, or benchmark family. Multiple candidate obligations in one ticket are
 allowed because post-action evidence, not pre-action planning, chooses the
-final satisfaction target.
+final satisfaction target. ODG-7.1 additionally requires stale and invalid
+ready-projection statuses to remain distinct, ticket identity to use canonical
+JSON hashing rather than delimiter concatenation, ready views to be checked
+against the current canonical obligation, and target matching to use
+Runtime-supplied `AttributionTargetView.canonical_subject_ids` rather than
+lexical matching.
+
+ODG-8 may add authority-free post-action evidence normalization. It may project
+immutable `VerificationEvidenceView` / `VerificationReportView` inputs and
+Runtime-owned `VerifierSemanticEvidenceDeclaration` values into
+`PostActionEvidenceFact` values, but those facts must not carry obligation IDs
+and must not decide satisfaction. ODG-8 must not persist tickets, change
+ActionContract, pass tickets to Executor or Verifier, change verifier pass/fail
+behavior, mutate StateKernel or the obligation ledger, change finish authority,
+change PlannerContext, consume TaskPlan progress, or use BrowserGym reward,
+task names, URLs, selectors, coordinates, or benchmark family as evidence
+authority. Receipt and external-evaluator sources remain weak; ODG-9 may not
+complete an obligation from weak evidence alone.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

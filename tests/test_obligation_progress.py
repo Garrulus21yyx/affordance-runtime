@@ -1,6 +1,7 @@
 import pytest
 
 from affordance_runtime.obligation_attribution import (
+    EvidenceSourceKind,
     EvidenceStrength,
     ObligationAttributionResult,
     ObligationSatisfactionPreparation,
@@ -372,15 +373,21 @@ def test_attribution_ticket_and_satisfaction_preparation_are_identity_bound() ->
     )
     fact = PostActionEvidenceFact(
         contract_id=ticket.contract_id,
+        contract_hash=ticket.contract_hash,
         pre_snapshot_id=ticket.pre_snapshot_id,
         post_snapshot_id="snapshot-post",
         post_page_revision="page-post",
         post_environment_revision="env-post",
-        semantic_target_id=ticket.semantic_target_id,
+        action_semantic_target_id=ticket.semantic_target_id,
+        evidence_subject_id=ticket.semantic_target_id,
         relation=TaskObligationRelation.HAS_CHANGED,
         before_value="",
         after_value="Kanesha",
+        expected_value="Kanesha",
+        verifier_kind="control_state",
+        source_kind=EvidenceSourceKind.POST_ACTION_OBSERVATION,
         strength=EvidenceStrength.INDEPENDENT,
+        passed=True,
         evidence_refs=("verification:1",),
     )
     preparation = ObligationSatisfactionPreparation(

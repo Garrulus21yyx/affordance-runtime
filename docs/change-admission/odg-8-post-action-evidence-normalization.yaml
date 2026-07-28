@@ -1,0 +1,124 @@
+slice_id: odg-8-post-action-evidence-normalization
+parent_decision: docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml
+depends_on:
+  - docs/change-admission/odg-7-attribution-ticket-resolver.yaml
+decision_date: 2026-07-28
+base_revision: 6d8526a5cb468326feda017982948da6d93e225e
+change_type: evidence_normalization_foundation
+agent_mode: single_agent
+production_behavior_change: false
+production_writers: 1
+remote_ci: disabled
+
+single_primary_owner: Post-action verifier evidence normalization
+
+goal: >
+  Add a pure, authority-free normalizer that converts immutable verifier
+  evidence views plus Runtime-owned semantic declarations into identity-bound
+  PostActionEvidenceFact values. The facts carry no obligation ID and do not
+  decide satisfaction; ODG-9 remains responsible for attribution.
+
+included:
+  - EvidenceSourceKind
+  - expanded PostActionEvidenceFact identity and source fields
+  - VerificationEvidenceView
+  - VerificationReportView
+  - VerifierSemanticEvidenceDeclaration
+  - PostActionEvidenceNormalizationResult
+  - PostActionEvidenceNormalizer
+  - immutable tuple projection from verification evidence lists
+  - contract hash and pre/post snapshot identity binding
+  - action target separated from evidence subject
+  - post-action observation source strength mapping
+  - independent API source strength mapping
+  - receipt and external-evaluator weak source mapping
+  - value-shape validation for EQUALS
+  - value-shape validation for HAS_CHANGED
+  - value-shape validation for IS_CHECKED
+  - multiple normalized facts from one report
+  - unsupported observed shape fail-closed result
+
+excluded:
+  - Coordinator integration
+  - ProgressAttributionTicket persistence
+  - ActionContract schema changes
+  - Executor ticket or evidence input
+  - Verifier pass/fail behavior changes
+  - VerifierLadder behavior changes
+  - post-verification obligation attribution
+  - StateKernel obligation ledger mutation
+  - StateKernel.satisfy_task_obligation()
+  - finish gate change
+  - PlannerContext changes
+  - PlannerPort changes
+  - TaskPlan changes
+  - BrowserGym adapter changes
+  - benchmark rerun
+  - fresh diagnostic
+  - promotion claim
+
+authority_rules:
+  fact_completion_authority: none
+  fact_obligation_id: prohibited
+  ticket_candidates_consumed_for_completion: false
+  model_authored_evidence_declaration: prohibited
+  adapter_authored_obligation_id: prohibited
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  input_allowed:
+    - ProgressAttributionTicket
+    - VerificationReportView
+    - VerificationEvidenceView
+    - VerifierSemanticEvidenceDeclaration
+    - post-action observation identity
+  input_forbidden:
+    - StateKernel
+    - Coordinator
+    - TraceDag
+    - TaskPlan
+    - PlannerProposal
+    - ActionContract
+    - ExecutionReceipt
+    - BrowserGym official reward
+    - task name
+    - URL
+    - selector
+    - coordinate
+    - benchmark family
+  source_strength_policy:
+    post_action_observation: independent
+    independent_http_json: authoritative
+    execution_receipt: weak
+    external_evaluator: weak
+  writes_state: false
+  writes_trace: false
+  mutates_obligation_ledger: false
+  changes_verifier_behavior: false
+  changes_planner_input: false
+  changes_finish_gate: false
+  standard_path_authority: not_authorized
+  dual_authority: false
+
+tests:
+  red_green:
+    - tests/test_post_action_evidence_normalization.py
+  focused:
+    - tests/test_progress_attribution_ticket_resolver.py
+    - tests/test_post_action_evidence_normalization.py
+    - tests/test_obligation_progress.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+    - tests/test_r8_architecture_boundaries.py
+    - tests/test_responsibility_containment.py
+
+architecture_admission: pass
+closure_status: evidence_normalization_foundation_only
+promotion_status: held
+
+next_requirement: >
+  Continue with ODG-8B verification evidence fidelity projection only if real
+  verifier reports lack typed values. Otherwise continue to ODG-9
+  post-verification obligation attribution. ODG-9 must consume
+  ProgressAttributionTicket plus PostActionEvidenceFact values and may only
+  prepare satisfaction when exactly one candidate is proven by sufficiently
+  strong, identity-consistent evidence.

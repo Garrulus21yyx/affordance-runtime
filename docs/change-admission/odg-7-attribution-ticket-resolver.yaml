@@ -20,20 +20,23 @@ goal: >
 
 included:
   - AttributionActionView
+  - AttributionTargetView
   - ProgressAttributionTicket.contract_hash
   - ProgressAttributionTicket.compatibility_plan_id
   - ProgressAttributionTicket.compatibility_plan_version
   - ProgressAttributionTicketResolution
   - ProgressAttributionTicketResolver
-  - deterministic ticket_id generation
+  - deterministic canonical-JSON ticket_id generation
   - ready-obligation candidate filtering
   - multiple candidate obligations in one ticket
   - dependency-ready filtering
   - progress-role filtering
   - stale task/progress/action identity rejection
+  - stale_progress and invalid_progress projection classification split
   - role_pending propagation
+  - ready-view canonical consistency validation
   - action-kind compatibility checks
-  - semantic-target compatibility checks
+  - runtime supplied target-to-canonical-subject binding
 
 excluded:
   - Coordinator ticket storage
@@ -63,6 +66,7 @@ authority_rules:
     - ObligationProgressStateView
     - ReadyObligationProjection
     - AttributionActionView
+    - AttributionTargetView
   input_forbidden:
     - StateKernel
     - Coordinator
@@ -80,6 +84,13 @@ authority_rules:
   candidate_cardinality:
     multiple_candidates_allowed: true
     final_satisfaction_not_decided_pre_action: true
+  target_binding:
+    semantic_target_id_model_authored: false
+    canonical_subject_ids_runtime_supplied: true
+    lexical_matching: prohibited
+  ticket_identity:
+    canonical_json_hash: true
+    delimiter_concatenation: prohibited
   writes_state: false
   writes_trace: false
   mutates_obligation_ledger: false
