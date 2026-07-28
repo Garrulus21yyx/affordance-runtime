@@ -327,8 +327,12 @@ delivery claims.
     root-owner evidence and choose exactly one owner: V-PRB-6A progress-scope
     binding, V-PRB-6B residual Runtime completion for `enter-text:seed-1`, or
     the separate click-button JSON-invalid schema/provider robustness cluster.
+    Compact classification now exists at
+    `docs/evidence/runs/v-prb-6-post-9ad1288-classification/` with diagnostic
+    packet
+    `docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml`.
     Do not batch these and do not start immutable Planner input unless evidence
-    directly implicates mutable Planner state.
+    directly implicates mutable Planner state. Next select exactly one RED.
 
 ## Change Record
 

@@ -169,7 +169,12 @@ batched into a single mixed patch:
    V-PRB-6A remains the separate strict-xfail diagnostic for dependent
    checkbox/submit progress-scope binding. A new `click-button:seed-1`
    JSON-invalid intent draft failure is a separate schema/provider robustness
-   cluster and must not be mixed into 6A or 6B.
+   cluster and must not be mixed into 6A or 6B. Post-`9ad1288` compact
+   classification is recorded at
+   `docs/evidence/runs/v-prb-6-post-9ad1288-classification/` with diagnostic
+   packet
+   `docs/change-admission/v-prb-6-post-9ad1288-residual-classification.yaml`;
+   it admits no production code and requires exactly one next RED/owner.
 5. **H2 immutable Planner input** — after the current vertical evidence is
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
