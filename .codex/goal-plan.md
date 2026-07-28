@@ -649,3 +649,10 @@ delivery claims.
   `enter-text:seed-1` remains `role_pending` for blocking availability. Next
   slice is ODG-6 current-observation obligation satisfaction for role-resolved
   `IS_AVAILABLE` / `IS_VISIBLE`, not form-sequence post-action attribution yet.
+- Started ODG-6 as a foundation/evaluator-only slice. The selected RED covers
+  current-observation satisfaction for explicitly role-resolved
+  `IS_AVAILABLE` / `IS_VISIBLE` canonical obligations without TaskPlan,
+  ExecutionReceipt, BrowserGym reward, task-name, URL, selector, or coordinate
+  authority. Coordinator commit, StateKernel / obligation-ledger mutation,
+  finish authority, PlannerContext, TaskPlan behavior, benchmark rerun, and
+  promotion remain unauthorized in this slice.

@@ -160,6 +160,16 @@ progress seam, or `ObligationProgressShadowFailed` if the diagnostic projector
 unexpectedly fails. This hookup must replace existing inline Coordinator
 control flow, reduce `run_sync()`, and remain diagnostic-only.
 
+ODG-6 may add a typed, authority-free current-observation satisfaction
+evaluator for explicitly role-resolved `IS_AVAILABLE` / `IS_VISIBLE`
+obligations. The evaluator may prepare `ObligationSatisfactionPreparation`
+with `source=current_observation`, but it must not import Coordinator,
+StateKernel, TaskPlan, trace writers, BrowserGym, planner implementations, or
+benchmark packages. It must not consume `ExecutionReceipt`, external reward,
+task names, URLs, selectors, coordinates, or model proposals as completion
+authority. Coordinator commit remains ODG-10 and finish-gate authority remains
+ODG-11.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

@@ -29,11 +29,11 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `04a2fcd310f8af246b23fb4bfced6a0fad8519fb`: ODG-5 post-observation shadow trace hookup is committed and pushed; current local work archives the focused ODG-5 diagnostic run before ODG-6 |
+| Current HEAD | ODG-6 current-observation obligation satisfaction foundation is the active local change after `f8710f38398f555206e9dd48259c3ac56f050e3e`; ODG-5 post-observation shadow trace hookup and focused diagnostic evidence are already committed and pushed |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
-| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, and the next ODG slice is ODG-6 current-observation obligation satisfaction before Coordinator commit, finish migration, PlannerContext change, or benchmark rerun. |
+| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, and ODG-6 adds foundation-only current-observation satisfaction preparation before Coordinator commit, finish migration, PlannerContext change, or benchmark rerun. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -68,7 +68,9 @@ obligation_driven_progress:
   shadow_comparison_record: docs/change-admission/odg-5-obligation-progress-shadow-comparison.yaml
   shadow_comparison: post_observation_trace_hookup
   shadow_diagnostic_evidence: docs/evidence/runs/odg-5-shadow-diagnostic-04a2fcd/
-  next_odg_slice: odg-6-current-observation-obligation-satisfaction
+  current_observation_satisfaction_record: docs/change-admission/odg-6-current-observation-obligation-satisfaction.yaml
+  current_observation_satisfaction: foundation_evaluator_only
+  next_odg_slice: odg-7-attribution-ticket-or-authorized-odg-6-shadow-hookup
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
@@ -142,7 +144,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: ODG-6 current-observation obligation satisfaction; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized commit slice
+  current_next_change_admission: ODG-6 current-observation obligation satisfaction foundation; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized commit slice
   immutable_planner_input: deferred until ODG ready-obligation projection shapes the standard Planner view
 
 active_local_repair:
@@ -458,7 +460,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | ODG-5.3 post-observation trace hookup is committed at `04a2fcd`; focused shadow diagnostic evidence is archived; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | ODG-6 current-observation obligation satisfaction is next; immutable Planner input remains deferred until the ODG standard path shapes Planner view |
+| `active` | ODG-6 current-observation obligation satisfaction foundation is the active local change after ODG-5 diagnostic evidence; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | ODG-7 attribution ticket or an explicitly authorized ODG-6 shadow hookup is next; immutable Planner input remains deferred until the ODG standard path shapes Planner view |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
