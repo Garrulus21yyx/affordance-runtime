@@ -360,8 +360,12 @@ delivery claims.
     `docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml`
     records the `enter-text` update: TaskPlanValidator correctly rejects a
     replacement that removes a required `submit_button is available` obligation.
-    A future V-PRB-6B production slice must start from a new RED for required
-    read-only obligation completion/accounting.
+    Trace inspection narrowed the immediate source again: first type_text
+    strong DOM value evidence lacks active-subgoal links because canonical
+    HAS_CHANGED text outcomes have empty values. Child production packet
+    `docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml`
+    adds RED/GREEN coverage for exact non-no-op fill deltas. Clean committed PR
+    breadth rerun is still required before any closure claim.
 
 ## Change Record
 

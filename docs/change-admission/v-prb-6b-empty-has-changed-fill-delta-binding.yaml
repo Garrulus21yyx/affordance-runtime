@@ -1,0 +1,104 @@
+slice_id: v-prb-6b-empty-has-changed-fill-delta-binding
+parent_packet: docs/change-admission/v-prb-6b-obligation-subgoal-missing-after-discard.yaml
+packet_role: child_production_slice
+
+base_revision: b49e8b96117ee52e57a8f4c52bd43671cb05b00b
+change_type: vertical_repair
+agent_mode: single_agent
+production_change_allowed: true
+
+single_primary_owner: BrowserGym fill-delta active-subgoal evidence declaration
+owner_before:
+  - BrowserGym exact typed text progress binding covered HAS_CHANGED only when the Runtime-owned outcome carried a concrete value
+  - real canonical HAS_CHANGED text obligations carry an empty outcome value
+  - the first fill postcondition therefore produced strong DOM evidence with no active subgoal criterion/requirement links
+owner_after:
+  - BrowserGym fill/type_text DOM value postconditions may declare active-subgoal evidence for empty-value HAS_CHANGED only when the pre-action control value differs from the concrete fill action value and the post-action DOM value equals that action value
+  - no-op fill remains task-terminal-only
+
+source_evidence:
+  clean_rerun: docs/evidence/runs/m8.2a-pr-breadth-66dae07/
+  local_trace: /tmp/affordance-pr-breadth-66dae07-20260728-130459/artifacts/runs/browsergym-generalist-enter-text-seed-1/events.jsonl
+  trace_fact: >
+    The first `enter-text:seed-1` type_text action produced a strong
+    DOM value postcondition for `Kanesha`, but it had no active subgoal
+    criterion/requirement ids because the active HAS_CHANGED outcome had an
+    empty value. A later submit action then backfilled the text subgoal with
+    terminal evidence, leaving the required submit availability obligation
+    unaccounted.
+  executable_red: tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_uses_fill_delta_for_active_subgoal_evidence
+  negative_control: tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_keeps_noop_fill_terminal_only
+
+problem_statement: >
+  Canonical HAS_CHANGED text obligations intentionally do not carry a concrete
+  value in the outcome. The BrowserGym adapter must still be able to declare
+  active-subgoal evidence when the concrete fill action creates an independently
+  observed DOM value delta. It must not use receipt success, official reward, or
+  a no-op fill as completion authority.
+
+allowed_writes:
+  - src/affordance_runtime/benchmarks/browsergym_encoder.py
+  - tests/test_browsergym_encoder.py
+  - docs/change-admission/v-prb-6b-empty-has-changed-fill-delta-binding.yaml
+  - docs/current-implementation-plan.md
+  - docs/implementation-status.md
+  - .codex/goal-plan.md
+
+forbidden_changes:
+  - Coordinator finish guard weakening
+  - TaskPlanValidator obligation coverage weakening
+  - BrowserGym official reward as Runtime completion authority
+  - ExecutionReceipt.success based subgoal completion
+  - Prompt, model-call budget, retry budget, timeout, or cost changes
+  - task-name, URL, selector, coordinate, or benchmark-family branches
+  - immutable Planner input / PlannerStateView migration
+  - V-PRB-6A progress-scope binding changes
+
+typed_boundary:
+  input:
+    - active HAS_CHANGED text subgoal with empty outcome value
+    - pre-action control_value from the selected affordance
+    - concrete fill/type_text action value
+    - post-action DOM attribute value verifier
+  output:
+    - active-subgoal progress evidence declaration only for non-no-op exact fill deltas
+
+verification:
+  red:
+    command: >
+      python -m pytest -q
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_uses_fill_delta_for_active_subgoal_evidence
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_keeps_noop_fill_terminal_only
+    result: 1 failed, 1 passed; empty-value HAS_CHANGED fill delta remained task_terminal
+  green:
+    command: >
+      python -m pytest -q
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_uses_fill_delta_for_active_subgoal_evidence
+      tests/test_browsergym_encoder.py::test_browsergym_has_changed_empty_outcome_keeps_noop_fill_terminal_only
+    result: 2 passed
+  focused_regression:
+    command: >
+      python -m pytest -q tests/test_browsergym_encoder.py
+      tests/test_horizontal_architecture_governance.py
+      tests/test_responsibility_containment.py
+    result: 51 passed, 1 xfailed
+
+implementation_result:
+  status: pending_clean_pr_breadth_rerun
+  production_change: >
+    BrowserGym fill/type_text DOM attribute evidence now declares active
+    subgoal progress for empty-value HAS_CHANGED only when the post-action
+    value equals the concrete action value and the pre-action control value was
+    different.
+  clean_pr_breadth_rerun:
+    required: true
+    result: not_run
+
+architecture_admission: pass
+promotion_status: held
+remote_ci: disabled
+
+done_when:
+  - executable RED and no-op negative control are green
+  - BrowserGym encoder and architecture focused gates remain green
+  - no PR breadth acceptance, fresh diagnostic, promotion, or official score claim is made before a clean committed rerun
