@@ -29,11 +29,11 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-1 active local change after `f3d95925b4e1058e09a453c96617238e290808b7`: ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, and TraceNode payload/parent references are being frozen at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | `9574a80bd071be4658dcdd9c8445f18a2d5772cf` (`feat: freeze trace event payloads`): SAR-1 freezes ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, and TraceNode payload/parent references at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
-| Historical ODG experiment | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml` records the superseded default-route proposal in which Canonical Obligation Graph was the target progress authority and TaskPlan an optional strategy. ODG-1 through ODG-9 remain immutable foundation/diagnostic history and advanced attribution is `EXPERIMENTAL_ONLY`; S0 plus TPA-0 govern the current default target. No ODG foundation has Coordinator commit or finish authority. |
+| Historical ODG experiment | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml` records the superseded default-route proposal in which Canonical Obligation Graph was the target progress authority and TaskPlan an optional strategy. ODG-1 through ODG-9 remain immutable foundation/diagnostic history and advanced attribution is `EXPERIMENTAL_ONLY`; SAR-0 governs the current default target. No ODG foundation has Coordinator commit or finish authority. |
 | Current simplified architecture decision | `docs/change-admission/s0-simplified-architecture-freeze.yaml`: the default production path is redirected to Runtime-owned active step progress plus independent task-level completion verification. ODG advanced attribution is retained as `EXPERIMENTAL_ONLY`; ODG-9 hookup, ODG-10 obligation progress commit, and ODG-11 finish-authority migration are stopped for the default path. |
 | Current simplified core contracts | `docs/change-admission/s1-simplified-core-contracts.yaml`: `SourceReference`, criterion policies, `StepSpec`, `TaskPlanView`, `StepProgressView`, `ExecutionAttempt`, `VerificationResult`, and `ActionOutcome` are added as neutral foundation contracts. No Coordinator, StateKernel, Executor, Verifier behavior, TraceDag, PlannerContext, runtime authority, PR breadth, or promotion change is authorized by S1. |
 | Current simplified step projection | `docs/change-admission/s2-legacy-step-compatibility-projection.yaml` plus `docs/change-admission/s2-1-step-projection-hardening.yaml`: current TaskPlan/Subgoal/PlanProgress can be projected into simplified Step contracts by exact ID only. The projector is read-only, rejects stale plan identity, lexical mapping, unknown progress IDs, completed-without-evidence progress, and unsupported typed evidence policy; completed plans project with no active step and have no completion authority. |
@@ -127,6 +127,7 @@ simplified_runtime_architecture:
 authoritative_optimized_architecture:
   architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+  docs_index: docs/README.md
   superseded_archive: docs/archive/superseded-2026-07-29/README.md
   freeze_record: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
   status: approved_with_guardrails
@@ -285,9 +286,9 @@ pr_breadth_latest:
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-0-authoritative-architecture-freeze
-  revision: current_committed_revision
-  status: authoritative_architecture_freeze
+  slice: sar-1-deep-immutability-and-stale-contract-hash
+  revision: 9574a80bd071be4658dcdd9c8445f18a2d5772cf
+  status: active_first_cut
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -304,6 +305,8 @@ active_local_repair:
   taskplan_authority_contracts_record: docs/change-admission/tpa-4-taskplan-authority-contracts.yaml
   taskplan_generator_draft_migration_record: docs/change-admission/tpa-5-taskplan-generator-draft-migration.yaml
   sar_0_freeze_record: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
+  sar_1_record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
+  sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
   behavior_change: false
@@ -314,7 +317,7 @@ active_local_repair:
   taskplan_generator_change: draft_foundation_only_with_legacy_production_path
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-1-deep-immutability-and-stale-contract-hash
+  next_runtime_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
   promotion_status: held
 
 attribution_classification:
@@ -609,7 +612,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, TPA-3.2D request-only admission application, TPA-3.3 Generalist request-only core, TPA-3.4 ParentAgentPlannerAdapter request migration, TPA-3.5 reference contract planner request migration, TPA-3.6 conformance/recovery fixture request migration, TPA-3.7 BrowserGym policy planner compatibility projection, TPA-3.8 PlannerPort public request cutover, TPA-4 TaskPlanAuthority neutral contracts, and TPA-5 TaskPlanDraft generator compatibility surfaces are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, and execution-commit gates | none | TPA-5B LLM generator draft migration is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1 deep immutability is the active production hardening lane; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-1 close-or-classify remaining mutable runtime boundaries is next; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

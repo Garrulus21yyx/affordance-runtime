@@ -13,6 +13,7 @@ pr_breadth: not_required
 decision:
   authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   substitutive_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+  documentation_index: docs/README.md
   conflict_precedence: authoritative_optimized_architecture_replaces_prior_default_target_architectures
 
 superseded_default_paths:

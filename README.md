@@ -12,6 +12,8 @@ Current long-term architecture authority:
 - [Affordance Runtime Authoritative Optimized Architecture](docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
 - [Affordance Runtime Substitutive Refactor Execution Plan](docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
 
+The durable documentation index is [docs/README.md](docs/README.md).
+
 Earlier simplified, TaskPlanAuthority, and ODG default-path designs are retained
 as historical records under
 [superseded-2026-07-29](docs/archive/superseded-2026-07-29/README.md). They no

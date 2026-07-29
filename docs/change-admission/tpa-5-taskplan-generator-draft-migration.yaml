@@ -40,7 +40,13 @@ compatibility_window:
   legacy_taskplannerport: active
   draft_generators: foundation_available
   production_plan_generation: legacy_path_unchanged
-  llm_generator_migration: pending_separate_slice
+  llm_generator_migration: stopped_by_sar_0
+
+supersession:
+  superseded_by: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
+  reason: SAR-0 stops additive foundation-only expansion and requires substitutive one-in/one-out migration under the authoritative optimized architecture.
+  former_next_slice: tpa-5b-llm-taskplan-generator-draft-migration
+  current_default_next_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
 
 authority_invariants:
   generated_draft_has_no_plan_id: true
@@ -60,5 +66,5 @@ validation:
   diff_check: required
 
 closure_status: taskplan_generator_draft_migration_foundation
-next_slice: tpa-5b-llm-taskplan-generator-draft-migration
+next_slice: stopped_by_sar_0
 promotion_status: held

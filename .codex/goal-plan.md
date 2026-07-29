@@ -892,3 +892,8 @@ delivery claims.
 - Continued SAR-1 after `f3d9592`. Added a RED for mutable `TraceNode.payload`
   and `TraceNode.parents`, froze trace event append boundaries, and preserved
   JSONL writer compatibility through canonical JSON projection.
+- Continued documentation governance after `9574a80`. Added `docs/README.md`
+  as the durable documentation index, kept SAR-0 authoritative architecture and
+  substitutive execution plan as the current authority, preserved superseded
+  simplified/TaskPlanAuthority documents in archive, and corrected lingering
+  TPA-5B/current-HEAD drift in durable status documents.
