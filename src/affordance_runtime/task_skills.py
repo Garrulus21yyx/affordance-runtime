@@ -18,6 +18,7 @@ from affordance_runtime.criteria import (
     evidence_requirements_from_descriptions,
     skill_step_owner_id,
 )
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel, TaskSkillRunState
 from affordance_runtime.task_intake import TaskSpec
@@ -819,6 +820,9 @@ class TaskSkillReplayDecision:
     status: str
     reason: str
     metrics: dict[str, float]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metrics", freeze_json(self.metrics))
 
 
 @dataclass(frozen=True)

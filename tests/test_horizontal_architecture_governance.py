@@ -1793,11 +1793,25 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "verifierevaluation observed value freeze" in record
     assert "plannerdecision result and planner_context deep freeze" in record
     assert "tracenode payload and parent identity sequence freeze" in record
+    assert "recoverytraceprojection payload freeze" in record
+    assert "taskplantraceprojection payload freeze" in record
+    assert "recoverycontext tried backend sequence freeze" in record
     assert "browsersnapshot accessibility_tree deep freeze" in record
     assert "pageaffordancemodel affordance sequence freeze" in record
     assert "thingaffordancemodel affordance and state-source payload freeze" in record
+    assert "conformancesurfaceresult evidence sequence freeze" in record
+    assert "evolutionproposal applicability and validation-plan freeze" in record
+    assert "runtimepatchpayload task/feature payload freeze" in record
+    assert "recoverypolicypatchpayload task/signature/evidence/postcondition freeze" in record
+    assert "recoveryskillpayload task/signature/step/evidence/postcondition freeze" in record
+    assert "recoveryreplayevidence action sequence freeze" in record
+    assert "recoveryevolutionreport incident/replay payload freeze" in record
+    assert "canonicaltrace row payload freeze" in record
     assert "configuredapprovalprovider allowed capability set freeze" in record
     assert "routingdecision candidate and score payload freeze" in record
+    assert "gesturetargetbinding locator deep freeze" in record
+    assert "ordinal collection snapshot affordance state freeze" in record
+    assert "taskskillreplaydecision metrics freeze" in record
     assert "durable readme/status/current-plan authority references synchronized" in record
     assert "observation metadata, target_fingerprints, and artifact_refs deep freeze" in record
     assert "affordance locator, state, payload, backend_candidates, evidence, and lease provenance deep freeze" in record
@@ -1814,23 +1828,37 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
     assert (
-        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope_task_api_semantic_payloads_intake_mappings_docs_synchronized"
+        "current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields"
         in status
     )
+    assert (
+        "remaining_scanner_findings: none_for_non_benchmark_frozen_dataclasses_with_container_fields_missing_post_init"
+        in status
+    )
+    assert "next_slice: sar-2-relation-criterion-evidence-vocabulary-unification" in status
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
     assert "legacy_compatibility_boundary: frozen payload readers use mapping and sequence" in status
     assert "adapter_boundary_thaw: explicit_only" in status
-    assert "freezes actioncontract, executionreceipt, plannerdecision diagnostic, observation, affordance, verificationevidence" in current_plan
+    assert "freezes actioncontract, executionreceipt, plannerdecision diagnostic, observation, affordance, gesturetargetbinding locator, verificationevidence" in current_plan
     assert "tracenode payload boundaries" in current_plan
+    assert "recoverytraceprojection payloads" in current_plan
+    assert "taskplantraceprojection payloads" in current_plan
+    assert "recoverycontext tried-backend sequences" in current_plan
     assert "browsersnapshot accessibility-tree payload boundaries" in current_plan
     assert "pageaffordancemodel affordance-sequence boundaries" in current_plan
     assert "thingaffordancemodel affordance/state-source payload boundaries" in current_plan
+    assert "conformancesurfaceresult evidence sequences" in current_plan
+    assert "evolution/recovery-evolution artifact payloads" in current_plan
+    assert "canonicaltrace rows" in current_plan
     assert "configuredapprovalprovider allowed-capability boundaries" in current_plan
     assert "routingdecision candidate/score payload boundaries" in current_plan
     assert "taskenvelope constraint/capability boundaries" in current_plan
     assert "task api request/execution dto boundaries" in current_plan
     assert "semantic resolver/compiler payload boundaries" in current_plan
     assert "canonical/intent proposal claim-id mappings" in current_plan
+    assert "ordinal collection snapshot affordance state" in current_plan
+    assert "taskskillreplaydecision metrics" in current_plan
+    assert "scanner evidence has no non-benchmark frozen dataclass" in current_plan
     assert "durable status/readme references are synchronized to the current head" in current_plan
 
 

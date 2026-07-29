@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.failure_envelope import FailureEnvelope
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.recovery_commands import RecoveryPlan
 
 
@@ -12,6 +13,9 @@ from affordance_runtime.recovery_commands import RecoveryPlan
 class RecoveryTraceProjection:
     kind: str
     payload: dict[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", freeze_json(self.payload))
 
 
 def recovery_protocol_projections(

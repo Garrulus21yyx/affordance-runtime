@@ -8,6 +8,7 @@ from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
     EvolutionArtifactType,
+    EvolutionProposal,
     EvolutionRegistry,
     EvolutionRegistryStore,
     EvolutionStatus,
@@ -42,6 +43,94 @@ def test_regression_gate_respects_metric_direction() -> None:
     )
 
     assert status == EvolutionStatus.ACCEPTED
+
+
+def test_evolution_payloads_are_immutable_from_source_collections_and_json_projected() -> None:
+    task_ids = ["settings"]
+    feature_overrides = {"structural_verification": True}
+    runtime_payload = RuntimePatchPayload(
+        "1.0",
+        "runtime_features",
+        task_ids,
+        feature_overrides,
+    )
+    task_ids.append("mutated")
+    feature_overrides["structural_verification"] = False
+
+    assert runtime_payload.task_ids == ("settings",)
+    assert runtime_payload.feature_overrides == {"structural_verification": True}
+    assert runtime_payload.to_dict() == {
+        "schema_version": "1.0",
+        "patch_kind": "runtime_features",
+        "task_ids": ["settings"],
+        "feature_overrides": {"structural_verification": True},
+    }
+    json.dumps(runtime_payload.to_dict())
+    with pytest.raises(TypeError):
+        runtime_payload.feature_overrides["structural_verification"] = False
+
+    policy_tasks = ["settings"]
+    signature = {"phase": "execution"}
+    evidence = ["state checked"]
+    postconditions = ["no retry"]
+    policy_payload = RecoveryPolicyPatchPayload(
+        "1.0",
+        "recovery_policy",
+        policy_tasks,
+        signature,
+        RecoveryAction.REOBSERVE.value,
+        1,
+        evidence,
+        postconditions,
+    )
+    policy_tasks.append("mutated")
+    signature["phase"] = "mutated"
+    evidence.append("mutated")
+    postconditions.append("mutated")
+
+    assert policy_payload.task_ids == ("settings",)
+    assert policy_payload.signature_match == {"phase": "execution"}
+    assert policy_payload.required_evidence == ("state checked",)
+    assert policy_payload.postconditions == ("no retry",)
+    json.dumps(policy_payload.to_dict())
+
+    skill_steps = [RecoveryAction.REOBSERVE.value]
+    skill_payload = RecoverySkillPayload(
+        "1.0",
+        "recovery_skill",
+        ["settings"],
+        {"phase": "execution"},
+        skill_steps,
+        1,
+        ["state checked"],
+        ["no retry"],
+    )
+    skill_steps.append(RecoveryAction.RETRY.value)
+
+    assert skill_payload.steps == (RecoveryAction.REOBSERVE.value,)
+    json.dumps(skill_payload.to_dict())
+
+
+def test_evolution_proposal_payloads_are_immutable_from_source_collections() -> None:
+    applicability = {"suite": {"name": "pricing"}}
+    validation_plan = ["run focused gate"]
+
+    proposal = EvolutionProposal(
+        proposal_id="proposal-1",
+        source_trace="trace.jsonl",
+        failure_class=FailureClass.PLANNING,
+        artifact_type=EvolutionArtifactType.POLICY_PATCH,
+        change_summary="narrow recovery behavior",
+        applicability=applicability,
+        validation_plan=validation_plan,
+    )
+    applicability["suite"]["name"] = "mutated"
+    validation_plan.append("mutated")
+
+    assert proposal.applicability == {"suite": {"name": "pricing"}}
+    assert proposal.validation_plan == ("run focused gate",)
+    with pytest.raises(TypeError):
+        proposal.applicability["suite"]["name"] = "mutated"  # type: ignore[index]
 
 
 def test_regression_gate_quarantines_missing_or_regressed_metric() -> None:

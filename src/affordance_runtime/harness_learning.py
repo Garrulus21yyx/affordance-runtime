@@ -7,8 +7,9 @@ import json
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task_skills import (
     TaskSkillMiner,
     TaskSkillPayload,
@@ -64,6 +65,9 @@ class CanonicalTraceReport:
 class CanonicalTrace:
     report: CanonicalTraceReport
     rows: tuple[Mapping[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rows", tuple(freeze_json(row) for row in self.rows))
 
 
 @dataclass(frozen=True)
@@ -213,7 +217,7 @@ class CanonicalSemanticTraceExtractor:
                 continue
             payload = _payload(row)
             action = payload.get("semantic_action")
-            if isinstance(action, dict):
+            if isinstance(action, Mapping):
                 semantic_actions[_required_string(payload, "contract_id")] = action
 
         steps = tuple(
@@ -236,10 +240,15 @@ class CanonicalSemanticTraceExtractor:
         destination_value = action.get("destination")
         destination = _mapping(destination_value, "semantic destination") if destination_value is not None else {}
         parameters = action.get("parameters")
-        if not isinstance(parameters, dict) or not all(isinstance(name, str) for name in parameters):
+        if not isinstance(parameters, Mapping) or not all(isinstance(name, str) for name in parameters):
             raise CanonicalTraceError("semantic action parameters must be an object")
         verifier_plan = action.get("verifier_plan")
-        if not isinstance(verifier_plan, list) or not verifier_plan or not all(isinstance(item, dict) for item in verifier_plan):
+        if (
+            not isinstance(verifier_plan, Sequence)
+            or isinstance(verifier_plan, str)
+            or not verifier_plan
+            or not all(isinstance(item, Mapping) for item in verifier_plan)
+        ):
             raise CanonicalTraceError("semantic action requires a typed verifier plan")
         postconditions = tuple(_verifier_postcondition(item) for item in verifier_plan)
         evidence_requirements = tuple(_verifier_requirement(item) for item in verifier_plan)
@@ -372,7 +381,7 @@ def _payload(row: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
-    if not isinstance(value, dict):
+    if not isinstance(value, Mapping):
         raise CanonicalTraceError(f"{name} must be an object")
     return value
 

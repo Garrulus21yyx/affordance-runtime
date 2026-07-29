@@ -218,6 +218,9 @@ class GestureTargetBinding:
     target_fingerprint_key: str
     lease: AffordanceLease
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "locator", freeze_json(self.locator))
+
     @classmethod
     def from_affordance(
         cls,

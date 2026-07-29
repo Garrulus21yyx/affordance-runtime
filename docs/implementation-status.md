@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `2ab7f4ef3f7ac39814449d0317f31a43eac50ef5` (`feat: freeze intent proposal id mappings`). SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1 has frozen ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConfiguredApprovalProvider allowed-capability sets, RoutingDecision candidate/score payloads, TaskEnvelope constraints/capabilities, task API request/execution DTO payloads, semantic resolver/compiler payloads, and canonical/intent proposal claim-id mappings at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1 local completion candidate after `911c7051af9fe397263b8cb849a4c3030282c59e`: SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1 has frozen ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, GestureTargetBinding locator payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, RecoveryTraceProjection payloads, TaskPlanTraceProjection payloads, RecoveryContext tried-backend sequences, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConformanceSurfaceResult evidence sequences, evolution/recovery-evolution artifact payloads, CanonicalTrace rows, ConfiguredApprovalProvider allowed-capability sets, RoutingDecision candidate/score payloads, TaskEnvelope constraints/capabilities, task API request/execution DTO payloads, semantic resolver/compiler payloads, canonical/intent proposal claim-id mappings, ordinal collection snapshot affordance state, and TaskSkillReplayDecision metrics at construction/materialization/append boundaries. Scanner evidence shows no remaining non-benchmark frozen dataclass with list/dict/Mapping/Sequence fields lacking `__post_init__`. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -152,8 +152,8 @@ authoritative_optimized_architecture:
 sar_1_deep_immutability:
   record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
   threat_model: docs/security/action-contract-digest-threat-model.md
-  status: active_first_cut
-  current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope_task_api_semantic_payloads_intake_mappings_docs_synchronized
+  status: local_completion_candidate
+  current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields
   immutable_helper: src/affordance_runtime/immutable.py
   frozen_runtime_payloads:
     - ActionContract locator / parameters / hash-critical list fields
@@ -161,13 +161,25 @@ sar_1_deep_immutability:
     - PlannerDecision result / planner_context
     - Observation metadata / target_fingerprints / artifact_refs
     - Affordance locator / state / payload / backend_candidates / evidence / lease provenance
+    - GestureTargetBinding locator
     - VerificationEvidence observed / expected
     - VerificationReport evidence
     - VerifierEvaluation observed
     - TraceNode payload / parents
+    - RecoveryTraceProjection payload
+    - TaskPlanTraceProjection payload
+    - RecoveryContext tried_backends
     - BrowserSnapshot accessibility_tree
     - PageAffordanceModel affordances
     - ThingAffordanceModel affordances / state_sources
+    - ConformanceSurfaceResult contract_capabilities / event_types / screenshot_refs
+    - EvolutionProposal applicability / validation_plan
+    - RuntimePatchPayload task_ids / feature_overrides
+    - RecoveryPolicyPatchPayload task_ids / signature_match / required_evidence / postconditions
+    - RecoverySkillPayload task_ids / signature_match / steps / required_evidence / postconditions
+    - RecoveryReplayEvidence recovery_actions
+    - RecoveryEvolutionReport source_incident / replays
+    - CanonicalTrace rows
     - ConfiguredApprovalProvider allowed_capabilities
     - RoutingDecision candidate_backends / scores
     - TaskEnvelope constraints / capabilities
@@ -178,13 +190,16 @@ sar_1_deep_immutability:
     - SemanticConstraints compatible_target_ids
     - CanonicalProposalGraph proposal_claim_ids
     - IntentDraftRepairAttempt proposal_claim_ids
+    - SnapshotAffordanceView ordinal collection state
+    - TaskSkillReplayDecision metrics
   json_persistence_boundary: TraceDag and ArtifactStore project frozen containers to canonical JSON-compatible data
   adapter_boundary_thaw: explicit_only
   legacy_compatibility_boundary: frozen payload readers use Mapping and Sequence rather than mutable dict/list assumptions
   production_behavior_change: false
   progress_authority_change: prohibited
   finish_authority_change: prohibited
-  next_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
+  remaining_scanner_findings: none_for_non_benchmark_frozen_dataclasses_with_container_fields_missing_post_init
+  next_slice: sar-2-relation-criterion-evidence-vocabulary-unification
   promotion_status: held
 
 taskplan_authority_program:
@@ -635,7 +650,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1 deep immutability is the active production hardening lane; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-1 close-or-classify remaining mutable runtime boundaries is next; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1 deep immutability is a local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-2 relation / criterion / evidence vocabulary unification is next after local verification; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

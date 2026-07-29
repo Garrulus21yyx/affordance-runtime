@@ -235,6 +235,34 @@ def test_affordance_payloads_are_deeply_immutable_from_source_payload() -> None:
         affordance.payload["options"][0]["label"] = "changed"
 
 
+def test_gesture_target_binding_locator_is_deeply_immutable_from_source_payload() -> None:
+    lease = AffordanceLease.issue(
+        environment_revision="rev-1",
+        snapshot_id="snap-1",
+        page_revision="page-1",
+        target_fingerprint="target-1",
+    )
+    locator = {"bbox": [1, 2, 3, 4], "metadata": {"route": "visual"}}
+    binding = GestureTargetBinding(
+        semantic_target_id="target",
+        candidate_id="candidate",
+        locator=locator,
+        snapshot_id="snap-1",
+        page_revision="page-1",
+        target_fingerprint="target-1",
+        target_fingerprint_key="target",
+        lease=lease,
+    )
+
+    locator["bbox"][0] = 9
+    locator["metadata"]["route"] = "mutated"
+
+    assert binding.locator["bbox"] == (1, 2, 3, 4)
+    assert binding.locator["metadata"] == {"route": "visual"}
+    with pytest.raises(TypeError):
+        binding.locator["metadata"]["route"] = "mutated"
+
+
 def test_gesture_contract_binds_and_preflights_both_endpoints() -> None:
     source_lease = AffordanceLease.issue(
         environment_revision="rev-1", snapshot_id="snap-1", page_revision="page-1", target_fingerprint="source-1"

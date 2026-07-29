@@ -20,6 +20,7 @@ from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, ActionC
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
+from affordance_runtime.immutable import FrozenSequence
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
@@ -51,6 +52,11 @@ class ConformanceSurfaceResult:
     event_types: list[str]
     trace_path: str
     screenshot_refs: list[str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "contract_capabilities", FrozenSequence(self.contract_capabilities))
+        object.__setattr__(self, "event_types", FrozenSequence(self.event_types))
+        object.__setattr__(self, "screenshot_refs", FrozenSequence(self.screenshot_refs))
 
 
 def _preserves_shared_contract_envelope(item: ConformanceSurfaceResult) -> bool:

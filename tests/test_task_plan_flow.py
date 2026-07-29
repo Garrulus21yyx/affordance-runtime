@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation, RuntimeErrorCode
@@ -11,6 +13,7 @@ from affordance_runtime.task_plan_flow import (
     TaskPlanCommitStateView,
     TaskPlanFlow,
     TaskPlanFlowKind,
+    TaskPlanTraceProjection,
 )
 from affordance_runtime.task_plan_lifecycle import (
     TaskPlanLifecycle,
@@ -70,6 +73,19 @@ def _state() -> StateKernel:
     state = StateKernel(task_id=_task().task_id, goal=_task().objective)
     state.remember_observation(_snapshot().observation)
     return state
+
+
+def test_task_plan_trace_projection_payload_is_deeply_immutable_from_source_payload() -> None:
+    payload = {"plan": {"plan_id": "plan-1"}, "issues": ["missing-source"]}
+
+    projection = TaskPlanTraceProjection("TaskPlanRejected", payload)
+    payload["plan"]["plan_id"] = "mutated"  # type: ignore[index]
+    payload["issues"].append("extra")  # type: ignore[union-attr]
+
+    assert projection.payload["plan"] == {"plan_id": "plan-1"}
+    assert projection.payload["issues"] == ("missing-source",)
+    with pytest.raises(TypeError):
+        projection.payload["plan"]["plan_id"] = "mutated"  # type: ignore[index]
 
 
 def test_flow_prepares_accepted_initial_plan_without_mutating_state() -> None:

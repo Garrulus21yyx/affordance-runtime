@@ -123,7 +123,7 @@ class RecoveryHandler:
         context = RecoveryContext(
             attempt=request.recovery_count,
             recovery_count=request.recovery_count,
-            tried_backends=tried_backends,
+            tried_backends=tuple(tried_backends),
             effect_may_have_occurred=effect_may_have_occurred,
             failure_signature=signature,
             task_id=request.task_id,

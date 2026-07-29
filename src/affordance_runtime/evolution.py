@@ -12,6 +12,7 @@ from typing import Any
 from affordance_runtime.benchmarks.spec import BenchmarkRun
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 from affordance_runtime.coordinator import RuntimeFeatures
+from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
     FailureSignature,
@@ -63,6 +64,10 @@ class EvolutionProposal:
     change_summary: str
     applicability: dict[str, Any]
     validation_plan: list[str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "applicability", freeze_json(self.applicability))
+        object.__setattr__(self, "validation_plan", FrozenSequence(self.validation_plan))
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,10 @@ class RuntimePatchPayload:
     task_ids: list[str]
     feature_overrides: dict[str, bool]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "task_ids", FrozenSequence(self.task_ids))
+        object.__setattr__(self, "feature_overrides", freeze_json(self.feature_overrides))
+
     def validate(self) -> None:
         if self.schema_version != "1.0":
             raise ValueError(f"unsupported payload schema: {self.schema_version}")
@@ -163,7 +172,7 @@ class RuntimePatchPayload:
             raise ValueError("runtime patch must declare task_ids and feature_overrides")
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return to_json_compatible(self)
 
     def digest(self) -> str:
         payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -226,6 +235,12 @@ class RecoveryPolicyPatchPayload:
     postconditions: list[str]
     max_risk: str = RiskLevel.LOW.value
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "task_ids", FrozenSequence(self.task_ids))
+        object.__setattr__(self, "signature_match", freeze_json(self.signature_match))
+        object.__setattr__(self, "required_evidence", FrozenSequence(self.required_evidence))
+        object.__setattr__(self, "postconditions", FrozenSequence(self.postconditions))
+
     def validate(self) -> None:
         if self.schema_version != "1.0" or self.patch_kind != "recovery_policy":
             raise ValueError("unsupported recovery policy payload schema or kind")
@@ -252,7 +267,7 @@ class RecoveryPolicyPatchPayload:
         return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return to_json_compatible(self)
 
     def digest(self) -> str:
         return _payload_digest(self.to_dict())
@@ -286,6 +301,13 @@ class RecoverySkillPayload:
     postconditions: list[str]
     max_risk: str = RiskLevel.LOW.value
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "task_ids", FrozenSequence(self.task_ids))
+        object.__setattr__(self, "signature_match", freeze_json(self.signature_match))
+        object.__setattr__(self, "steps", FrozenSequence(self.steps))
+        object.__setattr__(self, "required_evidence", FrozenSequence(self.required_evidence))
+        object.__setattr__(self, "postconditions", FrozenSequence(self.postconditions))
+
     def validate(self) -> None:
         if self.schema_version != "1.0" or self.patch_kind != "recovery_skill":
             raise ValueError("unsupported recovery skill payload schema or kind")
@@ -312,7 +334,7 @@ class RecoverySkillPayload:
         return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return to_json_compatible(self)
 
     def digest(self) -> str:
         return _payload_digest(self.to_dict())

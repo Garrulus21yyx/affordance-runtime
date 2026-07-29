@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from affordance_runtime.collection_window import OrdinalRouteKind, resolve_global_ordinal_constraint
+import pytest
+
+from affordance_runtime.collection_window import (
+    OrdinalRouteKind,
+    _SnapshotAffordanceView,
+    resolve_global_ordinal_constraint,
+)
 from affordance_runtime.planner_context import AffordanceSummary
 
 
@@ -32,6 +38,29 @@ def _page(page: int, *, current: bool = False) -> AffordanceSummary:
             "pagination_total_pages": 3,
         },
     )
+
+
+def test_snapshot_affordance_view_state_is_deeply_immutable_from_source_payload() -> None:
+    state = {
+        "pagination_owner": "results-pages",
+        "nested": {"page": 1},
+    }
+
+    view = _SnapshotAffordanceView(
+        id="page-1",
+        role="link",
+        label="1",
+        action="activate",
+        state=state,
+    )
+
+    state["pagination_owner"] = "mutated"
+    state["nested"]["page"] = 2
+
+    assert view.state["pagination_owner"] == "results-pages"
+    assert view.state["nested"] == {"page": 1}
+    with pytest.raises(TypeError):
+        view.state["pagination_owner"] = "mutated"  # type: ignore[index]
 
 
 def test_global_ordinal_routes_to_required_page_then_current_item() -> None:

@@ -1,3 +1,5 @@
+import pytest
+
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 from affordance_runtime.grounding import (
     DomGroundingPayload,
@@ -78,6 +80,17 @@ def test_recovery_uses_declared_fallback_after_retry_budget() -> None:
     )
     assert decision.action == RecoveryAction.REROUTE
     assert decision.backend == "visual"
+
+
+def test_recovery_context_tried_backends_is_immutable_from_source_list() -> None:
+    tried_backends = ["dom"]
+
+    context = RecoveryContext(tried_backends=tried_backends)
+    tried_backends.append("visual")
+
+    assert context.tried_backends == ("dom",)
+    with pytest.raises(TypeError):
+        context.tried_backends[0] = "visual"  # type: ignore[index]
 
 
 def test_recovery_prefers_fresh_grounding_candidate_over_blind_retry() -> None:

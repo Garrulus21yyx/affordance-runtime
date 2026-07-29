@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Mapping, Protocol
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.immutable import freeze_json
 
 
 class CollectionAffordanceView(Protocol):
@@ -24,7 +25,7 @@ class CollectionAffordanceView(Protocol):
     def action(self) -> str: ...
 
     @property
-    def state(self) -> dict[str, Any]: ...
+    def state(self) -> Mapping[str, Any]: ...
 
 
 class OrdinalRouteKind(StrEnum):
@@ -50,7 +51,10 @@ class _SnapshotAffordanceView:
     role: str
     label: str
     action: str
-    state: dict[str, Any]
+    state: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "state", freeze_json(self.state))
 
 
 _ORDINAL_WORDS = {

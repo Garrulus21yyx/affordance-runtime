@@ -7,12 +7,35 @@ from affordance_runtime.evolution import EvolutionRegistry, EvolutionStatus
 from affordance_runtime.harness_learning import (
     CanonicalSemanticTraceExtractor,
     CanonicalTaskSkillPipeline,
+    CanonicalTrace,
     CanonicalTraceError,
+    CanonicalTraceReport,
     CanonicalTraceValidator,
     SemanticTraceClusterer,
     TraceMiningContext,
 )
 from affordance_runtime.trace import JsonlTraceWriter, TraceDag
+
+
+def test_canonical_trace_rows_are_deeply_immutable_from_source_rows() -> None:
+    rows = [{"event": "TaskCreated", "payload": {"goal": "save"}}]
+    report = CanonicalTraceReport(
+        path="trace.jsonl",
+        run_id="run",
+        source_digest="sha256:" + "0" * 64,
+        runtime_version="test",
+        contract_schema_version="1.0",
+        event_count=1,
+        verified_contract_ids=(),
+        terminal_event="TaskCompleted",
+    )
+
+    trace = CanonicalTrace(report, tuple(rows))
+    rows[0]["payload"]["goal"] = "mutated"  # type: ignore[index]
+
+    assert trace.rows[0]["payload"] == {"goal": "save"}
+    with pytest.raises(TypeError):
+        trace.rows[0]["payload"]["goal"] = "mutated"  # type: ignore[index]
 
 
 def _write_trace(

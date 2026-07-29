@@ -24,6 +24,7 @@ from affordance_runtime.evolution import (
     RecoveryPolicyPatchPayload,
     RegressionRule,
 )
+from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryContext
@@ -155,6 +156,9 @@ class RecoveryReplayEvidence:
     passed: bool
     trace_path: str
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "recovery_actions", FrozenSequence(self.recovery_actions))
+
 
 @dataclass(frozen=True)
 class RecoveryEvolutionReport:
@@ -168,6 +172,10 @@ class RecoveryEvolutionReport:
     quarantine_registry_path: str
     rollback_proof_path: str
     rollback_verified: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_incident", freeze_json(self.source_incident))
+        object.__setattr__(self, "replays", FrozenSequence(self.replays))
 
 
 def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
@@ -400,9 +408,9 @@ def _prove_recovery_rollback(
 def _write_report(report: RecoveryEvolutionReport, output_dir: Path) -> None:
     value = {
         "schema_version": "recovery-cascade-evolution-v1",
-        "source_incident": report.source_incident,
+        "source_incident": to_json_compatible(report.source_incident),
         "artifact": asdict(report.artifact),
-        "replays": [asdict(item) for item in report.replays],
+        "replays": [to_json_compatible(item) for item in report.replays],
         "decision": report.decision.value,
         "quarantined_before_replay": report.quarantined_before_replay,
         "fresh_candidate_id": report.fresh_candidate_id,

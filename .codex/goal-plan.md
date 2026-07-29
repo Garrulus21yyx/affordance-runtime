@@ -944,3 +944,22 @@ delivery claims.
   present under `docs/superpowers/`, kept superseded simplified/TaskPlanAuthority
   and former root architecture records in archive/redirect form, and aligned
   README/status/current-plan references with the exact current HEAD identity.
+- Continued SAR-1 after `911c705`. Added a RED for mutable ordinal collection
+  snapshot affordance state and froze `_SnapshotAffordanceView.state` at
+  construction so pagination/ordinal planning constraints cannot observe later
+  caller-owned state mutations.
+- Continued the same SAR-1 pass by adding a RED for mutable
+  `GestureTargetBinding.locator` and freezing gesture endpoint locators at
+  construction, keeping gesture preflight/hash-sensitive contract payloads
+  stable.
+- Continued SAR-1 with REDs for mutable `RecoveryTraceProjection.payload`,
+  `TaskPlanTraceProjection.payload`, `RecoveryContext.tried_backends`, and
+  `TaskSkillReplayDecision.metrics`; froze those runtime diagnostic/recovery/
+  task-skill payloads without changing progress, finish, Coordinator, or
+  recovery authority.
+- Completed the SAR-1 mutable-boundary pass as a local completion candidate by
+  adding REDs for conformance result sequences, evolution payloads, recovery
+  evolution report payloads, and canonical trace rows, then freezing them while
+  preserving JSON projection at artifact boundaries. Scanner evidence now shows
+  no non-benchmark frozen dataclass with container fields missing constructor
+  normalization.

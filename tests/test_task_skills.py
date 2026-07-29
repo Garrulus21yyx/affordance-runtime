@@ -24,6 +24,7 @@ from affordance_runtime.task_skills import (
     TaskSkillMiner,
     TaskSkillPayload,
     TaskSkillProgress,
+    TaskSkillReplayDecision,
     TaskSkillReplayEvidence,
     TaskSkillReplayGate,
     VerifiedSemanticStep,
@@ -285,6 +286,21 @@ def _replay(category: str, *, activated: bool = True, applicable: bool = True) -
 
 def _digest(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+
+
+def test_task_skill_replay_decision_metrics_are_immutable_from_source_mapping() -> None:
+    metrics = {"activation_rate_delta": 0.25}
+
+    decision = TaskSkillReplayDecision(
+        status="accepted",
+        reason="complete safe replay",
+        metrics=metrics,
+    )
+    metrics["activation_rate_delta"] = 0.0
+
+    assert decision.metrics["activation_rate_delta"] == 0.25
+    with pytest.raises(TypeError):
+        decision.metrics["activation_rate_delta"] = 0.0
 
 
 def test_task_skill_replay_gate_accepts_only_complete_safe_heldout_efficiency_evidence() -> None:

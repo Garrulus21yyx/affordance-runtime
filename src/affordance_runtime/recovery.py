@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any, Callable
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
+from affordance_runtime.immutable import FrozenSequence
 
 
 class RecoveryAction(StrEnum):
@@ -228,12 +229,15 @@ class RecoveryCascadeDetector:
 class RecoveryContext:
     attempt: int = 0
     recovery_count: int = 0
-    tried_backends: list[str] = field(default_factory=list)
+    tried_backends: tuple[str, ...] = field(default_factory=tuple)
     backend_fallback_count: int = 0
     effect_may_have_occurred: bool = False
     approval_available: bool = False
     failure_signature: FailureSignature | None = None
     task_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tried_backends", FrozenSequence(self.tried_backends))
 
 
 @dataclass(frozen=True)

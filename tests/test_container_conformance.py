@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import pytest
+
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
@@ -183,6 +185,35 @@ def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
     assert not _preserves_shared_contract_envelope(
         item.__class__(**{**item.__dict__, "contract_schema": "1.0"})
     )
+
+
+def test_conformance_surface_result_sequences_are_immutable_from_source_lists() -> None:
+    capabilities = [CONFORMANCE_CAPABILITY]
+    events = ["PostconditionPassed"]
+    screenshots = ["screen.png"]
+
+    item = ConformanceSurfaceResult(
+        surface="dom",
+        backend="dom",
+        status="done",
+        oracle_enabled=True,
+        oracle_source="node-wot-control",
+        verification_status="passed",
+        contract_schema=ACTION_CONTRACT_SCHEMA_VERSION,
+        contract_capabilities=capabilities,
+        event_types=events,
+        trace_path="/evidence/events.jsonl",
+        screenshot_refs=screenshots,
+    )
+    capabilities.append("mutated")
+    events.append("extra")
+    screenshots.append("other.png")
+
+    assert item.contract_capabilities == (CONFORMANCE_CAPABILITY,)
+    assert item.event_types == ("PostconditionPassed",)
+    assert item.screenshot_refs == ("screen.png",)
+    with pytest.raises(TypeError):
+        item.contract_capabilities[0] = "mutated"  # type: ignore[index]
 
 
 def test_host_container_agreement_ignores_only_timing_and_trace_paths(tmp_path: Path) -> None:

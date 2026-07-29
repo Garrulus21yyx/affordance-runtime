@@ -12,6 +12,7 @@ from enum import StrEnum
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureClass
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_lifecycle import (
@@ -71,6 +72,9 @@ class TaskPlanTraceProjection:
 
     kind: str
     payload: dict[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", freeze_json(self.payload))
 
 
 @dataclass(frozen=True)

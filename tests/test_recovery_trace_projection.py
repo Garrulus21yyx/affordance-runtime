@@ -1,3 +1,5 @@
+import pytest
+
 from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
@@ -7,7 +9,20 @@ from affordance_runtime.failure_envelope import (
 )
 from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoverySelectionContext
-from affordance_runtime.recovery_trace_projection import recovery_protocol_projections
+from affordance_runtime.recovery_trace_projection import RecoveryTraceProjection, recovery_protocol_projections
+
+
+def test_recovery_trace_projection_payload_is_deeply_immutable_from_source_payload() -> None:
+    payload = {"failure": {"code": "stale"}, "changed_dimensions": ["observation"]}
+
+    projection = RecoveryTraceProjection("RecoveryStrategySelected", payload)
+    payload["failure"]["code"] = "mutated"  # type: ignore[index]
+    payload["changed_dimensions"].append("backend")  # type: ignore[union-attr]
+
+    assert projection.payload["failure"] == {"code": "stale"}
+    assert projection.payload["changed_dimensions"] == ("observation",)
+    with pytest.raises(TypeError):
+        projection.payload["failure"]["code"] = "mutated"  # type: ignore[index]
 
 
 def test_protocol_projection_is_typed_and_does_not_write_runtime_state() -> None:
