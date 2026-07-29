@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
+import pytest
+
+from affordance_runtime.decision_constraints import DecisionConstraintSet, StrictDecisionConstraintBuilder
 from affordance_runtime.planner_context import AffordanceSummary, PlannerContext
 
 
@@ -92,3 +94,17 @@ def test_current_state_admission_keeps_finish_after_verifier_backed_effect() -> 
 
     assert permitted == ["type_text", "finish", "ask_user"]
     assert targets["type_text"] == ["name-field"]
+
+
+def test_decision_constraint_set_copies_and_freezes_compatible_targets() -> None:
+    targets = {"type_text": ("name-field",)}
+
+    constraints = DecisionConstraintSet(
+        permitted_action_kinds=("type_text",),
+        compatible_target_ids=targets,
+    )
+    targets["type_text"] = ("email-field",)
+
+    assert constraints.compatible_target_ids["type_text"] == ("name-field",)
+    with pytest.raises(TypeError):
+        constraints.compatible_target_ids["activate"] = ("save-button",)

@@ -9,6 +9,7 @@ benchmarks.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import cast
 
 from affordance_runtime.simplified_runtime_contracts import (
@@ -23,6 +24,26 @@ from affordance_runtime.simplified_runtime_contracts import (
 FrozenStateItems = tuple[tuple[str, FrozenScalar], ...]
 FrozenRequestValue = object
 FrozenRequestObject = tuple[tuple[str, FrozenRequestValue], ...]
+
+
+class PlannerStepProjectionStatus(StrEnum):
+    PROJECTED = "projected"
+    NO_PLAN = "no_plan"
+    STALE_PLAN = "stale_plan"
+    PROJECTION_INVALID = "projection_invalid"
+    UNSUPPORTED_EVIDENCE_POLICY = "unsupported_evidence_policy"
+
+
+class PlannerAdmissionSource(StrEnum):
+    LEGACY_TERMINAL_READINESS = "legacy_terminal_readiness"
+    ACTIVE_STEP_SCOPE = "active_step_scope"
+
+
+class TargetAdmissionStatus(StrEnum):
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+    UNKNOWN = "unknown"
+    UNRESOLVED = "unresolved"
 
 
 @dataclass(frozen=True)
@@ -77,19 +98,29 @@ class PlannerStepView:
     progress: StepProgressView | None
     active_step: StepSpec | None
     activity_status: StepActivityStatus
+    projection_status: PlannerStepProjectionStatus = PlannerStepProjectionStatus.NO_PLAN
+    projection_reason: str = ""
     active_step_action_family: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.activity_status, StepActivityStatus):
             raise ValueError("unsupported step activity status")
+        if not isinstance(self.projection_status, PlannerStepProjectionStatus):
+            raise ValueError("unsupported step projection status")
+        if self.projection_reason:
+            _require_nonblank("projection_reason", self.projection_reason)
         if self.progress is None:
             if self.plan is not None or self.active_step is not None:
                 raise ValueError("step view without progress cannot carry plan data")
             if self.activity_status != StepActivityStatus.NO_PLAN:
                 raise ValueError("missing progress requires no-plan status")
+            if self.projection_status == PlannerStepProjectionStatus.PROJECTED:
+                raise ValueError("projected step view requires progress")
             return
         if self.plan is None:
             raise ValueError("step progress requires a plan view")
+        if self.projection_status != PlannerStepProjectionStatus.PROJECTED:
+            raise ValueError("step progress requires projected status")
         if self.progress.activity_status != self.activity_status:
             raise ValueError("step activity status mismatch")
         if self.progress.plan_id != self.plan.plan_id:
@@ -113,6 +144,81 @@ class PlannerStepView:
             raise ValueError("only active status may expose an active step")
         if self.active_step_action_family:
             _require_nonblank("active_step_action_family", self.active_step_action_family)
+
+    @property
+    def permits_effectful_actions(self) -> bool:
+        return self.projection_status in {
+            PlannerStepProjectionStatus.PROJECTED,
+            PlannerStepProjectionStatus.NO_PLAN,
+        }
+
+
+@dataclass(frozen=True)
+class TargetAdmissionDecision:
+    target_id: str
+    status: TargetAdmissionStatus
+    reason_code: str
+    blocking_step_ids: tuple[str, ...] = ()
+    unknown_step_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_nonblank("target_id", self.target_id)
+        if not isinstance(self.status, TargetAdmissionStatus):
+            raise ValueError("unsupported target admission status")
+        _require_nonblank("reason_code", self.reason_code)
+        _require_tuple("blocking_step_ids", self.blocking_step_ids)
+        _require_tuple("unknown_step_ids", self.unknown_step_ids)
+        _require_unique_nonblank("blocking step ids", self.blocking_step_ids)
+        _require_unique_nonblank("unknown step ids", self.unknown_step_ids)
+        if self.status == TargetAdmissionStatus.BLOCKED and not self.blocking_step_ids:
+            raise ValueError("blocked target admission requires blocking step ids")
+        if self.status == TargetAdmissionStatus.UNKNOWN and not self.unknown_step_ids:
+            raise ValueError("unknown target admission requires unknown step ids")
+
+
+@dataclass(frozen=True)
+class PlannerAdmissionView:
+    source: PlannerAdmissionSource
+    task_revision: int
+    snapshot_id: str
+    target_decisions: tuple[TargetAdmissionDecision, ...] = ()
+    excluded_target_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, PlannerAdmissionSource):
+            raise ValueError("unsupported planner admission source")
+        if self.task_revision < 1:
+            raise ValueError("task revision must be positive")
+        _require_nonblank("snapshot_id", self.snapshot_id)
+        _require_tuple("target_decisions", self.target_decisions)
+        _require_tuple("excluded_target_ids", self.excluded_target_ids)
+        _require_unique_nonblank("excluded target ids", self.excluded_target_ids)
+        seen: set[str] = set()
+        for decision in self.target_decisions:
+            if decision.target_id in seen:
+                raise ValueError("target admission decisions must be unique")
+            seen.add(decision.target_id)
+        unknown_excluded = set(self.excluded_target_ids) - seen
+        if unknown_excluded:
+            raise ValueError("excluded target ids must be present in target decisions")
+
+
+@dataclass(frozen=True)
+class PlannerAdmissionSummary:
+    excluded_target_ids: tuple[str, ...] = ()
+    blocked_target_ids: tuple[str, ...] = ()
+    unknown_target_ids: tuple[str, ...] = ()
+    unresolved_target_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_tuple("excluded_target_ids", self.excluded_target_ids)
+        _require_tuple("blocked_target_ids", self.blocked_target_ids)
+        _require_tuple("unknown_target_ids", self.unknown_target_ids)
+        _require_tuple("unresolved_target_ids", self.unresolved_target_ids)
+        _require_unique_nonblank("excluded target ids", self.excluded_target_ids)
+        _require_unique_nonblank("blocked target ids", self.blocked_target_ids)
+        _require_unique_nonblank("unknown target ids", self.unknown_target_ids)
+        _require_unique_nonblank("unresolved target ids", self.unresolved_target_ids)
 
 
 @dataclass(frozen=True)
@@ -254,6 +360,7 @@ class PlanningRequest:
     )
     permitted_action_kinds: tuple[str, ...] = ()
     satisfied_action_targets: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    admission: PlannerAdmissionView | None = None
 
     def __post_init__(self) -> None:
         if self.identity.task_spec_identity != self.task.task_spec_identity:
@@ -266,6 +373,11 @@ class PlanningRequest:
             raise ValueError("request page revision mismatch")
         if self.identity.environment_revision != self.observation.environment_revision:
             raise ValueError("request environment revision mismatch")
+        if self.admission is not None:
+            if self.admission.task_revision != self.identity.task_revision:
+                raise ValueError("request admission task revision mismatch")
+            if self.admission.snapshot_id != self.identity.snapshot_id:
+                raise ValueError("request admission snapshot identity mismatch")
         _require_tuple("recent_outcomes", self.recent_outcomes)
         _require_tuple("latest_outcome", self.latest_outcome)
         _require_tuple("recent_proposals", self.recent_proposals)

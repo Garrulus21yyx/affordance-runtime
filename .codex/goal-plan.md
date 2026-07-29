@@ -774,3 +774,12 @@ delivery claims.
   PlannerPort, Coordinator call sites, TaskPlan admission, progress authority,
   finish authority, PR breadth, and promotion remain unchanged. The next slice
   is TPA-3.2 DecisionConstraint request adapter.
+- Started TPA-3.2A/B after `b99160d`. Preserved non-projected Step projection
+  status/reason in PlanningRequest instead of folding stale/invalid plans into
+  ordinary no-plan, blocked effectful request actions for invalid projections,
+  added immutable PlannerAdmissionView / TargetAdmissionDecision /
+  PlannerAdmissionSummary contracts, and deep-froze DecisionConstraintSet
+  compatible-target mappings. PlannerPort, Coordinator call sites, terminal
+  admission hookup, TaskPlan admission, progress authority, finish authority,
+  PR breadth, and promotion remain unchanged. The next slice is TPA-3.2C
+  legacy terminal admission projector.

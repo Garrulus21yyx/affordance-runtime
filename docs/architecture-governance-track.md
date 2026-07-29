@@ -296,7 +296,13 @@ first slice allowed to migrate standard StepPlannerPort call sites to
 it triggers a separately authorized breadth rerun. TPA-3.1 adds the
 request-based PlannerContextBuilder serialization path only; the legacy
 three-object PlannerContextBuilder path remains temporarily available until
-standard StepPlannerPort cutover is complete.
+standard StepPlannerPort cutover is complete. TPA-3.2A/B hardens the immutable
+request surface by preserving stale/invalid Step projection status, adding
+PlannerAdmissionView / TargetAdmissionDecision / PlannerAdmissionSummary
+contracts, and making DecisionConstraintSet target mappings deeply immutable.
+It does not connect terminal admission, change PlannerPort, touch Coordinator,
+or change progress/finish authority. The next authorized sub-slice is the
+legacy terminal admission projector.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

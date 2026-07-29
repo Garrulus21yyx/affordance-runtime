@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import OrdinalRouteConstraint, resolve_global_ordinal_constraint
@@ -24,11 +26,25 @@ from affordance_runtime.terminal_readiness import (
 @dataclass(frozen=True)
 class DecisionConstraintSet:
     permitted_action_kinds: tuple[str, ...]
-    compatible_target_ids: dict[str, tuple[str, ...]]
+    compatible_target_ids: Mapping[str, tuple[str, ...]]
     allowed_text_values: tuple[str, ...] = ()
     require_bound_text_source: bool = False
     text_constraint: SemanticTextInputConstraint | None = None
     ordinal_constraint: OrdinalRouteConstraint | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "permitted_action_kinds", tuple(self.permitted_action_kinds))
+        object.__setattr__(
+            self,
+            "compatible_target_ids",
+            MappingProxyType(
+                {
+                    str(action_kind): tuple(target_ids)
+                    for action_kind, target_ids in self.compatible_target_ids.items()
+                }
+            ),
+        )
+        object.__setattr__(self, "allowed_text_values", tuple(self.allowed_text_values))
 
 
 @dataclass(frozen=True)

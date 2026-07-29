@@ -13,6 +13,7 @@ from affordance_runtime.planning_request import (
     PlannerObservationView,
     PlannerOutcomeSummary,
     PlannerRecoverySummary,
+    PlannerStepProjectionStatus,
     PlannerStepView,
     PlannerTaskView,
     PlanningRequest,
@@ -30,6 +31,17 @@ from affordance_runtime.simplified_step_projection import (
     project_task_completion_criterion,
 )
 from affordance_runtime.state_kernel import StateKernel
+
+_EFFECTFUL_ACTION_KINDS = {
+    "activate",
+    "point_activate",
+    "type_text",
+    "select_option",
+    "press_key",
+    "drag",
+    "navigate",
+    "scroll",
+}
 
 
 @dataclass(frozen=True)
@@ -73,6 +85,17 @@ class PlanningRequestBuilder:
             else None
         )
         limits = self.limits
+        step_view = _planner_step_view(step_projection)
+        permitted_action_kinds = _permitted_action_kinds(
+            snapshot,
+            allow_finish=self.allow_finish,
+        )
+        if not step_view.permits_effectful_actions:
+            permitted_action_kinds = tuple(
+                item
+                for item in permitted_action_kinds
+                if item not in _EFFECTFUL_ACTION_KINDS
+            )
         request = PlanningRequest(
             identity=PlanningRequestIdentity(
                 task_spec_identity=task_spec.identity,
@@ -92,7 +115,7 @@ class PlanningRequestBuilder:
                 task_completion_projection_status=completion_projection.status.value,
                 task_summary=freeze_request_mapping(_task_summary(task_spec.model_dump(mode="json"))),
             ),
-            step=_planner_step_view(step_projection),
+            step=step_view,
             observation=PlannerObservationView(
                 snapshot_id=snapshot.observation.snapshot_id,
                 page_revision=snapshot.observation.page_revision,
@@ -131,10 +154,7 @@ class PlanningRequestBuilder:
                 ),
                 model_calls=max(0, limits.max_model_calls),
             ),
-            permitted_action_kinds=_permitted_action_kinds(
-                snapshot,
-                allow_finish=self.allow_finish,
-            ),
+            permitted_action_kinds=permitted_action_kinds,
             satisfied_action_targets=tuple(
                 sorted(_satisfied_action_targets(state).items())
             ),
@@ -151,6 +171,8 @@ def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepVie
             progress=None,
             active_step=None,
             activity_status=StepActivityStatus.NO_PLAN,
+            projection_status=_planner_step_projection_status(projection.status),
+            projection_reason=projection.reason,
         )
     plan = projection.task_plan_view
     progress = projection.step_progress_view
@@ -169,8 +191,18 @@ def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepVie
         progress=progress,
         active_step=active_step,
         activity_status=progress.activity_status,
+        projection_status=PlannerStepProjectionStatus.PROJECTED,
         active_step_action_family=_active_step_action_family(active_step),
     )
+
+
+def _planner_step_projection_status(
+    status: LegacyStepProjectionStatus,
+) -> PlannerStepProjectionStatus:
+    try:
+        return PlannerStepProjectionStatus(status.value)
+    except ValueError as exc:
+        raise ValueError("unsupported legacy step projection status") from exc
 
 
 def _affordance_view(item: Affordance) -> PlannerAffordanceView:

@@ -119,6 +119,7 @@ def test_builder_can_rebuild_provider_context_from_immutable_request() -> None:
 def test_request_context_does_not_expose_ready_step_as_active() -> None:
     from affordance_runtime.planning_request import (
         PlannerObservationView,
+        PlannerStepProjectionStatus,
         PlannerStepView,
         PlannerTaskView,
         PlanningRequest,
@@ -194,6 +195,7 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
             ),
             active_step=None,
             activity_status=StepActivityStatus.READY_NOT_ACTIVATED,
+            projection_status=PlannerStepProjectionStatus.PROJECTED,
         ),
         observation=PlannerObservationView(
             snapshot_id="snapshot-1",

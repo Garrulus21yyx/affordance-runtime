@@ -5,6 +5,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
+from affordance_runtime.simplified_step_projection import LegacyStepProjectionStatus
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     EvidenceKind,
@@ -158,3 +159,49 @@ def test_builder_does_not_activate_ready_legacy_step() -> None:
     assert state.plan_progress is not None
     assert state.plan_progress.active_subgoal_id == ""
     assert state.version == before_version
+
+
+def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
+    from affordance_runtime.planning_request import PlannerStepProjectionStatus
+    from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+
+    envelope, state, snapshot = _fixture()
+    task = envelope.task_spec
+    assert task is not None
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-request",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="unknown-step",
+                    objective="unknown step",
+                    outcome=None,
+                    success_criteria=("unknown",),
+                    evidence_requirements=("fresh input-value observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                ),
+            ),
+        )
+    )
+
+    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+
+    assert request.step.projection_status == PlannerStepProjectionStatus.PROJECTION_INVALID
+    assert request.step.projection_reason
+    assert request.step.activity_status == StepActivityStatus.NO_PLAN
+    assert request.step.permits_effectful_actions is False
+    assert not {
+        "type_text",
+        "activate",
+        "select_option",
+        "press_key",
+        "drag",
+        "navigate",
+    } & set(request.permitted_action_kinds)
+    assert request.step.projection_status.value == LegacyStepProjectionStatus.PROJECTION_INVALID.value

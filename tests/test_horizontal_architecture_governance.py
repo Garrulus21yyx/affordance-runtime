@@ -557,8 +557,14 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "step_projection: foundation_hardened" in status
     assert "planning_request: foundation_contracts_and_builder" in status
     assert "tpa_3_1: completed_foundation" in status
+    assert "tpa_3_2a: completed_foundation" in status
     assert "planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml" in status
-    assert "next_slice: tpa-3-2-decision-constraints-request-adapter" in status
+    assert (
+        "planner_projection_admission_contract_record: "
+        "docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-2c-legacy-terminal-admission-projector" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -691,7 +697,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.2 decisionconstraint request adapter" in status
+    assert "current_next_change_admission: tpa-3.2c legacy terminal admission projector" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1154,6 +1160,18 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "plannerport signature change" in tpa_3_1
     assert "golden equivalence test" in tpa_3_1
     assert "closure_status: planner_context_request_path_foundation" in tpa_3_1
+    tpa_3_2a = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-2a-step-projection-admission-contracts.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "plannerstepprojectionstatus" in tpa_3_2a
+    assert "planneradmissionview" in tpa_3_2a
+    assert "decisionconstraintset compatible-target deep immutability" in tpa_3_2a
+    assert "production_behavior_change: false" in tpa_3_2a
+    assert "plannerport signature cutover" in tpa_3_2a
+    assert "coordinator call site change" in tpa_3_2a
+    assert "closure_status: projection_and_admission_contract_foundation" in tpa_3_2a
 
 
 def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:

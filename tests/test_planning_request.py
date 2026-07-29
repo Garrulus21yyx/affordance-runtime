@@ -5,6 +5,109 @@ import pytest
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 
 
+def test_planner_step_view_preserves_non_projected_status_and_reason() -> None:
+    from affordance_runtime.planning_request import PlannerStepProjectionStatus, PlannerStepView
+
+    stale = PlannerStepView(
+        plan=None,
+        progress=None,
+        active_step=None,
+        activity_status=StepActivityStatus.NO_PLAN,
+        projection_status=PlannerStepProjectionStatus.STALE_PLAN,
+        projection_reason="plan based on stale task revision",
+    )
+
+    assert stale.projection_status == PlannerStepProjectionStatus.STALE_PLAN
+    assert stale.projection_reason == "plan based on stale task revision"
+    assert stale.permits_effectful_actions is False
+
+
+def test_planner_admission_view_is_identity_bound_and_deeply_immutable() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerAdmissionSource,
+        PlannerAdmissionView,
+        TargetAdmissionDecision,
+        TargetAdmissionStatus,
+    )
+
+    decision = TargetAdmissionDecision(
+        target_id="semantic:submit",
+        status=TargetAdmissionStatus.BLOCKED,
+        reason_code="dependency_open",
+        blocking_step_ids=("step:type-name",),
+    )
+    admission = PlannerAdmissionView(
+        source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+        task_revision=1,
+        snapshot_id="snapshot-1",
+        target_decisions=(decision,),
+        excluded_target_ids=("semantic:submit",),
+    )
+
+    assert admission.target_decisions[0].blocking_step_ids == ("step:type-name",)
+    with pytest.raises(TypeError):
+        admission.excluded_target_ids[0] = "semantic:name"  # type: ignore[index]
+
+
+def test_planner_admission_rejects_inconsistent_exclusions() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerAdmissionSource,
+        PlannerAdmissionView,
+    )
+
+    with pytest.raises(ValueError, match="excluded target"):
+        PlannerAdmissionView(
+            source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+            task_revision=1,
+            snapshot_id="snapshot-1",
+            target_decisions=(),
+            excluded_target_ids=("semantic:submit",),
+        )
+
+
+def test_planner_admission_rejects_duplicate_decisions_and_unexplained_blocking() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerAdmissionSource,
+        PlannerAdmissionView,
+        TargetAdmissionDecision,
+        TargetAdmissionStatus,
+    )
+
+    with pytest.raises(ValueError, match="blocking step ids"):
+        TargetAdmissionDecision(
+            target_id="semantic:submit",
+            status=TargetAdmissionStatus.BLOCKED,
+            reason_code="dependency_open",
+        )
+
+    decision = TargetAdmissionDecision(
+        target_id="semantic:submit",
+        status=TargetAdmissionStatus.UNRESOLVED,
+        reason_code="ambiguous_grounding",
+    )
+    with pytest.raises(ValueError, match="unique"):
+        PlannerAdmissionView(
+            source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+            task_revision=1,
+            snapshot_id="snapshot-1",
+            target_decisions=(decision, decision),
+        )
+
+
+def test_planner_admission_summary_is_deeply_immutable() -> None:
+    from affordance_runtime.planning_request import PlannerAdmissionSummary
+
+    summary = PlannerAdmissionSummary(
+        excluded_target_ids=("semantic:submit",),
+        blocked_target_ids=("semantic:submit",),
+        unknown_target_ids=(),
+        unresolved_target_ids=(),
+    )
+
+    with pytest.raises(TypeError):
+        summary.excluded_target_ids[0] = "semantic:name"  # type: ignore[index]
+
+
 def test_planning_request_contracts_are_deeply_immutable() -> None:
     from affordance_runtime.planning_request import (
         PlannerAffordanceView,
