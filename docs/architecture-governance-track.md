@@ -266,6 +266,14 @@ change production authority, complete steps from receipts or external reward,
 or authorize ODG hookup / ODG-10 / ODG-11. The next default-path slice after S1
 is exact-ID legacy-to-step compatibility projection.
 
+S2 legacy-step compatibility projection may read TaskPlan, PlanProgress,
+TaskSpec, and StateKernel as a read-only projection source. It may project exact
+subgoal ID to canonical obligation ID, completed step identity, active step
+identity, and evidence references into the simplified Step contracts. It must
+not use lexical mapping, task name, URL, selector, seed, benchmark family,
+PlannerContext, trace writing, Coordinator logic, or any StateKernel mutation.
+The projected view has no completion authority until a later explicit cutover.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

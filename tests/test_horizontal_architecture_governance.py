@@ -315,6 +315,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     )
     s0_record = CHANGE_ADMISSION_DIR / "s0-simplified-architecture-freeze.yaml"
     s1_record = CHANGE_ADMISSION_DIR / "s1-simplified-core-contracts.yaml"
+    s2_record = CHANGE_ADMISSION_DIR / "s2-legacy-step-compatibility-projection.yaml"
     simplified_architecture = (
         REPOSITORY_ROOT
         / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
@@ -340,6 +341,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_9_runtime_record.exists()
     assert s0_record.exists()
     assert s1_record.exists()
+    assert s2_record.exists()
     assert simplified_architecture.exists()
     assert simplification_plan.exists()
     assert role_audit.exists()
@@ -360,6 +362,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     ).casefold()
     s0 = " ".join(s0_record.read_text(encoding="utf-8").split()).casefold()
     s1 = " ".join(s1_record.read_text(encoding="utf-8").split()).casefold()
+    s2 = " ".join(s2_record.read_text(encoding="utf-8").split()).casefold()
     simplified_architecture_text = " ".join(
         simplified_architecture.read_text(encoding="utf-8").split()
     ).casefold()
@@ -474,6 +477,14 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "receipt_success_completion: prohibited" in s1
     assert "closure_status: contract_foundation_only" in s1
     assert "next_slice: s2-legacy-step-compatibility-projection" in s1
+    assert "slice_id: s2-legacy-step-compatibility-projection" in s2
+    assert "production_behavior_change: false" in s2
+    assert "projected_view_authority: none" in s2
+    assert "exact_id_mapping_only: true" in s2
+    assert "lexical_mapping: prohibited" in s2
+    assert "no_state_mutation: required" in s2
+    assert "closure_status: compatibility_projection_foundation_only" in s2
+    assert "next_slice: s3-immutable-planning-request" in s2
     assert "approved_with_guardrails" in simplified_architecture_text
     assert "高级 attribution" in simplified_architecture_text
     assert "experimental_only" in simplified_architecture_text
@@ -509,7 +520,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "simplified_runtime_architecture:" in status
     assert "core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml" in status
     assert "core_contracts: foundation_only" in status
-    assert "next_slice: s2-legacy-step-compatibility-projection" in status
+    assert "step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml" in status
+    assert "step_projection: foundation_only" in status
+    assert "next_slice: s3-immutable-planning-request" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -539,6 +552,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "s1 simplified core contracts may add a neutral contract module" in governance
     assert "foundation-only boundary" in governance
     assert "next default-path slice after s1 is exact-id legacy-to-step compatibility projection" in governance
+    assert "s2 legacy-step compatibility projection may read taskplan" in governance
+    assert "exact subgoal id to canonical obligation id" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -626,7 +641,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: s2 legacy-step compatibility projection" in status
+    assert "current_next_change_admission: s3 immutable planningrequest" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -955,6 +970,32 @@ def test_obligation_shadow_flow_is_read_only_runtime_projection() -> None:
                     "affordance_runtime.adapters",
                     "affordance_runtime.benchmarks",
                     "affordance_runtime.coordinator",
+                    "affordance_runtime.trace",
+                )
+            ):
+                violations.append((filename, getattr(node, "lineno", 0), dependency))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in STATE_KERNEL_MUTATIONS
+        ):
+            violations.append((filename, node.lineno, node.func.attr))
+    assert violations == []
+
+
+def test_simplified_step_projection_is_read_only_compatibility_projection() -> None:
+    filename = "simplified_step_projection.py"
+    tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+    violations: list[tuple[str, int, str]] = []
+    for node in ast.walk(tree):
+        for dependency in _import_dependencies(node):
+            if any(
+                _matches_module(dependency, prefix)
+                for prefix in (
+                    "affordance_runtime.adapters",
+                    "affordance_runtime.benchmarks",
+                    "affordance_runtime.coordinator",
+                    "affordance_runtime.planner_context",
                     "affordance_runtime.trace",
                 )
             ):

@@ -726,3 +726,12 @@ delivery claims.
   StateKernel, Executor, Verifier behavior, TraceDag, PlannerContext, runtime
   authority, PR breadth, or promotion change. The next slice is S2
   legacy-to-step compatibility projection.
+- Started S2 legacy-step compatibility projection after `0288a8e`. Added a
+  read-only exact-ID projector from current TaskPlan/Subgoal/PlanProgress and
+  TaskSpec terminal obligations into the simplified Step contracts. RED first
+  failed because the projector API was absent; GREEN covers multi-step, flat
+  task, stale plan identity, no lexical mapping, task-level terminal criterion
+  projection, and StateKernel version read-only behavior. This remains
+  foundation-only: projected views have no completion authority, no trace
+  writes, no Coordinator changes, no PlannerContext migration, no PR breadth,
+  and no promotion. The next slice is S3 immutable PlanningRequest.
