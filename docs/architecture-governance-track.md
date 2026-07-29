@@ -243,6 +243,19 @@ hookup writes a diagnostic event. It must not mutate StateKernel or the
 obligation ledger, change Coordinator progress commit, change finish authority,
 change PlannerContext, require TaskPlan, or claim PR breadth / promotion.
 
+S0 simplified architecture freeze supersedes ODG-0 as the default production
+target. ODG-2 through ODG-9 remain foundation/diagnostic code, but ODG-9 hookup,
+ODG-10 obligation-ledger progress commit, and ODG-11 obligation finish-authority
+migration are stopped for the default path. Advanced attribution is
+`EXPERIMENTAL_ONLY`. New default-path work must follow
+`docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+and
+`docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`:
+Runtime-owned active step is the target progress authority, and final task
+completion comes from independent verification of `TaskSpec.completion_criterion`.
+No change may create three simultaneous completion authorities across legacy
+TaskPlan progress, active-step progress, and obligation-ledger progress.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

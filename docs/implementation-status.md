@@ -29,11 +29,12 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | ODG-9 runtime ticket-carry / shadow-projection foundation is the active local change after `ce7a329b58042d7cf44cf74f3e18876cac533d11`; ODG-9 pure post-verification attribution is committed and approved |
+| Current HEAD | S0 simplified target architecture freeze is the active documentation change after `21f49e730a24640b00ef42fd3a3e98e1813f6656`; ODG-2 through ODG-9 remain foundation/diagnostic only and ODG-10/ODG-11 are not authorized |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
 | Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, ODG-6 adds foundation-only current-observation satisfaction preparation at `dac2c5f`, ODG-6.1 hardens shared attribution identity/source/evidence contracts at `6b182d4`, ODG-7 adds authority-free pre-action candidate ticket resolution at `6d8526a`, ODG-8 adds authority-free post-action evidence normalization at `c3ab326`, ODG-8.1/8B harden causal identity, effective strength, stable semantic keys, and verifier observed-value fidelity, ODG-9 adds pure post-verification obligation attribution at `ce7a329`, and the runtime ticket-carry / shadow-projection foundation adds `BoundActionExecution` without changing ActionContract, Executor, Verifier, StateKernel, finish, or PlannerContext authority. |
+| Current simplified architecture decision | `docs/change-admission/s0-simplified-architecture-freeze.yaml`: the default production path is redirected to Runtime-owned active step progress plus independent task-level completion verification. ODG advanced attribution is retained as `EXPERIMENTAL_ONLY`; ODG-9 hookup, ODG-10 obligation progress commit, and ODG-11 finish-authority migration are stopped for the default path. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -84,13 +85,30 @@ obligation_driven_progress:
   post_verification_attribution: foundation_only
   runtime_ticket_carry_shadow_record: docs/change-admission/odg-9-runtime-ticket-carry-shadow-diagnostic.yaml
   runtime_ticket_carry_shadow: foundation_only
-  next_odg_slice: odg-9-diagnostic-trace-hookup
+  next_odg_slice: stopped_for_default_path
+  advanced_attribution: experimental_only
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
   benchmark_rerun: not_required
   standard_path_migrated: false
   taskplan_authority: compatibility_only_target
+  promotion_status: held
+
+simplified_runtime_architecture:
+  target_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
+  status: approved_with_guardrails
+  implementation: not_started_as_a_whole
+  current_production_progress_authority: legacy_taskplan_subgoal_planprogress
+  target_production_progress_authority: runtime_owned_active_step
+  target_task_completion_authority: task_spec_completion_criterion_independent_verification
+  next_slice: s1-simplified-core-contracts
+  odg_default_path: stopped
+  odg_advanced_attribution: experimental_only
+  odg_10_progress_commit: not_authorized
+  odg_11_finish_authority_migration: not_authorized
   promotion_status: held
 
 pr_breadth_initial_negative:
@@ -158,21 +176,21 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: ODG-9 diagnostic trace hookup; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized commit slice
+  current_next_change_admission: S1 simplified core contracts; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: deferred until ODG ready-obligation projection shapes the standard Planner view
 
 active_local_repair:
-  slice: odg-9-runtime-ticket-carry-shadow-diagnostic
-  revision: ce7a329b58042d7cf44cf74f3e18876cac533d11
-  status: runtime_ticket_carry_shadow_foundation_in_progress
-  foundation_record: docs/change-admission/odg-9-runtime-ticket-carry-shadow-diagnostic.yaml
+  slice: s0-simplified-architecture-freeze
+  revision: 21f49e730a24640b00ef42fd3a3e98e1813f6656
+  status: architecture_freeze_in_progress
+  foundation_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
   taskplan_required: false
-  next_runtime_slice: odg-9-diagnostic-trace-hookup
+  next_runtime_slice: s1-simplified-core-contracts
   promotion_status: held
 
 attribution_classification:
@@ -467,7 +485,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | ODG-9 runtime ticket-carry / shadow-projection foundation is the active local change after post-verification attribution; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | ODG-9 diagnostic trace hookup is next; ODG-6 runtime shadow hookup and immutable Planner input remain deferred |
+| `active` | S0 simplified target architecture freeze is the active documentation change after ODG-9 foundation; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | S1 simplified core contracts are next; ODG-9 hookup, ODG-10, ODG-11, and immutable Planner input remain deferred/stopped for the default path |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

@@ -312,6 +312,15 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_9_runtime_record = (
         CHANGE_ADMISSION_DIR / "odg-9-runtime-ticket-carry-shadow-diagnostic.yaml"
     )
+    s0_record = CHANGE_ADMISSION_DIR / "s0-simplified-architecture-freeze.yaml"
+    simplified_architecture = (
+        REPOSITORY_ROOT
+        / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
+    )
+    simplification_plan = (
+        REPOSITORY_ROOT
+        / "docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md"
+    )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -327,6 +336,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_8b_record.exists()
     assert odg_9_record.exists()
     assert odg_9_runtime_record.exists()
+    assert s0_record.exists()
+    assert simplified_architecture.exists()
+    assert simplification_plan.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -342,6 +354,13 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_9 = " ".join(odg_9_record.read_text(encoding="utf-8").split()).casefold()
     odg_9_runtime = " ".join(
         odg_9_runtime_record.read_text(encoding="utf-8").split()
+    ).casefold()
+    s0 = " ".join(s0_record.read_text(encoding="utf-8").split()).casefold()
+    simplified_architecture_text = " ".join(
+        simplified_architecture.read_text(encoding="utf-8").split()
+    ).casefold()
+    simplification_plan_text = " ".join(
+        simplification_plan.read_text(encoding="utf-8").split()
     ).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
@@ -431,6 +450,19 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "executor_ticket_visibility: prohibited" in odg_9_runtime
     assert "verifier_ticket_visibility: prohibited" in odg_9_runtime
     assert "closure_status: runtime_ticket_carry_shadow_foundation_only" in odg_9_runtime
+    assert "slice_id: s0-simplified-architecture-freeze" in s0
+    assert "default_production_progress_authority: runtime_owned_active_step" in s0
+    assert "advanced_attribution: experimental_only" in s0
+    assert "odg_10_progress_commit: not_authorized" in s0
+    assert "odg_11_finish_authority_migration: not_authorized" in s0
+    assert "closure_status: architecture_freeze_only" in s0
+    assert "approved_with_guardrails" in simplified_architecture_text
+    assert "高级 attribution" in simplified_architecture_text
+    assert "experimental_only" in simplified_architecture_text
+    assert "odg-10 obligation ledger commit 与 odg-11 finish-authority migration 停止" in simplified_architecture_text
+    assert "proposed_for_execution" in simplification_plan_text
+    assert "s1 simplified core contracts" in simplification_plan_text
+    assert "advanced attribution 进入默认 completion" in simplification_plan_text
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -455,7 +487,10 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "verifier_evidence_fidelity: foundation_only" in status
     assert "post_verification_attribution: foundation_only" in status
     assert "runtime_ticket_carry_shadow: foundation_only" in status
-    assert "next_odg_slice: odg-9-diagnostic-trace-hookup" in status
+    assert "next_odg_slice: stopped_for_default_path" in status
+    assert "simplified_runtime_architecture:" in status
+    assert "next_slice: s1-simplified-core-contracts" in status
+    assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -478,6 +513,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "weak receipt, weak state-delta, and weak external-evaluator" in governance
     assert "odg-9 runtime carry may add" in governance
     assert "must not be added to the `actioncontract` schema" in governance
+    assert "s0 simplified architecture freeze supersedes odg-0" in governance
+    assert "advanced attribution is `experimental_only`" in governance
+    assert "no change may create three simultaneous completion authorities" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -565,7 +603,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-9 diagnostic trace hookup" in status
+    assert "current_next_change_admission: s1 simplified core contracts" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

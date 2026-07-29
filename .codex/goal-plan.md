@@ -709,3 +709,12 @@ delivery claims.
   progress commit, change finish authority, change PlannerContext, require
   TaskPlan, run PR breadth, or claim promotion. The next slice is the actual
   diagnostic trace hookup; Coordinator obligation commit remains ODG-10.
+- Started S0 simplified architecture freeze after `21f49e7`. Archived the
+  approved target architecture at
+  `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+  and the granular execution plan at
+  `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`.
+  This supersedes ODG-0 for the default production path: ODG-2 through ODG-9
+  stay foundation/diagnostic, ODG-9 hookup and ODG-10/ODG-11 are stopped for
+  default progress authority, and advanced attribution is experimental-only.
+  The next slice is S1 simplified core contracts, not ODG diagnostic hookup.
