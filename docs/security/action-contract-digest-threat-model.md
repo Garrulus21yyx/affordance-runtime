@@ -124,6 +124,10 @@ target-compatibility payloads at construction. A selected semantic action or
 compiler-produced target scope therefore cannot be changed by mutating the
 caller-owned dictionaries that produced it.
 
+Canonical and intent repair proposal claim-id maps are frozen as well. Provider
+graph IDs are diagnostic/local inputs only, but their mapping to Runtime-owned
+canonical claim IDs must not drift after canonicalization or repair reporting.
+
 Configured approval providers freeze their allowed-capability set at
 construction time. A caller-owned set cannot be mutated after provider creation
 to silently expand which high-risk contracts may receive an approval token.

@@ -3,6 +3,7 @@ import pytest
 from affordance_runtime.canonical_obligation_compiler import (
     CanonicalEffectInput,
     CanonicalObligationCompiler,
+    CanonicalProposalGraph,
 )
 from affordance_runtime.source_ledger import SourceLedgerBuilder
 from affordance_runtime.task_intake import (
@@ -53,6 +54,19 @@ def _effect(unit_id: str) -> CanonicalEffectInput:
             ),
         ),
     )
+
+
+def test_canonical_proposal_graph_claim_id_map_is_immutable_from_source_mapping() -> None:
+    ledger = _ledger()
+    graph = CanonicalObligationCompiler().compile(ledger, (_effect(ledger.raw_text_unit_id),))
+    proposal_claim_ids = {"provider-read": graph.claims[0].claim_id}
+
+    proposal = CanonicalProposalGraph(graph=graph, proposal_claim_ids=proposal_claim_ids)
+    proposal_claim_ids["provider-read"] = "claim:polluted"
+
+    assert proposal.proposal_claim_ids["provider-read"] == graph.claims[0].claim_id
+    with pytest.raises(TypeError):
+        proposal.proposal_claim_ids["provider-read"] = "claim:polluted"
 
 
 def test_canonical_compiler_owns_ids_provenance_and_typed_evidence() -> None:

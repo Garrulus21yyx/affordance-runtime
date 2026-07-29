@@ -934,3 +934,8 @@ delivery claims.
   and compiler payloads, froze `SemanticActionResolution.parameters`,
   `SemanticCompilation.parameters`, and `SemanticConstraints.compatible_target_ids`,
   and kept planner/compiler behavior unchanged.
+- Continued SAR-1 after `2782593`. Added REDs for mutable
+  `CanonicalProposalGraph.proposal_claim_ids` and
+  `IntentDraftRepairAttempt.proposal_claim_ids`, froze proposal-to-canonical
+  claim-id mappings at canonicalization/repair reporting boundaries, and kept
+  TaskSpec authority unchanged.

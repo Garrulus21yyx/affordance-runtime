@@ -11,6 +11,7 @@ from typing import Callable, Sequence, TypeVar
 from pydantic import BaseModel, Field, ValidationError
 
 from affordance_runtime.canonical_obligation_compiler import CanonicalObligationCompiler
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_port import (
     ModelCallRecord,
     ModelConfig,
@@ -178,6 +179,9 @@ class IntentDraftRepairAttempt:
     result: CompilationResult
     parent: TraceNode | None
     succeeded: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_claim_ids", freeze_json(self.proposal_claim_ids))
 
 
 @dataclass

@@ -3,11 +3,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Sequence, TypeVar
 
+import pytest
 from pydantic import BaseModel
 
 from affordance_runtime.intent_compiler import (
     INTENT_COMPILER_PROMPT_VERSION,
     INTENT_DRAFT_REPAIR_PROMPT_VERSION,
+    IntentDraftRepairAttempt,
     LLMIntentCompiler,
     LLMIntentDraft,
     ParentSemanticProposalCompiler,
@@ -15,6 +17,7 @@ from affordance_runtime.intent_compiler import (
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.task_intake import (
     CompilationPolicy,
+    CompilationResult,
     CompilationStatus,
     GraphConstructionSource,
     IntentAmbiguity,
@@ -41,6 +44,38 @@ from affordance_runtime.task_obligation_coverage import (
 from affordance_runtime.trace import TraceDag
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def test_intent_draft_repair_attempt_claim_id_map_is_immutable_from_source_mapping() -> None:
+    draft = IntentDraft(
+        objective="Inspect report",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="report",
+                source_ref="source:request:whole",
+            ),
+        ),
+    )
+    proposal_claim_ids = {"provider-read": "claim:canonical"}
+
+    attempt = IntentDraftRepairAttempt(
+        draft=draft,
+        provider_issues=(),
+        proposal_claim_ids=proposal_claim_ids,
+        result=CompilationResult(
+            status=CompilationStatus.READY,
+            request_id="request-1",
+            draft=draft,
+        ),
+        parent=None,
+        succeeded=True,
+    )
+    proposal_claim_ids["provider-read"] = "claim:polluted"
+
+    assert attempt.proposal_claim_ids["provider-read"] == "claim:canonical"
+    with pytest.raises(TypeError):
+        attempt.proposal_claim_ids["provider-read"] = "claim:polluted"
 
 
 def _terminal_authority(

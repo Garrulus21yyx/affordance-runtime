@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from pydantic import Field
 
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.source_ledger import SourceLedger
 from affordance_runtime.task_intake import (
     CompilationIssue,
@@ -51,6 +52,9 @@ class CanonicalProposalGraph:
     graph: CanonicalObligationGraph
     proposal_claim_ids: dict[str, str]
     issues: tuple[CompilationIssue, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_claim_ids", freeze_json(self.proposal_claim_ids))
 
 
 @dataclass(frozen=True)
