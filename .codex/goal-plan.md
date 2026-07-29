@@ -711,9 +711,9 @@ delivery claims.
   diagnostic trace hookup; Coordinator obligation commit remains ODG-10.
 - Started S0 simplified architecture freeze after `21f49e7`. Archived the
   approved target architecture at
-  `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+  `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md`
   and the granular execution plan at
-  `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`.
+  `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md`.
   This supersedes ODG-0 for the default production path: ODG-2 through ODG-9
   stay foundation/diagnostic, ODG-9 hookup and ODG-10/ODG-11 are stopped for
   default progress authority, and advanced attribution is experimental-only.
@@ -869,3 +869,7 @@ delivery claims.
   long-term authority, superseding the additive TPA/ODG default sequence for
   future work. TPA-5B foundation-only expansion is stopped; the next slice is
   SAR-1 deep immutability and stale contract-hash repair.
+- Started SAR-0 archive synchronization after `e7acc8a`. Superseded
+  simplified and TaskPlanAuthority docs are moved under
+  `docs/archive/superseded-2026-07-29/`, README/status/governance references are
+  aligned to the SAR-0 authoritative docs, and the next slice remains SAR-1.

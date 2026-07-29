@@ -10,8 +10,8 @@ remote_ci: disabled
 parent_decision:
   freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
   projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml
-  target_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md
-  execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  target_architecture: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  execution_plan: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
 
 authority:
   current_production_progress_authority: legacy_taskplan_subgoal_planprogress

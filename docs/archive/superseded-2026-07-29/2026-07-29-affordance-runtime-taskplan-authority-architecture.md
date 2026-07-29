@@ -1,12 +1,19 @@
 # Affordance Runtime TaskPlan 权威与 Planner 边界架构修改
 
+> [!IMPORTANT]
+> Superseded by SAR-0. Current authority is
+> `docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
+> and
+> `docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`.
+> This archived file is historical context only.
+
 > **文档类型：** Architecture Amendment / Domain Ownership Decision
 > **状态：** `APPROVED_WITH_GUARDRAILS`
 > **适用仓库：** `Garrulus21yyx/affordance-runtime`
 > **适用分支：** `agent/migrate-runtime-components`
 > **原始审查基线：** `7fe493e8429541b4d42801f4519626891ff794d5`
 > **纳入仓库时的执行基线：** `8445747f0d734b3998b88edb204e099edf58d259`
-> **父级目标架构：** `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+> **父级目标架构：** `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md`
 > **实施状态：** `NOT_IMPLEMENTED_AS_A_WHOLE`
 > **决议日期：** 2026-07-29
 

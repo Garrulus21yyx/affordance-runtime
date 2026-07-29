@@ -1,6 +1,13 @@
 # Affordance Runtime 简化目标架构（优化版）
 
-> **建议仓库路径：** `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`  
+> [!IMPORTANT]
+> Superseded by SAR-0. Current authority is
+> `docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
+> and
+> `docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`.
+> This archived file is historical context only.
+
+> **建议仓库路径：** `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md`
 > **文档类型：** Target Architecture / Architecture Sustainability Decision  
 > **状态：** `APPROVED_WITH_GUARDRAILS`  
 > **TaskPlan ownership amendment：** `2026-07-29-affordance-runtime-taskplan-authority-architecture.md`（冲突时优先）

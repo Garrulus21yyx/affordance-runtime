@@ -112,19 +112,14 @@ cluster remains monitored rather than production-admitted. The prior
 V-PRB-6A dependent-subgoal progress-target foundation is retained, but only as
 compatibility scaffolding. ODG-0 and ODG-2 through ODG-9 remain historical
 foundation/diagnostic records and advanced attribution is `EXPERIMENTAL_ONLY`.
-The default-path decisions are now S0 simplified architecture plus the TPA-0
-TaskPlan authority amendment: TaskPlanGeneratorPort produces drafts,
-TaskPlanAuthority makes plan decisions, RunCoordinator commits, StateKernel
-stores accepted immutable plans and separate progress, and StepPlannerPort only
-proposes the next action for the Runtime-selected active step. The active-subgoal
-read/activation separation is locally closed in the current governance-sync
-line. Immutable Planner input remains real horizontal debt, but it is deferred
-only until S2.1 step projection hardening closes the compatibility edge cases
-required for S3. The Planner input now targets TaskSpec plus Step projection,
-UnifiedObservation, recent ActionOutcome summaries, and budget views under the
-simplified active-step architecture, not an ODG ready-obligation projection.
-Neither lane authorizes promotion while remote CI is disabled or required
-validation is unavailable.
+The default-path decision is now SAR-0 authoritative optimized architecture.
+S0/S1/S2 and TPA-0 through TPA-5 remain historical foundation work, but they no
+longer define the next default production target when they conflict with SAR-0.
+Future Runtime work follows substitutive one-in/one-out migration: replace an
+old authority, switch the real production path, then retire the old owner or
+projector. The next authorized default-path slice is SAR-1 deep immutability and
+stale contract-hash repair. Neither lane authorizes promotion while remote CI is
+disabled or required validation is unavailable.
 
 ODG-2 may add typed, authority-free progress and attribution contracts, but
 those contracts are not progress authority until later slices add shadow
@@ -247,18 +242,20 @@ hookup writes a diagnostic event. It must not mutate StateKernel or the
 obligation ledger, change Coordinator progress commit, change finish authority,
 change PlannerContext, require TaskPlan, or claim PR breadth / promotion.
 
-S0 simplified architecture freeze supersedes ODG-0 as the default production
-target. ODG-2 through ODG-9 remain foundation/diagnostic code, but ODG-9 hookup,
-ODG-10 obligation-ledger progress commit, and ODG-11 obligation finish-authority
-migration are stopped for the default path. Advanced attribution is
-`EXPERIMENTAL_ONLY`. New default-path work must follow
-`docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+S0 simplified architecture freeze superseded ODG-0 as the default production
+target during the active-step design period, but SAR-0 now supersedes both the
+S0 simplified target and the TPA additive default sequence. The S0 and TPA
+documents are archived under `docs/archive/superseded-2026-07-29/` and remain
+historical context only. ODG-2 through ODG-9 remain foundation/diagnostic code;
+ODG-9 hookup, ODG-10 obligation-ledger progress commit, and ODG-11 obligation
+finish-authority migration are stopped for the default path. Advanced
+attribution is `EXPERIMENTAL_ONLY`. New default-path work must follow
+`docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
 and
-`docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`:
-Runtime-owned active step is the target progress authority, and final task
-completion comes from independent verification of `TaskSpec.completion_criterion`.
-No change may create three simultaneous completion authorities across legacy
-TaskPlan progress, active-step progress, and obligation-ledger progress.
+`docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`.
+No change may create simultaneous completion authorities across legacy TaskPlan
+progress, active-step progress, obligation-ledger progress, or future
+TaskProgress.
 
 S1 simplified core contracts may add a neutral contract module for
 `SourceReference`, criterion policies, `StepSpec`, `TaskPlanView`,

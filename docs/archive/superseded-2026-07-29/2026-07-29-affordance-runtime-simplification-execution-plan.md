@@ -1,6 +1,13 @@
 # Affordance Runtime 简化架构实施计划（颗粒度版）
 
-> **建议仓库路径：** `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`  
+> [!IMPORTANT]
+> Superseded by SAR-0. Current authority is
+> `docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
+> and
+> `docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`.
+> This archived file is historical context only.
+
+> **建议仓库路径：** `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md`
 > **文档类型：** Incremental Implementation Plan / Change-Admission Program  
 > **状态：** `PROPOSED_FOR_EXECUTION`  
 > **TaskPlan/Planner boundary sub-plan：** `2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md`

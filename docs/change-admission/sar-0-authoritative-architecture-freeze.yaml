@@ -16,8 +16,11 @@ decision:
   conflict_precedence: authoritative_optimized_architecture_replaces_prior_default_target_architectures
 
 superseded_default_paths:
-  - docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md
-  - docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md
+  - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-architecture.md
+  - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md
+  - docs/archive/superseded-2026-07-29/README.md
   - odg_default_path
   - tpa_additive_foundation_only_sequence
 

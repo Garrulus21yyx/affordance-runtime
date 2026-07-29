@@ -13,11 +13,11 @@ IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
 ARCHITECTURE_DOC = REPOSITORY_ROOT / "docs" / "architecture.md"
 TASKPLAN_AUTHORITY_ARCHITECTURE = (
     REPOSITORY_ROOT
-    / "docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md"
+    / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-architecture.md"
 )
 TASKPLAN_AUTHORITY_PLAN = (
     REPOSITORY_ROOT
-    / "docs/superpowers/plans/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
+    / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
 )
 AUTHORITATIVE_OPTIMIZED_ARCHITECTURE = (
     REPOSITORY_ROOT
@@ -349,11 +349,11 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     s2_1_record = CHANGE_ADMISSION_DIR / "s2-1-step-projection-hardening.yaml"
     simplified_architecture = (
         REPOSITORY_ROOT
-        / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
+        / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md"
     )
     simplification_plan = (
         REPOSITORY_ROOT
-        / "docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md"
+        / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md"
     )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
@@ -640,12 +640,14 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "legacy_implementation_retirement: pending" in status
     assert "draft_generator_foundation: complete" in status
     assert "llm_generator_migration: pending" in status
-    assert "next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
+    assert "next_slice: sar-1-deep-immutability-and-stale-contract-hash" in status
+    assert "stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
-    assert "taskplanauthority makes plan decisions" in governance
-    assert "stepplannerport only proposes the next action" in governance
+    assert "default-path decision is now sar-0 authoritative optimized architecture" in governance
+    assert "s0/s1/s2 and tpa-0 through tpa-5 remain historical foundation work" in governance
+    assert "substitutive one-in/one-out migration" in governance
     assert "advanced attribution is `experimental_only`" in governance
     assert "must not import coordinator, statekernel, taskplan" in governance
     assert "statekernel to the obligation progress contracts" in governance
@@ -666,12 +668,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "weak receipt, weak state-delta, and weak external-evaluator" in governance
     assert "odg-9 runtime carry may add" in governance
     assert "must not be added to the `actioncontract` schema" in governance
-    assert "s0 simplified architecture freeze supersedes odg-0" in governance
+    assert "sar-0 now supersedes both the s0 simplified target" in governance
     assert "advanced attribution is `experimental_only`" in governance
-    assert "no change may create three simultaneous completion authorities" in governance
+    assert "no change may create simultaneous completion authorities" in governance
     assert "s1 simplified core contracts may add a neutral contract module" in governance
     assert "foundation-only boundary" in governance
-    assert "next default-path slice after s1 is exact-id legacy-to-step compatibility projection" in governance
+    assert "sar-1 deep immutability" in governance
     assert "s2 legacy-step compatibility projection may read taskplan" in governance
     assert "exact subgoal id to canonical obligation id" in governance
     assert "s2.1 hardens this projection before tpa-2" in governance
@@ -697,7 +699,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "module-level semantic owner gate" in governance
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
-    assert "default-path decisions are now s0 simplified architecture plus the tpa-0" in governance
+    assert "foundation-only expansion, including tpa-5b" in governance
     assert "odg-0 and odg-2 through odg-9 remain historical" in governance
     assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
@@ -1668,6 +1670,9 @@ def test_taskplan_draft_generators_are_foundation_only() -> None:
 
 
 def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
+    readme = " ".join(
+        (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8").split()
+    ).casefold()
     architecture = " ".join(
         AUTHORITATIVE_OPTIMIZED_ARCHITECTURE.read_text(encoding="utf-8").split()
     ).casefold()
@@ -1687,9 +1692,45 @@ def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
     assert "substitutive migration" in execution_plan
     assert "sar-1 深层不可变" in execution_plan
     assert "production_behavior_change: false" in record
+    assert "docs/archive/superseded-2026-07-29/readme.md" in record
     assert "stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
     assert "next_slice: sar-1-deep-immutability-and-stale-contract-hash" in status
     assert "additive_foundation_expansion: stopped" in status
+    assert "superseded_archive: docs/archive/superseded-2026-07-29/readme.md" in status
+    assert "2026-07-29-affordance-runtime-authoritative-optimized-architecture.md" in readme
+    assert "2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md" in readme
+    assert "docs/archive/superseded-2026-07-29/readme.md" in readme
+
+    archived_paths = (
+        "2026-07-29-affordance-runtime-simplified-target-architecture.md",
+        "2026-07-29-affordance-runtime-simplification-execution-plan.md",
+        "2026-07-29-affordance-runtime-taskplan-authority-architecture.md",
+        "2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md",
+    )
+    for archived_path in archived_paths:
+        assert (
+            "docs/archive/superseded-2026-07-29/" + archived_path
+        ) in record
+        assert (
+            REPOSITORY_ROOT / "docs/archive/superseded-2026-07-29" / archived_path
+        ).exists()
+
+    assert not (
+        REPOSITORY_ROOT
+        / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
+    ).exists()
+    assert not (
+        REPOSITORY_ROOT
+        / "docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md"
+    ).exists()
+    assert not (
+        REPOSITORY_ROOT
+        / "docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md"
+    ).exists()
+    assert not (
+        REPOSITORY_ROOT
+        / "docs/superpowers/plans/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
+    ).exists()
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

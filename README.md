@@ -7,6 +7,17 @@ harness evolution.
 
 ## Architecture Boundary
 
+Current long-term architecture authority:
+
+- [Affordance Runtime Authoritative Optimized Architecture](docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
+- [Affordance Runtime Substitutive Refactor Execution Plan](docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
+
+Earlier simplified, TaskPlanAuthority, and ODG default-path designs are retained
+as historical records under
+[superseded-2026-07-29](docs/archive/superseded-2026-07-29/README.md). They no
+longer define the default production target when they conflict with the
+authoritative optimized architecture.
+
 **Affordance Runtime is the product. BrowserGym and every other benchmark are
 external consumers and evaluation environments.** Architecture changes must
 improve the generic Runtime main path first and must have non-BrowserGym

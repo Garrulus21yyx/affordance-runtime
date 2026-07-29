@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-0 active local change after `648c2da4f6b51c87c5488b6073f0c4b83bf80677`: the authoritative optimized architecture and substitutive refactor plan are being added as the single long-term target; production behavior, Coordinator, StateKernel, planner contracts, progress authority, finish authority, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-0 archive/doc-maintenance active local change after `e7acc8adc89ec190b33c00f4c7468e6f7d8aef54`: the authoritative optimized architecture remains the single long-term target; superseded simplified and TaskPlanAuthority documents are being moved to `docs/archive/superseded-2026-07-29/`; README/status references are being aligned. Production behavior, Coordinator, StateKernel, planner contracts, progress authority, finish authority, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -102,13 +102,13 @@ obligation_driven_progress:
   promotion_status: held
 
 simplified_runtime_architecture:
-  target_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md
-  execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  target_architecture: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  execution_plan: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
   freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
   core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml
   step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml
   step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml
-  status: approved_with_guardrails
+  status: superseded_by_sar_0
   implementation: foundation_contracts_started
   core_contracts: foundation_only
   step_projection: foundation_hardened
@@ -117,7 +117,7 @@ simplified_runtime_architecture:
   target_task_completion_authority: task_spec_completion_criterion_independent_verification
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planning_request: foundation_contracts_and_builder
-  next_slice: tpa-5b-llm-taskplan-generator-draft-migration
+  next_slice: stopped_by_sar_0
   odg_default_path: stopped
   odg_advanced_attribution: experimental_only
   odg_10_progress_commit: not_authorized
@@ -127,18 +127,20 @@ simplified_runtime_architecture:
 authoritative_optimized_architecture:
   architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+  superseded_archive: docs/archive/superseded-2026-07-29/README.md
   freeze_record: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
   status: approved_with_guardrails
   conflict_precedence: replaces_simplified_taskplan_authority_and_odg_default_target_architectures
   migration_style: substitutive_one_in_one_out
+  old_default_docs: archived
   stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration
   next_slice: sar-1-deep-immutability-and-stale-contract-hash
   production_behavior_change: false
   promotion_status: held
 
 taskplan_authority_program:
-  architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md
-  execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md
+  architecture: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-architecture.md
+  execution_plan: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   call_site_audit: docs/audits/taskplan-authority-call-sites.md
@@ -184,7 +186,8 @@ taskplan_authority_program:
   legacy_implementation_retirement: pending
   draft_generator_foundation: complete
   llm_generator_migration: pending
-  next_slice: tpa-5b-llm-taskplan-generator-draft-migration
+  next_slice: stopped_by_sar_0
+  superseded_by: sar-0-authoritative-architecture-freeze
   production_authority_changed: false
   promotion_status: held
 

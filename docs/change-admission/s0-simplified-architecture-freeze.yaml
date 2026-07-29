@@ -8,13 +8,13 @@ production_writers: 1
 remote_ci: disabled
 
 target_architecture:
-  document: docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md
+  document: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md
   status: approved_with_guardrails
   default_production_progress_authority: runtime_owned_active_step
   task_completion_authority: task_spec_completion_criterion_independent_verification
 
 execution_plan:
-  document: docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md
+  document: docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
   status: proposed_for_execution
   next_slice: s1-simplified-core-contracts
 

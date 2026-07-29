@@ -9,8 +9,8 @@
 > **默认生产进度权威：** 迁移完成前仍为 legacy `TaskPlan + PlanProgress`；目标为本文件定义的 `TaskPlan + TaskProgress`  
 > **冲突优先级：** 本文件是 Affordance Runtime 长期目标架构的唯一权威。与以下历史设计冲突时，以本文件为准：
 >
-> - `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`
-> - `docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md`
+> - `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplified-target-architecture.md`
+> - `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-architecture.md`
 > - ODG-0 至 ODG-9 默认路径提案
 > - TPA foundation 文档中仍要求长期并存的 compatibility / projection 设计
 >

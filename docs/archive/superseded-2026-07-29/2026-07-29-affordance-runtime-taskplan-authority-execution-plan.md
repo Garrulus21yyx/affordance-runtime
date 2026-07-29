@@ -1,9 +1,16 @@
 # Affordance Runtime TaskPlan 权威与 Planner 边界实施计划
 
+> [!IMPORTANT]
+> Superseded by SAR-0. Current authority is
+> `docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
+> and
+> `docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`.
+> This archived file is historical context only.
+
 > **文档类型：** Granular Implementation Plan / Change-Admission Program
 > **状态：** `PROPOSED_FOR_EXECUTION`
 > **架构决议：** `2026-07-29-affordance-runtime-taskplan-authority-architecture.md`
-> **父级计划：** `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`
+> **父级计划：** `docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md`
 > **适用分支：** `agent/migrate-runtime-components`
 > **原始审查基线：** `7fe493e8429541b4d42801f4519626891ff794d5`
 > **执行基线：** `8445747f0d734b3998b88edb204e099edf58d259`
