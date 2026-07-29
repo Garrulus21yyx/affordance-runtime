@@ -20,6 +20,7 @@ goal: >
 
 included:
   - EvidenceSourceKind
+  - PostVerificationContext
   - expanded PostActionEvidenceFact identity and source fields
   - VerificationEvidenceView
   - VerificationReportView
@@ -37,6 +38,9 @@ included:
   - value-shape validation for IS_CHECKED
   - multiple normalized facts from one report
   - unsupported observed shape fail-closed result
+  - stable semantic_evidence_key declaration matching
+  - effective strength from source cap and reported strength intersection
+  - verifier observed-value fidelity foundation via VerifierEvaluation
 
 excluded:
   - Coordinator integration
@@ -86,10 +90,14 @@ authority_rules:
     - coordinate
     - benchmark family
   source_strength_policy:
-    post_action_observation: independent
-    independent_http_json: authoritative
-    execution_receipt: weak
-    external_evaluator: weak
+    post_action_observation: capped_at_independent
+    independent_http_json: capped_at_authoritative
+    execution_receipt: capped_at_weak
+    external_evaluator: capped_at_weak
+    effective_strength: min(reported_strength, source_cap)
+  semantic_declaration_key:
+    dynamic_evidence_id: prohibited
+    stable_semantic_evidence_key: required
   writes_state: false
   writes_trace: false
   mutates_obligation_ledger: false
@@ -112,13 +120,12 @@ tests:
     - tests/test_responsibility_containment.py
 
 architecture_admission: pass
-closure_status: evidence_normalization_foundation_only
+closure_status: evidence_normalization_foundation_hardened_with_verifier_fidelity
 promotion_status: held
 
 next_requirement: >
-  Continue with ODG-8B verification evidence fidelity projection only if real
-  verifier reports lack typed values. Otherwise continue to ODG-9
-  post-verification obligation attribution. ODG-9 must consume
-  ProgressAttributionTicket plus PostActionEvidenceFact values and may only
-  prepare satisfaction when exactly one candidate is proven by sufficiently
-  strong, identity-consistent evidence.
+  Continue to ODG-9 post-verification obligation attribution as a separate
+  foundation-only slice. ODG-9 must consume ProgressAttributionTicket plus
+  PostActionEvidenceFact values and may only prepare satisfaction when exactly
+  one candidate is proven by sufficiently strong, identity-consistent
+  evidence.

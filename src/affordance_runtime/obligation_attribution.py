@@ -65,6 +65,26 @@ class PostVerificationSatisfactionSource:
 
 
 @dataclass(frozen=True)
+class PostVerificationContext:
+    """Causal identity for one post-action verification pass."""
+
+    contract_id: str
+    contract_hash: str
+    pre_snapshot_id: str
+    post_snapshot_id: str
+    post_page_revision: str
+    post_environment_revision: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank("contract_id", self.contract_id)
+        _require_nonblank("contract_hash", self.contract_hash)
+        _require_nonblank("pre_snapshot_id", self.pre_snapshot_id)
+        _require_nonblank("post_snapshot_id", self.post_snapshot_id)
+        _require_nonblank("post_page_revision", self.post_page_revision)
+        _require_nonblank("post_environment_revision", self.post_environment_revision)
+
+
+@dataclass(frozen=True)
 class AttributionTargetView:
     """Runtime-grounded target binding for attribution candidate matching."""
 
@@ -310,6 +330,7 @@ class VerificationEvidenceView:
     observed: FrozenEvidenceValue
     expected: FrozenEvidenceValue
     evidence_id: str
+    semantic_evidence_key: str
     criterion_ids: tuple[str, ...]
     requirement_ids: tuple[str, ...]
     snapshot_id: str
@@ -332,6 +353,7 @@ class VerificationEvidenceView:
             _frozen_evidence_value("expected", self.expected),
         )
         _require_nonblank("evidence_id", self.evidence_id)
+        _require_nonblank("semantic_evidence_key", self.semantic_evidence_key)
         object.__setattr__(self, "criterion_ids", tuple(self.criterion_ids))
         object.__setattr__(self, "requirement_ids", tuple(self.requirement_ids))
         _require_unique_nonblank("criterion ids", self.criterion_ids)
@@ -362,7 +384,7 @@ class VerificationReportView:
 class VerifierSemanticEvidenceDeclaration:
     """Runtime-owned semantic meaning for one verifier evidence item."""
 
-    evidence_id: str
+    semantic_evidence_key: str
     evidence_subject_id: str
     relation: TaskObligationRelation
     before_value: FrozenEvidenceValue
@@ -371,7 +393,7 @@ class VerifierSemanticEvidenceDeclaration:
     allowed_source_kinds: tuple[EvidenceSourceKind, ...]
 
     def __post_init__(self) -> None:
-        _require_nonblank("semantic evidence id", self.evidence_id)
+        _require_nonblank("semantic evidence key", self.semantic_evidence_key)
         _require_nonblank("evidence subject id", self.evidence_subject_id)
         object.__setattr__(
             self,
@@ -418,19 +440,21 @@ class PostActionEvidenceNormalizer:
         ticket: ProgressAttributionTicket,
         report: VerificationReportView,
         declarations: tuple[VerifierSemanticEvidenceDeclaration, ...],
-        post_snapshot_id: str,
-        post_page_revision: str,
-        post_environment_revision: str,
+        context: PostVerificationContext,
     ) -> PostActionEvidenceNormalizationResult:
-        if not post_snapshot_id.strip() or not post_page_revision.strip() or not post_environment_revision.strip():
+        if (
+            context.contract_id != ticket.contract_id
+            or context.contract_hash != ticket.contract_hash
+            or context.pre_snapshot_id != ticket.pre_snapshot_id
+        ):
             return PostActionEvidenceNormalizationResult(
                 status="stale",
-                reason="missing post-action observation identity",
+                reason="post-verification context does not match ticket",
             )
         if report.status != "passed":
             return PostActionEvidenceNormalizationResult(status="report_not_passed")
-        declarations_by_id = {item.evidence_id: item for item in declarations}
-        if not declarations or len(declarations_by_id) != len(declarations):
+        declarations_by_key = {item.semantic_evidence_key: item for item in declarations}
+        if not declarations or len(declarations_by_key) != len(declarations):
             return PostActionEvidenceNormalizationResult(
                 status="invalid",
                 reason="semantic evidence declarations must be unique and non-empty",
@@ -445,24 +469,36 @@ class PostActionEvidenceNormalizer:
         facts: list[PostActionEvidenceFact] = []
         unsupported_shape = False
         for evidence in report.evidence:
-            declaration = declarations_by_id.get(evidence.evidence_id)
+            declaration = declarations_by_key.get(evidence.semantic_evidence_key)
             if declaration is None:
                 continue
             if not evidence.passed:
                 continue
             if (
-                evidence.snapshot_id != post_snapshot_id
-                or evidence.environment_revision != post_environment_revision
+                evidence.snapshot_id != context.post_snapshot_id
+                or evidence.environment_revision != context.post_environment_revision
             ):
                 return PostActionEvidenceNormalizationResult(status="stale")
             source = _source_kind_and_strength(evidence.source)
             if source is None:
                 continue
-            source_kind, strength = source
+            reported_strength = _reported_strength(evidence.reported_strength)
+            if reported_strength is None:
+                return PostActionEvidenceNormalizationResult(
+                    status="invalid",
+                    reason=f"unknown reported evidence strength: {evidence.reported_strength}",
+                )
+            source_kind, source_strength = source
+            strength = _minimum_strength(source_strength, reported_strength)
             if source_kind not in declaration.allowed_source_kinds:
                 continue
             if _strength_rank(strength) < _strength_rank(declaration.minimum_strength):
                 continue
+            if declaration.expected_value != evidence.expected:
+                return PostActionEvidenceNormalizationResult(
+                    status="invalid",
+                    reason="semantic declaration expected value does not match evidence",
+                )
             if not _evidence_shape_supported(
                 relation=declaration.relation,
                 before_value=declaration.before_value,
@@ -475,9 +511,9 @@ class PostActionEvidenceNormalizer:
                     contract_id=ticket.contract_id,
                     contract_hash=ticket.contract_hash,
                     pre_snapshot_id=ticket.pre_snapshot_id,
-                    post_snapshot_id=post_snapshot_id,
-                    post_page_revision=post_page_revision,
-                    post_environment_revision=post_environment_revision,
+                    post_snapshot_id=context.post_snapshot_id,
+                    post_page_revision=context.post_page_revision,
+                    post_environment_revision=context.post_environment_revision,
                     action_semantic_target_id=ticket.semantic_target_id,
                     evidence_subject_id=declaration.evidence_subject_id,
                     relation=declaration.relation,
@@ -580,6 +616,26 @@ def _source_kind_and_strength(
     if normalized == "external_evaluator":
         return EvidenceSourceKind.EXTERNAL_EVALUATOR, EvidenceStrength.WEAK
     return None
+
+
+def _reported_strength(reported: str) -> EvidenceStrength | None:
+    normalized = reported.casefold()
+    if normalized == "weak":
+        return EvidenceStrength.WEAK
+    if normalized == "strong":
+        return EvidenceStrength.AUTHORITATIVE
+    if normalized == EvidenceStrength.INDEPENDENT.value:
+        return EvidenceStrength.INDEPENDENT
+    if normalized == EvidenceStrength.AUTHORITATIVE.value:
+        return EvidenceStrength.AUTHORITATIVE
+    return None
+
+
+def _minimum_strength(
+    left: EvidenceStrength,
+    right: EvidenceStrength,
+) -> EvidenceStrength:
+    return left if _strength_rank(left) <= _strength_rank(right) else right
 
 
 def _strength_rank(strength: EvidenceStrength) -> int:

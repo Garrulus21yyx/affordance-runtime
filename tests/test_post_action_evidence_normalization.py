@@ -5,6 +5,7 @@ from affordance_runtime.obligation_attribution import (
     EvidenceSourceKind,
     EvidenceStrength,
     PostActionEvidenceNormalizer,
+    PostVerificationContext,
     ProgressAttributionTicket,
     VerificationEvidenceView,
     VerificationReportView,
@@ -33,6 +34,7 @@ def _ticket() -> ProgressAttributionTicket:
 def _evidence(
     evidence_id: str = "evidence:slider",
     *,
+    semantic_evidence_key: str = "spec:slider",
     target: str = "semantic:slider",
     passed: bool = True,
     source: str = "post_action_observation",
@@ -50,6 +52,7 @@ def _evidence(
         observed=observed,
         expected=expected,
         evidence_id=evidence_id,
+        semantic_evidence_key=semantic_evidence_key,
         criterion_ids=("criterion:slider",),
         requirement_ids=("requirement:slider",),
         snapshot_id=snapshot_id,
@@ -64,7 +67,7 @@ def _report(*evidence: VerificationEvidenceView, status: str = "passed") -> Veri
 
 
 def _declaration(
-    evidence_id: str = "evidence:slider",
+    semantic_evidence_key: str = "spec:slider",
     *,
     subject: str = "semantic:slider",
     relation: TaskObligationRelation = TaskObligationRelation.EQUALS,
@@ -76,7 +79,7 @@ def _declaration(
     ),
 ) -> VerifierSemanticEvidenceDeclaration:
     return VerifierSemanticEvidenceDeclaration(
-        evidence_id=evidence_id,
+        semantic_evidence_key=semantic_evidence_key,
         evidence_subject_id=subject,
         relation=relation,
         before_value=before_value,
@@ -91,17 +94,21 @@ def _normalize(
     ticket: ProgressAttributionTicket | None = None,
     report: VerificationReportView | None = None,
     declarations: tuple[VerifierSemanticEvidenceDeclaration, ...] | None = None,
-    post_snapshot_id: str = "snapshot-post",
-    post_page_revision: str = "page-post",
-    post_environment_revision: str = "env-post",
+    context: PostVerificationContext | None = None,
 ):
     return PostActionEvidenceNormalizer().normalize(
         ticket=ticket or _ticket(),
         report=report or _report(_evidence()),
         declarations=(_declaration(),) if declarations is None else declarations,
-        post_snapshot_id=post_snapshot_id,
-        post_page_revision=post_page_revision,
-        post_environment_revision=post_environment_revision,
+        context=context
+        or PostVerificationContext(
+            contract_id="contract-1",
+            contract_hash="sha256:contract-1",
+            pre_snapshot_id="snapshot-pre",
+            post_snapshot_id="snapshot-post",
+            post_page_revision="page-post",
+            post_environment_revision="env-post",
+        ),
     )
 
 
@@ -139,10 +146,18 @@ def test_normalizes_has_changed_and_checked_facts() -> None:
         ),
     )
     checked = _normalize(
-        report=_report(_evidence("evidence:checkbox", target="semantic:checkbox", observed=True)),
+        report=_report(
+            _evidence(
+                "evidence:checkbox",
+                semantic_evidence_key="spec:checkbox",
+                target="semantic:checkbox",
+                observed=True,
+                expected=True,
+            )
+        ),
         declarations=(
             _declaration(
-                "evidence:checkbox",
+                "spec:checkbox",
                 subject="semantic:checkbox",
                 relation=TaskObligationRelation.IS_CHECKED,
                 expected_value=True,
@@ -161,18 +176,24 @@ def test_independent_api_can_be_authoritative_and_multiple_facts_are_allowed() -
     result = _normalize(
         report=_report(
             _evidence("evidence:api-a", source="independent_http_json", observed="done", expected="done"),
-            _evidence("evidence:api-b", source="independent_http_json", observed=True, expected=True),
+            _evidence(
+                "evidence:api-b",
+                semantic_evidence_key="spec:api-b",
+                source="independent_http_json",
+                observed=True,
+                expected=True,
+            ),
         ),
         declarations=(
             _declaration(
-                "evidence:api-a",
+                "spec:slider",
                 relation=TaskObligationRelation.EQUALS,
                 expected_value="done",
                 minimum_strength=EvidenceStrength.AUTHORITATIVE,
                 allowed_sources=(EvidenceSourceKind.INDEPENDENT_API,),
             ),
             _declaration(
-                "evidence:api-b",
+                "spec:api-b",
                 relation=TaskObligationRelation.IS_COMPLETED,
                 expected_value=True,
                 minimum_strength=EvidenceStrength.AUTHORITATIVE,
@@ -281,3 +302,103 @@ def test_invalid_inputs_fail_closed() -> None:
             semantic_target_id="semantic:slider",
             canonical_subject_ids=(),
         )
+
+
+def test_context_causality_must_match_ticket_before_normalizing() -> None:
+    assert (
+        _normalize(
+            context=PostVerificationContext(
+                contract_id="contract-other",
+                contract_hash="sha256:contract-1",
+                pre_snapshot_id="snapshot-pre",
+                post_snapshot_id="snapshot-post",
+                post_page_revision="page-post",
+                post_environment_revision="env-post",
+            ),
+        ).status
+        == "stale"
+    )
+    assert (
+        _normalize(
+            context=PostVerificationContext(
+                contract_id="contract-1",
+                contract_hash="sha256:other",
+                pre_snapshot_id="snapshot-pre",
+                post_snapshot_id="snapshot-post",
+                post_page_revision="page-post",
+                post_environment_revision="env-post",
+            ),
+        ).status
+        == "stale"
+    )
+    assert (
+        _normalize(
+            context=PostVerificationContext(
+                contract_id="contract-1",
+                contract_hash="sha256:contract-1",
+                pre_snapshot_id="snapshot-other",
+                post_snapshot_id="snapshot-post",
+                post_page_revision="page-post",
+                post_environment_revision="env-post",
+            ),
+        ).status
+        == "stale"
+    )
+
+
+def test_effective_strength_is_source_cap_and_reported_strength_intersection() -> None:
+    weak_observation = _normalize(
+        report=_report(_evidence(strength="weak")),
+        declarations=(
+            _declaration(
+                minimum_strength=EvidenceStrength.INDEPENDENT,
+            ),
+        ),
+    )
+    weak_receipt = _normalize(
+        report=_report(_evidence(source="execution_receipt", strength="strong")),
+        declarations=(
+            _declaration(
+                allowed_sources=(EvidenceSourceKind.EXECUTION_RECEIPT,),
+                minimum_strength=EvidenceStrength.INDEPENDENT,
+            ),
+        ),
+    )
+    unknown_strength = _normalize(
+        report=_report(_evidence(strength="adapter_magic")),
+    )
+
+    assert weak_observation.status == "no_eligible_evidence"
+    assert weak_receipt.status == "no_eligible_evidence"
+    assert unknown_strength.status == "invalid"
+
+
+def test_semantic_declaration_uses_stable_key_not_dynamic_evidence_id() -> None:
+    result = _normalize(
+        report=_report(
+            _evidence(
+                evidence_id="verification:snapshot-post:0:dynamic",
+                semantic_evidence_key="spec:stable-slider",
+            )
+        ),
+        declarations=(
+            _declaration(
+                "spec:stable-slider",
+                relation=TaskObligationRelation.EQUALS,
+                expected_value=7,
+            ),
+        ),
+    )
+
+    assert result.status == "normalized"
+    assert result.facts[0].evidence_refs == ("verification:snapshot-post:0:dynamic",)
+
+
+def test_declaration_expected_value_must_match_evidence_expected() -> None:
+    assert (
+        _normalize(
+            report=_report(_evidence(expected=9)),
+            declarations=(_declaration(expected_value=7),),
+        ).status
+        == "invalid"
+    )

@@ -29,11 +29,11 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | ODG-8 post-action evidence normalization foundation is the active local change after `6d8526a5cb468326feda017982948da6d93e225e`; ODG-7 attribution ticket resolver foundation is approved and ODG-7.1 contract hardening is included in this local slice |
+| Current HEAD | ODG-8.1 causal identity / strength hardening and ODG-8B verifier evidence fidelity are the active local changes after `c3ab32649c897fab2272694315e26210e36021b6`; ODG-8 pure normalizer is approved |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
-| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, ODG-6 adds foundation-only current-observation satisfaction preparation at `dac2c5f`, ODG-6.1 hardens shared attribution identity/source/evidence contracts at `6b182d4`, ODG-7 adds authority-free pre-action candidate ticket resolution at `6d8526a`, and ODG-8 adds authority-free post-action evidence normalization before ODG-9 attribution. |
+| Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, ODG-6 adds foundation-only current-observation satisfaction preparation at `dac2c5f`, ODG-6.1 hardens shared attribution identity/source/evidence contracts at `6b182d4`, ODG-7 adds authority-free pre-action candidate ticket resolution at `6d8526a`, ODG-8 adds authority-free post-action evidence normalization at `c3ab326`, and ODG-8.1/8B harden causal identity, effective strength, stable semantic keys, and verifier observed-value fidelity before ODG-9 attribution. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -75,7 +75,11 @@ obligation_driven_progress:
   attribution_ticket_resolver_record: docs/change-admission/odg-7-attribution-ticket-resolver.yaml
   attribution_ticket_resolver: foundation_only_hardened
   post_action_evidence_normalization_record: docs/change-admission/odg-8-post-action-evidence-normalization.yaml
-  post_action_evidence_normalization: foundation_only
+  post_action_evidence_normalization: foundation_hardened_with_verifier_fidelity
+  post_action_causality_strength_record: docs/change-admission/odg-8-1-causality-strength-hardening.yaml
+  post_action_causality_strength: complete
+  verifier_evidence_fidelity_record: docs/change-admission/odg-8b-verifier-evidence-fidelity.yaml
+  verifier_evidence_fidelity: foundation_only
   next_odg_slice: odg-9-post-verification-obligation-attribution
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
@@ -466,7 +470,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | ODG-8 post-action evidence normalization foundation is the active local change after ODG-7; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | ODG-9 post-verification obligation attribution is next; ODG-6 runtime shadow hookup and immutable Planner input remain deferred |
+| `active` | ODG-8.1 / ODG-8B evidence hardening and verifier fidelity are the active local changes after ODG-8; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | ODG-9 post-verification obligation attribution is next; ODG-6 runtime shadow hookup and immutable Planner input remain deferred |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

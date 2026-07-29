@@ -27,6 +27,13 @@ from affordance_runtime.contracts import (
 class Verifier(Protocol):
     kind: str
 
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> "VerifierEvaluation": ...
+
     def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool: ...
 
 
@@ -53,6 +60,13 @@ class VerificationEvidence:
     snapshot_id: str = ""
     observed_at_s: float = 0.0
     strength: str = "weak"
+    semantic_evidence_key: str = ""
+
+
+@dataclass(frozen=True)
+class VerifierEvaluation:
+    passed: bool
+    observed: Any = None
 
 
 @dataclass(frozen=True)
@@ -70,38 +84,74 @@ class VerificationReport:
 class EvidenceVerifier:
     kind: str = "evidence"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
+        del observation
         value = receipt.evidence.get(spec.target)
-        return value == spec.expected if spec.strict else bool(value)
+        passed = value == spec.expected if spec.strict else bool(value)
+        return VerifierEvaluation(passed=passed, observed=value)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
 class ObservationMetadataVerifier:
     kind: str = "observation_metadata"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
+        del receipt
         value = observation.metadata.get(spec.target)
-        return value == spec.expected if spec.strict else bool(value)
+        passed = value == spec.expected if spec.strict else bool(value)
+        return VerifierEvaluation(passed=passed, observed=value)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
 class DomContainsVerifier:
     kind: str = "dom_contains"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         del receipt
-        html = str(observation.metadata.get("html") or "")
-        expected = str(spec.expected)
-        return expected in html
+        observed = str(spec.expected) in str(observation.metadata.get("html") or "")
+        return VerifierEvaluation(passed=observed, observed=observed)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
 class DomAbsentVerifier:
     kind: str = "dom_absent"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         del receipt
-        return str(spec.expected) not in str(observation.metadata.get("html") or "")
+        observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
+        return VerifierEvaluation(passed=observed, observed=observed)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 class _DomAttributeParser(HTMLParser):
@@ -125,18 +175,29 @@ class DomAttributeVerifier:
 
     kind: str = "dom_attribute"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         del receipt
         if not isinstance(spec.expected, Mapping):
-            return False
+            return VerifierEvaluation(False)
         target_attribute = str(spec.expected.get("target_attribute") or "")
         attribute = str(spec.expected.get("attribute") or "")
         if not target_attribute or not attribute or not spec.target:
-            return False
+            return VerifierEvaluation(False)
         parser = _DomAttributeParser(target_attribute, spec.target, attribute)
         parser.feed(str(observation.metadata.get("html") or ""))
         parser.close()
-        return parser.observed == spec.expected.get("value")
+        return VerifierEvaluation(
+            passed=parser.observed == spec.expected.get("value"),
+            observed=parser.observed,
+        )
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
@@ -145,21 +206,36 @@ class ControlStateVerifier:
 
     kind: str = "control_state"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         del receipt
         if not isinstance(spec.expected, Mapping):
-            return False
+            return VerifierEvaluation(False)
         states = observation.metadata.get("control_states")
         if not isinstance(states, Mapping):
-            return False
+            return VerifierEvaluation(False)
         state = states.get(spec.target)
         if not isinstance(state, Mapping):
-            return False
+            return VerifierEvaluation(False)
         field_name = str(spec.expected.get("field") or "")
         observed = state.get(field_name)
         if "changed_from" in spec.expected:
-            return observed not in {None, ""} and observed != spec.expected.get("changed_from")
-        return observed == spec.expected.get("value")
+            return VerifierEvaluation(
+                passed=observed not in {None, ""}
+                and observed != spec.expected.get("changed_from"),
+                observed=observed,
+            )
+        return VerifierEvaluation(
+            passed=observed == spec.expected.get("value"),
+            observed=observed,
+        )
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
@@ -168,13 +244,18 @@ class StateDeltaOrTerminalVerifier:
 
     kind: str = "state_delta_or_terminal"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         if receipt.evidence.get("terminal_success") is True:
-            return True
+            return VerifierEvaluation(True, True)
         if receipt.evidence.get("terminal_failure") is True:
-            return False
+            return VerifierEvaluation(False, False)
         if observation.metadata.get("active_control") == spec.target:
-            return True
+            return VerifierEvaluation(True, True)
         if isinstance(spec.expected, Mapping):
             states = observation.metadata.get("control_states")
             state = states.get(spec.target) if isinstance(states, Mapping) else None
@@ -182,8 +263,14 @@ class StateDeltaOrTerminalVerifier:
             if isinstance(state, Mapping) and field_name:
                 observed = state.get(field_name)
                 if observed != spec.expected.get("changed_from"):
-                    return True
-        return bool(observation.environment_revision) and (observation.environment_revision != receipt.started_revision)
+                    return VerifierEvaluation(True, True)
+        passed = bool(observation.environment_revision) and (
+            observation.environment_revision != receipt.started_revision
+        )
+        return VerifierEvaluation(passed, passed)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
@@ -192,19 +279,30 @@ class HttpJsonVerifier:
 
     kind: str = "http_json"
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
         del receipt, observation
         if not isinstance(spec.expected, Mapping):
-            return False
+            return VerifierEvaluation(False)
         try:
             with urlopen(spec.target, timeout=2.0) as response:  # noqa: S310 - URL is capability/policy constrained
                 value: Any = json.loads(response.read())
             for part in str(spec.expected.get("path") or "").split("."):
                 if part:
                     value = value[part]
-            return value == spec.expected.get("value")
+            return VerifierEvaluation(
+                passed=value == spec.expected.get("value"),
+                observed=value,
+            )
         except Exception:
-            return False
+            return VerifierEvaluation(False)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
 
 
 @dataclass
@@ -251,7 +349,8 @@ class VerifierLadder:
                         f"strict verifier is not registered: {spec.kind}",
                     )
                 continue
-            passed = verifier.verify(spec, receipt, observation)
+            evaluation = verifier.evaluate(spec, receipt, observation)
+            passed = evaluation.passed
             adapter_terminal_success = (
                 spec.kind == "state_delta_or_terminal"
                 and receipt.evidence.get("terminal_success") is True
@@ -260,18 +359,7 @@ class VerifierLadder:
                 spec.progress_scope == ProgressEvidenceScope.TASK_TERMINAL
                 and receipt.evidence.get("terminal_success") is True
             )
-            if spec.kind == "evidence":
-                observed = receipt.evidence.get(spec.target)
-            elif spec.kind == "dom_contains":
-                observed = str(spec.expected) in str(observation.metadata.get("html") or "")
-            elif spec.kind == "dom_absent":
-                observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
-            elif spec.kind == "http_json":
-                observed = passed
-            elif spec.kind in {"dom_attribute", "control_state", "state_delta_or_terminal"}:
-                observed = passed
-            else:
-                observed = observation.metadata.get(spec.target)
+            semantic_evidence_key = spec.evidence_key or f"{spec.kind}:{spec.target}"
             evidence.append(
                 VerificationEvidence(
                     verifier_kind=spec.kind,
@@ -286,11 +374,11 @@ class VerifierLadder:
                         if spec.kind == "http_json"
                         else "post_action_observation"
                     ),
-                    observed=observed,
+                    observed=evaluation.observed,
                     expected=spec.expected,
                     evidence_id=(
                         f"verification:{observation.snapshot_id or observation.environment_revision}:"
-                        f"{index}:{spec.evidence_key or f'{spec.kind}:{spec.target}'}"
+                        f"{index}:{semantic_evidence_key}"
                     ),
                     criterion_ids=(
                         spec.criterion_ids
@@ -313,6 +401,7 @@ class VerifierLadder:
                         and not (adapter_terminal_success or terminal_progress)
                         else "strong"
                     ),
+                    semantic_evidence_key=semantic_evidence_key,
                 )
             )
             if not passed:

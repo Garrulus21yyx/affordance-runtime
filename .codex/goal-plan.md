@@ -680,3 +680,10 @@ delivery claims.
   produces `PostActionEvidenceFact` values only; no obligation ID, Coordinator
   commit, StateKernel mutation, finish authority, PlannerContext change,
   BrowserGym rerun, or promotion claim is authorized.
+- Started ODG-8.1 / ODG-8B after review. ODG-8.1 adds
+  `PostVerificationContext`, stable `semantic_evidence_key` declaration
+  matching, ticket/context causality checks, and effective strength as the
+  minimum of source cap and verifier reported strength. ODG-8B adds verifier
+  `evaluate()` methods and `VerificationEvidence.semantic_evidence_key` while
+  preserving `verify() == evaluate().passed`; it improves evidence content
+  without changing verifier pass/fail behavior or runtime progress authority.

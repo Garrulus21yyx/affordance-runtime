@@ -303,6 +303,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     )
     odg_7_record = CHANGE_ADMISSION_DIR / "odg-7-attribution-ticket-resolver.yaml"
     odg_8_record = CHANGE_ADMISSION_DIR / "odg-8-post-action-evidence-normalization.yaml"
+    odg_8_1_record = CHANGE_ADMISSION_DIR / "odg-8-1-causality-strength-hardening.yaml"
+    odg_8b_record = CHANGE_ADMISSION_DIR / "odg-8b-verifier-evidence-fidelity.yaml"
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -314,6 +316,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_6_1_record.exists()
     assert odg_7_record.exists()
     assert odg_8_record.exists()
+    assert odg_8_1_record.exists()
+    assert odg_8b_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -324,6 +328,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_6_1 = " ".join(odg_6_1_record.read_text(encoding="utf-8").split()).casefold()
     odg_7 = " ".join(odg_7_record.read_text(encoding="utf-8").split()).casefold()
     odg_8 = " ".join(odg_8_record.read_text(encoding="utf-8").split()).casefold()
+    odg_8_1 = " ".join(odg_8_1_record.read_text(encoding="utf-8").split()).casefold()
+    odg_8b = " ".join(odg_8b_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -389,7 +395,18 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "receipt_success_completion: prohibited" in odg_8
     assert "external_reward_completion: prohibited" in odg_8
     assert "source_strength_policy:" in odg_8
-    assert "closure_status: evidence_normalization_foundation_only" in odg_8
+    assert "effective_strength: min(reported_strength, source_cap)" in odg_8
+    assert "stable_semantic_evidence_key: required" in odg_8
+    assert "closure_status: evidence_normalization_foundation_hardened_with_verifier_fidelity" in odg_8
+    assert "postverificationcontext" in odg_8_1
+    assert "effective strength equals the minimum" in odg_8_1
+    assert "unknown reported strength fail-closed as invalid" in odg_8_1
+    assert "closure_status: causality_strength_contract_hardening" in odg_8_1
+    assert "verifierevaluation" in odg_8b
+    assert "verificationevidence.semantic_evidence_key" in odg_8b
+    assert "verify_result_equals_evaluate_passed" in odg_8b
+    assert "state_delta_or_terminal_concrete_progress_fact: prohibited" in odg_8b
+    assert "closure_status: verifier_fidelity_foundation_only" in odg_8b
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -409,7 +426,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "current_observation_satisfaction: foundation_evaluator_only_hardened" in status
     assert "shared_attribution_contract_hardening: complete" in status
     assert "attribution_ticket_resolver: foundation_only_hardened" in status
-    assert "post_action_evidence_normalization: foundation_only" in status
+    assert "post_action_evidence_normalization: foundation_hardened_with_verifier_fidelity" in status
+    assert "post_action_causality_strength: complete" in status
+    assert "verifier_evidence_fidelity: foundation_only" in status
     assert "next_odg_slice: odg-9-post-verification-obligation-attribution" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -425,6 +444,10 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg-8 may add authority-free post-action evidence normalization" in governance
     assert "must not persist tickets" in governance
     assert "receipt and external-evaluator sources remain weak" in governance
+    assert "odg-8.1 hardens odg-8 before attribution" in governance
+    assert "effective strength is the minimum" in governance
+    assert "odg-8b may improve verifier evidence fidelity" in governance
+    assert "verify()` a compatibility wrapper" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit

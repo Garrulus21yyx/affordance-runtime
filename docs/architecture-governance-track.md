@@ -205,6 +205,24 @@ task names, URLs, selectors, coordinates, or benchmark family as evidence
 authority. Receipt and external-evaluator sources remain weak; ODG-9 may not
 complete an obligation from weak evidence alone.
 
+ODG-8.1 hardens ODG-8 before attribution. A normalizer must receive a
+`PostVerificationContext` and verify that contract ID, contract hash, and
+pre-action snapshot match the `ProgressAttributionTicket`. Semantic evidence
+declarations bind through stable `semantic_evidence_key` values, not dynamic
+post-snapshot evidence IDs. Effective strength is the minimum of verifier
+reported strength and source cap; weak post-action observations remain weak,
+receipt and external-evaluator sources remain weak even if reported strong, and
+unknown strength values fail closed.
+
+ODG-8B may improve verifier evidence fidelity by adding `VerifierEvaluation`
+and making `verify()` a compatibility wrapper for `evaluate().passed`.
+Verification reports may store real observed values for receipt evidence,
+observation metadata, DOM attributes, control state, and HTTP JSON projections.
+This must not change verifier pass/fail semantics. `state_delta_or_terminal`
+remains weak generic evidence and must not be converted into concrete
+`EQUALS`, `HAS_CHANGED`, or `IS_CHECKED` progress facts without explicit typed
+before/after state.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first
