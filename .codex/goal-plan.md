@@ -873,3 +873,7 @@ delivery claims.
   simplified and TaskPlanAuthority docs are moved under
   `docs/archive/superseded-2026-07-29/`, README/status/governance references are
   aligned to the SAR-0 authoritative docs, and the next slice remains SAR-1.
+- Started SAR-1 after `13409f8`. Added the stale ActionContract nested payload
+  RED and began the deep-immutability fix with explicit BrowserGym
+  adapter-boundary thaw; production progress/finish authority remains
+  unchanged.

@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from time import time
 from typing import TYPE_CHECKING, Any
+
+from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 
 if TYPE_CHECKING:
     from affordance_runtime.grounding import GroundingCandidate, RoutePlan
@@ -463,6 +465,13 @@ class ActionContract:
     fallback_reason: str = ""
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "locator", freeze_json(self.locator))
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        object.__setattr__(self, "preconditions", FrozenSequence(self.preconditions))
+        object.__setattr__(self, "expected_effects", FrozenSequence(self.expected_effects))
+        object.__setattr__(self, "verifier_plan", FrozenSequence(self.verifier_plan))
+        object.__setattr__(self, "required_capabilities", freeze_json(self.required_capabilities))
+        object.__setattr__(self, "fallback_backends", freeze_json(self.fallback_backends))
         if not self.page_revision:
             object.__setattr__(self, "page_revision", self.environment_revision)
         if not self.contract_hash:
@@ -480,9 +489,11 @@ class ActionContract:
                 raise ValueError("scope authorization does not match the grounded contract target")
 
     def canonical_payload(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload.pop("contract_hash", None)
-        return payload
+        return {
+            item.name: to_json_compatible(getattr(self, item.name))
+            for item in fields(self)
+            if item.name != "contract_hash"
+        }
 
     def compute_hash(self) -> str:
         encoded = json.dumps(self.canonical_payload(), sort_keys=True, separators=(",", ":"), default=str).encode(
@@ -509,7 +520,7 @@ class ActionContract:
             action=affordance.action,
             backend=backend,
             environment_revision=affordance.lease.environment_revision,
-            locator=dict(affordance.locator),
+            locator=affordance.locator,
             parameters=parameters or {},
             expected_effects=expected_effects or [],
             verifier_plan=verifier_plan or [],

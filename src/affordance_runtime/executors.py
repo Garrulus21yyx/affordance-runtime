@@ -14,6 +14,7 @@ from typing import Any, Callable, Protocol
 from urllib.request import Request, urlopen
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
+from affordance_runtime.immutable import thaw_json_at_external_boundary
 
 
 class ContractExecutor(Protocol):
@@ -99,10 +100,10 @@ class VisualGestureEncoder:
 
 def _visual_locator_center(locator: dict[str, Any]) -> tuple[float, float]:
     for key in ("point", "center"):
-        raw = locator.get(key)
+        raw = thaw_json_at_external_boundary(locator.get(key))
         if isinstance(raw, (list, tuple)) and len(raw) == 2:
             return float(raw[0]), float(raw[1])
-    raw = locator.get("bbox")
+    raw = thaw_json_at_external_boundary(locator.get("bbox"))
     if isinstance(raw, (list, tuple)) and len(raw) == 4:
         left, top, width, height = (float(value) for value in raw)
         if width > 0 and height > 0:
@@ -279,9 +280,9 @@ class VisualExecutor:
                         "steps": encoded.steps,
                     },
                 )
-            center = contract.locator.get("point") or contract.locator.get("center")
+            center = thaw_json_at_external_boundary(contract.locator.get("point") or contract.locator.get("center"))
             if center is None:
-                bbox = contract.locator.get("bbox")
+                bbox = thaw_json_at_external_boundary(contract.locator.get("bbox"))
                 if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
                     raise ValueError("visual contract requires center or [x, y, w, h] bbox")
                 x, y, width, height = (int(value) for value in bbox)
@@ -368,8 +369,10 @@ class WotExecutor:
             min_interval_ms = float(contract.parameters.get("min_interval_ms", 0.0))
             self.gate.check(thing_id, min_interval_ms)
 
-            payload = contract.parameters.get("payload", contract.parameters.get("value"))
-            headers = dict(contract.parameters.get("headers") or {})
+            payload = thaw_json_at_external_boundary(
+                contract.parameters.get("payload", contract.parameters.get("value"))
+            )
+            headers = dict(thaw_json_at_external_boundary(contract.parameters.get("headers") or {}))
             status, response = self.send(
                 method,
                 href,

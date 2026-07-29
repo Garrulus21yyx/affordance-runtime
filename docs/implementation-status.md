@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-0 archive/doc-maintenance active local change after `e7acc8adc89ec190b33c00f4c7468e6f7d8aef54`: the authoritative optimized architecture remains the single long-term target; superseded simplified and TaskPlanAuthority documents are being moved to `docs/archive/superseded-2026-07-29/`; README/status references are being aligned. Production behavior, Coordinator, StateKernel, planner contracts, progress authority, finish authority, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1 active local change after `13409f8f7ded5f7e1159daa5c32e2662cac7572a`: ActionContract nested JSON payloads are being made deeply immutable before digest computation, with explicit adapter-boundary thaw. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -136,6 +136,19 @@ authoritative_optimized_architecture:
   stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration
   next_slice: sar-1-deep-immutability-and-stale-contract-hash
   production_behavior_change: false
+  promotion_status: held
+
+sar_1_deep_immutability:
+  record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
+  threat_model: docs/security/action-contract-digest-threat-model.md
+  status: active_first_cut
+  current_scope: action_contract_locator_parameters_and_hash_critical_lists
+  immutable_helper: src/affordance_runtime/immutable.py
+  adapter_boundary_thaw: explicit_only
+  production_behavior_change: false
+  progress_authority_change: prohibited
+  finish_authority_change: prohibited
+  next_slice: sar-1-continue-receipt-verification-plannerdecision-deep-immutability
   promotion_status: held
 
 taskplan_authority_program:

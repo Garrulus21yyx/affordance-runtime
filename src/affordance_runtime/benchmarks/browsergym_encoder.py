@@ -17,6 +17,7 @@ from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     VerifierSpec,
 )
+from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
@@ -126,7 +127,7 @@ class BrowserGymPointEncoder:
         bid = str(getattr(candidate.payload, "backend_handle", "") or "")
         if bid:
             return BrowserGymAction("click", {"bid": bid})
-        point = contract.locator.get("point")
+        point = thaw_json_at_external_boundary(contract.locator.get("point"))
         if not isinstance(point, list) or len(point) != 2:
             raise ValueError("BrowserGym point contract requires trusted viewport coordinates")
         return BrowserGymAction("mouse_click", {"x": float(point[0]), "y": float(point[1])})
@@ -270,6 +271,7 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
 def viewport_box(value: Any) -> tuple[float, float, float, float] | None:
     """Validate one adapter-owned viewport rectangle."""
 
+    value = thaw_json_at_external_boundary(value)
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:

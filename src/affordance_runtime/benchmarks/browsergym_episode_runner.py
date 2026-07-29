@@ -53,6 +53,7 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
+from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
@@ -311,7 +312,7 @@ class BrowserGymExecutor:
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         started = perf_counter()
         try:
-            payload = contract.parameters.get("action")
+            payload = thaw_json_at_external_boundary(contract.parameters.get("action"))
             if not isinstance(payload, dict):
                 raise ValueError("BrowserGym contract requires typed parameters.action")
             action = BrowserGymAction(str(payload.get("name") or ""), dict(payload.get("arguments") or {}))

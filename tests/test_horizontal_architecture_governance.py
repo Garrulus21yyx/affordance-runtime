@@ -1733,6 +1733,33 @@ def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
     ).exists()
 
 
+def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
+    record_path = CHANGE_ADMISSION_DIR / "sar-1-deep-immutability-and-stale-contract-hash.yaml"
+    threat_model_path = REPOSITORY_ROOT / "docs/security/action-contract-digest-threat-model.md"
+    record = " ".join(record_path.read_text(encoding="utf-8").split()).casefold()
+    threat_model = " ".join(threat_model_path.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+
+    assert record_path.exists()
+    assert threat_model_path.exists()
+    assert "slice_id: sar-1-deep-immutability-and-stale-contract-hash" in record
+    assert "action_contract_hash_computed_after_freeze: true" in record
+    assert "nested_contract_payload_mutation_after_construction: prohibited" in record
+    assert "adapter_boundary_thaw: explicit_only" in record
+    assert "progress_authority_change: prohibited" in record
+    assert "finish_authority_change: prohibited" in record
+    assert "promotion_status: held" in record
+    assert "contract_hash was computed over payload a" in threat_model
+    assert "payload changed to payload b" in threat_model
+    assert "approval tokens match `contract_hash`" in threat_model
+    assert "sar_1_deep_immutability:" in status
+    assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
+    assert "immutable_helper: src/affordance_runtime/immutable.py" in status
+    assert "adapter_boundary_thaw: explicit_only" in status
+    assert "current production repair freezes actioncontract nested json payloads" in current_plan
+
+
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:
     mutation_names = {
         "activate_task_skill",

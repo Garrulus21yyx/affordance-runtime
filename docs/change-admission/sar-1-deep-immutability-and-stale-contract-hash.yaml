@@ -1,0 +1,58 @@
+slice_id: sar-1-deep-immutability-and-stale-contract-hash
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: 13409f8f7ded5f7e1159daa5c32e2662cac7572a
+change_type: correctness_security_refactor
+production_behavior_change: false
+standard_path_authority: unchanged
+coordinator_integration: unchanged
+statekernel_mutation: unchanged
+planner_contract_change: unchanged
+progress_authority_change: prohibited
+finish_authority_change: prohibited
+pr_breadth: not_required
+
+single_primary_owner:
+  deep immutable runtime contract payloads and stable digest identity
+
+included:
+  - src/affordance_runtime/immutable.py
+  - ActionContract locator and parameter deep freeze
+  - ActionContract hash-critical list fields normalized to immutable sequences
+  - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
+  - action contract digest threat model
+  - stale nested mutation regression test
+
+excluded:
+  - Coordinator control-flow changes
+  - StateKernel schema changes
+  - PlannerPort or PlanningRequest changes
+  - TaskPlan / TaskProgress authority changes
+  - ActionContract business schema redesign
+  - Executor or Verifier behavior changes beyond explicit adapter-boundary thaw
+  - Approval token policy changes
+  - PR breadth or promotion claim
+
+authority_invariants:
+  action_contract_hash_computed_after_freeze: true
+  nested_contract_payload_mutation_after_construction: prohibited
+  source_object_mutation_changes_contract_hash: false
+  core_thaw: prohibited
+  adapter_boundary_thaw: explicit_only
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  production_progress_authority: legacy_taskplan_planprogress
+  promotion_status: held
+
+validation:
+  stale_hash_red_observed: tests/test_contracts.py::test_action_contract_payloads_are_deeply_immutable_and_hash_stable
+  focused_contract_tests: required
+  architecture_tests: required
+  full_pytest: required
+  ruff: required
+  mypy: required
+  uv_build: required
+  diff_check: required
+
+closure_status: sar_1_action_contract_payload_freeze_in_progress
+next_slice: sar-1-continue-receipt-verification-plannerdecision-deep-immutability
+promotion_status: held

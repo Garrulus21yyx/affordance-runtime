@@ -70,6 +70,47 @@ def test_contract_binds_snapshot_target_and_canonical_hash() -> None:
     assert preflight(replace(contract, expires_at_s=time() - 1), observation) == RuntimeErrorCode.LEASE_EXPIRED
 
 
+def test_action_contract_payloads_are_deeply_immutable_and_hash_stable() -> None:
+    lease = AffordanceLease.issue(
+        environment_revision="legacy-rev",
+        snapshot_id="snap-1",
+        page_revision="page-rev-1",
+        target_fingerprint="target-1",
+    )
+    raw_parameters = {"text": "Alice", "modifiers": ["shift"]}
+    raw_locator = {"selector": "#name", "bbox": [1, 2, 3, 4]}
+    affordance = Affordance(
+        "name",
+        Surface.DOM,
+        "textbox",
+        "Name",
+        "type",
+        raw_locator,
+        lease,
+    )
+
+    contract = ActionContract.from_affordance(
+        affordance,
+        intent="enter name",
+        backend="dom",
+        parameters=raw_parameters,
+    )
+    original_hash = contract.contract_hash
+
+    raw_parameters["modifiers"].append("ctrl")
+    raw_locator["bbox"].append(5)
+
+    assert contract.contract_hash == original_hash
+    assert contract.compute_hash() == original_hash
+    assert contract.parameters["modifiers"] == ("shift",)
+    assert contract.locator["bbox"] == (1, 2, 3, 4)
+
+    with pytest.raises(TypeError):
+        contract.parameters["text"] = "Bob"
+    with pytest.raises(TypeError):
+        contract.locator["bbox"][0] = 9
+
+
 def test_gesture_contract_binds_and_preflights_both_endpoints() -> None:
     source_lease = AffordanceLease.issue(
         environment_revision="rev-1", snapshot_id="snap-1", page_revision="page-1", target_fingerprint="source-1"
