@@ -783,3 +783,13 @@ delivery claims.
   admission hookup, TaskPlan admission, progress authority, finish authority,
   PR breadth, and promotion remain unchanged. The next slice is TPA-3.2C
   legacy terminal admission projector.
+- Started TPA-3.2C after `87b692b`. Added LegacyPlannerAdmissionProjector as
+  the sole migration owner for legacy terminal readiness projection, reusing
+  the existing terminal binding/compiler/evaluator chain and embedding the
+  resulting PlannerAdmissionView in PlanningRequestBuilder without consuming it
+  in PlannerPort or Coordinator. Ready terminal targets remain visible, while
+  blocked, unknown, ambiguous, and unresolved terminal targets are projected as
+  typed exclusions. PlannerPort, Coordinator call sites, TaskPlan admission,
+  progress authority, finish authority, PR breadth, and promotion remain
+  unchanged. The next slice is TPA-3.2D DecisionConstraint apply-admission
+  request path.

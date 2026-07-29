@@ -302,7 +302,14 @@ PlannerAdmissionView / TargetAdmissionDecision / PlannerAdmissionSummary
 contracts, and making DecisionConstraintSet target mappings deeply immutable.
 It does not connect terminal admission, change PlannerPort, touch Coordinator,
 or change progress/finish authority. The next authorized sub-slice is the
-legacy terminal admission projector.
+legacy terminal admission projector. TPA-3.2C adds that projector as the only
+migration owner allowed to read legacy TaskPlan/PlanProgress plus
+BrowserSnapshot terminal-grounding details and embed the resulting immutable
+PlannerAdmissionView in PlanningRequest. It does not consume the admission in
+DecisionConstraintBuilder yet and still does not change PlannerPort,
+Coordinator, progress, finish, or benchmark behavior. The next authorized
+sub-slice is TPA-3.2D, where DecisionConstraintBuilder applies the immutable
+admission instead of rereading StateKernel and BrowserSnapshot.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

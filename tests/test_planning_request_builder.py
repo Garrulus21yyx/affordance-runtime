@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
+from affordance_runtime.grounding import (
+    DomGroundingPayload,
+    GroundingCandidate,
+    GroundingSource,
+    UnifiedAffordance,
+)
+from affordance_runtime.grounding import (
+    EvidenceKind as GroundingEvidenceKind,
+)
+from affordance_runtime.planning_request import TargetAdmissionStatus
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.simplified_step_projection import LegacyStepProjectionStatus
@@ -20,6 +32,9 @@ from affordance_runtime.task_intake import (
     TaskSpec,
 )
 from affordance_runtime.task_planning import (
+    PlanProgress,
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
     SubgoalSpec,
     TaskPlan,
     TaskPlanActionFamily,
@@ -205,3 +220,117 @@ def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
         "navigate",
     } & set(request.permitted_action_kinds)
     assert request.step.projection_status.value == LegacyStepProjectionStatus.PROJECTION_INVALID.value
+
+
+def test_builder_embeds_legacy_terminal_admission_without_mutation() -> None:
+    from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+
+    envelope, state, snapshot = _fixture()
+    task = envelope.task_spec
+    assert task is not None
+    terminal = TaskObligationSpec(
+        obligation_id="step:submit",
+        kind=TaskObligationKind.EFFECT,
+        subject="settings submission",
+        relation=TaskObligationRelation.IS_COMPLETED,
+        depends_on=("step:enter-name",),
+        claim_ids=("claim:enter-name",),
+        evidence_requirements=("fresh submit observation",),
+        typed_evidence_requirements=(
+            EvidenceRequirement(
+                kind=EvidenceKind.ACCESSIBILITY_STATE,
+                subject="settings submission",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                minimum_strength="independent",
+                source_constraints=("post_action_observation",),
+            ),
+        ),
+        terminal=True,
+    )
+    envelope = TaskEnvelope(
+        task_spec=task.model_copy(
+            update={"obligations": (*task.obligations, terminal)}
+        ),
+        capabilities=["settings.write"],
+    )
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-request",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="step:enter-name",
+                    objective="display name input equals Ada",
+                    outcome=SubgoalOutcome(
+                        subject="display name",
+                        relation=SubgoalOutcomeRelation.EQUALS,
+                        value="Ada",
+                    ),
+                    success_criteria=("display name input equals Ada",),
+                    evidence_requirements=("fresh input-value observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                ),
+                SubgoalSpec(
+                    subgoal_id="step:submit",
+                    objective="settings submission is completed",
+                    depends_on=("step:enter-name",),
+                    outcome=SubgoalOutcome(
+                        subject="settings submission",
+                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                    ),
+                    success_criteria=("settings submission is completed",),
+                    evidence_requirements=("fresh submit observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                ),
+            ),
+        )
+    )
+    state.plan_progress = PlanProgress(
+        active_subgoal_id="step:submit",
+        completed_subgoal_ids=["step:enter-name"],
+        evidence_by_subgoal={"step:enter-name": ["artifact:verification"]},
+    )
+    before_version = state.version
+    snapshot = BrowserSnapshot(
+        observation=replace(
+            snapshot.observation,
+            target_fingerprints={"candidate:dom:submit": "sha256:submit"},
+        ),
+        affordance_model=snapshot.affordance_model,
+        unified_affordances=(
+            UnifiedAffordance(
+                semantic_target_id="semantic:submit",
+                role="button",
+                label="settings submission",
+                supported_actions=frozenset({"activate"}),
+                grounding_candidates=(
+                    GroundingCandidate(
+                        candidate_id="candidate:dom:submit",
+                        semantic_target_id="semantic:submit",
+                        source=GroundingSource.DOM,
+                        payload=DomGroundingPayload(backend_handle="submit"),
+                        compatible_executor="browsergym",
+                        observation_epoch_id=snapshot.observation.snapshot_id,
+                        environment_revision=snapshot.observation.environment_revision,
+                        page_revision=snapshot.observation.page_revision,
+                        target_fingerprint="sha256:submit",
+                        supported_actions=frozenset({"activate"}),
+                        evidence_kinds=frozenset({GroundingEvidenceKind.STRUCTURAL}),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+
+    assert request.admission is not None
+    assert request.admission.excluded_target_ids == ()
+    assert request.admission.target_decisions[0].status == TargetAdmissionStatus.ALLOWED
+    assert state.version == before_version

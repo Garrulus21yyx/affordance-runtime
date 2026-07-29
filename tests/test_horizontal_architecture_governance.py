@@ -79,6 +79,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "task_action_family_resolution.py",
     "obligation_attribution_flow.py",
     "obligation_progress_shadow_flow.py",
+    "planner_admission_projection.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )
@@ -558,13 +559,19 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "planning_request: foundation_contracts_and_builder" in status
     assert "tpa_3_1: completed_foundation" in status
     assert "tpa_3_2a: completed_foundation" in status
+    assert "tpa_3_2c: completed_foundation" in status
     assert "planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml" in status
     assert (
         "planner_projection_admission_contract_record: "
         "docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml"
         in status
     )
-    assert "next_slice: tpa-3-2c-legacy-terminal-admission-projector" in status
+    assert (
+        "legacy_terminal_admission_projector_record: "
+        "docs/change-admission/tpa-3-2c-legacy-terminal-admission-projector.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-2d-decisionconstraint-apply-admission" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -697,7 +704,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.2c legacy terminal admission projector" in status
+    assert "current_next_change_admission: tpa-3.2d decisionconstraint apply-admission request path" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1172,6 +1179,18 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "plannerport signature cutover" in tpa_3_2a
     assert "coordinator call site change" in tpa_3_2a
     assert "closure_status: projection_and_admission_contract_foundation" in tpa_3_2a
+    tpa_3_2c = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-2c-legacy-terminal-admission-projector.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "legacyplanneradmissionprojector" in tpa_3_2c
+    assert "browsersnapshot" in tpa_3_2c
+    assert "planneradmissionview embedding" in tpa_3_2c
+    assert "production_behavior_change: false" in tpa_3_2c
+    assert "decisionconstraintbuilder request-only path" in tpa_3_2c
+    assert "coordinator call site change" in tpa_3_2c
+    assert "closure_status: legacy_terminal_admission_projection_foundation" in tpa_3_2c
 
 
 def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:

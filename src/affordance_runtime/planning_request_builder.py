@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Affordance
+from affordance_runtime.planner_admission_projection import LegacyPlannerAdmissionProjector
 from affordance_runtime.planning_request import (
     PlannerAffordanceView,
     PlannerObservationView,
@@ -60,6 +61,7 @@ class PlanningRequestBuilder:
     limits: PlanningRequestLimits = PlanningRequestLimits()
     accepted_knowledge: tuple[str, ...] = ()
     allow_finish: bool = True
+    admission_projector: LegacyPlannerAdmissionProjector = LegacyPlannerAdmissionProjector()
 
     def build(
         self,
@@ -96,6 +98,12 @@ class PlanningRequestBuilder:
                 for item in permitted_action_kinds
                 if item not in _EFFECTFUL_ACTION_KINDS
             )
+        admission = self.admission_projector.project(
+            task_revision=task_spec.revision,
+            task_plan=state.task_plan,
+            plan_progress=state.plan_progress,
+            snapshot=snapshot,
+        )
         request = PlanningRequest(
             identity=PlanningRequestIdentity(
                 task_spec_identity=task_spec.identity,
@@ -158,6 +166,7 @@ class PlanningRequestBuilder:
             satisfied_action_targets=tuple(
                 sorted(_satisfied_action_targets(state).items())
             ),
+            admission=admission,
         )
         if state.version != before_version:
             raise ValueError("planning request build changed state version")
