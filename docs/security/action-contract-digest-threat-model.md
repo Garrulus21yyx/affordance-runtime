@@ -108,5 +108,9 @@ and state-source payloads. Device route planning therefore reads an immutable
 Thing Description projection rather than a caller-owned list or dictionary that
 can be rewritten after parsing.
 
+Configured approval providers freeze their allowed-capability set at
+construction time. A caller-owned set cannot be mutated after provider creation
+to silently expand which high-risk contracts may receive an approval token.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

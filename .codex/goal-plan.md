@@ -907,3 +907,6 @@ delivery claims.
 - Continued SAR-1 after `d5f8249`. Added a RED for mutable
   `ThingAffordanceModel.affordances/state_sources`, froze WoT parsed surface
   model payloads, and kept device route planning on immutable TD projections.
+- Continued SAR-1 after `7c98863`. Added a RED for mutable
+  `ConfiguredApprovalProvider.allowed_capabilities`, froze approval provider
+  capability configuration, and prevented post-construction approval expansion.

@@ -67,6 +67,20 @@ def test_configured_approval_provider_returns_none_without_allowed_required_capa
     assert provider.approve(_contract(required_capabilities=required_capabilities)) is None
 
 
+def test_configured_approval_provider_allowed_capabilities_are_immutable_from_source_set() -> None:
+    allowed_capabilities: set[str] = set()
+    provider = ConfiguredApprovalProvider(
+        approver="operator-1",
+        allowed_capabilities=allowed_capabilities,
+    )
+
+    allowed_capabilities.add("report.export")
+
+    assert provider.approve(_contract(required_capabilities=["report.export"])) is None
+    with pytest.raises(AttributeError):
+        provider.allowed_capabilities.add("report.export")  # type: ignore[attr-defined]
+
+
 def test_configured_approval_provider_selects_first_allowed_capability_in_contract_order() -> None:
     contract = _contract(required_capabilities=["capability.a", "capability.b", "capability.c"])
     provider = ConfiguredApprovalProvider(

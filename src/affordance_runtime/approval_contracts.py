@@ -22,6 +22,9 @@ class ConfiguredApprovalProvider:
     allowed_capabilities: set[str]
     ttl_s: float = 60.0
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "allowed_capabilities", frozenset(self.allowed_capabilities))
+
     def approve(self, contract: ActionContract) -> ApprovalToken | None:
         capabilities = [
             item
