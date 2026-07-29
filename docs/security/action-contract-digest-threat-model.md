@@ -80,5 +80,12 @@ and `AffordanceLease.provenance`. Legacy code that reads these values must treat
 them as `Mapping` / `Sequence` or explicitly project at an adapter boundary; core
 code must not regain mutable references.
 
+The verification boundary is included in the same SAR-1 repair:
+`VerificationEvidence.observed`, `VerificationEvidence.expected`,
+`VerificationReport.evidence`, and `VerifierEvaluation.observed` are frozen at
+construction/materialization time. This prevents post-verification evidence
+objects from changing after they have been linked into trace, progress
+diagnostics, recovery, or later attribution experiments.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.verification import (
     ControlStateVerifier,
@@ -8,6 +10,9 @@ from affordance_runtime.verification import (
     HttpJsonVerifier,
     ObservationMetadataVerifier,
     StateDeltaOrTerminalVerifier,
+    VerificationEvidence,
+    VerificationReport,
+    VerificationStatus,
     VerifierLadder,
 )
 
@@ -145,3 +150,54 @@ def test_state_delta_or_terminal_remains_weak_generic_evidence() -> None:
     assert report.evidence[0].observed is True
     assert report.evidence[0].strength == "weak"
     assert report.evidence[0].semantic_evidence_key == "spec:slider-delta"
+
+
+def test_verification_evidence_values_are_deeply_immutable_from_source_payload() -> None:
+    raw_observed = {"field": "value", "history": ["5"]}
+    raw_expected = {"field": "value", "value": "7"}
+
+    evidence = VerificationEvidence(
+        "control_state",
+        "slider",
+        True,
+        "post_action_observation",
+        observed=raw_observed,
+        expected=raw_expected,
+    )
+
+    raw_observed["history"].append("7")
+    raw_expected["value"] = "9"
+
+    assert evidence.observed["history"] == ("5",)
+    assert evidence.expected["value"] == "7"
+    with pytest.raises(TypeError):
+        evidence.observed["field"] = "other"
+    with pytest.raises(TypeError):
+        evidence.expected["value"] = "other"
+
+
+def test_verification_report_evidence_list_is_deeply_immutable_from_source_payload() -> None:
+    raw_evidence = [
+        VerificationEvidence(
+            "control_state",
+            "slider",
+            True,
+            "post_action_observation",
+            observed={"value": "7"},
+        )
+    ]
+
+    report = VerificationReport(VerificationStatus.PASSED, evidence=raw_evidence)
+    raw_evidence.append(
+        VerificationEvidence(
+            "control_state",
+            "checkbox",
+            True,
+            "post_action_observation",
+            observed=True,
+        )
+    )
+
+    assert len(report.evidence) == 1
+    with pytest.raises(TypeError):
+        report.evidence[0] = raw_evidence[0]

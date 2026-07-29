@@ -22,6 +22,7 @@ from affordance_runtime.contracts import (
     VerifierSpec,
     gesture_preflight,
 )
+from affordance_runtime.immutable import FrozenSequence, freeze_json
 
 
 class Verifier(Protocol):
@@ -62,11 +63,20 @@ class VerificationEvidence:
     strength: str = "weak"
     semantic_evidence_key: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "observed", freeze_json(self.observed))
+        object.__setattr__(self, "expected", freeze_json(self.expected))
+        object.__setattr__(self, "criterion_ids", tuple(self.criterion_ids))
+        object.__setattr__(self, "requirement_ids", tuple(self.requirement_ids))
+
 
 @dataclass(frozen=True)
 class VerifierEvaluation:
     passed: bool
     observed: Any = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "observed", freeze_json(self.observed))
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,9 @@ class VerificationReport:
     status: VerificationStatus
     evidence: list[VerificationEvidence] = field(default_factory=list)
     reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evidence", FrozenSequence(self.evidence))
 
     @property
     def passed(self) -> bool:

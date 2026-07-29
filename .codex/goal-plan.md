@@ -885,3 +885,7 @@ delivery claims.
   Affordance source payloads, froze those construction boundaries, and repaired
   legacy Mapping/Sequence read assumptions without changing Coordinator
   authority, progress, or finish semantics.
+- Continued SAR-1 after `5709f75`. Added REDs for mutable
+  `VerificationEvidence.observed/expected` and `VerificationReport.evidence`,
+  froze verifier evaluation/report materialization boundaries, and kept
+  production progress/finish authority unchanged.
