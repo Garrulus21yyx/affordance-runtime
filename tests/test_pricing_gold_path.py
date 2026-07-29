@@ -1,13 +1,16 @@
 import asyncio
 import json
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
 
+from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
-from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.cli import run_scenario
+from affordance_runtime.contracts import Observation
 from affordance_runtime.coordinator import RunCoordinator
 from affordance_runtime.evolution import (
     EvolutionArtifact,
@@ -19,8 +22,17 @@ from affordance_runtime.evolution import (
 )
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import PRICING_DATA, create_fixture_server, pricing_html
-from affordance_runtime.planners import PricingPlanner, PricingTaskPlanner, extract_pricing
+from affordance_runtime.planners import (
+    ExportPlanner,
+    PricingPlanner,
+    PricingTaskPlanner,
+    SettingsPlanner,
+    extract_pricing,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
@@ -110,6 +122,134 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
     assert "selector" not in encoded_context
     assert "coordinates" not in encoded_context
     assert "backend" not in encoded_context
+
+
+def test_reference_pricing_planner_builds_request_before_contract_binding() -> None:
+    revision = "pricing-request-v1"
+    model = DomAdapter().transduce(
+        pricing_html(),
+        environment_revision=revision,
+        snapshot_id="snapshot-pricing-request",
+    )
+    observation = Observation(
+        revision,
+        url="http://fixture/pricing",
+        snapshot_id="snapshot-pricing-request",
+        page_revision=model.page_revision,
+        metadata={"html": pricing_html()},
+    )
+    state = StateKernel("pricing-request", "Reveal pricing")
+    state.transition("observing")
+    state.remember_observation(observation)
+    state.transition("planning")
+    task = TaskSpec(
+        task_id="pricing-request",
+        revision=1,
+        objective="Reveal pricing",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("Pro", "Enterprise"),
+        success_criteria=("both pricing plans are visible",),
+        evidence_requirements=("structural pricing evidence",),
+        source_request_ref="pricing-request-source",
+    )
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built: PlanningRequest | None = None
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built = self.inner.build(envelope, state, snapshot)
+            return self.built
+
+    request_builder = RecordingRequestBuilder()
+
+    decision = PricingPlanner(planning_request_builder=request_builder).propose(
+        TaskEnvelope(task_spec=task),
+        state,
+        BrowserSnapshot(observation, model),
+    )
+
+    assert request_builder.built is not None
+    assert decision.contract is not None
+    assert decision.contract.affordance_id == "dom_button_1"
+    assert request_builder.built.observation.affordances[0].label == "Show Pro limits"
+
+
+def test_settings_and_export_reference_planners_build_request_before_contract_binding() -> None:
+    revision = "reference-request-v1"
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built_count: int = 0
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built_count += 1
+            return self.inner.build(envelope, state, snapshot)
+
+    cases = (
+        (
+            SettingsPlanner,
+            '<button id="notify" bid="notify">Enable notifications</button>',
+            "http://fixture/settings",
+            "Enable notifications",
+        ),
+        (
+            ExportPlanner,
+            '<button id="export" bid="export">Export report</button>',
+            "http://fixture/export",
+            "Export report",
+        ),
+    )
+    for planner_type, html, url, expected_label in cases:
+        model = DomAdapter().transduce(
+            html,
+            environment_revision=revision,
+            snapshot_id=f"snapshot-{expected_label.replace(' ', '-').lower()}",
+        )
+        observation = Observation(
+            revision,
+            url=url,
+            snapshot_id=model.snapshot_id,
+            page_revision=model.page_revision,
+            metadata={"html": html},
+        )
+        state = StateKernel("reference-request", expected_label)
+        state.transition("observing")
+        state.remember_observation(observation)
+        state.transition("planning")
+        task = TaskSpec(
+            task_id="reference-request",
+            revision=1,
+            objective=expected_label,
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            targets=(expected_label,),
+            success_criteria=(f"{expected_label} completed",),
+            evidence_requirements=(f"{expected_label} evidence",),
+            source_request_ref="reference-request-source",
+        )
+        request_builder = RecordingRequestBuilder()
+
+        decision = planner_type(planning_request_builder=request_builder).propose(
+            TaskEnvelope(task_spec=task),
+            state,
+            BrowserSnapshot(observation, model),
+        )
+
+        assert request_builder.built_count == 1
+        assert decision.contract is not None
+        assert decision.contract.intent
 
 
 def test_local_fixture_exposes_pricing_oracle() -> None:

@@ -584,12 +584,18 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         in status
     )
     assert "tpa_3_4: completed_foundation" in status
+    assert "tpa_3_5: completed_foundation" in status
     assert (
         "parent_agent_request_record: "
         "docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml"
         in status
     )
-    assert "next_slice: tpa-3-5-reference-scripted-planners-request-migration" in status
+    assert (
+        "reference_planner_request_record: "
+        "docs/change-admission/tpa-3-5-reference-scripted-planners-request-migration.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-6-conformance-benchmark-planners-request-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -627,7 +633,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
     assert (
-        "immutable_planner_input: generalistlmplanner and parentagentplanneradapter now use the immutable planningrequest core internally"
+        "immutable_planner_input: generalistlmplanner, parentagentplanneradapter, and reference contract planners now use the immutable planningrequest core internally"
         in status
     )
     assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
@@ -725,7 +731,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.5 reference/scripted/conformance planners request migration" in status
+    assert "current_next_change_admission: tpa-3.6 conformance/benchmark planners request migration" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1294,6 +1300,40 @@ def test_parent_agent_adapter_uses_request_context_core() -> None:
     assert "production_behavior_change: false" in tpa_3_4
     assert "plannerport public signature cutover" in tpa_3_4
     assert "closure_status: parent_agent_request_migration_foundation" in tpa_3_4
+
+
+def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:
+    tree = ast.parse((SOURCE_ROOT / "planners.py").read_text(encoding="utf-8"))
+    for class_name in ("PricingPlanner", "SettingsPlanner", "ExportPlanner"):
+        planner = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == class_name
+        )
+        propose = next(
+            node
+            for node in planner.body
+            if isinstance(node, ast.FunctionDef) and node.name == "propose"
+        )
+        calls = {
+            node.func.id
+            for node in ast.walk(propose)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "_reference_planning_request" in calls
+
+    tpa_3_5 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-5-reference-scripted-planners-request-migration.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "pricingplanner" in tpa_3_5
+    assert "settingsplanner" in tpa_3_5
+    assert "exportplanner" in tpa_3_5
+    assert "planningrequest" in tpa_3_5
+    assert "production_behavior_change: false" in tpa_3_5
+    assert "plannerport public signature cutover" in tpa_3_5
+    assert "closure_status: reference_contract_planner_request_foundation" in tpa_3_5
 
 
 def test_decisionconstraint_apply_admission_is_request_only() -> None:

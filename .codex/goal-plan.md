@@ -819,5 +819,13 @@ delivery claims.
   build_planner_context helper directly. Parent proposal validation,
   provenance, public PlannerPort compatibility signature, Coordinator call
   sites, TaskPlan admission, progress authority, finish authority, PR breadth,
-  and promotion remain unchanged. The next slice is TPA-3.5
-  reference/scripted/conformance planners request migration.
+  and promotion remain unchanged.
+- Started TPA-3.5 after `9195ed3`. PricingPlanner, SettingsPlanner, and
+  ExportPlanner now build PlanningRequest when a validated TaskSpec is present,
+  use request-bounded affordance labels for deterministic reference selection,
+  and keep concrete ActionContract creation in the legacy snapshot-bound
+  compatibility path. Envelope-only fixture paths do not fabricate TaskSpec
+  identity. PlannerPort public signature, Coordinator call sites, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged. The next slice is TPA-3.6 conformance/benchmark planners
+  request migration.

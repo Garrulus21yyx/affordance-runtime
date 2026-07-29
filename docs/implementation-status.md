@@ -138,6 +138,7 @@ taskplan_authority_program:
   tpa_3_2d: completed_foundation
   tpa_3_3: completed_foundation
   tpa_3_4: completed_foundation
+  tpa_3_5: completed_foundation
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml
   planner_projection_admission_contract_record: docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml
@@ -145,6 +146,7 @@ taskplan_authority_program:
   decisionconstraint_apply_admission_record: docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml
   generalist_request_core_record: docs/change-admission/tpa-3-3-generalist-request-only-core.yaml
   parent_agent_request_record: docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml
+  reference_planner_request_record: docs/change-admission/tpa-3-5-reference-scripted-planners-request-migration.yaml
   plan_candidate_owner_target: TaskPlanGeneratorPort
   plan_decision_owner_target: TaskPlanAuthority
   plan_commit_owner: RunCoordinator
@@ -152,7 +154,7 @@ taskplan_authority_program:
   standard_step_planner_target: StepPlannerPort.propose(PlanningRequest)
   current_standard_triple_signature_implementations: 15
   current_production_authority: legacy_taskplan_subgoal_planprogress
-  next_slice: tpa-3-5-reference-scripted-planners-request-migration
+  next_slice: tpa-3-6-conformance-benchmark-planners-request-migration
   production_authority_changed: false
   promotion_status: held
 
@@ -221,13 +223,13 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: TPA-3.5 reference/scripted/conformance planners request migration; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
-  immutable_planner_input: GeneralistLMPlanner and ParentAgentPlannerAdapter now use the immutable PlanningRequest core internally with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets; PlannerPort public signature and Coordinator call site are still pending cutover
+  current_next_change_admission: TPA-3.6 conformance/benchmark planners request migration; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  immutable_planner_input: GeneralistLMPlanner, ParentAgentPlannerAdapter, and reference contract planners now use the immutable PlanningRequest core internally with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; PlannerPort public signature and Coordinator call site are still pending cutover
 
 active_local_repair:
-  slice: tpa-3-4-parent-agent-planner-request-migration
+  slice: tpa-3-5-reference-scripted-planners-request-migration
   revision: current_committed_revision
-  status: parent_agent_request_migration_foundation
+  status: reference_contract_planner_request_foundation
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -237,13 +239,14 @@ active_local_repair:
   decisionconstraint_apply_admission_record: docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml
   generalist_request_core_record: docs/change-admission/tpa-3-3-generalist-request-only-core.yaml
   parent_agent_request_record: docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml
+  reference_planner_request_record: docs/change-admission/tpa-3-5-reference-scripted-planners-request-migration.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
-  planner_context_change: request_context_path_in_use_for_generalist_and_parent_agent_adapter
+  planner_context_change: request_context_path_in_use_for_generalist_parent_agent_and_reference_contract_planners
   taskplan_required: false
-  next_runtime_slice: tpa-3-5-reference-scripted-planners-request-migration
+  next_runtime_slice: tpa-3-6-conformance-benchmark-planners-request-migration
   promotion_status: held
 
 attribution_classification:
@@ -538,7 +541,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, TPA-3.2D request-only admission application, TPA-3.3 Generalist request-only core, and TPA-3.4 ParentAgentPlannerAdapter request migration are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, and execution-commit gates | none | TPA-3.5 reference/scripted/conformance planners request migration is next; PlannerPort signature cutover, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
+| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, TPA-3.2D request-only admission application, TPA-3.3 Generalist request-only core, TPA-3.4 ParentAgentPlannerAdapter request migration, and TPA-3.5 reference contract planner request migration are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, and execution-commit gates | none | TPA-3.6 conformance/benchmark planners request migration is next; PlannerPort signature cutover, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

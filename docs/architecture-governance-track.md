@@ -319,7 +319,11 @@ without changing the public PlannerPort signature, Coordinator call site,
 progress authority, or finish authority. TPA-3.4 routes
 ParentAgentPlannerAdapter through the same immutable request/context path while
 preserving parent-agent proposal validation and provenance. The next authorized
-sub-slice is TPA-3.5 reference/scripted/conformance planners request migration.
+sub-slice was TPA-3.5 reference contract planner request migration; it routes
+Pricing/Settings/Export through PlanningRequest when TaskSpec identity is
+available while preserving legacy snapshot ActionContract binding. The next
+authorized sub-slice is TPA-3.6 conformance/benchmark planners request
+migration.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
