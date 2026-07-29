@@ -3,6 +3,7 @@
 > **建议仓库路径：** `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md`  
 > **文档类型：** Target Architecture / Architecture Sustainability Decision  
 > **状态：** `APPROVED_WITH_GUARDRAILS`  
+> **TaskPlan ownership amendment：** `2026-07-29-affordance-runtime-taskplan-authority-architecture.md`（冲突时优先）
 > **适用基线：** `agent/migrate-runtime-components` @ `21f49e730a24640b00ef42fd3a3e98e1813f6656`  
 > **实施状态：** `NOT_IMPLEMENTED_AS_A_WHOLE`  
 > **默认生产进度权威：** 迁移完成后由 Runtime-owned active step 与独立 step verification 共同决定  

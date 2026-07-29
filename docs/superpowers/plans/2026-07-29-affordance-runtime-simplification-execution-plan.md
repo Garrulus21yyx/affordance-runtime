@@ -3,6 +3,7 @@
 > **建议仓库路径：** `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`  
 > **文档类型：** Incremental Implementation Plan / Change-Admission Program  
 > **状态：** `PROPOSED_FOR_EXECUTION`  
+> **TaskPlan/Planner boundary sub-plan：** `2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md`
 > **目标架构：** `2026-07-29-affordance-runtime-simplified-target-architecture.md`  
 > **基线分支：** `agent/migrate-runtime-components`  
 > **基线 revision：** `21f49e730a24640b00ef42fd3a3e98e1813f6656`  

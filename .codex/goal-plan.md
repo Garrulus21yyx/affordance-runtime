@@ -743,3 +743,18 @@ delivery claims.
   requirements, and unknown or unevidenced legacy progress IDs fail closed. It
   remains behavior-neutral and does not change Coordinator, StateKernel
   mutation, PlannerContext, production authority, PR breadth, or promotion.
+- Completed TPA-0 on top of the committed S2.1 baseline. Added the TaskPlan
+  authority amendment and granular TPA plan, with TaskPlanGeneratorPort as
+  candidate owner, TaskPlanAuthority as decision owner, RunCoordinator as sole
+  install/replace committer, StateKernel as storage owner, and request-only
+  StepPlannerPort as the target step-action boundary. The amendment does not
+  reopen S2.1: incomplete/no-ready legacy projection remains fail-closed as
+  `PROJECTION_INVALID`, not a new `BLOCKED` authority state.
+- Completed TPA-1 as a read-only inventory. Added TaskPlan authority call-site,
+  Step Planner standard-input read-set, and TaskSkill progress-authority audits.
+  Governance AST baselines now freeze two Coordinator-only plan commit calls,
+  four TaskPlan constructor owners, 15 production triple-signature Step Planner
+  implementations, and TaskSkill state mutation calls isolated to
+  `task_skills.py`. No production source, Planner behavior, StateKernel,
+  Coordinator control flow, progress authority, PR breadth, or promotion changed.
+  The next slice is TPA-2 immutable PlanningRequest contracts and sole builder.

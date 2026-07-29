@@ -57,8 +57,8 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | S3 immutable PlanningRequest | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture and granular execution plan. S1 adds neutral simplified core contracts without changing production authority. S2 adds read-only exact-ID legacy TaskPlan/PlanProgress to simplified Step projection in `docs/change-admission/s2-legacy-step-compatibility-projection.yaml`; S2.1 hardens active/ready/completed projection, source-unit provenance, typed evidence policy, and legacy progress ID validation in `docs/change-admission/s2-1-step-projection-hardening.yaml`. Projected views have no completion authority. Default production authority remains legacy TaskPlan/PlanProgress until the authorized active-step cutover. | Inventory the Planner read-set and introduce immutable PlanningRequest views built from TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, budgets, and read-only runtime summaries. Do not pass mutable StateKernel to standard Planner contracts, do not change Planner behavior yet, do not modify Coordinator growth ceilings, and do not run PR breadth. ODG-9 hookup, ODG-10 progress commit, ODG-11 finish migration, active-step authority cutover, and promotion remain unauthorized. | unrelated horizontal debt retirement |
-| Horizontal | S3 immutable Planner input under simplified active-step architecture | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined; S2.1 hardening closes projection edge cases before immutable request construction | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budget views | ODG experimental attribution documentation |
+| Vertical | TPA-2 immutable PlanningRequest | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture. S1 adds neutral simplified core contracts. S2/S2.1 provide a hardened, read-only exact-ID Step projection. TPA-0 freezes TaskPlan ownership and Step Planner naming; TPA-1 records the complete plan/Planner/Recovery/TaskSkill call-site and read-set baseline. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Introduce immutable PlanningRequest contracts and the sole projection builder from TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, budgets, and read-only runtime summaries. Do not pass mutable StateKernel to standard Planner contracts, do not change Planner behavior, TaskPlan admission, Coordinator ceilings, or progress authority, and do not run PR breadth. | unrelated horizontal debt retirement |
+| Horizontal | TPA-2 immutable Step Planner input | active-subgoal read/activation split and S2.1 projection hardening are closed; TPA-1 freezes 15 production triple-signature Step Planner implementations and the exact read-set before interface migration | standard StepPlannerPort contract no longer receives mutable `StateKernel`; planner context derives only from a deeply immutable PlanningRequest | ODG experimental attribution documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -258,10 +258,11 @@ targeted post-`407133d` `click-button` recheck passed seeds 0 and 1, so the
 JSON-invalid cluster remains monitored rather than production-admitted. The
 `fa1037e` V-PRB-6A progress-target foundation is retained as compatibility-only
 scaffolding, but the next vertical action is no longer to extend pre-action
-TaskPlan subgoal attribution. The current decision freezes an
-obligation-driven progress architecture: the Canonical Obligation Graph becomes
-the only formal progress authority, TaskPlan becomes an optional execution
-strategy view. ODG-1 records the initial obligation execution-role audit, and
+TaskPlan subgoal attribution. The historical ODG-0 decision froze an
+obligation-driven experiment in which the Canonical Obligation Graph becomes
+the only formal progress authority and TaskPlan becomes an optional execution
+strategy view; S0 and TPA-0 now supersede that route for the default path.
+ODG-1 records the initial obligation execution-role audit, and
 ODG-2 adds the typed progress/attribution contracts without connecting them to
 Coordinator or finish authority. ODG-3 adds StateKernel obligation ledger
 foundation as storage, identity, ledger-local mutation invariants, and
@@ -313,8 +314,11 @@ architecture and stops ODG-9 hookup, ODG-10 progress commit, and ODG-11 finish
 authority migration for the default production path. S1 adds neutral
 simplified core contracts without production authority changes. S2 adds
 read-only exact-ID legacy-to-step compatibility projection without production
-authority changes. The selected next slice is S3 immutable PlanningRequest; ODG
-advanced attribution remains `EXPERIMENTAL_ONLY`.
+authority changes. S2.1 hardens the projection. TPA-0 then freezes the
+TaskPlanGeneratorPort -> TaskPlanAuthority -> RunCoordinator -> StateKernel
+ownership chain and distinguishes it from request-only StepPlannerPort. TPA-1
+freezes the current call sites and read sets. The selected next slice is TPA-2
+immutable PlanningRequest; ODG advanced attribution remains `EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
 decision record is

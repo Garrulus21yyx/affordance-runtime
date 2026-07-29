@@ -110,11 +110,13 @@ structured intent-draft `json_invalid` failure in the breadth matrix, but a
 targeted post-`407133d` click-button recheck passed seeds 0 and 1, so that
 cluster remains monitored rather than production-admitted. The prior
 V-PRB-6A dependent-subgoal progress-target foundation is retained, but only as
-compatibility scaffolding. The active decision record is now
-`docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`:
-the Canonical Obligation Graph is the sole target progress authority, TaskPlan
-is an optional execution strategy view, and future standard-path completion
-must be attributed to obligation IDs after verification. The active-subgoal
+compatibility scaffolding. ODG-0 and ODG-2 through ODG-9 remain historical
+foundation/diagnostic records and advanced attribution is `EXPERIMENTAL_ONLY`.
+The default-path decisions are now S0 simplified architecture plus the TPA-0
+TaskPlan authority amendment: TaskPlanGeneratorPort produces drafts,
+TaskPlanAuthority makes plan decisions, RunCoordinator commits, StateKernel
+stores accepted immutable plans and separate progress, and StepPlannerPort only
+proposes the next action for the Runtime-selected active step. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line. Immutable Planner input remains real horizontal debt, but it is deferred
 only until S2.1 step projection hardening closes the compatibility edge cases
@@ -275,12 +277,20 @@ identity, and evidence references into the simplified Step contracts. It must
 not use lexical mapping, task name, URL, selector, seed, benchmark family,
 PlannerContext, trace writing, Coordinator logic, or any StateKernel mutation.
 The projected view has no completion authority until a later explicit cutover.
-S2.1 hardens this projection before S3: completed plans must project with no
+S2.1 hardens this projection before TPA-2: completed plans must project with no
 active step, ready-but-not-activated steps must remain unactivated until the
 Coordinator explicitly activates them, source-unit lineage must not be confused
 with claim identity, criterion evidence policy must come from typed evidence
 requirements rather than semantic task-obligation provenance, and legacy
 progress IDs must be exact and verifier-evidenced.
+
+TPA-0 freezes the TaskPlan and Step Planner owner matrix without changing
+production behavior. TPA-1 records the current TaskPlan construction, plan
+commit, replan, Step Planner triple-signature, Planner read-set, TaskSkill
+progress, CLI, integration, and benchmark surfaces and protects the exact
+baselines with AST tests. TPA-2 may add immutable PlanningRequest contracts and
+one read-only builder; it may not switch PlannerPort, TaskPlan admission,
+progress, finish, Coordinator control flow, or benchmark behavior.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

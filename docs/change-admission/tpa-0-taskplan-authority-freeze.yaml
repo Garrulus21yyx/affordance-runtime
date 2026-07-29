@@ -1,0 +1,56 @@
+slice_id: tpa-0-taskplan-authority-freeze
+base_revision: 8445747f0d734b3998b88edb204e099edf58d259
+parent_decision: s0-simplified-architecture-freeze
+change_type: architecture_decision_and_status_sync
+production_behavior_change: false
+production_writers: 1
+
+single_responsibility:
+  freeze TaskPlan generation, admission, commit, storage, step-planning, and
+  replan ownership before immutable PlanningRequest migration
+
+owner_decision:
+  plan_candidate_owner: TaskPlanGeneratorPort
+  plan_decision_owner: TaskPlanAuthority
+  plan_commit_owner: RunCoordinator
+  plan_storage_owner: StateKernel
+  active_step_owner: StepLifecycle
+  step_action_owner: StepPlannerPort
+  replan_trigger_owner: RecoveryPolicy
+
+current_production_authority:
+  plan: legacy TaskPlan
+  progress: legacy PlanProgress
+  completion: TaskPlanLifecycle and Coordinator compatibility paths
+
+completed_prerequisite:
+  record: docs/change-admission/s2-1-step-projection-hardening.yaml
+  revision: 8445747f0d734b3998b88edb204e099edf58d259
+  completed_plan_active_step_id: null
+  ready_not_activated_is_active: false
+  incomplete_without_ready: projection_invalid
+  source_unit_lineage: preserved
+  criterion_policy_source: typed_evidence_requirements
+  unknown_progress_ids: projection_invalid
+
+included:
+  - TaskPlan authority architecture amendment
+  - granular TPA execution plan
+  - current governance source synchronization
+  - S2.1 completion evidence reference
+
+excluded:
+  - production TaskPlanAuthority implementation
+  - immutable PlanningRequest implementation
+  - StepPlannerPort signature cutover
+  - active-step progress cutover
+  - ODG-9 runtime hookup
+  - ODG-10 obligation commit
+  - ODG-11 finish migration
+  - PR breadth
+  - promotion
+
+architecture_admission: pass
+closure_status: architecture_frozen_s2_1_inherited
+next_slice: tpa-1-authority-read-set-audit
+promotion_status: held

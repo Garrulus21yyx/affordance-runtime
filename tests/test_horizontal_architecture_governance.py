@@ -11,6 +11,23 @@ PROJECT_PLAN = REPOSITORY_ROOT / "docs" / "project-plan.md"
 CURRENT_PLAN = REPOSITORY_ROOT / "docs" / "current-implementation-plan.md"
 IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
 ARCHITECTURE_DOC = REPOSITORY_ROOT / "docs" / "architecture.md"
+TASKPLAN_AUTHORITY_ARCHITECTURE = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/specs/2026-07-29-affordance-runtime-taskplan-authority-architecture.md"
+)
+TASKPLAN_AUTHORITY_PLAN = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/plans/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
+)
+TASKPLAN_CALL_SITE_AUDIT = (
+    REPOSITORY_ROOT / "docs" / "audits" / "taskplan-authority-call-sites.md"
+)
+STEP_PLANNER_READ_SET_AUDIT = (
+    REPOSITORY_ROOT / "docs" / "audits" / "step-planner-standard-input-read-set.md"
+)
+TASKSKILL_AUTHORITY_AUDIT = (
+    REPOSITORY_ROOT / "docs" / "audits" / "taskskill-progress-authority.md"
+)
 INTENT_GOVERNANCE = (
     REPOSITORY_ROOT / "docs" / "intent-schema-authority-governance-20260726.md"
 )
@@ -536,11 +553,13 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml" in status
     assert "step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml" in status
     assert "step_projection: foundation_hardened" in status
-    assert "next_slice: s3-immutable-planning-request" in status
+    assert "next_slice: tpa-2-immutable-planning-request" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
-    assert "future standard-path completion must be attributed to obligation ids" in governance
+    assert "taskplanauthority makes plan decisions" in governance
+    assert "stepplannerport only proposes the next action" in governance
+    assert "advanced attribution is `experimental_only`" in governance
     assert "must not import coordinator, statekernel, taskplan" in governance
     assert "statekernel to the obligation progress contracts" in governance
     assert "odg-4 may add executable role decisions" in governance
@@ -568,7 +587,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "next default-path slice after s1 is exact-id legacy-to-step compatibility projection" in governance
     assert "s2 legacy-step compatibility projection may read taskplan" in governance
     assert "exact subgoal id to canonical obligation id" in governance
-    assert "s2.1 hardens this projection before s3" in governance
+    assert "s2.1 hardens this projection before tpa-2" in governance
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
     assert "immutable_planner_input: planned under simplified active-step architecture" in status
@@ -585,7 +604,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "module-level semantic owner gate" in governance
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
-    assert "canonical obligation graph is the sole target progress authority" in governance
+    assert "default-path decisions are now s0 simplified architecture plus the tpa-0" in governance
+    assert "odg-0 and odg-2 through odg-9 remain historical" in governance
     assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
 
@@ -648,7 +668,8 @@ def test_v_prb_6b_407133d_rerun_is_recorded_without_promotion_claim() -> None:
     assert "form-sequence:seed-1" in status
     assert "v-prb-6a progress-target foundation is retained as compatibility-only" in current_plan
     assert "json-invalid cluster remains monitored" in current_plan
-    assert "obligation-driven progress architecture" in current_plan
+    assert "historical odg-0 decision" in current_plan
+    assert "s0 and tpa-0 now supersede that route" in current_plan
     assert "official_score_claimed=false" in evidence_text
     assert "promotion_status: held" in evidence_text
     assert "pr_breadth_acceptance: failed" in evidence_text
@@ -665,7 +686,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: s3 immutable planningrequest" in status
+    assert "current_next_change_admission: tpa-2 immutable planningrequest" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1031,6 +1052,147 @@ def test_simplified_step_projection_is_read_only_compatibility_projection() -> N
         ):
             violations.append((filename, node.lineno, node.func.attr))
     assert violations == []
+
+
+def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
+    paths = (
+        TASKPLAN_AUTHORITY_ARCHITECTURE,
+        TASKPLAN_AUTHORITY_PLAN,
+        TASKPLAN_CALL_SITE_AUDIT,
+        STEP_PLANNER_READ_SET_AUDIT,
+        TASKSKILL_AUTHORITY_AUDIT,
+        CHANGE_ADMISSION_DIR / "tpa-0-taskplan-authority-freeze.yaml",
+        CHANGE_ADMISSION_DIR / "tpa-1-authority-read-set-audit.yaml",
+    )
+    for path in paths:
+        assert path.exists(), path
+
+    architecture = " ".join(
+        TASKPLAN_AUTHORITY_ARCHITECTURE.read_text(encoding="utf-8").split()
+    ).casefold()
+    plan = " ".join(
+        TASKPLAN_AUTHORITY_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    call_sites = " ".join(
+        TASKPLAN_CALL_SITE_AUDIT.read_text(encoding="utf-8").split()
+    ).casefold()
+    read_set = " ".join(
+        STEP_PLANNER_READ_SET_AUDIT.read_text(encoding="utf-8").split()
+    ).casefold()
+    taskskill = " ".join(
+        TASKSKILL_AUTHORITY_AUDIT.read_text(encoding="utf-8").split()
+    ).casefold()
+
+    assert "taskplanauthority" in architecture
+    assert "taskplangeneratorport" in architecture
+    assert "runcoordinator" in architecture
+    assert "stepplannerport" in architecture
+    assert "tpa-0" in plan
+    assert "tpa-1" in plan
+    assert "tpa-2" in plan
+    assert "tpa-0: completed" in plan
+    assert "projection_invalid" in plan
+    assert "taskplanlifecycle" in call_sites
+    assert "install_task_plan" in call_sites
+    assert "replace_task_plan" in call_sites
+    assert "plannercontextbuilder" in read_set
+    assert "generalistlmplanner" in read_set
+    assert "mutable_reference_required: false" in read_set
+    assert "taskskillrunstate" in taskskill
+    assert "compatibility authority" in taskskill
+    assert "runtime task completion authority: false" in taskskill
+
+
+def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:
+    plan_commit_callers: set[tuple[str, str]] = set()
+    plan_constructors: set[tuple[str, str]] = set()
+    for path in SOURCE_ROOT.rglob("*.py"):
+        relative = str(path.relative_to(SOURCE_ROOT))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        class_by_node: dict[ast.AST, str] = {}
+        for owner in ast.walk(tree):
+            if isinstance(owner, ast.ClassDef):
+                for node in ast.walk(owner):
+                    class_by_node[node] = owner.name
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "install_task_plan",
+                "replace_task_plan",
+            }:
+                plan_commit_callers.add((relative, node.func.attr))
+            if isinstance(node.func, ast.Name) and node.func.id == "TaskPlan":
+                plan_constructors.add((relative, class_by_node.get(node, "<module>")))
+
+    assert plan_commit_callers == {
+        ("coordinator.py", "install_task_plan"),
+        ("coordinator.py", "replace_task_plan"),
+    }
+    assert plan_constructors == {
+        ("planners.py", "PricingTaskPlanner"),
+        ("task_planning.py", "LLMTaskPlanner"),
+        ("task_planning.py", "TaskObligationOutcomeCompiler"),
+        ("task_planning.py", "<module>"),
+    }
+
+
+def test_standard_step_planner_triple_signature_inventory_is_frozen() -> None:
+    implementations: set[tuple[str, str]] = set()
+    for path in SOURCE_ROOT.rglob("*.py"):
+        relative = str(path.relative_to(SOURCE_ROOT))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for owner in ast.walk(tree):
+            if not isinstance(owner, ast.ClassDef):
+                continue
+            for node in owner.body:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name != "propose":
+                    continue
+                names = tuple(argument.arg for argument in node.args.args)
+                if names[:4] == ("self", "envelope", "state", "snapshot"):
+                    implementations.add((relative, owner.name))
+
+    assert implementations == {
+        ("benchmarks/adaptive_routing.py", "_CountingSystem2Planner"),
+        ("benchmarks/browsergym_episode_runner.py", "BrowserGymGeneralistPlanner"),
+        ("benchmarks/browsergym_episode_runner.py", "BrowserGymPlanner"),
+        ("benchmarks/generalization_rollout.py", "_DoneAfterDisclosurePlanner"),
+        ("benchmarks/generalization_rollout.py", "_ProviderFailOncePlanner"),
+        ("benchmarks/generalization_rollout.py", "_SurfacePlanner"),
+        ("benchmarks/task_planning.py", "_StageActionPlanner"),
+        ("conformance.py", "ConformancePlanner"),
+        ("generalist_planner.py", "GeneralistLMPlanner"),
+        ("planner_adapters.py", "ParentAgentPlannerAdapter"),
+        ("planners.py", "ExportPlanner"),
+        ("planners.py", "PricingPlanner"),
+        ("planners.py", "SettingsPlanner"),
+        ("planning_contracts.py", "PlannerPort"),
+        ("recovery_evolution.py", "RecoveryFixturePlanner"),
+    }
+
+
+def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:
+    mutation_names = {
+        "activate_task_skill",
+        "checkpoint_task_skill_step",
+        "expose_task_skill_step",
+        "fall_through_task_skill",
+        "update_task_skill_bindings",
+    }
+    callers: set[tuple[str, str]] = set()
+    for path in SOURCE_ROOT.rglob("*.py"):
+        relative = str(path.relative_to(SOURCE_ROOT))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in mutation_names
+            ):
+                callers.add((relative, node.func.attr))
+    assert callers == {("task_skills.py", name) for name in mutation_names}
 
 
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
