@@ -881,3 +881,7 @@ delivery claims.
   `ExecutionReceipt.evidence` and `PlannerDecision.result/planner_context`,
   froze those construction boundaries, and projected frozen payloads through
   trace/artifact JSON writers without changing progress or finish authority.
+- Continued SAR-1 after `7530394`. Added REDs for mutable Observation and
+  Affordance source payloads, froze those construction boundaries, and repaired
+  legacy Mapping/Sequence read assumptions without changing Coordinator
+  authority, progress, or finish semantics.

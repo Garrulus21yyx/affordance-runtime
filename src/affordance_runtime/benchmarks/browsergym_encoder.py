@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from typing import Any
@@ -362,23 +363,23 @@ def browsergym_action_verifiers(
                 action_bid,
                 (
                     {"field": "selected_options", "value": selected_options}
-                    if isinstance(selected_options, list)
+                    if isinstance(selected_options, Sequence) and not isinstance(selected_options, (str, bytes))
                     else {"field": "value", "value": str(selected_options)}
                 ),
             )
         )
     elif action.name == "press":
         previous = snapshot.observation.metadata.get("control_states", {})
-        previous_state = previous.get(action_bid, {}) if isinstance(previous, dict) else {}
+        previous_state = previous.get(action_bid, {}) if isinstance(previous, Mapping) else {}
         is_scroll_region = (
-            isinstance(previous_state, dict)
+            isinstance(previous_state, Mapping)
             and isinstance(previous_state.get("scroll_height"), (int, float))
             and isinstance(previous_state.get("client_height"), (int, float))
             and previous_state["scroll_height"] > previous_state["client_height"]
         )
         field_name = "scroll_top" if is_scroll_region else "aria_valuenow"
-        previous_value = previous_state.get(field_name, "") if isinstance(previous_state, dict) else ""
-        if previous_value in {None, ""} and isinstance(previous_state, dict):
+        previous_value = previous_state.get(field_name, "") if isinstance(previous_state, Mapping) else ""
+        if previous_value in {None, ""} and isinstance(previous_state, Mapping):
             field_name = "context_text"
             previous_value = previous_state.get(field_name, "")
         verifier_plan.append(
@@ -390,9 +391,9 @@ def browsergym_action_verifiers(
         )
     elif action.name in {"click", "click_no_navigation"}:
         previous = snapshot.observation.metadata.get("control_states", {})
-        previous_state = previous.get(action_bid, {}) if isinstance(previous, dict) else {}
-        expanded = previous_state.get("aria_expanded") if isinstance(previous_state, dict) else None
-        checked = previous_state.get("checked") if isinstance(previous_state, dict) else None
+        previous_state = previous.get(action_bid, {}) if isinstance(previous, Mapping) else {}
+        expanded = previous_state.get("aria_expanded") if isinstance(previous_state, Mapping) else None
+        checked = previous_state.get("checked") if isinstance(previous_state, Mapping) else None
         if expanded in {"true", "false"}:
             verifier_plan.append(
                 VerifierSpec(
@@ -524,7 +525,7 @@ def _browsergym_postcondition_proves_outcome(
     outcome_value: str,
     affordance: Affordance,
 ) -> bool:
-    expected = verifier.expected if isinstance(verifier.expected, dict) else {}
+    expected = verifier.expected if isinstance(verifier.expected, Mapping) else {}
     normalized_outcome = browsergym_fill_value(affordance.state, outcome_value.strip())
     if action.name in {"fill", "type_text_with_events"} and verifier.kind == "dom_attribute":
         actual = str(expected.get("value", ""))
@@ -544,7 +545,11 @@ def _browsergym_postcondition_proves_outcome(
         )
     if action.name == "select_option" and verifier.kind == "control_state":
         options = action.arguments.get("options")
-        selected = [str(item) for item in options] if isinstance(options, list) else [str(options)]
+        selected = (
+            [str(item) for item in options]
+            if isinstance(options, Sequence) and not isinstance(options, (str, bytes))
+            else [str(options)]
+        )
         return bool(normalized_outcome) and (
             (relation == SubgoalOutcomeRelation.EQUALS and selected == [normalized_outcome])
             or (relation == SubgoalOutcomeRelation.CONTAINS and normalized_outcome in selected)

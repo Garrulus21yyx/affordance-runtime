@@ -72,5 +72,13 @@ construction time. Trace and artifact writers project frozen containers through
 canonical JSON-compatible data before persistence, so immutable core payloads do
 not become stringified trace artifacts.
 
+The follow-up SAR-1 cut extends the same constructor boundary to
+`Observation.metadata`, `Observation.target_fingerprints`,
+`Observation.artifact_refs`, `Affordance.locator`, `Affordance.state`,
+`Affordance.payload`, `Affordance.backend_candidates`, `Affordance.evidence`,
+and `AffordanceLease.provenance`. Legacy code that reads these values must treat
+them as `Mapping` / `Sequence` or explicitly project at an adapter boundary; core
+code must not regain mutable references.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

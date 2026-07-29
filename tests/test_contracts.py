@@ -161,6 +161,80 @@ def test_planner_decision_diagnostic_dicts_are_deeply_immutable_from_source_payl
         decision.planner_context["model"]["messages"][0] = "changed"
 
 
+def test_observation_payloads_are_deeply_immutable_from_source_payload() -> None:
+    raw_metadata = {"browsergym": {"goal": "inspect", "candidates": ["button"]}}
+    raw_fingerprints = {"target": "fingerprint-1"}
+    raw_artifacts = ["artifact:observation"]
+
+    observation = Observation(
+        "rev-1",
+        metadata=raw_metadata,
+        target_fingerprints=raw_fingerprints,
+        artifact_refs=raw_artifacts,
+    )
+
+    raw_metadata["browsergym"]["candidates"].append("textbox")
+    raw_fingerprints["target"] = "fingerprint-2"
+    raw_artifacts.append("artifact:mutated")
+
+    assert observation.metadata["browsergym"]["candidates"] == ("button",)
+    assert observation.target_fingerprints["target"] == "fingerprint-1"
+    assert observation.artifact_refs == ("artifact:observation",)
+    with pytest.raises(TypeError):
+        observation.metadata["browsergym"]["goal"] = "mutated"
+    with pytest.raises(TypeError):
+        observation.target_fingerprints["target"] = "fingerprint-3"
+    with pytest.raises(TypeError):
+        observation.artifact_refs[0] = "artifact:changed"
+
+
+def test_affordance_payloads_are_deeply_immutable_from_source_payload() -> None:
+    lease_provenance = ["dom"]
+    lease = AffordanceLease.issue(
+        environment_revision="rev-1",
+        provenance=lease_provenance,
+    )
+    raw_locator = {"selector": "#name", "bbox": [1, 2, 3, 4]}
+    raw_state = {"enabled": True, "selected_options": ["Alice"]}
+    raw_payload = {"options": [{"label": "Alice"}]}
+    raw_backends = ["dom"]
+    raw_evidence = ["evidence:dom"]
+
+    affordance = Affordance(
+        "name",
+        Surface.DOM,
+        "textbox",
+        "Name",
+        "type",
+        raw_locator,
+        lease,
+        backend_candidates=raw_backends,
+        state=raw_state,
+        evidence=raw_evidence,
+        payload=raw_payload,
+    )
+
+    raw_locator["bbox"].append(5)
+    raw_state["selected_options"].append("Bob")
+    raw_payload["options"][0]["label"] = "Bob"
+    raw_backends.append("visual")
+    raw_evidence.append("evidence:visual")
+    lease_provenance.append("visual")
+
+    assert affordance.locator["bbox"] == (1, 2, 3, 4)
+    assert affordance.state["selected_options"] == ("Alice",)
+    assert affordance.payload["options"][0]["label"] == "Alice"
+    assert affordance.backend_candidates == ("dom",)
+    assert affordance.evidence == ("evidence:dom",)
+    assert affordance.lease.provenance == ("dom",)
+    with pytest.raises(TypeError):
+        affordance.locator["selector"] = "#other"
+    with pytest.raises(TypeError):
+        affordance.state["selected_options"][0] = "changed"
+    with pytest.raises(TypeError):
+        affordance.payload["options"][0]["label"] = "changed"
+
+
 def test_gesture_contract_binds_and_preflights_both_endpoints() -> None:
     source_lease = AffordanceLease.issue(
         environment_revision="rev-1", snapshot_id="snap-1", page_revision="page-1", target_fingerprint="source-1"

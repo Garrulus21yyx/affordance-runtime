@@ -326,7 +326,7 @@ class RunCoordinator:
                     "environment_revision": snapshot.observation.environment_revision,
                     "url": snapshot.observation.url,
                     "artifact_refs": ([observation_ref.path] if observation_ref else [])
-                    + snapshot.observation.artifact_refs,
+                    + list(snapshot.observation.artifact_refs),
                     "perception_requirements": snapshot.observation.metadata.get("perception_requirements"),
                     "source_observations": [
                         {
@@ -1389,7 +1389,7 @@ class RunCoordinator:
                         "snapshot_id": preflight_snapshot.observation.snapshot_id,
                         "page_revision": preflight_snapshot.observation.page_revision,
                         "artifact_refs": ([preflight_ref.path] if preflight_ref else [])
-                        + preflight_snapshot.observation.artifact_refs,
+                        + list(preflight_snapshot.observation.artifact_refs),
                     },
                     parents=[parent.id],
                 )
@@ -1548,7 +1548,7 @@ class RunCoordinator:
                         "snapshot_id": approval_snapshot.observation.snapshot_id,
                         "page_revision": approval_snapshot.observation.page_revision,
                         "artifact_refs": ([approval_ref.path] if approval_ref else [])
-                        + approval_snapshot.observation.artifact_refs,
+                        + list(approval_snapshot.observation.artifact_refs),
                     },
                     parents=[parent.id],
                 )
@@ -1802,7 +1802,7 @@ class RunCoordinator:
                             "verification": latest_verification.status.value,
                             "snapshot_id": inspection.observation.snapshot_id,
                             "artifact_refs": ([inspection_ref.path] if inspection_ref else [])
-                            + inspection.observation.artifact_refs,
+                            + list(inspection.observation.artifact_refs),
                         },
                         parents=[parent.id],
                     )
@@ -1869,7 +1869,7 @@ class RunCoordinator:
                     "state": state.phase,
                     "snapshot_id": post_snapshot.observation.snapshot_id,
                     "page_revision": post_snapshot.observation.page_revision,
-                    "artifact_refs": ([post_ref.path] if post_ref else []) + post_snapshot.observation.artifact_refs,
+                    "artifact_refs": ([post_ref.path] if post_ref else []) + list(post_snapshot.observation.artifact_refs),
                 },
                 parents=[parent.id],
             )
@@ -3186,7 +3186,7 @@ class RunCoordinator:
                     "snapshot_id": targeted.observation.snapshot_id,
                     "page_revision": targeted.observation.page_revision,
                     "environment_revision": targeted.observation.environment_revision,
-                    "artifact_refs": ([targeted_ref.path] if targeted_ref else []) + targeted.observation.artifact_refs,
+                    "artifact_refs": ([targeted_ref.path] if targeted_ref else []) + list(targeted.observation.artifact_refs),
                     "source_observations": [
                         {
                             "source": item.source.value,

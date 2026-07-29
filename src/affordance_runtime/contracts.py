@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from time import time
@@ -108,6 +109,9 @@ class Observation:
         # field. New contracts bind the narrower semantic page revision.
         if not self.page_revision:
             object.__setattr__(self, "page_revision", self.environment_revision)
+        object.__setattr__(self, "metadata", freeze_json(self.metadata))
+        object.__setattr__(self, "target_fingerprints", freeze_json(self.target_fingerprints))
+        object.__setattr__(self, "artifact_refs", freeze_json(self.artifact_refs))
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,9 @@ class AffordanceLease:
     snapshot_id: str = ""
     page_revision: str = ""
     target_fingerprint: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provenance", freeze_json(self.provenance))
 
     @classmethod
     def issue(
@@ -185,6 +192,13 @@ class Affordance:
     risk: RiskLevel = RiskLevel.LOW
     evidence: list[str] = field(default_factory=list)
     payload: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "locator", freeze_json(self.locator))
+        object.__setattr__(self, "backend_candidates", freeze_json(self.backend_candidates))
+        object.__setattr__(self, "state", freeze_json(self.state))
+        object.__setattr__(self, "evidence", freeze_json(self.evidence))
+        object.__setattr__(self, "payload", freeze_json(self.payload))
 
     @property
     def target_fingerprint(self) -> str:
@@ -374,13 +388,13 @@ def gesture_preflight(
 def _gesture_endpoint_blocked(target: GestureTargetBinding, raw_overlays: Any) -> bool:
     """Check current generic viewport geometry without backend-specific handles."""
 
-    if not isinstance(raw_overlays, list):
+    if not isinstance(raw_overlays, Sequence) or isinstance(raw_overlays, (str, bytes)):
         return False
     point = _gesture_locator_point(target.locator)
     if point is None:
         return False
     for item in raw_overlays:
-        if not isinstance(item, dict):
+        if not hasattr(item, "get"):
             continue
         raw_box = item.get("bbox")
         if not isinstance(raw_box, (list, tuple)) or len(raw_box) != 4:

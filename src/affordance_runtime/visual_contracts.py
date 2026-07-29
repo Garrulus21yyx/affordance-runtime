@@ -128,7 +128,7 @@ class VisualContractBinder:
             raise ValueError("grounding point is outside the current viewport")
 
     def _blocked(self, point: tuple[float, float], raw_overlays: Any) -> bool:
-        if not isinstance(raw_overlays, list):
+        if not isinstance(raw_overlays, Sequence) or isinstance(raw_overlays, (str, bytes)):
             return False
         return any(
             _point_in_box(point, box)

@@ -12,30 +12,21 @@ JsonValue: TypeAlias = Any
 FrozenObject: TypeAlias = Any
 
 
-class FrozenList(Sequence[JsonValue]):
+class FrozenList(tuple[JsonValue, ...]):
     """Immutable JSON list that keeps comparison compatibility with list/tuple."""
 
-    def __init__(self, values: Sequence[Any]) -> None:
-        self._values = tuple(freeze_json(value) for value in values)
+    __hash__ = tuple.__hash__
 
-    def __getitem__(self, index: int | slice) -> JsonValue | tuple[JsonValue, ...]:
-        return self._values[index]
-
-    def __iter__(self) -> Iterator[JsonValue]:
-        return iter(self._values)
-
-    def __len__(self) -> int:
-        return len(self._values)
+    def __new__(cls, values: Sequence[Any]) -> "FrozenList":
+        return super().__new__(cls, tuple(freeze_json(value) for value in values))
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, FrozenList):
-            return self._values == other._values
         if isinstance(other, (list, tuple)):
-            return tuple(thaw_json_at_external_boundary(item) for item in self._values) == tuple(other)
+            return tuple(thaw_json_at_external_boundary(item) for item in self) == tuple(other)
         return False
 
     def __repr__(self) -> str:
-        return repr(tuple(thaw_json_at_external_boundary(item) for item in self._values))
+        return repr(tuple(thaw_json_at_external_boundary(item) for item in self))
 
 
 class FrozenSequence(tuple[Any, ...]):
@@ -82,6 +73,12 @@ class FrozenDict(Mapping[str, JsonValue]):
 
     def __repr__(self) -> str:
         return repr(thaw_json_at_external_boundary(self))
+
+    def __or__(self, other: Mapping[str, Any]) -> dict[str, Any]:
+        return thaw_json_at_external_boundary(self) | dict(other)
+
+    def __ror__(self, other: Mapping[str, Any]) -> dict[str, Any]:
+        return dict(other) | thaw_json_at_external_boundary(self)
 
 
 def freeze_json(value: Any) -> JsonValue:

@@ -16,12 +16,15 @@ single_primary_owner:
 
 included:
   - src/affordance_runtime/immutable.py
+  - Observation metadata, target_fingerprints, and artifact_refs deep freeze
+  - Affordance locator, state, payload, backend_candidates, evidence, and lease provenance deep freeze
   - ActionContract locator and parameter deep freeze
   - ActionContract hash-critical list fields normalized to immutable sequences
   - ExecutionReceipt evidence deep freeze
   - PlannerDecision result and planner_context deep freeze
   - Trace and Artifact JSON writers project frozen payloads through canonical JSON-compatible data
   - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
+  - legacy sequence/mapping compatibility repairs for frozen observation and affordance payloads
   - action contract digest threat model
   - stale nested mutation regression test
 
@@ -50,6 +53,8 @@ validation:
   stale_hash_red_observed: tests/test_contracts.py::test_action_contract_payloads_are_deeply_immutable_and_hash_stable
   receipt_evidence_red_observed: tests/test_contracts.py::test_execution_receipt_evidence_is_deeply_immutable_from_source_payload
   planner_decision_diagnostics_red_observed: tests/test_contracts.py::test_planner_decision_diagnostic_dicts_are_deeply_immutable_from_source_payload
+  observation_payload_red_observed: tests/test_contracts.py::test_observation_payloads_are_deeply_immutable_from_source_payload
+  affordance_payload_red_observed: tests/test_contracts.py::test_affordance_payloads_are_deeply_immutable_from_source_payload
   focused_contract_tests: required
   architecture_tests: required
   full_pytest: required
@@ -58,6 +63,6 @@ validation:
   uv_build: required
   diff_check: required
 
-closure_status: sar_1_action_contract_receipt_plannerdecision_freeze_in_progress
-next_slice: sar-1-continue-observation-affordance-verificationevidence-deep-immutability
+closure_status: sar_1_primary_runtime_contract_freeze_in_progress
+next_slice: sar-1-continue-verificationevidence-and-remaining-value-boundaries
 promotion_status: held
