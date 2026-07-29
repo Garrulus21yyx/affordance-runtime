@@ -108,6 +108,11 @@ and state-source payloads. Device route planning therefore reads an immutable
 Thing Description projection rather than a caller-owned list or dictionary that
 can be rewritten after parsing.
 
+Task envelopes now freeze caller-provided constraints and granted capability
+lists at construction time. This keeps run-level policy and capability scope
+stable after `TaskEnvelope` is passed to Runtime or Coordinator entrypoints,
+instead of retaining mutable references owned by the caller.
+
 Configured approval providers freeze their allowed-capability set at
 construction time. A caller-owned set cannot be mutated after provider creation
 to silently expand which high-risk contracts may receive an approval token.

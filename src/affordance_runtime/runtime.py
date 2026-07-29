@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
+from affordance_runtime.immutable import FrozenSequence, freeze_json
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
@@ -43,6 +44,8 @@ class TaskEnvelope:
     task_spec: TaskSpec | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", freeze_json(self.constraints))
+        object.__setattr__(self, "capabilities", FrozenSequence(self.capabilities))
         if self.task_spec is None:
             if not self.task_id or not self.goal:
                 raise ValueError("legacy TaskEnvelope requires task_id and goal")

@@ -922,3 +922,7 @@ delivery claims.
   production behavior, progress authority, finish authority, Coordinator
   control flow, StateKernel schema, PlannerPort, PR breadth, or promotion
   changed.
+- Continued SAR-1 after `8e9c300`. Added a RED for mutable
+  `TaskEnvelope.constraints/capabilities`, froze those runtime entry payloads
+  at construction, and kept task policy/capability semantics stable after
+  callers mutate their original collections.

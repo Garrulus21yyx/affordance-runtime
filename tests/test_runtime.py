@@ -1,5 +1,28 @@
+import pytest
+
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
 from affordance_runtime.runtime import AffordanceRuntime, RuntimeStep, TaskEnvelope
+
+
+def test_task_envelope_payloads_are_immutable_from_source_collections() -> None:
+    constraints = {"require_approval_for": ["settings.write"]}
+    capabilities = ["settings.write"]
+
+    envelope = TaskEnvelope(
+        task_id="task_1",
+        goal="save settings",
+        constraints=constraints,
+        capabilities=capabilities,
+    )
+    constraints["require_approval_for"].append("admin.override")
+    capabilities.append("admin.override")
+
+    assert envelope.constraints["require_approval_for"] == ["settings.write"]
+    assert envelope.capabilities == ["settings.write"]
+    with pytest.raises(TypeError):
+        envelope.constraints["require_approval_for"][0] = "admin.override"
+    with pytest.raises(AttributeError):
+        envelope.capabilities.append("admin.override")
 
 
 class FakeExecutor:
