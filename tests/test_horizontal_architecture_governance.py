@@ -305,6 +305,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_8_record = CHANGE_ADMISSION_DIR / "odg-8-post-action-evidence-normalization.yaml"
     odg_8_1_record = CHANGE_ADMISSION_DIR / "odg-8-1-causality-strength-hardening.yaml"
     odg_8b_record = CHANGE_ADMISSION_DIR / "odg-8b-verifier-evidence-fidelity.yaml"
+    odg_9_record = (
+        CHANGE_ADMISSION_DIR / "odg-9-post-verification-obligation-attribution.yaml"
+    )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -318,6 +321,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_8_record.exists()
     assert odg_8_1_record.exists()
     assert odg_8b_record.exists()
+    assert odg_9_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -330,6 +334,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_8 = " ".join(odg_8_record.read_text(encoding="utf-8").split()).casefold()
     odg_8_1 = " ".join(odg_8_1_record.read_text(encoding="utf-8").split()).casefold()
     odg_8b = " ".join(odg_8b_record.read_text(encoding="utf-8").split()).casefold()
+    odg_9 = " ".join(odg_9_record.read_text(encoding="utf-8").split()).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -407,6 +412,11 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "verify_result_equals_evaluate_passed" in odg_8b
     assert "state_delta_or_terminal_concrete_progress_fact: prohibited" in odg_8b
     assert "closure_status: verifier_fidelity_foundation_only" in odg_8b
+    assert "production_behavior_change: false" in odg_9
+    assert "postverificationobligationattributor" in odg_9
+    assert "weak_evidence_completion: prohibited" in odg_9
+    assert "taskplan_required: false" in odg_9
+    assert "closure_status: attribution_foundation_only" in odg_9
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -429,7 +439,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "post_action_evidence_normalization: foundation_hardened_with_verifier_fidelity" in status
     assert "post_action_causality_strength: complete" in status
     assert "verifier_evidence_fidelity: foundation_only" in status
-    assert "next_odg_slice: odg-9-post-verification-obligation-attribution" in status
+    assert "post_verification_attribution: foundation_only" in status
+    assert "next_odg_slice: runtime-ticket-carry-and-odg-9-shadow-diagnostic" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -448,6 +459,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "effective strength is the minimum" in governance
     assert "odg-8b may improve verifier evidence fidelity" in governance
     assert "verify()` a compatibility wrapper" in governance
+    assert "odg-9 may add a pure" in governance
+    assert "weak receipt, weak state-delta, and weak external-evaluator" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -535,7 +548,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: odg-9 post-verification obligation attribution" in status
+    assert "current_next_change_admission: runtime-only ticket carry boundary and odg-9 shadow diagnostic" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

@@ -223,6 +223,17 @@ remains weak generic evidence and must not be converted into concrete
 `EQUALS`, `HAS_CHANGED`, or `IS_CHECKED` progress facts without explicit typed
 before/after state.
 
+ODG-9 may add a pure `PostVerificationObligationAttributor`. It may consume the
+canonical `TaskSpec`, immutable `ObligationProgressStateView`,
+`ProgressAttributionTicket`, and `PostActionEvidenceFact` values to return an
+`ObligationAttributionResult`. A satisfaction preparation is allowed only when
+exactly one candidate obligation is fully covered by sufficiently strong,
+identity-consistent evidence and its dependencies are still satisfied. ODG-9
+must not persist tickets, mutate StateKernel or the obligation ledger, write
+trace, change Coordinator, change finish authority, change PlannerContext, or
+require TaskPlan. Weak receipt, weak state-delta, and weak external-evaluator
+facts may classify as `weak_evidence`, but may not complete an obligation.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

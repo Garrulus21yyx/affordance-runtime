@@ -687,3 +687,15 @@ delivery claims.
   `evaluate()` methods and `VerificationEvidence.semantic_evidence_key` while
   preserving `verify() == evaluate().passed`; it improves evidence content
   without changing verifier pass/fail behavior or runtime progress authority.
+- Started ODG-9 after ODG-8B approval. The slice adds a pure
+  `PostVerificationObligationAttributor` that consumes `TaskSpec`,
+  `ObligationProgressStateView`, `ProgressAttributionTicket`, and
+  `PostActionEvidenceFact` values. It may return
+  `ObligationSatisfactionPreparation` only when exactly one candidate is fully
+  covered by sufficiently strong, identity-consistent evidence and dependencies
+  remain satisfied. It does not persist tickets, mutate StateKernel or the
+  obligation ledger, write trace, change finish authority, change
+  PlannerContext, require TaskPlan, run PR breadth, or claim promotion. The
+  next authorized slice is a Runtime-only ticket carry boundary plus ODG-9
+  shadow diagnostics; Coordinator obligation commit remains ODG-10 and finish
+  authority remains ODG-11.

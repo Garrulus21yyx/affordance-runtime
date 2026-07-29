@@ -547,6 +547,7 @@ class ObligationAttributionResult:
         "ambiguous",
         "weak_evidence",
         "stale",
+        "invalid",
         "dependency_blocked",
     ]
     preparation: "ObligationSatisfactionPreparation | None" = None
@@ -557,6 +558,93 @@ class ObligationAttributionResult:
             raise ValueError("satisfied attribution requires preparation")
         if self.status != "satisfied" and self.preparation is not None:
             raise ValueError("non-satisfied attribution cannot include preparation")
+
+
+class PostVerificationObligationAttributor:
+    """Attribute post-action facts to exactly one candidate obligation."""
+
+    def attribute(
+        self,
+        *,
+        task_spec: TaskSpec,
+        progress: ObligationProgressStateView,
+        ticket: ProgressAttributionTicket,
+        facts: tuple[PostActionEvidenceFact, ...],
+    ) -> ObligationAttributionResult:
+        identity_error = _validate_attribution_identity(
+            task_spec=task_spec,
+            progress=progress,
+            ticket=ticket,
+            facts=facts,
+        )
+        if identity_error is not None:
+            return identity_error
+        progress_validation = _validate_progress_for_ticket(
+            task_spec=task_spec,
+            progress=progress,
+        )
+        if progress_validation is not None:
+            return ObligationAttributionResult(
+                status="stale"
+                if progress_validation.status == "stale"
+                else "no_match",
+                reason=progress_validation.reason,
+            )
+
+        obligations_by_id = {item.obligation_id: item for item in task_spec.obligations}
+        satisfied_ids = set(progress.satisfied_obligation_ids)
+        failed_ids = set(progress.failed_obligation_ids)
+        eligible: list[TaskObligationSpec] = []
+        dependency_blocked = False
+        for candidate_id in ticket.candidate_obligation_ids:
+            obligation = obligations_by_id[candidate_id]
+            if candidate_id in satisfied_ids or candidate_id in failed_ids:
+                continue
+            if not set(obligation.depends_on).issubset(satisfied_ids):
+                dependency_blocked = True
+                continue
+            eligible.append(obligation)
+        if not eligible:
+            return ObligationAttributionResult(
+                status="dependency_blocked" if dependency_blocked else "no_match",
+            )
+
+        strong_matches: list[tuple[TaskObligationSpec, tuple[str, ...]]] = []
+        weak_match_seen = False
+        for obligation in eligible:
+            proof = _prove_obligation_with_facts(obligation=obligation, facts=facts)
+            if proof.status == "strong":
+                strong_matches.append((obligation, proof.evidence_refs))
+            elif proof.status == "weak":
+                weak_match_seen = True
+
+        if len(strong_matches) > 1:
+            return ObligationAttributionResult(status="ambiguous")
+        if not strong_matches:
+            return ObligationAttributionResult(
+                status="weak_evidence" if weak_match_seen else "no_match",
+            )
+
+        obligation, evidence_refs = strong_matches[0]
+        post_snapshot_id, post_page_revision, post_environment_revision = _single_post_identity(
+            facts
+        )
+        return ObligationAttributionResult(
+            status="satisfied",
+            preparation=ObligationSatisfactionPreparation(
+                task_spec_identity=task_spec.identity,
+                task_revision=task_spec.revision,
+                evaluated_at_state_version=progress.evaluated_at_state_version,
+                obligation_id=obligation.obligation_id,
+                evidence_refs=evidence_refs,
+                source=PostVerificationSatisfactionSource(
+                    contract_id=ticket.contract_id,
+                    post_snapshot_id=post_snapshot_id,
+                    post_page_revision=post_page_revision,
+                    post_environment_revision=post_environment_revision,
+                ),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -592,6 +680,211 @@ def _require_unique_nonblank(field_name: str, values: tuple[str, ...]) -> None:
         raise ValueError(f"{field_name} must be unique")
     if any(not item.strip() for item in values):
         raise ValueError(f"{field_name} cannot contain blank values")
+
+
+def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return tuple(result)
+
+
+@dataclass(frozen=True)
+class _ObligationProof:
+    status: Literal["none", "weak", "strong"]
+    evidence_refs: tuple[str, ...] = ()
+
+
+def _validate_attribution_identity(
+    *,
+    task_spec: TaskSpec,
+    progress: ObligationProgressStateView,
+    ticket: ProgressAttributionTicket,
+    facts: tuple[PostActionEvidenceFact, ...],
+) -> ObligationAttributionResult | None:
+    if (
+        ticket.task_spec_identity != task_spec.identity
+        or ticket.task_revision != task_spec.revision
+        or progress.task_spec_identity != task_spec.identity
+        or progress.task_revision != task_spec.revision
+    ):
+        return ObligationAttributionResult(status="stale")
+    if not facts:
+        return ObligationAttributionResult(status="no_match")
+    if len({ref for fact in facts for ref in fact.evidence_refs}) != sum(
+        len(fact.evidence_refs) for fact in facts
+    ):
+        return ObligationAttributionResult(
+            status="no_match",
+            reason="duplicate evidence ref",
+        )
+    for fact in facts:
+        if (
+            fact.contract_id != ticket.contract_id
+            or fact.contract_hash != ticket.contract_hash
+            or fact.pre_snapshot_id != ticket.pre_snapshot_id
+        ):
+            return ObligationAttributionResult(status="stale")
+    post_identities = {
+        (
+            fact.post_snapshot_id,
+            fact.post_page_revision,
+            fact.post_environment_revision,
+        )
+        for fact in facts
+    }
+    if len(post_identities) != 1:
+        return ObligationAttributionResult(
+            status="stale",
+            reason="mixed post-verification identities",
+        )
+    known_ids = {item.obligation_id for item in task_spec.obligations}
+    if any(candidate not in known_ids for candidate in ticket.candidate_obligation_ids):
+        return ObligationAttributionResult(status="invalid")
+    return None
+
+
+def _single_post_identity(
+    facts: tuple[PostActionEvidenceFact, ...],
+) -> tuple[str, str, str]:
+    fact = facts[0]
+    return (
+        fact.post_snapshot_id,
+        fact.post_page_revision,
+        fact.post_environment_revision,
+    )
+
+
+def _prove_obligation_with_facts(
+    *,
+    obligation: TaskObligationSpec,
+    facts: tuple[PostActionEvidenceFact, ...],
+) -> _ObligationProof:
+    if not obligation.typed_evidence_requirements:
+        return _ObligationProof(status="none")
+    covered_refs: list[str] = []
+    weak_candidate = False
+    for requirement in obligation.typed_evidence_requirements:
+        proof = _cover_evidence_requirement(obligation=obligation, requirement=requirement, facts=facts)
+        if proof.status == "none":
+            return _ObligationProof(status="weak" if weak_candidate else "none")
+        if proof.status == "weak":
+            weak_candidate = True
+        covered_refs.extend(proof.evidence_refs)
+    if weak_candidate:
+        return _ObligationProof(status="weak")
+    return _ObligationProof(status="strong", evidence_refs=_dedupe(tuple(covered_refs)))
+
+
+def _cover_evidence_requirement(
+    *,
+    obligation: TaskObligationSpec,
+    requirement: object,
+    facts: tuple[PostActionEvidenceFact, ...],
+) -> _ObligationProof:
+    subject = getattr(requirement, "subject", obligation.subject)
+    relation = getattr(requirement, "relation", obligation.relation)
+    minimum_strength = _required_strength(getattr(requirement, "minimum_strength", "independent"))
+    allowed_sources = _allowed_source_kinds(getattr(requirement, "source_constraints", ()))
+    matching_facts = tuple(
+        fact
+        for fact in facts
+        if fact.evidence_subject_id == subject
+        and fact.relation == relation
+        and _fact_proves_relation(fact=fact, obligation=obligation, relation=relation)
+    )
+    if not matching_facts:
+        return _ObligationProof(status="none")
+    strong = tuple(
+        fact
+        for fact in matching_facts
+        if (not allowed_sources or fact.source_kind in allowed_sources)
+        and _strength_rank(fact.strength) >= _strength_rank(minimum_strength)
+        and fact.strength != EvidenceStrength.WEAK
+    )
+    source_mismatched_or_weak = tuple(
+        fact
+        for fact in matching_facts
+        if _strength_rank(fact.strength) >= _strength_rank(minimum_strength)
+        or fact.strength == EvidenceStrength.WEAK
+        or (allowed_sources and fact.source_kind not in allowed_sources)
+    )
+    if not strong:
+        return _ObligationProof(status="weak" if source_mismatched_or_weak else "none")
+    return _ObligationProof(
+        status="strong",
+        evidence_refs=_dedupe(
+            tuple(ref for fact in strong for ref in fact.evidence_refs)
+        ),
+    )
+
+
+def _required_strength(value: str) -> EvidenceStrength:
+    normalized = value.casefold()
+    if normalized == EvidenceStrength.WEAK.value:
+        return EvidenceStrength.WEAK
+    if normalized == EvidenceStrength.AUTHORITATIVE.value:
+        return EvidenceStrength.AUTHORITATIVE
+    return EvidenceStrength.INDEPENDENT
+
+
+def _allowed_source_kinds(source_constraints: tuple[str, ...]) -> frozenset[EvidenceSourceKind]:
+    result: set[EvidenceSourceKind] = set()
+    for constraint in source_constraints:
+        normalized = constraint.casefold()
+        if "independent_api" in normalized or "http" in normalized or "api" in normalized:
+            result.add(EvidenceSourceKind.INDEPENDENT_API)
+        elif "execution_receipt" in normalized or "receipt" in normalized:
+            result.add(EvidenceSourceKind.EXECUTION_RECEIPT)
+        elif "external_evaluator" in normalized or "reward" in normalized:
+            result.add(EvidenceSourceKind.EXTERNAL_EVALUATOR)
+        elif "post_action_observation" in normalized or "dom" in normalized or "source:" in normalized:
+            result.add(EvidenceSourceKind.POST_ACTION_OBSERVATION)
+    return frozenset(result)
+
+
+def _fact_proves_relation(
+    *,
+    fact: PostActionEvidenceFact,
+    obligation: TaskObligationSpec,
+    relation: TaskObligationRelation,
+) -> bool:
+    expected = _expected_value_for_proof(obligation)
+    if relation == TaskObligationRelation.EQUALS:
+        return fact.after_value == expected and fact.expected_value == expected
+    if relation == TaskObligationRelation.CONTAINS:
+        return (
+            isinstance(fact.after_value, str)
+            and str(expected) in fact.after_value
+            and fact.expected_value == expected
+        )
+    if relation == TaskObligationRelation.MATCHES:
+        return fact.after_value == expected and fact.expected_value == expected
+    if relation == TaskObligationRelation.HAS_CHANGED:
+        changed = (
+            fact.before_value is not None
+            and fact.after_value is not None
+            and fact.before_value != fact.after_value
+        )
+        return changed and (expected in {"", None} or fact.after_value == expected)
+    if relation == TaskObligationRelation.IS_CHECKED:
+        return fact.after_value is True
+    if relation == TaskObligationRelation.IS_SELECTED:
+        return fact.after_value == expected
+    if relation == TaskObligationRelation.IS_COMPLETED:
+        return fact.after_value is True or (
+            fact.after_value is not None and fact.after_value == expected
+        )
+    return False
+
+
+def _expected_value_for_proof(obligation: TaskObligationSpec) -> FrozenEvidenceValue:
+    if obligation.expected_value.casefold() == "true":
+        return True
+    if obligation.expected_value.casefold() == "false":
+        return False
+    return obligation.expected_value
 
 
 def _frozen_evidence_value(
