@@ -718,3 +718,11 @@ delivery claims.
   stay foundation/diagnostic, ODG-9 hookup and ODG-10/ODG-11 are stopped for
   default progress authority, and advanced attribution is experimental-only.
   The next slice is S1 simplified core contracts, not ODG diagnostic hookup.
+- Started S1 simplified core contracts after `6e590e9`. Added neutral
+  `simplified_runtime_contracts.py` for source references, criterion policies,
+  step/task-plan views, execution attempts, verification results, and action
+  outcomes. RED first failed because the module was absent; GREEN passes the
+  focused contract tests. This remains foundation-only: no Coordinator,
+  StateKernel, Executor, Verifier behavior, TraceDag, PlannerContext, runtime
+  authority, PR breadth, or promotion change. The next slice is S2
+  legacy-to-step compatibility projection.

@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | S1 simplified core contracts | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 now freezes the simplified default target architecture at `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md` and the granular execution plan at `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`. Default production authority is redirected from ODG obligation-ledger completion toward Runtime-owned active step plus independent task-level completion verification. | Add neutral simplified core contracts such as `SuccessCriterion`, `StepSpec`, `ExecutionAttempt`, `VerificationResult`, and `ActionOutcome` without switching production authority. ODG-9 hookup, ODG-10 progress commit, ODG-11 finish migration, Coordinator growth, PlannerContext changes, PR breadth, and promotion remain unauthorized. | unrelated horizontal debt retirement |
+| Vertical | S2 legacy-to-step compatibility projection | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture at `docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md` and the granular execution plan at `docs/superpowers/plans/2026-07-29-affordance-runtime-simplification-execution-plan.md`. S1 adds neutral simplified core contracts in `src/affordance_runtime/simplified_runtime_contracts.py` and records them in `docs/change-admission/s1-simplified-core-contracts.yaml` without changing production authority. Default production authority remains legacy TaskPlan/PlanProgress until the authorized active-step cutover. | Project the current TaskPlan/Subgoal/PlanProgress authority into `TaskPlanView`, active `StepSpec`, completed step IDs, and evidence using exact identity only. Do not make StepSpec a second production plan, do not modify Coordinator/StateKernel/PlannerContext, and do not run PR breadth. ODG-9 hookup, ODG-10 progress commit, ODG-11 finish migration, Coordinator growth, PlannerContext changes, and promotion remain unauthorized. | unrelated horizontal debt retirement |
 | Horizontal | immutable Planner input, deferred until ODG standard path | active-subgoal read/activation split is locally closed; mutable Planner `StateKernel` boundary remains baselined, but H2 should be designed around ready obligation projection rather than TaskPlan/PlanProgress authority | standard Planner contract no longer receives mutable `StateKernel`; planner context derives from frozen obligation/request/view data after ODG projection exists | ODG-0/ODG-1 and role-audit documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -310,9 +310,10 @@ change finish authority, or require TaskPlan. The runtime carry foundation adds
 ticket can travel beside the accepted contract without entering ActionContract
 schema or Executor/Verifier inputs. S0 then freezes the simplified target
 architecture and stops ODG-9 hookup, ODG-10 progress commit, and ODG-11 finish
-authority migration for the default production path. The selected next slice is
-S1 simplified core contracts; ODG advanced attribution remains
-`EXPERIMENTAL_ONLY`.
+authority migration for the default production path. S1 adds neutral
+simplified core contracts without production authority changes. The selected
+next slice is S2 legacy-to-step compatibility projection; ODG advanced
+attribution remains `EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
 decision record is

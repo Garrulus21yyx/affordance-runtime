@@ -43,6 +43,7 @@ RUN_COORDINATOR_METHOD_CEILING = 26
 NEUTRAL_CONTRACT_MODULES = (
     "approval_contracts.py",
     "planning_contracts.py",
+    "simplified_runtime_contracts.py",
 )
 
 EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
@@ -313,6 +314,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         CHANGE_ADMISSION_DIR / "odg-9-runtime-ticket-carry-shadow-diagnostic.yaml"
     )
     s0_record = CHANGE_ADMISSION_DIR / "s0-simplified-architecture-freeze.yaml"
+    s1_record = CHANGE_ADMISSION_DIR / "s1-simplified-core-contracts.yaml"
     simplified_architecture = (
         REPOSITORY_ROOT
         / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
@@ -337,6 +339,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_9_record.exists()
     assert odg_9_runtime_record.exists()
     assert s0_record.exists()
+    assert s1_record.exists()
     assert simplified_architecture.exists()
     assert simplification_plan.exists()
     assert role_audit.exists()
@@ -356,6 +359,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         odg_9_runtime_record.read_text(encoding="utf-8").split()
     ).casefold()
     s0 = " ".join(s0_record.read_text(encoding="utf-8").split()).casefold()
+    s1 = " ".join(s1_record.read_text(encoding="utf-8").split()).casefold()
     simplified_architecture_text = " ".join(
         simplified_architecture.read_text(encoding="utf-8").split()
     ).casefold()
@@ -456,6 +460,20 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg_10_progress_commit: not_authorized" in s0
     assert "odg_11_finish_authority_migration: not_authorized" in s0
     assert "closure_status: architecture_freeze_only" in s0
+    assert "slice_id: s1-simplified-core-contracts" in s1
+    assert "production_behavior_change: false" in s1
+    assert "standard_path_authority_change: none" in s1
+    assert "sourcereference" in s1
+    assert "step_spec" not in s1
+    assert "stepspec" in s1
+    assert "executionattempt" in s1
+    assert "verificationresult" in s1
+    assert "actionoutcome" in s1
+    assert "source_refs_for_completion_criteria: required" in s1
+    assert "precondition_as_completion_criterion: prohibited" in s1
+    assert "receipt_success_completion: prohibited" in s1
+    assert "closure_status: contract_foundation_only" in s1
+    assert "next_slice: s2-legacy-step-compatibility-projection" in s1
     assert "approved_with_guardrails" in simplified_architecture_text
     assert "高级 attribution" in simplified_architecture_text
     assert "experimental_only" in simplified_architecture_text
@@ -489,7 +507,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "runtime_ticket_carry_shadow: foundation_only" in status
     assert "next_odg_slice: stopped_for_default_path" in status
     assert "simplified_runtime_architecture:" in status
-    assert "next_slice: s1-simplified-core-contracts" in status
+    assert "core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml" in status
+    assert "core_contracts: foundation_only" in status
+    assert "next_slice: s2-legacy-step-compatibility-projection" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -516,6 +536,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "s0 simplified architecture freeze supersedes odg-0" in governance
     assert "advanced attribution is `experimental_only`" in governance
     assert "no change may create three simultaneous completion authorities" in governance
+    assert "s1 simplified core contracts may add a neutral contract module" in governance
+    assert "foundation-only boundary" in governance
+    assert "next default-path slice after s1 is exact-id legacy-to-step compatibility projection" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -603,7 +626,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: s1 simplified core contracts" in status
+    assert "current_next_change_admission: s2 legacy-step compatibility projection" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text

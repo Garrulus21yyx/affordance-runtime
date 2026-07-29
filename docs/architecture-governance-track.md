@@ -256,6 +256,16 @@ completion comes from independent verification of `TaskSpec.completion_criterion
 No change may create three simultaneous completion authorities across legacy
 TaskPlan progress, active-step progress, and obligation-ledger progress.
 
+S1 simplified core contracts may add a neutral contract module for
+`SourceReference`, criterion policies, `StepSpec`, `TaskPlanView`,
+`StepProgressView`, `ExecutionAttempt`, `VerificationResult`, and
+`ActionOutcome`. This module is a foundation-only boundary: it must not import
+Coordinator, StateKernel, adapters, benchmarks, trace, executors, verifier
+implementations, PlannerContext, or TaskPlan implementation code; it must not
+change production authority, complete steps from receipts or external reward,
+or authorize ODG hookup / ODG-10 / ODG-11. The next default-path slice after S1
+is exact-ID legacy-to-step compatibility projection.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first
