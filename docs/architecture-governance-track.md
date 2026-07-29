@@ -234,6 +234,15 @@ trace, change Coordinator, change finish authority, change PlannerContext, or
 require TaskPlan. Weak receipt, weak state-delta, and weak external-evaluator
 facts may classify as `weak_evidence`, but may not complete an obligation.
 
+ODG-9 runtime carry may add `BoundActionExecution` and a diagnostic shadow
+projection seam. The ticket may be carried beside the accepted `ActionContract`
+only; it must not be added to the `ActionContract` schema or passed to Executor
+or Verifier. The shadow projection may create a versioned payload describing
+the ODG-9 attribution result, but it is trace-payload-only until a separate
+hookup writes a diagnostic event. It must not mutate StateKernel or the
+obligation ledger, change Coordinator progress commit, change finish authority,
+change PlannerContext, require TaskPlan, or claim PR breadth / promotion.
+
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
 reserved for bounded, low-overlap, read-only investigation or a diff-first

@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
+from affordance_runtime.obligation_attribution import ProgressAttributionTicket
+from affordance_runtime.obligation_attribution_flow import BoundActionExecution
 from affordance_runtime.runtime import Executor, TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder, preflight
@@ -94,6 +96,17 @@ class ContractExecutionLoop:
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         return self.executor.execute(contract, observation)
+
+    def bind_action_execution(
+        self,
+        contract: ActionContract,
+        *,
+        attribution_ticket: ProgressAttributionTicket | None = None,
+    ) -> BoundActionExecution:
+        return BoundActionExecution(
+            contract=contract,
+            attribution_ticket=attribution_ticket,
+        )
 
     def verify(
         self,

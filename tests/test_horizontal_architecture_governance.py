@@ -58,6 +58,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_trace_projection.py",
     "semantic_action_resolver.py",
     "task_action_family_resolution.py",
+    "obligation_attribution_flow.py",
     "obligation_progress_shadow_flow.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
@@ -308,6 +309,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_9_record = (
         CHANGE_ADMISSION_DIR / "odg-9-post-verification-obligation-attribution.yaml"
     )
+    odg_9_runtime_record = (
+        CHANGE_ADMISSION_DIR / "odg-9-runtime-ticket-carry-shadow-diagnostic.yaml"
+    )
     role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
@@ -322,6 +326,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert odg_8_1_record.exists()
     assert odg_8b_record.exists()
     assert odg_9_record.exists()
+    assert odg_9_runtime_record.exists()
     assert role_audit.exists()
     record = " ".join(odg_record.read_text(encoding="utf-8").split()).casefold()
     odg_2 = " ".join(odg_2_record.read_text(encoding="utf-8").split()).casefold()
@@ -335,6 +340,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     odg_8_1 = " ".join(odg_8_1_record.read_text(encoding="utf-8").split()).casefold()
     odg_8b = " ".join(odg_8b_record.read_text(encoding="utf-8").split()).casefold()
     odg_9 = " ".join(odg_9_record.read_text(encoding="utf-8").split()).casefold()
+    odg_9_runtime = " ".join(
+        odg_9_runtime_record.read_text(encoding="utf-8").split()
+    ).casefold()
     audit = " ".join(role_audit.read_text(encoding="utf-8").split()).casefold()
 
     assert "canonical obligation graph is the sole authoritative progress model" in record
@@ -417,6 +425,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "weak_evidence_completion: prohibited" in odg_9
     assert "taskplan_required: false" in odg_9
     assert "closure_status: attribution_foundation_only" in odg_9
+    assert "boundactionexecution" in odg_9_runtime
+    assert "contractexecutionloop.bind_action_execution" in odg_9_runtime
+    assert "action_contract_schema_change: false" in odg_9_runtime
+    assert "executor_ticket_visibility: prohibited" in odg_9_runtime
+    assert "verifier_ticket_visibility: prohibited" in odg_9_runtime
+    assert "closure_status: runtime_ticket_carry_shadow_foundation_only" in odg_9_runtime
     assert "taskplanprogresstarget:" in record
     assert "status: compatibility_foundation" in record
     assert "subgoalevidencebinder_progress_target:" in record
@@ -440,7 +454,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "post_action_causality_strength: complete" in status
     assert "verifier_evidence_fidelity: foundation_only" in status
     assert "post_verification_attribution: foundation_only" in status
-    assert "next_odg_slice: runtime-ticket-carry-and-odg-9-shadow-diagnostic" in status
+    assert "runtime_ticket_carry_shadow: foundation_only" in status
+    assert "next_odg_slice: odg-9-diagnostic-trace-hookup" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
     assert "future standard-path completion must be attributed to obligation ids" in governance
@@ -461,6 +476,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "verify()` a compatibility wrapper" in governance
     assert "odg-9 may add a pure" in governance
     assert "weak receipt, weak state-delta, and weak external-evaluator" in governance
+    assert "odg-9 runtime carry may add" in governance
+    assert "must not be added to the `actioncontract` schema" in governance
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit
@@ -548,7 +565,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: runtime-only ticket carry boundary and odg-9 shadow diagnostic" in status
+    assert "current_next_change_admission: odg-9 diagnostic trace hookup" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -877,6 +894,32 @@ def test_obligation_shadow_flow_is_read_only_runtime_projection() -> None:
                     "affordance_runtime.adapters",
                     "affordance_runtime.benchmarks",
                     "affordance_runtime.coordinator",
+                    "affordance_runtime.trace",
+                )
+            ):
+                violations.append((filename, getattr(node, "lineno", 0), dependency))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in STATE_KERNEL_MUTATIONS
+        ):
+            violations.append((filename, node.lineno, node.func.attr))
+    assert violations == []
+
+
+def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
+    filename = "obligation_attribution_flow.py"
+    tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+    violations: list[tuple[str, int, str]] = []
+    for node in ast.walk(tree):
+        for dependency in _import_dependencies(node):
+            if any(
+                _matches_module(dependency, prefix)
+                for prefix in (
+                    "affordance_runtime.adapters",
+                    "affordance_runtime.benchmarks",
+                    "affordance_runtime.coordinator",
+                    "affordance_runtime.state_kernel",
                     "affordance_runtime.trace",
                 )
             ):

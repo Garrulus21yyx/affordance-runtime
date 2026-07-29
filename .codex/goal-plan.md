@@ -699,3 +699,13 @@ delivery claims.
   next authorized slice is a Runtime-only ticket carry boundary plus ODG-9
   shadow diagnostics; Coordinator obligation commit remains ODG-10 and finish
   authority remains ODG-11.
+- Started the Runtime-only ticket carry / ODG-9 shadow-projection foundation
+  after `ce7a329`. The slice adds `BoundActionExecution` and
+  `ContractExecutionLoop.bind_action_execution()` so a
+  `ProgressAttributionTicket` can travel beside an accepted `ActionContract`
+  without entering the `ActionContract` schema or Executor/Verifier inputs. It
+  also adds diagnostic-only ODG-9 shadow projection payloads. It does not mutate
+  StateKernel or the obligation ledger, write trace, change Coordinator
+  progress commit, change finish authority, change PlannerContext, require
+  TaskPlan, run PR breadth, or claim promotion. The next slice is the actual
+  diagnostic trace hookup; Coordinator obligation commit remains ODG-10.
