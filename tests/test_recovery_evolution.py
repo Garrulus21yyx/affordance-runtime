@@ -1,7 +1,57 @@
 import json
+from dataclasses import dataclass
 
+from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.evolution import EvolutionStatus
-from affordance_runtime.recovery_evolution import run_recovery_cascade_evolution
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+from affordance_runtime.recovery_evolution import RecoveryFixturePlanner, _snapshot, run_recovery_cascade_evolution
+from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+
+
+def test_recovery_fixture_planner_builds_request_when_task_spec_is_available() -> None:
+    snapshot = _snapshot()
+    state = StateKernel("recovery-request", "exercise bounded recovery")
+    state.transition("observing")
+    state.remember_observation(snapshot.observation)
+    state.transition("planning")
+    task = TaskSpec(
+        task_id="recovery-request",
+        revision=1,
+        objective="exercise bounded recovery",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("Save",),
+        success_criteria=("effect verified",),
+        evidence_requirements=("receipt evidence",),
+        source_request_ref="recovery-request-source",
+    )
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built: PlanningRequest | None = None
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built = self.inner.build(envelope, state, snapshot)
+            return self.built
+
+    request_builder = RecordingRequestBuilder()
+
+    decision = RecoveryFixturePlanner(
+        idempotent=True,
+        planning_request_builder=request_builder,
+    ).propose(TaskEnvelope(task_spec=task), state, snapshot)
+
+    assert request_builder.built is not None
+    assert decision.contract is not None
+    assert decision.contract.idempotency_key == "recovery-fixture:save"
 
 
 def test_repeated_recovery_failure_evolves_persists_and_rolls_back(tmp_path) -> None:

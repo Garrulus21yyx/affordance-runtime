@@ -322,8 +322,11 @@ preserving parent-agent proposal validation and provenance. The next authorized
 sub-slice was TPA-3.5 reference contract planner request migration; it routes
 Pricing/Settings/Export through PlanningRequest when TaskSpec identity is
 available while preserving legacy snapshot ActionContract binding. The next
-authorized sub-slice is TPA-3.6 conformance/benchmark planners request
-migration.
+authorized sub-slice was TPA-3.6 conformance/recovery fixture planner request
+migration; it routes ConformancePlanner and RecoveryFixturePlanner through
+PlanningRequest when TaskSpec identity is available while preserving fixture
+contract behavior. The next authorized sub-slice is TPA-3.7 BrowserGym and
+benchmark planner compatibility migration.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

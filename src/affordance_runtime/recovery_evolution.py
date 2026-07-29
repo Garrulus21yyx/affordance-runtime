@@ -6,7 +6,7 @@ import json
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
@@ -24,11 +24,22 @@ from affordance_runtime.evolution import (
     RecoveryPolicyPatchPayload,
     RegressionRule,
 )
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryContext
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
+
+
+class RecoveryPlanningRequestBuilderPort(Protocol):
+    def build(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlanningRequest: ...
 
 
 def _snapshot() -> BrowserSnapshot:
@@ -58,9 +69,17 @@ class StableRecoveryObserver:
 @dataclass
 class RecoveryFixturePlanner:
     idempotent: bool
+    planning_request_builder: RecoveryPlanningRequestBuilderPort | None = None
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope
+        request = _recovery_planning_request(
+            self.planning_request_builder,
+            envelope,
+            state,
+            snapshot,
+        )
+        if request is not None and request.identity.snapshot_id != snapshot.observation.snapshot_id:
+            return PlannerDecision(reason="stale recovery planning request")
         if state.receipts and state.receipts[-1].success:
             return PlannerDecision(done=True, result={"effect": "verified"})
         contract = ActionContract.from_affordance(
@@ -76,6 +95,17 @@ class RecoveryFixturePlanner:
                 contract_hash="",
             )
         )
+
+
+def _recovery_planning_request(
+    builder: RecoveryPlanningRequestBuilderPort | None,
+    envelope: TaskEnvelope,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> PlanningRequest | None:
+    if envelope.task_spec is None:
+        return None
+    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
 
 
 @dataclass

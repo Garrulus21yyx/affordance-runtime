@@ -827,5 +827,12 @@ delivery claims.
   compatibility path. Envelope-only fixture paths do not fabricate TaskSpec
   identity. PlannerPort public signature, Coordinator call sites, TaskPlan
   admission, progress authority, finish authority, PR breadth, and promotion
-  remain unchanged. The next slice is TPA-3.6 conformance/benchmark planners
-  request migration.
+  remain unchanged.
+- Started TPA-3.6 after `d7a3194`. ConformancePlanner and
+  RecoveryFixturePlanner now build PlanningRequest when a validated TaskSpec is
+  present, fail closed on stale injected request identity, and preserve their
+  fixture contract envelopes. BrowserGym and benchmark planner compatibility
+  remains isolated for the next slice. PlannerPort public signature,
+  Coordinator call sites, TaskPlan admission, progress authority, finish
+  authority, PR breadth, and promotion remain unchanged. The next slice is
+  TPA-3.7 BrowserGym and benchmark planner compatibility migration.

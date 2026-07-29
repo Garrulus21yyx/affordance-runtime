@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -20,11 +20,22 @@ from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, ActionC
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
 CONFORMANCE_GOAL = "Enable one reversible shared state with independent oracle evidence."
 CONFORMANCE_CAPABILITY = "conformance.write.reversible"
+
+
+class ConformancePlanningRequestBuilderPort(Protocol):
+    def build(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlanningRequest: ...
 
 
 @dataclass(frozen=True)
@@ -53,9 +64,17 @@ def _preserves_shared_contract_envelope(item: ConformanceSurfaceResult) -> bool:
 class ConformancePlanner:
     surface: str
     oracle_state_url: str
+    planning_request_builder: ConformancePlanningRequestBuilderPort | None = None
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope
+        request = _conformance_planning_request(
+            self.planning_request_builder,
+            envelope,
+            state,
+            snapshot,
+        )
+        if request is not None and request.identity.snapshot_id != snapshot.observation.snapshot_id:
+            return PlannerDecision(reason="stale conformance planning request")
         if state.receipts:
             return PlannerDecision(done=True, result={"enabled": True, "surface": self.surface})
         affordance = self._select(snapshot)
@@ -90,6 +109,17 @@ class ConformancePlanner:
         if self.surface == "visual":
             return next(item for item in candidates if item.surface.value == "visual")
         return next(item for item in candidates if item.label == "setEnabled")
+
+
+def _conformance_planning_request(
+    builder: ConformancePlanningRequestBuilderPort | None,
+    envelope: TaskEnvelope,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> PlanningRequest | None:
+    if envelope.task_spec is None:
+        return None
+    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
 
 
 @dataclass
