@@ -28,6 +28,7 @@ from affordance_runtime.grounding import (
     SourceObservation,
     UnifiedAffordance,
 )
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.perception import PerceptionOrchestratorPort
 from affordance_runtime.svg_geometry import (
     SelectiveSvgGeometryObserver,
@@ -72,6 +73,10 @@ class BrowserSnapshot:
     active_perception_requests: tuple[ActivePerceptionRequest, ...] = ()
     accessibility_tree: dict[str, Any] | None = None
     perception_requirements: PerceptionRequirements | None = None
+
+    def __post_init__(self) -> None:
+        if self.accessibility_tree is not None:
+            object.__setattr__(self, "accessibility_tree", freeze_json(self.accessibility_tree))
 
 
 @dataclass(frozen=True)

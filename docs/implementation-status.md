@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `9574a80bd071be4658dcdd9c8445f18a2d5772cf` (`feat: freeze trace event payloads`): SAR-1 freezes ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, and TraceNode payload/parent references at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1 active local change after `0e04d5384289df7c06ee5c4ca23d60c2a0b139ae`: ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, and BrowserSnapshot accessibility trees are being frozen at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -143,7 +143,7 @@ sar_1_deep_immutability:
   record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
   threat_model: docs/security/action-contract-digest-threat-model.md
   status: active_first_cut
-  current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace
+  current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot
   immutable_helper: src/affordance_runtime/immutable.py
   frozen_runtime_payloads:
     - ActionContract locator / parameters / hash-critical list fields
@@ -155,6 +155,7 @@ sar_1_deep_immutability:
     - VerificationReport evidence
     - VerifierEvaluation observed
     - TraceNode payload / parents
+    - BrowserSnapshot accessibility_tree
   json_persistence_boundary: TraceDag and ArtifactStore project frozen containers to canonical JSON-compatible data
   adapter_boundary_thaw: explicit_only
   legacy_compatibility_boundary: frozen payload readers use Mapping and Sequence rather than mutable dict/list assumptions

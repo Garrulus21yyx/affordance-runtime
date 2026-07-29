@@ -3,7 +3,9 @@ from typing import Any
 
 import pytest
 
-from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.adapters.dom import PageAffordanceModel
+from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.contracts import Observation
 from affordance_runtime.grounding import (
     ActivePerceptionRequest,
     EvidenceKind,
@@ -87,6 +89,34 @@ def test_browser_session_bundles_browser_accessibility_tree_in_same_epoch() -> N
     )
     assert accessibility.observation_epoch_id == snapshot.observation.snapshot_id
     assert snapshot.observation.metadata["accessibility_tree"] == snapshot.accessibility_tree
+
+
+def test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload() -> None:
+    accessibility_tree = {
+        "role": "WebArea",
+        "children": [{"role": "button", "name": "Save"}],
+    }
+    snapshot = BrowserSnapshot(
+        observation=Observation(environment_revision="env:1", snapshot_id="snap:1"),
+        affordance_model=PageAffordanceModel(
+            page_id="settings",
+            url="http://fixture/settings",
+            environment_revision="env:1",
+            snapshot_id="snap:1",
+            page_revision="page:1",
+            affordances=[],
+            raw_node_count=0,
+            kept_node_count=0,
+        ),
+        accessibility_tree=accessibility_tree,
+    )
+
+    accessibility_tree["children"][0]["name"] = "Polluted"
+
+    assert snapshot.accessibility_tree is not None
+    assert snapshot.accessibility_tree["children"][0]["name"] == "Save"
+    with pytest.raises(TypeError):
+        snapshot.accessibility_tree["children"][0]["name"] = "Polluted"
 
 
 def test_browser_session_keeps_same_label_checkbox_siblings_as_ordered_targets() -> None:

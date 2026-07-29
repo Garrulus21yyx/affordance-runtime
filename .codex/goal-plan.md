@@ -897,3 +897,7 @@ delivery claims.
   substitutive execution plan as the current authority, preserved superseded
   simplified/TaskPlanAuthority documents in archive, and corrected lingering
   TPA-5B/current-HEAD drift in durable status documents.
+- Continued SAR-1 after `0e04d53`. Added a RED for mutable
+  `BrowserSnapshot.accessibility_tree`, froze the snapshot accessibility-tree
+  payload at construction, and kept production progress/finish authority
+  unchanged.

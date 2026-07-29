@@ -92,5 +92,10 @@ immutable and `TraceNode.parents` cannot be mutated by the caller after
 `TraceDag.add()`. The trace DAG itself remains the append-only collector, but
 individual events no longer retain caller-owned mutable payload references.
 
+Browser snapshots also freeze the optional browser accessibility-tree payload at
+construction time. This keeps snapshot-local accessibility evidence from being
+rewritten by a caller-owned dictionary after planning, verification, or trace
+projection has already consumed the snapshot identity.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.
