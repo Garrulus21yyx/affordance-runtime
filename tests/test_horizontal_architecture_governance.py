@@ -586,6 +586,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_4: completed_foundation" in status
     assert "tpa_3_5: completed_foundation" in status
     assert "tpa_3_6: completed_foundation" in status
+    assert "tpa_3_7: completed_foundation" in status
     assert (
         "parent_agent_request_record: "
         "docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml"
@@ -601,7 +602,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-3-6-conformance-benchmark-planners-request-migration.yaml"
         in status
     )
-    assert "next_slice: tpa-3-7-browsergym-and-benchmark-planners-compatibility" in status
+    assert (
+        "browsergym_policy_planner_compatibility_record: "
+        "docs/change-admission/tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-8-plannerport-public-request-cutover" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -639,9 +645,10 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
     assert (
-        "immutable_planner_input: generalistlmplanner, parentagentplanneradapter, reference contract planners, conformanceplanner, and recoveryfixtureplanner now use the immutable planningrequest core internally"
+        "immutable_planner_input: generalistlmplanner, parentagentplanneradapter, reference contract planners, conformanceplanner, recoveryfixtureplanner, and browsergymplanner now use the immutable planningrequest core internally"
         in status
     )
+    assert "browsergympolicyrequest remains a compatibility-only benchmark policy boundary" in status
     assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
     assert "completed_plan_active_step_id: null" in s2_1
     assert "claim_id_is_not_source_unit_id: true" in s2_1
@@ -737,7 +744,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.7 browsergym and benchmark planner compatibility migration" in status
+    assert "current_next_change_admission: tpa-3.8 plannerport public request cutover" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1377,6 +1384,42 @@ def test_conformance_recovery_planners_build_request_before_legacy_contract_bind
     assert "browsergymplanner migration" in tpa_3_6
     assert "plannerport public signature cutover" in tpa_3_6
     assert "closure_status: conformance_recovery_planner_request_foundation" in tpa_3_6
+
+
+def test_browsergym_policy_planner_keeps_policy_request_as_compatibility_boundary() -> None:
+    tree = ast.parse(
+        (SOURCE_ROOT / "benchmarks/browsergym_episode_runner.py").read_text(encoding="utf-8")
+    )
+    planner = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "BrowserGymPlanner"
+    )
+    propose = next(
+        node
+        for node in planner.body
+        if isinstance(node, ast.FunctionDef) and node.name == "propose"
+    )
+    calls = {
+        node.func.id
+        for node in ast.walk(propose)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "_browsergym_planning_request" in calls
+    assert "BrowserGymPolicyRequest" in calls
+
+    tpa_3_7 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "browsergymplanner" in tpa_3_7
+    assert "browsergympolicyrequest" in tpa_3_7
+    assert "planningrequest" in tpa_3_7
+    assert "production_behavior_change: false" in tpa_3_7
+    assert "official reward" in tpa_3_7
+    assert "plannerport public signature cutover" in tpa_3_7
+    assert "closure_status: browsergym_policy_planner_compatibility_foundation" in tpa_3_7
 
 
 def test_decisionconstraint_apply_admission_is_request_only() -> None:

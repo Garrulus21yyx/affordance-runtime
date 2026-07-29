@@ -836,3 +836,11 @@ delivery claims.
   Coordinator call sites, TaskPlan admission, progress authority, finish
   authority, PR breadth, and promotion remain unchanged. The next slice is
   TPA-3.7 BrowserGym and benchmark planner compatibility migration.
+- Started TPA-3.7 after `b08c7c4`. BrowserGymPlanner now builds
+  PlanningRequest when a validated TaskSpec is present, fail closes on stale
+  injected request identity, and keeps BrowserGymPolicyRequest as the
+  benchmark-policy compatibility boundary. AgentLabPlannerAdapter inherits that
+  projection. PlannerPort public signature, Coordinator call sites, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged. The next slice is TPA-3.8 PlannerPort public request
+  cutover.

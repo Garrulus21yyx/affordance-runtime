@@ -11,7 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Empty
 from time import perf_counter
-from typing import Any, Callable, Sequence, cast
+from typing import Any, Callable, Protocol, Sequence, cast
 
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
@@ -67,6 +67,8 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
@@ -85,6 +87,15 @@ BROWSERGYM_TERMINAL_COMPLETION_POLICY = "official-terminal-v1"
 BROWSERGYM_PAGE_ACTION_TIMEOUT_MS = 1_500
 # Planner proposals are compact semantic candidates, not long-form answers.
 BROWSERGYM_PLANNER_MAX_TOKENS = 384
+
+
+class BrowserGymPlanningRequestBuilderPort(Protocol):
+    def build(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlanningRequest: ...
 
 
 def browsergym_planner_model_config(
@@ -108,13 +119,21 @@ class BrowserGymPlanner:
     policy: BrowserGymPolicy
     episode: BrowserGymEpisodeState
     bindings: dict[str, BrowserGymAction]
+    planning_request_builder: BrowserGymPlanningRequestBuilderPort | None = None
 
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope
+        planning_request = _browsergym_planning_request(
+            self.planning_request_builder,
+            envelope,
+            state,
+            snapshot,
+        )
+        if planning_request is not None and planning_request.identity.snapshot_id != snapshot.observation.snapshot_id:
+            return PlannerDecision(reason="stale BrowserGym planning request")
         terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
         if terminal is not None:
             return terminal
-        request = BrowserGymPolicyRequest(
+        policy_request = BrowserGymPolicyRequest(
             task_id=self.episode.task_id,
             seed=self.episode.seed,
             goal=self.episode.goal,
@@ -133,7 +152,7 @@ class BrowserGymPlanner:
             previous_actions=[asdict(action) for action in self.episode.actions],
             accessibility_tree=_accessibility_tree_text(self.episode.observation),
         )
-        action = self.policy.propose(request)
+        action = self.policy.propose(policy_request)
         if action is None:
             return PlannerDecision(
                 proposal=PlannerProposal(
@@ -171,6 +190,19 @@ class BrowserGymPlanner:
             ),
             reason="benchmark action translated to semantic proposal",
         )
+
+
+def _browsergym_planning_request(
+    builder: BrowserGymPlanningRequestBuilderPort | None,
+    envelope: TaskEnvelope,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> PlanningRequest | None:
+    """Project benchmark planner identity without changing policy-specific input."""
+
+    if envelope.task_spec is None:
+        return None
+    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
 
 
 @dataclass

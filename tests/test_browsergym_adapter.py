@@ -53,6 +53,7 @@ from affordance_runtime.benchmarks.browsergym_dom import (
     browsergym_svg_observer,
 )
 from affordance_runtime.benchmarks.browsergym_episode_runner import (
+    BrowserGymPlanner,
     _browsergym_failure_stats,
     _browsergym_model_stats,
 )
@@ -86,6 +87,9 @@ from affordance_runtime.model_port import (
 )
 from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import IntentDraft, OperationClass, TaskSpec
 from affordance_runtime.trace import TraceDag
@@ -310,6 +314,81 @@ class OneClickPolicy:
 
     def close(self) -> None:
         self.closed = True
+
+
+def test_browsergym_policy_planner_projects_request_without_changing_policy_request() -> None:
+    revision = "browsergym-request-v1"
+    model = DomAdapter().transduce(
+        '<button bid="target">Target</button>',
+        environment_revision=revision,
+        snapshot_id="browsergym-request-snapshot",
+    )
+    observation = Observation(
+        revision,
+        snapshot_id="browsergym-request-snapshot",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("browsergym-request", "Click the target")
+    state.transition("observing")
+    state.remember_observation(observation)
+    state.transition("planning")
+    task = TaskSpec(
+        task_id="browsergym-request",
+        revision=1,
+        objective="Click the target",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("target",),
+        success_criteria=("target clicked",),
+        evidence_requirements=("browsergym evidence",),
+        source_request_ref="browsergym-request-source",
+    )
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built: PlanningRequest | None = None
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built = self.inner.build(envelope, state, snapshot)
+            return self.built
+
+    class RecordingPolicy(OneClickPolicy):
+        seen: BrowserGymPolicyRequest | None = None
+
+        def propose(self, request: BrowserGymPolicyRequest) -> BrowserGymAction | None:
+            self.seen = request
+            return BrowserGymAction("click", {"bid": "target"})
+
+    request_builder = RecordingRequestBuilder()
+    policy = RecordingPolicy()
+    episode = BrowserGymEpisodeState(
+        task_id="click-button",
+        seed=4,
+        goal="Click the target",
+        observation={"text": "Target"},
+        info={},
+    )
+
+    decision = BrowserGymPlanner(
+        policy,
+        episode,
+        {},
+        planning_request_builder=request_builder,
+    ).propose(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+
+    assert request_builder.built is not None
+    assert request_builder.built.identity.snapshot_id == observation.snapshot_id
+    assert policy.seen is not None
+    assert policy.seen.task_id == "click-button"
+    assert policy.seen.seed == 4
+    assert policy.seen.affordances[0]["id"] == "dom_button_1"
+    assert decision.proposal is not None
 
 
 @dataclass
