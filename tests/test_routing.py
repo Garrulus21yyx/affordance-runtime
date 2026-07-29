@@ -1,5 +1,7 @@
+import pytest
+
 from affordance_runtime.contracts import Affordance, AffordanceLease, Surface
-from affordance_runtime.routing import CostAwareRouter
+from affordance_runtime.routing import CostAwareRouter, RoutingDecision
 
 
 def _affordance(backend: str, confidence: float = 1.0) -> Affordance:
@@ -23,6 +25,27 @@ def test_router_prefers_low_cost_reliable_backend() -> None:
 
     assert decision.selected_backend == "wot"
     assert decision.candidate_backends == ["wot", "dom"]
+
+
+def test_routing_decision_payloads_are_immutable_from_source_collections() -> None:
+    candidate_backends = ["dom"]
+    scores = {"dom": 0.3}
+    decision = RoutingDecision(
+        selected_backend="dom",
+        candidate_backends=candidate_backends,
+        scores=scores,
+        reason="selected",
+    )
+
+    candidate_backends.append("visual")
+    scores["dom"] = 1.0
+
+    assert decision.candidate_backends == ["dom"]
+    assert decision.scores["dom"] == 0.3
+    with pytest.raises(AttributeError):
+        decision.candidate_backends.append("visual")  # type: ignore[attr-defined]
+    with pytest.raises(TypeError):
+        decision.scores["dom"] = 1.0
 
 
 def test_static_backend_router_has_no_receipt_success_learning_channel() -> None:

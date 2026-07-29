@@ -910,3 +910,6 @@ delivery claims.
 - Continued SAR-1 after `7c98863`. Added a RED for mutable
   `ConfiguredApprovalProvider.allowed_capabilities`, froze approval provider
   capability configuration, and prevented post-construction approval expansion.
+- Continued SAR-1 after `22fd2b2`. Added a RED for mutable
+  `RoutingDecision.candidate_backends/scores`, froze route-selection result
+  payloads, and kept routing outcomes stable after selection.

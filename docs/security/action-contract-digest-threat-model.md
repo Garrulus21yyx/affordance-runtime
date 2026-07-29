@@ -112,5 +112,10 @@ Configured approval providers freeze their allowed-capability set at
 construction time. A caller-owned set cannot be mutated after provider creation
 to silently expand which high-risk contracts may receive an approval token.
 
+Routing decisions freeze candidate backend order and score payloads at
+construction time. Route-selection trace, contract binding, and later
+diagnostics therefore cannot be rewritten by mutating caller-owned lists or
+dictionaries after the route is selected.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

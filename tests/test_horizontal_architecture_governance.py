@@ -1756,6 +1756,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "pageaffordancemodel affordance sequence freeze" in record
     assert "thingaffordancemodel affordance and state-source payload freeze" in record
     assert "configuredapprovalprovider allowed capability set freeze" in record
+    assert "routingdecision candidate and score payload freeze" in record
     assert "observation metadata, target_fingerprints, and artifact_refs deep freeze" in record
     assert "affordance locator, state, payload, backend_candidates, evidence, and lease provenance deep freeze" in record
     assert "trace and artifact json writers project frozen payloads" in record
@@ -1771,7 +1772,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
     assert (
-        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval"
+        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing"
         in status
     )
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
@@ -1783,6 +1784,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "pageaffordancemodel affordance-sequence boundaries" in current_plan
     assert "thingaffordancemodel affordance/state-source payload boundaries" in current_plan
     assert "configuredapprovalprovider allowed-capability boundaries" in current_plan
+    assert "routingdecision candidate/score payload boundaries" in current_plan
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

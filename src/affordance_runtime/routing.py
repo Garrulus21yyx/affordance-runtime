@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from affordance_runtime.contracts import Affordance
+from affordance_runtime.immutable import FrozenSequence, freeze_json
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,10 @@ class RoutingDecision:
     scores: dict[str, float]
     reason: str
     confidence: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "candidate_backends", FrozenSequence(self.candidate_backends))
+        object.__setattr__(self, "scores", freeze_json(self.scores))
 
 
 @dataclass
