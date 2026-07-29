@@ -87,5 +87,10 @@ construction/materialization time. This prevents post-verification evidence
 objects from changing after they have been linked into trace, progress
 diagnostics, recovery, or later attribution experiments.
 
+Trace nodes are also frozen at append time: `TraceNode.payload` is deeply
+immutable and `TraceNode.parents` cannot be mutated by the caller after
+`TraceDag.add()`. The trace DAG itself remains the append-only collector, but
+individual events no longer retain caller-owned mutable payload references.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

@@ -23,3 +23,32 @@ def test_trace_rejects_unknown_parent() -> None:
         assert "parent does not exist" in str(exc)
     else:
         raise AssertionError("unknown trace parent should be rejected")
+
+
+def test_trace_node_payload_and_parents_are_deeply_immutable_from_source_payload() -> None:
+    trace = TraceDag("run-1")
+    root = trace.add("root", {"state": "created"})
+    payload = {"context": {"messages": ["bounded"]}, "artifact_refs": ["artifact:1"]}
+    parents = [root.id]
+
+    node = trace.add("planner", payload, parents=parents)
+
+    payload["context"]["messages"].append("mutated")
+    payload["artifact_refs"].append("artifact:2")
+    parents.append("injected-parent")
+
+    assert node.payload["context"]["messages"] == ("bounded",)
+    assert node.payload["artifact_refs"] == ("artifact:1",)
+    assert node.parents == [root.id]
+    try:
+        node.payload["context"]["messages"][0] = "changed"
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("trace payload should be immutable")
+    try:
+        node.parents[0] = "changed"
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("trace parents should be immutable")

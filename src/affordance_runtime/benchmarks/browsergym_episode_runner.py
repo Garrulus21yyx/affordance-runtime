@@ -6,6 +6,7 @@ import json
 import multiprocessing as mp
 import shlex
 import subprocess
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -53,7 +54,7 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
-from affordance_runtime.immutable import thaw_json_at_external_boundary
+from affordance_runtime.immutable import thaw_json_at_external_boundary, to_json_compatible
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
@@ -1070,7 +1071,7 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
             "TaskObligationCoverageReviewed",
             "PlannerProposalProduced",
         }
-        and isinstance(node.payload.get("model_call"), dict)
+        and isinstance(node.payload.get("model_call"), Mapping)
     ]
     provider_failures = [
         str(node.payload.get("provider_failure") or "")
@@ -1094,7 +1095,7 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
         if node.kind != "FailureDetected":
             continue
         failure = node.payload.get("failure")
-        if not isinstance(failure, dict):
+        if not isinstance(failure, Mapping):
             continue
         phase = str(failure.get("phase") or "")
         failure_class = str(failure.get("failure_class") or "")
@@ -1124,7 +1125,7 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
                 None,
             )
             issues = rejected.payload.get("issues") if rejected is not None else None
-            if isinstance(issues, list) and issues and isinstance(issues[0], dict):
+            if isinstance(issues, Sequence) and issues and isinstance(issues[0], Mapping):
                 detail_code = str(issues[0].get("code") or "")
         elif phase == "verification":
             failed = next(
@@ -1136,12 +1137,12 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
                 None,
             )
             evidence = failed.payload.get("evidence") if failed is not None else None
-            if isinstance(evidence, list):
+            if isinstance(evidence, Sequence):
                 failed_kinds = list(
                     dict.fromkeys(
                         str(item.get("verifier_kind") or "")
                         for item in evidence
-                        if isinstance(item, dict) and item.get("passed") is False
+                        if isinstance(item, Mapping) and item.get("passed") is False
                     )
                 )
                 if len(failed_kinds) == 1:
@@ -1157,7 +1158,7 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
                 message=str(failure.get("message") or ""),
                 evidence_refs=(
                     [str(item) for item in evidence_refs]
-                    if isinstance(evidence_refs, list)
+                    if isinstance(evidence_refs, Sequence) and not isinstance(evidence_refs, (str, bytes))
                     else []
                 ),
             )
@@ -1185,10 +1186,10 @@ def _browsergym_adaptive_runtime_stats(nodes: Sequence[Any]) -> dict[str, Any]:
         if node.kind != "SourceAssertionsArbitrated":
             continue
         decisions = node.payload.get("decisions")
-        if not isinstance(decisions, list):
+        if not isinstance(decisions, Sequence) or isinstance(decisions, (str, bytes)):
             continue
         conflict_count += sum(
-            isinstance(item, dict) and str(item.get("status") or "") in {"conflict", "inconclusive", "reobserve"}
+            isinstance(item, Mapping) and str(item.get("status") or "") in {"conflict", "inconclusive", "reobserve"}
             for item in decisions
         )
     return {
@@ -1212,7 +1213,7 @@ def _browsergym_context_stats(nodes: Sequence[Any], affordance_limit: int) -> di
     contexts = [
         node.payload.get("context")
         for node in nodes
-        if node.kind == "PlannerContextBuilt" and isinstance(node.payload.get("context"), dict)
+        if node.kind == "PlannerContextBuilt" and isinstance(node.payload.get("context"), Mapping)
     ]
     if not contexts:
         return {
@@ -1222,10 +1223,10 @@ def _browsergym_context_stats(nodes: Sequence[Any], affordance_limit: int) -> di
             "planner_permitted_action_kinds": [],
         }
     context = contexts[-1]
-    size = len(json.dumps(context, sort_keys=True, separators=(",", ":")))
+    size = len(json.dumps(to_json_compatible(context), sort_keys=True, separators=(",", ":")))
     affordances = context.get("affordances")
     affordance_count = int(context.get("affordance_count") or 0)
-    if not affordance_count and isinstance(affordances, list):
+    if not affordance_count and isinstance(affordances, Sequence) and not isinstance(affordances, (str, bytes)):
         affordance_count = len(affordances)
     truncation = "affordance_limit_reached" if affordance_count >= affordance_limit else "not_observed"
     permitted = context.get("permitted_action_kinds")
@@ -1233,7 +1234,11 @@ def _browsergym_context_stats(nodes: Sequence[Any], affordance_limit: int) -> di
         "planner_context_size": size,
         "planner_context_truncation": truncation,
         "planner_affordance_count": affordance_count,
-        "planner_permitted_action_kinds": [str(item) for item in permitted] if isinstance(permitted, list) else [],
+        "planner_permitted_action_kinds": (
+            [str(item) for item in permitted]
+            if isinstance(permitted, Sequence) and not isinstance(permitted, (str, bytes))
+            else []
+        ),
     }
 
 

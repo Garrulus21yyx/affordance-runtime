@@ -25,6 +25,7 @@ included:
   - VerificationReport evidence sequence freeze
   - VerifierEvaluation observed value freeze before report materialization
   - PlannerDecision result and planner_context deep freeze
+  - TraceNode payload and parent identity sequence freeze
   - Trace and Artifact JSON writers project frozen payloads through canonical JSON-compatible data
   - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
   - legacy sequence/mapping compatibility repairs for frozen observation and affordance payloads
@@ -60,6 +61,7 @@ validation:
   affordance_payload_red_observed: tests/test_contracts.py::test_affordance_payloads_are_deeply_immutable_from_source_payload
   verification_evidence_value_red_observed: tests/test_verification_evidence_fidelity.py::test_verification_evidence_values_are_deeply_immutable_from_source_payload
   verification_report_evidence_red_observed: tests/test_verification_evidence_fidelity.py::test_verification_report_evidence_list_is_deeply_immutable_from_source_payload
+  trace_node_payload_red_observed: tests/test_trace_writer.py::test_trace_node_payload_and_parents_are_deeply_immutable_from_source_payload
   focused_contract_tests: required
   architecture_tests: required
   full_pytest: required
@@ -68,6 +70,6 @@ validation:
   uv_build: required
   diff_check: required
 
-closure_status: sar_1_primary_runtime_contract_and_verification_evidence_freeze_in_progress
-next_slice: sar-1-scan-and-close-remaining-mutable-runtime-boundaries
+closure_status: sar_1_primary_runtime_contract_verification_and_trace_freeze_in_progress
+next_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
 promotion_status: held

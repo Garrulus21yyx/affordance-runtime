@@ -9,7 +9,7 @@ from time import time
 from typing import Any
 
 from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION
-from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,10 @@ class TraceNode:
     payload: dict[str, Any]
     parents: list[str] = field(default_factory=list)
     timestamp_s: float = field(default_factory=time)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", freeze_json(self.payload))
+        object.__setattr__(self, "parents", freeze_json(self.parents))
 
 
 @dataclass

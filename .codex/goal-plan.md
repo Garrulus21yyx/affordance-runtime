@@ -889,3 +889,6 @@ delivery claims.
   `VerificationEvidence.observed/expected` and `VerificationReport.evidence`,
   froze verifier evaluation/report materialization boundaries, and kept
   production progress/finish authority unchanged.
+- Continued SAR-1 after `f3d9592`. Added a RED for mutable `TraceNode.payload`
+  and `TraceNode.parents`, froze trace event append boundaries, and preserved
+  JSONL writer compatibility through canonical JSON projection.

@@ -22,6 +22,7 @@ from affordance_runtime.evolution import (
 )
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import PRICING_DATA, create_fixture_server, pricing_html
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.planners import (
     ExportPlanner,
     PricingPlanner,
@@ -118,7 +119,7 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         "reveal-enterprise",
     ]
     proposed = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
-    encoded_context = json.dumps(proposed.payload["planning_context"], sort_keys=True)
+    encoded_context = json.dumps(to_json_compatible(proposed.payload["planning_context"]), sort_keys=True)
     assert "selector" not in encoded_context
     assert "coordinates" not in encoded_context
     assert "backend" not in encoded_context
