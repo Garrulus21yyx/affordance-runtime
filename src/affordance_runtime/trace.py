@@ -9,6 +9,7 @@ from time import time
 from typing import Any
 
 from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION
+from affordance_runtime.immutable import to_json_compatible
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,10 @@ class JsonlTraceWriter:
 
     def write(self, trace: TraceDag) -> Path:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        lines = [json.dumps(row, sort_keys=True, default=str) for row in trace.event_rows()]
+        lines = [
+            json.dumps(to_json_compatible(row), sort_keys=True, default=str)
+            for row in trace.event_rows()
+        ]
         self.path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         return self.path
 

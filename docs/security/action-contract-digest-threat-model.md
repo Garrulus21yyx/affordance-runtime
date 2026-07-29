@@ -66,5 +66,11 @@ The first SAR-1 production cut freezes `ActionContract.locator` and
 contract list fields to immutable sequences before computing the digest, and
 requires adapters/executors to thaw explicitly at external boundaries.
 
+The same cut also freezes `ExecutionReceipt.evidence` and the compatibility
+`PlannerDecision.result` / `PlannerDecision.planner_context` diagnostic maps at
+construction time. Trace and artifact writers project frozen containers through
+canonical JSON-compatible data before persistence, so immutable core payloads do
+not become stringified trace artifacts.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

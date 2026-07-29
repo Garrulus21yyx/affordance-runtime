@@ -1746,6 +1746,9 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "slice_id: sar-1-deep-immutability-and-stale-contract-hash" in record
     assert "action_contract_hash_computed_after_freeze: true" in record
     assert "nested_contract_payload_mutation_after_construction: prohibited" in record
+    assert "executionreceipt evidence deep freeze" in record
+    assert "plannerdecision result and planner_context deep freeze" in record
+    assert "trace and artifact json writers project frozen payloads" in record
     assert "adapter_boundary_thaw: explicit_only" in record
     assert "progress_authority_change: prohibited" in record
     assert "finish_authority_change: prohibited" in record
@@ -1756,8 +1759,10 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "sar_1_deep_immutability:" in status
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
+    assert "current_scope: action_contract_receipt_evidence_and_plannerdecision_diagnostics" in status
+    assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
     assert "adapter_boundary_thaw: explicit_only" in status
-    assert "current production repair freezes actioncontract nested json payloads" in current_plan
+    assert "freezes executionreceipt evidence and plannerdecision diagnostic maps" in current_plan
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

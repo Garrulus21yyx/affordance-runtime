@@ -579,3 +579,6 @@ class ExecutionReceipt:
     evidence: dict[str, Any] = field(default_factory=dict)
     error_code: RuntimeErrorCode | None = None
     message: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evidence", freeze_json(self.evidence))

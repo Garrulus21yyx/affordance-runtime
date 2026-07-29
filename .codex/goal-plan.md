@@ -877,3 +877,7 @@ delivery claims.
   RED and began the deep-immutability fix with explicit BrowserGym
   adapter-boundary thaw; production progress/finish authority remains
   unchanged.
+- Continued SAR-1 after `816443f`. Added REDs for mutable
+  `ExecutionReceipt.evidence` and `PlannerDecision.result/planner_context`,
+  froze those construction boundaries, and projected frozen payloads through
+  trace/artifact JSON writers without changing progress or finish authority.

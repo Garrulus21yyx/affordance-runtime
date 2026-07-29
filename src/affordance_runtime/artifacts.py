@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from affordance_runtime.contracts import ExecutionReceipt, Observation
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.trace import JsonlTraceWriter, TraceDag
 from affordance_runtime.verification import VerificationReport
 
@@ -42,7 +43,12 @@ class ArtifactStore:
             raise ValueError(f"unsafe artifact path: {relative_path!r}")
         path = self.run_dir(run_id) / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(value, indent=2, sort_keys=True, default=str).encode("utf-8")
+        encoded = json.dumps(
+            to_json_compatible(value),
+            indent=2,
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
         path.write_bytes(encoded)
         return self._record(run_id, ArtifactRef(str(path), hashlib.sha256(encoded).hexdigest(), "application/json"))
 

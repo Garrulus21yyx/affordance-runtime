@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-1 active local change after `13409f8f7ded5f7e1159daa5c32e2662cac7572a`: ActionContract nested JSON payloads are being made deeply immutable before digest computation, with explicit adapter-boundary thaw. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1 active local change after `816443fccb0524cbdaa1d02d3e484ee589dce0b0`: ActionContract nested JSON payloads are frozen before digest computation; the next local cut extends the same immutable boundary to ExecutionReceipt evidence and PlannerDecision diagnostic maps, with frozen payloads projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -142,13 +142,18 @@ sar_1_deep_immutability:
   record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
   threat_model: docs/security/action-contract-digest-threat-model.md
   status: active_first_cut
-  current_scope: action_contract_locator_parameters_and_hash_critical_lists
+  current_scope: action_contract_receipt_evidence_and_plannerdecision_diagnostics
   immutable_helper: src/affordance_runtime/immutable.py
+  frozen_runtime_payloads:
+    - ActionContract locator / parameters / hash-critical list fields
+    - ExecutionReceipt evidence
+    - PlannerDecision result / planner_context
+  json_persistence_boundary: TraceDag and ArtifactStore project frozen containers to canonical JSON-compatible data
   adapter_boundary_thaw: explicit_only
   production_behavior_change: false
   progress_authority_change: prohibited
   finish_authority_change: prohibited
-  next_slice: sar-1-continue-receipt-verification-plannerdecision-deep-immutability
+  next_slice: sar-1-continue-observation-affordance-verificationevidence-deep-immutability
   promotion_status: held
 
 taskplan_authority_program:

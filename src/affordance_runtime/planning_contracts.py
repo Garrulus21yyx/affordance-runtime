@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Protocol
 
 from affordance_runtime.contracts import ActionContract
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance
 from affordance_runtime.planning_request import PlanningRequest
@@ -23,6 +24,10 @@ class PlannerDecision:
     reason: str = ""
     planner_context: dict[str, Any] = field(default_factory=dict)
     model_call: ModelCallRecord | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "result", freeze_json(self.result))
+        object.__setattr__(self, "planner_context", freeze_json(self.planner_context))
 
 
 class PlannerPort(Protocol):

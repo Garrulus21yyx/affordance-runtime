@@ -8,6 +8,7 @@ from affordance_runtime.contracts import (
     Affordance,
     AffordanceLease,
     Condition,
+    ExecutionReceipt,
     GestureBinding,
     GestureBindingError,
     GestureContractBinder,
@@ -16,6 +17,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     Surface,
 )
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.verification import preflight
 
 
@@ -109,6 +111,54 @@ def test_action_contract_payloads_are_deeply_immutable_and_hash_stable() -> None
         contract.parameters["text"] = "Bob"
     with pytest.raises(TypeError):
         contract.locator["bbox"][0] = 9
+
+
+def test_execution_receipt_evidence_is_deeply_immutable_from_source_payload() -> None:
+    raw_evidence = {
+        "actual_value": {"text": "Alice", "tokens": ["first"]},
+        "artifact_refs": ["artifact:1"],
+    }
+
+    receipt = ExecutionReceipt(
+        contract_id="contract-1",
+        backend="dom",
+        success=True,
+        started_revision="page-1",
+        ended_revision="page-2",
+        latency_ms=10.0,
+        evidence=raw_evidence,
+    )
+
+    raw_evidence["actual_value"]["tokens"].append("mutated")
+    raw_evidence["artifact_refs"].append("artifact:2")
+
+    assert receipt.evidence["actual_value"]["tokens"] == ("first",)
+    assert receipt.evidence["artifact_refs"] == ("artifact:1",)
+    with pytest.raises(TypeError):
+        receipt.evidence["actual_value"]["text"] = "Bob"
+    with pytest.raises(TypeError):
+        receipt.evidence["artifact_refs"][0] = "artifact:changed"
+
+
+def test_planner_decision_diagnostic_dicts_are_deeply_immutable_from_source_payload() -> None:
+    raw_result = {"status": "done", "nested": {"artifact_refs": ["artifact:1"]}}
+    raw_context = {"model": {"messages": ["bounded"]}}
+
+    decision = PlannerDecision(
+        done=True,
+        result=raw_result,
+        planner_context=raw_context,
+    )
+
+    raw_result["nested"]["artifact_refs"].append("artifact:2")
+    raw_context["model"]["messages"].append("mutated")
+
+    assert decision.result["nested"]["artifact_refs"] == ("artifact:1",)
+    assert decision.planner_context["model"]["messages"] == ("bounded",)
+    with pytest.raises(TypeError):
+        decision.result["status"] = "changed"
+    with pytest.raises(TypeError):
+        decision.planner_context["model"]["messages"][0] = "changed"
 
 
 def test_gesture_contract_binds_and_preflights_both_endpoints() -> None:
