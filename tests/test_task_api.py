@@ -6,6 +6,7 @@ import pytest
 
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
+    RunView,
     ServiceRunStatus,
     TaskExecution,
     TaskRequest,
@@ -55,6 +56,57 @@ def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> Non
     assert adapter.call("gui_get_evidence", {"run_id": "run-1"}) == [str(evidence)]
     assert adapter.call("gui_get_trace", {"run_id": "run-1"}) == [{"event_type": "TaskCompleted"}]
     assert all(name not in adapter.tool_names for name in ("gui_click", "gui_type", "gui_observe"))
+
+
+def test_task_request_payloads_are_immutable_from_source_collections() -> None:
+    constraints = {"require_approval_for": ["settings.write"]}
+    capabilities = ["settings.write"]
+
+    request = TaskRequest(
+        run_id="run-immutable",
+        scenario="settings",
+        goal="Update settings",
+        target="settings",
+        constraints=constraints,
+        capabilities=capabilities,
+    )
+    constraints["require_approval_for"].append("admin.override")
+    capabilities.append("admin.override")
+
+    assert request.constraints["require_approval_for"] == ["settings.write"]
+    assert request.capabilities == ["settings.write"]
+    with pytest.raises(TypeError):
+        request.constraints["require_approval_for"][0] = "admin.override"
+    with pytest.raises(AttributeError):
+        request.capabilities.append("admin.override")
+    assert request.to_dict()["constraints"] == {"require_approval_for": ["settings.write"]}
+    assert request.to_dict()["capabilities"] == ["settings.write"]
+
+
+def test_task_execution_payloads_are_immutable_from_source_collections() -> None:
+    result = {"items": ["a"]}
+    artifacts = ["trace.jsonl"]
+
+    execution = TaskExecution("done", result=result, artifacts=artifacts)
+    result["items"].append("polluted")
+    artifacts.append("receipt.json")
+
+    assert execution.result["items"] == ["a"]
+    assert execution.artifacts == ["trace.jsonl"]
+    with pytest.raises(TypeError):
+        execution.result["items"][0] = "polluted"
+    with pytest.raises(AttributeError):
+        execution.artifacts.append("receipt.json")
+    assert RunView(TaskRequest("run-immutable", "settings", "Update", "settings"), execution=execution).to_dict()[
+        "execution"
+    ] == {
+        "status": "done",
+        "result": {"items": ["a"]},
+        "error_code": None,
+        "artifacts": ["trace.jsonl"],
+        "trace_path": "",
+        "required_capability": "",
+    }
 
 
 def test_task_api_cancel_and_capability_scope() -> None:

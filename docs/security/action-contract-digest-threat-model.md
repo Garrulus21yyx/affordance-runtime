@@ -113,6 +113,12 @@ lists at construction time. This keeps run-level policy and capability scope
 stable after `TaskEnvelope` is passed to Runtime or Coordinator entrypoints,
 instead of retaining mutable references owned by the caller.
 
+Task-level API request and execution DTOs follow the same rule. `TaskRequest`
+freezes external constraints and capability grants when a parent/tool adapter
+submits work, while `TaskExecution` freezes result payloads and artifact lists
+before they are stored in `RunView`. API responses explicitly project these
+frozen containers back to JSON-compatible dicts and lists.
+
 Configured approval providers freeze their allowed-capability set at
 construction time. A caller-owned set cannot be mutated after provider creation
 to silently expand which high-risk contracts may receive an approval token.

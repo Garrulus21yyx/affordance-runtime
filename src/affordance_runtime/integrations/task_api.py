@@ -11,6 +11,7 @@ from threading import RLock
 from time import time
 from typing import Any, Callable
 
+from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.task_intake import TaskSpec
 
 
@@ -35,6 +36,8 @@ class TaskRequest:
     task_spec: TaskSpec | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", freeze_json(self.constraints))
+        object.__setattr__(self, "capabilities", FrozenSequence(self.capabilities))
         task_spec = TaskSpec.model_validate(self.task_spec) if isinstance(self.task_spec, dict) else self.task_spec
         object.__setattr__(self, "task_spec", task_spec)
         if task_spec is None:
@@ -48,7 +51,15 @@ class TaskRequest:
             raise ValueError("TaskRequest grants exceed TaskSpec requested_capabilities")
 
     def to_dict(self) -> dict[str, Any]:
-        value = asdict(self)
+        value = {
+            "run_id": self.run_id,
+            "scenario": self.scenario,
+            "goal": self.goal,
+            "target": self.target,
+            "constraints": to_json_compatible(self.constraints),
+            "capabilities": to_json_compatible(self.capabilities),
+            "task_spec": None,
+        }
         if self.task_spec is not None:
             value["task_spec"] = self.task_spec.model_dump(mode="json")
         return value
@@ -75,6 +86,20 @@ class TaskExecution:
     trace_path: str = ""
     required_capability: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "result", freeze_json(self.result))
+        object.__setattr__(self, "artifacts", FrozenSequence(self.artifacts))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "result": to_json_compatible(self.result),
+            "error_code": self.error_code,
+            "artifacts": to_json_compatible(self.artifacts),
+            "trace_path": self.trace_path,
+            "required_capability": self.required_capability,
+        }
+
 
 TaskRunner = Callable[[TaskRequest, ApprovalGrant | None], TaskExecution]
 
@@ -92,7 +117,7 @@ class RunView:
         return {
             "request": self.request.to_dict(),
             "status": self.status.value,
-            "execution": asdict(self.execution) if self.execution else None,
+            "execution": self.execution.to_dict() if self.execution else None,
             "approval": asdict(self.approval) if self.approval else None,
             "created_at_s": self.created_at_s,
             "updated_at_s": self.updated_at_s,
@@ -224,7 +249,7 @@ class TaskRuntimeService:
 
     def get_result(self, run_id: str) -> dict[str, Any]:
         view = self.get_run(run_id)
-        return dict(view.execution.result) if view.execution else {}
+        return to_json_compatible(view.execution.result) if view.execution else {}
 
     def get_evidence(self, run_id: str) -> list[str]:
         view = self.get_run(run_id)

@@ -1810,7 +1810,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
     assert (
-        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope"
+        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope_task_api"
         in status
     )
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
@@ -1824,6 +1824,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "configuredapprovalprovider allowed-capability boundaries" in current_plan
     assert "routingdecision candidate/score payload boundaries" in current_plan
     assert "taskenvelope constraint/capability boundaries" in current_plan
+    assert "task api request/execution dto boundaries" in current_plan
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

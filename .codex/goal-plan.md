@@ -926,3 +926,7 @@ delivery claims.
   `TaskEnvelope.constraints/capabilities`, froze those runtime entry payloads
   at construction, and kept task policy/capability semantics stable after
   callers mutate their original collections.
+- Continued SAR-1 after `239ff76`. Added REDs for mutable task API
+  `TaskRequest.constraints/capabilities` and `TaskExecution.result/artifacts`,
+  froze those DTO payloads at construction, and kept API output compatibility
+  through explicit JSON projection.
