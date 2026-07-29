@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.planner_context import AffordanceSummary, PlannerContext
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 
@@ -19,6 +20,9 @@ class SemanticActionResolution:
     parameters: dict[str, str | int | float | bool | list[str]] = field(default_factory=dict)
     expected_effects: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
 
 
 def resolve_empty_clarification_action(

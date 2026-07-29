@@ -119,6 +119,11 @@ submits work, while `TaskExecution` freezes result payloads and artifact lists
 before they are stored in `RunView`. API responses explicitly project these
 frozen containers back to JSON-compatible dicts and lists.
 
+Semantic resolver and compiler outputs also freeze their parameter and
+target-compatibility payloads at construction. A selected semantic action or
+compiler-produced target scope therefore cannot be changed by mutating the
+caller-owned dictionaries that produced it.
+
 Configured approval providers freeze their allowed-capability set at
 construction time. A caller-owned set cannot be mutated after provider creation
 to silently expand which high-risk contracts may receive an approval token.

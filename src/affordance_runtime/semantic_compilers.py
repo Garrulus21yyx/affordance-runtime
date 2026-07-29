@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
+from affordance_runtime.immutable import freeze_json
+
 
 class SemanticCompilerContext(Protocol):
     task_spec: dict[str, Any]
@@ -22,6 +24,9 @@ class SemanticCompilation:
     compiler_id: str = ""
     evidence_ref: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parameters", freeze_json(self.parameters))
+
 
 @dataclass(frozen=True)
 class SemanticConstraints:
@@ -32,6 +37,9 @@ class SemanticConstraints:
     require_bound_text_source: bool = False
     compiler_id: str = ""
     evidence_ref: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "compatible_target_ids", freeze_json(self.compatible_target_ids))
 
 
 @dataclass(frozen=True)

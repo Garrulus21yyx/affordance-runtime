@@ -930,3 +930,7 @@ delivery claims.
   `TaskRequest.constraints/capabilities` and `TaskExecution.result/artifacts`,
   froze those DTO payloads at construction, and kept API output compatibility
   through explicit JSON projection.
+- Continued SAR-1 after `8b6c2f9`. Added REDs for mutable semantic resolver
+  and compiler payloads, froze `SemanticActionResolution.parameters`,
+  `SemanticCompilation.parameters`, and `SemanticConstraints.compatible_target_ids`,
+  and kept planner/compiler behavior unchanged.
