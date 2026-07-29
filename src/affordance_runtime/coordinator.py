@@ -42,6 +42,8 @@ from affordance_runtime.failure_envelope import (
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
+from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
+from affordance_runtime.planner_compatibility import propose_with_runtime_projection as _propose
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -54,7 +56,7 @@ from affordance_runtime.planning import (
     proposal_error_code,
     proposal_record,
 )
-from affordance_runtime.planning_contracts import PlannerDecision, PlannerPort
+from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery import (
     BoundedRecoveryPolicy,
@@ -157,7 +159,7 @@ class CoordinatorResult:
 @dataclass
 class RunCoordinator:
     observer: ObservationSource
-    planner: PlannerPort
+    planner: PlannerCompatibilityPort
     executor: Executor
     verifier: VerifierLadder = field(default_factory=VerifierLadder)
     gate: CapabilityGate = field(default_factory=CapabilityGate)
@@ -641,9 +643,9 @@ class RunCoordinator:
                                 state,
                                 skill_decision.reason,
                             )
-                        decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
+                        decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
                 else:
-                    decision = _resolve_planner_decision(self.planner.propose(envelope, state, snapshot))
+                    decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
             except ProviderModelError as exc:
                 error_code = RuntimeErrorCode(exc.kind.value)
                 if (
@@ -3449,9 +3451,7 @@ class RunCoordinator:
         )
 
 
-def _resolve_planner_decision(
-    value: PlannerDecision | Awaitable[PlannerDecision],
-) -> PlannerDecision:
+def _resolve_planner_decision(value: PlannerDecision | Awaitable[PlannerDecision]) -> PlannerDecision:
     if not inspect.isawaitable(value):
         return value
     return resolve_awaitable(_await_planner_decision(value))

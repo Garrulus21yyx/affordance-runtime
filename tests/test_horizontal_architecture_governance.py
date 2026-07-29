@@ -587,6 +587,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_5: completed_foundation" in status
     assert "tpa_3_6: completed_foundation" in status
     assert "tpa_3_7: completed_foundation" in status
+    assert "tpa_3_8: completed_foundation" in status
     assert (
         "parent_agent_request_record: "
         "docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml"
@@ -607,7 +608,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml"
         in status
     )
-    assert "next_slice: tpa-3-8-plannerport-public-request-cutover" in status
+    assert (
+        "plannerport_public_request_cutover_record: "
+        "docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml"
+        in status
+    )
+    assert "next_slice: tpa-4-taskplan-authority-contracts" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -645,10 +651,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
     assert (
-        "immutable_planner_input: generalistlmplanner, parentagentplanneradapter, reference contract planners, conformanceplanner, recoveryfixtureplanner, and browsergymplanner now use the immutable planningrequest core internally"
+        "immutable_planner_input: plannerport public contract is request-only and uses planningrequest"
         in status
     )
+    assert "planner_compatibility.py" in status
     assert "browsergympolicyrequest remains a compatibility-only benchmark policy boundary" in status
+    assert "coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)" in status
     assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
     assert "completed_plan_active_step_id: null" in s2_1
     assert "claim_id_is_not_source_unit_id: true" in s2_1
@@ -744,7 +752,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.8 plannerport public request cutover" in status
+    assert "current_next_change_admission: tpa-4 taskplanauthority contracts" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1491,6 +1499,8 @@ def test_standard_step_planner_triple_signature_inventory_is_frozen() -> None:
         for owner in ast.walk(tree):
             if not isinstance(owner, ast.ClassDef):
                 continue
+            if relative == "planner_compatibility.py" and owner.name == "LegacyPlannerPort":
+                continue
             for node in owner.body:
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
@@ -1514,9 +1524,40 @@ def test_standard_step_planner_triple_signature_inventory_is_frozen() -> None:
         ("planners.py", "ExportPlanner"),
         ("planners.py", "PricingPlanner"),
         ("planners.py", "SettingsPlanner"),
-        ("planning_contracts.py", "PlannerPort"),
         ("recovery_evolution.py", "RecoveryFixturePlanner"),
     }
+
+
+def test_plannerport_public_contract_is_request_only_with_legacy_seam() -> None:
+    contracts = (SOURCE_ROOT / "planning_contracts.py").read_text(encoding="utf-8")
+    assert "from affordance_runtime.planning_request import PlanningRequest" in contracts
+    assert "from affordance_runtime.state_kernel import StateKernel" not in contracts
+    assert "from affordance_runtime.runtime import TaskEnvelope" not in contracts
+    assert "from affordance_runtime.browser_session import BrowserSnapshot" not in contracts
+
+    tree = ast.parse(contracts)
+    planner_port = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "PlannerPort"
+    )
+    propose = next(
+        node
+        for node in planner_port.body
+        if isinstance(node, ast.FunctionDef) and node.name == "propose"
+    )
+    assert tuple(argument.arg for argument in propose.args.args) == ("self", "request")
+
+    compatibility = (SOURCE_ROOT / "planner_compatibility.py").read_text(encoding="utf-8")
+    compatibility_text = " ".join(compatibility.split())
+    assert "class LegacyPlannerPort" in compatibility
+    assert "def propose_with_planner_compatibility" in compatibility
+    assert "standard planners should implement ``propose(request)``" in compatibility_text
+
+    coordinator = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    assert "propose_with_runtime_projection" in coordinator
+    assert "PlanningRequestBuilder" not in coordinator
+    assert "self.planner.propose(envelope, state, snapshot)" not in coordinator
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

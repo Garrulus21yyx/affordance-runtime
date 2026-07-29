@@ -328,8 +328,11 @@ PlanningRequest when TaskSpec identity is available while preserving fixture
 contract behavior. The latest authorized sub-slice is TPA-3.7 BrowserGym and
 benchmark planner compatibility migration; it routes BrowserGymPlanner through
 PlanningRequest when TaskSpec identity is available while preserving
-BrowserGymPolicyRequest as the benchmark-policy compatibility boundary. The
-next authorized sub-slice is TPA-3.8 PlannerPort public request cutover.
+BrowserGymPolicyRequest as the benchmark-policy compatibility boundary.
+TPA-3.8 makes the public PlannerPort contract request-only and moves remaining
+three-argument planner invocation behind `planner_compatibility.py` for legacy
+ActionContract-returning fixtures. The next authorized sub-slice is TPA-4
+TaskPlanAuthority contracts.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

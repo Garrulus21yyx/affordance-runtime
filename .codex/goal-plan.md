@@ -844,3 +844,11 @@ delivery claims.
   admission, progress authority, finish authority, PR breadth, and promotion
   remain unchanged. The next slice is TPA-3.8 PlannerPort public request
   cutover.
+- Started TPA-3.8 after `65dab6b`. PlannerPort now exposes request-only
+  `propose(PlanningRequest)` in the neutral contract module; Coordinator
+  builds PlanningRequest before the planner boundary and invokes legacy
+  three-argument planners only through `planner_compatibility.py`. This is a
+  compatibility cutover foundation: legacy ActionContract-returning fixtures
+  remain isolated rather than rewritten, and TaskPlan admission, progress
+  authority, finish authority, PR breadth, and promotion remain unchanged. The
+  next slice is TPA-4 TaskPlanAuthority contracts.

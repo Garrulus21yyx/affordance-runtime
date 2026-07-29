@@ -15,6 +15,7 @@ from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
+from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
 from affordance_runtime.planners import (
     ExportPlanner,
     PricingPlanner,
@@ -22,7 +23,6 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
 )
-from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.recovery import BoundedRecoveryPolicy
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -383,7 +383,7 @@ def run_scenario(
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
-    planners: dict[str, PlannerPort] = {
+    planners: dict[str, PlannerCompatibilityPort] = {
         "pricing": PricingPlanner(),
         "settings": SettingsPlanner(),
         "export": ExportPlanner(),

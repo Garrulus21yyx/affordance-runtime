@@ -5,12 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Protocol
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance
-from affordance_runtime.runtime import TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning_request import PlanningRequest
 
 
 @dataclass(frozen=True)
@@ -30,7 +28,5 @@ class PlannerDecision:
 class PlannerPort(Protocol):
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
+        request: PlanningRequest,
     ) -> PlannerDecision | Awaitable[PlannerDecision]: ...
