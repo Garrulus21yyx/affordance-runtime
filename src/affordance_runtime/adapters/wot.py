@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.immutable import FrozenSequence, freeze_json
 
 _DEFAULT_METHOD = {
     "readproperty": "GET",
@@ -35,6 +36,10 @@ class ThingAffordanceModel:
     base: str
     affordances: list[Affordance]
     state_sources: list[dict[str, Any]]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "affordances", FrozenSequence(self.affordances))
+        object.__setattr__(self, "state_sources", freeze_json(self.state_sources))
 
 
 def _declared_ops(form: dict[str, Any]) -> list[str]:

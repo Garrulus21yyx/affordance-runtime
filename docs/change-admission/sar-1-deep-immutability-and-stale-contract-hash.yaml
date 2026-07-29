@@ -28,6 +28,7 @@ included:
   - TraceNode payload and parent identity sequence freeze
   - BrowserSnapshot accessibility_tree deep freeze
   - PageAffordanceModel affordance sequence freeze
+  - ThingAffordanceModel affordance and state-source payload freeze
   - Trace and Artifact JSON writers project frozen payloads through canonical JSON-compatible data
   - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
   - legacy sequence/mapping compatibility repairs for frozen observation and affordance payloads
@@ -66,6 +67,7 @@ validation:
   trace_node_payload_red_observed: tests/test_trace_writer.py::test_trace_node_payload_and_parents_are_deeply_immutable_from_source_payload
   browser_snapshot_accessibility_tree_red_observed: tests/test_browser_session.py::test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload
   page_affordance_model_affordances_red_observed: tests/test_dom_adapter.py::test_page_affordance_model_affordances_are_immutable_from_source_list
+  thing_affordance_model_payloads_red_observed: tests/test_wot_adapter.py::test_wot_affordance_model_payloads_are_immutable_after_parse
   focused_contract_tests: required
   architecture_tests: required
   full_pytest: required
@@ -74,6 +76,6 @@ validation:
   uv_build: required
   diff_check: required
 
-closure_status: sar_1_primary_runtime_contract_verification_trace_snapshot_and_affordance_model_freeze_in_progress
+closure_status: sar_1_primary_runtime_contract_verification_trace_snapshot_and_surface_model_freeze_in_progress
 next_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
 promotion_status: held

@@ -904,3 +904,6 @@ delivery claims.
 - Continued SAR-1 after `fd972db`. Added a RED for mutable
   `PageAffordanceModel.affordances`, froze the DOM affordance sequence at model
   construction, and kept replacement-based model updates explicit.
+- Continued SAR-1 after `d5f8249`. Added a RED for mutable
+  `ThingAffordanceModel.affordances/state_sources`, froze WoT parsed surface
+  model payloads, and kept device route planning on immutable TD projections.

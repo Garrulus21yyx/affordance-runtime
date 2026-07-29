@@ -103,5 +103,10 @@ new affordance sequence, but mutating the original list supplied to
 `PageAffordanceModel` cannot alter a captured snapshot's planner-facing target
 inventory.
 
+WoT thing affordance models apply the same rule to their affordance sequence
+and state-source payloads. Device route planning therefore reads an immutable
+Thing Description projection rather than a caller-owned list or dictionary that
+can be rewritten after parsing.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.
