@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | TPA-4 active local change after `8ccabc1e0f9de41fe45aa01d1387c5207c122152`: TaskPlanAuthority neutral contracts are being added as foundation-only draft/request/decision/generator boundaries; PlannerPort public contract is request-only, legacy three-argument planner implementations remain behind a named compatibility seam, and TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
+| Current HEAD | TPA-5 active local change after `6816df5a6d4b3108d3d0ff288780bb22cd63cc0d`: TaskPlanDraft generator compatibility surfaces are being added for rule/router/reference planning without Coordinator rewiring, StateKernel mutation, TaskPlanAuthority production admission, progress authority, finish authority, PR breadth, or promotion changes |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -117,7 +117,7 @@ simplified_runtime_architecture:
   target_task_completion_authority: task_spec_completion_criterion_independent_verification
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planning_request: foundation_contracts_and_builder
-  next_slice: tpa-4-taskplan-authority-contracts
+  next_slice: tpa-5b-llm-taskplan-generator-draft-migration
   odg_default_path: stopped
   odg_advanced_attribution: experimental_only
   odg_10_progress_commit: not_authorized
@@ -146,6 +146,7 @@ taskplan_authority_program:
   tpa_3_7: completed_foundation
   tpa_3_8: completed_foundation
   tpa_4: completed_foundation
+  tpa_5: completed_foundation
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml
   planner_projection_admission_contract_record: docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml
@@ -158,6 +159,7 @@ taskplan_authority_program:
   browsergym_policy_planner_compatibility_record: docs/change-admission/tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml
   plannerport_public_request_cutover_record: docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml
   taskplan_authority_contracts_record: docs/change-admission/tpa-4-taskplan-authority-contracts.yaml
+  taskplan_generator_draft_migration_record: docs/change-admission/tpa-5-taskplan-generator-draft-migration.yaml
   plan_candidate_owner_target: TaskPlanGeneratorPort
   plan_decision_owner_target: TaskPlanAuthority
   plan_commit_owner: RunCoordinator
@@ -168,7 +170,9 @@ taskplan_authority_program:
   public_request_contract: complete
   request_projection_foundation: complete
   legacy_implementation_retirement: pending
-  next_slice: tpa-5-taskplan-generator-draft-migration
+  draft_generator_foundation: complete
+  llm_generator_migration: pending
+  next_slice: tpa-5b-llm-taskplan-generator-draft-migration
   production_authority_changed: false
   promotion_status: held
 
@@ -237,13 +241,13 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: TPA-4 TaskPlanAuthority contracts; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: TPA-5B LLM TaskPlan generator draft migration; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: tpa-3-8-plannerport-public-request-cutover
+  slice: tpa-5-taskplan-generator-draft-migration
   revision: current_committed_revision
-  status: plannerport_public_request_cutover_foundation
+  status: taskplan_generator_draft_migration_foundation
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -257,13 +261,16 @@ active_local_repair:
   conformance_recovery_planner_request_record: docs/change-admission/tpa-3-6-conformance-benchmark-planners-request-migration.yaml
   browsergym_policy_planner_compatibility_record: docs/change-admission/tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml
   plannerport_public_request_cutover_record: docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml
+  taskplan_authority_contracts_record: docs/change-admission/tpa-4-taskplan-authority-contracts.yaml
+  taskplan_generator_draft_migration_record: docs/change-admission/tpa-5-taskplan-generator-draft-migration.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
-  planner_context_change: public_plannerport_request_only_with_legacy_compatibility_seam
+  planner_context_change: unchanged
+  taskplan_generator_change: draft_foundation_only_with_legacy_production_path
   taskplan_required: false
-  next_runtime_slice: tpa-4-taskplan-authority-contracts
+  next_runtime_slice: tpa-5b-llm-taskplan-generator-draft-migration
   promotion_status: held
 
 attribution_classification:
@@ -558,7 +565,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, TPA-3.2D request-only admission application, TPA-3.3 Generalist request-only core, TPA-3.4 ParentAgentPlannerAdapter request migration, TPA-3.5 reference contract planner request migration, TPA-3.6 conformance/recovery fixture planner request migration, TPA-3.7 BrowserGym policy planner compatibility projection, and TPA-3.8 PlannerPort public request cutover are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, and execution-commit gates | none | TPA-4 TaskPlanAuthority contracts are next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
+| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, TPA-3.2D request-only admission application, TPA-3.3 Generalist request-only core, TPA-3.4 ParentAgentPlannerAdapter request migration, TPA-3.5 reference contract planner request migration, TPA-3.6 conformance/recovery fixture request migration, TPA-3.7 BrowserGym policy planner compatibility projection, TPA-3.8 PlannerPort public request cutover, TPA-4 TaskPlanAuthority neutral contracts, and TPA-5 TaskPlanDraft generator compatibility surfaces are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, and execution-commit gates | none | TPA-5B LLM generator draft migration is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

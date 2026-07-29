@@ -336,7 +336,10 @@ initial/revision request, issue-report, decision, binder, and generator-port
 contracts without connecting them to Coordinator, StateKernel mutation,
 TaskPlanLifecycle, generator migration, progress authority, finish authority,
 or PR breadth claims. The next authorized sub-slice is TPA-5 TaskPlan generator
-draft migration.
+draft migration. TPA-5 adds draft-producing rule, router, and reference
+generator compatibility surfaces plus exact semantic projection tests. It keeps
+legacy TaskPlannerPort production generation active, does not change provider
+schema or prompts, and leaves LLM draft migration as a separate pending slice.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

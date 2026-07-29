@@ -301,7 +301,7 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "v-prb-5a button-sequence effect semantics" in current_plan
     assert "v-prb-5b entry action-family resolution" in current_plan
     assert "v-prb-6 terminal completion guard classification" in current_plan
-    assert "tpa-4 taskplanauthority neutral contracts" in current_plan
+    assert "tpa-5 generator compatibility surfaces" in current_plan
     assert "p2 semantic fallback owner extraction" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
 
@@ -591,6 +591,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_7: completed_foundation" in status
     assert "tpa_3_8: completed_foundation" in status
     assert "tpa_4: completed_foundation" in status
+    assert "tpa_5: completed_foundation" in status
     assert (
         "parent_agent_request_record: "
         "docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml"
@@ -621,10 +622,17 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-4-taskplan-authority-contracts.yaml"
         in status
     )
+    assert (
+        "taskplan_generator_draft_migration_record: "
+        "docs/change-admission/tpa-5-taskplan-generator-draft-migration.yaml"
+        in status
+    )
     assert "public_request_contract: complete" in status
     assert "request_projection_foundation: complete" in status
     assert "legacy_implementation_retirement: pending" in status
-    assert "next_slice: tpa-5-taskplan-generator-draft-migration" in status
+    assert "draft_generator_foundation: complete" in status
+    assert "llm_generator_migration: pending" in status
+    assert "next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -763,7 +771,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-4 taskplanauthority contracts" in status
+    assert "current_next_change_admission: tpa-5b llm taskplan generator draft migration" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1612,6 +1620,43 @@ def test_taskplan_authority_contracts_are_neutral_foundation_only() -> None:
     assert "coordinator_integration: prohibited" in tpa_4
     assert "taskplan_generator_migration: prohibited" in tpa_4
     assert "closure_status: taskplan_authority_contracts_foundation" in tpa_4
+
+
+def test_taskplan_draft_generators_are_foundation_only() -> None:
+    path = SOURCE_ROOT / "task_plan_generators.py"
+    source = path.read_text(encoding="utf-8")
+    lowered = source.casefold()
+
+    forbidden = (
+        "affordance_runtime.coordinator",
+        "affordance_runtime.state_kernel",
+        "affordance_runtime.trace",
+        "affordance_runtime.browser_session",
+        "affordance_runtime.benchmarks",
+    )
+    for item in forbidden:
+        assert item not in lowered
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"install_task_plan", "replace_task_plan"}
+        ):
+            raise AssertionError("TaskPlan draft generator cannot commit accepted plans")
+
+    tpa_5 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-5-taskplan-generator-draft-migration.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "production_behavior_change: false" in tpa_5
+    assert "coordinator_integration: prohibited" in tpa_5
+    assert "statekernel_mutation: prohibited" in tpa_5
+    assert "taskplan_authority_production_admission: prohibited" in tpa_5
+    assert "legacy_taskplannerport: active" in tpa_5
+    assert "closure_status: taskplan_generator_draft_migration_foundation" in tpa_5
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

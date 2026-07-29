@@ -57,8 +57,8 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | TPA-4 TaskPlanAuthority contracts | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture. S1 adds neutral simplified core contracts. S2/S2.1 provide a hardened, read-only exact-ID Step projection. TPA-0 freezes TaskPlan ownership and Step Planner naming; TPA-1 records the complete plan/Planner/Recovery/TaskSkill call-site and read-set baseline. TPA-2 adds immutable PlanningRequest contracts and the sole read-only builder. TPA-3.1 through TPA-3.8 complete the request-only public PlannerPort contract and isolate remaining three-argument planner implementations behind `planner_compatibility.py`. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Establish TaskPlanAuthority draft/decision contracts without changing Coordinator plan commit, progress authority, finish authority, or PR breadth claims. | unrelated horizontal debt retirement |
-| Horizontal | TPA-4 TaskPlanAuthority neutral contracts | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, and TPA-3 request-only public PlannerPort cutover are closed; TPA-4 adds neutral TaskPlan draft/request/decision contracts only | public StepPlannerPort no longer receives mutable `StateKernel`; legacy planner implementation retirement remains pending behind compatibility seams | ODG experimental attribution documentation |
+| Vertical | TPA-5 TaskPlan generator draft migration | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture. S1 adds neutral simplified core contracts. S2/S2.1 provide a hardened, read-only exact-ID Step projection. TPA-0 through TPA-4 establish TaskPlan ownership, read-set inventories, immutable PlanningRequest, request-only PlannerPort, and neutral TaskPlanAuthority contracts. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Add draft-producing rule/router/reference generator surfaces without changing Coordinator plan commit, progress authority, finish authority, provider schema, or PR breadth claims. | unrelated horizontal debt retirement |
+| Horizontal | TPA-5 generator compatibility surfaces | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, TPA-3 request-only public PlannerPort cutover, and TPA-4 neutral TaskPlanAuthority contracts are closed | draft generators can produce authority-free TaskPlanDraft objects; legacy TaskPlannerPort and LLM generator migration remain pending behind compatibility seams | ODG experimental attribution documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -339,8 +339,10 @@ TPA-3.7 routes BrowserGymPlanner through PlanningRequest when TaskSpec identity
 is available while preserving BrowserGymPolicyRequest as the benchmark-policy
 compatibility boundary. TPA-3.8 makes PlannerPort's public contract
 request-only and moves remaining three-argument planner invocation behind
-`planner_compatibility.py` for legacy ActionContract-returning fixtures. The
-selected next slice is TPA-4 TaskPlanAuthority contracts; ODG advanced
+`planner_compatibility.py` for legacy ActionContract-returning fixtures. TPA-4
+adds neutral TaskPlanAuthority contracts, and TPA-5 adds draft-producing
+rule/router/reference generator compatibility surfaces. The selected next
+slice is TPA-5B LLM TaskPlan generator draft migration; ODG advanced
 attribution remains `EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG

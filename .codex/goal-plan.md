@@ -858,3 +858,9 @@ delivery claims.
   generator migration, progress authority, finish authority, PR breadth, or
   promotion change is authorized. The next slice is TPA-5 TaskPlan generator
   draft migration.
+- Started TPA-5 after `6816df5`. Added TaskPlanDraft generator compatibility
+  surfaces for rule, router, and reference pricing planning while keeping
+  legacy TaskPlannerPort production generation, LLM generator migration,
+  Coordinator plan commit, StateKernel mutation, progress authority, finish
+  authority, PR breadth, and promotion unchanged. The next slice is TPA-5B LLM
+  TaskPlan generator draft migration.
