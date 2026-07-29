@@ -21,9 +21,17 @@ superseded_default_paths:
   - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md
   - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-architecture.md
   - docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md
+  - docs/archive/superseded-2026-07-29/architecture.md
+  - docs/archive/superseded-2026-07-29/complete-architecture-blueprint.md
+  - docs/archive/superseded-2026-07-29/design-freeze.md
   - docs/archive/superseded-2026-07-29/README.md
   - odg_default_path
   - tpa_additive_foundation_only_sequence
+
+stable_redirects:
+  - docs/architecture.md
+  - docs/complete-architecture-blueprint.md
+  - docs/design-freeze.md
 
 stopped_work:
   - tpa-5b-llm-taskplan-generator-draft-migration
@@ -45,6 +53,7 @@ invariants:
 validation:
   documentation_paths_exist: required
   governance_status_sync: required
+  legacy_root_architecture_redirects: required
   architecture_tests: required
   full_pytest: required
   ruff: required

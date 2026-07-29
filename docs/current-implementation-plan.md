@@ -57,7 +57,7 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs are archived; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
+| Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
 | Horizontal | SAR-1 deep immutability / stale contract hash | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, TPA-3 request-only public PlannerPort cutover, TPA-4 neutral TaskPlanAuthority contracts, and TPA-5 generator compatibility surfaces are closed as historical foundation | current production repair freezes ActionContract, ExecutionReceipt, PlannerDecision diagnostic, Observation, Affordance, VerificationEvidence, VerificationReport, VerifierEvaluation, TraceNode payload boundaries, BrowserSnapshot accessibility-tree payload boundaries, PageAffordanceModel affordance-sequence boundaries, ThingAffordanceModel affordance/state-source payload boundaries, ConfiguredApprovalProvider allowed-capability boundaries, and RoutingDecision candidate/score payload boundaries, and requires Mapping/Sequence-safe reads plus explicit JSON projection or thaw at external boundaries | ODG experimental attribution documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
@@ -68,6 +68,15 @@ continuation but cannot be promoted as remote-green evidence. “When authorized
 means the named entry conditions above are satisfied and no safety, authority,
 architecture, or validation gate is being bypassed; it does not mean waiting
 for a repository-wide refactor.
+
+Current documentation authority:
+
+```yaml
+legacy_root_architecture_docs: archived_with_redirects
+current_architecture_entrypoint: docs/README.md
+current_authoritative_spec: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+current_authoritative_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+```
 
 ### Review-driven remediation sequence
 
@@ -1138,11 +1147,13 @@ closure work.
 This document is the implementation profile for the current repository. It is
 the plan contributors should follow when deciding what to build now.
 
-The [Complete Architecture Blueprint](complete-architecture-blueprint.md)
-describes a possible production-scale destination. It does not create current
-release requirements. When the two documents differ, this implementation plan
-wins until a production feature is explicitly promoted through the decision
-gate in the main [Project Plan](project-plan.md).
+The current long-term architecture authority is SAR-0:
+[Affordance Runtime Authoritative Optimized Architecture](superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
+and
+[Affordance Runtime Substitutive Refactor Execution Plan](superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md).
+Former root architecture documents are archived under
+[superseded-2026-07-29](archive/superseded-2026-07-29/README.md), and their old
+paths are redirect stubs only.
 
 The [Runtime-First Architecture Boundary](runtime-first-boundary.md),
 [Responsibility Containment Boundary](responsibility-containment-boundary.md),

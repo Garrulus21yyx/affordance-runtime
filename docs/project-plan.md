@@ -29,14 +29,17 @@ The project should not be positioned as a direct replacement for PageAgent,
 browser-use, Stagehand, Skyvern, OpenHands, or OSWorld. Those systems are useful
 reference points, baselines, or integration targets.
 
-### 1.1 Plan Authority and Two Horizons
+### 1.1 Plan Authority
 
-The project uses two compatible planning horizons:
+The current long-term architecture authority is SAR-0:
 
-- [Current Implementation Plan](current-implementation-plan.md): the
-  authoritative plan for current code, milestones, and release claims.
-- [Complete Architecture Blueprint](complete-architecture-blueprint.md): a
-  non-blocking reference for a future durable, multi-run, service-grade system.
+- [Affordance Runtime Authoritative Optimized Architecture](superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
+- [Affordance Runtime Substitutive Refactor Execution Plan](superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
+- [Documentation Index](README.md)
+
+The former complete blueprint and design-freeze documents are archived under
+[superseded-2026-07-29](archive/superseded-2026-07-29/README.md), and the old
+root paths now exist only as redirect stubs.
 
 Repository governance, current correctness work, selective C009 reuse, and
 claim/evidence gates are maintained in the Governance and Correctness Gates
@@ -305,7 +308,7 @@ Objective: make the plan precise enough to constrain implementation.
 
 Deliverables:
 
-- `docs/design-freeze.md`
+- SAR-0 architecture and execution-plan records
 - scenario specs for the three Web/SaaS tasks
 - status matrix separating implemented, partial, planned, and deferred
 - system invariants

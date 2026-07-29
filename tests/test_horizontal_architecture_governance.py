@@ -1733,6 +1733,44 @@ def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
     ).exists()
 
 
+def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> None:
+    readme = " ".join(
+        (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8").split()
+    ).casefold()
+    docs_readme = " ".join(
+        (REPOSITORY_ROOT / "docs" / "README.md").read_text(encoding="utf-8").split()
+    ).casefold()
+    archive_readme = " ".join(
+        (REPOSITORY_ROOT / "docs/archive/superseded-2026-07-29/README.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+
+    legacy_docs = (
+        "architecture.md",
+        "complete-architecture-blueprint.md",
+        "design-freeze.md",
+    )
+    for legacy_doc in legacy_docs:
+        archive_path = REPOSITORY_ROOT / "docs/archive/superseded-2026-07-29" / legacy_doc
+        redirect_path = REPOSITORY_ROOT / "docs" / legacy_doc
+        assert archive_path.exists()
+        redirect_text = " ".join(redirect_path.read_text(encoding="utf-8").split()).casefold()
+        assert "superseded by sar-0" in redirect_text
+        assert "2026-07-29-affordance-runtime-authoritative-optimized-architecture.md" in redirect_text
+        assert "2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md" in redirect_text
+        assert legacy_doc in archive_readme
+
+    assert "[architecture](docs/architecture.md)" not in readme
+    assert "[complete architecture blueprint](docs/complete-architecture-blueprint.md)" not in readme
+    assert "[design freeze and implementation gates](docs/design-freeze.md)" not in readme
+    assert "legacy root architecture redirects" in docs_readme
+    assert "legacy_root_architecture_docs:" in status
+    assert "legacy_root_architecture_docs: archived_with_redirects" in current_plan
+
+
 def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     record_path = CHANGE_ADMISSION_DIR / "sar-1-deep-immutability-and-stale-contract-hash.yaml"
     threat_model_path = REPOSITORY_ROOT / "docs/security/action-contract-digest-threat-model.md"

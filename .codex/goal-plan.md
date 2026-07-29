@@ -913,3 +913,12 @@ delivery claims.
 - Continued SAR-1 after `22fd2b2`. Added a RED for mutable
   `RoutingDecision.candidate_backends/scores`, froze route-selection result
   payloads, and kept routing outcomes stable after selection.
+- Continued documentation convergence after `7f3ffff`. Archived former root
+  `architecture.md`, `complete-architecture-blueprint.md`, and
+  `design-freeze.md` content under `docs/archive/superseded-2026-07-29/`,
+  replaced the root paths with SAR-0 redirect stubs, and synchronized README,
+  project plan, implementation status, current plan, archive index, and SAR-0
+  change-admission records. This is documentation authority cleanup only; no
+  production behavior, progress authority, finish authority, Coordinator
+  control flow, StateKernel schema, PlannerPort, PR breadth, or promotion
+  changed.

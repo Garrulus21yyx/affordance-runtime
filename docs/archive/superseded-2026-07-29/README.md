@@ -15,12 +15,15 @@ Archived records:
 - [Simplification execution plan](2026-07-29-affordance-runtime-simplification-execution-plan.md)
 - [TaskPlan authority architecture](2026-07-29-affordance-runtime-taskplan-authority-architecture.md)
 - [TaskPlan authority execution plan](2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md)
+- [Former root architecture](architecture.md)
+- [Former complete architecture blueprint](complete-architecture-blueprint.md)
+- [Former design freeze and implementation gates](design-freeze.md)
 
 These documents remain useful for decision history and migration context, but
 they do not define the default production architecture when they conflict with
 the SAR-0 authoritative optimized architecture.
 
 Do not treat this archive as a dead-code deletion list. It contains superseded
-default-target documents only; narrow audit records, evidence reports, and
-change-admission files remain in their original locations unless a later
-decision explicitly supersedes their authority.
+default-target and former root architecture documents only; narrow audit
+records, evidence reports, and change-admission files remain in their original
+locations unless a later decision explicitly supersedes their authority.

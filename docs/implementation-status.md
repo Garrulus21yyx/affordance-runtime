@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-1 active local change after `22fd2b26284ad4f9349af84eeba8bb7dd7d0d2bb`: ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConfiguredApprovalProvider allowed-capability sets, and RoutingDecision candidate/score payloads are being frozen at construction/materialization/append boundaries. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1 active local change after `7f3ffff85b8b57d43e4f238c3a69cb732e86c045`: ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConfiguredApprovalProvider allowed-capability sets, and RoutingDecision candidate/score payloads are frozen at construction/materialization/append boundaries. The current documentation sync also archives former root architecture/design-freeze content behind stable redirect stubs. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -134,6 +134,16 @@ authoritative_optimized_architecture:
   conflict_precedence: replaces_simplified_taskplan_authority_and_odg_default_target_architectures
   migration_style: substitutive_one_in_one_out
   old_default_docs: archived
+  legacy_root_architecture_docs:
+    status: archived_with_redirects
+    archived:
+      - docs/archive/superseded-2026-07-29/architecture.md
+      - docs/archive/superseded-2026-07-29/complete-architecture-blueprint.md
+      - docs/archive/superseded-2026-07-29/design-freeze.md
+    redirects:
+      - docs/architecture.md
+      - docs/complete-architecture-blueprint.md
+      - docs/design-freeze.md
   stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration
   next_slice: sar-1-deep-immutability-and-stale-contract-hash
   production_behavior_change: false

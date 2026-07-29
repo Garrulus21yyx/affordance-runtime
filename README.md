@@ -85,9 +85,10 @@ their exact revisions. Current report code keeps
 `official_score_claimed=false`.
 Service-grade distributed options remain explicitly deferred.
 
-Planning follows two horizons: the current implementation plan is authoritative
-for code and release scope, while the complete architecture blueprint preserves
-future service-grade options without making them current requirements.
+Planning follows the SAR-0 authoritative optimized architecture and
+substitutive refactor plan. Older root architecture, complete-blueprint, and
+design-freeze documents are redirect stubs whose full historical content is
+kept under the superseded archive.
 
 It is not another in-page web copilot or a thin browser automation wrapper. Its
 core is:
@@ -214,9 +215,8 @@ Explicitly deferred beyond the current profile:
 - [Project Plan](docs/project-plan.md)
 - [Implementation Status and Forward Gates](docs/implementation-status.md)
 - [Current Implementation Plan](docs/current-implementation-plan.md)
-- [Complete Architecture Blueprint](docs/complete-architecture-blueprint.md)
-- [Design Freeze and Implementation Gates](docs/design-freeze.md)
-- [Architecture](docs/architecture.md)
+- [Documentation Index](docs/README.md)
+- [Superseded Architecture Archive](docs/archive/superseded-2026-07-29/README.md)
 - [Active Perception and Online Recovery Architecture](docs/active-perception-and-online-recovery.md)
 - [Task Intake and Generalist Planner](docs/task-intake-and-planner.md)
 - [Agent Orchestration and Live Feedback](docs/orchestration-and-feedback.md)

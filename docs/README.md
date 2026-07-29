@@ -38,6 +38,15 @@ Archived documents remain useful as decision history and migration context, but
 they do not define the default production architecture when they conflict with
 SAR-0.
 
+Legacy root architecture redirects remain at:
+
+- [Architecture](architecture.md)
+- [Complete Architecture Blueprint](complete-architecture-blueprint.md)
+- [Design Freeze and Implementation Gates](design-freeze.md)
+
+These files are stable redirect targets only. Their full historical content is
+stored under the superseded archive.
+
 Do not move evidence reports, narrow audit records, or change-admission records
 into the archive only because they are old. Archive only documents whose default
 architecture authority has been explicitly superseded.
