@@ -51,6 +51,13 @@ class ActionOutcomeStatus(StrEnum):
     STALE = "stale"
 
 
+class StepActivityStatus(StrEnum):
+    ACTIVE = "active"
+    READY_NOT_ACTIVATED = "ready_not_activated"
+    COMPLETED = "completed"
+    NO_PLAN = "no_plan"
+
+
 CriterionRole: TypeAlias = Literal["completion", "precondition"]
 FrozenScalar: TypeAlias = str | bool | int | float | None
 
@@ -59,11 +66,14 @@ FrozenScalar: TypeAlias = str | bool | int | float | None
 class SourceReference:
     source_id: str
     source_unit_id: str
+    claim_id: str = ""
     field_path: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_nonblank("source_id", self.source_id)
         _require_nonblank("source_unit_id", self.source_unit_id)
+        if self.claim_id:
+            _require_nonblank("claim_id", self.claim_id)
         _require_tuple("field_path", self.field_path)
         _require_no_blank_values("field_path", self.field_path)
 
@@ -220,7 +230,7 @@ class TaskPlanView:
     task_spec_identity: str
     task_revision: int
     steps: tuple[StepSpec, ...]
-    active_step_id: str
+    active_step_id: str | None
 
     def __post_init__(self) -> None:
         _require_nonblank("plan_id", self.plan_id)
@@ -234,8 +244,7 @@ class TaskPlanView:
             raise ValueError("task plan view steps cannot be empty")
         step_ids = tuple(step.step_id for step in self.steps)
         _require_unique_nonblank("step ids", step_ids)
-        _require_nonblank("active_step_id", self.active_step_id)
-        if self.active_step_id not in step_ids:
+        if self.active_step_id is not None and self.active_step_id not in step_ids:
             raise ValueError("active step must exist in task plan view")
         known = set(step_ids)
         for step in self.steps:
@@ -252,23 +261,55 @@ class TaskPlanView:
 class StepProgressView:
     plan_id: str
     plan_version: int
-    active_step_id: str
+    active_step_id: str | None
+    activity_status: StepActivityStatus = StepActivityStatus.NO_PLAN
     completed_step_ids: tuple[str, ...] = ()
     failed_step_ids: tuple[str, ...] = ()
+    ready_step_ids: tuple[str, ...] = ()
     evidence_by_step_id: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def __post_init__(self) -> None:
         _require_nonblank("plan_id", self.plan_id)
         if self.plan_version < 1:
             raise ValueError("plan version must be positive")
-        _require_nonblank("active_step_id", self.active_step_id)
+        if self.active_step_id is not None:
+            _require_nonblank("active_step_id", self.active_step_id)
+        if not isinstance(self.activity_status, StepActivityStatus):
+            raise ValueError("unsupported step activity status")
         _require_tuple("completed_step_ids", self.completed_step_ids)
         _require_tuple("failed_step_ids", self.failed_step_ids)
+        _require_tuple("ready_step_ids", self.ready_step_ids)
         _require_unique_nonblank("completed step ids", self.completed_step_ids)
         _require_unique_nonblank("failed step ids", self.failed_step_ids)
+        _require_unique_nonblank("ready step ids", self.ready_step_ids)
         overlap = set(self.completed_step_ids) & set(self.failed_step_ids)
         if overlap:
             raise ValueError("completed and failed step ids cannot overlap")
+        if self.active_step_id is not None and (
+            self.active_step_id in self.completed_step_ids
+            or self.active_step_id in self.failed_step_ids
+        ):
+            raise ValueError("active step cannot be completed or failed")
+        if (
+            self.activity_status == StepActivityStatus.ACTIVE
+            and self.active_step_id is None
+        ):
+            raise ValueError("active status requires active_step_id")
+        if (
+            self.activity_status != StepActivityStatus.ACTIVE
+            and self.active_step_id is not None
+        ):
+            raise ValueError("only active status may carry active_step_id")
+        if (
+            self.activity_status == StepActivityStatus.READY_NOT_ACTIVATED
+            and not self.ready_step_ids
+        ):
+            raise ValueError("ready-not-activated status requires ready steps")
+        if (
+            self.activity_status == StepActivityStatus.COMPLETED
+            and self.ready_step_ids
+        ):
+            raise ValueError("completed status cannot carry ready steps")
         _validate_tuple_map("evidence_by_step_id", self.evidence_by_step_id)
 
 

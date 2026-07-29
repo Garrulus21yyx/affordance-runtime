@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from affordance_runtime.simplified_runtime_contracts import (
+    EvidenceStrength,
+    StepActivityStatus,
+)
 from affordance_runtime.simplified_step_projection import (
     LegacyStepProjectionStatus,
     TaskCompletionProjectionStatus,
@@ -9,6 +13,8 @@ from affordance_runtime.simplified_step_projection import (
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
+    EvidenceKind,
+    EvidenceRequirement,
     OperationClass,
     SourcedTaskClaim,
     TaskClaimKind,
@@ -35,12 +41,14 @@ def _task_spec() -> TaskSpec:
         kind=TaskClaimKind.EFFECT,
         statement="name equals Alice",
         source_ref="source:user:1",
+        source_unit_ids=("unit:type-name",),
     )
     claim_b = SourcedTaskClaim(
         claim_id="claim:submit",
         kind=TaskClaimKind.TERMINAL,
         statement="form submitted",
         source_ref="source:user:1",
+        source_unit_ids=("unit:submit",),
     )
     return TaskSpec(
         task_id="task:1",
@@ -61,6 +69,16 @@ def _task_spec() -> TaskSpec:
                 expected_value="Alice",
                 claim_ids=("claim:type-name",),
                 evidence_requirements=("evidence:name",),
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="semantic:name",
+                        relation=TaskObligationRelation.EQUALS,
+                        value_ref="Alice",
+                        minimum_strength="independent",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
             ),
             TaskObligationSpec(
                 obligation_id="step:submit",
@@ -70,6 +88,15 @@ def _task_spec() -> TaskSpec:
                 claim_ids=("claim:submit",),
                 depends_on=("step:type-name",),
                 evidence_requirements=("evidence:submit",),
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.ACCESSIBILITY_STATE,
+                        subject="semantic:submit",
+                        relation=TaskObligationRelation.IS_COMPLETED,
+                        minimum_strength="authoritative",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
                 terminal=True,
             ),
         ),
@@ -136,7 +163,24 @@ def test_projects_legacy_task_plan_with_exact_ids_and_evidence() -> None:
     assert result.step_progress_view is not None
     assert result.task_plan_view.step_ids == ("step:type-name", "step:submit")
     assert result.task_plan_view.steps[1].depends_on == ("step:type-name",)
+    assert result.task_plan_view.steps[0].source_refs[0].source_unit_id == "unit:type-name"
+    assert result.task_plan_view.steps[0].source_refs[0].claim_id == "claim:type-name"
+    assert (
+        result.task_plan_view.steps[0]
+        .completion_criteria[0]
+        .evidence_policy
+        .allowed_source_kinds
+        == ("dom_state",)
+    )
+    assert (
+        result.task_plan_view.steps[1]
+        .completion_criteria[0]
+        .evidence_policy
+        .minimum_strength
+        == EvidenceStrength.AUTHORITATIVE
+    )
     assert result.step_progress_view.active_step_id == "step:submit"
+    assert result.step_progress_view.activity_status == StepActivityStatus.ACTIVE
     assert result.step_progress_view.completed_step_ids == ("step:type-name",)
     assert result.step_progress_view.evidence_by_step_id == (
         ("step:type-name", ("evidence:name:1",)),
@@ -225,6 +269,114 @@ def test_state_projection_is_read_only() -> None:
 
     assert result.status == LegacyStepProjectionStatus.PROJECTED
     assert state.version == version
+
+
+def test_completed_plan_does_not_project_last_step_as_active() -> None:
+    task = _task_spec()
+    plan = _plan(task)
+    progress = PlanProgress(
+        completed_subgoal_ids=["step:type-name", "step:submit"],
+        evidence_by_subgoal={
+            "step:type-name": ["evidence:name:1"],
+            "step:submit": ["evidence:submit:1"],
+        },
+    )
+
+    result = project_legacy_task_plan_to_step_view(
+        task_spec=task,
+        plan=plan,
+        progress=progress,
+        evaluated_at_state_version=8,
+    )
+
+    assert result.status == LegacyStepProjectionStatus.PROJECTED
+    assert result.step_progress_view is not None
+    assert result.step_progress_view.activity_status == StepActivityStatus.COMPLETED
+    assert result.step_progress_view.active_step_id is None
+    assert result.step_progress_view.ready_step_ids == ()
+
+
+def test_ready_but_not_activated_step_is_not_projected_as_active() -> None:
+    task = _task_spec()
+    plan = _plan(task)
+    progress = PlanProgress(
+        completed_subgoal_ids=["step:type-name"],
+        evidence_by_subgoal={"step:type-name": ["evidence:name:1"]},
+    )
+
+    result = project_legacy_task_plan_to_step_view(
+        task_spec=task,
+        plan=plan,
+        progress=progress,
+        evaluated_at_state_version=8,
+    )
+
+    assert result.status == LegacyStepProjectionStatus.PROJECTED
+    assert result.step_progress_view is not None
+    assert result.step_progress_view.activity_status == StepActivityStatus.READY_NOT_ACTIVATED
+    assert result.step_progress_view.active_step_id is None
+    assert result.step_progress_view.ready_step_ids == ("step:submit",)
+
+
+def test_projection_rejects_unknown_completed_failed_or_evidence_ids() -> None:
+    task = _task_spec()
+    plan = _plan(task)
+
+    for progress, reason in (
+        (PlanProgress(completed_subgoal_ids=["unknown"]), "unknown completed"),
+        (PlanProgress(failed_subgoal_ids=["unknown"]), "unknown failed"),
+        (
+            PlanProgress(evidence_by_subgoal={"step:type-name": ["evidence:name:1"]}),
+            "evidence key",
+        ),
+    ):
+        result = project_legacy_task_plan_to_step_view(
+            task_spec=task,
+            plan=plan,
+            progress=progress,
+            evaluated_at_state_version=8,
+        )
+
+        assert result.status == LegacyStepProjectionStatus.PROJECTION_INVALID
+        assert reason in result.reason
+
+
+def test_projection_rejects_completed_step_without_evidence() -> None:
+    task = _task_spec()
+    plan = _plan(task)
+
+    result = project_legacy_task_plan_to_step_view(
+        task_spec=task,
+        plan=plan,
+        progress=PlanProgress(completed_subgoal_ids=["step:type-name"]),
+        evaluated_at_state_version=8,
+    )
+
+    assert result.status == LegacyStepProjectionStatus.PROJECTION_INVALID
+    assert "without verifier evidence" in result.reason
+
+
+def test_projection_rejects_unspecified_typed_evidence_policy() -> None:
+    task = _task_spec()
+    unsupported = task.model_copy(
+        update={
+            "obligations": (
+                task.obligations[0].model_copy(
+                    update={"typed_evidence_requirements": ()}
+                ),
+                task.obligations[1],
+            )
+        }
+    )
+
+    result = project_legacy_task_plan_to_step_view(
+        task_spec=unsupported,
+        plan=_plan(task),
+        progress=PlanProgress(active_subgoal_id="step:type-name"),
+        evaluated_at_state_version=8,
+    )
+
+    assert result.status == LegacyStepProjectionStatus.UNSUPPORTED_EVIDENCE_POLICY
 
 
 def test_projects_single_terminal_obligation_as_task_completion_criterion() -> None:

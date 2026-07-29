@@ -403,9 +403,19 @@ step evidence
 ### 映射规则
 
 - exact subgoal/criterion identity only；
-- source refs从 TaskSpec/TaskPlan authority投影；
+- source refs从 TaskSpec/TaskPlan authority投影，`source_unit_id` 与 `claim_id`
+  必须分开保存；
 - 不使用 label/regex/task name；
 - unsupported shape返回 typed `projection_invalid`；
+- missing or unsupported typed evidence policy 返回
+  `unsupported_evidence_policy`，不得进入未来 active-step completion
+  authority；
+- completed plan 使用 `activity_status=completed` 且 `active_step_id=null`；
+- ready-but-not-activated step 使用 `activity_status=ready_not_activated`
+  且 `active_step_id=null`，由 Coordinator 后续显式 activation；
+- completed / failed / active / evidence step IDs 必须全部属于 projected
+  plan step IDs；
+- completed step 必须有 verifier evidence；
 - 不修改 state。
 
 ## S2.2 Task-level completion criterion projection

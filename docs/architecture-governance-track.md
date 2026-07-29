@@ -117,8 +117,10 @@ is an optional execution strategy view, and future standard-path completion
 must be attributed to obligation IDs after verification. The active-subgoal
 read/activation separation is locally closed in the current governance-sync
 line. Immutable Planner input remains real horizontal debt, but it is deferred
-until PlannerContext can expose ready obligation projection rather than
-freezing a TaskPlan/PlanProgress-shaped view that ODG intends to retire.
+only until S2.1 step projection hardening closes the compatibility edge cases
+required for S3. The Planner input now targets TaskSpec plus Step projection,
+UnifiedObservation, recent ActionOutcome summaries, and budget views under the
+simplified active-step architecture, not an ODG ready-obligation projection.
 Neither lane authorizes promotion while remote CI is disabled or required
 validation is unavailable.
 
@@ -273,6 +275,12 @@ identity, and evidence references into the simplified Step contracts. It must
 not use lexical mapping, task name, URL, selector, seed, benchmark family,
 PlannerContext, trace writing, Coordinator logic, or any StateKernel mutation.
 The projected view has no completion authority until a later explicit cutover.
+S2.1 hardens this projection before S3: completed plans must project with no
+active step, ready-but-not-activated steps must remain unactivated until the
+Coordinator explicitly activates them, source-unit lineage must not be confused
+with claim identity, criterion evidence policy must come from typed evidence
+requirements rather than semantic task-obligation provenance, and legacy
+progress IDs must be exact and verifier-evidenced.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

@@ -735,3 +735,11 @@ delivery claims.
   foundation-only: projected views have no completion authority, no trace
   writes, no Coordinator changes, no PlannerContext migration, no PR breadth,
   and no promotion. The next slice is S3 immutable PlanningRequest.
+- Started S2.1 step projection hardening after `7fe493e`. This preliminary
+  slice closes review-required projection edge cases before S3 immutable
+  PlanningRequest: completed plans no longer synthesize the last step as active,
+  ready-but-not-activated steps stay unactivated, source-unit IDs and claim IDs
+  remain distinct, criterion evidence policy comes from typed evidence
+  requirements, and unknown or unevidenced legacy progress IDs fail closed. It
+  remains behavior-neutral and does not change Coordinator, StateKernel
+  mutation, PlannerContext, production authority, PR breadth, or promotion.

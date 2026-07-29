@@ -20,6 +20,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     SourceReference,
     StateCriterion,
     StateCriterionRelation,
+    StepActivityStatus,
     StepProgressView,
     StepSpec,
     TaskPlanView,
@@ -39,6 +40,7 @@ class LegacyStepProjectionStatus(StrEnum):
     NO_PLAN = "no_plan"
     STALE_PLAN = "stale_plan"
     PROJECTION_INVALID = "projection_invalid"
+    UNSUPPORTED_EVIDENCE_POLICY = "unsupported_evidence_policy"
 
 
 class TaskCompletionProjectionStatus(StrEnum):
@@ -160,6 +162,13 @@ def project_legacy_task_plan_to_step_view(
 
     obligation_by_id = {item.obligation_id: item for item in task_spec.obligations}
     claims_by_id = {item.claim_id: item for item in task_spec.source_claims}
+    progress_error = _validate_legacy_progress_ids(plan=plan, progress=progress)
+    if progress_error:
+        return LegacyStepProjectionResult(
+            status=LegacyStepProjectionStatus.PROJECTION_INVALID,
+            evaluated_at_state_version=evaluated_at_state_version,
+            reason=progress_error,
+        )
     steps: list[StepSpec] = []
     for subgoal in plan.subgoals:
         obligation = obligation_by_id.get(subgoal.subgoal_id)
@@ -178,8 +187,13 @@ def project_legacy_task_plan_to_step_view(
             claims_by_id=claims_by_id,
         )
         if criterion is None:
+            status = (
+                LegacyStepProjectionStatus.UNSUPPORTED_EVIDENCE_POLICY
+                if not obligation.typed_evidence_requirements
+                else LegacyStepProjectionStatus.PROJECTION_INVALID
+            )
             return LegacyStepProjectionResult(
-                status=LegacyStepProjectionStatus.PROJECTION_INVALID,
+                status=status,
                 evaluated_at_state_version=evaluated_at_state_version,
                 reason=f"TaskPlan subgoal {subgoal.subgoal_id!r} has unsupported criterion shape",
             )
@@ -200,10 +214,23 @@ def project_legacy_task_plan_to_step_view(
                 reason=str(exc),
             )
 
-    active_step_id = progress.active_subgoal_id
-    if not active_step_id:
-        ready = progress.ready_subgoal_ids(plan)
-        active_step_id = ready[0] if ready else plan.subgoals[-1].subgoal_id
+    active_step_id: str | None = progress.active_subgoal_id or None
+    ready_step_ids: tuple[str, ...] = ()
+    activity_status = StepActivityStatus.NO_PLAN
+    if active_step_id is not None:
+        activity_status = StepActivityStatus.ACTIVE
+    else:
+        ready_step_ids = tuple(progress.ready_subgoal_ids(plan))
+        if ready_step_ids:
+            activity_status = StepActivityStatus.READY_NOT_ACTIVATED
+        elif set(progress.completed_subgoal_ids) == {item.subgoal_id for item in plan.subgoals}:
+            activity_status = StepActivityStatus.COMPLETED
+        else:
+            return LegacyStepProjectionResult(
+                status=LegacyStepProjectionStatus.PROJECTION_INVALID,
+                evaluated_at_state_version=evaluated_at_state_version,
+                reason="legacy progress has no active, ready, or completed step",
+            )
     try:
         task_plan_view = TaskPlanView(
             plan_id=plan.plan_id,
@@ -217,8 +244,10 @@ def project_legacy_task_plan_to_step_view(
             plan_id=plan.plan_id,
             plan_version=plan.plan_version,
             active_step_id=active_step_id,
+            activity_status=activity_status,
             completed_step_ids=tuple(progress.completed_subgoal_ids),
             failed_step_ids=tuple(progress.failed_subgoal_ids),
+            ready_step_ids=ready_step_ids,
             evidence_by_step_id=_project_evidence_by_step(progress),
         )
     except ValueError as exc:
@@ -278,10 +307,9 @@ def _criterion_from_obligation(
     if not source_refs:
         return None
     resolved_value = obligation.expected_value if expected_value is None else expected_value
-    policy = CriterionEvidencePolicy(
-        minimum_strength=EvidenceStrength.INDEPENDENT,
-        allowed_source_kinds=("task_obligation",),
-    )
+    policy = _evidence_policy_for_obligation(obligation)
+    if policy is None:
+        return None
     if resolved_relation == StateCriterionRelation.IS_ABSENT:
         return AbsenceCriterion(
             criterion_id=obligation.obligation_id,
@@ -313,6 +341,80 @@ def _criterion_from_obligation(
     )
 
 
+def _validate_legacy_progress_ids(*, plan: TaskPlan, progress: PlanProgress) -> str:
+    plan_step_ids = {item.subgoal_id for item in plan.subgoals}
+    completed = set(progress.completed_subgoal_ids)
+    failed = set(progress.failed_subgoal_ids)
+    unknown_completed = completed - plan_step_ids
+    if unknown_completed:
+        return f"unknown completed step ids: {sorted(unknown_completed)!r}"
+    unknown_failed = failed - plan_step_ids
+    if unknown_failed:
+        return f"unknown failed step ids: {sorted(unknown_failed)!r}"
+    active = progress.active_subgoal_id or ""
+    if active and active not in plan_step_ids:
+        return f"unknown active step id: {active!r}"
+    if active and (active in completed or active in failed):
+        return "active step cannot be completed or failed"
+    evidence_keys = set(progress.evidence_by_subgoal)
+    unknown_evidence = evidence_keys - completed
+    if unknown_evidence:
+        return f"evidence key is not a completed step id: {sorted(unknown_evidence)!r}"
+    for step_id in progress.completed_subgoal_ids:
+        if not tuple(progress.evidence_by_subgoal.get(step_id, ())):
+            return f"completed step {step_id!r} without verifier evidence"
+    return ""
+
+
+def _evidence_policy_for_obligation(
+    obligation: TaskObligationSpec,
+) -> CriterionEvidencePolicy | None:
+    if not obligation.typed_evidence_requirements:
+        return None
+    mapped_strengths: list[EvidenceStrength] = []
+    for requirement in obligation.typed_evidence_requirements:
+        strength = _map_evidence_strength(requirement.minimum_strength)
+        if strength is None:
+            return None
+        mapped_strengths.append(strength)
+    if not mapped_strengths:
+        return None
+    strongest = max(mapped_strengths, key=_evidence_strength_rank)
+    source_kinds = tuple(
+        dict.fromkeys(
+            requirement.kind.value
+            for requirement in obligation.typed_evidence_requirements
+        )
+    )
+    if not source_kinds:
+        return None
+    return CriterionEvidencePolicy(
+        minimum_strength=strongest,
+        allowed_source_kinds=source_kinds,
+    )
+
+
+def _map_evidence_strength(value: str) -> EvidenceStrength | None:
+    normalized = value.casefold()
+    if normalized == EvidenceStrength.WEAK.value:
+        return EvidenceStrength.WEAK
+    if normalized in {EvidenceStrength.INDEPENDENT.value, "strong"}:
+        return EvidenceStrength.INDEPENDENT
+    if normalized == EvidenceStrength.AUTHORITATIVE.value:
+        return EvidenceStrength.AUTHORITATIVE
+    return None
+
+
+def _evidence_strength_rank(value: EvidenceStrength | None) -> int:
+    if value == EvidenceStrength.WEAK:
+        return 0
+    if value == EvidenceStrength.INDEPENDENT:
+        return 1
+    if value == EvidenceStrength.AUTHORITATIVE:
+        return 2
+    return -1
+
+
 def _source_refs_for_obligation(
     obligation: TaskObligationSpec,
     claims_by_id: dict[str, SourcedTaskClaim],
@@ -322,12 +424,24 @@ def _source_refs_for_obligation(
         claim = claims_by_id.get(claim_id)
         if claim is None:
             return ()
-        refs.append(
-            SourceReference(
-                source_id=claim.source_ref,
-                source_unit_id=claim.claim_id,
+        if claim.source_unit_ids:
+            refs.extend(
+                SourceReference(
+                    source_id=claim.source_ref,
+                    source_unit_id=source_unit_id,
+                    claim_id=claim.claim_id,
+                )
+                for source_unit_id in claim.source_unit_ids
             )
-        )
+        else:
+            refs.append(
+                SourceReference(
+                    source_id=claim.source_ref,
+                    source_unit_id=f"compatibility:claim-only:{claim.claim_id}",
+                    claim_id=claim.claim_id,
+                    field_path=("compatibility_claim_only",),
+                )
+            )
     return tuple(refs)
 
 

@@ -316,6 +316,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     s0_record = CHANGE_ADMISSION_DIR / "s0-simplified-architecture-freeze.yaml"
     s1_record = CHANGE_ADMISSION_DIR / "s1-simplified-core-contracts.yaml"
     s2_record = CHANGE_ADMISSION_DIR / "s2-legacy-step-compatibility-projection.yaml"
+    s2_1_record = CHANGE_ADMISSION_DIR / "s2-1-step-projection-hardening.yaml"
     simplified_architecture = (
         REPOSITORY_ROOT
         / "docs/superpowers/specs/2026-07-29-affordance-runtime-simplified-target-architecture.md"
@@ -342,6 +343,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert s0_record.exists()
     assert s1_record.exists()
     assert s2_record.exists()
+    assert s2_1_record.exists()
     assert simplified_architecture.exists()
     assert simplification_plan.exists()
     assert role_audit.exists()
@@ -363,6 +365,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     s0 = " ".join(s0_record.read_text(encoding="utf-8").split()).casefold()
     s1 = " ".join(s1_record.read_text(encoding="utf-8").split()).casefold()
     s2 = " ".join(s2_record.read_text(encoding="utf-8").split()).casefold()
+    s2_1 = " ".join(s2_1_record.read_text(encoding="utf-8").split()).casefold()
     simplified_architecture_text = " ".join(
         simplified_architecture.read_text(encoding="utf-8").split()
     ).casefold()
@@ -484,7 +487,17 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "lexical_mapping: prohibited" in s2
     assert "no_state_mutation: required" in s2
     assert "closure_status: compatibility_projection_foundation_only" in s2
-    assert "next_slice: s3-immutable-planning-request" in s2
+    assert "hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml" in s2
+    assert "next_slice: s2-1-step-projection-hardening-before-s3" in s2
+    assert "slice_id: s2-1-step-projection-hardening" in s2_1
+    assert "production_behavior_change: false" in s2_1
+    assert "completed_plan_active_step_id: null" in s2_1
+    assert "claim_id_is_not_source_unit_id: true" in s2_1
+    assert "criterion_policy_source: typed_evidence_requirements" in s2_1
+    assert "completed_without_evidence: projection_invalid" in s2_1
+    assert "unknown_progress_ids: projection_invalid" in s2_1
+    assert "closure_status: compatibility_projection_hardened" in s2_1
+    assert "next_slice: s3-immutable-planning-request" in s2_1
     assert "approved_with_guardrails" in simplified_architecture_text
     assert "高级 attribution" in simplified_architecture_text
     assert "experimental_only" in simplified_architecture_text
@@ -521,7 +534,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml" in status
     assert "core_contracts: foundation_only" in status
     assert "step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml" in status
-    assert "step_projection: foundation_only" in status
+    assert "step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml" in status
+    assert "step_projection: foundation_hardened" in status
     assert "next_slice: s3-immutable-planning-request" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
@@ -554,6 +568,16 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "next default-path slice after s1 is exact-id legacy-to-step compatibility projection" in governance
     assert "s2 legacy-step compatibility projection may read taskplan" in governance
     assert "exact subgoal id to canonical obligation id" in governance
+    assert "s2.1 hardens this projection before s3" in governance
+    assert "completed plans must project with no active step" in governance
+    assert "criterion evidence policy must come from typed evidence requirements" in governance
+    assert "immutable_planner_input: planned under simplified active-step architecture" in status
+    assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
+    assert "completed_plan_active_step_id: null" in s2_1
+    assert "claim_id_is_not_source_unit_id: true" in s2_1
+    assert "criterion_policy_source: typed_evidence_requirements" in s2_1
+    assert "completed_without_evidence: projection_invalid" in s2_1
+    assert "unknown_progress_ids: projection_invalid" in s2_1
     assert "synthetic contract id" in governance
     assert "coordinator commit remains odg-10" in governance
     assert "submit_button_is_available:" in audit

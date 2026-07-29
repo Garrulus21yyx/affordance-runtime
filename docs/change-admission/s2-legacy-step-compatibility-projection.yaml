@@ -71,5 +71,6 @@ validation:
 
 architecture_admission: pass
 closure_status: compatibility_projection_foundation_only
-next_slice: s3-immutable-planning-request
+hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml
+next_slice: s2-1-step-projection-hardening-before-s3
 promotion_status: held

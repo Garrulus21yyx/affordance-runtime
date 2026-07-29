@@ -29,14 +29,14 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | S2 legacy-step compatibility projection is the active local change after `0288a8e4b68ddab61c79e8cc247e1fc331e2662f`; ODG-2 through ODG-9 remain foundation/diagnostic only, ODG-10/ODG-11 are not authorized, and production authority remains legacy TaskPlan/PlanProgress until an explicit active-step cutover |
+| Current HEAD | `fix: harden simplified step projection`: S2.1 step projection hardening is committed in this revision; ODG-2 through ODG-9 remain foundation/diagnostic only, ODG-10/ODG-11 are not authorized, and production authority remains legacy TaskPlan/PlanProgress until an explicit active-step cutover |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
 | Current ODG decision | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml`: Canonical Obligation Graph is the sole target progress authority; TaskPlan is downgraded to optional execution strategy. ODG-1 audit is recorded, ODG-2 typed contracts are approved at `d6e2cb3`, ODG-3 StateKernel storage foundation is committed at `4af7c19`, ODG-4 executable role decisions / safe ready projection is committed at `6553296`, ODG-5.1/5.2 shadow hardening plus read-only runtime projection are committed at `24455fd`, ODG-5.3 post-observation diagnostic trace hookup is committed at `04a2fcd`, ODG-6 adds foundation-only current-observation satisfaction preparation at `dac2c5f`, ODG-6.1 hardens shared attribution identity/source/evidence contracts at `6b182d4`, ODG-7 adds authority-free pre-action candidate ticket resolution at `6d8526a`, ODG-8 adds authority-free post-action evidence normalization at `c3ab326`, ODG-8.1/8B harden causal identity, effective strength, stable semantic keys, and verifier observed-value fidelity, ODG-9 adds pure post-verification obligation attribution at `ce7a329`, and the runtime ticket-carry / shadow-projection foundation adds `BoundActionExecution` without changing ActionContract, Executor, Verifier, StateKernel, finish, or PlannerContext authority. |
 | Current simplified architecture decision | `docs/change-admission/s0-simplified-architecture-freeze.yaml`: the default production path is redirected to Runtime-owned active step progress plus independent task-level completion verification. ODG advanced attribution is retained as `EXPERIMENTAL_ONLY`; ODG-9 hookup, ODG-10 obligation progress commit, and ODG-11 finish-authority migration are stopped for the default path. |
 | Current simplified core contracts | `docs/change-admission/s1-simplified-core-contracts.yaml`: `SourceReference`, criterion policies, `StepSpec`, `TaskPlanView`, `StepProgressView`, `ExecutionAttempt`, `VerificationResult`, and `ActionOutcome` are added as neutral foundation contracts. No Coordinator, StateKernel, Executor, Verifier behavior, TraceDag, PlannerContext, runtime authority, PR breadth, or promotion change is authorized by S1. |
-| Current simplified step projection | `docs/change-admission/s2-legacy-step-compatibility-projection.yaml`: current TaskPlan/Subgoal/PlanProgress can be projected into simplified Step contracts by exact ID only. The projector is read-only, rejects stale plan identity and lexical mapping, and has no completion authority. |
+| Current simplified step projection | `docs/change-admission/s2-legacy-step-compatibility-projection.yaml` plus `docs/change-admission/s2-1-step-projection-hardening.yaml`: current TaskPlan/Subgoal/PlanProgress can be projected into simplified Step contracts by exact ID only. The projector is read-only, rejects stale plan identity, lexical mapping, unknown progress IDs, completed-without-evidence progress, and unsupported typed evidence policy; completed plans project with no active step and have no completion authority. |
 | Latest implementation-bearing local-equivalent baseline | `66747420c4d319d26a10a7c6fb6006871cf3310a` |
 | Baseline local equivalent gate | pass at that implementation-bearing baseline: 957 tests, Ruff, mypy over 116 source files, `uv build`, Chromium smoke, BrowserGym bridge smoke, diagnostic benchmark smoke, Docker runtime-test, Docker benchmark diagnostic, Docker WoT conformance, and diff check |
 | Current documentation-sync identity | documentation/evidence commits after `c382592` classify the V-PRB-6B negative rerun; later documentation-only sync commits inherit no broader runtime evidence unless their own gate is recorded in the change ledger |
@@ -103,10 +103,11 @@ simplified_runtime_architecture:
   freeze_record: docs/change-admission/s0-simplified-architecture-freeze.yaml
   core_contracts_record: docs/change-admission/s1-simplified-core-contracts.yaml
   step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml
+  step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml
   status: approved_with_guardrails
   implementation: foundation_contracts_started
   core_contracts: foundation_only
-  step_projection: foundation_only
+  step_projection: foundation_hardened
   current_production_progress_authority: legacy_taskplan_subgoal_planprogress
   target_production_progress_authority: runtime_owned_active_step
   target_task_completion_authority: task_spec_completion_criterion_independent_verification
@@ -183,13 +184,14 @@ pr_breadth_latest:
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
   current_next_change_admission: S3 immutable PlanningRequest; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
-  immutable_planner_input: deferred until ODG ready-obligation projection shapes the standard Planner view
+  immutable_planner_input: planned under simplified active-step architecture using TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets
 
 active_local_repair:
-  slice: s2-legacy-step-compatibility-projection
-  revision: 0288a8e4b68ddab61c79e8cc247e1fc331e2662f
-  status: compatibility_projection_in_progress
+  slice: s2-1-step-projection-hardening
+  revision: current_committed_revision
+  status: compatibility_projection_hardening_committed
   foundation_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml
+  hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
@@ -491,7 +493,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | S2 legacy-step compatibility projection is the active local foundation slice after S1 core contracts; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | S3 immutable PlanningRequest is next; ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain deferred/stopped for the default path |
+| `active` | S2.1 step projection hardening is committed in the current revision; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus dependency and execution-commit gates | none | S3 immutable PlanningRequest is next; ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain deferred/stopped for the default path |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
