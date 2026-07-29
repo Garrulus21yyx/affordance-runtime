@@ -793,3 +793,13 @@ delivery claims.
   progress authority, finish authority, PR breadth, and promotion remain
   unchanged. The next slice is TPA-3.2D DecisionConstraint apply-admission
   request path.
+- Started TPA-3.2D after `2b929ba`. Added
+  StrictDecisionConstraintBuilder.apply_admission(context, admission), returning
+  ConstraintApplicationResult with a typed PlannerAdmissionSummary while
+  filtering excluded targets from immutable PlannerAdmissionView. The method
+  does not read StateKernel or BrowserSnapshot and does not invoke terminal
+  readiness. The legacy narrow_terminal_candidates path remains compatibility
+  until Generalist request-only core migration. PlannerPort, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged. The next slice is TPA-3.3 Generalist
+  request-only core.

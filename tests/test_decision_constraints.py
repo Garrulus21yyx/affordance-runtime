@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.decision_constraints import DecisionConstraintSet, StrictDecisionConstraintBuilder
+from affordance_runtime.decision_constraints import (
+    DecisionConstraintSet,
+    StrictDecisionConstraintBuilder,
+)
 from affordance_runtime.planner_context import AffordanceSummary, PlannerContext
+from affordance_runtime.planning_request import (
+    PlannerAdmissionSource,
+    PlannerAdmissionView,
+    TargetAdmissionDecision,
+    TargetAdmissionStatus,
+)
 
 
 def _context(**updates: object) -> PlannerContext:
@@ -28,6 +37,15 @@ def _context(**updates: object) -> PlannerContext:
                 role="textbox",
                 label="Email address",
                 action="fill",
+                confidence=1.0,
+                state={},
+            ),
+            AffordanceSummary(
+                id="submit-button",
+                surface="dom",
+                role="button",
+                label="Submit",
+                action="click",
                 confidence=1.0,
                 state={},
             ),
@@ -108,3 +126,44 @@ def test_decision_constraint_set_copies_and_freezes_compatible_targets() -> None
     assert constraints.compatible_target_ids["type_text"] == ("name-field",)
     with pytest.raises(TypeError):
         constraints.compatible_target_ids["activate"] = ("save-button",)
+
+
+def test_apply_admission_filters_excluded_targets_and_returns_summary() -> None:
+    admission = PlannerAdmissionView(
+        source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+        task_revision=1,
+        snapshot_id="snapshot-1",
+        target_decisions=(
+            TargetAdmissionDecision(
+                target_id="submit-button",
+                status=TargetAdmissionStatus.BLOCKED,
+                reason_code="terminal_dependency_blocked",
+                blocking_step_ids=("step:type-name",),
+            ),
+            TargetAdmissionDecision(
+                target_id="help-link",
+                status=TargetAdmissionStatus.UNRESOLVED,
+                reason_code="terminal_grounding_unresolved",
+            ),
+        ),
+        excluded_target_ids=("submit-button", "help-link"),
+    )
+
+    result = StrictDecisionConstraintBuilder().apply_admission(_context(), admission)
+
+    assert tuple(item.id for item in result.context.affordances) == (
+        "name-field",
+        "email-field",
+    )
+    assert result.summary.excluded_target_ids == ("help-link", "submit-button")
+    assert result.summary.blocked_target_ids == ("submit-button",)
+    assert result.summary.unresolved_target_ids == ("help-link",)
+
+
+def test_apply_admission_without_admission_preserves_context() -> None:
+    context = _context()
+
+    result = StrictDecisionConstraintBuilder().apply_admission(context, None)
+
+    assert result.context == context
+    assert result.summary.excluded_target_ids == ()

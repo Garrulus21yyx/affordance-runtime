@@ -560,6 +560,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_1: completed_foundation" in status
     assert "tpa_3_2a: completed_foundation" in status
     assert "tpa_3_2c: completed_foundation" in status
+    assert "tpa_3_2d: completed_foundation" in status
     assert "planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml" in status
     assert (
         "planner_projection_admission_contract_record: "
@@ -571,7 +572,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-3-2c-legacy-terminal-admission-projector.yaml"
         in status
     )
-    assert "next_slice: tpa-3-2d-decisionconstraint-apply-admission" in status
+    assert (
+        "decisionconstraint_apply_admission_record: "
+        "docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-3-generalist-request-only-core" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -704,7 +710,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.2d decisionconstraint apply-admission request path" in status
+    assert "current_next_change_admission: tpa-3.3 generalist request-only core" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1191,6 +1197,44 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "decisionconstraintbuilder request-only path" in tpa_3_2c
     assert "coordinator call site change" in tpa_3_2c
     assert "closure_status: legacy_terminal_admission_projection_foundation" in tpa_3_2c
+    tpa_3_2d = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-2d-decisionconstraint-apply-admission.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "strictdecisionconstraintbuilder.apply_admission" in tpa_3_2d
+    assert "planneradmissionsummary" in tpa_3_2d
+    assert "production_behavior_change: false" in tpa_3_2d
+    assert "generalistlmplanner request-only core" in tpa_3_2d
+    assert "coordinator call site change" in tpa_3_2d
+    assert "closure_status: decisionconstraint_apply_admission_foundation" in tpa_3_2d
+
+
+def test_decisionconstraint_apply_admission_is_request_only() -> None:
+    tree = ast.parse((SOURCE_ROOT / "decision_constraints.py").read_text(encoding="utf-8"))
+    builder = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "StrictDecisionConstraintBuilder"
+    )
+    method = next(
+        node
+        for node in builder.body
+        if isinstance(node, ast.FunctionDef) and node.name == "apply_admission"
+    )
+    forbidden_names = {
+        "StateKernel",
+        "BrowserSnapshot",
+        "TerminalEffectBindingResolver",
+        "TaskObligationViewCompiler",
+        "TerminalReadinessEvaluator",
+    }
+    used_names = {
+        node.id
+        for node in ast.walk(method)
+        if isinstance(node, ast.Name)
+    }
+    assert used_names.isdisjoint(forbidden_names)
 
 
 def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:

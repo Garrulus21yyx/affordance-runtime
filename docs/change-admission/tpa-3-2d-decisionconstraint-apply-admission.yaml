@@ -1,0 +1,76 @@
+slice_id: tpa-3-2d-decisionconstraint-apply-admission
+parent_decision: tpa-0-taskplan-authority-freeze
+base_revision: 2b929ba7e4cfcd112a5e92955ebb8e56cb3b3167
+change_type: planner_input_boundary_migration
+production_behavior_change: false
+production_writers: 1
+
+single_primary_owner:
+  StrictDecisionConstraintBuilder.apply_admission: immutable PlannerAdmissionView application
+
+included:
+  - ConstraintApplicationResult
+  - request-only apply_admission(context, admission)
+  - PlannerAdmissionSummary emission
+  - immutable target exclusion application
+  - no-admission identity behavior
+  - DecisionConstraintSet deep immutability retained
+
+excluded:
+  - GeneralistLMPlanner request-only core
+  - PlannerPort signature cutover
+  - Coordinator call site change
+  - legacy narrow_terminal_candidates deletion
+  - TaskPlanAuthority production cutover
+  - active-step progress cutover
+  - finish-authority change
+  - ODG-9 / ODG-10 / ODG-11
+  - PR breadth claim
+  - promotion
+
+authority:
+  plan_generation: unchanged
+  plan_decision: unchanged
+  plan_commit: RunCoordinator
+  progress_authority: legacy_taskplan_subgoal_planprogress
+  planner_input_authority: PlanningRequest projection
+  terminal_admission_authority: immutable_admission_application_only
+  state_writer: unchanged
+  trace_writer: unchanged
+
+required_invariants:
+  - apply_admission must not read StateKernel
+  - apply_admission must not read BrowserSnapshot
+  - apply_admission must not invoke terminal readiness resolver/compiler/evaluator
+  - apply_admission must not perform lexical target reconstruction
+  - admission-excluded targets are removed from PlannerContext affordances
+  - PlannerAdmissionSummary preserves excluded / blocked / unknown / unresolved target classes
+  - legacy narrow_terminal_candidates remains only as temporary compatibility until Generalist request core migration
+  - no runtime authority or finish behavior change is authorized by this slice
+
+tests:
+  focused:
+    - tests/test_decision_constraints.py
+    - tests/test_planner_admission_projection.py
+    - tests/test_planning_request_builder.py
+    - tests/test_planning_request.py
+  architecture:
+    - tests/test_horizontal_architecture_governance.py
+  full_local_gate:
+    - python -m pytest -q
+    - python -m ruff check src tests scripts
+    - python -m mypy --ignore-missing-imports src
+    - uv build
+    - git diff --check
+
+runtime_effect:
+  planner_behavior_changed: false
+  standard_planner_signature_changed: false
+  coordinator_changed: false
+  statekernel_changed: false
+  taskplan_changed: false
+  browsergym_changed: false
+
+closure_status: decisionconstraint_apply_admission_foundation
+next_slice: tpa-3-3-generalist-request-only-core
+promotion_status: held

@@ -15,6 +15,11 @@ from affordance_runtime.planner_model_orchestrator import (
     semantic_text_input_constraint,
 )
 from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.planning_request import (
+    PlannerAdmissionSummary,
+    PlannerAdmissionView,
+    TargetAdmissionStatus,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.terminal_readiness import (
     TaskObligationViewCompiler,
@@ -45,6 +50,12 @@ class DecisionConstraintSet:
             ),
         )
         object.__setattr__(self, "allowed_text_values", tuple(self.allowed_text_values))
+
+
+@dataclass(frozen=True)
+class ConstraintApplicationResult:
+    context: PlannerContext
+    summary: PlannerAdmissionSummary
 
 
 @dataclass(frozen=True)
@@ -113,6 +124,51 @@ class StrictDecisionConstraintBuilder:
         if not context.verified_effects:
             permitted = [action for action in permitted if action != "finish"]
         return permitted, targets
+
+    def apply_admission(
+        self,
+        context: PlannerContext,
+        admission: PlannerAdmissionView | None,
+    ) -> ConstraintApplicationResult:
+        """Apply immutable request admission without reading runtime state."""
+
+        if admission is None:
+            return ConstraintApplicationResult(context, PlannerAdmissionSummary())
+        excluded = set(admission.excluded_target_ids)
+        narrowed = context.model_copy(
+            update={
+                "affordances": tuple(
+                    item for item in context.affordances if item.id not in excluded
+                )
+            }
+        )
+        return ConstraintApplicationResult(
+            narrowed,
+            PlannerAdmissionSummary(
+                excluded_target_ids=tuple(sorted(excluded)),
+                blocked_target_ids=tuple(
+                    sorted(
+                        item.target_id
+                        for item in admission.target_decisions
+                        if item.status == TargetAdmissionStatus.BLOCKED
+                    )
+                ),
+                unknown_target_ids=tuple(
+                    sorted(
+                        item.target_id
+                        for item in admission.target_decisions
+                        if item.status == TargetAdmissionStatus.UNKNOWN
+                    )
+                ),
+                unresolved_target_ids=tuple(
+                    sorted(
+                        item.target_id
+                        for item in admission.target_decisions
+                        if item.status == TargetAdmissionStatus.UNRESOLVED
+                    )
+                ),
+            ),
+        )
 
     def narrow_terminal_candidates(
         self,

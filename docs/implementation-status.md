@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `feat: project legacy terminal admission into PlanningRequest`: TPA-3.2C adds a read-only legacy terminal admission projector and embeds immutable PlannerAdmissionView in PlanningRequestBuilder; PlannerPort, Coordinator behavior, TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
+| Current HEAD | `feat: apply planner admission constraints from request`: TPA-3.2D adds a request-only DecisionConstraintBuilder admission application path that consumes immutable PlannerAdmissionView and returns PlannerAdmissionSummary; PlannerPort, Coordinator behavior, TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -135,10 +135,12 @@ taskplan_authority_program:
   tpa_3_1: completed_foundation
   tpa_3_2a: completed_foundation
   tpa_3_2c: completed_foundation
+  tpa_3_2d: completed_foundation
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml
   planner_projection_admission_contract_record: docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml
   legacy_terminal_admission_projector_record: docs/change-admission/tpa-3-2c-legacy-terminal-admission-projector.yaml
+  decisionconstraint_apply_admission_record: docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml
   plan_candidate_owner_target: TaskPlanGeneratorPort
   plan_decision_owner_target: TaskPlanAuthority
   plan_commit_owner: RunCoordinator
@@ -146,7 +148,7 @@ taskplan_authority_program:
   standard_step_planner_target: StepPlannerPort.propose(PlanningRequest)
   current_standard_triple_signature_implementations: 15
   current_production_authority: legacy_taskplan_subgoal_planprogress
-  next_slice: tpa-3-2d-decisionconstraint-apply-admission
+  next_slice: tpa-3-3-generalist-request-only-core
   production_authority_changed: false
   promotion_status: held
 
@@ -215,26 +217,27 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: TPA-3.2D DecisionConstraint apply-admission request path; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: TPA-3.3 Generalist request-only core; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: foundation contracts and sole read-only builder implemented under simplified active-step architecture using TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets
 
 active_local_repair:
-  slice: tpa-3-2c-legacy-terminal-admission-projector
+  slice: tpa-3-2d-decisionconstraint-apply-admission
   revision: current_committed_revision
-  status: legacy_terminal_admission_projection_foundation
+  status: decisionconstraint_apply_admission_foundation
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml
   planner_projection_admission_contract_record: docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml
   legacy_terminal_admission_projector_record: docs/change-admission/tpa-3-2c-legacy-terminal-admission-projector.yaml
+  decisionconstraint_apply_admission_record: docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: not_authorized_until_tpa_3
   taskplan_required: false
-  next_runtime_slice: tpa-3-2d-decisionconstraint-apply-admission
+  next_runtime_slice: tpa-3-3-generalist-request-only-core
   promotion_status: held
 
 attribution_classification:
@@ -529,7 +532,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, and TPA-3.2C legacy terminal admission projection are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection, and execution-commit gates | none | TPA-3.2D DecisionConstraint apply-admission request path is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
+| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, TPA-2 immutable PlanningRequest foundation, TPA-3.1 PlannerContext request path, TPA-3.2A/B projection/admission contract hardening, TPA-3.2C legacy terminal admission projection, and TPA-3.2D request-only admission application are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, and execution-commit gates | none | TPA-3.3 Generalist request-only core is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

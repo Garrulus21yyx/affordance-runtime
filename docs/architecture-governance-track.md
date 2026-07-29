@@ -309,7 +309,12 @@ PlannerAdmissionView in PlanningRequest. It does not consume the admission in
 DecisionConstraintBuilder yet and still does not change PlannerPort,
 Coordinator, progress, finish, or benchmark behavior. The next authorized
 sub-slice is TPA-3.2D, where DecisionConstraintBuilder applies the immutable
-admission instead of rereading StateKernel and BrowserSnapshot.
+admission instead of rereading StateKernel and BrowserSnapshot. TPA-3.2D adds
+that request-only admission application and typed summary result; the legacy
+`narrow_terminal_candidates(context, state, snapshot)` method remains a
+temporary compatibility path until Generalist internals are switched to the
+request core. The next authorized sub-slice is TPA-3.3 Generalist request-only
+core.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
