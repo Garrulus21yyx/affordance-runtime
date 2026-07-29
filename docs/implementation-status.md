@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | TPA-3.8 active local change after `65dab6b`: PlannerPort public contract is request-only, Coordinator builds PlanningRequest before the planner boundary, and legacy three-argument planners are isolated behind a named compatibility seam; TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
+| Current HEAD | TPA-4 active local change after `8ccabc1e0f9de41fe45aa01d1387c5207c122152`: TaskPlanAuthority neutral contracts are being added as foundation-only draft/request/decision/generator boundaries; PlannerPort public contract is request-only, legacy three-argument planner implementations remain behind a named compatibility seam, and TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,10 +53,13 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 immutable_planner_input:
-  implementation: foundation_contracts_and_builder
+  public_contract_migrated: true
+  internal_request_projection: complete_foundation
+  compatibility_retirement: pending
+  standard_path_migrated: compatibility_window
   record: docs/change-admission/tpa-2-immutable-planning-request.yaml
+  public_cutover_record: docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml
   design: planned
-  standard_path_migrated: false
   tests: focused_foundation
 
 obligation_driven_progress:
@@ -114,7 +117,7 @@ simplified_runtime_architecture:
   target_task_completion_authority: task_spec_completion_criterion_independent_verification
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planning_request: foundation_contracts_and_builder
-  next_slice: tpa-3-stepplannerport-request-only-cutover
+  next_slice: tpa-4-taskplan-authority-contracts
   odg_default_path: stopped
   odg_advanced_attribution: experimental_only
   odg_10_progress_commit: not_authorized
@@ -142,6 +145,7 @@ taskplan_authority_program:
   tpa_3_6: completed_foundation
   tpa_3_7: completed_foundation
   tpa_3_8: completed_foundation
+  tpa_4: completed_foundation
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml
   planner_projection_admission_contract_record: docs/change-admission/tpa-3-2a-step-projection-admission-contracts.yaml
@@ -153,6 +157,7 @@ taskplan_authority_program:
   conformance_recovery_planner_request_record: docs/change-admission/tpa-3-6-conformance-benchmark-planners-request-migration.yaml
   browsergym_policy_planner_compatibility_record: docs/change-admission/tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml
   plannerport_public_request_cutover_record: docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml
+  taskplan_authority_contracts_record: docs/change-admission/tpa-4-taskplan-authority-contracts.yaml
   plan_candidate_owner_target: TaskPlanGeneratorPort
   plan_decision_owner_target: TaskPlanAuthority
   plan_commit_owner: RunCoordinator
@@ -160,7 +165,10 @@ taskplan_authority_program:
   standard_step_planner_target: StepPlannerPort.propose(PlanningRequest)
   current_standard_triple_signature_implementations: 15
   current_production_authority: legacy_taskplan_subgoal_planprogress
-  next_slice: tpa-4-taskplan-authority-contracts
+  public_request_contract: complete
+  request_projection_foundation: complete
+  legacy_implementation_retirement: pending
+  next_slice: tpa-5-taskplan-generator-draft-migration
   production_authority_changed: false
   promotion_status: held
 

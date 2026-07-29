@@ -331,8 +331,12 @@ PlanningRequest when TaskSpec identity is available while preserving
 BrowserGymPolicyRequest as the benchmark-policy compatibility boundary.
 TPA-3.8 makes the public PlannerPort contract request-only and moves remaining
 three-argument planner invocation behind `planner_compatibility.py` for legacy
-ActionContract-returning fixtures. The next authorized sub-slice is TPA-4
-TaskPlanAuthority contracts.
+ActionContract-returning fixtures. TPA-4 adds neutral TaskPlanAuthority draft,
+initial/revision request, issue-report, decision, binder, and generator-port
+contracts without connecting them to Coordinator, StateKernel mutation,
+TaskPlanLifecycle, generator migration, progress authority, finish authority,
+or PR breadth claims. The next authorized sub-slice is TPA-5 TaskPlan generator
+draft migration.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

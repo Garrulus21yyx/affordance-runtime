@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+import pytest
+
+from affordance_runtime.simplified_runtime_contracts import (
+    CriterionEvidencePolicy,
+    EvidenceStrength,
+    SourceReference,
+    StateCriterion,
+    StateCriterionRelation,
+    StepActivityStatus,
+    StepProgressView,
+    StepSpec,
+    TaskPlanView,
+)
+from affordance_runtime.task_plan_contracts import (
+    InitialTaskPlanRequest,
+    PlanIssueKind,
+    PlanIssueReport,
+    TaskPlanAuthorityBinder,
+    TaskPlanDecision,
+    TaskPlanDecisionStatus,
+    TaskPlanDraft,
+    TaskPlanGeneratorSource,
+    TaskPlanIssue,
+    TaskPlanRepairDirective,
+    TaskPlanRevisionRequest,
+    TaskPlanRevisionTrigger,
+)
+
+
+def _source() -> SourceReference:
+    return SourceReference(
+        source_id="source:req",
+        source_unit_id="source:req:unit:1",
+        claim_id="claim:1",
+    )
+
+
+def _criterion(criterion_id: str = "criterion:step:1") -> StateCriterion:
+    return StateCriterion(
+        criterion_id=criterion_id,
+        source_refs=(_source(),),
+        subject="semantic:target",
+        relation=StateCriterionRelation.IS_VISIBLE,
+        expected_value=True,
+        evidence_policy=CriterionEvidencePolicy(
+            EvidenceStrength.INDEPENDENT,
+            ("dom_state",),
+        ),
+    )
+
+
+def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepSpec:
+    return StepSpec(
+        step_id=step_id,
+        objective=f"complete {step_id}",
+        completion_criteria=(_criterion(f"criterion:{step_id}"),),
+        source_refs=(_source(),),
+        depends_on=depends_on,
+    )
+
+
+def _draft(*steps: StepSpec) -> TaskPlanDraft:
+    return TaskPlanDraft(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        generated_by=TaskPlanGeneratorSource.RULE,
+        generator_id="rule-task-planner",
+        steps=steps or (_step(),),
+        source_refs=(_source(),),
+    )
+
+
+def _plan_view() -> TaskPlanView:
+    return TaskPlanView(
+        plan_id="plan:1",
+        plan_version=1,
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        steps=(_step(),),
+        active_step_id="step:1",
+    )
+
+
+def _progress_view() -> StepProgressView:
+    return StepProgressView(
+        plan_id="plan:1",
+        plan_version=1,
+        active_step_id="step:1",
+        activity_status=StepActivityStatus.ACTIVE,
+        ready_step_ids=("step:1",),
+    )
+
+
+def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
+    draft = _draft(_step("step:a"), _step("step:b", depends_on=("step:a",)))
+
+    assert not hasattr(draft, "plan_id")
+    assert not hasattr(draft, "plan_version")
+    assert not hasattr(draft, "supersedes_plan_id")
+    assert not hasattr(draft, "based_on_state_version")
+    assert draft.steps[1].depends_on == ("step:a",)
+
+    with pytest.raises(ValueError, match="step ids must be unique"):
+        _draft(_step("step:a"), _step("step:a"))
+    with pytest.raises(ValueError, match="unknown draft step dependency"):
+        _draft(_step("step:a", depends_on=("missing",)))
+    with pytest.raises(ValueError, match="cycle"):
+        _draft(_step("step:a", depends_on=("step:b",)), _step("step:b", depends_on=("step:a",)))
+    with pytest.raises(ValueError, match="forbidden implementation detail"):
+        TaskPlanDraft(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            generated_by=TaskPlanGeneratorSource.LLM,
+            generator_id="model",
+            steps=(_step(),),
+            assumptions=("use selector #submit",),
+            source_refs=(_source(),),
+        )
+
+
+def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None:
+    initial = InitialTaskPlanRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=3,
+        objective="Do the task",
+        observation_refs=("snapshot:1",),
+        remaining_budget_steps=5,
+    )
+    assert initial.observation_refs == ("snapshot:1",)
+
+    trigger = TaskPlanRevisionTrigger(
+        kind="step_unexecutable",
+        reason_code="action_family_unavailable",
+        evidence_refs=("evidence:1",),
+        affected_step_id="step:1",
+    )
+    revision = TaskPlanRevisionRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=4,
+        previous_plan=_plan_view(),
+        previous_progress=_progress_view(),
+        trigger=trigger,
+        observation_refs=("snapshot:2",),
+        remaining_budget_steps=4,
+    )
+    assert revision.previous_plan.plan_id == "plan:1"
+
+    with pytest.raises(ValueError, match="previous progress plan identity mismatch"):
+        TaskPlanRevisionRequest(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=4,
+            previous_plan=_plan_view(),
+            previous_progress=StepProgressView(plan_id="other", plan_version=1, active_step_id=None),
+            trigger=trigger,
+            observation_refs=("snapshot:2",),
+            remaining_budget_steps=4,
+        )
+
+
+def test_plan_issue_report_cannot_carry_plan_patch_fields() -> None:
+    issue = PlanIssueReport(
+        plan_id="plan:1",
+        plan_version=1,
+        step_id="step:1",
+        kind=PlanIssueKind.STEP_UNEXECUTABLE,
+        reason_code="action_family_unavailable",
+        evidence_refs=("evidence:1",),
+        observed_at_state_version=5,
+    )
+    assert not hasattr(issue, "replacement_steps")
+    assert not hasattr(issue, "patch")
+    assert not hasattr(issue, "complete_step")
+
+
+def test_task_plan_decision_status_invariants() -> None:
+    plan = TaskPlanAuthorityBinder().bind_initial(
+        InitialTaskPlanRequest(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=3,
+            objective="Do the task",
+            observation_refs=("snapshot:1",),
+            remaining_budget_steps=5,
+        ),
+        _draft(),
+    )
+    accepted = TaskPlanDecision.accepted(plan)
+    assert accepted.status == TaskPlanDecisionStatus.ACCEPTED
+    assert accepted.plan_digest
+
+    with pytest.raises(ValueError, match="accepted decision requires plan"):
+        TaskPlanDecision(TaskPlanDecisionStatus.ACCEPTED)
+    with pytest.raises(ValueError, match="rejected decision cannot carry plan"):
+        TaskPlanDecision(
+            TaskPlanDecisionStatus.REJECTED,
+            plan=plan,
+            issues=(TaskPlanIssue("fatal", "bad"),),
+        )
+    with pytest.raises(ValueError, match="repair decision requires directives"):
+        TaskPlanDecision(TaskPlanDecisionStatus.REPAIR_REQUIRED)
+    with pytest.raises(ValueError, match="clarification decision requires question"):
+        TaskPlanDecision(TaskPlanDecisionStatus.CLARIFICATION_REQUIRED)
+
+    repair = TaskPlanDecision.repair_required(
+        TaskPlanRepairDirective(reason_code="missing_step", instruction="add a sourced step")
+    )
+    assert repair.status == TaskPlanDecisionStatus.REPAIR_REQUIRED
+
+
+def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
+    request = InitialTaskPlanRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=3,
+        objective="Do the task",
+        observation_refs=("snapshot:1",),
+        remaining_budget_steps=5,
+    )
+    binder = TaskPlanAuthorityBinder()
+    first = binder.bind_initial(request, _draft())
+    retry = binder.bind_initial(request, _draft())
+
+    assert first.plan_id == retry.plan_id
+    assert first.plan_version == 1
+    assert first.supersedes_plan_id == ""
+    assert first.based_on_state_version == 3
+
+    revision = binder.bind_revision(
+        TaskPlanRevisionRequest(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=8,
+            previous_plan=TaskPlanView(
+                plan_id=first.plan_id,
+                plan_version=first.plan_version,
+                task_spec_identity="sha256:task",
+                task_revision=1,
+                steps=(_step(),),
+                active_step_id="step:1",
+            ),
+            previous_progress=StepProgressView(
+                plan_id=first.plan_id,
+                plan_version=first.plan_version,
+                active_step_id="step:1",
+                activity_status=StepActivityStatus.ACTIVE,
+                ready_step_ids=("step:1",),
+            ),
+            trigger=TaskPlanRevisionTrigger(
+                kind="step_unexecutable",
+                reason_code="action_family_unavailable",
+                evidence_refs=("evidence:1",),
+                affected_step_id="step:1",
+            ),
+            observation_refs=("snapshot:2",),
+            remaining_budget_steps=4,
+        ),
+        _draft(_step("step:1"), _step("step:2", depends_on=("step:1",))),
+    )
+
+    assert revision.plan_version == 2
+    assert revision.supersedes_plan_id == first.plan_id
+    assert revision.plan_id != first.plan_id

@@ -288,9 +288,11 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "snapshot: current" in status
     assert "not a one-time milestone closure" in status
     assert "immutable_planner_input:" in status
-    assert "implementation: foundation_contracts_and_builder" in status
+    assert "public_contract_migrated: true" in status
+    assert "internal_request_projection: complete_foundation" in status
+    assert "compatibility_retirement: pending" in status
     assert "record: docs/change-admission/tpa-2-immutable-planning-request.yaml" in status
-    assert "standard_path_migrated: false" in status
+    assert "standard_path_migrated: compatibility_window" in status
     assert "latest implementation-bearing baseline" in status
     assert "later documentation-only sync commits" in status
     assert "inherit no broader runtime evidence" in status
@@ -299,7 +301,7 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "v-prb-5a button-sequence effect semantics" in current_plan
     assert "v-prb-5b entry action-family resolution" in current_plan
     assert "v-prb-6 terminal completion guard classification" in current_plan
-    assert "h2 immutable planner input" in current_plan
+    assert "tpa-4 taskplanauthority neutral contracts" in current_plan
     assert "p2 semantic fallback owner extraction" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
 
@@ -588,6 +590,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_6: completed_foundation" in status
     assert "tpa_3_7: completed_foundation" in status
     assert "tpa_3_8: completed_foundation" in status
+    assert "tpa_4: completed_foundation" in status
     assert (
         "parent_agent_request_record: "
         "docs/change-admission/tpa-3-4-parent-agent-planner-request-migration.yaml"
@@ -613,7 +616,15 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-3-8-plannerport-public-request-cutover.yaml"
         in status
     )
-    assert "next_slice: tpa-4-taskplan-authority-contracts" in status
+    assert (
+        "taskplan_authority_contracts_record: "
+        "docs/change-admission/tpa-4-taskplan-authority-contracts.yaml"
+        in status
+    )
+    assert "public_request_contract: complete" in status
+    assert "request_projection_foundation: complete" in status
+    assert "legacy_implementation_retirement: pending" in status
+    assert "next_slice: tpa-5-taskplan-generator-draft-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -1485,6 +1496,7 @@ def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> Non
     }
     assert plan_constructors == {
         ("planners.py", "PricingTaskPlanner"),
+        ("task_plan_contracts.py", "<module>"),
         ("task_planning.py", "LLMTaskPlanner"),
         ("task_planning.py", "TaskObligationOutcomeCompiler"),
         ("task_planning.py", "<module>"),
@@ -1558,6 +1570,48 @@ def test_plannerport_public_contract_is_request_only_with_legacy_seam() -> None:
     assert "propose_with_runtime_projection" in coordinator
     assert "PlanningRequestBuilder" not in coordinator
     assert "self.planner.propose(envelope, state, snapshot)" not in coordinator
+
+
+def test_taskplan_authority_contracts_are_neutral_foundation_only() -> None:
+    path = SOURCE_ROOT / "task_plan_contracts.py"
+    source = path.read_text(encoding="utf-8")
+    lowered = source.casefold()
+
+    forbidden = (
+        "affordance_runtime.coordinator",
+        "affordance_runtime.state_kernel",
+        "affordance_runtime.trace",
+        "affordance_runtime.browser_session",
+        "affordance_runtime.benchmarks",
+        "task_plan_lifecycle",
+    )
+    for item in forbidden:
+        assert item not in lowered
+
+    tree = ast.parse(source)
+    generator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "TaskPlanGeneratorPort"
+    )
+    generate = next(
+        node
+        for node in generator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "generate"
+    )
+    annotation = ast.unparse(generate.returns).casefold()
+    assert "taskplandraft" in annotation
+    assert "taskplan " not in annotation
+
+    tpa_4 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-4-taskplan-authority-contracts.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "production_behavior_change: false" in tpa_4
+    assert "coordinator_integration: prohibited" in tpa_4
+    assert "taskplan_generator_migration: prohibited" in tpa_4
+    assert "closure_status: taskplan_authority_contracts_foundation" in tpa_4
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

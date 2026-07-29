@@ -852,3 +852,9 @@ delivery claims.
   remain isolated rather than rewritten, and TaskPlan admission, progress
   authority, finish authority, PR breadth, and promotion remain unchanged. The
   next slice is TPA-4 TaskPlanAuthority contracts.
+- Started TPA-4 after `8ccabc1`. TaskPlanAuthority neutral draft/request/
+  issue/decision/binder/generator contracts are added as foundation-only; no
+  Coordinator plan commit, StateKernel mutation, TaskPlanLifecycle admission,
+  generator migration, progress authority, finish authority, PR breadth, or
+  promotion change is authorized. The next slice is TPA-5 TaskPlan generator
+  draft migration.
