@@ -120,6 +120,7 @@ validation:
   uv_build: required
   diff_check: required
 
-closure_status: sar_1_primary_runtime_contract_verification_trace_snapshot_surface_model_approval_routing_runtime_task_api_semantic_and_intake_mapping_freeze_in_progress
-next_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
+closure_status: local_completion_candidate
+remaining_scanner_findings: none_for_non_benchmark_frozen_dataclasses_with_container_fields_missing_post_init
+next_slice: sar-2-relation-criterion-evidence-vocabulary-unification
 promotion_status: held

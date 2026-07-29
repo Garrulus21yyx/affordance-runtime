@@ -145,7 +145,7 @@ authoritative_optimized_architecture:
       - docs/complete-architecture-blueprint.md
       - docs/design-freeze.md
   stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration
-  next_slice: sar-1-deep-immutability-and-stale-contract-hash
+  next_slice: sar-2-relation-criterion-evidence-vocabulary-unification
   production_behavior_change: false
   promotion_status: held
 

@@ -640,7 +640,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "legacy_implementation_retirement: pending" in status
     assert "draft_generator_foundation: complete" in status
     assert "llm_generator_migration: pending" in status
-    assert "next_slice: sar-1-deep-immutability-and-stale-contract-hash" in status
+    assert "next_slice: sar-2-relation-criterion-evidence-vocabulary-unification" in status
     assert "stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
@@ -1694,7 +1694,7 @@ def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
     assert "production_behavior_change: false" in record
     assert "docs/archive/superseded-2026-07-29/readme.md" in record
     assert "stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
-    assert "next_slice: sar-1-deep-immutability-and-stale-contract-hash" in status
+    assert "next_slice: sar-2-relation-criterion-evidence-vocabulary-unification" in status
     assert "additive_foundation_expansion: stopped" in status
     assert "superseded_archive: docs/archive/superseded-2026-07-29/readme.md" in status
     assert "2026-07-29-affordance-runtime-authoritative-optimized-architecture.md" in readme
@@ -1786,6 +1786,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert threat_model_path.exists()
     assert "slice_id: sar-1-deep-immutability-and-stale-contract-hash" in record
     assert "action_contract_hash_computed_after_freeze: true" in record
+    assert "closure_status: local_completion_candidate" in record
     assert "nested_contract_payload_mutation_after_construction: prohibited" in record
     assert "executionreceipt evidence deep freeze" in record
     assert "verificationevidence observed and expected value deep freeze" in record
