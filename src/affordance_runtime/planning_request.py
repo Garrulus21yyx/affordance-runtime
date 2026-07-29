@@ -21,6 +21,8 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 
 FrozenStateItems = tuple[tuple[str, FrozenScalar], ...]
+FrozenRequestValue = object
+FrozenRequestObject = tuple[tuple[str, FrozenRequestValue], ...]
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,7 @@ class PlannerTaskView:
     capabilities: tuple[str, ...]
     task_completion_criterion: Criterion | None
     task_completion_projection_status: str
+    task_summary: FrozenRequestObject = ()
 
     def __post_init__(self) -> None:
         _require_nonblank("task_spec_identity", self.task_spec_identity)
@@ -65,6 +68,7 @@ class PlannerTaskView:
             "task_completion_projection_status",
             self.task_completion_projection_status,
         )
+        _require_tuple("task_summary", self.task_summary)
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ class PlannerStepView:
     progress: StepProgressView | None
     active_step: StepSpec | None
     activity_status: StepActivityStatus
+    active_step_action_family: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.activity_status, StepActivityStatus):
@@ -106,6 +111,8 @@ class PlannerStepView:
                 raise ValueError("active step identity mismatch")
         elif self.active_step is not None:
             raise ValueError("only active status may expose an active step")
+        if self.active_step_action_family:
+            _require_nonblank("active_step_action_family", self.active_step_action_family)
 
 
 @dataclass(frozen=True)
@@ -234,6 +241,10 @@ class PlanningRequest:
     observation: PlannerObservationView
     recent_outcomes: tuple[PlannerOutcomeSummary, ...] = ()
     recovery: PlannerRecoverySummary | None = None
+    latest_outcome: FrozenRequestObject = ()
+    recent_proposals: tuple[FrozenRequestObject, ...] = ()
+    verified_effects: tuple[str, ...] = ()
+    pending_evidence_obligations: tuple[str, ...] = ()
     remaining_budget: RuntimeBudgetView = RuntimeBudgetView(
         steps=0,
         observations=0,
@@ -256,6 +267,18 @@ class PlanningRequest:
         if self.identity.environment_revision != self.observation.environment_revision:
             raise ValueError("request environment revision mismatch")
         _require_tuple("recent_outcomes", self.recent_outcomes)
+        _require_tuple("latest_outcome", self.latest_outcome)
+        _require_tuple("recent_proposals", self.recent_proposals)
+        _require_tuple("verified_effects", self.verified_effects)
+        _require_no_blank_values("verified_effects", self.verified_effects)
+        _require_tuple(
+            "pending_evidence_obligations",
+            self.pending_evidence_obligations,
+        )
+        _require_no_blank_values(
+            "pending_evidence_obligations",
+            self.pending_evidence_obligations,
+        )
         _require_tuple("permitted_action_kinds", self.permitted_action_kinds)
         _require_unique_nonblank("permitted action kinds", self.permitted_action_kinds)
         _validate_string_tuple_map(
@@ -273,6 +296,42 @@ def _freeze_state_items(value: FrozenStateItems | dict[str, object]) -> FrozenSt
         )
     _require_tuple("state", value)
     return tuple((key, _freeze_scalar(item)) for key, item in value)
+
+
+def freeze_request_value(value: object) -> FrozenRequestValue:
+    if _is_frozen_scalar(value):
+        return value
+    if isinstance(value, dict):
+        return (
+            "__dict__",
+            tuple((str(key), freeze_request_value(item)) for key, item in sorted(value.items())),
+        )
+    if isinstance(value, (list, tuple)):
+        return ("__list__", tuple(freeze_request_value(item) for item in value))
+    raise ValueError("request summary values must be JSON-like and immutable")
+
+
+def freeze_request_mapping(value: dict[str, object]) -> FrozenRequestObject:
+    return tuple((str(key), freeze_request_value(item)) for key, item in sorted(value.items()))
+
+
+def thaw_request_value(value: FrozenRequestValue) -> object:
+    if _is_frozen_scalar(value):
+        return value
+    if isinstance(value, tuple):
+        if len(value) == 2 and value[0] == "__dict__" and isinstance(value[1], tuple):
+            return {
+                key: thaw_request_value(item)
+                for key, item in value[1]
+                if isinstance(key, str)
+            }
+        if len(value) == 2 and value[0] == "__list__" and isinstance(value[1], tuple):
+            return [thaw_request_value(item) for item in value[1]]
+    raise ValueError("unsupported frozen request value")
+
+
+def thaw_request_mapping(value: FrozenRequestObject) -> dict[str, object]:
+    return {key: thaw_request_value(item) for key, item in value}
 
 
 def _freeze_scalar(value: object) -> FrozenScalar:

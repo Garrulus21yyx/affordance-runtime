@@ -556,7 +556,9 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml" in status
     assert "step_projection: foundation_hardened" in status
     assert "planning_request: foundation_contracts_and_builder" in status
-    assert "next_slice: tpa-3-stepplannerport-request-only-cutover" in status
+    assert "tpa_3_1: completed_foundation" in status
+    assert "planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml" in status
+    assert "next_slice: tpa-3-2-decision-constraints-request-adapter" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -689,7 +691,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3 stepplannerport request-only cutover" in status
+    assert "current_next_change_admission: tpa-3.2 decisionconstraint request adapter" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1092,6 +1094,7 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
         CHANGE_ADMISSION_DIR / "tpa-0-taskplan-authority-freeze.yaml",
         CHANGE_ADMISSION_DIR / "tpa-1-authority-read-set-audit.yaml",
         CHANGE_ADMISSION_DIR / "tpa-2-immutable-planning-request.yaml",
+        CHANGE_ADMISSION_DIR / "tpa-3-1-planner-context-request-path.yaml",
     )
     for path in paths:
         assert path.exists(), path
@@ -1141,6 +1144,16 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "plannerport_cutover" in tpa_2
     assert "coordinator_call_site_change" in tpa_2
     assert "closure_status: request_contracts_and_builder_foundation" in tpa_2
+    tpa_3_1 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-1-planner-context-request-path.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "plannercontextbuilder" in tpa_3_1
+    assert "production_behavior_change: false" in tpa_3_1
+    assert "plannerport signature change" in tpa_3_1
+    assert "golden equivalence test" in tpa_3_1
+    assert "closure_status: planner_context_request_path_foundation" in tpa_3_1
 
 
 def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:

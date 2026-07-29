@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Affordance
+from affordance_runtime.planning_request import (
+    PlanningRequest,
+    thaw_request_mapping,
+)
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
@@ -71,10 +75,16 @@ class PlannerContextBuilder:
 
     def build(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
+        envelope: TaskEnvelope | PlanningRequest,
+        state: StateKernel | None = None,
+        snapshot: BrowserSnapshot | None = None,
     ) -> PlannerContext:
+        if isinstance(envelope, PlanningRequest):
+            if state is not None or snapshot is not None:
+                raise ValueError("request-based PlannerContext build cannot receive legacy state")
+            return self._build_from_request(envelope)
+        if state is None or snapshot is None:
+            raise ValueError("legacy PlannerContext build requires state and snapshot")
         task_spec = envelope.task_spec
         if task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
@@ -158,6 +168,69 @@ class PlannerContextBuilder:
             snapshot_id=snapshot.observation.snapshot_id,
         )
 
+    def _build_from_request(self, request: PlanningRequest) -> PlannerContext:
+        latest_outcome = thaw_request_mapping(request.latest_outcome)
+        recent_proposals = tuple(
+            thaw_request_mapping(item) for item in request.recent_proposals
+        )
+        recovery_summary = (
+            {
+                "kind": request.recovery.kind,
+                "reason_code": request.recovery.reason_code,
+                "message": request.recovery.message,
+                "attempted_changes": list(request.recovery.attempted_changes),
+            }
+            if request.recovery is not None
+            else {}
+        )
+        active_subgoal = (
+            request.step.active_step.objective
+            if request.step.active_step is not None
+            else request.task.objective
+        )
+        return PlannerContext(
+            task_spec=_task_summary_from_request(request),
+            active_subgoal=active_subgoal,
+            active_subgoal_action_family=request.step.active_step_action_family,
+            observed_text=request.observation.observed_text,
+            affordances=tuple(
+                AffordanceSummary(
+                    id=item.target_id,
+                    surface=item.surface,
+                    role=item.role,
+                    label=item.label,
+                    action=item.supported_actions[0] if item.supported_actions else "",
+                    confidence=item.confidence if item.confidence is not None else 0.0,
+                    state={key: value for key, value in item.state},
+                )
+                for item in request.observation.affordances
+            ),
+            permitted_action_kinds=request.permitted_action_kinds,
+            selected_artifact_refs=request.observation.artifact_refs,
+            granted_capabilities=request.task.capabilities,
+            approval_handling="coordinator_managed",
+            remaining_budgets={
+                "steps": request.remaining_budget.steps,
+                "observations": request.remaining_budget.observations,
+                "recoveries": request.remaining_budget.recoveries,
+                "effectful_actions": request.remaining_budget.effectful_actions,
+            },
+            pending_evidence_obligations=request.pending_evidence_obligations,
+            latest_outcome=latest_outcome,
+            recent_proposals=recent_proposals,
+            verified_effects=request.verified_effects,
+            satisfied_action_targets={
+                key: value for key, value in request.satisfied_action_targets
+            },
+            recovery_summary=recovery_summary,
+            accepted_knowledge=self.accepted_knowledge[
+                -self.limits.max_accepted_knowledge :
+            ],
+            task_revision=request.identity.task_revision,
+            state_version=request.identity.evaluated_at_state_version,
+            snapshot_id=request.identity.snapshot_id,
+        )
+
 
 def build_planner_context(
     envelope: TaskEnvelope,
@@ -196,6 +269,18 @@ def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
         "ambiguity_status",
     )
     return {key: task_spec[key] for key in keys if key in task_spec}
+
+
+def _task_summary_from_request(request: PlanningRequest) -> dict[str, Any]:
+    summary = thaw_request_mapping(request.task.task_summary)
+    if summary:
+        return summary
+    return {
+        "revision": request.task.task_revision,
+        "objective": request.task.objective,
+        "constraints": list(request.task.constraints),
+        "requested_capabilities": list(request.task.capabilities),
+    }
 
 
 def _opaque_artifact_ref(value: str) -> str:

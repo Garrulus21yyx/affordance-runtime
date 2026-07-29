@@ -15,6 +15,10 @@ from affordance_runtime.planner_context import (
     PlannerLimits,
     build_planner_context,
 )
+from affordance_runtime.planning_request_builder import (
+    PlanningRequestBuilder,
+    PlanningRequestLimits,
+)
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -91,6 +95,119 @@ def test_compatibility_function_matches_explicit_builder() -> None:
     compatible = build_planner_context(envelope, state, snapshot, limits=limits)
 
     assert compatible == direct
+
+
+def test_builder_can_rebuild_provider_context_from_immutable_request() -> None:
+    envelope, state, snapshot = _fixture()
+    limits = PlannerLimits(max_affordances=2, max_artifact_refs=1, max_accepted_knowledge=2)
+    context_builder = PlannerContextBuilder(
+        limits=limits,
+        accepted_knowledge=("old", "current-a", "current-b"),
+        allow_finish=False,
+    )
+
+    legacy_context = context_builder.build(envelope, state, snapshot)
+    request = PlanningRequestBuilder(
+        limits=PlanningRequestLimits(max_affordances=2, max_artifact_refs=1),
+        allow_finish=False,
+    ).build(envelope, state, snapshot)
+    request_context = context_builder.build(request)
+
+    assert request_context.model_dump() == legacy_context.model_dump()
+
+
+def test_request_context_does_not_expose_ready_step_as_active() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerObservationView,
+        PlannerStepView,
+        PlannerTaskView,
+        PlanningRequest,
+        PlanningRequestIdentity,
+    )
+    from affordance_runtime.simplified_runtime_contracts import (
+        CriterionEvidencePolicy,
+        EvidenceStrength,
+        SourceReference,
+        StateCriterion,
+        StateCriterionRelation,
+        StepActivityStatus,
+        StepProgressView,
+        StepSpec,
+        TaskPlanView,
+    )
+
+    criterion = StateCriterion(
+        criterion_id="ready-step",
+        subject="display name",
+        relation=StateCriterionRelation.EQUALS,
+        expected_value="Ada",
+        evidence_policy=CriterionEvidencePolicy(
+            minimum_strength=EvidenceStrength.INDEPENDENT,
+            allowed_source_kinds=("dom_state",),
+        ),
+        source_refs=(
+            SourceReference(
+                source_id="source:user",
+                source_unit_id="unit:ready-step",
+            ),
+        ),
+    )
+    step = StepSpec(
+        step_id="ready-step",
+        objective="display name input equals Ada",
+        completion_criteria=(criterion,),
+        source_refs=criterion.source_refs,
+    )
+    request = PlanningRequest(
+        identity=PlanningRequestIdentity(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=4,
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+        ),
+        task=PlannerTaskView(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            objective="Save display name",
+            constraints=(),
+            capabilities=(),
+            task_completion_criterion=None,
+            task_completion_projection_status="pending",
+        ),
+        step=PlannerStepView(
+            plan=TaskPlanView(
+                plan_id="plan:1",
+                plan_version=1,
+                task_spec_identity="sha256:task",
+                task_revision=1,
+                steps=(step,),
+                active_step_id=None,
+            ),
+            progress=StepProgressView(
+                plan_id="plan:1",
+                plan_version=1,
+                active_step_id=None,
+                activity_status=StepActivityStatus.READY_NOT_ACTIVATED,
+                ready_step_ids=("ready-step",),
+            ),
+            active_step=None,
+            activity_status=StepActivityStatus.READY_NOT_ACTIVATED,
+        ),
+        observation=PlannerObservationView(
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+            observed_text="",
+            affordances=(),
+            artifact_refs=(),
+        ),
+    )
+    context = PlannerContextBuilder().build(request)
+
+    assert context.active_subgoal == "Save display name"
+    assert context.active_subgoal_action_family == ""
 
 
 def test_builder_exposes_typed_active_subgoal_action_family() -> None:

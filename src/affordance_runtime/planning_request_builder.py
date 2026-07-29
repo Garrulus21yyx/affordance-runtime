@@ -18,6 +18,7 @@ from affordance_runtime.planning_request import (
     PlanningRequest,
     PlanningRequestIdentity,
     RuntimeBudgetView,
+    freeze_request_mapping,
 )
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
@@ -89,16 +90,14 @@ class PlanningRequestBuilder:
                 capabilities=tuple(sorted(set(envelope.capabilities))),
                 task_completion_criterion=task_completion_criterion,
                 task_completion_projection_status=completion_projection.status.value,
+                task_summary=freeze_request_mapping(_task_summary(task_spec.model_dump(mode="json"))),
             ),
             step=_planner_step_view(step_projection),
             observation=PlannerObservationView(
                 snapshot_id=snapshot.observation.snapshot_id,
                 page_revision=snapshot.observation.page_revision,
                 environment_revision=snapshot.observation.environment_revision,
-                observed_text=_bounded_text(
-                    str(snapshot.observation.metadata.get("visible_text") or ""),
-                    2_000,
-                ),
+                observed_text=str(snapshot.observation.metadata.get("visible_text") or "")[:2_000],
                 affordances=tuple(
                     _affordance_view(item)
                     for item in _bounded_affordances(
@@ -115,6 +114,13 @@ class PlanningRequestBuilder:
             ),
             recent_outcomes=_recent_outcomes(state),
             recovery=_recovery_summary(state),
+            latest_outcome=freeze_request_mapping(_latest_outcome(state)),
+            recent_proposals=tuple(
+                freeze_request_mapping(item)
+                for item in state.planner_history[-1:]
+            ),
+            verified_effects=_verified_effects(state),
+            pending_evidence_obligations=tuple(state.pending_obligations[-5:]),
             remaining_budget=RuntimeBudgetView(
                 steps=max(0, limits.max_steps - state.step_count),
                 observations=max(0, limits.max_observations - state.observation_count),
@@ -163,6 +169,7 @@ def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepVie
         progress=progress,
         active_step=active_step,
         activity_status=progress.activity_status,
+        active_step_action_family=_active_step_action_family(active_step),
     )
 
 
@@ -308,6 +315,38 @@ def _recent_outcomes(state: StateKernel) -> tuple[PlannerOutcomeSummary, ...]:
     )
 
 
+def _latest_outcome(state: StateKernel) -> dict[str, object]:
+    receipt = state.receipts[-1] if state.receipts else None
+    verification = state.latest_verification
+    return {
+        "receipt_success": receipt.success if receipt else None,
+        "receipt_backend": receipt.backend if receipt else "",
+        "error_code": receipt.error_code.value if receipt and receipt.error_code else "",
+        "verification_status": verification.status.value if verification else "",
+        "verification_reason": verification.reason if verification else "",
+        "verified_state_delta": [
+            {
+                "verifier_kind": item.verifier_kind,
+                "target": item.target,
+                "passed": item.passed,
+                "observed": item.observed,
+                "expected": item.expected,
+            }
+            for item in (verification.evidence[-1:] if verification else [])
+        ],
+    }
+
+
+def _verified_effects(state: StateKernel) -> tuple[str, ...]:
+    verification = state.latest_verification
+    latest_proposal = state.planner_history[-1] if state.planner_history else {}
+    return (
+        tuple(str(item) for item in latest_proposal.get("expected_effects", []))
+        if verification and verification.passed
+        else ()
+    )
+
+
 def _recovery_summary(state: StateKernel) -> PlannerRecoverySummary | None:
     if state.progress_guard_events:
         event = state.progress_guard_events[-1]
@@ -363,3 +402,25 @@ def _bounded_text(value: str, limit: int) -> str:
     prefix_length = (limit - len(marker)) // 2
     suffix_length = limit - len(marker) - prefix_length
     return value[:prefix_length] + marker + value[-suffix_length:]
+
+
+def _active_step_action_family(active_step: object) -> str:
+    return ""
+
+
+def _task_summary(task_spec: dict[str, object]) -> dict[str, object]:
+    keys = (
+        "revision",
+        "objective",
+        "operation_class",
+        "task_structure",
+        "targets",
+        "success_criteria",
+        "constraints",
+        "semantic_value_constraints",
+        "forbidden_effects",
+        "evidence_requirements",
+        "requested_capabilities",
+        "ambiguity_status",
+    )
+    return {key: task_spec[key] for key in keys if key in task_spec}

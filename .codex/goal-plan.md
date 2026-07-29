@@ -766,3 +766,11 @@ delivery claims.
   admission, progress authority, finish authority, PR breadth, and promotion
   remain unchanged. The next slice after this foundation is TPA-3
   StepPlannerPort request-only cutover.
+- Started TPA-3.1 after `b70ed62`. Added a request-based
+  PlannerContextBuilder path and strengthened PlanningRequest summaries so
+  provider-facing context can be rebuilt from the immutable request. The golden
+  test proves the covered legacy context payload is identical, and
+  ready-not-activated steps are not exposed as active planner subgoals.
+  PlannerPort, Coordinator call sites, TaskPlan admission, progress authority,
+  finish authority, PR breadth, and promotion remain unchanged. The next slice
+  is TPA-3.2 DecisionConstraint request adapter.

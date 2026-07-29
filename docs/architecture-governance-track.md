@@ -293,7 +293,10 @@ one read-only builder; it does not switch PlannerPort, TaskPlan admission,
 progress, finish, Coordinator control flow, or benchmark behavior. TPA-3 is the
 first slice allowed to migrate standard StepPlannerPort call sites to
 `propose(request)` and must preserve provider-facing payload and behavior unless
-it triggers a separately authorized breadth rerun.
+it triggers a separately authorized breadth rerun. TPA-3.1 adds the
+request-based PlannerContextBuilder serialization path only; the legacy
+three-object PlannerContextBuilder path remains temporarily available until
+standard StepPlannerPort cutover is complete.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are
