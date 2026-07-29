@@ -812,5 +812,12 @@ delivery claims.
   step objective/action-family as immutable compatibility context without
   creating fake Step authority. PlannerPort public signature, Coordinator call
   sites, TaskPlan admission, progress authority, finish authority, PR breadth,
-  and promotion remain unchanged. The next slice is TPA-3.4
-  ParentAgentPlannerAdapter request migration.
+  and promotion remain unchanged.
+- Started TPA-3.4 after `21f408c`. ParentAgentPlannerAdapter now builds the
+  same immutable PlanningRequest at propose entry and serializes parent-agent
+  context from the request path instead of calling the legacy
+  build_planner_context helper directly. Parent proposal validation,
+  provenance, public PlannerPort compatibility signature, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged. The next slice is TPA-3.5
+  reference/scripted/conformance planners request migration.

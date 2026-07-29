@@ -316,8 +316,10 @@ temporary compatibility path until Generalist internals are switched to the
 request core. TPA-3.3 routes GeneralistLMPlanner internals through immutable
 PlanningRequest and consumes request-sourced terminal admission diagnostics
 without changing the public PlannerPort signature, Coordinator call site,
-progress authority, or finish authority. The next authorized sub-slice is
-TPA-3.4 ParentAgentPlannerAdapter request migration.
+progress authority, or finish authority. TPA-3.4 routes
+ParentAgentPlannerAdapter through the same immutable request/context path while
+preserving parent-agent proposal validation and provenance. The next authorized
+sub-slice is TPA-3.5 reference/scripted/conformance planners request migration.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

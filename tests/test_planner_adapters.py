@@ -9,7 +9,10 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.planner_adapters import ParentAgentPlannerAdapter
+from affordance_runtime.planner_context import PlannerContext, PlannerContextBuilder
 from affordance_runtime.planning import PlannerProposalSource
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -85,3 +88,55 @@ def test_parent_adapter_rejects_primitive_locator_payload() -> None:
 
     with pytest.raises(ValidationError, match="surface or authority"):
         asyncio.run(ParentAgentPlannerAdapter(ParentSource(invalid=True)).propose(envelope, state, snapshot))
+
+
+def test_parent_adapter_uses_immutable_request_context_path() -> None:
+    envelope, state, snapshot = _inputs()
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built: PlanningRequest | None = None
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built = self.inner.build(envelope, state, snapshot)
+            return self.built
+
+    @dataclass
+    class RequestOnlyContextBuilder:
+        received: PlanningRequest | None = None
+
+        def build(
+            self,
+            request: PlanningRequest,
+            state: StateKernel | None = None,
+            snapshot: BrowserSnapshot | None = None,
+        ) -> PlannerContext:
+            assert state is None
+            assert snapshot is None
+            self.received = request
+            return PlannerContextBuilder().build(request)
+
+    request_builder = RecordingRequestBuilder()
+    context_builder = RequestOnlyContextBuilder()
+    source = ParentSource()
+
+    decision = asyncio.run(
+        ParentAgentPlannerAdapter(
+            source,
+            planning_request_builder=request_builder,
+            context_builder=context_builder,
+        ).propose(envelope, state, snapshot)
+    )
+
+    assert request_builder.built is not None
+    assert context_builder.received is request_builder.built
+    assert source.seen is not None
+    assert source.seen["state_version"] == request_builder.built.identity.evaluated_at_state_version
+    assert source.seen["snapshot_id"] == request_builder.built.identity.snapshot_id
+    assert decision.proposal is not None
