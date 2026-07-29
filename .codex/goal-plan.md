@@ -939,3 +939,8 @@ delivery claims.
   `IntentDraftRepairAttempt.proposal_claim_ids`, froze proposal-to-canonical
   claim-id mappings at canonicalization/repair reporting boundaries, and kept
   TaskSpec authority unchanged.
+- Synchronized SAR-0/SAR-1 durable documentation after `2ab7f4e`. Confirmed
+  the authoritative optimized architecture and substitutive execution plan are
+  present under `docs/superpowers/`, kept superseded simplified/TaskPlanAuthority
+  and former root architecture records in archive/redirect form, and aligned
+  README/status/current-plan references with the exact current HEAD identity.

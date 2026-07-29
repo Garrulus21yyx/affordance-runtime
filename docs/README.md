@@ -28,6 +28,11 @@ production work.
 - [Benchmark Governance Boundary](benchmark-governance-boundary.md) records
   anti-specialization and evidence rules.
 
+When a change updates the active architecture, plan, or evidence identity,
+update these durable files in the same commit. `implementation-status.md` owns
+the exact current HEAD identity; `current-implementation-plan.md` owns the
+active queue; this README owns navigation and conflict precedence only.
+
 ## Archive
 
 Superseded default-target architecture documents live in:

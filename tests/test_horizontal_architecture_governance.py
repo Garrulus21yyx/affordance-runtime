@@ -1767,6 +1767,9 @@ def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> No
     assert "[complete architecture blueprint](docs/complete-architecture-blueprint.md)" not in readme
     assert "[design freeze and implementation gates](docs/design-freeze.md)" not in readme
     assert "legacy root architecture redirects" in docs_readme
+    assert "`implementation-status.md` owns the exact current head identity" in docs_readme
+    assert "`current-implementation-plan.md` owns the active queue" in docs_readme
+    assert "this readme owns navigation and conflict precedence only" in docs_readme
     assert "legacy_root_architecture_docs:" in status
     assert "legacy_root_architecture_docs: archived_with_redirects" in current_plan
 
@@ -1795,6 +1798,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "thingaffordancemodel affordance and state-source payload freeze" in record
     assert "configuredapprovalprovider allowed capability set freeze" in record
     assert "routingdecision candidate and score payload freeze" in record
+    assert "durable readme/status/current-plan authority references synchronized" in record
     assert "observation metadata, target_fingerprints, and artifact_refs deep freeze" in record
     assert "affordance locator, state, payload, backend_candidates, evidence, and lease provenance deep freeze" in record
     assert "trace and artifact json writers project frozen payloads" in record
@@ -1810,7 +1814,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
     assert (
-        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope_task_api_semantic_payloads_intake_mappings"
+        "current_scope: action_contract_receipt_plannerdecision_observation_affordance_verification_trace_browser_snapshot_surface_models_approval_routing_task_envelope_task_api_semantic_payloads_intake_mappings_docs_synchronized"
         in status
     )
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
@@ -1827,6 +1831,7 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "task api request/execution dto boundaries" in current_plan
     assert "semantic resolver/compiler payload boundaries" in current_plan
     assert "canonical/intent proposal claim-id mappings" in current_plan
+    assert "durable status/readme references are synchronized to the current head" in current_plan
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

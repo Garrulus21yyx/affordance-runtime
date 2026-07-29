@@ -38,6 +38,7 @@ included:
   - SemanticCompilation parameter payload and SemanticConstraints target mapping freeze
   - CanonicalProposalGraph proposal claim-id mapping freeze
   - IntentDraftRepairAttempt proposal claim-id mapping freeze
+  - durable README/status/current-plan authority references synchronized to current HEAD
   - Trace and Artifact JSON writers project frozen payloads through canonical JSON-compatible data
   - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
   - legacy sequence/mapping compatibility repairs for frozen observation and affordance payloads
