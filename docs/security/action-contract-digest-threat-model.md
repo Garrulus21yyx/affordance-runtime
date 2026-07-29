@@ -97,5 +97,11 @@ construction time. This keeps snapshot-local accessibility evidence from being
 rewritten by a caller-owned dictionary after planning, verification, or trace
 projection has already consumed the snapshot identity.
 
+DOM page affordance models also freeze their affordance sequence at
+construction time. Callers may still create a replacement model with an explicit
+new affordance sequence, but mutating the original list supplied to
+`PageAffordanceModel` cannot alter a captured snapshot's planner-facing target
+inventory.
+
 This does not change progress authority, finish authority, Planner API,
 Coordinator control flow, StateKernel mutation, or benchmark promotion status.

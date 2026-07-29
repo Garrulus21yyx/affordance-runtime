@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.immutable import FrozenSequence
 
 _INTERACTIVE_TAGS = frozenset(["a", "button", "input", "select", "textarea", "label", "form", "option"])
 _STRIP_TAGS = frozenset(["script", "style", "meta", "link", "noscript", "head", "svg"])
@@ -438,6 +439,9 @@ class PageAffordanceModel:
     affordances: list[Affordance]
     raw_node_count: int
     kept_node_count: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "affordances", FrozenSequence(self.affordances))
 
 
 def _escape_attr(value: str) -> str:

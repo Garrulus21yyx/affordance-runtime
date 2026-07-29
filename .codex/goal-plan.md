@@ -901,3 +901,6 @@ delivery claims.
   `BrowserSnapshot.accessibility_tree`, froze the snapshot accessibility-tree
   payload at construction, and kept production progress/finish authority
   unchanged.
+- Continued SAR-1 after `fd972db`. Added a RED for mutable
+  `PageAffordanceModel.affordances`, froze the DOM affordance sequence at model
+  construction, and kept replacement-based model updates explicit.

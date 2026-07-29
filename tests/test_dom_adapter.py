@@ -1,7 +1,11 @@
+import pytest
+
 from affordance_runtime.adapters.dom import (
     AuthoredInteractiveExtension,
     DomAdapter,
+    PageAffordanceModel,
 )
+from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
     marker_attribute="data-runtime-interactive",
@@ -32,6 +36,53 @@ def test_dom_adapter_extracts_interactables_with_leases() -> None:
     assert model.kept_node_count == 2
     assert [item.label for item in model.affordances] == ["Save", "Email"]
     assert all(item.lease.environment_revision == "rev-1" for item in model.affordances)
+
+
+def test_page_affordance_model_affordances_are_immutable_from_source_list() -> None:
+    affordance = Affordance(
+        id="button:save",
+        surface=Surface.DOM,
+        role="button",
+        label="Save",
+        action="click",
+        locator={"selector": "#save"},
+        lease=AffordanceLease(
+            environment_revision="env:1",
+            issued_at_s=1.0,
+            ttl_ms=1000,
+            snapshot_id="snap:1",
+            page_revision="page:1",
+        ),
+        risk=RiskLevel.LOW,
+    )
+    affordances = [affordance]
+    model = PageAffordanceModel(
+        page_id="settings",
+        url="http://fixture/settings",
+        environment_revision="env:1",
+        snapshot_id="snap:1",
+        page_revision="page:1",
+        affordances=affordances,
+        raw_node_count=1,
+        kept_node_count=1,
+    )
+
+    affordances.append(
+        Affordance(
+            id="button:polluted",
+            surface=Surface.DOM,
+            role="button",
+            label="Polluted",
+            action="click",
+            locator={"selector": "#polluted"},
+            lease=affordance.lease,
+            risk=RiskLevel.LOW,
+        )
+    )
+
+    assert [item.id for item in model.affordances] == ["button:save"]
+    with pytest.raises(AttributeError):
+        model.affordances.append(affordance)  # type: ignore[attr-defined]
 
 
 def test_dom_adapter_preserves_authored_backend_handle_alongside_stable_selector() -> None:
