@@ -162,6 +162,12 @@ def project_legacy_task_plan_to_step_view(
 
     obligation_by_id = {item.obligation_id: item for item in task_spec.obligations}
     claims_by_id = {item.claim_id: item for item in task_spec.source_claims}
+    if not obligation_by_id:
+        return LegacyStepProjectionResult(
+            status=LegacyStepProjectionStatus.NO_PLAN,
+            evaluated_at_state_version=evaluated_at_state_version,
+            reason="TaskSpec has no canonical obligations for exact step projection",
+        )
     progress_error = _validate_legacy_progress_ids(plan=plan, progress=progress)
     if progress_error:
         return LegacyStepProjectionResult(

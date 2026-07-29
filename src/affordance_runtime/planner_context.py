@@ -14,6 +14,7 @@ from affordance_runtime.contracts import Affordance
 from affordance_runtime.planning_request import (
     PlanningRequest,
     thaw_request_mapping,
+    thaw_request_value,
 )
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
@@ -186,7 +187,7 @@ class PlannerContextBuilder:
         active_subgoal = (
             request.step.active_step.objective
             if request.step.active_step is not None
-            else request.task.objective
+            else request.step.compatibility_active_step_objective or request.task.objective
         )
         return PlannerContext(
             task_spec=_task_summary_from_request(request),
@@ -201,7 +202,7 @@ class PlannerContextBuilder:
                     label=item.label,
                     action=item.supported_actions[0] if item.supported_actions else "",
                     confidence=item.confidence if item.confidence is not None else 0.0,
-                    state={key: value for key, value in item.state},
+                    state={key: thaw_request_value(value) for key, value in item.state},
                 )
                 for item in request.observation.affordances
             ),

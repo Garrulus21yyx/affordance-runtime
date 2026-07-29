@@ -176,7 +176,10 @@ def test_planning_request_contracts_are_deeply_immutable() -> None:
     mutable_state["value"] = "Mallory"
     mutable_state["ignored"].append("changed")
 
-    assert request.observation.affordances[0].state == (("value", "Alice"),)
+    assert request.observation.affordances[0].state == (
+        ("ignored", ("__list__", ("mutable",))),
+        ("value", "Alice"),
+    )
     with pytest.raises(TypeError):
         request.observation.affordances[0].state[0] = ("value", "Mallory")  # type: ignore[index]
 

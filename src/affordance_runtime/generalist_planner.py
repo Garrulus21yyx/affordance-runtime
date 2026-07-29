@@ -16,6 +16,7 @@ from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, 
 from affordance_runtime.planner_context import (
     AffordanceSummary,
     PlannerContext,
+    PlannerContextBuilder,
     PlannerLimits,
     build_planner_context,
 )
@@ -40,6 +41,15 @@ from affordance_runtime.planning import (
     PlannerProposalSource,
 )
 from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.planning_request import (
+    PlannerAdmissionSummary,
+    PlannerAdmissionView,
+    TargetAdmissionStatus,
+)
+from affordance_runtime.planning_request_builder import (
+    PlanningRequestBuilder,
+    PlanningRequestLimits,
+)
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_action_resolver import resolve_empty_clarification_action
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
@@ -230,6 +240,14 @@ class GeneralistLMPlanner:
         default_factory=StrictDecisionConstraintBuilder,
         repr=False,
     )
+    planning_request_builder: PlanningRequestBuilder | None = field(
+        default=None,
+        repr=False,
+    )
+    context_builder: PlannerContextBuilder | None = field(
+        default=None,
+        repr=False,
+    )
     model_orchestrator: PlannerModelOrchestrator = field(
         default_factory=PlannerModelOrchestrator,
         repr=False,
@@ -263,13 +281,18 @@ class GeneralistLMPlanner:
     ) -> PlannerDecision:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
-        context = self.build_context(envelope, state, snapshot)
+        request = self._planning_request_builder().build(envelope, state, snapshot)
+        context = self._context_builder().build(request)
         terminal_readiness: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            context, terminal_readiness = self.decision_constraints.narrow_terminal_candidates(
+            admission_result = self.decision_constraints.apply_admission(
                 context,
-                state,
-                snapshot,
+                request.admission,
+            )
+            context = admission_result.context
+            terminal_readiness = _terminal_readiness_payload(
+                admission_result.summary,
+                request.admission,
             )
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
@@ -544,6 +567,24 @@ class GeneralistLMPlanner:
             allow_finish=self.allow_finish,
         )
 
+    def _planning_request_builder(self) -> PlanningRequestBuilder:
+        if self.planning_request_builder is not None:
+            return self.planning_request_builder
+        return PlanningRequestBuilder(
+            limits=_request_limits(self.limits, self.max_model_calls),
+            accepted_knowledge=self.accepted_knowledge,
+            allow_finish=self.allow_finish,
+        )
+
+    def _context_builder(self) -> PlannerContextBuilder:
+        if self.context_builder is not None:
+            return self.context_builder
+        return PlannerContextBuilder(
+            limits=self.limits,
+            accepted_knowledge=self.accepted_knowledge,
+            allow_finish=self.allow_finish,
+        )
+
     def planner_context_ref(self) -> str:
         """Expose only bounded context-shape state to the recovery owner."""
 
@@ -590,6 +631,57 @@ class GeneralistLMPlanner:
         before = self.planner_schema_ref()
         self.schema_recovery_generation = 1
         return before, self.planner_schema_ref()
+
+
+def _request_limits(
+    limits: PlannerLimits,
+    max_model_calls: int | None,
+) -> PlanningRequestLimits:
+    return PlanningRequestLimits(
+        max_steps=limits.max_steps,
+        max_observations=limits.max_observations,
+        max_recoveries=limits.max_recoveries,
+        max_effectful_actions=limits.max_effectful_actions,
+        max_model_calls=max_model_calls or 0,
+        max_affordances=limits.max_affordances,
+        max_artifact_refs=limits.max_artifact_refs,
+    )
+
+
+def _terminal_readiness_payload(
+    summary: PlannerAdmissionSummary,
+    admission: PlannerAdmissionView | None,
+) -> dict[str, object]:
+    if admission is None:
+        return {}
+    payload: dict[str, object] = {
+        "excluded_target_ids": list(summary.excluded_target_ids),
+        "unresolved_target_ids": list(summary.unresolved_target_ids),
+    }
+    if summary.blocked_target_ids:
+        payload["blocked_target_ids"] = list(summary.blocked_target_ids)
+    if summary.unknown_target_ids:
+        payload["unknown_target_ids"] = list(summary.unknown_target_ids)
+    if admission.target_decisions:
+        payload["candidates"] = [
+            {
+                "semantic_target_id": item.target_id,
+                "status": _terminal_readiness_status(item.status),
+                "blocking_obligation_ids": list(item.blocking_step_ids),
+                "unknown_obligation_ids": list(item.unknown_step_ids),
+            }
+            for item in admission.target_decisions
+        ]
+    return payload
+
+
+def _terminal_readiness_status(status: TargetAdmissionStatus) -> str:
+    return {
+        TargetAdmissionStatus.ALLOWED: "ready",
+        TargetAdmissionStatus.BLOCKED: "blocked",
+        TargetAdmissionStatus.UNKNOWN: "unknown",
+        TargetAdmissionStatus.UNRESOLVED: "unresolved",
+    }[status]
 
 
 def _planner_decision(

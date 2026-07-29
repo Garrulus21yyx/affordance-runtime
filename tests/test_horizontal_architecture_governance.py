@@ -561,6 +561,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "tpa_3_2a: completed_foundation" in status
     assert "tpa_3_2c: completed_foundation" in status
     assert "tpa_3_2d: completed_foundation" in status
+    assert "tpa_3_3: completed_foundation" in status
     assert "planner_context_request_record: docs/change-admission/tpa-3-1-planner-context-request-path.yaml" in status
     assert (
         "planner_projection_admission_contract_record: "
@@ -577,7 +578,12 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         "docs/change-admission/tpa-3-2d-decisionconstraint-apply-admission.yaml"
         in status
     )
-    assert "next_slice: tpa-3-3-generalist-request-only-core" in status
+    assert (
+        "generalist_request_core_record: "
+        "docs/change-admission/tpa-3-3-generalist-request-only-core.yaml"
+        in status
+    )
+    assert "next_slice: tpa-3-4-parent-agent-planner-request-migration" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -614,7 +620,10 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "s2.1 hardens this projection before tpa-2" in governance
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
-    assert "immutable_planner_input: foundation contracts and sole read-only builder implemented under simplified active-step architecture" in status
+    assert (
+        "immutable_planner_input: generalistlmplanner now uses the immutable planningrequest core internally"
+        in status
+    )
     assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
     assert "completed_plan_active_step_id: null" in s2_1
     assert "claim_id_is_not_source_unit_id: true" in s2_1
@@ -710,7 +719,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-3.3 generalist request-only core" in status
+    assert "current_next_change_admission: tpa-3.4 parentagentplanneradapter request migration" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1208,6 +1217,40 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "generalistlmplanner request-only core" in tpa_3_2d
     assert "coordinator call site change" in tpa_3_2d
     assert "closure_status: decisionconstraint_apply_admission_foundation" in tpa_3_2d
+
+
+def test_generalist_propose_uses_request_core_without_legacy_terminal_read() -> None:
+    tree = ast.parse((SOURCE_ROOT / "generalist_planner.py").read_text(encoding="utf-8"))
+    planner = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GeneralistLMPlanner"
+    )
+    propose = next(
+        node
+        for node in planner.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "propose"
+    )
+    calls = {
+        node.func.attr
+        for node in ast.walk(propose)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "build" in calls
+    assert "apply_admission" in calls
+    assert "narrow_terminal_candidates" not in calls
+    assert "build_context" not in calls
+
+    tpa_3_3 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-3-3-generalist-request-only-core.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "generalistlmplanner" in tpa_3_3
+    assert "planningrequest" in tpa_3_3
+    assert "production_behavior_change: false" in tpa_3_3
+    assert "plannerport public signature cutover" in tpa_3_3
+    assert "closure_status: generalist_request_only_core_foundation" in tpa_3_3
 
 
 def test_decisionconstraint_apply_admission_is_request_only() -> None:

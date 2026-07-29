@@ -803,3 +803,14 @@ delivery claims.
   sites, TaskPlan admission, progress authority, finish authority, PR breadth,
   and promotion remain unchanged. The next slice is TPA-3.3 Generalist
   request-only core.
+- Started TPA-3.3 after `a7c3668`. GeneralistLMPlanner now builds a single
+  immutable PlanningRequest at propose entry, rebuilds provider PlannerContext
+  from that request, and applies terminal admission from PlannerAdmissionView
+  instead of rereading StateKernel/BrowserSnapshot through
+  narrow_terminal_candidates. Request affordance state preserves bounded
+  list-like values, and no-canonical-obligation legacy TaskSpecs carry active
+  step objective/action-family as immutable compatibility context without
+  creating fake Step authority. PlannerPort public signature, Coordinator call
+  sites, TaskPlan admission, progress authority, finish authority, PR breadth,
+  and promotion remain unchanged. The next slice is TPA-3.4
+  ParentAgentPlannerAdapter request migration.

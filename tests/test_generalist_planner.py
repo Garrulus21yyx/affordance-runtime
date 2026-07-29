@@ -51,13 +51,23 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
+    EvidenceKind,
+    EvidenceRequirement,
     OperationClass,
     SemanticValueConstraint,
     SemanticValueRelation,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskObligationValueSource,
     TaskSpec,
 )
 from affordance_runtime.task_planning import (
@@ -941,6 +951,219 @@ class EmptyClarificationModel:
         return output_schema.model_validate({"action_kind": "ask_user"})
 
 
+def test_generalist_propose_uses_immutable_request_context_and_admission() -> None:
+    model = _authored_dom_adapter().transduce(
+        '<button id="submit">Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    source = model.affordances[0]
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+    )
+    candidate = candidate_from_affordance(
+        source,
+        observation,
+        semantic_target_id="submit-target",
+        compatible_executor="browsergym",
+    )
+    target = SemanticEntityResolver().resolve(
+        (
+            CandidateDescriptor(
+                "button",
+                "settings submission",
+                "activate",
+                "settings",
+                candidate,
+            ),
+        )
+    )[0]
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints=candidate_fingerprints((target,)),
+    )
+    snapshot = BrowserSnapshot(
+        observation,
+        model,
+        grounding_candidates=target.grounding_candidates,
+        unified_affordances=(target,),
+    )
+    state = StateKernel("task-1", "submit settings")
+    state.remember_observation(observation)
+    plan = TaskPlan(
+        plan_id="plan-request",
+        task_id="task-1",
+        task_revision=2,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.LLM,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="field:value",
+                objective="field equals dark",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.TYPE_TEXT,
+                outcome=SubgoalOutcome(
+                    subject="field",
+                    relation=SubgoalOutcomeRelation.EQUALS,
+                    value="dark",
+                ),
+            ),
+            SubgoalSpec(
+                subgoal_id="settings:submitted",
+                objective="settings submission is completed",
+                depends_on=("field:value",),
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.ACTIVATE,
+                outcome=SubgoalOutcome(
+                    subject="settings submission",
+                    relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+            ),
+        ),
+    )
+    state.task_plan = plan
+    state.plan_progress = PlanProgress(
+        active_subgoal_id="settings:submitted",
+        completed_subgoal_ids=["field:value"],
+        evidence_by_subgoal={},
+    )
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=2,
+        objective="Set the field to dark and submit settings",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("settings",),
+        success_criteria=("settings submitted",),
+        source_request_ref="request-1",
+        source_claims=(
+            SourcedTaskClaim(
+                claim_id="claim:field",
+                kind=TaskClaimKind.EFFECT,
+                statement="field equals dark",
+                source_ref="request-1",
+                source_unit_ids=("unit:field",),
+            ),
+            SourcedTaskClaim(
+                claim_id="claim:submit",
+                kind=TaskClaimKind.EFFECT,
+                statement="settings submission is completed",
+                source_ref="request-1",
+                source_unit_ids=("unit:submit",),
+            ),
+        ),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="field:value",
+                kind=TaskObligationKind.EFFECT,
+                subject="field",
+                relation=TaskObligationRelation.EQUALS,
+                value_source=TaskObligationValueSource.LITERAL,
+                expected_value="dark",
+                claim_ids=("claim:field",),
+                evidence_requirements=("field state evidence",),
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="field",
+                        relation=TaskObligationRelation.EQUALS,
+                        value_ref="dark",
+                        minimum_strength="independent",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
+            ),
+            TaskObligationSpec(
+                obligation_id="settings:submitted",
+                kind=TaskObligationKind.EFFECT,
+                subject="settings submission",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                value_source=TaskObligationValueSource.NONE,
+                depends_on=("field:value",),
+                claim_ids=("claim:submit",),
+                evidence_requirements=("submit completion evidence",),
+                terminal=True,
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="settings submission",
+                        relation=TaskObligationRelation.IS_COMPLETED,
+                        minimum_strength="independent",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    @dataclass
+    class RecordingRequestBuilder:
+        inner: PlanningRequestBuilder = PlanningRequestBuilder()
+        built: PlanningRequest | None = None
+
+        def build(
+            self,
+            envelope: TaskEnvelope,
+            state: StateKernel,
+            snapshot: BrowserSnapshot,
+        ) -> PlanningRequest:
+            self.built = self.inner.build(envelope, state, snapshot)
+            return self.built
+
+    @dataclass
+    class RequestOnlyContextBuilder:
+        received: PlanningRequest | None = None
+
+        def build(
+            self,
+            request: PlanningRequest,
+            state: StateKernel | None = None,
+            snapshot: BrowserSnapshot | None = None,
+        ) -> PlannerContext:
+            assert state is None
+            assert snapshot is None
+            self.received = request
+            return GeneralistLMPlanner(
+                ProposalModel(),
+            )._context_builder().build(request)
+
+    @dataclass
+    class AskUserModel(ProposalModel):
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            self.context = __import__("json").loads(messages[1].content)
+            return output_schema.model_validate({"action_kind": "ask_user"})
+
+    request_builder = RecordingRequestBuilder()
+    context_builder = RequestOnlyContextBuilder()
+    model_port = AskUserModel()
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(
+            model_port,
+            planning_request_builder=request_builder,  # type: ignore[arg-type]
+            context_builder=context_builder,  # type: ignore[arg-type]
+        ).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert request_builder.built is not None
+    assert context_builder.received is request_builder.built
+    assert model_port.context is not None
+    assert [item["id"] for item in model_port.context["affordances"]] == []  # type: ignore[index]
+    assert decision.planner_context["terminal_readiness"]["excluded_target_ids"] == [  # type: ignore[index]
+        target.semantic_target_id
+    ]
+    assert decision.planner_context["terminal_readiness"]["candidates"][0]["status"] == "unknown"  # type: ignore[index]
+
+
 def test_generalist_context_is_bounded_semantic_and_authority_separated() -> None:
     model = _authored_dom_adapter().transduce(
         '<button id="save" data-runtime-handle="secret-backend-handle">Save</button>',
@@ -1123,6 +1346,64 @@ def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
         targets=("settings",),
         success_criteria=("settings submitted",),
         source_request_ref="request-1",
+        source_claims=(
+            SourcedTaskClaim(
+                claim_id="claim:field",
+                kind=TaskClaimKind.EFFECT,
+                statement="field equals dark",
+                source_ref="request-1",
+                source_unit_ids=("unit:field",),
+            ),
+            SourcedTaskClaim(
+                claim_id="claim:submit",
+                kind=TaskClaimKind.EFFECT,
+                statement="settings submission is completed",
+                source_ref="request-1",
+                source_unit_ids=("unit:submit",),
+            ),
+        ),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="field:value",
+                kind=TaskObligationKind.EFFECT,
+                subject="field",
+                relation=TaskObligationRelation.EQUALS,
+                value_source=TaskObligationValueSource.LITERAL,
+                expected_value="dark",
+                claim_ids=("claim:field",),
+                evidence_requirements=("field state evidence",),
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="field",
+                        relation=TaskObligationRelation.EQUALS,
+                        value_ref="dark",
+                        minimum_strength="independent",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
+            ),
+            TaskObligationSpec(
+                obligation_id="settings:submitted",
+                kind=TaskObligationKind.EFFECT,
+                subject="settings submission",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                value_source=TaskObligationValueSource.NONE,
+                depends_on=("field:value",),
+                claim_ids=("claim:submit",),
+                evidence_requirements=("submit completion evidence",),
+                terminal=True,
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="settings submission",
+                        relation=TaskObligationRelation.IS_COMPLETED,
+                        minimum_strength="independent",
+                        source_constraints=("post_action_observation",),
+                    ),
+                ),
+            ),
+        ),
     )
 
     @dataclass

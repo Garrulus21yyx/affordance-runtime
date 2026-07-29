@@ -21,9 +21,9 @@ from affordance_runtime.simplified_runtime_contracts import (
     TaskPlanView,
 )
 
-FrozenStateItems = tuple[tuple[str, FrozenScalar], ...]
 FrozenRequestValue = object
 FrozenRequestObject = tuple[tuple[str, FrozenRequestValue], ...]
+FrozenStateItems = tuple[tuple[str, FrozenRequestValue], ...]
 
 
 class PlannerStepProjectionStatus(StrEnum):
@@ -101,6 +101,7 @@ class PlannerStepView:
     projection_status: PlannerStepProjectionStatus = PlannerStepProjectionStatus.NO_PLAN
     projection_reason: str = ""
     active_step_action_family: str = ""
+    compatibility_active_step_objective: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.activity_status, StepActivityStatus):
@@ -109,6 +110,11 @@ class PlannerStepView:
             raise ValueError("unsupported step projection status")
         if self.projection_reason:
             _require_nonblank("projection_reason", self.projection_reason)
+        if self.compatibility_active_step_objective:
+            _require_nonblank(
+                "compatibility_active_step_objective",
+                self.compatibility_active_step_objective,
+            )
         if self.progress is None:
             if self.plan is not None or self.active_step is not None:
                 raise ValueError("step view without progress cannot carry plan data")
@@ -402,12 +408,11 @@ class PlanningRequest:
 def _freeze_state_items(value: FrozenStateItems | dict[str, object]) -> FrozenStateItems:
     if isinstance(value, dict):
         return tuple(
-            (str(key), _freeze_scalar(item))
+            (str(key), freeze_request_value(item))
             for key, item in sorted(value.items())
-            if _is_frozen_scalar(item)
         )
     _require_tuple("state", value)
-    return tuple((key, _freeze_scalar(item)) for key, item in value)
+    return tuple((key, freeze_request_value(item)) for key, item in value)
 
 
 def freeze_request_value(value: object) -> FrozenRequestValue:
@@ -463,7 +468,7 @@ def _validate_state_items(value: FrozenStateItems) -> None:
         if key in seen:
             raise ValueError("state keys must be unique")
         seen.add(key)
-        _freeze_scalar(item)
+        thaw_request_value(item)
 
 
 def _validate_string_tuple_map(

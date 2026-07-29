@@ -87,7 +87,7 @@ class PlanningRequestBuilder:
             else None
         )
         limits = self.limits
-        step_view = _planner_step_view(step_projection)
+        step_view = _planner_step_view(step_projection, state)
         permitted_action_kinds = _permitted_action_kinds(
             snapshot,
             allow_finish=self.allow_finish,
@@ -173,7 +173,10 @@ class PlanningRequestBuilder:
         return request
 
 
-def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepView:
+def _planner_step_view(
+    projection: LegacyStepProjectionResult,
+    state: StateKernel,
+) -> PlannerStepView:
     if projection.status != LegacyStepProjectionStatus.PROJECTED:
         return PlannerStepView(
             plan=None,
@@ -182,6 +185,8 @@ def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepVie
             activity_status=StepActivityStatus.NO_PLAN,
             projection_status=_planner_step_projection_status(projection.status),
             projection_reason=projection.reason,
+            active_step_action_family=_compatibility_active_step_action_family(state),
+            compatibility_active_step_objective=_compatibility_active_step_objective(state),
         )
     plan = projection.task_plan_view
     progress = projection.step_progress_view
@@ -205,6 +210,38 @@ def _planner_step_view(projection: LegacyStepProjectionResult) -> PlannerStepVie
     )
 
 
+def _compatibility_active_step_objective(state: StateKernel) -> str:
+    """Carry legacy active-step text as immutable context, not step authority."""
+
+    plan = state.task_plan
+    progress = state.plan_progress
+    if plan is None or progress is None or not progress.active_subgoal_id:
+        return ""
+    return next(
+        (
+            item.objective
+            for item in plan.subgoals
+            if item.subgoal_id == progress.active_subgoal_id
+        ),
+        "",
+    )
+
+
+def _compatibility_active_step_action_family(state: StateKernel) -> str:
+    plan = state.task_plan
+    progress = state.plan_progress
+    if plan is None or progress is None or not progress.active_subgoal_id:
+        return ""
+    return next(
+        (
+            item.action_family.value
+            for item in plan.subgoals
+            if item.subgoal_id == progress.active_subgoal_id and item.action_family is not None
+        ),
+        "",
+    )
+
+
 def _planner_step_projection_status(
     status: LegacyStepProjectionStatus,
 ) -> PlannerStepProjectionStatus:
@@ -221,7 +258,7 @@ def _affordance_view(item: Affordance) -> PlannerAffordanceView:
         role=item.role,
         label=_bounded_text(item.label, 240),
         supported_actions=(item.action,),
-        state=item.state,
+        state=_compact_affordance_state(item.state),
         confidence=item.confidence,
         conflict_codes=(),
         source_refs=tuple(str(ref) for ref in item.evidence),
@@ -298,6 +335,21 @@ def _bounded_affordances(
     )
     selected_indexes = {index for index, _item in ranked[: max(1, limit)]}
     return [item for index, item in enumerate(affordances) if index in selected_indexes]
+
+
+def _compact_affordance_state(value: dict[str, object]) -> dict[str, object]:
+    """Mirror legacy PlannerContext state bounds before freezing request input."""
+
+    compact: dict[str, object] = {}
+    for key in sorted(value)[:12]:
+        item = value[key]
+        if isinstance(item, str):
+            compact[key] = _bounded_text(item, 240)
+        elif isinstance(item, (list, tuple)):
+            compact[key] = tuple(item[:8])
+        elif isinstance(item, (bool, int, float)) or item is None:
+            compact[key] = item
+    return compact
 
 
 def _permitted_action_kinds(
