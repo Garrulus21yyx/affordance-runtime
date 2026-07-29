@@ -288,9 +288,12 @@ TPA-0 freezes the TaskPlan and Step Planner owner matrix without changing
 production behavior. TPA-1 records the current TaskPlan construction, plan
 commit, replan, Step Planner triple-signature, Planner read-set, TaskSkill
 progress, CLI, integration, and benchmark surfaces and protects the exact
-baselines with AST tests. TPA-2 may add immutable PlanningRequest contracts and
-one read-only builder; it may not switch PlannerPort, TaskPlan admission,
-progress, finish, Coordinator control flow, or benchmark behavior.
+baselines with AST tests. TPA-2 adds immutable PlanningRequest contracts and
+one read-only builder; it does not switch PlannerPort, TaskPlan admission,
+progress, finish, Coordinator control flow, or benchmark behavior. TPA-3 is the
+first slice allowed to migrate standard StepPlannerPort call sites to
+`propose(request)` and must preserve provider-facing payload and behavior unless
+it triggers a separately authorized breadth rerun.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

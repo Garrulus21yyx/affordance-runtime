@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `docs: freeze TaskPlan authority and planner boundary`: TPA-0 adopts the TaskPlan authority amendment and TPA-1 freezes call-site/read-set inventories on top of the completed S2.1 projection hardening; no production authority or Planner behavior changes |
+| Current HEAD | `feat: add immutable PlanningRequest foundation`: TPA-2 adds deeply immutable planner-input contracts and the sole read-only `PlanningRequestBuilder` on top of the completed TPA-0/TPA-1 authority baseline; PlannerPort, Coordinator behavior, TaskPlan admission, progress authority, finish authority, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,10 +53,11 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 immutable_planner_input:
-  implementation: not_started
+  implementation: foundation_contracts_and_builder
+  record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   design: planned
   standard_path_migrated: false
-  tests: absent
+  tests: focused_foundation
 
 obligation_driven_progress:
   decision: frozen
@@ -111,7 +112,9 @@ simplified_runtime_architecture:
   current_production_progress_authority: legacy_taskplan_subgoal_planprogress
   target_production_progress_authority: runtime_owned_active_step
   target_task_completion_authority: task_spec_completion_criterion_independent_verification
-  next_slice: tpa-2-immutable-planning-request
+  planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
+  planning_request: foundation_contracts_and_builder
+  next_slice: tpa-3-stepplannerport-request-only-cutover
   odg_default_path: stopped
   odg_advanced_attribution: experimental_only
   odg_10_progress_commit: not_authorized
@@ -128,6 +131,8 @@ taskplan_authority_program:
   taskskill_authority_audit: docs/audits/taskskill-progress-authority.md
   tpa_0: completed
   tpa_1: completed
+  tpa_2: completed_foundation
+  planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   plan_candidate_owner_target: TaskPlanGeneratorPort
   plan_decision_owner_target: TaskPlanAuthority
   plan_commit_owner: RunCoordinator
@@ -135,7 +140,7 @@ taskplan_authority_program:
   standard_step_planner_target: StepPlannerPort.propose(PlanningRequest)
   current_standard_triple_signature_implementations: 15
   current_production_authority: legacy_taskplan_subgoal_planprogress
-  next_slice: tpa-2-immutable-planning-request
+  next_slice: tpa-3-stepplannerport-request-only-cutover
   production_authority_changed: false
   promotion_status: held
 
@@ -204,22 +209,23 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: TPA-2 immutable PlanningRequest contracts and sole builder; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
-  immutable_planner_input: planned under simplified active-step architecture using TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets
+  current_next_change_admission: TPA-3 StepPlannerPort request-only cutover; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  immutable_planner_input: foundation contracts and sole read-only builder implemented under simplified active-step architecture using TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets
 
 active_local_repair:
-  slice: tpa-1-authority-read-set-audit
+  slice: tpa-2-immutable-planning-request
   revision: current_committed_revision
-  status: read_only_inventory_committed
+  status: request_contracts_and_builder_foundation
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
+  planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
   behavior_change: false
   standard_path_authority: not_authorized
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
-  planner_context_change: not_authorized
+  planner_context_change: not_authorized_until_tpa_3
   taskplan_required: false
-  next_runtime_slice: s3-immutable-planning-request
+  next_runtime_slice: tpa-3-stepplannerport-request-only-cutover
   promotion_status: held
 
 attribution_classification:
@@ -514,7 +520,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | TPA-0 ownership freeze and TPA-1 read-only inventories are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, and execution-commit gates | none | TPA-2 immutable PlanningRequest is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
+| `active` | TPA-0 ownership freeze, TPA-1 read-only inventories, and TPA-2 immutable PlanningRequest foundation are current; S2.1 remains closed; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, and execution-commit gates | none | TPA-3 StepPlannerPort request-only cutover is next; TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, and active-step authority cutover remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

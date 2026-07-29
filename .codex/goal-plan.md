@@ -758,3 +758,11 @@ delivery claims.
   `task_skills.py`. No production source, Planner behavior, StateKernel,
   Coordinator control flow, progress authority, PR breadth, or promotion changed.
   The next slice is TPA-2 immutable PlanningRequest contracts and sole builder.
+- Started TPA-2 after `7cf854b`. Added immutable PlanningRequest contracts and
+  a sole read-only PlanningRequestBuilder that projects validated TaskSpec,
+  legacy exact-ID Step projection, bounded observation affordances, runtime
+  summaries, and budgets without mutating StateKernel or activating a ready
+  step. PlannerPort, Coordinator call sites, PlannerContextBuilder, TaskPlan
+  admission, progress authority, finish authority, PR breadth, and promotion
+  remain unchanged. The next slice after this foundation is TPA-3
+  StepPlannerPort request-only cutover.

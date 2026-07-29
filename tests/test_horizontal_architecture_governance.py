@@ -60,6 +60,7 @@ RUN_COORDINATOR_METHOD_CEILING = 26
 NEUTRAL_CONTRACT_MODULES = (
     "approval_contracts.py",
     "planning_contracts.py",
+    "planning_request.py",
     "simplified_runtime_contracts.py",
 )
 
@@ -286,7 +287,8 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "snapshot: current" in status
     assert "not a one-time milestone closure" in status
     assert "immutable_planner_input:" in status
-    assert "implementation: not_started" in status
+    assert "implementation: foundation_contracts_and_builder" in status
+    assert "record: docs/change-admission/tpa-2-immutable-planning-request.yaml" in status
     assert "standard_path_migrated: false" in status
     assert "latest implementation-bearing baseline" in status
     assert "later documentation-only sync commits" in status
@@ -553,7 +555,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "step_projection_record: docs/change-admission/s2-legacy-step-compatibility-projection.yaml" in status
     assert "step_projection_hardening_record: docs/change-admission/s2-1-step-projection-hardening.yaml" in status
     assert "step_projection: foundation_hardened" in status
-    assert "next_slice: tpa-2-immutable-planning-request" in status
+    assert "planning_request: foundation_contracts_and_builder" in status
+    assert "next_slice: tpa-3-stepplannerport-request-only-cutover" in status
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
@@ -590,7 +593,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "s2.1 hardens this projection before tpa-2" in governance
     assert "completed plans must project with no active step" in governance
     assert "criterion evidence policy must come from typed evidence requirements" in governance
-    assert "immutable_planner_input: planned under simplified active-step architecture" in status
+    assert "immutable_planner_input: foundation contracts and sole read-only builder implemented under simplified active-step architecture" in status
     assert "taskspec, step projection, unifiedobservation, recent actionoutcome summaries, and budgets" in status
     assert "completed_plan_active_step_id: null" in s2_1
     assert "claim_id_is_not_source_unit_id: true" in s2_1
@@ -686,7 +689,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-2 immutable planningrequest" in status
+    assert "current_next_change_admission: tpa-3 stepplannerport request-only cutover" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1054,6 +1057,31 @@ def test_simplified_step_projection_is_read_only_compatibility_projection() -> N
     assert violations == []
 
 
+def test_planning_request_builder_is_read_only_projection_owner() -> None:
+    filename = "planning_request_builder.py"
+    tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
+    violations: list[tuple[str, int, str]] = []
+    for node in ast.walk(tree):
+        for dependency in _import_dependencies(node):
+            if any(
+                _matches_module(dependency, prefix)
+                for prefix in (
+                    "affordance_runtime.adapters",
+                    "affordance_runtime.benchmarks",
+                    "affordance_runtime.coordinator",
+                    "affordance_runtime.trace",
+                )
+            ):
+                violations.append((filename, getattr(node, "lineno", 0), dependency))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in STATE_KERNEL_MUTATIONS
+        ):
+            violations.append((filename, node.lineno, node.func.attr))
+    assert violations == []
+
+
 def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     paths = (
         TASKPLAN_AUTHORITY_ARCHITECTURE,
@@ -1063,6 +1091,7 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
         TASKSKILL_AUTHORITY_AUDIT,
         CHANGE_ADMISSION_DIR / "tpa-0-taskplan-authority-freeze.yaml",
         CHANGE_ADMISSION_DIR / "tpa-1-authority-read-set-audit.yaml",
+        CHANGE_ADMISSION_DIR / "tpa-2-immutable-planning-request.yaml",
     )
     for path in paths:
         assert path.exists(), path
@@ -1101,6 +1130,17 @@ def test_taskplan_authority_decision_and_tpa_1_audits_are_governed() -> None:
     assert "taskskillrunstate" in taskskill
     assert "compatibility authority" in taskskill
     assert "runtime task completion authority: false" in taskskill
+    tpa_2 = " ".join(
+        (CHANGE_ADMISSION_DIR / "tpa-2-immutable-planning-request.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    assert "planningrequestbuilder" in tpa_2
+    assert "planningrequestlimits" in tpa_2
+    assert "production_behavior_change: false" in tpa_2
+    assert "plannerport_cutover" in tpa_2
+    assert "coordinator_call_site_change" in tpa_2
+    assert "closure_status: request_contracts_and_builder_foundation" in tpa_2
 
 
 def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> None:
