@@ -57,8 +57,8 @@ integrator.
 
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
-| Vertical | TPA-5 TaskPlan generator draft migration | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. S0 freezes the simplified default target architecture. S1 adds neutral simplified core contracts. S2/S2.1 provide a hardened, read-only exact-ID Step projection. TPA-0 through TPA-4 establish TaskPlan ownership, read-set inventories, immutable PlanningRequest, request-only PlannerPort, and neutral TaskPlanAuthority contracts. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Add draft-producing rule/router/reference generator surfaces without changing Coordinator plan commit, progress authority, finish authority, provider schema, or PR breadth claims. | unrelated horizontal debt retirement |
-| Horizontal | TPA-5 generator compatibility surfaces | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, TPA-3 request-only public PlannerPort cutover, and TPA-4 neutral TaskPlanAuthority contracts are closed | draft generators can produce authority-free TaskPlanDraft objects; legacy TaskPlannerPort and LLM generator migration remain pending behind compatibility seams | ODG experimental attribution documentation |
+| Vertical | SAR-0 authoritative optimized architecture freeze | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Add authoritative architecture and substitutive execution plan; stop TPA-5B foundation-only expansion; select SAR-1 deep immutability and stale contract-hash repair next. | unrelated horizontal debt retirement |
+| Horizontal | SAR-1 deep immutability / stale contract hash next | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, TPA-3 request-only public PlannerPort cutover, TPA-4 neutral TaskPlanAuthority contracts, and TPA-5 generator compatibility surfaces are closed as historical foundation | next production repair targets nested mutability and digest correctness before further planner/generator expansion | ODG experimental attribution documentation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -341,9 +341,11 @@ compatibility boundary. TPA-3.8 makes PlannerPort's public contract
 request-only and moves remaining three-argument planner invocation behind
 `planner_compatibility.py` for legacy ActionContract-returning fixtures. TPA-4
 adds neutral TaskPlanAuthority contracts, and TPA-5 adds draft-producing
-rule/router/reference generator compatibility surfaces. The selected next
-slice is TPA-5B LLM TaskPlan generator draft migration; ODG advanced
-attribution remains `EXPERIMENTAL_ONLY`.
+rule/router/reference generator compatibility surfaces. SAR-0 now supersedes
+the additive default sequence with the authoritative optimized architecture and
+substitutive refactor plan. The selected next slice is SAR-1 deep immutability
+and stale contract-hash repair; ODG advanced attribution remains
+`EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
 decision record is

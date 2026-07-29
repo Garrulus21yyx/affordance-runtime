@@ -864,3 +864,8 @@ delivery claims.
   Coordinator plan commit, StateKernel mutation, progress authority, finish
   authority, PR breadth, and promotion unchanged. The next slice is TPA-5B LLM
   TaskPlan generator draft migration.
+- Started SAR-0 after `648c2da`. Added the authoritative optimized target
+  architecture and substitutive refactor execution plan as the default
+  long-term authority, superseding the additive TPA/ODG default sequence for
+  future work. TPA-5B foundation-only expansion is stopped; the next slice is
+  SAR-1 deep immutability and stale contract-hash repair.

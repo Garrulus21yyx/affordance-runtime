@@ -340,6 +340,14 @@ draft migration. TPA-5 adds draft-producing rule, router, and reference
 generator compatibility surfaces plus exact semantic projection tests. It keeps
 legacy TaskPlannerPort production generation active, does not change provider
 schema or prompts, and leaves LLM draft migration as a separate pending slice.
+SAR-0 then freezes
+`docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`
+as the single long-term target architecture and
+`docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md`
+as the active execution plan. Future default-path work stops additive
+foundation-only expansion, including TPA-5B, and uses substitutive one-in/
+one-out migration. The next authorized slice is SAR-1 deep immutability and
+stale contract-hash repair.
 
 The token-minimizing default is one integrator agent carrying the slice from
 interface decision through implementation and final acceptance. Subagents are

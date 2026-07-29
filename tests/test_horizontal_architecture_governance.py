@@ -19,6 +19,14 @@ TASKPLAN_AUTHORITY_PLAN = (
     REPOSITORY_ROOT
     / "docs/superpowers/plans/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
 )
+AUTHORITATIVE_OPTIMIZED_ARCHITECTURE = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md"
+)
+SUBSTITUTIVE_REFACTOR_PLAN = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md"
+)
 TASKPLAN_CALL_SITE_AUDIT = (
     REPOSITORY_ROOT / "docs" / "audits" / "taskplan-authority-call-sites.md"
 )
@@ -771,7 +779,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: tpa-5b llm taskplan generator draft migration" in status
+    assert "current_next_change_admission: sar-1 deep immutability" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1657,6 +1665,31 @@ def test_taskplan_draft_generators_are_foundation_only() -> None:
     assert "taskplan_authority_production_admission: prohibited" in tpa_5
     assert "legacy_taskplannerport: active" in tpa_5
     assert "closure_status: taskplan_generator_draft_migration_foundation" in tpa_5
+
+
+def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
+    architecture = " ".join(
+        AUTHORITATIVE_OPTIMIZED_ARCHITECTURE.read_text(encoding="utf-8").split()
+    ).casefold()
+    execution_plan = " ".join(
+        SUBSTITUTIVE_REFACTOR_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    record = " ".join(
+        (CHANGE_ADMISSION_DIR / "sar-0-authoritative-architecture-freeze.yaml")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+
+    assert "唯一权威" in architecture
+    assert "plancandidate" in architecture
+    assert "taskprogress" in architecture
+    assert "substitutive migration" in execution_plan
+    assert "sar-1 深层不可变" in execution_plan
+    assert "production_behavior_change: false" in record
+    assert "stopped_additive_next_slice: tpa-5b-llm-taskplan-generator-draft-migration" in status
+    assert "next_slice: sar-1-deep-immutability-and-stale-contract-hash" in status
+    assert "additive_foundation_expansion: stopped" in status
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:
