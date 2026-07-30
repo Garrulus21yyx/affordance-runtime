@@ -114,10 +114,7 @@ class RecoveryPhase:
         state.current_recovery_decision = decision
         state.current_recovery_outcome = None
         command = plan.commands[0]
-        if command.kind in OWNER_DISPATCH_COMMANDS:
-            state.current_recovery_plan = plan
-        else:
-            state.current_recovery_plan = None
+        state.current_recovery_command = command
         state.attempted_recovery_strategy_ids.add(decision.strategy_key)
         state.recovery_count += 1
         parent = _trace_recovery_protocol(
@@ -187,10 +184,9 @@ class RecoveryPhase:
         *,
         abort_reentry_phase: RecoveryReentryPhase,
     ) -> tuple[RecoveryCommandKind, TraceNode]:
-        plan = state.current_recovery_plan
-        if plan is None:
-            raise ValueError("owner recovery dispatch requires a pending plan")
-        command = plan.commands[0]
+        command = state.current_recovery_command
+        if command is None:
+            raise ValueError("owner recovery dispatch requires a pending command")
         previous_fingerprint = (
             failure.progress_fingerprint
             or f"{failure.semantic_family_key}:state:{failure.state_version}"
@@ -206,7 +202,7 @@ class RecoveryPhase:
             parents=[parent.id],
         )
         if not dispatched.receipt.success or dispatched.delta is None:
-            state.current_recovery_plan = None
+            state.current_recovery_command = None
             state.transition(abort_reentry_phase.value)
             state.current_recovery_outcome = RecoveryOutcome(
                 decision_id=state.current_recovery_decision.decision_id
@@ -234,7 +230,7 @@ class RecoveryPhase:
                 dispatched.delta.next_attempt_fingerprint,
             )
         )
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         state.transition(RuntimeStep.OBSERVING.value)
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
@@ -313,7 +309,7 @@ def _complete_immediate_recovery_command(
     state.recovery_deltas.append(completion.delta)
     state.recovery_receipts.append(completion.receipt)
     state.recovery_history.append(completion.history)
-    state.current_recovery_plan = None
+    state.current_recovery_command = None
     state.current_recovery_outcome = RecoveryOutcome(
         decision_id=state.current_recovery_decision.decision_id
         if state.current_recovery_decision is not None

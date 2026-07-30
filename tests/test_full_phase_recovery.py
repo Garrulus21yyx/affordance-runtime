@@ -405,11 +405,11 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
     assert result.state.current_failure.phase == FailurePhase.OBSERVATION
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REOBSERVE.value
-    assert result.state.recovery_history == []
-    assert result.state.recovery_receipts == []
+    assert result.state.recovery_history[0].strategy_id.startswith("strategy:reobserve:")
+    assert result.state.recovery_receipts[0].success
     events = [node.kind for node in result.trace.nodes]
     assert events.index("FailureDetected") < events.index("RecoveryCommandStarted")
-    assert "RecoveryDeltaValidated" not in events
+    assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
 
 
 def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
@@ -427,8 +427,8 @@ def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     assert result.state.current_failure.phase == FailurePhase.STEP_PLANNING
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_STEP.value
-    assert result.state.recovery_history == []
-    assert result.state.recovery_deltas == []
+    assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
+    assert result.state.recovery_deltas[0].changed_dimensions[0].value == "step_plan"
 
 
 def test_target_scope_rejection_replans_without_weakening_validation() -> None:
@@ -518,7 +518,7 @@ def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget
     assert result.state.recovery_count < 3
     assert result.state.current_recovery_outcome is not None
     assert result.state.current_recovery_outcome.next_phase.value == RuntimeStep.ABORTED.value
-    assert [receipt.success for receipt in result.state.recovery_receipts] == [True]
+    assert [receipt.success for receipt in result.state.recovery_receipts] == [False, True]
     selected = [
         node.payload["decision"]["kind"]
         for node in result.trace.nodes
@@ -548,7 +548,7 @@ def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
     assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_TASK.value
     events = [node.kind for node in result.trace.nodes]
     assert events.index("RecoveryCommandStarted") < events.index("TaskPlanAccepted")
-    assert "RecoveryDeltaValidated" not in events
+    assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
 
 
 def test_intake_clarification_uses_same_recovery_coordinator_without_run_state() -> None:
@@ -613,7 +613,7 @@ def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> No
     assert result.state.receipts == []
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.GROUNDING_BINDING
-    assert [item.success for item in result.state.recovery_receipts] == [True]
+    assert [item.success for item in result.state.recovery_receipts] == [False, True]
     selected = [
         node.payload["decision"]["kind"]
         for node in result.trace.nodes

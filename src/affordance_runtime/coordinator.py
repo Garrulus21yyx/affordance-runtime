@@ -2383,10 +2383,9 @@ class RunCoordinator:
         plan_or_route_ref: str,
     ) -> TraceNode:
         failure = state.current_failure
-        plan = state.current_recovery_plan
-        if failure is None or plan is None or plan.commands[0].kind != kind:
+        command = state.current_recovery_command
+        if failure is None or command is None or command.kind != kind:
             return parent
-        command = plan.commands[0]
         completion = successful_recovery_completion(
             failure=failure,
             command=command,
@@ -2398,7 +2397,7 @@ class RunCoordinator:
         state.recovery_deltas.append(completion.delta)
         state.recovery_receipts.append(completion.receipt)
         state.recovery_history.append(completion.history)
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         parent = trace.add(
             "RecoveryCommandCompleted",
             {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},
@@ -2437,10 +2436,9 @@ class RunCoordinator:
         verification: VerificationReport | None = None,
     ) -> tuple[TraceNode, VerificationReport | None, bool]:
         failure = state.current_failure
-        plan = state.current_recovery_plan
-        if failure is None or plan is None:
+        command = state.current_recovery_command
+        if failure is None or command is None:
             return parent, verification, False
-        command = plan.commands[0]
         observation_commands = {
             RecoveryCommandKind.REOBSERVE,
             RecoveryCommandKind.INSPECT_POST_STATE,
@@ -2490,7 +2488,7 @@ class RunCoordinator:
                     error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
                 )
                 state.recovery_receipts.append(failed_receipt)
-                state.current_recovery_plan = None
+                state.current_recovery_command = None
                 parent = trace.add(
                     "RecoveryCommandCompleted",
                     {
@@ -2548,7 +2546,7 @@ class RunCoordinator:
                 next_fingerprint,
             )
         )
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         parent = trace.add(
             "RecoveryCommandCompleted",
             {
@@ -2583,10 +2581,9 @@ class RunCoordinator:
         contract: ActionContract,
     ) -> tuple[TraceNode, bool]:
         failure = state.current_failure
-        plan = state.current_recovery_plan
-        if failure is None or plan is None:
+        command = state.current_recovery_command
+        if failure is None or command is None:
             return parent, False
-        command = plan.commands[0]
         if command.kind not in {
             RecoveryCommandKind.REGROUND,
             RecoveryCommandKind.REROUTE,
@@ -2645,7 +2642,7 @@ class RunCoordinator:
                 next_fingerprint,
             )
         )
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         parent = trace.add(
             "RecoveryCommandCompleted",
             {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
@@ -2673,10 +2670,9 @@ class RunCoordinator:
         *,
         error_code: str,
     ) -> TraceNode:
-        plan = state.current_recovery_plan
-        if plan is None:
+        command = state.current_recovery_command
+        if command is None:
             return parent
-        command = plan.commands[0]
         receipt = RecoveryCommandReceipt(
             command_id=command.command_id,
             success=False,
@@ -2685,7 +2681,7 @@ class RunCoordinator:
             error_code=error_code,
         )
         state.recovery_receipts.append(receipt)
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         return trace.add(
             "RecoveryCommandCompleted",
             {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
@@ -2697,10 +2693,9 @@ class RunCoordinator:
         state: StateKernel,
         contract: ActionContract,
     ) -> RuntimeErrorCode | None:
-        plan = state.current_recovery_plan
-        if plan is None or plan.commands[0].kind != RecoveryCommandKind.RETRY_IDEMPOTENT:
+        command = state.current_recovery_command
+        if command is None or command.kind != RecoveryCommandKind.RETRY_IDEMPOTENT:
             return None
-        command = plan.commands[0]
         if (
             not contract.idempotency_key
             or contract.idempotency_key != command.idempotency_key
@@ -2720,14 +2715,13 @@ class RunCoordinator:
         observation: Observation,
     ) -> TraceNode:
         failure = state.current_failure
-        plan = state.current_recovery_plan
+        command = state.current_recovery_command
         if (
             failure is None
-            or plan is None
-            or plan.commands[0].kind != RecoveryCommandKind.RETRY_IDEMPOTENT
+            or command is None
+            or command.kind != RecoveryCommandKind.RETRY_IDEMPOTENT
         ):
             return parent
-        command = plan.commands[0]
         previous_fingerprint = (
             failure.progress_fingerprint
             or f"{failure.semantic_family_key}:state:{failure.state_version}"
@@ -2777,7 +2771,7 @@ class RunCoordinator:
                 next_fingerprint,
             )
         )
-        state.current_recovery_plan = None
+        state.current_recovery_command = None
         parent = trace.add(
             "RecoveryCommandCompleted",
             {"state": state.phase, "receipt": receipt.model_dump(mode="json")},

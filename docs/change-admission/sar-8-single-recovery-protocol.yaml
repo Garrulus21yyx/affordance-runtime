@@ -36,8 +36,8 @@ scope:
       through RecoveryPhase instead of the legacy RecoveryHandler.
     - StateKernel no longer stores recovery_incident or recovery_diagnostics.
     - StateKernel stores canonical current_recovery_decision and
-      current_recovery_outcome alongside the temporary plan/command
-      compatibility payload.
+      current_recovery_outcome alongside a narrowed temporary
+      current_recovery_command compatibility payload.
     - RecoveryPhase returns RecoveryApplicationResult with classification,
       RecoveryDecision, optional RecoveryOutcome, command_kind, and trace parent.
     - Immediate terminal recovery records RecoveryOutcome and clears the
@@ -51,14 +51,15 @@ scope:
     - Coordinator line count, run_sync length, and RunCoordinator method count
       decreased below the SAR-8C call-site migration ratchet.
     - RecoveryDecision to RecoveryPlan/RecoveryCommand conversion is isolated
-      in recovery_decision_compatibility.py; RecoveryPlan/RecoveryCommand
+      in recovery_decision_compatibility.py; RecoveryPlan no longer enters
+      StateKernel, while RecoveryCommand
       remain compatibility trace/dispatcher payloads and are no longer selected
       by the default Coordinator recovery owner.
     - RecoveryStrategySelected default RecoveryPhase trace payload now records
       canonical RecoveryDecision instead of legacy RecoveryPlan.
-    - Phase-general non-owner recovery transitions no longer store
-      current_recovery_plan, recovery_receipts, recovery_deltas, or
-      recovery_history entries in StateKernel.
+    - StateKernel no longer imports or stores RecoveryPlan/current_recovery_plan;
+      cross-turn recovery compatibility is narrowed to the pending
+      current_recovery_command plus canonical current_recovery_decision.
     - RunCoordinator.run_sync no longer reads legacy current_recovery_plan for
       pending recovery command checks; it uses canonical current_recovery_decision
       through a migration helper.
@@ -103,10 +104,12 @@ failure_kind_policy:
       - ask_user
       - abort
 
-remaining_sar_8_work:
-  - Replace RecoveryCommand/RecoveryPlan/RecoveryReceipt trace/dispatcher
+  remaining_sar_8_work:
+  - Replace RecoveryCommand/RecoveryReceipt trace/dispatcher
     compatibility payloads with RecoveryOutcome where external recovery action
     results are genuinely needed.
+  - Delete RecoveryPlan from the isolated recovery_decision_compatibility
+    adapter and recovery_coordinator.plan() compatibility API.
   - Delete legacy RecoveryAction/Incident/Attempt/Cascade modules and their
     dedicated compatibility tests after evolution/profile artifacts are migrated
     or archived.
@@ -127,6 +130,12 @@ validation:
   taskplan_lifecycle_no_legacy_plan_gate:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_plan_lifecycle_does_not_read_legacy_recovery_plan_state -q --tb=short
   taskplan_lifecycle_no_legacy_plan_gate_result: 1_passed
+  statekernel_no_legacy_recovery_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short
+  statekernel_no_legacy_recovery_plan_gate_result: 1_passed
+  pending_command_cutover_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_obligation_progress_ledger.py tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short --maxfail=20
+  pending_command_cutover_focused_result: 63_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -138,5 +147,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_canonical_decision_trace_local_candidate
+status: sar_8c_pending_command_state_local_candidate
 next_slice: planner-selection-simplification-actionchoice
