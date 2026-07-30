@@ -2216,6 +2216,40 @@ def test_for_1_actionchoice_failures_carry_failure_owner() -> None:
     assert "disposition" not in annotations
 
 
+def test_for_2b_recovery_coordinator_runtime_policy_excludes_semantic_owner_kinds() -> None:
+    source = (SOURCE_ROOT / "recovery_coordinator.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    module_source = ast.unparse(tree)
+
+    assert "RecoveryCoordinator only selects Runtime-owned recovery decisions" in source
+
+    strategy_order = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_strategy_order_for_kind"
+    )
+    strategy_source = ast.unparse(strategy_order)
+    planning_order = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_planning_strategy_order"
+    )
+    planning_source = ast.unparse(planning_order)
+    runtime_policy_source = "\n".join((strategy_source, planning_source))
+
+    for semantic_owner_kind in (
+        "RecoveryKind.REPLAN_TASK",
+        "RecoveryKind.REPLAN_STEP",
+        "RecoveryKind.ASK_USER",
+        "RecoveryKind.CLARIFY_INTENT",
+        "RecoveryKind.REQUEST_APPROVAL",
+    ):
+        assert semantic_owner_kind not in runtime_policy_source
+
+    assert "RecoveryKind.REPLAN_TASK" in module_source
+    assert "RecoveryKind.ASK_USER" in module_source
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(

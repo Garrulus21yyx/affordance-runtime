@@ -132,7 +132,8 @@ validation_policy:
 status:
   for_1: local_candidate
   for_2a_runtime_recovery_phase_narrowing: local_candidate
-  for_2b_semantic_recoverykind_deletion: selected_next
+  for_2b_runtime_recovery_policy_cleanup: local_candidate
+  for_3_structured_owner_handoff: selected_next
   full_for_closure: incomplete
 
 behavioral_evidence:

@@ -79,6 +79,8 @@ class RecoveryCoordinator:
         *,
         current_state_version: int,
     ) -> RecoveryDecision:
+        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
+            raise ValueError("RecoveryCoordinator only selects Runtime-owned recovery decisions")
         attempted = set(failure.attempted_strategy_ids)
         ordered = _strategy_order(failure, classification, context)
         for kind in ordered:
@@ -131,15 +133,10 @@ def _strategy_order(
     }:
         base = (
             RecoveryKind.INSPECT_POST_STATE,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     elif failure.failure_class == FailureClass.AUTHORITY:
-        base = (
-            RecoveryKind.REQUEST_APPROVAL,
-            RecoveryKind.ASK_USER,
-            RecoveryKind.ABORT,
-        )
+        base = (RecoveryKind.ABORT,)
     else:
         base = _strategy_order_for_kind(classification.kind, failure.phase)
     profile = tuple(
@@ -167,13 +164,12 @@ def _strategy_order_for_kind(
     if kind == FailureKind.CURRENT_STEP_ALREADY_SATISFIED:
         return (RecoveryKind.ABORT,)
     if kind == FailureKind.MISSING_USER_INPUT:
-        return (RecoveryKind.ASK_USER, RecoveryKind.ABORT)
+        return (RecoveryKind.ABORT,)
     if kind == FailureKind.GROUNDING_AMBIGUOUS:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.REGROUND,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if kind == FailureKind.NO_FEASIBLE_ACTION:
@@ -187,11 +183,7 @@ def _strategy_order_for_kind(
     if kind == FailureKind.PLAN_OUTPUT_REJECTED:
         return _planning_strategy_order(phase)
     if kind == FailureKind.INTENT_COMPILATION_REJECTED:
-        return (
-            RecoveryKind.CLARIFY_INTENT,
-            RecoveryKind.ASK_USER,
-            RecoveryKind.ABORT,
-        )
+        return (RecoveryKind.ABORT,)
     if kind == FailureKind.EXECUTION_FAILED:
         return (
             RecoveryKind.REROUTE,
@@ -203,15 +195,12 @@ def _strategy_order_for_kind(
     if kind == FailureKind.VERIFICATION_FAILED:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
-            RecoveryKind.REPLAN_STEP,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if kind == FailureKind.OBSERVATION_INSUFFICIENT:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if kind == FailureKind.PROVIDER_OR_SCHEMA_FAILURE:
@@ -219,15 +208,10 @@ def _strategy_order_for_kind(
             RecoveryKind.COMPACT_CONTEXT,
             RecoveryKind.REPAIR_MODEL_SCHEMA,
             RecoveryKind.SWITCH_PROVIDER,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if kind == FailureKind.AUTHORITY_BLOCKED:
-        return (
-            RecoveryKind.REQUEST_APPROVAL,
-            RecoveryKind.ASK_USER,
-            RecoveryKind.ABORT,
-        )
+        return (RecoveryKind.ABORT,)
     if kind == FailureKind.UNKNOWN:
         return (RecoveryKind.ABORT,)
     return _planning_strategy_order(phase)
@@ -239,32 +223,21 @@ def _planning_strategy_order(phase: FailurePhase) -> tuple[RecoveryKind, ...]:
             RecoveryKind.COMPACT_CONTEXT,
             RecoveryKind.REPAIR_MODEL_SCHEMA,
             RecoveryKind.SWITCH_PROVIDER,
-            RecoveryKind.REPLAN_TASK,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if phase == FailurePhase.STEP_PLANNING:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.COMPACT_CONTEXT,
-            RecoveryKind.REPLAN_STEP,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if phase == FailurePhase.PROPOSAL_VALIDATION:
         return (
             RecoveryKind.REPAIR_MODEL_SCHEMA,
-            RecoveryKind.REPLAN_STEP,
-            RecoveryKind.ASK_USER,
             RecoveryKind.ABORT,
         )
     if phase == FailurePhase.SKILL_ACTIVATION:
-        return (
-            RecoveryKind.REPLAN_STEP,
-            RecoveryKind.REPLAN_TASK,
-            RecoveryKind.ASK_USER,
-            RecoveryKind.ABORT,
-        )
+        return (RecoveryKind.ABORT,)
     return (RecoveryKind.ABORT,)
 
 

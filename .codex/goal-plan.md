@@ -1019,3 +1019,11 @@ delivery claims.
   remains next: delete semantic-owner `RecoveryKind` values and duplicate owner
   mappings, then move to structured non-runtime handoff and behavioral
   classification.
+- Closed FOR-2B locally. `RecoveryCoordinator.decide()` now rejects
+  non-runtime owners, runtime strategy order no longer emits semantic-owner
+  `RecoveryKind` fallbacks (`REPLAN_*`, `ASK_USER`, `CLARIFY_INTENT`,
+  `REQUEST_APPROVAL`), `RecoveryPhase` removed its unreachable replan branch,
+  and intake/user owner failures use the temporary owner handoff decision path.
+  Focused FOR recovery/actionchoice/governance tests passed 48/48 and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-3 is
+  next: replace the temporary handoff with structured owner handoff context.

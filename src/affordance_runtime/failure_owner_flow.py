@@ -43,7 +43,7 @@ def commit_non_runtime_failure_owner_handoff(
     Terminal boundaries.
     """
 
-    decision = _non_runtime_owner_decision(
+    decision = non_runtime_failure_owner_decision(
         failure,
         classification,
         current_state_version=state.version,
@@ -56,7 +56,7 @@ def commit_non_runtime_failure_owner_handoff(
             planner_deferral_kind=classification.planner_deferral_kind,
             available_action_count=classification.available_action_count,
         )
-        decision = _non_runtime_owner_decision(
+        decision = non_runtime_failure_owner_decision(
             failure,
             classification,
             current_state_version=state.version,
@@ -74,15 +74,6 @@ def commit_non_runtime_failure_owner_handoff(
         decision=decision,
     ):
         parent = trace.add(projection.kind, projection.payload, parents=[parent.id])
-
-    if classification.owner in {FailureOwner.STEP_PLANNER, FailureOwner.TASK_PLANNER}:
-        state.replan_count += 1
-        state.record_disproved_assumption(
-            f"{failure.phase.value}:{failure.error_code}:{failure.message}"
-        )
-        if state.phase != RuntimeStep.OBSERVING.value:
-            state.transition(RuntimeStep.OBSERVING.value)
-        return decision.kind, parent
 
     terminal_step = _runtime_step_for_owner_decision(decision)
     if terminal_step is not None:
@@ -114,16 +105,60 @@ def commit_non_runtime_failure_owner_handoff(
             },
             parents=[parent.id],
         )
+        return decision.kind, parent
+
+    if classification.owner in {FailureOwner.STEP_PLANNER, FailureOwner.TASK_PLANNER}:
+        state.replan_count += 1
+        state.record_disproved_assumption(
+            f"{failure.phase.value}:{failure.error_code}:{failure.message}"
+        )
+        if state.phase != RuntimeStep.OBSERVING.value:
+            state.transition(RuntimeStep.OBSERVING.value)
+        return decision.kind, parent
 
     return decision.kind, parent
 
 
-def _non_runtime_owner_decision(
+def non_runtime_failure_owner_decision(
     failure: FailureEnvelope,
     classification: FailureClassification,
     *,
     current_state_version: int,
 ) -> RecoveryDecision:
+    if not failure.recoverable:
+        kind = RecoveryKind.ABORT
+        dimension = RecoveryDimension.TERMINAL
+        reentry = RuntimePhase.ABORTED
+        cost = RecoveryBudgetCost(recoveries=0)
+    else:
+        kind, dimension, reentry, cost = _recoverable_owner_shape(failure, classification)
+    strategy_key = (
+        f"strategy:{kind.value}:"
+        f"{failure.semantic_family_key.removeprefix('sha256:')[:16]}"
+    )
+    return RecoveryDecision(
+        decision_id=f"failure-owner-decision-{uuid4().hex}",
+        failure_id=failure.failure_id,
+        based_on_state_version=current_state_version,
+        strategy_key=strategy_key,
+        kind=kind,
+        reason_code=classification.reason_code,
+        reentry_phase=reentry,
+        changed_dimensions=(dimension,),
+        preconditions=(f"failure owner is {classification.owner.value}",),
+        budget_cost=cost,
+        question=(
+            "What information or authority is required to continue safely?"
+            if classification.owner == FailureOwner.USER and kind != RecoveryKind.ABORT
+            else ""
+        ),
+    )
+
+
+def _recoverable_owner_shape(
+    failure: FailureEnvelope,
+    classification: FailureClassification,
+) -> tuple[RecoveryKind, RecoveryDimension, RuntimePhase, RecoveryBudgetCost]:
     kind, dimension, reentry, cost = {
         FailureOwner.PROGRESS: (
             RecoveryKind.ABORT,
@@ -158,27 +193,7 @@ def _non_runtime_owner_decision(
             RecoveryBudgetCost(recoveries=0),
         ),
     }[classification.owner]
-    strategy_key = (
-        f"strategy:{kind.value}:"
-        f"{failure.semantic_family_key.removeprefix('sha256:')[:16]}"
-    )
-    return RecoveryDecision(
-        decision_id=f"failure-owner-decision-{uuid4().hex}",
-        failure_id=failure.failure_id,
-        based_on_state_version=current_state_version,
-        strategy_key=strategy_key,
-        kind=kind,
-        reason_code=classification.reason_code,
-        reentry_phase=reentry,
-        changed_dimensions=(dimension,),
-        preconditions=(f"failure owner is {classification.owner.value}",),
-        budget_cost=cost,
-        question=(
-            "What information or authority is required to continue safely?"
-            if classification.owner == FailureOwner.USER
-            else ""
-        ),
-    )
+    return kind, dimension, reentry, cost
 
 
 def _runtime_step_for_owner_decision(decision: RecoveryDecision) -> str | None:

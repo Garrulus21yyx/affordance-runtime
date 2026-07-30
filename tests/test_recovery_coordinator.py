@@ -103,23 +103,39 @@ def _context(**updates: object) -> RecoverySelectionContext:
 
 def test_phase_general_coordinator_selects_safe_primary_strategy() -> None:
     expected = {
-        FailurePhase.INTAKE: RecoveryKind.CLARIFY_INTENT,
         FailurePhase.OBSERVATION: RecoveryKind.ACTIVE_PERCEPTION,
         FailurePhase.FUSION: RecoveryKind.ACTIVE_PERCEPTION,
-        FailurePhase.TASK_PLANNING: RecoveryKind.COMPACT_CONTEXT,
-        FailurePhase.STEP_PLANNING: RecoveryKind.ACTIVE_PERCEPTION,
-        FailurePhase.PROPOSAL_VALIDATION: RecoveryKind.REPAIR_MODEL_SCHEMA,
         FailurePhase.GROUNDING_BINDING: RecoveryKind.ACTIVE_PERCEPTION,
         FailurePhase.PREFLIGHT: RecoveryKind.ACTIVE_PERCEPTION,
         FailurePhase.EXECUTION_NOT_DISPATCHED: RecoveryKind.REROUTE,
         FailurePhase.VERIFICATION: RecoveryKind.ACTIVE_PERCEPTION,
         FailurePhase.PROVIDER_CONTEXT: RecoveryKind.COMPACT_CONTEXT,
-        FailurePhase.SKILL_ACTIVATION: RecoveryKind.REPLAN_STEP,
     }
 
     for phase, kind in expected.items():
         decision = _decision(_failure(phase), _context(), current_state_version=3)
         assert decision.kind == kind
+
+
+def test_recovery_coordinator_rejects_non_runtime_failure_owners() -> None:
+    for phase in (
+        FailurePhase.INTAKE,
+        FailurePhase.TASK_PLANNING,
+        FailurePhase.STEP_PLANNING,
+        FailurePhase.PROPOSAL_VALIDATION,
+        FailurePhase.SKILL_ACTIVATION,
+    ):
+        failure = _failure(phase)
+        classification = classify_failure(failure)
+
+        assert classification.owner != FailureOwner.RUNTIME_RECOVERY
+        with pytest.raises(ValueError, match="RecoveryCoordinator only selects Runtime-owned"):
+            RecoveryCoordinator().decide(
+                failure,
+                classification,
+                _context(),
+                current_state_version=3,
+            )
 
 
 def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
@@ -135,7 +151,7 @@ def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
     assert decision.changed_dimensions == (RecoveryDimension.EFFECT_STATUS,)
 
 
-def test_irreducible_missing_evidence_asks_user_when_no_probe_or_reobserve_exists() -> None:
+def test_irreducible_runtime_missing_evidence_aborts_when_no_probe_or_reobserve_exists() -> None:
     failure = _failure(FailurePhase.OBSERVATION)
     decision = _decision(
         failure,
@@ -147,8 +163,8 @@ def test_irreducible_missing_evidence_asks_user_when_no_probe_or_reobserve_exist
         current_state_version=3,
     )
 
-    assert decision.kind == RecoveryKind.ASK_USER
-    assert decision.reentry_phase == RuntimePhase.WAITING_USER
+    assert decision.kind == RecoveryKind.ABORT
+    assert decision.reentry_phase == RuntimePhase.ABORTED
 
 
 def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_replan() -> None:
@@ -171,14 +187,8 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
     assert classification.owner == FailureOwner.STEP_PLANNER
     assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
-    decision = _decision(failure, _context(), current_state_version=3)
-
-    assert decision.kind == RecoveryKind.COMPACT_CONTEXT
-    assert decision.kind not in {
-        RecoveryKind.ASK_USER,
-        RecoveryKind.REPLAN_STEP,
-        RecoveryKind.REPLAN_TASK,
-    }
+    with pytest.raises(ValueError, match="RecoveryCoordinator only selects Runtime-owned"):
+        _decision(failure, _context(), current_state_version=3)
 
 
 def test_failure_classification_routes_model_deferral_to_step_planner_owner() -> None:
@@ -212,16 +222,15 @@ def test_planner_deferral_does_not_default_to_ask_user_when_action_space_is_unkn
         }
     )
 
-    decision = _decision(
-        failure,
-        _context(
-            available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
-            available_action_count=0,
-        ),
-        current_state_version=3,
-    )
-
-    assert decision.kind == RecoveryKind.ABORT
+    with pytest.raises(ValueError, match="RecoveryCoordinator only selects Runtime-owned"):
+        _decision(
+            failure,
+            _context(
+                available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
+                available_action_count=0,
+            ),
+            current_state_version=3,
+        )
 
 
 def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> None:
@@ -393,7 +402,7 @@ def test_retry_and_compensation_decisions_reject_unsafe_shortcuts() -> None:
 
 
 def test_coordinator_skips_stale_unavailable_overbudget_and_unaccepted_profile() -> None:
-    failure = _failure(FailurePhase.TASK_PLANNING)
+    failure = _failure(FailurePhase.OBSERVATION)
 
     unavailable = _decision(
         failure,
@@ -413,7 +422,7 @@ def test_coordinator_skips_stale_unavailable_overbudget_and_unaccepted_profile()
 
 
 def test_repeated_strategy_changes_or_stops_and_a_b_oscillation_is_not_reentered() -> None:
-    first_failure = _failure(FailurePhase.TASK_PLANNING)
+    first_failure = _failure(FailurePhase.OBSERVATION)
     first = _decision(first_failure, _context(), current_state_version=3)
     first_id = first.strategy_key
     repeated_failure = first_failure.model_copy(

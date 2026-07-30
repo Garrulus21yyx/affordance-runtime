@@ -75,7 +75,7 @@ validation_policy:
 
 status:
   for_2a: local_candidate
-  for_2b_semantic_recoverykind_deletion: selected_next
-  for_3_structured_owner_handoff: pending
+  for_2b_runtime_recovery_policy_cleanup: local_candidate
+  for_3_structured_owner_handoff: selected_next
   for_4_routing_deletion_gate: pending
   full_for_closure: incomplete

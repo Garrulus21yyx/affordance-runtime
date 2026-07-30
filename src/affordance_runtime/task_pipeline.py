@@ -13,9 +13,9 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
+from affordance_runtime.failure_owner_flow import non_runtime_failure_owner_decision
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
-from affordance_runtime.recovery_coordinator import RecoverySelectionContext
 from affordance_runtime.recovery_protocol import (
     RecoveryDimension,
     RecoveryKind,
@@ -147,30 +147,10 @@ class GeneralistTaskPipeline:
             recoverable=clarification,
             progress_fingerprint="intake:uncompiled",
         )
-        recovery_context = RecoverySelectionContext(
-            available_commands=(
-                frozenset(
-                    {
-                        RecoveryKind.CLARIFY_INTENT,
-                        RecoveryKind.ASK_USER,
-                        RecoveryKind.ABORT,
-                    }
-                )
-                if clarification
-                else frozenset({RecoveryKind.ABORT})
-            ),
-            current_attempt_fingerprint=failure.progress_fingerprint,
-            user_question=message,
-            accepted_profile_digest=self.coordinator.runtime_profile_digest,
-            accepted_profile_artifact_ids=frozenset(
-                self.coordinator.loaded_profile_artifact_ids
-            ),
-        )
         classification = classify_failure(failure)
-        decision = self.coordinator.recovery_coordinator.decide(
+        decision = non_runtime_failure_owner_decision(
             failure,
             classification,
-            recovery_context,
             current_state_version=0,
         )
         parent = trace.nodes[-1] if trace.nodes else None

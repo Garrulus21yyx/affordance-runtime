@@ -133,21 +133,6 @@ class RecoveryPhase:
                 decision.kind,
                 parent,
             )
-        if decision.kind in {
-            RecoveryKind.REPLAN_STEP,
-            RecoveryKind.REPLAN_TASK,
-        }:
-            state.replan_count += 1
-            state.record_disproved_assumption(
-                f"{failure.phase.value}:{failure.error_code}:{failure.message}"
-            )
-            state.transition(RuntimeStep.OBSERVING.value)
-            return RecoveryApplicationResult(
-                classification,
-                decision,
-                decision.kind,
-                parent,
-            )
         if decision.kind in OWNER_DISPATCH_RECOVERY_KINDS:
             recovery_kind, parent = self._dispatch_owner_command(
                 failure,
