@@ -1060,3 +1060,13 @@ delivery claims.
   Ruff and core mypy passed. Coordinator is now 2939 lines, `run_sync()` is
   1940 lines, and RunCoordinator has 19 methods. SAR-9 full phase extraction
   remains incomplete; next is another named phase extraction slice.
+- Started SAR-9B ProgressPhase extraction after
+  `008b48055a401743a3c5291869e3d66f2748c4ef`. Added
+  `progress_phase.ProgressPhase`, routed post-observation and post-TaskPlan
+  current-state progress through that seam, and removed direct low-level
+  progress-flow calls from `RunCoordinator.run_sync` and `task_plan_phase.py`.
+  Progress authority remains `task_plan_progress_flow` for this intermediate
+  extraction. Focused/adjacent SAR-9A/SAR-9B/Progress/TaskPlan/Coordinator
+  gates passed 62/62; changed-file Ruff, core mypy, and diff check passed.
+  Coordinator is now 2934 lines, `run_sync()` is 1936 lines, and RunCoordinator
+  remains at 19 methods. SAR-9 full phase extraction remains incomplete.

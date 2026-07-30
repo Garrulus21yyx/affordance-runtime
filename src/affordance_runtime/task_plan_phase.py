@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.state_kernel import StateKernel
@@ -17,7 +18,6 @@ from affordance_runtime.task_plan_flow import (
     TaskPlanFlowKind,
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits
-from affordance_runtime.task_plan_progress_flow import commit_current_state_completion
 from affordance_runtime.trace import TraceDag, TraceNode
 
 
@@ -25,6 +25,7 @@ from affordance_runtime.trace import TraceDag, TraceNode
 class TaskPlanPhaseResult:
     parent: TraceNode
     failure: TaskPlanFlowFailure | None = None
+    plan_committed: bool = False
     current_state_completion_committed: bool = False
 
 
@@ -38,6 +39,7 @@ def commit_task_plan_phase(
     *,
     task_plan_flow: TaskPlanFlow,
     recovery_phase: RecoveryPhase,
+    progress_phase: ProgressPhase,
 ) -> TaskPlanPhaseResult:
     """Prepare and commit TaskPlan changes without keeping the logic in run_sync."""
 
@@ -104,7 +106,7 @@ def commit_task_plan_phase(
         kind=RecoveryKind.REPLAN_TASK,
         plan_or_route_ref=task_plan.plan_id,
     )
-    current_state_parent = commit_current_state_completion(
+    progress_result = progress_phase.commit_current_state(
         task_spec,
         state,
         snapshot,
@@ -112,9 +114,8 @@ def commit_task_plan_phase(
         trace,
         parent,
     )
-    if current_state_parent is not None:
-        return TaskPlanPhaseResult(
-            parent=current_state_parent,
-            current_state_completion_committed=True,
-        )
-    return TaskPlanPhaseResult(parent=parent)
+    return TaskPlanPhaseResult(
+        parent=progress_result.parent,
+        plan_committed=True,
+        current_state_completion_committed=progress_result.completion_committed,
+    )

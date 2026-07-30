@@ -118,7 +118,7 @@ owner routing now goes through typed `FailureOwnerHandoff` /
 helper mappings plus implicit wrapper compatibility are removed. FOR-4 targeted
 non-qwen Ollama classification is recorded at
 `docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md`.
-SAR-9A TaskPlan phase extraction is now the active local slice.
+SAR-9B ProgressPhase extraction is now the active local slice.
 Neither lane authorizes promotion while remote CI is disabled or required
 validation is unavailable.
 
@@ -424,7 +424,7 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 
 | Debt | State | Required direction |
 | --- | --- | --- |
-| `RunCoordinator.run_sync` contains multiple phase algorithms | `SAR-9A local candidate` | TaskPlan prepare / commit / trace-projection detail is extracted to `task_plan_phase.commit_task_plan_phase`; continue extracting one named responsibility at a time through immutable context and typed result |
+| `RunCoordinator.run_sync` contains multiple phase algorithms | `SAR-9B local candidate` | TaskPlan prepare / commit / trace-projection detail is extracted to `task_plan_phase.commit_task_plan_phase`; post-observation and post-TaskPlan current-state progress now route through `progress_phase.ProgressPhase`; continue extracting one named responsibility at a time through immutable context and typed result |
 | standard `PlannerPort` still receives mutable `StateKernel` | `done for public contract / compatibility pending` | public `PlannerPort` is request-only; legacy compatibility signatures must continue shrinking behind explicit adapters |
 | failure routing and runtime recovery ownership are still mixed | `FOR-4 local candidate / SAR-9 selected` | `FailureOwner` replaces `FailureDisposition`; RecoveryPhase and RecoveryCoordinator now accept only `RUNTIME_RECOVERY`; runtime policy no longer emits semantic-owner RecoveryKind fallbacks; non-runtime routing has typed handoff contracts; duplicate helper mappings are removed; targeted behavioral classification is recorded. SAR-9 may start, but must not copy mixed owner logic into phases |
 | Generalist Planner semantic fallback ownership review | `in_progress` | Planner Selection Simplification deleted the strict `semantic_action_resolver.py` default path and strict page/exact text/terminal-submit fallback functions; remaining historical-profile grammar must retire through ActionChoice or explicit compatibility-only owners |

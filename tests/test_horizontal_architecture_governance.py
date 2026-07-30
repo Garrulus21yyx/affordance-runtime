@@ -2351,6 +2351,24 @@ def test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection() -> None
     assert (SOURCE_ROOT / "task_plan_phase.py").is_file()
 
 
+def test_sar_9b_progress_low_level_commits_are_behind_progress_phase() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    task_plan_phase_source = (SOURCE_ROOT / "task_plan_phase.py").read_text(
+        encoding="utf-8"
+    )
+    progress_phase_path = SOURCE_ROOT / "progress_phase.py"
+
+    assert progress_phase_path.is_file()
+    assert "progress_phase" in coordinator_source
+
+    for forbidden in (
+        "commit_post_observation_progress",
+        "commit_current_state_completion",
+    ):
+        assert forbidden not in coordinator_source
+        assert forbidden not in task_plan_phase_source
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(

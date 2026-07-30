@@ -58,6 +58,7 @@ from affordance_runtime.planning import (
     proposal_record,
 )
 from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
@@ -90,13 +91,10 @@ from affordance_runtime.runtime_terminal import (
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
-from affordance_runtime.task_plan_flow import (
-    TaskPlanFlow,
-)
+from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_phase import commit_task_plan_phase
 from affordance_runtime.task_plan_progress_flow import (
-    commit_post_observation_progress,
     commit_task_skill_terminal_progress,
     commit_verified_task_progress,
 )
@@ -119,6 +117,7 @@ OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
         RecoveryKind.SWITCH_PROVIDER,
     }
 )
+PROGRESS_PHASE = ProgressPhase()
 
 
 @dataclass(frozen=True)
@@ -453,22 +452,18 @@ class RunCoordinator:
                     RuntimeErrorCode.PRECONDITION_FAILED,
                     latest_verification,
                 )
-            progress_commit = commit_post_observation_progress(
+            progress_commit = PROGRESS_PHASE.commit_post_observation(
                 envelope.task_spec, state, snapshot, self.budget, trace, parent
             )
             parent = progress_commit.parent
-            if progress_commit.legacy_completion_committed:
+            if progress_commit.completion_committed:
                 continue
             if self.task_plan_flow is not None and envelope.task_spec is not None:
                 task_plan_phase = commit_task_plan_phase(
-                    envelope.task_spec,
-                    state,
-                    snapshot,
-                    self.budget,
-                    trace,
-                    parent,
+                    envelope.task_spec, state, snapshot, self.budget, trace, parent,
                     task_plan_flow=self.task_plan_flow,
                     recovery_phase=self.recovery_phase,
+                    progress_phase=PROGRESS_PHASE,
                 )
                 parent = task_plan_phase.parent
                 flow_failure = task_plan_phase.failure

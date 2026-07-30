@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-9A TaskPlan phase extraction | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, records canonical recovery decision/outcome state, and physically removes the legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols at implementation revision `09d43041283078d4031828d01d0b129df4271148`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text / slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback at implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. FOR-1 through FOR-4 close the Failure Ownership Router precondition for SAR-9; targeted non-qwen Ollama `llama3.1:8b` classification on `ccb6bf1` observed 3/3 with 1/3 pass, clustering residuals into execution and intent/planning owners. SAR-9A starts phase extraction by moving TaskPlan prepare / commit / trace-projection detail out of `RunCoordinator.run_sync` into `task_plan_phase.commit_task_plan_phase`. | `RunCoordinator.run_sync` no longer inlines `TaskPlanCommitPreparation`, `TaskPlanCommitStateView`, `TaskPlanFlowKind`, or plan_commit projection details; Coordinator still owns event ordering and TaskPlan failure recovery branch response. | next named SAR-9 phase extraction after SAR-9A |
+| Horizontal | SAR-9B ProgressPhase extraction | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, records canonical recovery decision/outcome state, and physically removes the legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols at implementation revision `09d43041283078d4031828d01d0b129df4271148`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text / slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback at implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. FOR-1 through FOR-4 close the Failure Ownership Router precondition for SAR-9. SAR-9A moved TaskPlan prepare / commit / trace-projection detail out of `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`. | `RunCoordinator.run_sync` and `task_plan_phase.py` no longer call low-level `commit_post_observation_progress` or `commit_current_state_completion`; progress authority remains `task_plan_progress_flow` for this intermediate extraction. | next named SAR-9 phase extraction after SAR-9B |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -99,7 +99,9 @@ implementation_revision:
   failure_owner_structured_handoff: 83b4e24896af87ec932fdcecccd2694b6855ba7c
   failure_owner_routing_deletion_gate: ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154
   failure_owner_behavioral_classification: ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154
-  sar_9a_taskplan_phase_extraction: local_candidate
+  sar_9a_taskplan_phase_extraction: 39e99afb9c82409a3af7110712529f9904cc2c80
+  sar_9a_metrics_alignment: 008b48055a401743a3c5291869e3d66f2748c4ef
+  sar_9b_progress_phase_extraction: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -161,12 +163,12 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 2939
-  run_sync_lines: 1940
+  coordinator_lines: 2934
+  run_sync_lines: 1936
   methods: 19
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - next SAR-9 named phase extraction after TaskPlan phase seam
+  - next SAR-9 named phase extraction after ProgressPhase seam
 blocked_until:
   sar_8: unblocked
 hard_guardrails:
@@ -193,6 +195,7 @@ evidence:
   failure_owner_structured_handoff: docs/change-admission/for-3-structured-owner-handoff.yaml
   failure_owner_routing_deletion_gate: docs/change-admission/for-4-routing-deletion-and-behavioral-classification.yaml
   sar_9a_taskplan_phase_extraction: docs/change-admission/sar-9a-taskplan-phase-extraction.yaml
+  sar_9b_progress_phase_extraction: docs/change-admission/sar-9b-progress-phase-extraction.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false

@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-8C implementation revision `09d43041283078d4031828d01d0b129df4271148` routes default Coordinator recovery through `RecoveryPhase`, removes legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols, and records canonical `current_recovery_decision` / `current_recovery_outcome`. Planner Selection Simplification implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0` has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text and slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback. FOR-1 through FOR-4 are local candidates. FOR-4 targeted non-qwen Ollama `llama3.1:8b` classification on clean revision `ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154` observed 3/3 with 1/3 pass: `form-sequence` passed, `choose-list` clustered as execution owner, and `enter-text` clustered as intent/planning owner. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync` into `task_plan_phase.commit_task_plan_phase`; focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-8C implementation revision `09d43041283078d4031828d01d0b129df4271148` routes default Coordinator recovery through `RecoveryPhase`, removes legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols, and records canonical `current_recovery_decision` / `current_recovery_outcome`. Planner Selection Simplification implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0` has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text and slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback. FOR-1 through FOR-4 are local candidates. FOR-4 targeted non-qwen Ollama `llama3.1:8b` classification on clean revision `ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154` observed 3/3 with 1/3 pass. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`. Focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,11 +53,11 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 coordinator_reduction:
-  interpretation: sar_9a_taskplan_phase_extraction_local_candidate
+  interpretation: sar_9b_progress_phase_extraction_local_candidate
   current_size_expected_for_stage: true
   within_ratchet: true
-  current_lines: 2939
-  run_sync_lines: 1940
+  current_lines: 2934
+  run_sync_lines: 1936
   method_count: 19
   actual_reduction_stage: sar_7_to_sar_9
   sar_9a_before:
@@ -67,6 +67,10 @@ coordinator_reduction:
   sar_9a_after:
     coordinator_lines: 2939
     run_sync_lines: 1940
+    runcoordinator_methods: 19
+  sar_9b_after:
+    coordinator_lines: 2934
+    run_sync_lines: 1936
     runcoordinator_methods: 19
   current_local_after_sar_7_3:
     coordinator_lines: 3397
@@ -368,7 +372,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-9A TaskPlan phase extraction. Failure Ownership Router is closed as the SAR-9 precondition, with targeted behavioral classification recorded at docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md. SAR-9A moves TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase while preserving TaskPlanFlow, StateKernel, RecoveryPhase, and progress-flow ownership. Promotion remains held.
+  current_next_change_admission: SAR-9B ProgressPhase extraction. Failure Ownership Router is closed as the SAR-9 precondition, with targeted behavioral classification recorded at docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md. SAR-9A moved TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase. SAR-9B routes post-observation and post-TaskPlan current-state progress through progress_phase.ProgressPhase while preserving task_plan_progress_flow as the progress writer. Promotion remains held.
   pre_sar_8_planner_failure_classification:
     record: docs/change-admission/sar-8-pre-planner-failure-classification.yaml
     evidence: docs/evidence/runs/sar-7-planner-failure-classification-25ec674/
@@ -565,12 +569,13 @@ active_local_repair:
   sar_5b_record: docs/change-admission/sar-5b-active-step-scope-validator-hookup.yaml
   sar_6_record: docs/change-admission/sar-6-actioncontract-actionoutcome-canonicalization.yaml
   sar_9a_record: docs/change-admission/sar-9a-taskplan-phase-extraction.yaml
+  sar_9b_record: docs/change-admission/sar-9b-progress-phase-extraction.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
   behavior_change: planned_for_sar_6_execution_outcome_contract_shape_only_until_cutover
   standard_path_authority: candidate_capable_initial_and_replacement_admission_cutover_only
-  coordinator_commit: authorized_for_bounded_sar_9a_phase_extraction_only
+  coordinator_commit: authorized_for_bounded_sar_9b_phase_extraction_only
   finish_gate_change: not_authorized
   planner_context_change: unchanged
   taskplan_generator_change: unchanged_after_plan_candidate_naming_retirement
@@ -583,7 +588,7 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-9a-taskplan-phase-extraction
+  current_runtime_slice: sar-9b-progress-phase-extraction
   next_runtime_slice: next-named-sar-9-phase-extraction
   sar_8_blocked_until: unblocked
   historical_required_before_sar_7:
