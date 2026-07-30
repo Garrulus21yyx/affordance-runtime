@@ -2423,6 +2423,15 @@ def test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher() -> No
     assert "RecoveryCommandDispatcher" not in phase_source
 
 
+def test_sar_8c_recovery_trace_projection_is_decision_based() -> None:
+    source = (SOURCE_ROOT / "recovery_trace_projection.py").read_text(encoding="utf-8")
+
+    assert "RecoveryCommand" not in source
+    assert "command:" not in source
+    assert "RecoveryCommandStarted" not in source
+    assert "RecoveryDecisionStarted" in source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

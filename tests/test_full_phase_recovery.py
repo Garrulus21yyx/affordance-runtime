@@ -413,8 +413,8 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
     )
     assert recovery_receipt["success"]
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("FailureDetected") < events.index("RecoveryCommandStarted")
-    assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
+    assert events.index("FailureDetected") < events.index("RecoveryDecisionStarted")
+    assert events.index("RecoveryDecisionStarted") < events.index("RecoveryDeltaValidated")
 
 
 def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
@@ -492,7 +492,7 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
     assert recovery_outcome["success"]
     assert recovery_outcome["changed_dimensions"][0] == "provider"
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("RecoveryCommandStarted") < events.index(
+    assert events.index("RecoveryDecisionStarted") < events.index(
         "RecoveryOutcomeRecorded"
     )
     assert events.index("RecoveryOutcomeRecorded") < events.index(
@@ -571,8 +571,8 @@ def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_TASK.value
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("RecoveryCommandStarted") < events.index("TaskPlanAccepted")
-    assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
+    assert events.index("RecoveryDecisionStarted") < events.index("TaskPlanAccepted")
+    assert events.index("RecoveryDecisionStarted") < events.index("RecoveryDeltaValidated")
 
 
 def test_intake_clarification_uses_same_recovery_coordinator_without_run_state() -> None:

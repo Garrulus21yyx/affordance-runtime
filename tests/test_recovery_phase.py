@@ -61,11 +61,11 @@ def test_recovery_phase_handles_phase_general_failure_through_decision_seam() ->
     assert [node.kind for node in trace.nodes[-3:]] == [
         "FailureDetected",
         "RecoveryStrategySelected",
-        "RecoveryCommandStarted",
+        "RecoveryDecisionStarted",
     ]
     assert "decision" in trace.nodes[-2].payload
     assert "plan" not in trace.nodes[-2].payload
-    assert result.parent.kind == "RecoveryCommandStarted"
+    assert result.parent.kind == "RecoveryDecisionStarted"
 
 
 def test_recovery_phase_records_immediate_terminal_outcome_without_pending_plan() -> None:

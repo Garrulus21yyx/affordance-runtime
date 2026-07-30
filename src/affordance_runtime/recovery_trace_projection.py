@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.recovery_commands import RecoveryCommand
 from affordance_runtime.recovery_protocol import RecoveryDecision
 
 
@@ -24,7 +23,6 @@ def recovery_protocol_projections(
     state_phase: str,
     failure: FailureEnvelope,
     decision: RecoveryDecision,
-    command: RecoveryCommand,
 ) -> tuple[RecoveryTraceProjection, ...]:
     """Project selected recovery facts; Coordinator remains the trace writer."""
 
@@ -47,12 +45,17 @@ def recovery_protocol_projections(
                     "reentry_phase": decision.reentry_phase.value,
                     "changed_dimensions": [item.value for item in decision.changed_dimensions],
                 },
-                "strategy_id": command.strategy_id,
-                "changed_dimensions": [item.value for item in command.changed_dimensions],
+                "strategy_id": decision.strategy_key,
+                "changed_dimensions": [item.value for item in decision.changed_dimensions],
             },
         ),
         RecoveryTraceProjection(
-            "RecoveryCommandStarted",
-            {"state": state_phase, "command": command.model_dump(mode="json")},
+            "RecoveryDecisionStarted",
+            {
+                "state": state_phase,
+                "decision_id": decision.decision_id,
+                "kind": decision.kind.value,
+                "reentry_phase": decision.reentry_phase.value,
+            },
         ),
     )

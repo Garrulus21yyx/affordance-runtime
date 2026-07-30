@@ -7,10 +7,8 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoverySelectionContext
-from affordance_runtime.recovery_decision_compatibility import legacy_plan_from_recovery_decision
-from affordance_runtime.recovery_protocol import classify_failure
+from affordance_runtime.recovery_protocol import RecoveryKind, classify_failure
 from affordance_runtime.recovery_trace_projection import RecoveryTraceProjection, recovery_protocol_projections
 
 
@@ -49,7 +47,7 @@ def test_protocol_projection_is_typed_and_does_not_write_runtime_state() -> None
         ),
     )
     context = RecoverySelectionContext(
-        available_commands=frozenset({RecoveryCommandKind.REOBSERVE, RecoveryCommandKind.ABORT}),
+        available_commands=frozenset({RecoveryKind.REOBSERVE, RecoveryKind.ABORT}),
         current_attempt_fingerprint="state:3",
     )
     classification = classify_failure(failure)
@@ -59,25 +57,20 @@ def test_protocol_projection_is_typed_and_does_not_write_runtime_state() -> None
         context,
         current_state_version=3,
     )
-    plan = legacy_plan_from_recovery_decision(
-        decision,
-        failure,
-        effect_status=failure.effect_status,
-    )
 
     projections = recovery_protocol_projections(
         state_phase="recovering",
         failure=failure,
         decision=decision,
-        command=plan.commands[0],
     )
 
     assert [item.kind for item in projections] == [
         "FailureDetected",
         "RecoveryStrategySelected",
-        "RecoveryCommandStarted",
+        "RecoveryDecisionStarted",
     ]
     assert projections[0].payload["failure"]["failure_id"] == failure.failure_id  # type: ignore[index]
     assert "decision" in projections[1].payload
     assert "plan" not in projections[1].payload
-    assert projections[-1].payload["command"]["command_id"] == plan.commands[0].command_id  # type: ignore[index]
+    assert projections[-1].payload["decision_id"] == decision.decision_id
+    assert projections[-1].payload["kind"] == decision.kind.value

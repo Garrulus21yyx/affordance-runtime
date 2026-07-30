@@ -134,7 +134,6 @@ class RecoveryPhase:
             state_phase=state.phase,
             failure=failure,
             decision=decision,
-            command=command,
         )
         if command.kind in {
             RecoveryCommandKind.REOBSERVE,
@@ -710,13 +709,11 @@ def _trace_recovery_protocol(
     state_phase: str,
     failure: FailureEnvelope,
     decision: RecoveryDecision,
-    command: RecoveryCommand,
 ) -> TraceNode:
     for projection in recovery_protocol_projections(
         state_phase=state_phase,
         failure=failure,
         decision=decision,
-        command=command,
     ):
         parent = trace.add(projection.kind, projection.payload, parents=[parent.id])
     return parent

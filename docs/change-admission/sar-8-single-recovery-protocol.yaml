@@ -138,6 +138,9 @@ scope:
       RecoveryKind; Coordinator, model recovery owners, task pipeline, and
       benchmark runtime construction no longer depend on
       RecoveryCommandDispatcher or RecoveryCommandKind.
+    - Recovery protocol trace projection is decision-based and emits
+      RecoveryDecisionStarted instead of RecoveryCommandStarted; it no longer
+      imports or serializes RecoveryCommand.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -302,6 +305,13 @@ validation:
     ruff: passed
     mypy_core: passed_7_source_files_ignore_optional_missing_imports
     diff_check: passed
+  recovery_trace_decision_projection_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_phase.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_task_pipeline_multistage.py tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_trace_projection_is_decision_based --maxfail=1 --tb=short
+  recovery_trace_decision_projection_cutover_result: 81_passed
+  recovery_trace_decision_projection_cutover_static:
+    ruff: passed
+    mypy_core: passed_8_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1325_passed
   coordinator_lines: 2974
@@ -313,5 +323,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_default_runtime_owner_dispatcher_cutover_local_candidate
+status: sar_8c_recovery_trace_decision_projection_local_candidate
 next_slice: planner-selection-simplification-actionchoice
