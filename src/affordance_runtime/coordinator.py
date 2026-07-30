@@ -75,6 +75,7 @@ from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_evidence import (
     semantic_progress_fingerprint,
 )
+from affordance_runtime.runtime_loop_phase import RuntimeLoopPhase
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
@@ -123,6 +124,7 @@ VERIFICATION_PHASE = VerificationPhase()
 TASK_SKILL_PROGRESS_PHASE = TaskSkillProgressPhase()
 VERIFIED_PROGRESS_PHASE = VerifiedProgressPhase()
 VERIFICATION_FAILURE_PHASE = VerificationFailurePhase()
+RUNTIME_LOOP_PHASE = RuntimeLoopPhase()
 
 
 @dataclass(frozen=True)
@@ -235,37 +237,33 @@ class RunCoordinator:
 
     def run_sync(self, envelope: TaskEnvelope, upstream_trace: TraceDag | None = None) -> CoordinatorResult:
         """Execute one task with serial state mutation and action semantics."""
-        state = StateKernel(task_id=envelope.task_id, goal=envelope.goal, constraints=dict(envelope.constraints))
-        if upstream_trace is not None and upstream_trace.run_id != envelope.task_id:
-            raise ValueError("upstream trace run_id does not match task")
-        trace = upstream_trace or TraceDag(run_id=envelope.task_id)
-        upstream_parent = trace.nodes[-1] if trace.nodes else None
-        parent: TraceNode | None = trace.add(
-            "TaskCreated",
-            {
-                "state": RuntimeStep.CREATED.value,
-                "goal": envelope.goal,
-                "constraints": envelope.constraints,
-                "task_spec_identity": envelope.task_spec.identity if envelope.task_spec is not None else "",
-                "runtime_profile_digest": self.runtime_profile_digest,
-                "loaded_profile_artifact_ids": list(self.loaded_profile_artifact_ids),
-            },
-            parents=[upstream_parent.id] if upstream_parent else None,
+        loop_start = RUNTIME_LOOP_PHASE.start(
+            envelope=envelope,
+            upstream_trace=upstream_trace,
+            runtime_profile_digest=self.runtime_profile_digest,
+            loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
         )
+        state = loop_start.state
+        trace = loop_start.trace
+        parent = loop_start.parent
         latest_verification: VerificationReport | None = None
         while True:
-            budget_error = self._budget_error(state)
-            if budget_error is not None:
-                state.transition(RuntimeStep.FAILED.value)
-                parent = trace.add(
-                    "TaskFailed",
-                    {"state": state.phase, "error_code": budget_error.value, "reason": "runtime budget exhausted"},
-                    parents=[parent.id] if parent else None,
-                )
+            budget_result = RUNTIME_LOOP_PHASE.check_budget(
+                state=state,
+                trace=trace,
+                parent=parent,
+                budget_error=self._budget_error(state),
+            )
+            if budget_result is not None:
                 return self._finish(
-                    envelope, state, trace, RuntimeStep.FAILED, parent, budget_error, latest_verification
+                    envelope,
+                    state,
+                    trace,
+                    budget_result.status,
+                    budget_result.parent,
+                    budget_result.error_code,
+                    latest_verification,
                 )
-            assert parent is not None
             perception = PERCEPTION_PHASE.run(
                 envelope=envelope,
                 state=state,
@@ -346,9 +344,7 @@ class RunCoordinator:
                     )
                 if task_plan_phase.current_state_completion_committed:
                     continue
-            state.transition(RuntimeStep.PLANNING.value)
-            if state.task_plan is not None:
-                state.activate_next_subgoal()
+            RUNTIME_LOOP_PHASE.enter_planning(state=state)
             skill_step_id = ""
             try:
                 task_skill_phase = TASK_SKILL_PHASE.select(
@@ -653,7 +649,7 @@ class RunCoordinator:
                 )
             assert execution_result.receipt is not None
             receipt = execution_result.receipt
-            state.transition(RuntimeStep.VERIFYING.value)
+            RUNTIME_LOOP_PHASE.enter_verifying(state=state)
             verification_result = VERIFICATION_PHASE.run(
                 envelope=envelope,
                 state=state,
