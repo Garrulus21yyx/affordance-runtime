@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contracts import Observation
 from affordance_runtime.obligation_progress_shadow_flow import (
     prepare_obligation_progress_shadow_trace,
 )
@@ -17,7 +18,9 @@ from affordance_runtime.task_plan_progress import (
     TaskPlanProgressStateView,
     current_state_evidence_refs,
 )
+from affordance_runtime.task_planning import SubgoalVerifierPort
 from affordance_runtime.trace import TraceDag, TraceNode
+from affordance_runtime.verification import VerificationReport
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,14 @@ class CurrentStateSubgoalCompletionCommit:
 class PostObservationProgressCommit:
     parent: TraceNode
     legacy_completion_committed: bool
+
+
+@dataclass(frozen=True)
+class VerifiedTaskProgressCommit:
+    parent: TraceNode
+    subgoal_completion_committed: bool
+    task_plan_completed: bool
+    task_completion_requested: bool
 
 
 def prepare_current_state_subgoal_completion(
@@ -210,6 +221,93 @@ def commit_post_observation_progress(
         parent=parent,
         legacy_completion_committed=legacy_completion_committed,
     )
+
+
+def commit_verified_task_progress(
+    *,
+    state: StateKernel,
+    trace: TraceDag,
+    parent: TraceNode,
+    subgoal_verifier: SubgoalVerifierPort,
+    verification: VerificationReport,
+    observation: Observation,
+    task_planner_is_router: bool,
+    skill_complete: bool,
+) -> VerifiedTaskProgressCommit:
+    if state.task_plan is None or state.plan_progress is None:
+        return VerifiedTaskProgressCommit(parent, False, False, False)
+    subgoal = TaskPlanLifecycle.active_subgoal_spec(state)
+    progress_report = (
+        subgoal_verifier.verify(
+            subgoal,
+            verification,
+            observation,
+        )
+        if subgoal is not None
+        else None
+    )
+    if progress_report is not None and progress_report.passed and subgoal is not None:
+        state.complete_subgoal(
+            subgoal.subgoal_id,
+            progress_report.match.evidence_ids,
+        )
+        parent = trace.add(
+            "SubgoalCompleted",
+            {
+                "state": state.phase,
+                "plan_id": state.task_plan.plan_id,
+                "subgoal_id": subgoal.subgoal_id,
+                "evidence": list(progress_report.match.evidence_ids),
+                "criterion_evidence_links": [asdict(item) for item in progress_report.match.links],
+            },
+            parents=[parent.id],
+        )
+        if not TaskPlanLifecycle.completed(state):
+            return VerifiedTaskProgressCommit(parent, True, False, False)
+        parent = trace.add(
+            "TaskPlanCompleted",
+            {
+                "state": state.phase,
+                "task_plan_id": state.task_plan.plan_id,
+                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+            },
+            parents=[parent.id],
+        )
+        if not (
+            len(state.task_plan.subgoals) > 1
+            or not task_planner_is_router
+            or skill_complete
+        ):
+            return VerifiedTaskProgressCommit(parent, True, True, False)
+        if skill_complete and state.task_skill is not None:
+            state.final_result = {
+                "task_skill_id": state.task_skill.skill_id,
+                "task_skill_version": state.task_skill.version,
+                "completed_step_ids": list(state.task_skill.completed_step_ids),
+            }
+            parent = trace.add(
+                "TaskSkillCompleted",
+                {"state": state.phase, **state.final_result},
+                parents=[parent.id],
+            )
+        else:
+            state.final_result = {
+                "task_plan_id": state.task_plan.plan_id,
+                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+            }
+        return VerifiedTaskProgressCommit(parent, True, True, True)
+    if progress_report is not None and subgoal is not None:
+        parent = trace.add(
+            "SubgoalEvidenceRejected",
+            {
+                "state": state.phase,
+                "plan_id": state.task_plan.plan_id,
+                "subgoal_id": subgoal.subgoal_id,
+                "criteria_match": asdict(progress_report.match),
+            },
+            parents=[parent.id],
+        )
+    return VerifiedTaskProgressCommit(parent, False, False, False)
 
 
 def _still_current(

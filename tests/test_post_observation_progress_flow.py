@@ -6,6 +6,11 @@ from affordance_runtime.contracts import (
     Observation,
     Surface,
 )
+from affordance_runtime.criteria import (
+    CriteriaEvidenceMatchReport,
+    CriterionEvidenceLink,
+    SubgoalVerificationReport,
+)
 from affordance_runtime.obligation_progress_shadow import (
     ObligationProgressShadowClassification,
 )
@@ -26,6 +31,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_plan_progress_flow import (
     commit_post_observation_progress,
+    commit_verified_task_progress,
 )
 from affordance_runtime.task_planning import (
     SubgoalOutcome,
@@ -36,6 +42,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.trace import TraceDag
+from affordance_runtime.verification import VerificationReport, VerificationStatus
 
 
 class _Budget:
@@ -44,6 +51,23 @@ class _Budget:
     max_replans = 10
     max_recoveries = 10
     max_effectful_actions = 10
+
+
+class _PassingSubgoalVerifier:
+    def verify(self, subgoal, report, observation):  # type: ignore[no-untyped-def]
+        return SubgoalVerificationReport(
+            subgoal.subgoal_id,
+            CriteriaEvidenceMatchReport(
+                passed=True,
+                links=(
+                    CriterionEvidenceLink(
+                        criterion_id=f"criterion:{subgoal.subgoal_id}",
+                        evidence_id="evidence:verified",
+                        requirement_ids=(f"evidence:{subgoal.subgoal_id}",),
+                    ),
+                ),
+            ),
+        )
 
 
 def _obligation(
@@ -279,3 +303,35 @@ def test_post_observation_progress_commits_current_state_then_traces_shadow() ->
         commit.parent.payload["comparison"]["classification"]
         == ObligationProgressShadowClassification.ROLE_PENDING.value
     )
+
+
+def test_verified_task_progress_flow_commits_active_step_and_prepares_task_completion() -> None:
+    task_spec = _task_spec(_obligation("obligation:terminal", terminal=True))
+    state = _state(task_spec, _plan(task_spec, _subgoal("obligation:terminal")))
+    trace = TraceDag("run")
+    parent = trace.add("ActionOutcomeRecorded", {"state": state.phase})
+
+    commit = commit_verified_task_progress(
+        state=state,
+        trace=trace,
+        parent=parent,
+        subgoal_verifier=_PassingSubgoalVerifier(),
+        verification=VerificationReport(VerificationStatus.PASSED),
+        observation=_snapshot().observation,
+        task_planner_is_router=False,
+        skill_complete=False,
+    )
+
+    assert commit.subgoal_completion_committed is True
+    assert commit.task_completion_requested is True
+    assert state.plan_progress is not None
+    assert state.plan_progress.completed_subgoal_ids == ["obligation:terminal"]
+    assert state.final_result == {
+        "task_plan_id": "plan-post-observation",
+        "completed_subgoal_ids": ["obligation:terminal"],
+    }
+    assert [node.kind for node in trace.nodes] == [
+        "ActionOutcomeRecorded",
+        "SubgoalCompleted",
+        "TaskPlanCompleted",
+    ]

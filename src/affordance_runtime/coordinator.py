@@ -114,6 +114,7 @@ from affordance_runtime.task_plan_flow import (
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
     commit_post_observation_progress,
+    commit_verified_task_progress,
 )
 from affordance_runtime.task_planning import (
     PlanningRouter,
@@ -2076,90 +2077,33 @@ class RunCoordinator:
                         {"state": state.phase, "incident": state.recovery_diagnostics},
                         parents=[parent.id],
                     )
-                if state.task_plan is not None and state.plan_progress is not None:
-                    subgoal = TaskPlanLifecycle.active_subgoal_spec(state)
-                    progress_report = (
-                        self.subgoal_verifier.verify(
-                            subgoal,
-                            latest_verification,
-                            post_snapshot.observation,
-                        )
-                        if subgoal is not None
-                        else None
+                verified_progress_commit = commit_verified_task_progress(
+                    state=state,
+                    trace=trace,
+                    parent=parent,
+                    subgoal_verifier=self.subgoal_verifier,
+                    verification=latest_verification,
+                    observation=post_snapshot.observation,
+                    task_planner_is_router=isinstance(self.task_planner, PlanningRouter),
+                    skill_complete=skill_complete,
+                )
+                parent = verified_progress_commit.parent
+                if verified_progress_commit.task_completion_requested:
+                    state.transition(RuntimeStep.DONE.value)
+                    parent = trace.add(
+                        "TaskCompleted",
+                        {"state": state.phase, "result": state.final_result},
+                        parents=[parent.id],
                     )
-                    if progress_report is not None and progress_report.passed and subgoal is not None:
-                        state.complete_subgoal(
-                            subgoal.subgoal_id,
-                            progress_report.match.evidence_ids,
-                        )
-                        parent = trace.add(
-                            "SubgoalCompleted",
-                            {
-                                "state": state.phase,
-                                "plan_id": state.task_plan.plan_id,
-                                "subgoal_id": subgoal.subgoal_id,
-                                "evidence": list(progress_report.match.evidence_ids),
-                                "criterion_evidence_links": [asdict(item) for item in progress_report.match.links],
-                            },
-                            parents=[parent.id],
-                        )
-                        if TaskPlanLifecycle.completed(state):
-                            parent = trace.add(
-                                "TaskPlanCompleted",
-                                {
-                                    "state": state.phase,
-                                    "task_plan_id": state.task_plan.plan_id,
-                                    "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
-                                },
-                                parents=[parent.id],
-                            )
-                            if (
-                                len(state.task_plan.subgoals) > 1
-                                or not isinstance(self.task_planner, PlanningRouter)
-                                or skill_complete
-                            ):
-                                if skill_complete and state.task_skill is not None:
-                                    state.final_result = {
-                                        "task_skill_id": state.task_skill.skill_id,
-                                        "task_skill_version": state.task_skill.version,
-                                        "completed_step_ids": list(state.task_skill.completed_step_ids),
-                                    }
-                                    parent = trace.add(
-                                        "TaskSkillCompleted",
-                                        {"state": state.phase, **state.final_result},
-                                        parents=[parent.id],
-                                    )
-                                else:
-                                    state.final_result = {
-                                        "task_plan_id": state.task_plan.plan_id,
-                                        "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
-                                    }
-                                state.transition(RuntimeStep.DONE.value)
-                                parent = trace.add(
-                                    "TaskCompleted",
-                                    {"state": state.phase, "result": state.final_result},
-                                    parents=[parent.id],
-                                )
-                                return self._finish(
-                                    envelope,
-                                    state,
-                                    trace,
-                                    RuntimeStep.DONE,
-                                    parent,
-                                    None,
-                                    latest_verification,
-                                )
-                    elif progress_report is not None and subgoal is not None:
-                        parent = trace.add(
-                            "SubgoalEvidenceRejected",
-                            {
-                                "state": state.phase,
-                                "plan_id": state.task_plan.plan_id,
-                                "subgoal_id": subgoal.subgoal_id,
-                                "criteria_match": asdict(progress_report.match),
-                            },
-                            parents=[parent.id],
-                        )
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep.DONE,
+                        parent,
+                        None,
+                        latest_verification,
+                    )
                 state.replan_count += 1
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue
