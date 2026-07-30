@@ -123,6 +123,7 @@ implementation_revision:
   sar_9t_source_arbitration_trace_owner: local_candidate
   sar_9u_artifact_persistence_owner: local_candidate
   sar_9v_runtime_result_finalization_owner: local_candidate
+  sar_9w_runtime_budget_owner: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -184,9 +185,9 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 827
+  coordinator_lines: 811
   run_sync_lines: 521
-  methods: 4
+  methods: 3
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
   - SAR-9 closure audit and next phase-purification target
@@ -237,6 +238,7 @@ evidence:
   sar_9t_source_arbitration_trace_owner: docs/change-admission/sar-9t-source-arbitration-trace-owner.yaml
   sar_9u_artifact_persistence_owner: docs/change-admission/sar-9u-artifact-persistence-owner.yaml
   sar_9v_runtime_result_finalization_owner: docs/change-admission/sar-9v-runtime-result-finalization-owner.yaml
+  sar_9w_runtime_budget_owner: docs/change-admission/sar-9w-runtime-budget-owner.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false

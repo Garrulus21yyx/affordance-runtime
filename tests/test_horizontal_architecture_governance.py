@@ -2879,6 +2879,28 @@ def test_sar_9v_runtime_result_finalization_is_not_a_runcoordinator_method() -> 
     assert ".finalize(" in result_source
 
 
+def test_sar_9w_runtime_budget_check_is_not_a_runcoordinator_method() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name for node in run_coordinator.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_budget_error" not in method_names
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    assert "budget_error=self._budget_error" not in coordinator_source
+    runtime_loop_source = (SOURCE_ROOT / "runtime_loop_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "class RuntimeBudgetView" in runtime_loop_source
+    assert "def check_budget" in runtime_loop_source
+    assert "def _budget_error" in runtime_loop_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)

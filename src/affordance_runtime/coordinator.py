@@ -19,9 +19,6 @@ from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contract_failure_phase import ContractFailurePhase
-from affordance_runtime.contracts import (
-    RuntimeErrorCode,
-)
 from affordance_runtime.execution_phase import ExecutionPhase
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_phase import PerceptionPhase
@@ -236,7 +233,7 @@ class RunCoordinator:
         parent = _commit_runtime_loop_event(trace, loop_start.event)
         latest_verification: VerificationReport | None = None
         while True:
-            budget_result = RUNTIME_LOOP_PHASE.check_budget(state=state, budget_error=self._budget_error(state))
+            budget_result = RUNTIME_LOOP_PHASE.check_budget(state=state, budget=self.budget)
             if budget_result is not None:
                 _apply_runtime_loop_transition(state, budget_result.transition)
                 parent = _commit_runtime_loop_event(trace, budget_result.event, parent)
@@ -744,19 +741,6 @@ class RunCoordinator:
                 verification_failure.terminal.error_code,
                 latest_verification,
             )
-
-    def _budget_error(self, state: StateKernel) -> RuntimeErrorCode | None:
-        if state.step_count >= self.budget.max_steps:
-            return RuntimeErrorCode.EXECUTION_FAILED
-        if state.observation_count >= self.budget.max_observations:
-            return RuntimeErrorCode.EXECUTION_FAILED
-        if state.replan_count >= self.budget.max_replans:
-            return RuntimeErrorCode.EXECUTION_FAILED
-        if state.recovery_count >= self.budget.max_recoveries:
-            return RuntimeErrorCode.EXECUTION_FAILED
-        if state.effectful_action_count >= self.budget.max_effectful_actions:
-            return RuntimeErrorCode.UNSAFE_ACTION
-        return None
 
 def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
     if state.current_recovery_outcome is not None:

@@ -7,6 +7,7 @@ domain planning, execution, verification, progress, or recovery decisions.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
@@ -40,6 +41,23 @@ class RuntimeLoopTerminalResult:
     error_code: RuntimeErrorCode | None
     transition: RuntimeLoopTransition
     event: RuntimeLoopEvent
+
+
+class RuntimeBudgetView(Protocol):
+    @property
+    def max_steps(self) -> int: ...
+
+    @property
+    def max_observations(self) -> int: ...
+
+    @property
+    def max_replans(self) -> int: ...
+
+    @property
+    def max_recoveries(self) -> int: ...
+
+    @property
+    def max_effectful_actions(self) -> int: ...
 
 
 class RuntimeLoopPhase:
@@ -82,8 +100,9 @@ class RuntimeLoopPhase:
         self,
         *,
         state: StateKernel,
-        budget_error: RuntimeErrorCode | None,
+        budget: RuntimeBudgetView,
     ) -> RuntimeLoopTerminalResult | None:
+        budget_error = _budget_error(state, budget)
         if budget_error is None:
             return None
         return RuntimeLoopTerminalResult(
@@ -108,3 +127,20 @@ class RuntimeLoopPhase:
 
     def enter_verifying(self) -> RuntimeLoopTransition:
         return RuntimeLoopTransition(RuntimeStep.VERIFYING)
+
+
+def _budget_error(
+    state: StateKernel,
+    budget: RuntimeBudgetView,
+) -> RuntimeErrorCode | None:
+    if state.step_count >= budget.max_steps:
+        return RuntimeErrorCode.EXECUTION_FAILED
+    if state.observation_count >= budget.max_observations:
+        return RuntimeErrorCode.EXECUTION_FAILED
+    if state.replan_count >= budget.max_replans:
+        return RuntimeErrorCode.EXECUTION_FAILED
+    if state.recovery_count >= budget.max_recoveries:
+        return RuntimeErrorCode.EXECUTION_FAILED
+    if state.effectful_action_count >= budget.max_effectful_actions:
+        return RuntimeErrorCode.UNSAFE_ACTION
+    return None
