@@ -74,19 +74,12 @@ from affordance_runtime.runtime_evidence import (
     semantic_progress_fingerprint,
     verification_confirms_effect_absent,
 )
-from affordance_runtime.runtime_terminal import (
-    TaskCompletionVerifier,
-    commit_task_terminal_success,
-)
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_phase import commit_task_plan_phase
-from affordance_runtime.task_plan_progress_flow import (
-    commit_verified_task_progress,
-)
 from affordance_runtime.task_planning import (
     PlanningRouter,
     SubgoalVerifierPort,
@@ -106,6 +99,7 @@ from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerifierLadder
 from affordance_runtime.verification_phase import VerificationPhase
+from affordance_runtime.verified_progress_phase import VerifiedProgressPhase
 
 OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
     {
@@ -122,6 +116,7 @@ PREFLIGHT_PHASE = PreflightPhase()
 EXECUTION_PHASE = ExecutionPhase()
 VERIFICATION_PHASE = VerificationPhase()
 TASK_SKILL_PROGRESS_PHASE = TaskSkillProgressPhase()
+VERIFIED_PROGRESS_PHASE = VerifiedProgressPhase()
 
 
 @dataclass(frozen=True)
@@ -981,46 +976,32 @@ class RunCoordinator:
                 )
             skill_complete = task_skill_progress_result.skill_complete
             if latest_verification.passed:
-                if contract.grounding_candidate is not None:
-                    state.complete_grounding_recovery(contract.grounding_candidate.semantic_target_id)
-                verified_progress_commit = commit_verified_task_progress(
+                verified_progress = VERIFIED_PROGRESS_PHASE.run(
+                    envelope=envelope,
                     state=state,
                     trace=trace,
                     parent=parent,
+                    contract=contract,
                     subgoal_verifier=self.subgoal_verifier,
                     verification=latest_verification,
-                    observation=post_snapshot.observation,
+                    post_snapshot=post_snapshot,
                     task_planner_is_router=isinstance(self.task_planner, PlanningRouter),
                     skill_complete=skill_complete,
                     skill_progress=task_skill_progress_result.skill_progress,
                 )
-                parent = verified_progress_commit.parent
-                if verified_progress_commit.task_completion_requested:
-                    completion = TaskCompletionVerifier().verify(
-                        task_spec=envelope.task_spec,
-                        state=state,
-                        verification=latest_verification,
-                        result=state.final_result,
-                    )
-                    terminal = commit_task_terminal_success(
-                        state=state,
-                        trace=trace,
-                        parent=parent,
-                        completion=completion,
-                    )
-                    parent = terminal.parent
+                parent = verified_progress.parent
+                if verified_progress.terminal is not None:
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep.DONE,
+                        verified_progress.terminal.status,
                         parent,
                         None,
                         latest_verification,
                     )
-                state.replan_count += 1
-                state.transition(RuntimeStep.OBSERVING.value)
-                continue
+                if verified_progress.continue_observing:
+                    continue
             if not self.features.recovery:
                 state.transition(RuntimeStep.FAILED.value)
                 return self._finish(
