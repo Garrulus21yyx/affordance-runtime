@@ -1,0 +1,83 @@
+slice_id: planner-selection-actionchoice
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+base_revision: d0515c9
+change_type: planner_selection_simplification
+production_behavior_change: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+planner_behavior_changed: false
+provider_schema_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_slice: ps_1_ps_2_actionchoice_contracts_and_dispatch_foundation
+  included:
+    - Runtime-owned ActionChoice contract.
+    - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
+    - Runtime-owned ActionSelection and ActionSelectionValidator.
+    - ChoicePlanningRequest for the future multi-choice Step Planner selector.
+    - ActionChoiceBuilder support for exact text-entry EQUALS criteria.
+    - ActionChoiceBuilder support for slider numeric EQUALS via bounded
+      press-key direction choice.
+    - Zero/one/many dispatch semantics as a pure boundary.
+    - Strict architecture gate registration for action_choice.py.
+  excluded:
+    - Coordinator call-site integration.
+    - PlannerPort replacement with select(choice_id).
+    - Provider schema changes.
+    - ActionContract builder changes.
+    - Executor, verifier, preflight, approval, or capability changes.
+    - Deterministic fallback deletion.
+    - Task Planner action-family retirement.
+    - TargetIntent migration.
+    - PR breadth, fresh diagnostic, or promotion claim.
+
+authority_rules:
+  planner_generates_action_kind: unchanged_legacy_path_pending
+  planner_generates_target: unchanged_legacy_path_pending
+  planner_generates_parameters: unchanged_legacy_path_pending
+  planner_generates_expected_effects: unchanged_legacy_path_pending
+  planner_generates_evidence_requirements: unchanged_legacy_path_pending
+  actionchoice_backend_authority: prohibited
+  actionchoice_verifier_authority: prohibited
+  actionchoice_completion_authority: prohibited
+  actionchoice_trace_writer: prohibited
+  actionchoice_state_mutation: prohibited
+
+dispatch_rules:
+  zero_choices:
+    result: typed_failure
+    planner_called: false
+  one_choice:
+    result: runtime_action_selection
+    planner_called: false
+  multiple_choices:
+    result: StepPlannerPort_selects_choice_id_future_boundary
+    planner_called: true
+    validator: choice_id_membership_and_identity_only
+
+validation:
+  focused:
+    - python -m pytest tests/test_action_choice.py tests/test_active_step_scope.py -q --tb=short --maxfail=10
+  focused_result: 15_passed
+  architecture:
+    - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
+  architecture_result: 9_passed
+  ruff:
+    - ruff check src/affordance_runtime/action_choice.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py
+  ruff_result: passed
+  mypy:
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/action_choice.py
+  mypy_result: passed
+  diff_check: passed
+  full_pytest: not_required_for_foundation_commit
+  uv_build: not_required_for_foundation_commit
+  pr_breadth: not_run
+  fresh_diagnostic: not_run
+
+status: ps_1_ps_2_foundation_local_candidate
+next_slice: ps_1_vertical_default_path_cutover_exact_text_and_slider

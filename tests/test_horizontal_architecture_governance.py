@@ -104,6 +104,7 @@ FORBIDDEN_NEUTRAL_DEPENDENCIES = (
 )
 
 STRICT_AUTHORITY_FREE_COLLABORATORS = (
+    "action_choice.py",
     "active_step_scope.py",
     "semantic_action_resolver.py",
     "task_action_family_resolution.py",
