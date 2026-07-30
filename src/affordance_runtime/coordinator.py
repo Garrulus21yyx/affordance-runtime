@@ -64,13 +64,9 @@ from affordance_runtime.recovery_command_dispatcher import (
 )
 from affordance_runtime.recovery_commands import (
     RecoveryCommandKind,
-    RecoveryDelta,
     RecoveryReentryPhase,
 )
-from affordance_runtime.recovery_commands import (
-    RecoveryReceipt as RecoveryCommandReceipt,
-)
-from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoveryHistoryItem
+from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.route_calibration import (
@@ -354,13 +350,57 @@ class RunCoordinator:
                 parent,
                 snapshot,
             )
-            parent, recovered_verification, recovery_must_stop = (
-                self._complete_pending_recovery_observation(
-                    state,
-                    trace,
-                    parent,
-                    snapshot,
+            recovered_verification = None
+            recovery_inspection_failed = False
+            pending_recovery_command = state.current_recovery_command
+            if (
+                pending_recovery_command is not None
+                and pending_recovery_command.kind == RecoveryCommandKind.INSPECT_POST_STATE
+            ):
+                contract = state.current_contract
+                execution_receipt = state.receipts[-1] if state.receipts else None
+                if contract is None or execution_receipt is None:
+                    raise ValueError(
+                        "post-state recovery inspection requires contract and receipt lineage"
+                    )
+                recovered_verification = self.contract_execution_loop.verify(
+                    contract,
+                    execution_receipt,
+                    snapshot.observation,
+                    structural_verification_enabled=True,
+                    disabled_reason="",
                 )
+                state.latest_verification = recovered_verification
+                parent = trace.add(
+                    "RecoveryStateInspected",
+                    {
+                        "state": state.phase,
+                        "verification": recovered_verification.status.value,
+                        "snapshot_id": snapshot.observation.snapshot_id,
+                        "artifact_refs": snapshot.observation.artifact_refs,
+                    },
+                    parents=[parent.id],
+                )
+                recovery_skill_progress = (
+                    _task_skill_progress(self.task_skill_runtime, state)
+                    if self.task_skill_runtime is not None
+                    else None
+                )
+                changed_skill_fallthrough = bool(
+                    verification_confirms_effect_absent(recovered_verification)
+                    and recovery_skill_progress is not None
+                    and not recovery_skill_progress.active
+                )
+                recovery_inspection_failed = (
+                    not recovered_verification.passed and not changed_skill_fallthrough
+                )
+            parent, recovery_must_stop = self.recovery_phase.complete_pending_observation(
+                state,
+                trace,
+                parent,
+                snapshot,
+                verification=recovered_verification,
+                post_state_inspection_failed=recovery_inspection_failed,
             )
             if recovered_verification is not None:
                 latest_verification = recovered_verification
@@ -1781,13 +1821,27 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    parent, _completed_verification, _recovery_must_stop = (
-                        self._complete_pending_recovery_observation(
+                    recovery_skill_progress = (
+                        _task_skill_progress(self.task_skill_runtime, state)
+                        if self.task_skill_runtime is not None
+                        else None
+                    )
+                    changed_skill_fallthrough = bool(
+                        verification_confirms_effect_absent(latest_verification)
+                        and recovery_skill_progress is not None
+                        and not recovery_skill_progress.active
+                    )
+                    parent, _recovery_must_stop = (
+                        self.recovery_phase.complete_pending_observation(
                             state,
                             trace,
                             parent,
                             inspection,
                             verification=latest_verification,
+                            post_state_inspection_failed=(
+                                not latest_verification.passed
+                                and not changed_skill_fallthrough
+                            ),
                         )
                     )
                     if latest_verification.passed:
@@ -2382,153 +2436,6 @@ class RunCoordinator:
             model_calls=max(0, self.budget.max_replans - state.replan_count),
             estimated_cost=10.0,
         )
-
-    def _complete_pending_recovery_observation(
-        self,
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        snapshot: BrowserSnapshot,
-        *,
-        verification: VerificationReport | None = None,
-    ) -> tuple[TraceNode, VerificationReport | None, bool]:
-        failure = state.current_failure
-        command = state.current_recovery_command
-        if failure is None or command is None:
-            return parent, verification, False
-        observation_commands = {
-            RecoveryCommandKind.REOBSERVE,
-            RecoveryCommandKind.INSPECT_POST_STATE,
-        }
-        if command.kind not in observation_commands:
-            return parent, verification, False
-        if command.kind == RecoveryCommandKind.INSPECT_POST_STATE:
-            contract = state.current_contract
-            execution_receipt = state.receipts[-1] if state.receipts else None
-            if contract is None or execution_receipt is None:
-                raise ValueError("post-state recovery inspection requires contract and receipt lineage")
-            if verification is None:
-                verification = self.contract_execution_loop.verify(
-                    contract,
-                    execution_receipt,
-                    snapshot.observation,
-                    structural_verification_enabled=True,
-                    disabled_reason="",
-                )
-                state.latest_verification = verification
-                parent = trace.add(
-                    "RecoveryStateInspected",
-                    {
-                        "state": state.phase,
-                        "verification": verification.status.value,
-                        "snapshot_id": snapshot.observation.snapshot_id,
-                        "artifact_refs": snapshot.observation.artifact_refs,
-                    },
-                    parents=[parent.id],
-                )
-            recovery_skill_progress = (
-                _task_skill_progress(self.task_skill_runtime, state)
-                if self.task_skill_runtime is not None
-                else None
-            )
-            changed_skill_fallthrough = bool(
-                verification_confirms_effect_absent(verification)
-                and recovery_skill_progress is not None
-                and not recovery_skill_progress.active
-            )
-            if not verification.passed and not changed_skill_fallthrough:
-                failed_receipt = RecoveryCommandReceipt(
-                    command_id=command.command_id,
-                    success=False,
-                    state_before=f"state:{failure.state_version}",
-                    state_after=f"state:{state.version}",
-                    error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
-                )
-                state.recovery_receipts.append(failed_receipt)
-                state.current_recovery_command = None
-                parent = trace.add(
-                    "RecoveryCommandCompleted",
-                    {
-                        "state": state.phase,
-                        "receipt": failed_receipt.model_dump(mode="json"),
-                    },
-                    parents=[parent.id],
-                )
-                parent = trace.add(
-                    "RecoveryAborted",
-                    {
-                        "state": state.phase,
-                        "reason": "post-state inspection did not establish a safe changed effect status",
-                    },
-                    parents=[parent.id],
-                )
-                return parent, verification, True
-        previous_fingerprint = (
-            failure.progress_fingerprint
-            or f"{failure.semantic_family_key}:state:{failure.state_version}"
-        )
-        next_fingerprint = (
-            f"{failure.semantic_family_key}:{command.strategy_id}:"
-            f"{snapshot.observation.snapshot_id}:state:{state.version}"
-        )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=previous_fingerprint,
-            next_attempt_fingerprint=next_fingerprint,
-            changed_dimensions=command.changed_dimensions,
-            new_evidence_refs=tuple(snapshot.observation.artifact_refs),
-            new_plan_or_route_ref=command.route_ref or command.candidate_id,
-            explanation=command.expected_change,
-        )
-        recovery_receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=True,
-            state_before=f"state:{failure.state_version}",
-            state_after=f"state:{state.version}",
-            changed_dimensions=command.changed_dimensions,
-            artifact_refs=tuple(snapshot.observation.artifact_refs),
-            observation_refs=(snapshot.observation.snapshot_id,),
-            route_refs=tuple(
-                item for item in (command.route_ref, command.candidate_id) if item
-            ),
-            verification_refs=(verification.status.value,) if verification is not None else (),
-            delta=delta,
-        )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(recovery_receipt)
-        state.recovery_history.append(
-            RecoveryHistoryItem(
-                failure.semantic_family_key,
-                command.strategy_id,
-                previous_fingerprint,
-                next_fingerprint,
-            )
-        )
-        state.current_recovery_command = None
-        parent = trace.add(
-            "RecoveryCommandCompleted",
-            {
-                "state": state.phase,
-                "receipt": recovery_receipt.model_dump(mode="json"),
-            },
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryDeltaValidated",
-            {
-                "state": state.phase,
-                "delta": delta.model_dump(mode="json"),
-            },
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryReenteredPhase",
-            {
-                "state": state.phase,
-                "reentry_phase": command.reentry_phase.value,
-            },
-            parents=[parent.id],
-        )
-        return parent, verification, False
 
     @staticmethod
     def _pending_retry_contract_error(

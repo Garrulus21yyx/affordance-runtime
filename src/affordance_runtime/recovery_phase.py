@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.recovery_command_dispatcher import (
@@ -40,6 +41,7 @@ from affordance_runtime.recovery_trace_projection import recovery_protocol_proje
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
+from affordance_runtime.verification import VerificationReport
 
 
 @dataclass(frozen=True)
@@ -546,6 +548,145 @@ class RecoveryPhase:
             {"state": state.phase, "delta": delta.model_dump(mode="json")},
             parents=[parent.id],
         )
+
+    @staticmethod
+    def complete_pending_observation(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        snapshot: BrowserSnapshot,
+        *,
+        verification: VerificationReport | None = None,
+        post_state_inspection_failed: bool = False,
+    ) -> tuple[TraceNode, bool]:
+        failure = state.current_failure
+        command = state.current_recovery_command
+        if failure is None or command is None:
+            return parent, False
+        observation_commands = {
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.INSPECT_POST_STATE,
+        }
+        if command.kind not in observation_commands:
+            return parent, False
+        if post_state_inspection_failed:
+            failed_receipt = RecoveryCommandReceipt(
+                command_id=command.command_id,
+                success=False,
+                state_before=f"state:{failure.state_version}",
+                state_after=f"state:{state.version}",
+                error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
+            )
+            state.recovery_receipts.append(failed_receipt)
+            state.current_recovery_command = None
+            state.current_recovery_outcome = RecoveryOutcome(
+                decision_id=state.current_recovery_decision.decision_id
+                if state.current_recovery_decision is not None
+                else command.command_id,
+                failure_id=failure.failure_id,
+                success=False,
+                changed_dimensions=tuple(
+                    RecoveryDimension(item.value) for item in command.changed_dimensions
+                ),
+                next_phase=RuntimePhase.ABORTED,
+                error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
+            )
+            parent = trace.add(
+                "RecoveryCommandCompleted",
+                {
+                    "state": state.phase,
+                    "receipt": failed_receipt.model_dump(mode="json"),
+                },
+                parents=[parent.id],
+            )
+            parent = trace.add(
+                "RecoveryAborted",
+                {
+                    "state": state.phase,
+                    "reason": "post-state inspection did not establish a safe changed effect status",
+                },
+                parents=[parent.id],
+            )
+            return parent, True
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"{snapshot.observation.snapshot_id}:state:{state.version}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            new_evidence_refs=tuple(snapshot.observation.artifact_refs),
+            new_plan_or_route_ref=command.route_ref or command.candidate_id,
+            explanation=command.expected_change,
+        )
+        recovery_receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            artifact_refs=tuple(snapshot.observation.artifact_refs),
+            observation_refs=(snapshot.observation.snapshot_id,),
+            route_refs=tuple(
+                item for item in (command.route_ref, command.candidate_id) if item
+            ),
+            verification_refs=(verification.status.value,) if verification is not None else (),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(recovery_receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_command = None
+        state.current_recovery_outcome = RecoveryOutcome(
+            decision_id=state.current_recovery_decision.decision_id
+            if state.current_recovery_decision is not None
+            else command.command_id,
+            failure_id=failure.failure_id,
+            success=True,
+            changed_dimensions=tuple(
+                RecoveryDimension(item.value) for item in command.changed_dimensions
+            ),
+            next_phase=RuntimePhase(command.reentry_phase.value),
+            artifact_refs=tuple(snapshot.observation.artifact_refs),
+            observation_refs=(snapshot.observation.snapshot_id,),
+        )
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {
+                "state": state.phase,
+                "receipt": recovery_receipt.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {
+                "state": state.phase,
+                "delta": delta.model_dump(mode="json"),
+            },
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryReenteredPhase",
+            {
+                "state": state.phase,
+                "reentry_phase": command.reentry_phase.value,
+            },
+            parents=[parent.id],
+        )
+        return parent, False
 
 
 def _trace_recovery_protocol(

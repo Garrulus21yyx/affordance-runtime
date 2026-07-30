@@ -85,6 +85,10 @@ scope:
     - RecoveryPhase owns pending idempotent retry execution completion;
       Coordinator no longer constructs retry recovery receipt/delta/history
       inline after execution.
+    - RecoveryPhase owns pending recovery observation completion, including
+      reobserve and post-state inspection receipt/delta/history/outcome
+      commits; Coordinator retains only the verifier call needed to produce an
+      inspection result.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -191,6 +195,12 @@ validation:
   recovery_execution_helper_focused:
     - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=10
   recovery_execution_helper_focused_result: 38_passed
+  recovery_observation_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_observation_inline -q --tb=short
+  recovery_observation_helper_migration_gate_result: 1_passed
+  recovery_observation_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py -q --tb=short --maxfail=15
+  recovery_observation_helper_focused_result: 46_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -202,5 +212,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_phase_execution_completion_local_candidate
+status: sar_8c_recovery_phase_observation_completion_local_candidate
 next_slice: planner-selection-simplification-actionchoice
