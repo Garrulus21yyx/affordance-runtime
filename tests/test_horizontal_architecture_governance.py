@@ -2195,6 +2195,23 @@ def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     assert "state.current_recovery_plan = plan" not in body_source
 
 
+def test_sar_8c_run_sync_does_not_read_legacy_recovery_plan_state() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    body_source = ast.unparse(run_sync).casefold()
+
+    assert "current_recovery_plan" not in body_source
+
+
 def test_sar_8c_legacy_recovery_incident_protocol_is_not_default_state() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     state_source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")

@@ -59,6 +59,9 @@ scope:
     - Phase-general non-owner recovery transitions no longer store
       current_recovery_plan, recovery_receipts, recovery_deltas, or
       recovery_history entries in StateKernel.
+    - RunCoordinator.run_sync no longer reads legacy current_recovery_plan for
+      pending recovery command checks; it uses canonical current_recovery_decision
+      through a migration helper.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -115,6 +118,9 @@ validation:
   decision_trace_focused:
     - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=20
   decision_trace_focused_result: 28_passed
+  run_sync_no_legacy_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_run_sync_does_not_read_legacy_recovery_plan_state -q --tb=short
+  run_sync_no_legacy_plan_gate_result: 1_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298

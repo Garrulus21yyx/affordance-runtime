@@ -74,6 +74,7 @@ from affordance_runtime.recovery_commands import (
 from affordance_runtime.recovery_completion import successful_recovery_completion
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoveryHistoryItem
 from affordance_runtime.recovery_phase import RecoveryPhase
+from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
@@ -455,11 +456,7 @@ class RunCoordinator:
                         rejection.payload,
                         parents=[parent.id],
                     )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        == RecoveryCommandKind.REPLAN_TASK
-                    ):
+                    if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_TASK:
                         parent = self._fail_pending_recovery_command(
                             state,
                             trace,
@@ -569,11 +566,7 @@ class RunCoordinator:
                         skill_decision.attempted
                         and skill_decision.reason.startswith("TaskSkill runtime error:")
                     ):
-                        if (
-                            state.current_recovery_plan is not None
-                            and state.current_recovery_plan.commands[0].kind
-                            == RecoveryCommandKind.REPLAN_STEP
-                        ):
+                        if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
                             parent = self._fail_pending_recovery_command(
                                 state,
                                 trace,
@@ -666,11 +659,7 @@ class RunCoordinator:
                     decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
             except ProviderModelError as exc:
                 error_code = RuntimeErrorCode(exc.kind.value)
-                if (
-                    state.current_recovery_plan is not None
-                    and state.current_recovery_plan.commands[0].kind
-                    == RecoveryCommandKind.REPLAN_STEP
-                ):
+                if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
                     parent = self._fail_pending_recovery_command(
                         state,
                         trace,
@@ -737,11 +726,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                if (
-                    state.current_recovery_plan is not None
-                    and state.current_recovery_plan.commands[0].kind
-                    == RecoveryCommandKind.REPLAN_STEP
-                ):
+                if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
                     parent = self._fail_pending_recovery_command(
                         state,
                         trace,
@@ -831,15 +816,11 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        in {
-                            RecoveryCommandKind.REGROUND,
-                            RecoveryCommandKind.REROUTE,
-                            RecoveryCommandKind.REPLAN_STEP,
-                        }
-                    ):
+                    if _pending_recovery_command_kind(state) in {
+                        RecoveryCommandKind.REGROUND,
+                        RecoveryCommandKind.REROUTE,
+                        RecoveryCommandKind.REPLAN_STEP,
+                    }:
                         parent = self._fail_pending_recovery_command(
                             state,
                             trace,
@@ -1011,11 +992,10 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
-                    ):
+                    if _pending_recovery_command_kind(state) in {
+                        RecoveryCommandKind.REGROUND,
+                        RecoveryCommandKind.REROUTE,
+                    }:
                         parent = self._fail_pending_recovery_command(
                             state,
                             trace,
@@ -1074,11 +1054,10 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if (
-                        state.current_recovery_plan is not None
-                        and state.current_recovery_plan.commands[0].kind
-                        in {RecoveryCommandKind.REGROUND, RecoveryCommandKind.REROUTE}
-                    ):
+                    if _pending_recovery_command_kind(state) in {
+                        RecoveryCommandKind.REGROUND,
+                        RecoveryCommandKind.REROUTE,
+                    }:
                         parent = self._fail_pending_recovery_command(
                             state,
                             trace,
@@ -3265,6 +3244,30 @@ def _resolve_planner_decision(value: PlannerDecision | Awaitable[PlannerDecision
 
 async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
     return await value
+
+
+def _pending_recovery_command_kind(state: StateKernel) -> RecoveryCommandKind | None:
+    decision = state.current_recovery_decision
+    if decision is None:
+        return None
+    return {
+        RecoveryKind.REPLAN_TASK: RecoveryCommandKind.REPLAN_TASK,
+        RecoveryKind.REPLAN_STEP: RecoveryCommandKind.REPLAN_STEP,
+        RecoveryKind.REGROUND: RecoveryCommandKind.REGROUND,
+        RecoveryKind.REROUTE: RecoveryCommandKind.REROUTE,
+        RecoveryKind.SWITCH_PROVIDER: RecoveryCommandKind.SWITCH_PROVIDER,
+        RecoveryKind.REPAIR_MODEL_SCHEMA: RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+        RecoveryKind.COMPACT_CONTEXT: RecoveryCommandKind.COMPACT_CONTEXT,
+        RecoveryKind.CLARIFY_INTENT: RecoveryCommandKind.CLARIFY_INTENT,
+        RecoveryKind.ASK_USER: RecoveryCommandKind.ASK_USER,
+        RecoveryKind.REOBSERVE: RecoveryCommandKind.REOBSERVE,
+        RecoveryKind.ACTIVE_PERCEPTION: RecoveryCommandKind.ACTIVE_PERCEPTION,
+        RecoveryKind.INSPECT_POST_STATE: RecoveryCommandKind.INSPECT_POST_STATE,
+        RecoveryKind.RETRY_IDEMPOTENT: RecoveryCommandKind.RETRY_IDEMPOTENT,
+        RecoveryKind.COMPENSATE: RecoveryCommandKind.COMPENSATE,
+        RecoveryKind.REQUEST_APPROVAL: RecoveryCommandKind.REQUEST_APPROVAL,
+        RecoveryKind.ABORT: RecoveryCommandKind.ABORT,
+    }[decision.kind]
 
 
 def _terminal_recovery_status(
