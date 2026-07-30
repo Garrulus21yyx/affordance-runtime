@@ -54,6 +54,11 @@ scope:
       in recovery_decision_compatibility.py; RecoveryPlan/RecoveryCommand
       remain compatibility trace/dispatcher payloads and are no longer selected
       by the default Coordinator recovery owner.
+    - RecoveryStrategySelected default RecoveryPhase trace payload now records
+      canonical RecoveryDecision instead of legacy RecoveryPlan.
+    - Phase-general non-owner recovery transitions no longer store
+      current_recovery_plan, recovery_receipts, recovery_deltas, or
+      recovery_history entries in StateKernel.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -66,7 +71,8 @@ scope:
       compatibility trace/dispatcher modules.
     - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt module
       deletion from offline compatibility tests.
-    - Full RecoveryOutcome replacement of RecoveryPlan trace payloads.
+    - Full RecoveryCommand / RecoveryReceipt physical deletion from owner
+      dispatcher and external recovery compatibility modules.
     - Planner ActionChoiceBuilder.
     - new task-family regex or deterministic fallback.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -106,6 +112,9 @@ validation:
     - python -m pytest tests/test_recovery_phase.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_handler.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py tests/test_recovery_evolution.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=10
   focused_result: 136_passed
   canonical_outcome_focused_result: 100_passed
+  decision_trace_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=20
+  decision_trace_focused_result: 28_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -117,5 +126,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_canonical_decision_outcome_state_local_candidate
+status: sar_8c_canonical_decision_trace_local_candidate
 next_slice: planner-selection-simplification-actionchoice

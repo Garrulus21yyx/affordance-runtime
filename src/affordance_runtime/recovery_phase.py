@@ -10,6 +10,7 @@ from affordance_runtime.recovery_command_dispatcher import (
     RecoveryCommandDispatcher,
 )
 from affordance_runtime.recovery_commands import (
+    RecoveryCommand,
     RecoveryCommandKind,
     RecoveryReentryPhase,
 )
@@ -112,11 +113,21 @@ class RecoveryPhase:
         state.current_failure = failure
         state.current_recovery_decision = decision
         state.current_recovery_outcome = None
-        state.current_recovery_plan = plan
         command = plan.commands[0]
-        state.attempted_recovery_strategy_ids.add(command.strategy_id)
+        if command.kind in OWNER_DISPATCH_COMMANDS:
+            state.current_recovery_plan = plan
+        else:
+            state.current_recovery_plan = None
+        state.attempted_recovery_strategy_ids.add(decision.strategy_key)
         state.recovery_count += 1
-        parent = _trace_recovery_protocol(trace, parent, state)
+        parent = _trace_recovery_protocol(
+            trace,
+            parent,
+            state_phase=state.phase,
+            failure=failure,
+            decision=decision,
+            command=command,
+        )
         if command.kind in {
             RecoveryCommandKind.REOBSERVE,
             RecoveryCommandKind.REGROUND,
@@ -151,7 +162,14 @@ class RecoveryPhase:
                 parent,
                 state.current_recovery_outcome,
             )
-        command_kind, parent = _complete_immediate_recovery_command(state, trace, parent)
+        command_kind, parent = _complete_immediate_recovery_command(
+            state,
+            trace,
+            parent,
+            failure=failure,
+            decision=decision,
+            command=command,
+        )
         return RecoveryApplicationResult(
             classification,
             decision,
@@ -249,16 +267,17 @@ class RecoveryPhase:
 def _trace_recovery_protocol(
     trace: TraceDag,
     parent: TraceNode,
-    state: StateKernel,
+    *,
+    state_phase: str,
+    failure: FailureEnvelope,
+    decision: RecoveryDecision,
+    command: RecoveryCommand,
 ) -> TraceNode:
-    failure = state.current_failure
-    plan = state.current_recovery_plan
-    if failure is None or plan is None:
-        return parent
     for projection in recovery_protocol_projections(
-        state_phase=state.phase,
+        state_phase=state_phase,
         failure=failure,
-        plan=plan,
+        decision=decision,
+        command=command,
     ):
         parent = trace.add(projection.kind, projection.payload, parents=[parent.id])
     return parent
@@ -268,12 +287,11 @@ def _complete_immediate_recovery_command(
     state: StateKernel,
     trace: TraceDag,
     parent: TraceNode,
+    *,
+    failure: FailureEnvelope,
+    decision: RecoveryDecision,
+    command: RecoveryCommand,
 ) -> tuple[RecoveryCommandKind, TraceNode]:
-    failure = state.current_failure
-    plan = state.current_recovery_plan
-    if failure is None or plan is None:
-        raise ValueError("immediate recovery completion requires failure and plan")
-    command = plan.commands[0]
     terminal_phase = {
         RecoveryReentryPhase.WAITING_USER: RuntimeStep.WAITING_CLARIFICATION.value,
         RecoveryReentryPhase.WAITING_APPROVAL: RuntimeStep.WAITING_APPROVAL.value,

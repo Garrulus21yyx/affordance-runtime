@@ -58,16 +58,15 @@ def test_recovery_phase_handles_phase_general_failure_through_decision_seam() ->
     assert state.current_failure == failure
     assert state.current_recovery_decision == result.decision
     assert state.current_recovery_outcome is None
-    assert state.current_recovery_plan is not None
-    assert state.current_recovery_plan.commands[0].kind == RecoveryCommandKind.REOBSERVE
-    assert state.attempted_recovery_strategy_ids == {
-        state.current_recovery_plan.commands[0].strategy_id
-    }
+    assert state.current_recovery_plan is None
+    assert state.attempted_recovery_strategy_ids == {result.decision.strategy_key}
     assert [node.kind for node in trace.nodes[-3:]] == [
         "FailureDetected",
         "RecoveryStrategySelected",
         "RecoveryCommandStarted",
     ]
+    assert "decision" in trace.nodes[-2].payload
+    assert "plan" not in trace.nodes[-2].payload
     assert result.parent.kind == "RecoveryCommandStarted"
 
 

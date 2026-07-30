@@ -126,10 +126,10 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     assert len(result.state.receipts) == 1
     assert result.verification is not None and result.verification.passed
     assert result.state.current_failure is not None
-    assert result.state.recovery_receipts
-    assert result.state.recovery_receipts[-1].command_id.startswith("recovery-command-")
-    assert result.state.recovery_history
-    assert ":inspect_post_state:" in result.state.recovery_history[-1].strategy_id
+    assert result.state.current_recovery_decision is not None
+    assert result.state.current_recovery_decision.kind.value == "inspect_post_state"
+    assert result.state.recovery_receipts == []
+    assert result.state.recovery_history == []
     events = [node.kind for node in result.trace.nodes]
     assert "RecoveryStateInspected" in events
     assert events.index("RecoveryStateInspected") < events.index("TaskCompleted")
