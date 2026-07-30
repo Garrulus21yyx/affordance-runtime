@@ -65,6 +65,10 @@ scope:
       unsupported reason_code in PlannerDecision.planner_context so the current
       Coordinator consumer can route ActionChoice failures into recovery
       without collapsing them to generic planner_failed.
+    - ActionChoiceBuilder distinguishes unresolved legacy target binding from
+      matched targets with no feasible action; strict Generalist preserves the
+      legacy PlannerProposal path only for action_choice_target_unresolved
+      during the compatibility window.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -133,17 +137,20 @@ validation:
   unsupported_reason_compatibility:
     - python -m pytest tests/test_planner_response_contracts.py::test_planner_unsupported_response_preserves_typed_reason_in_compatibility_decision -q --tb=short
   unsupported_reason_compatibility_result: 1_passed
+  unresolved_target_compatibility_fallback:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call tests/test_browsergym_adapter.py::test_generalist_planner_port_runs_browsergym_without_external_action_policy tests/test_browsergym_adapter.py::test_browsergym_episode_report_counts_successful_intent_repair tests/test_generalist_planner.py::test_strict_planner_uses_active_step_admission_without_terminal_readiness --maxfail=1 --tb=short -q
+  unresolved_target_compatibility_fallback_result: 20_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
-    full_pytest_result: 1298_passed
+    full_pytest_result: 1325_passed
     full_ruff: ruff check src tests scripts
     full_ruff_result: passed
-    core_mypy: /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime
-    core_mypy_result: passed_146_source_files
+    core_mypy: mypy --ignore-missing-imports src/affordance_runtime/coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/state_kernel.py src/affordance_runtime/action_choice.py src/affordance_runtime/generalist_planner.py src/affordance_runtime/benchmarks/local.py src/affordance_runtime/benchmarks/generalization_rollout.py
+    core_mypy_result: passed_7_source_files
     uv_build: passed
     diff_check: passed
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_no_choice_model_fallback_blocked_local_candidate
+status: ps_5_unresolved_target_compatibility_fallback_local_candidate
 next_slice: ps_6_historical_profile_grammar_quarantine

@@ -133,6 +133,10 @@ def _request_with_active_step(
     criterion: StateCriterion | tuple[StateCriterion, ...],
     affordance: PlannerAffordanceView | tuple[PlannerAffordanceView, ...],
     active_step_action_family: str = "",
+    permitted_action_kinds: tuple[str, ...] = (
+        PlannerActionKind.TYPE_TEXT.value,
+        PlannerActionKind.PRESS_KEY.value,
+    ),
 ) -> PlanningRequest:
     criteria = criterion if isinstance(criterion, tuple) else (criterion,)
     affordances = affordance if isinstance(affordance, tuple) else (affordance,)
@@ -198,7 +202,7 @@ def _request_with_active_step(
             effectful_actions=3,
             model_calls=1,
         ),
-        permitted_action_kinds=(PlannerActionKind.TYPE_TEXT.value, PlannerActionKind.PRESS_KEY.value),
+        permitted_action_kinds=permitted_action_kinds,
     )
 
 
@@ -311,6 +315,60 @@ def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
     assert isinstance(response, PlannerUnsupportedResponse)
     assert response.reason_code == "no_feasible_action_choice"
     assert planner.model_call_count == 0
+
+
+def test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved() -> None:
+    @dataclass
+    class ActivateModel:
+        provider: str = "fixed"
+        model: str = "legacy-fallback"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate(
+                {
+                    "action_kind": "activate",
+                    "target_affordance_id": "semantic:target",
+                    "reason": "legacy compatibility target binding",
+                }
+            )
+
+    request = _request_with_active_step(
+        criterion=StateCriterion(
+            criterion_id="criterion:legacy-target",
+            source_refs=(_request_source(),),
+            subject="target",
+            relation=CriterionRelation.HAS_CHANGED,
+            expected_value=None,
+            evidence_policy=_request_policy(),
+        ),
+        affordance=PlannerAffordanceView(
+            target_id="semantic:target",
+            surface="dom",
+            role="button",
+            label="Target",
+            supported_actions=("activate",),
+            state={"enabled": True, "visible": True},
+        ),
+        active_step_action_family="activate",
+        permitted_action_kinds=(PlannerActionKind.ACTIVATE.value,),
+    )
+    model = ActivateModel()
+    planner = GeneralistLMPlanner(model)
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerProposalResponse)
+    assert response.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert response.proposal.target_affordance_id == "semantic:target"
+    assert planner.model_call_count == 1
 
 
 def test_strict_planner_selects_choice_id_for_multiple_actionchoices() -> None:

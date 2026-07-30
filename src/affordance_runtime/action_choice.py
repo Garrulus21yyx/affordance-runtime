@@ -320,6 +320,7 @@ class ActionChoiceBuilder:
 
         targets = {item.target_id: item for item in observation.targets}
         choices: list[ActionChoice] = []
+        unresolved_target = False
         for criterion in step.completion_criteria:
             if not isinstance(criterion, StateCriterion):
                 continue
@@ -327,6 +328,7 @@ class ActionChoiceBuilder:
                 continue
             target = targets.get(criterion.subject)
             if target is None:
+                unresolved_target = True
                 continue
             choice = _choice_for_criterion(
                 task_revision=task_revision,
@@ -340,6 +342,11 @@ class ActionChoiceBuilder:
                 choices.append(choice)
 
         if not choices:
+            if unresolved_target:
+                return ActionChoiceFailure(
+                    kind=FailureKind.GROUNDING_AMBIGUOUS,
+                    reason_code="action_choice_target_unresolved",
+                )
             return ActionChoiceFailure(
                 kind=FailureKind.NO_FEASIBLE_ACTION,
                 reason_code="no_feasible_action_choice",

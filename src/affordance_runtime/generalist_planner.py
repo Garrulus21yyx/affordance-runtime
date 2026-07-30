@@ -776,6 +776,8 @@ async def _runtime_action_choice_decision(
         observation=UnifiedObservationView.from_planner_observation(request.observation),
     )
     if isinstance(choice_result, ActionChoiceFailure):
+        if choice_result.reason_code == "action_choice_target_unresolved":
+            return None
         return _action_choice_failure_decision(
             choice_result,
             context=context,

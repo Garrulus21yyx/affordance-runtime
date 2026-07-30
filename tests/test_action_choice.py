@@ -179,6 +179,39 @@ def test_action_choice_builder_returns_typed_failure_for_no_feasible_action() ->
     assert result.reason_code == "no_feasible_action_choice"
 
 
+def test_action_choice_builder_distinguishes_unresolved_target_from_no_action() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+    from affordance_runtime.recovery_protocol import FailureKind
+
+    criterion = _criterion(
+        criterion_id="criterion:legacy",
+        subject="target",
+        expected_value="clicked",
+    )
+    step = _step(criterion=criterion, step_id="step:legacy")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:target",
+                surface="dom",
+                role="button",
+                label="Target",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.kind == FailureKind.GROUNDING_AMBIGUOUS
+    assert result.reason_code == "action_choice_target_unresolved"
+
+
 def test_action_choice_builder_creates_checkbox_activation_choice() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

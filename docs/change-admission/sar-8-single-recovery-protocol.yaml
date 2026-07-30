@@ -259,7 +259,7 @@ validation:
     mypy_core: passed_5_source_files_ignore_optional_missing_imports
     diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
-  full_pytest_result: 1282_passed
+  full_pytest_result: 1325_passed
   coordinator_lines: 2974
   run_sync_lines: 1993
   runcoordinator_methods: 18
