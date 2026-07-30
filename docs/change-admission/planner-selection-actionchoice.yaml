@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_1_ps_2_actionchoice_contracts_and_dispatch_foundation
+  current_slice: ps_1_ps_2_actionchoice_contracts_dispatch_and_first_default_cutover
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -25,21 +25,31 @@ scope:
       press-key direction choice.
     - Zero/one/many dispatch semantics as a pure boundary.
     - Strict architecture gate registration for action_choice.py.
+    - Strict Generalist request-only path auto-selects a unique Runtime-built
+      ActionChoice before model invocation.
+    - Exact text EQUALS and slider numeric EQUALS unique-choice cases return
+      deterministic PlannerProposal compatibility output with
+      runtime-action-choice provenance.
+    - Strict page-observed text fallback is deleted from default Generalist
+      Planner behavior.
+    - Strict exact-value text fallback function and call site are deleted; the
+      remaining legacy exact-value test passes only through the older semantic
+      resolver compatibility path and is pending PS-4 retirement.
   excluded:
     - Coordinator call-site integration.
     - PlannerPort replacement with select(choice_id).
     - Provider schema changes.
     - ActionContract builder changes.
     - Executor, verifier, preflight, approval, or capability changes.
-    - Deterministic fallback deletion.
+    - Full deterministic fallback deletion.
     - Task Planner action-family retirement.
     - TargetIntent migration.
     - PR breadth, fresh diagnostic, or promotion claim.
 
 authority_rules:
-  planner_generates_action_kind: unchanged_legacy_path_pending
-  planner_generates_target: unchanged_legacy_path_pending
-  planner_generates_parameters: unchanged_legacy_path_pending
+  planner_generates_action_kind: bypassed_for_unique_exact_text_and_slider_choices
+  planner_generates_target: bypassed_for_unique_exact_text_and_slider_choices
+  planner_generates_parameters: bypassed_for_unique_exact_text_and_slider_choices
   planner_generates_expected_effects: unchanged_legacy_path_pending
   planner_generates_evidence_requirements: unchanged_legacy_path_pending
   actionchoice_backend_authority: prohibited
@@ -62,8 +72,8 @@ dispatch_rules:
 
 validation:
   focused:
-    - python -m pytest tests/test_action_choice.py tests/test_active_step_scope.py -q --tb=short --maxfail=10
-  focused_result: 15_passed
+    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_planner_response_contracts.py -q --tb=short --maxfail=10
+  focused_result: 100_passed
   architecture:
     - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
   architecture_result: 9_passed
@@ -73,11 +83,17 @@ validation:
   mypy:
     - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/action_choice.py
   mypy_result: passed
-  diff_check: passed
-  full_pytest: not_required_for_foundation_commit
-  uv_build: not_required_for_foundation_commit
+  cutover_closure:
+    full_pytest: PYTHONPATH=src python -m pytest -q
+    full_pytest_result: 1293_passed
+    full_ruff: ruff check src tests scripts
+    full_ruff_result: passed
+    core_mypy: /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime
+    core_mypy_result: passed_147_source_files
+    uv_build: passed
+    diff_check: passed
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_1_ps_2_foundation_local_candidate
-next_slice: ps_1_vertical_default_path_cutover_exact_text_and_slider
+status: ps_1_ps_2_exact_text_slider_cutover_local_candidate
+next_slice: ps_3_choice_id_step_planner_cutover

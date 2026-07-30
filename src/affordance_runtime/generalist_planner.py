@@ -8,10 +8,13 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
+from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
+from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
 from affordance_runtime.planner_context import (
     AffordanceSummary,
@@ -61,6 +64,7 @@ from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_action_resolver import resolve_empty_clarification_action
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.unified_observation import UnifiedObservationView
 
 GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
 COMPATIBILITY_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
@@ -310,6 +314,14 @@ class GeneralistLMPlanner:
                 admission_result.summary,
                 request.admission,
             )
+            action_choice_decision = _runtime_action_choice_decision(
+                request=request,
+                context=context,
+                planner_profile=self.planner_profile,
+                planner_admission=planner_admission,
+            )
+            if action_choice_decision is not None:
+                return action_choice_decision
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
             raise RuntimeError("planner semantic compiler profile was not initialized")
@@ -467,12 +479,6 @@ class GeneralistLMPlanner:
             if fallback_proposal is None:
                 fallback_proposal = _strict_submit_after_text_fallback(context, proposal)
                 fallback_producer_id = "strict-submit-after-text-fallback"
-            if fallback_proposal is None:
-                fallback_proposal = _strict_exact_value_text_fallback(context, proposal)
-                fallback_producer_id = "strict-exact-value-text-fallback"
-            if fallback_proposal is None:
-                fallback_proposal = _strict_page_observed_text_fallback(context, proposal)
-                fallback_producer_id = "strict-page-observed-text-fallback"
         if fallback_proposal is not None:
             return _planner_decision(
                 proposal=fallback_proposal,
@@ -700,6 +706,90 @@ def _planner_admission_status(status: TargetAdmissionStatus) -> str:
     }[status]
 
 
+def _runtime_action_choice_decision(
+    *,
+    request: PlanningRequest,
+    context: PlannerContext,
+    planner_profile: GeneralistPlannerProfile,
+    planner_admission: dict[str, object],
+) -> PlannerDecision | None:
+    active_step = request.step.active_step
+    if active_step is None:
+        return None
+    scope = ActiveStepScope.from_active_step(
+        task_revision=request.identity.task_revision,
+        evaluated_at_state_version=request.identity.evaluated_at_state_version,
+        snapshot_id=request.identity.snapshot_id,
+        step=active_step,
+        activity_status=request.step.activity_status,
+    )
+    choice_result = ActionChoiceBuilder().build(
+        task_revision=request.identity.task_revision,
+        state_version=request.identity.evaluated_at_state_version,
+        step=active_step,
+        scope=scope,
+        observation=UnifiedObservationView.from_planner_observation(request.observation),
+    )
+    if not isinstance(choice_result, ActionChoiceSet) or len(choice_result.choices) != 1:
+        return None
+    choice = choice_result.choices[0]
+    parameters = cast(
+        dict[str, str | int | float | bool | list[str]],
+        thaw_json_at_external_boundary(choice.parameters),
+    )
+    criterion_ids = choice.criterion_ids
+    allowed_source_kinds = tuple(
+        dict.fromkeys(
+            source
+            for criterion in active_step.completion_criteria
+            if getattr(criterion, "criterion_id", "") in criterion_ids
+            for source in getattr(
+                getattr(criterion, "evidence_policy", None),
+                "allowed_source_kinds",
+                (),
+            )
+        )
+    )
+    proposal = PlannerProposal(
+        proposal_id=f"proposal:{choice.choice_id}",
+        based_on_task_revision=choice.task_revision,
+        based_on_state_version=choice.state_version,
+        snapshot_id=choice.snapshot_id,
+        subgoal=context.active_subgoal,
+        action_kind=choice.action_kind,
+        target_affordance_id=choice.target_id,
+        destination_affordance_id=choice.destination_id,
+        parameters=parameters,
+        expected_effects=criterion_ids,
+        evidence_requirements=allowed_source_kinds,
+        reason="runtime_unique_action_choice",
+    )
+    return PlannerDecision(
+        proposal=proposal,
+        proposal_provenance=PlannerProposalProvenance(
+            source=PlannerProposalSource.DETERMINISTIC_RULE,
+            producer_id="runtime-action-choice",
+            profile_id=planner_profile.value,
+            version=GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
+            evidence_refs=criterion_ids,
+        ),
+        reason=proposal.reason,
+        planner_context={
+            "task_revision": context.task_revision,
+            "state_version": context.state_version,
+            "snapshot_id": context.snapshot_id,
+            "affordance_count": len(context.affordances),
+            "planner_profile": planner_profile.value,
+            "runtime_action_choice": {
+                "choice_id": choice.choice_id,
+                "active_step_id": choice.active_step_id,
+                "criterion_ids": list(choice.criterion_ids),
+            },
+            **({"planner_admission": planner_admission} if planner_admission else {}),
+        },
+    )
+
+
 def _planner_decision(
     *,
     proposal: PlannerProposal,
@@ -772,42 +862,6 @@ def _planner_response(decision: PlannerDecision) -> PlannerResponse:
     )
 
 
-def _strict_exact_value_text_fallback(
-    context: PlannerContext,
-    proposal: PlannerProposal,
-) -> PlannerProposal | None:
-    """Use exact TaskSpec text only when current semantics leave one safe input."""
-
-    if proposal.action_kind != PlannerActionKind.ASK_USER or proposal.reason.strip():
-        return None
-    if context.active_subgoal_action_family != PlannerActionKind.TYPE_TEXT.value:
-        return None
-    value = _single_open_exact_text_value(context)
-    if not value:
-        return None
-    target_ids = [
-        item.id
-        for item in context.affordances
-        if item.id in _compatible_target_ids(context).get(PlannerActionKind.TYPE_TEXT.value, [])
-        and item.state.get("enabled") is not False
-        and item.state.get("control_value") != value
-    ]
-    if len(target_ids) != 1:
-        return None
-    return PlannerProposalCandidate(
-        subgoal=context.active_subgoal,
-        action_kind=PlannerActionKind.TYPE_TEXT,
-        target_affordance_id=target_ids[0],
-        parameters={"text": value},
-        expected_effects=(context.active_subgoal,),
-        evidence_requirements=tuple(
-            str(item)
-            for item in context.task_spec.get("evidence_requirements", ())
-            if isinstance(item, str) and item
-        ),
-    ).bind(context)
-
-
 def _strict_submit_after_text_fallback(
     context: PlannerContext,
     proposal: PlannerProposal,
@@ -846,81 +900,9 @@ def _strict_submit_after_text_fallback(
     ).bind(context)
 
 
-def _strict_page_observed_text_fallback(
-    context: PlannerContext,
-    proposal: PlannerProposal,
-) -> PlannerProposal | None:
-    """Use one visible page value for deictic text-entry tasks."""
-
-    if proposal.action_kind != PlannerActionKind.ASK_USER or proposal.reason.strip():
-        return None
-    if context.active_subgoal_action_family != PlannerActionKind.TYPE_TEXT.value:
-        return None
-    value = _single_page_observed_text_value(context)
-    if not value:
-        return None
-    target_ids = [
-        item.id
-        for item in context.affordances
-        if item.id in _compatible_target_ids(context).get(PlannerActionKind.TYPE_TEXT.value, [])
-        and item.state.get("enabled") is not False
-        and item.state.get("control_value") != value
-    ]
-    if len(target_ids) != 1:
-        return None
-    return PlannerProposalCandidate(
-        subgoal=context.active_subgoal,
-        action_kind=PlannerActionKind.TYPE_TEXT,
-        target_affordance_id=target_ids[0],
-        parameters={"text": value},
-        expected_effects=(context.active_subgoal,),
-        evidence_requirements=tuple(
-            str(item)
-            for item in context.task_spec.get("evidence_requirements", ())
-            if isinstance(item, str) and item
-        ),
-    ).bind(context)
-
-
-def _single_page_observed_text_value(context: PlannerContext) -> str:
-    objective = str(context.task_spec.get("objective") or "").casefold()
-    if "text below" not in objective:
-        return ""
-    excluded = {
-        item.label.casefold().strip()
-        for item in context.affordances
-        if item.action in {"activate", "click"} or item.role == "button"
-    }
-    values = tuple(
-        dict.fromkeys(
-            line.strip()
-            for line in context.observed_text.splitlines()
-            if line.strip() and line.casefold().strip() not in excluded
-        )
-    )
-    return values[0] if len(values) == 1 else ""
-
-
 def _label_has_terminal_word(label: str) -> bool:
     words = ("submit", "save", "done", "confirm", "send", "create", "continue", "next", "ok")
     return any(re.search(rf"\b{re.escape(word)}\b", label.casefold()) for word in words)
-
-
-def _single_open_exact_text_value(context: PlannerContext) -> str:
-    raw_constraints = context.task_spec.get("semantic_value_constraints")
-    if not isinstance(raw_constraints, list):
-        return ""
-    values = tuple(
-        dict.fromkeys(
-            str(item.get("value"))
-            for item in raw_constraints
-            if isinstance(item, dict)
-            and item.get("relation") == "exact"
-            and isinstance(item.get("value"), str)
-            and str(item.get("value")).strip()
-        )
-    )
-    return values[0] if len(values) == 1 else ""
 
 
 def _strict_candidate_prebind_issue(

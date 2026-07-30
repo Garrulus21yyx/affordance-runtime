@@ -51,10 +51,29 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
-from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.planning_contracts import PlannerProposalResponse
+from affordance_runtime.planning_request import (
+    PlannerAffordanceView,
+    PlannerObservationView,
+    PlannerStepProjectionStatus,
+    PlannerStepView,
+    PlannerTaskView,
+    PlanningRequest,
+    PlanningRequestIdentity,
+    RuntimeBudgetView,
+)
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
+from affordance_runtime.simplified_runtime_contracts import (
+    SourceReference,
+    StateCriterion,
+    StepActivityStatus,
+    StepProgressView,
+    StepSpec,
+    TaskPlanView,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     EvidenceKind,
@@ -95,6 +114,172 @@ def _compatibility_planner(model: Any, **kwargs: Any) -> GeneralistLMPlanner:
         planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
         **kwargs,
     )
+
+
+def _request_source() -> SourceReference:
+    return SourceReference(source_id="source:user", source_unit_id="unit:1")
+
+
+def _request_policy() -> EvidencePolicy:
+    return EvidencePolicy(
+        minimum_strength=EvidenceStrength.INDEPENDENT,
+        allowed_source_kinds=("dom_state",),
+    )
+
+
+def _request_with_active_step(
+    *,
+    criterion: StateCriterion,
+    affordance: PlannerAffordanceView,
+    active_step_action_family: str = "",
+) -> PlanningRequest:
+    step = StepSpec(
+        step_id="step:current",
+        objective="Complete the current step",
+        completion_criteria=(criterion,),
+        source_refs=(_request_source(),),
+    )
+    plan = TaskPlanView(
+        plan_id="plan:1",
+        plan_version=1,
+        task_spec_identity="task:identity",
+        task_revision=1,
+        steps=(step,),
+        active_step_id=step.step_id,
+    )
+    progress = StepProgressView(
+        plan_id=plan.plan_id,
+        plan_version=plan.plan_version,
+        active_step_id=step.step_id,
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+    return PlanningRequest(
+        identity=PlanningRequestIdentity(
+            task_spec_identity="task:identity",
+            task_revision=1,
+            evaluated_at_state_version=7,
+            snapshot_id="snapshot:1",
+            page_revision="page:1",
+            environment_revision="env:1",
+        ),
+        task=PlannerTaskView(
+            task_spec_identity="task:identity",
+            task_revision=1,
+            objective="Complete the current step",
+            constraints=(),
+            capabilities=(),
+            task_completion_criterion=None,
+            task_completion_projection_status="pending",
+        ),
+        step=PlannerStepView(
+            plan=plan,
+            progress=progress,
+            active_step=step,
+            activity_status=StepActivityStatus.ACTIVE,
+            projection_status=PlannerStepProjectionStatus.PROJECTED,
+            active_step_action_family=active_step_action_family,
+            compatibility_active_step_objective=step.objective,
+        ),
+        observation=PlannerObservationView(
+            snapshot_id="snapshot:1",
+            page_revision="page:1",
+            environment_revision="env:1",
+            observed_text="",
+            affordances=(affordance,),
+            artifact_refs=(),
+        ),
+        remaining_budget=RuntimeBudgetView(
+            steps=3,
+            observations=3,
+            recoveries=1,
+            effectful_actions=3,
+            model_calls=1,
+        ),
+        permitted_action_kinds=(PlannerActionKind.TYPE_TEXT.value, PlannerActionKind.PRESS_KEY.value),
+    )
+
+
+@dataclass
+class NoCallModel:
+    provider: str = "fixed"
+    model: str = "no-call"
+    endpoint_class: str = "test"
+    last_call: ModelCallRecord | None = None
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        del messages, output_schema, config
+        raise AssertionError("model should not be called for a unique runtime action choice")
+
+
+def test_strict_planner_auto_selects_unique_exact_text_actionchoice() -> None:
+    request = _request_with_active_step(
+        criterion=StateCriterion(
+            criterion_id="criterion:name",
+            source_refs=(_request_source(),),
+            subject="semantic:name",
+            relation=CriterionRelation.EQUALS,
+            expected_value="Alice",
+            evidence_policy=_request_policy(),
+        ),
+        affordance=PlannerAffordanceView(
+            target_id="semantic:name",
+            surface="dom",
+            role="textbox",
+            label="Name",
+            supported_actions=("type_text",),
+            state={"value": ""},
+        ),
+    )
+    planner = GeneralistLMPlanner(NoCallModel())
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerProposalResponse)
+    assert response.proposal.action_kind == PlannerActionKind.TYPE_TEXT
+    assert response.proposal.target_affordance_id == "semantic:name"
+    assert response.proposal.parameters == {"text": "Alice"}
+    assert response.proposal.expected_effects == ("criterion:name",)
+    assert response.proposal.evidence_requirements == ("dom_state",)
+    assert response.proposal_provenance is not None
+    assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert planner.model_call_count == 0
+
+
+def test_strict_planner_auto_selects_unique_slider_actionchoice() -> None:
+    request = _request_with_active_step(
+        criterion=StateCriterion(
+            criterion_id="criterion:slider",
+            source_refs=(_request_source(),),
+            subject="semantic:slider",
+            relation=CriterionRelation.EQUALS,
+            expected_value=7,
+            evidence_policy=_request_policy(),
+        ),
+        affordance=PlannerAffordanceView(
+            target_id="semantic:slider",
+            surface="dom",
+            role="slider",
+            label="Volume",
+            supported_actions=("press_key",),
+            state={"value": 5},
+        ),
+    )
+    planner = GeneralistLMPlanner(NoCallModel())
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerProposalResponse)
+    assert response.proposal.action_kind == PlannerActionKind.PRESS_KEY
+    assert response.proposal.target_affordance_id == "semantic:slider"
+    assert response.proposal.parameters == {"key": "ArrowRight"}
+    assert response.proposal_provenance is not None
+    assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert planner.model_call_count == 0
 
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
@@ -3714,7 +3899,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
     assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
 
 
-def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarification() -> None:
+def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists() -> None:
     model = _authored_dom_adapter().transduce(
         '<div>LO4e</div><input id="tt" type="text"><button>Submit</button>',
         environment_revision="rev-1",
@@ -3783,10 +3968,10 @@ def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarificat
     )
 
     assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
-    assert decision.proposal.target_affordance_id == "dom_input_1"
-    assert decision.proposal.parameters == {"text": "LO4e"}
-    assert decision.proposal.requires_clarification is False
+    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
+    assert decision.proposal.target_affordance_id == ""
+    assert decision.proposal.parameters == {}
+    assert decision.proposal.requires_clarification is True
 
 
 def test_strict_planner_submits_after_verified_page_text_entry_when_model_asks() -> None:
