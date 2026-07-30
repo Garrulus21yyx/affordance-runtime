@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-5A UnifiedObservation and ActiveStepScope foundation | SAR-4A PlannerResponse and provider serialization is closed as a local partial candidate | Immutable target-centric UnifiedObservation contracts and pure ActiveStepScope proposal scope evaluation are added as replacement foundations. Coordinator proposal gating, PlannerContext provider-path retirement, PlanningRequestBuilder observation replacement, progress authority, finish authority, provider prompt/schema, and benchmark adapter remain unchanged | SAR-5B ActiveStepScope runtime hookup |
+| Horizontal | SAR-5B ActiveStepScope validator hookup | SAR-5A UnifiedObservation and ActiveStepScope foundation is closed as a local partial candidate | Exact legacy active-subgoal outcome subjects are enforced by ActiveStepScope inside PlannerProposalValidator when they match a current target ID. Coordinator/run_sync, StateKernel schema, progress authority, finish authority, provider prompt/schema, and benchmark adapter remain unchanged | SAR-6 ActionContract / ActionOutcome canonicalization |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -367,11 +367,13 @@ candidates. SAR-3E PlanCandidate naming retirement is closed as a bounded
 deletion slice: production source no longer uses `TaskPlanDraft` compatibility
 naming, and `PlanCandidate` is the only unaccepted plan model name. SAR-4A is
 closed as a replacement-boundary foundation for closed PlannerResponse contracts
-and direct PlanningRequest provider serialization. SAR-5A is active as a
+and direct PlanningRequest provider serialization. SAR-5A is closed as a
 foundation for immutable target-centric UnifiedObservation and pure
-ActiveStepScope proposal scope evaluation. Full legacy TaskPlan/PlanProgress
-model cutover, PlannerContext provider-path retirement, and Coordinator scope
-gate hookup remain open for later dedicated slices. Canonical
+ActiveStepScope proposal scope evaluation. SAR-5B hooks ActiveStepScope into
+PlannerProposalValidator for exact active-subgoal target enforcement without
+changing Coordinator/run_sync. Full legacy TaskPlan/PlanProgress model cutover
+and PlannerContext provider-path retirement remain open for later dedicated
+slices. Canonical
 semantic vocabulary lives in `semantics.py`; simplified step projection no
 longer maps relation enum values. ODG advanced attribution
 remains

@@ -786,7 +786,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-5a unifiedobservation and activestepscope foundation" in status
+    assert "current_next_change_admission: sar-5b activestepscope validator hookup" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1913,7 +1913,7 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-5a unifiedobservation and activestepscope foundation" in status
+    assert "current_next_change_admission: sar-5b activestepscope validator hookup" in status
     assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan
     assert "simplified step projection no longer maps relation enum values" in current_plan
     assert "sar-3 plan vertical replacement" in current_plan

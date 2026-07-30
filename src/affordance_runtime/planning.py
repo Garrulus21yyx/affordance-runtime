@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
+from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import (
     resolve_global_ordinal_constraint,
@@ -30,6 +31,7 @@ from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
 from affordance_runtime.scope_authorization import ProposalScopeEvaluator, ScopeRejectionKind
+from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
@@ -238,6 +240,38 @@ class ProposalRejected(ValueError):
         super().__init__(f"{code.value}: {detail}" if detail else code.value)
 
 
+def _legacy_active_step_scope(
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+) -> ActiveStepScope | None:
+    if state.task_plan is None or state.plan_progress is None:
+        return None
+    active_step_id = state.plan_progress.active_subgoal_id
+    if not active_step_id:
+        return None
+    subgoal = next(
+        (item for item in state.task_plan.subgoals if item.subgoal_id == active_step_id),
+        None,
+    )
+    if subgoal is None or subgoal.outcome is None:
+        return None
+    subject = subgoal.outcome.subject
+    if not subject:
+        return None
+    current_target_ids = {item.id for item in snapshot.affordance_model.affordances}
+    current_target_ids.update(item.semantic_target_id for item in snapshot.unified_affordances)
+    if subject not in current_target_ids:
+        return None
+    return ActiveStepScope(
+        task_revision=state.task_plan.task_revision,
+        evaluated_at_state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+        activity_status=StepActivityStatus.ACTIVE,
+        active_step_id=active_step_id,
+        permitted_target_ids=(subject,),
+    )
+
+
 @dataclass(frozen=True)
 class PlannerProposalValidator:
     """One source-neutral semantic proposal gate before contract binding."""
@@ -276,6 +310,7 @@ class PlannerProposalValidator:
                 proposal.target_affordance_id,
             )
         self._validate_target(proposal.target_affordance_id, proposal.action_kind, snapshot)
+        self._validate_active_step_scope(proposal, state, snapshot)
         self._validate_task_scope(proposal, task_spec, snapshot)
         if proposal.action_kind != PlannerActionKind.DRAG:
             if proposal.destination_affordance_id:
@@ -289,6 +324,24 @@ class PlannerProposalValidator:
             PlannerActionKind.DRAG,
             snapshot,
             destination=True,
+        )
+
+    @staticmethod
+    def _validate_active_step_scope(
+        proposal: PlannerProposal,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> None:
+        scope = _legacy_active_step_scope(state, snapshot)
+        if scope is None:
+            return
+        decision = scope.evaluate(proposal)
+        if decision.allowed:
+            return
+        raise ProposalRejected(
+            ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
+            decision.reason_code,
+            reason_code=decision.reason_code,
         )
 
     @staticmethod

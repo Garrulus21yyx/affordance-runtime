@@ -8,20 +8,20 @@ contracts, mutate state, write trace, or decide progress/finish.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.simplified_runtime_contracts import (
     StepActivityStatus,
     StepSpec,
 )
 
 _TARGET_ACTIONS = {
-    PlannerActionKind.ACTIVATE,
-    PlannerActionKind.POINT_ACTIVATE,
-    PlannerActionKind.TYPE_TEXT,
-    PlannerActionKind.SELECT_OPTION,
-    PlannerActionKind.PRESS_KEY,
-    PlannerActionKind.DRAG,
+    "activate",
+    "point_activate",
+    "type_text",
+    "select_option",
+    "press_key",
+    "drag",
 }
 
 
@@ -105,14 +105,15 @@ class ActiveStepScope:
         _require_tuple("permitted_target_ids", self.permitted_target_ids)
         _require_unique_nonblank("permitted target ids", self.permitted_target_ids)
 
-    def evaluate(self, proposal: PlannerProposal) -> ActiveStepScopeDecision:
+    def evaluate(self, proposal: Any) -> ActiveStepScopeDecision:
         if proposal.based_on_task_revision != self.task_revision:
             return ActiveStepScopeDecision(False, "stale_task_revision")
         if proposal.based_on_state_version != self.evaluated_at_state_version:
             return ActiveStepScopeDecision(False, "stale_state_version")
         if proposal.snapshot_id != self.snapshot_id:
             return ActiveStepScopeDecision(False, "stale_snapshot")
-        if proposal.action_kind not in _TARGET_ACTIONS:
+        action_kind = getattr(proposal.action_kind, "value", proposal.action_kind)
+        if action_kind not in _TARGET_ACTIONS:
             return ActiveStepScopeDecision(True, "non_target_action")
         if self.active_step_id is None:
             return ActiveStepScopeDecision(False, "no_active_step")

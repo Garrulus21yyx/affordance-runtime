@@ -899,6 +899,91 @@ def test_proposal_validator_accepts_a_current_semantic_proposal() -> None:
     )
 
 
+def test_proposal_validator_enforces_exact_active_step_scope_when_available() -> None:
+    model = DomAdapter().transduce(
+        '<input id="theme" aria-label="Theme"><button id="submit">Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Set theme")
+    state.remember_observation(observation)
+    target_ids = tuple(item.id for item in model.affordances)
+    active_target, cross_step_target = target_ids[0], target_ids[1]
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-active-scope",
+            task_id=state.task_id,
+            task_revision=2,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="step:theme",
+                    objective="Set theme to dark",
+                    success_criteria=("theme is dark",),
+                    evidence_requirements=("theme evidence",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                    outcome=SubgoalOutcome(
+                        subject=active_target,
+                        relation=SubgoalOutcomeRelation.EQUALS,
+                        value="dark",
+                    ),
+                ),
+                SubgoalSpec(
+                    subgoal_id="step:submit",
+                    objective="Submit the form",
+                    success_criteria=("form submitted",),
+                    evidence_requirements=("submit evidence",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    depends_on=("step:theme",),
+                    outcome=SubgoalOutcome(
+                        subject=cross_step_target,
+                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    spec = TaskSpec(
+        task_id="task-1",
+        revision=2,
+        objective="Set theme to dark and submit",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("theme", "submit"),
+        success_criteria=("theme is dark", "form submitted"),
+        source_request_ref="request-1",
+    )
+    proposal = _proposal(
+        state,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=cross_step_target,
+        parameters={},
+    )
+
+    with pytest.raises(ProposalRejected) as caught:
+        PlannerProposalValidator().validate(
+            proposal,
+            TEST_PROPOSAL_PROVENANCE,
+            spec,
+            state,
+            BrowserSnapshot(observation, model),
+        )
+
+    assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+    assert caught.value.reason_code == "target_outside_active_step"
+
+
 def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
     spec, state, snapshot = _fixture()
 
