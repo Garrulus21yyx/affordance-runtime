@@ -2916,6 +2916,19 @@ def test_sar_9x_runtime_loop_transition_commit_helpers_are_not_in_coordinator() 
     assert "def commit_runtime_loop_event" in commit_source
 
 
+def test_sar_9y_recovery_started_trace_commit_is_not_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "def _trace_recovery_started" not in coordinator_source
+    assert "RecoveryStarted" not in coordinator_source
+    assert "trace_recovery_started=trace_recovery_started" in coordinator_source
+    commit_source = (SOURCE_ROOT / "recovery_trace_commit.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def trace_recovery_started" in commit_source
+    assert "RecoveryStarted" in commit_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)

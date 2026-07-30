@@ -43,6 +43,7 @@ from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import (
     RecoveryKind,
 )
+from affordance_runtime.recovery_trace_commit import trace_recovery_started
 from affordance_runtime.route_calibration import RouteCalibrator
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_loop_phase import RuntimeLoopPhase
@@ -72,7 +73,7 @@ from affordance_runtime.task_skill_phase import (
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.task_skill_progress_phase import TaskSkillProgressPhase
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
-from affordance_runtime.trace import TraceDag, TraceNode
+from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification import VerificationReport, VerifierLadder
 from affordance_runtime.verification_failure_phase import VerificationFailurePhase
 from affordance_runtime.verification_phase import VerificationPhase
@@ -573,7 +574,7 @@ class RunCoordinator:
                     current_state,
                     fallback=RuntimeStep.ABORTED,
                 ),
-                trace_recovery_started=_trace_recovery_started,
+                trace_recovery_started=trace_recovery_started,
             )
             parent = preflight_result.parent
             contract = preflight_result.contract
@@ -613,7 +614,7 @@ class RunCoordinator:
                     current_state,
                     fallback=RuntimeStep.FAILED,
                 ),
-                trace_recovery_started=_trace_recovery_started,
+                trace_recovery_started=trace_recovery_started,
             )
             parent = execution_result.parent
             if execution_result.latest_verification is not None:
@@ -725,7 +726,7 @@ class RunCoordinator:
                 task_skill_runtime=self.task_skill_runtime,
                 task_skill_progress_for=_task_skill_progress,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
-                trace_recovery_started=_trace_recovery_started,
+                trace_recovery_started=trace_recovery_started,
                 terminal_recovery_status=_terminal_recovery_status,
             )
             parent = verification_failure.parent
@@ -771,17 +772,3 @@ def _terminal_recovery_status(
         return current
     state.transition(fallback.value)
     return fallback
-
-
-def _trace_recovery_started(
-    trace: TraceDag,
-    parent: TraceNode,
-    state: StateKernel,
-    command: RecoveryKind,
-    *,
-    verification_status: str = "",
-) -> TraceNode:
-    payload: dict[str, Any] = {"state": state.phase, "action": command.value}
-    if verification_status:
-        payload["verification"] = verification_status
-    return trace.add("RecoveryStarted", payload, parents=[parent.id])
