@@ -11,25 +11,39 @@ from dataclasses import dataclass
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.trace import TraceDag, TraceNode
+from affordance_runtime.trace import TraceDag
+
+
+@dataclass(frozen=True)
+class RuntimeLoopEvent:
+    kind: str
+    payload: dict[str, object]
+    parent_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RuntimeLoopTransition:
+    phase: RuntimeStep
+    activate_next_subgoal: bool = False
 
 
 @dataclass(frozen=True)
 class RuntimeLoopStartResult:
     state: StateKernel
     trace: TraceDag
-    parent: TraceNode
+    event: RuntimeLoopEvent
 
 
 @dataclass(frozen=True)
 class RuntimeLoopTerminalResult:
     status: RuntimeStep
     error_code: RuntimeErrorCode | None
-    parent: TraceNode
+    transition: RuntimeLoopTransition
+    event: RuntimeLoopEvent
 
 
 class RuntimeLoopPhase:
-    """Coordinator-facing owner for loop lifecycle state and trace commits."""
+    """Prepare loop lifecycle transitions and events without committing them."""
 
     def start(
         self,
@@ -48,9 +62,9 @@ class RuntimeLoopPhase:
             raise ValueError("upstream trace run_id does not match task")
         trace = upstream_trace or TraceDag(run_id=envelope.task_id)
         upstream_parent = trace.nodes[-1] if trace.nodes else None
-        parent = trace.add(
-            "TaskCreated",
-            {
+        event = RuntimeLoopEvent(
+            kind="TaskCreated",
+            payload={
                 "state": RuntimeStep.CREATED.value,
                 "goal": envelope.goal,
                 "constraints": envelope.constraints,
@@ -60,40 +74,37 @@ class RuntimeLoopPhase:
                 "runtime_profile_digest": runtime_profile_digest,
                 "loaded_profile_artifact_ids": list(loaded_profile_artifact_ids),
             },
-            parents=[upstream_parent.id] if upstream_parent else None,
+            parent_ids=(upstream_parent.id,) if upstream_parent else (),
         )
-        return RuntimeLoopStartResult(state=state, trace=trace, parent=parent)
+        return RuntimeLoopStartResult(state=state, trace=trace, event=event)
 
     def check_budget(
         self,
         *,
         state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
         budget_error: RuntimeErrorCode | None,
     ) -> RuntimeLoopTerminalResult | None:
         if budget_error is None:
             return None
-        state.transition(RuntimeStep.FAILED.value)
-        parent = trace.add(
-            "TaskFailed",
-            {
-                "state": state.phase,
-                "error_code": budget_error.value,
-                "reason": "runtime budget exhausted",
-            },
-            parents=[parent.id],
-        )
         return RuntimeLoopTerminalResult(
             status=RuntimeStep.FAILED,
             error_code=budget_error,
-            parent=parent,
+            transition=RuntimeLoopTransition(RuntimeStep.FAILED),
+            event=RuntimeLoopEvent(
+                kind="TaskFailed",
+                payload={
+                    "state": RuntimeStep.FAILED.value,
+                    "error_code": budget_error.value,
+                    "reason": "runtime budget exhausted",
+                },
+            ),
         )
 
-    def enter_planning(self, *, state: StateKernel) -> None:
-        state.transition(RuntimeStep.PLANNING.value)
-        if state.task_plan is not None:
-            state.activate_next_subgoal()
+    def enter_planning(self, *, has_task_plan: bool) -> RuntimeLoopTransition:
+        return RuntimeLoopTransition(
+            RuntimeStep.PLANNING,
+            activate_next_subgoal=has_task_plan,
+        )
 
-    def enter_verifying(self, *, state: StateKernel) -> None:
-        state.transition(RuntimeStep.VERIFYING.value)
+    def enter_verifying(self) -> RuntimeLoopTransition:
+        return RuntimeLoopTransition(RuntimeStep.VERIFYING)

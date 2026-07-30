@@ -115,7 +115,10 @@ implementation_revision:
   sar_9m_planning_failure_phase_extraction: ab577b396a7dd344c3d7b3edb155c4b55ff15f3b
   sar_9n_contract_failure_phase_extraction: e87831de269091f4cd14435d09bf5b13f1d37251
   sar_9o_loop_lifecycle_phase_extraction: 48cab04cc7d7fbd5674ddc37cb3b7e3b0da8b00f
-  sar_9p_recovery_failure_phase_extraction: local_candidate
+  sar_9p_recovery_failure_phase_extraction: bd8fe73a128b24447b59f968af361738fdec82ff
+  sar_9_closure_gate_and_intent_structure_alignment: 908ed15b43fc66de2d683a5f1e94587ffcdc0c20
+  sar_9q_runtime_loop_phase_pure_events: local_candidate
+  sar_9r_targeted_perception_owner_deletion: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -177,12 +180,12 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 1219
-  run_sync_lines: 523
-  methods: 14
+  coordinator_lines: 1030
+  run_sync_lines: 521
+  methods: 11
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-9 closure audit and full validation gate
+  - SAR-9 closure audit and next phase-purification target
 blocked_until:
   sar_8: unblocked
 hard_guardrails:
@@ -224,6 +227,8 @@ evidence:
   sar_9n_contract_failure_phase_extraction: docs/change-admission/sar-9n-contract-failure-phase-extraction.yaml
   sar_9o_loop_lifecycle_phase_extraction: docs/change-admission/sar-9o-loop-lifecycle-phase-extraction.yaml
   sar_9p_recovery_failure_phase_extraction: docs/change-admission/sar-9p-recovery-failure-phase-extraction.yaml
+  sar_9q_runtime_loop_phase_pure_events: docs/change-admission/sar-9q-runtime-loop-phase-pure-events.yaml
+  sar_9r_targeted_perception_owner_deletion: docs/change-admission/sar-9r-targeted-perception-owner-deletion.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false

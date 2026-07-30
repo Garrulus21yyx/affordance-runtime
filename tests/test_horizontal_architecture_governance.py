@@ -2762,6 +2762,34 @@ def test_sar_9o_loop_lifecycle_is_behind_runtime_loop_phase() -> None:
     assert (SOURCE_ROOT / "runtime_loop_phase.py").is_file()
 
 
+def test_sar_9q_runtime_loop_phase_returns_events_without_committing_state_or_trace() -> None:
+    source = (SOURCE_ROOT / "runtime_loop_phase.py").read_text(encoding="utf-8")
+
+    assert "trace.add(" not in source
+    assert ".transition(" not in source
+    assert ".activate_next_subgoal(" not in source
+    assert "RuntimeLoopEvent" in source
+    assert "RuntimeLoopTransition" in source
+
+
+def test_sar_9r_targeted_perception_is_not_a_runcoordinator_method() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name for node in run_coordinator.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_fulfill_targeted_perception" not in method_names
+    assert "_trace_perception_resolution" not in method_names
+    assert "fulfill_targeted_perception" in (
+        SOURCE_ROOT / "perception_phase.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
