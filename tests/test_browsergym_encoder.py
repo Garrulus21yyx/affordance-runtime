@@ -30,8 +30,7 @@ from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     Surface,
 )
-from affordance_runtime.planning import PlannerActionKind, PlannerProposal
-from affordance_runtime.planning import bind_active_subgoal_verifiers
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal, bind_active_subgoal_verifiers
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -42,8 +41,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
-from affordance_runtime.verification import VerifierSpec
-from affordance_runtime.verification import VerifierLadder
+from affordance_runtime.verification import VerifierLadder, VerifierSpec
 
 
 def _affordance(

@@ -22,7 +22,7 @@ from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
-from affordance_runtime.task_planning import SubgoalOutcomeRelation
+from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
 from affordance_runtime.unified_grounding import source_affordance_for_candidate
 from affordance_runtime.visual_contracts import VisualContractBinder
 
