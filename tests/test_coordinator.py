@@ -134,7 +134,15 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert result.verification is not None and result.verification.passed
     assert result.state.observation_count == 4
     event_types = [node.kind for node in result.trace.nodes]
-    assert event_types.index("ActionCompleted") < event_types.index("PostActionObservationCaptured")
+    assert "ActionCompleted" not in event_types
+    assert event_types.count("ActionOutcomeRecorded") == 1
+    assert event_types.index("PostActionObservationCaptured") < event_types.index("ActionOutcomeRecorded")
+    outcome = next(node for node in result.trace.nodes if node.kind == "ActionOutcomeRecorded")
+    assert outcome.payload["contract_id"] == "contract_dom_button_1"
+    assert outcome.payload["status"] == "verified_effect"
+    assert outcome.payload["receipt_success"] is True
+    assert outcome.payload["verification_status"] == "passed"
+    assert outcome.payload["post_snapshot_id"] == "snapshot-2"
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
 

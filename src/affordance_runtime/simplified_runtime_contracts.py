@@ -294,6 +294,7 @@ class ExecutionAttempt:
     action_kind: str
     semantic_target_id: str
     pre_observation: ObservationIdentity
+    active_step_id: str = ""
 
     def __post_init__(self) -> None:
         _require_nonblank("attempt_id", self.attempt_id)
@@ -303,6 +304,8 @@ class ExecutionAttempt:
             raise ValueError("issued state version cannot be negative")
         _require_nonblank("action_kind", self.action_kind)
         _require_nonblank("semantic_target_id", self.semantic_target_id)
+        if self.active_step_id:
+            _require_nonblank("active_step_id", self.active_step_id)
 
 
 @dataclass(frozen=True)
@@ -356,12 +359,23 @@ class ActionOutcome:
     verification: VerificationResult
     status: ActionOutcomeStatus
     step_id: str
+    receipt_contract_id: str = ""
+    receipt_success: bool = False
+    receipt_backend: str = ""
+    receipt_error_code: str = ""
+    receipt_evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_nonblank("outcome_id", self.outcome_id)
         if not isinstance(self.status, ActionOutcomeStatus):
             raise ValueError("unsupported action outcome status")
         _require_nonblank("step_id", self.step_id)
+        if self.receipt_contract_id and self.receipt_contract_id != self.attempt.contract_id:
+            raise ValueError("action outcome receipt contract mismatch")
+        if self.receipt_backend:
+            _require_nonblank("receipt_backend", self.receipt_backend)
+        _require_tuple("receipt_evidence_refs", self.receipt_evidence_refs)
+        _require_unique_nonblank("receipt evidence refs", self.receipt_evidence_refs)
         if self.attempt.contract_id != self.verification.contract_id:
             raise ValueError("action outcome contract identity mismatch")
         if self.attempt.contract_hash != self.verification.contract_hash:

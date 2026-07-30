@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Awaitable
 
+from affordance_runtime.action_outcome_flow import record_contract_action_outcome_trace
 from affordance_runtime.active_perception import (
     PerceptionResolutionStatus,
 )
@@ -1712,16 +1713,6 @@ class RunCoordinator:
                 state.effectful_action_count += 1
             receipt_ref = self._write_receipt(envelope.task_id, state.step_count, receipt)
             self._index(trace, receipt_ref)
-            parent = trace.add(
-                "ActionCompleted",
-                {
-                    "state": state.phase,
-                    "success": receipt.success,
-                    "error_code": receipt.error_code.value if receipt.error_code else "",
-                    "artifact_refs": [receipt_ref.path] if receipt_ref else [],
-                },
-                parents=[parent.id],
-            )
             parent = self._complete_pending_recovery_execution(
                 state,
                 trace,
@@ -1937,8 +1928,12 @@ class RunCoordinator:
                             "snapshot_id": post_snapshot.observation.snapshot_id,
                         },
                         parents=[parent.id],
-                    )
+            )
             state.latest_verification = latest_verification
+            parent = record_contract_action_outcome_trace(
+                self.contract_execution_loop, trace, parent, contract, execution_observation, state.version,
+                receipt, latest_verification, post_snapshot.observation, skill_step_id or contract.affordance_id, state.phase,
+            ).parent
             if decision.proposal is not None:
                 state.record_action_progress(
                     action_signature,

@@ -10,8 +10,6 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.obligation_attribution import ProgressAttributionTicket
-from affordance_runtime.obligation_attribution_flow import BoundActionExecution
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.verification import VerifierLadder
@@ -100,33 +98,52 @@ def test_contract_stages_bind_execute_and_verify_without_owning_run_state(tmp_pa
     assert loop.executor.contracts == [bound]
 
 
-def test_contract_loop_carries_progress_ticket_without_passing_it_to_executor() -> None:
+def test_contract_loop_records_canonical_execution_attempt_and_action_outcome() -> None:
     loop = _loop()
     contract = _contract()
-    ticket = ProgressAttributionTicket(
-        ticket_id="ticket-save",
-        task_spec_identity="sha256:task",
-        task_revision=1,
+    pre_observation = _observation()
+
+    attempt = loop.build_execution_attempt(
+        contract,
+        pre_observation,
         issued_at_state_version=3,
-        contract_id=contract.id,
-        contract_hash=contract.contract_hash,
-        semantic_target_id="save",
-        action_kind=contract.action,
-        candidate_obligation_ids=("obligation:save",),
-        pre_snapshot_id=contract.snapshot_id,
-        pre_page_revision=contract.page_revision,
-        pre_environment_revision=contract.environment_revision,
+        active_step_id="step:save",
+    )
+    receipt = loop.execute(contract, pre_observation)
+    report = loop.verify(
+        contract,
+        receipt,
+        _observation(saved=True),
+        structural_verification_enabled=True,
+        disabled_reason="",
+    )
+    outcome = loop.record_action_outcome(
+        attempt=attempt,
+        receipt=receipt,
+        verification=report,
+        post_observation=_observation(saved=True),
+        step_id="step:save",
     )
 
-    bound_action = loop.bind_action_execution(contract, attribution_ticket=ticket)
-    receipt = loop.execute(bound_action.contract, _observation())
-
-    assert isinstance(bound_action, BoundActionExecution)
-    assert bound_action.contract is contract
-    assert bound_action.attribution_ticket is ticket
     assert isinstance(loop.executor, RecordingExecutor)
     assert loop.executor.contracts == [contract]
+    assert attempt.contract_id == contract.id
+    assert attempt.contract_hash == contract.contract_hash
+    assert attempt.pre_observation.snapshot_id == contract.snapshot_id
+    assert attempt.active_step_id == "step:save"
     assert receipt.contract_id == contract.id
+    assert outcome.attempt == attempt
+    assert outcome.receipt_contract_id == contract.id
+    assert outcome.receipt_success is True
+    assert outcome.verification.contract_id == contract.id
+    assert outcome.verification.evidence_refs
+    assert outcome.status.value == "verified_effect"
+
+
+def test_contract_loop_default_execution_does_not_expose_attribution_sidecar() -> None:
+    loop = _loop()
+
+    assert not hasattr(loop, "bind_action_execution")
 
 
 def test_policy_capability_and_freshness_fail_closed_before_execution() -> None:
