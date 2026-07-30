@@ -118,6 +118,10 @@ scope:
     - StateKernel no longer stores current_recovery_command; RecoveryPhase
       derives the temporary legacy command from current_recovery_decision and
       current_failure only inside the compatibility adapter boundary.
+    - StateKernel no longer stores legacy RecoveryReceipt or RecoveryDelta
+      lists; RecoveryPhase writes command completion and delta evidence to trace
+      payloads and stores only canonical current_recovery_outcome plus bounded
+      recovery_history for strategy oscillation checks.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -246,6 +250,14 @@ validation:
     ruff: passed
     mypy_core: passed_3_core_source_files_ignore_optional_missing_imports
     diff_check: passed
+  statekernel_recovery_receipt_delta_removal:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_receipts_or_deltas tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_command tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_coordinator_reobserves_drift_before_execution tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_obligation_progress_ledger.py::test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfaces --maxfail=1 --tb=short -q
+  statekernel_recovery_receipt_delta_removal_result: 32_passed
+  statekernel_recovery_receipt_delta_removal_static:
+    yaml_parse: passed
+    ruff: passed
+    mypy_core: passed_5_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 2974
@@ -257,5 +269,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_statekernel_recovery_command_removal_local_candidate
-next_slice: sar_8c_recovery_receipt_delta_state_removal
+status: sar_8c_statekernel_recovery_receipt_delta_removal_local_candidate
+next_slice: planner-selection-simplification-actionchoice

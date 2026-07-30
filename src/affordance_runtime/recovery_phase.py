@@ -209,7 +209,6 @@ class RecoveryPhase:
             command,
             previous_attempt_fingerprint=previous_fingerprint,
         )
-        state.recovery_receipts.append(dispatched.receipt)
         parent = trace.add(
             "RecoveryCommandCompleted",
             {"state": state.phase, "receipt": dispatched.receipt.model_dump(mode="json")},
@@ -234,7 +233,6 @@ class RecoveryPhase:
         state.record_disproved_assumption(
             f"{failure.phase.value}:{failure.error_code}:{failure.message}"
         )
-        state.recovery_deltas.append(dispatched.delta)
         state.recovery_history.append(
             RecoveryHistoryItem(
                 failure.semantic_family_key,
@@ -292,8 +290,6 @@ class RecoveryPhase:
             fingerprint_ref=plan_or_route_ref,
             plan_or_route_ref=plan_or_route_ref,
         )
-        state.recovery_deltas.append(completion.delta)
-        state.recovery_receipts.append(completion.receipt)
         state.recovery_history.append(completion.history)
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
@@ -383,8 +379,6 @@ class RecoveryPhase:
             route_refs=tuple(item for item in (candidate_id, contract.id) if item),
             delta=delta,
         )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
         state.recovery_history.append(
             RecoveryHistoryItem(
                 failure.semantic_family_key,
@@ -441,7 +435,6 @@ class RecoveryPhase:
             state_after=f"state:{state.version}",
             error_code=error_code,
         )
-        state.recovery_receipts.append(receipt)
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -516,8 +509,6 @@ class RecoveryPhase:
             ),
             delta=delta,
         )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
         state.recovery_history.append(
             RecoveryHistoryItem(
                 failure.semantic_family_key,
@@ -581,7 +572,6 @@ class RecoveryPhase:
                 state_after=f"state:{state.version}",
                 error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
             )
-            state.recovery_receipts.append(failed_receipt)
             state.current_recovery_outcome = RecoveryOutcome(
                 decision_id=state.current_recovery_decision.decision_id
                 if state.current_recovery_decision is not None
@@ -641,8 +631,6 @@ class RecoveryPhase:
             verification_refs=(verification.status.value,) if verification is not None else (),
             delta=delta,
         )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(recovery_receipt)
         state.recovery_history.append(
             RecoveryHistoryItem(
                 failure.semantic_family_key,
@@ -751,8 +739,6 @@ def _complete_immediate_recovery_command(
         fingerprint_ref=state.phase,
         plan_or_route_ref=command.provider_id,
     )
-    state.recovery_deltas.append(completion.delta)
-    state.recovery_receipts.append(completion.receipt)
     state.recovery_history.append(completion.history)
     state.current_recovery_outcome = RecoveryOutcome(
         decision_id=state.current_recovery_decision.decision_id

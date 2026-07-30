@@ -128,7 +128,12 @@ class LocalSaasRunCase:
             recovery_cascade_depth=len(recovery_history),
             repeated_recovery_failures=max(0, len(recovery_history) - len(set(recovery_actions))),
             recovery_loop_aborts=recovery_loop_aborts,
-            effective_recovery_actions=sum(item.success for item in result.state.recovery_receipts),
+            effective_recovery_actions=sum(
+                1
+                for node in result.trace.nodes
+                if node.kind == "RecoveryCommandCompleted"
+                and bool(node.payload.get("receipt", {}).get("success"))
+            ),
             duplicate_effect_risks=int(recovery_actions.count("retry_idempotent") > 1),
             semantic_replay_success=status_success and oracle_success,
             variant=variant,

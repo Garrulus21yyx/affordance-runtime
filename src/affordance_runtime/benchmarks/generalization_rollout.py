@@ -788,11 +788,15 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
     ).run_sync(TaskEnvelope(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
+    recovery_success = any(
+        node.kind == "RecoveryCommandCompleted"
+        and bool(node.payload.get("receipt", {}).get("success"))
+        for node in result.trace.nodes
+    )
     success = (
         result.status == RuntimeStep.DONE
         and owner.calls == 1
-        and bool(result.state.recovery_receipts)
-        and result.state.recovery_receipts[0].success
+        and recovery_success
     )
     return _ExecutedCase(result, planner.calls, planner.calls, 0, success, True)
 

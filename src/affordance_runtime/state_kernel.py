@@ -22,7 +22,6 @@ from affordance_runtime.active_perception import (
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.recovery_commands import RecoveryDelta, RecoveryReceipt
 from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
 from affordance_runtime.task_planning import TaskPlan, TaskProgress
@@ -184,8 +183,6 @@ class StateKernel:
     current_failure: FailureEnvelope | None = None
     current_recovery_decision: RecoveryDecision | None = None
     current_recovery_outcome: RecoveryOutcome | None = None
-    recovery_receipts: list[RecoveryReceipt] = field(default_factory=list)
-    recovery_deltas: list[RecoveryDelta] = field(default_factory=list)
     recovery_history: list[RecoveryHistoryItem] = field(default_factory=list)
     attempted_recovery_strategy_ids: set[str] = field(default_factory=set)
     effectful_action_count: int = 0

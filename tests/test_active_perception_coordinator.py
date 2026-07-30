@@ -456,5 +456,15 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     assert "FailureDetected" in events
     assert "RecoveryCommandCompleted" in events
     assert "RecoveryDeltaValidated" in events
-    assert result.state.recovery_receipts[-1].success
-    assert result.state.recovery_deltas[-1].changed_dimensions[0].value == "effect_status"
+    recovery_receipt = next(
+        node.payload["receipt"]
+        for node in reversed(result.trace.nodes)
+        if node.kind == "RecoveryCommandCompleted"
+    )
+    recovery_delta = next(
+        node.payload["delta"]
+        for node in reversed(result.trace.nodes)
+        if node.kind == "RecoveryDeltaValidated"
+    )
+    assert recovery_receipt["success"]
+    assert recovery_delta["changed_dimensions"][0] == "effect_status"

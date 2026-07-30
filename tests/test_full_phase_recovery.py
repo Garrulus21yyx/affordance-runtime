@@ -406,7 +406,12 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REOBSERVE.value
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:reobserve:")
-    assert result.state.recovery_receipts[0].success
+    recovery_receipt = next(
+        node.payload["receipt"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryCommandCompleted"
+    )
+    assert recovery_receipt["success"]
     events = [node.kind for node in result.trace.nodes]
     assert events.index("FailureDetected") < events.index("RecoveryCommandStarted")
     assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
@@ -428,7 +433,12 @@ def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_STEP.value
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
-    assert result.state.recovery_deltas[0].changed_dimensions[0].value == "step_plan"
+    recovery_delta = next(
+        node.payload["delta"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryDeltaValidated"
+    )
+    assert recovery_delta["changed_dimensions"][0] == "step_plan"
 
 
 def test_target_scope_rejection_replans_without_weakening_validation() -> None:
@@ -474,8 +484,18 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 2
     assert owner.calls == 1
-    assert result.state.recovery_receipts[0].success
-    assert result.state.recovery_deltas[0].changed_dimensions[0].value == "provider"
+    recovery_receipt = next(
+        node.payload["receipt"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryCommandCompleted"
+    )
+    recovery_delta = next(
+        node.payload["delta"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryDeltaValidated"
+    )
+    assert recovery_receipt["success"]
+    assert recovery_delta["changed_dimensions"][0] == "provider"
     events = [node.kind for node in result.trace.nodes]
     assert events.index("RecoveryCommandStarted") < events.index(
         "RecoveryCommandCompleted"
@@ -500,9 +520,14 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
     assert result.status == RuntimeStep.DEFERRED
     assert result.state.phase == RuntimeStep.DEFERRED.value
     assert owner.calls == 1
-    assert result.state.recovery_deltas == []
-    assert not result.state.recovery_receipts[0].success
-    assert result.state.recovery_receipts[0].error_code == "owning_port_no_op"
+    assert "RecoveryDeltaValidated" not in [node.kind for node in result.trace.nodes]
+    recovery_receipt = next(
+        node.payload["receipt"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryCommandCompleted"
+    )
+    assert not recovery_receipt["success"]
+    assert recovery_receipt["error_code"] == "owning_port_no_op"
 
 
 def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget() -> None:
@@ -518,7 +543,11 @@ def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget
     assert result.state.recovery_count < 3
     assert result.state.current_recovery_outcome is not None
     assert result.state.current_recovery_outcome.next_phase.value == RuntimeStep.ABORTED.value
-    assert [receipt.success for receipt in result.state.recovery_receipts] == [False, True]
+    assert [
+        node.payload["receipt"]["success"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryCommandCompleted"
+    ] == [False, True]
     selected = [
         node.payload["decision"]["kind"]
         for node in result.trace.nodes
@@ -613,7 +642,11 @@ def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> No
     assert result.state.receipts == []
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.GROUNDING_BINDING
-    assert [item.success for item in result.state.recovery_receipts] == [False, True]
+    assert [
+        node.payload["receipt"]["success"]
+        for node in result.trace.nodes
+        if node.kind == "RecoveryCommandCompleted"
+    ] == [False, True]
     selected = [
         node.payload["decision"]["kind"]
         for node in result.trace.nodes
