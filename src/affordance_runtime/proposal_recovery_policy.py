@@ -6,12 +6,12 @@ from dataclasses import dataclass
 
 from affordance_runtime.failure_envelope import ProposalRejectionContext
 from affordance_runtime.planning import ProposalRejectionCode
-from affordance_runtime.recovery_commands import RecoveryCommandKind
+from affordance_runtime.recovery_protocol import RecoveryKind
 
 
 @dataclass(frozen=True)
 class ProposalRejectionRecoveryDecision:
-    available_commands: frozenset[RecoveryCommandKind]
+    available_commands: frozenset[RecoveryKind]
     recoverable: bool
     planner_feedback: str
     rejection_context: ProposalRejectionContext
@@ -38,8 +38,8 @@ class ProposalRejectionRecoveryPolicy:
             return ProposalRejectionRecoveryDecision(
                 available_commands=frozenset(
                     {
-                        RecoveryCommandKind.REPLAN_STEP,
-                        RecoveryCommandKind.ABORT,
+                        RecoveryKind.REPLAN_STEP,
+                        RecoveryKind.ABORT,
                     }
                 ),
                 recoverable=True,
@@ -47,7 +47,7 @@ class ProposalRejectionRecoveryPolicy:
                 rejection_context=rejection_context,
             )
         return ProposalRejectionRecoveryDecision(
-            available_commands=frozenset({RecoveryCommandKind.ABORT}),
+            available_commands=frozenset({RecoveryKind.ABORT}),
             recoverable=False,
             planner_feedback=feedback,
             rejection_context=rejection_context,

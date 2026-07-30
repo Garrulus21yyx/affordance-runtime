@@ -73,7 +73,7 @@ class RecoveryPhase:
         state: StateKernel,
         trace: TraceDag,
         parent: TraceNode,
-        available_commands: frozenset[RecoveryCommandKind],
+        available_commands: frozenset[RecoveryKind],
         runtime_profile_digest: str,
         loaded_profile_artifact_ids: tuple[str, ...],
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
@@ -274,12 +274,16 @@ class RecoveryPhase:
         trace: TraceDag,
         parent: TraceNode,
         *,
-        kind: RecoveryCommandKind,
+        kind: RecoveryKind,
         plan_or_route_ref: str,
     ) -> TraceNode:
         failure = state.current_failure
         command = _pending_legacy_command(state)
-        if failure is None or command is None or command.kind != kind:
+        if (
+            failure is None
+            or command is None
+            or RecoveryKind(command.kind.value) != kind
+        ):
             return parent
         completion = successful_recovery_completion(
             failure=failure,
@@ -679,13 +683,14 @@ class RecoveryPhase:
 
 
 def _available_recovery_kinds(
-    available_commands: frozenset[RecoveryCommandKind],
+    available_commands: frozenset[RecoveryKind],
     owner_available_commands: frozenset[RecoveryCommandKind],
 ) -> frozenset[RecoveryKind]:
     return frozenset(
-        RecoveryKind(kind.value)
+        kind
         for kind in available_commands
-        if kind not in OWNER_DISPATCH_COMMANDS or kind in owner_available_commands
+        if RecoveryCommandKind(kind.value) not in OWNER_DISPATCH_COMMANDS
+        or RecoveryCommandKind(kind.value) in owner_available_commands
     )
 
 

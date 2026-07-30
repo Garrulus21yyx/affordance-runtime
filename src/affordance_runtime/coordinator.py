@@ -59,11 +59,9 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_command_dispatcher import (
-    OWNER_DISPATCH_COMMANDS,
     RecoveryCommandDispatcher,
 )
 from affordance_runtime.recovery_commands import (
-    RecoveryCommandKind,
     RecoveryReentryPhase,
 )
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
@@ -117,7 +115,11 @@ from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
 
 OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
-    RecoveryKind(kind.value) for kind in OWNER_DISPATCH_COMMANDS
+    {
+        RecoveryKind.COMPACT_CONTEXT,
+        RecoveryKind.REPAIR_MODEL_SCHEMA,
+        RecoveryKind.SWITCH_PROVIDER,
+    }
 )
 
 
@@ -303,8 +305,8 @@ class RunCoordinator:
                     message=f"{type(exc).__name__}: {exc}"[:500],
                     available_commands=frozenset(
                         {
-                            RecoveryCommandKind.REOBSERVE,
-                            RecoveryCommandKind.ABORT,
+                            RecoveryKind.REOBSERVE,
+                            RecoveryKind.ABORT,
                         }
                     ),
                 )
@@ -428,7 +430,7 @@ class RunCoordinator:
                     failure_class=FailureClass.SOURCE_CONFLICT,
                     error_code=RuntimeErrorCode.PRECONDITION_FAILED,
                     message=state.perception_resolution.reason,
-                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    available_commands=frozenset({RecoveryKind.ABORT}),
                     snapshot=snapshot,
                     recoverable=False,
                 )
@@ -512,9 +514,9 @@ class RunCoordinator:
                         message=flow_failure.message,
                         available_commands=frozenset(
                             {
-                                RecoveryCommandKind.REPLAN_TASK,
-                                *self.recovery_command_dispatcher.available_commands,
-                                RecoveryCommandKind.ABORT,
+                                RecoveryKind.REPLAN_TASK,
+                                *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                                RecoveryKind.ABORT,
                             }
                         ),
                         snapshot=snapshot,
@@ -553,7 +555,7 @@ class RunCoordinator:
                         state,
                         trace,
                         parent,
-                        kind=RecoveryCommandKind.REPLAN_TASK,
+                        kind=RecoveryKind.REPLAN_TASK,
                         plan_or_route_ref=task_plan.plan_id,
                     )
                     current_state_parent = commit_current_state_completion(
@@ -622,9 +624,9 @@ class RunCoordinator:
                             message=skill_decision.reason,
                             available_commands=frozenset(
                                 {
-                                    RecoveryCommandKind.REPLAN_STEP,
-                                    *self.recovery_command_dispatcher.available_commands,
-                                    RecoveryCommandKind.ABORT,
+                                    RecoveryKind.REPLAN_STEP,
+                                    *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                                    RecoveryKind.ABORT,
                                 }
                             ),
                             snapshot=snapshot,
@@ -721,8 +723,8 @@ class RunCoordinator:
                     message=f"provider failure: {exc.kind.value}",
                     available_commands=frozenset(
                         {
-                            *self.recovery_command_dispatcher.available_commands,
-                            RecoveryCommandKind.ABORT,
+                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            RecoveryKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
@@ -782,9 +784,9 @@ class RunCoordinator:
                     message=planner_error[:500],
                     available_commands=frozenset(
                         {
-                            RecoveryCommandKind.REPLAN_STEP,
-                            *self.recovery_command_dispatcher.available_commands,
-                            RecoveryCommandKind.ABORT,
+                            RecoveryKind.REPLAN_STEP,
+                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            RecoveryKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
@@ -943,7 +945,7 @@ class RunCoordinator:
                     state,
                     trace,
                     parent,
-                    kind=RecoveryCommandKind.REPLAN_STEP,
+                    kind=RecoveryKind.REPLAN_STEP,
                     plan_or_route_ref=proposal.proposal_id,
                 )
                 if proposal.done:
@@ -976,7 +978,7 @@ class RunCoordinator:
                     state,
                     trace,
                     parent,
-                    kind=RecoveryCommandKind.REPLAN_STEP,
+                    kind=RecoveryKind.REPLAN_STEP,
                     plan_or_route_ref=f"planner-decision:state:{state.version}",
                 )
             terminal_commit = commit_planner_terminal_decision(
@@ -1002,7 +1004,7 @@ class RunCoordinator:
                     failure_class=FailureClass.VALIDATION,
                     error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                     message=terminal_commit.message,
-                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    available_commands=frozenset({RecoveryKind.ABORT}),
                     snapshot=snapshot,
                     recoverable=False,
                 )
@@ -1063,7 +1065,7 @@ class RunCoordinator:
                         failure_class=FailureClass.GROUNDING,
                         error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
                         message="semantic proposal requires TaskSpec and ContractBuilder",
-                        available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                        available_commands=frozenset({RecoveryKind.ABORT}),
                         snapshot=snapshot,
                         proposal_id=decision.proposal.proposal_id,
                         expected_effect="; ".join(decision.proposal.expected_effects),
@@ -1127,8 +1129,8 @@ class RunCoordinator:
                         message=exc.detail or exc.code.value,
                         available_commands=frozenset(
                             {
-                                RecoveryCommandKind.REGROUND,
-                                RecoveryCommandKind.ABORT,
+                                RecoveryKind.REGROUND,
+                                RecoveryKind.ABORT,
                             }
                         ),
                         snapshot=snapshot,
@@ -1185,9 +1187,9 @@ class RunCoordinator:
                     message=failure_message,
                     available_commands=frozenset(
                         {
-                            RecoveryCommandKind.REPLAN_STEP,
-                            *self.recovery_command_dispatcher.available_commands,
-                            RecoveryCommandKind.ABORT,
+                            RecoveryKind.REPLAN_STEP,
+                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            RecoveryKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
@@ -1677,7 +1679,7 @@ class RunCoordinator:
                         and state.perception_resolution is not None
                         else f"preflight rejected contract: {error.value}"
                     ),
-                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    available_commands=frozenset({RecoveryKind.ABORT}),
                     snapshot=preflight_snapshot if self.features.preflight else snapshot,
                     expected_effect=contract.intent,
                     recoverable=False,
@@ -1699,7 +1701,7 @@ class RunCoordinator:
                     failure_class=FailureClass.AUTHORITY,
                     error_code=authorization_error,
                     message=f"contract authorization rejected: {authorization_error.value}",
-                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    available_commands=frozenset({RecoveryKind.ABORT}),
                     snapshot=snapshot,
                     expected_effect=contract.intent,
                     recoverable=False,
@@ -2302,17 +2304,17 @@ class RunCoordinator:
             progress_fingerprint=semantic_progress_fingerprint(state),
             debug_context=failure_context or {},
         )
-        available: set[RecoveryCommandKind] = {RecoveryCommandKind.ABORT}
+        available: set[RecoveryKind] = {RecoveryKind.ABORT}
         if phase == FailurePhase.PREFLIGHT:
-            available.add(RecoveryCommandKind.REOBSERVE)
+            available.add(RecoveryKind.REOBSERVE)
         if phase in {
             FailurePhase.EXECUTION_UNCERTAIN,
             FailurePhase.VERIFICATION,
         }:
             available.update(
                 {
-                    RecoveryCommandKind.REOBSERVE,
-                    RecoveryCommandKind.INSPECT_POST_STATE,
+                    RecoveryKind.REOBSERVE,
+                    RecoveryKind.INSPECT_POST_STATE,
                 }
             )
         fresh_candidate_id = ""
@@ -2322,19 +2324,19 @@ class RunCoordinator:
             for candidate in route_plan.viable_alternatives:
                 if candidate.candidate_id != route_plan.selected_candidate.candidate_id:
                     fresh_candidate_id = candidate.candidate_id
-                    available.add(RecoveryCommandKind.REROUTE)
+                    available.add(RecoveryKind.REROUTE)
                     break
         if not fresh_candidate_id:
             tried_backends = {item.backend for item in state.receipts}
             for backend in contract.fallback_backends:
                 if backend not in tried_backends:
                     fresh_route_ref = backend
-                    available.add(RecoveryCommandKind.REROUTE)
+                    available.add(RecoveryKind.REROUTE)
                     break
         if contract.idempotency_key:
-            available.add(RecoveryCommandKind.RETRY_IDEMPOTENT)
+            available.add(RecoveryKind.RETRY_IDEMPOTENT)
         if contract.compensation:
-            available.add(RecoveryCommandKind.COMPENSATE)
+            available.add(RecoveryKind.COMPENSATE)
         recovery_result = self.recovery_phase.handle_phase_failure(
             failure=failure,
             state=state,
@@ -2381,7 +2383,7 @@ class RunCoordinator:
         failure_class: FailureClass,
         error_code: RuntimeErrorCode | str,
         message: str,
-        available_commands: frozenset[RecoveryCommandKind],
+        available_commands: frozenset[RecoveryKind],
         snapshot: BrowserSnapshot | None = None,
         proposal_id: str = "",
         proposal_rejection: ProposalRejectionContext | None = None,
@@ -2389,12 +2391,6 @@ class RunCoordinator:
         recoverable: bool = True,
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
     ) -> tuple[RecoveryKind, TraceNode]:
-        available_commands = frozenset(
-            kind
-            for kind in available_commands
-            if kind not in OWNER_DISPATCH_COMMANDS
-            or kind in self.recovery_command_dispatcher.available_commands
-        )
         task_plan = state.task_plan
         failure = make_failure_envelope(
             run_id=envelope.task_id,
@@ -2940,6 +2936,12 @@ def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
         return None
     decision = state.current_recovery_decision
     return decision.kind if decision is not None else None
+
+
+def _available_owner_recovery_kinds(
+    dispatcher: RecoveryCommandDispatcher,
+) -> frozenset[RecoveryKind]:
+    return frozenset(RecoveryKind(kind.value) for kind in dispatcher.available_commands)
 
 
 def _terminal_recovery_status(

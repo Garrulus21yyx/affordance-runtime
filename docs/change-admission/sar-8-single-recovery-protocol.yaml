@@ -126,6 +126,11 @@ scope:
       vocabulary; RecoverySelectionContext normalizes available/preferred
       commands to canonical RecoveryKind and RuntimePhase, while RecoveryPhase
       remains the temporary command adapter boundary.
+    - RunCoordinator and ProposalRejectionRecoveryPolicy no longer use
+      RecoveryCommandKind or OWNER_DISPATCH_COMMANDS; Coordinator-facing
+      recovery availability is expressed as canonical RecoveryKind and the
+      legacy command vocabulary remains inside RecoveryPhase/owner-dispatch
+      compatibility.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -269,6 +274,13 @@ validation:
     ruff: passed
     mypy_core: passed_2_source_files_ignore_optional_missing_imports
     diff_check: passed
+  coordinator_canonical_recovery_kind_inputs:
+    - python -m pytest tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_uses_canonical_recovery_vocabulary --maxfail=1 --tb=short -q
+  coordinator_canonical_recovery_kind_inputs_result: 73_passed
+  coordinator_canonical_recovery_kind_inputs_static:
+    ruff: passed
+    mypy_core: passed_4_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1325_passed
   coordinator_lines: 2974
@@ -280,5 +292,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_coordinator_canonical_vocabulary_local_candidate
+status: sar_8c_coordinator_canonical_recovery_kind_inputs_local_candidate
 next_slice: planner-selection-simplification-actionchoice

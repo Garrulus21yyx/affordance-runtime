@@ -2393,6 +2393,13 @@ def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> N
     assert "return recovery_result.command_kind" not in seam
 
 
+def test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs() -> None:
+    source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "RecoveryCommandKind" not in source
+    assert "OWNER_DISPATCH_COMMANDS" not in source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
