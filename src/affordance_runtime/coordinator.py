@@ -55,7 +55,6 @@ from affordance_runtime.runtime_transition_commit import (
     terminal_recovery_status,
 )
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
-from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_phase import commit_task_plan_phase
@@ -68,11 +67,11 @@ from affordance_runtime.task_planning import (
 )
 from affordance_runtime.task_skill_phase import (
     TaskSkillPhase,
+    task_skill_progress,
 )
 from affordance_runtime.task_skill_phase import (
     resolve_planner_decision as _resolve_planner_decision,  # noqa: F401
 )
-from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.task_skill_progress_phase import TaskSkillProgressPhase
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.trace import TraceDag
@@ -113,17 +112,6 @@ class RuntimeFeatures:
     structural_verification: bool = True
     capability_gate: bool = True
     recovery: bool = True
-
-
-def _task_skill_progress(
-    runtime: object | None,
-    state: StateKernel,
-) -> TaskSkillRunState | None:
-    progress_for = getattr(runtime, "progress_for", None)
-    if not callable(progress_for):
-        return None
-    progress = progress_for(state)
-    return progress if isinstance(progress, TaskSkillRunState) else None
 
 
 @dataclass
@@ -255,7 +243,7 @@ class RunCoordinator:
                 active_perception_flow=self.active_perception_flow,
                 budget=self.budget,
                 pending_recovery_kind=pending_recovery_kind,
-                task_skill_progress_for=_task_skill_progress,
+                task_skill_progress_for=task_skill_progress,
                 write_observation=self.artifact_phase.write_observation,
                 index_artifact=self.artifact_phase.index_artifact,
                 index_paths=self.artifact_phase.index_paths,
@@ -719,7 +707,7 @@ class RunCoordinator:
                 recovery_enabled=self.features.recovery,
                 skill_step_id=skill_step_id,
                 task_skill_runtime=self.task_skill_runtime,
-                task_skill_progress_for=_task_skill_progress,
+                task_skill_progress_for=task_skill_progress,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 trace_recovery_started=trace_recovery_started,
                 terminal_recovery_status=terminal_recovery_status,

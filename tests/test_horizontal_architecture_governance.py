@@ -2956,6 +2956,18 @@ def test_sar_9aa_recovery_state_read_helpers_are_not_in_coordinator() -> None:
     assert "def available_owner_recovery_kinds" in projection_source
 
 
+def test_sar_9ab_taskskill_progress_accessor_is_not_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "def _task_skill_progress" not in coordinator_source
+    assert "TaskSkillRunState" not in coordinator_source
+    assert "task_skill_progress_for=task_skill_progress" in coordinator_source
+    task_skill_source = (SOURCE_ROOT / "task_skill_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def task_skill_progress" in task_skill_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)

@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-9AA recovery state projection owner | SAR-9A-Z extracted TaskPlan, progress, TaskSkill, planning decision, contract binding/failure, preflight, execution, verification, TaskSkill progress, verified progress, verification failure, perception, planning-failure, runtime loop preparation, targeted perception, route outcome, source arbitration, artifact persistence, result finalization, budget classification, runtime transition/event commit, recovery-start trace, and terminal recovery status details from `RunCoordinator`; SAR-9AA moves pending-recovery and owner-dispatch read projections into `recovery_state_projection`. | `RunCoordinator` no longer owns recovery state read helper definitions; Coordinator still has a long `run_sync` sequencing body and SAR-9 has not cut over all phases to pure PhaseResult / transition / event returns. | SAR-9 closure audit and full validation gate |
+| Horizontal | SAR-9AB TaskSkill progress accessor owner | SAR-9A-AA extracted TaskPlan, progress, TaskSkill, planning decision, contract binding/failure, preflight, execution, verification, TaskSkill progress, verified progress, verification failure, perception, planning-failure, runtime loop preparation, targeted perception, route outcome, source arbitration, artifact persistence, result finalization, budget classification, runtime transition/event commit, recovery-start trace, terminal recovery status, and recovery read projection details from `RunCoordinator`; SAR-9AB removes the final top-level Coordinator helper by reusing `task_skill_phase.task_skill_progress`. | `RunCoordinator` has no top-level helper functions left outside the class; Coordinator still has a long `run_sync` sequencing body and SAR-9 has not cut over all phases to pure PhaseResult / transition / event returns. | SAR-9 closure audit and full validation gate |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -128,6 +128,7 @@ implementation_revision:
   sar_9y_recovery_started_trace_commit_owner: local_candidate
   sar_9z_terminal_recovery_status_commit_owner: local_candidate
   sar_9aa_recovery_state_projection_owner: local_candidate
+  sar_9ab_taskskill_progress_accessor_owner: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -189,7 +190,7 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 739
+  coordinator_lines: 727
   run_sync_lines: 521
   methods: 2
   remaining_reduction_stage: sar_7_to_sar_9
@@ -247,6 +248,7 @@ evidence:
   sar_9y_recovery_started_trace_commit_owner: docs/change-admission/sar-9y-recovery-started-trace-commit-owner.yaml
   sar_9z_terminal_recovery_status_commit_owner: docs/change-admission/sar-9z-terminal-recovery-status-commit-owner.yaml
   sar_9aa_recovery_state_projection_owner: docs/change-admission/sar-9aa-recovery-state-projection-owner.yaml
+  sar_9ab_taskskill_progress_accessor_owner: docs/change-admission/sar-9ab-taskskill-progress-accessor-owner.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false
