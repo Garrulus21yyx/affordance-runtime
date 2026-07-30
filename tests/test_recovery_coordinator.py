@@ -16,8 +16,8 @@ from affordance_runtime.recovery_coordinator import (
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassificationFacts,
-    FailureDisposition,
     FailureKind,
+    FailureOwner,
     PlannerDeferralKind,
     RecoveryBudgetCost,
     RecoveryDecision,
@@ -168,7 +168,7 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
     )
 
     assert classification.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
-    assert classification.disposition == FailureDisposition.RECOVERY
+    assert classification.owner == FailureOwner.STEP_PLANNER
     assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
     decision = _decision(failure, _context(), current_state_version=3)
@@ -179,6 +179,26 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
         RecoveryKind.REPLAN_STEP,
         RecoveryKind.REPLAN_TASK,
     }
+
+
+def test_failure_classification_routes_model_deferral_to_step_planner_owner() -> None:
+    failure = _failure(
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "planner_waiting_clarification",
+            "message": "planner requested clarification with typed choices available",
+        }
+    )
+
+    classification = classify_failure(
+        failure,
+        FailureClassificationFacts(available_action_count=2),
+    )
+
+    assert classification.owner == FailureOwner.STEP_PLANNER
+    assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
 
 def test_planner_deferral_does_not_default_to_ask_user_when_action_space_is_unknown() -> None:
@@ -239,7 +259,7 @@ def test_no_feasible_action_choice_reason_classifies_as_no_feasible_action() -> 
     classification = classify_failure(failure)
 
     assert classification.kind == FailureKind.NO_FEASIBLE_ACTION
-    assert classification.disposition == FailureDisposition.RECOVERY
+    assert classification.owner == FailureOwner.RUNTIME_RECOVERY
     assert classification.reason_code == "no_feasible_action_choice"
 
 
@@ -257,7 +277,7 @@ def test_legacy_decision_without_proposal_fails_closed_unknown() -> None:
     classification = classify_failure(failure)
 
     assert classification.kind == FailureKind.UNKNOWN
-    assert classification.disposition == FailureDisposition.TERMINAL
+    assert classification.owner == FailureOwner.TERMINAL
     assert classification.reason_code == "legacy_decision_without_proposal"
     assert RecoveryCoordinator().strategy_order_for_test(
         failure,
@@ -282,8 +302,27 @@ def test_user_input_required_clarification_is_not_model_deferral() -> None:
     )
 
     assert classification.kind == FailureKind.MISSING_USER_INPUT
-    assert classification.disposition == FailureDisposition.USER_INPUT
+    assert classification.owner == FailureOwner.USER
     assert classification.planner_deferral_kind == PlannerDeferralKind.USER_INPUT_REQUIRED
+
+
+def test_user_input_required_clarification_routes_to_user_owner() -> None:
+    failure = _failure(
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "planner_waiting_clarification",
+            "message": "planner requested missing user information",
+        }
+    )
+
+    classification = classify_failure(
+        failure,
+        FailureClassificationFacts(user_input_required=True),
+    )
+
+    assert classification.owner == FailureOwner.USER
 
 
 def test_already_satisfied_entry_requires_typed_rejection_reason_not_message_substring() -> None:
@@ -311,7 +350,7 @@ def test_already_satisfied_entry_requires_typed_rejection_reason_not_message_sub
     classification = classify_failure(typed_failure)
 
     assert classification.kind == FailureKind.CURRENT_STEP_ALREADY_SATISFIED
-    assert classification.disposition == FailureDisposition.PROGRESS_PRECHECK
+    assert classification.owner == FailureOwner.PROGRESS
     order = RecoveryCoordinator().strategy_order_for_test(typed_failure, _context())
 
     assert RecoveryKind.REPLAN_TASK not in order

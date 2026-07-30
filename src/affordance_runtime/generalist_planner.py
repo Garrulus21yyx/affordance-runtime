@@ -856,7 +856,7 @@ def _action_choice_failure_decision(
             "action_choice_failure": {
                 "kind": failure.kind.value,
                 "reason_code": failure.reason_code,
-                "disposition": failure.disposition.value,
+                "owner": failure.owner.value,
             },
             **({"planner_admission": planner_admission} if planner_admission else {}),
         },

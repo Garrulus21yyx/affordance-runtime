@@ -685,7 +685,7 @@ def test_action_choice_dispatcher_returns_failure_without_model_call() -> None:
         ActionChoiceDispatcher,
         ActionChoiceFailure,
     )
-    from affordance_runtime.recovery_protocol import FailureKind
+    from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
 
     class Planner:
         called = False
@@ -704,6 +704,7 @@ def test_action_choice_dispatcher_returns_failure_without_model_call() -> None:
 
     assert result is failure
     assert planner.called is False
+    assert failure.owner == FailureOwner.RUNTIME_RECOVERY
 
 
 def test_action_choice_dispatcher_auto_selects_unique_choice_without_model_call() -> None:

@@ -22,7 +22,7 @@ from affordance_runtime.active_step_targeting import (
 )
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
 from affordance_runtime.planning import PlannerActionKind
-from affordance_runtime.recovery_protocol import FailureDisposition, FailureKind
+from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import StateCriterion, StepSpec
 from affordance_runtime.unified_observation import (
@@ -142,14 +142,14 @@ class ActionChoiceSet:
 class ActionChoiceFailure:
     kind: FailureKind
     reason_code: str
-    disposition: FailureDisposition = FailureDisposition.RECOVERY
+    owner: FailureOwner = FailureOwner.RUNTIME_RECOVERY
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, FailureKind):
             raise ValueError("unsupported failure kind")
         _require_nonblank("reason_code", self.reason_code)
-        if not isinstance(self.disposition, FailureDisposition):
-            raise ValueError("unsupported failure disposition")
+        if not isinstance(self.owner, FailureOwner):
+            raise ValueError("unsupported failure owner")
 
 
 @dataclass(frozen=True)
@@ -315,7 +315,7 @@ class ActionChoiceBuilder:
             return ActionChoiceFailure(
                 kind=FailureKind.AUTHORITY_BLOCKED,
                 reason_code=stale_reason,
-                disposition=FailureDisposition.TERMINAL,
+                owner=FailureOwner.TERMINAL,
             )
         if scope.active_step_id is None:
             return ActionChoiceFailure(

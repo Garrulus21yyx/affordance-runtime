@@ -1004,9 +1004,10 @@ delivery claims.
   correct `select_option` action but failed progress attribution after
   verification. This is diagnostic evidence only, not PR breadth, remote CI, or
   promotion evidence.
-- Next admissible architecture step before SAR-9 is Failure Ownership Router:
-  keep the single `FailureEnvelope`, replace `FailureDisposition` with six-way
-  `FailureOwner`, narrow `RecoveryPhase` to `RUNTIME_RECOVERY`, add structured
-  STEP_PLANNER/TASK_PLANNER/USER/PROGRESS handoff, delete semantic-owner
-  RecoveryKind values and duplicate owner mappings, then run the behavioral
-  classification gate.
+- Started FOR-1 Failure Ownership Router vocabulary. `FailureClassification` and
+  `ActionChoiceFailure` now carry six-way `FailureOwner` instead of
+  `FailureDisposition`, while preserving the single `FailureEnvelope` model.
+  Focused recovery/actionchoice/governance tests passed 45/45, and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-2
+  remains next: narrow `RecoveryPhase` to `RUNTIME_RECOVERY`, delete
+  semantic-owner RecoveryKind values, and remove duplicate owner mappings.

@@ -2173,6 +2173,49 @@ def test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter() -> None:
     assert "plan" not in calls
 
 
+def test_for_1_failure_classification_uses_owner_not_disposition() -> None:
+    source = (SOURCE_ROOT / "recovery_protocol.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    class_names = {
+        node.name for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    assert "FailureOwner" in class_names
+    assert "FailureDisposition" not in class_names
+
+    classification = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FailureClassification"
+    )
+    annotations = {
+        item.target.id: ast.unparse(item.annotation)
+        for item in classification.body
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+    }
+
+    assert annotations["owner"] == "FailureOwner"
+    assert "disposition" not in annotations
+
+
+def test_for_1_actionchoice_failures_carry_failure_owner() -> None:
+    source = (SOURCE_ROOT / "action_choice.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    failure = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ActionChoiceFailure"
+    )
+    annotations = {
+        item.target.id: ast.unparse(item.annotation)
+        for item in failure.body
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+    }
+
+    assert annotations["owner"] == "FailureOwner"
+    assert "disposition" not in annotations
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(

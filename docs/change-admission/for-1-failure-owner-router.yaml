@@ -2,9 +2,9 @@ slice_id: for-1-failure-owner-router
 parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
 parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
 base_revision: 7af5ec6960d89c9882b7cd28519c7559df08965a
-change_type: failure_owner_routing_refactor_plan
-production_behavior_change: planned_not_in_this_record
-runtime_authority_changed: planned_for_followup_slices
+change_type: failure_owner_routing_refactor
+production_behavior_change: true
+runtime_authority_changed: failure_classification_owner_field_replaces_disposition
 progress_authority_changed: false
 finish_authority_changed: false
 coordinator_control_flow_changed: false
@@ -13,7 +13,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_record: plan_and_architecture_update_only
+  current_record: for_1_failure_owner_vocabulary_local_candidate
   selected_next_sequence:
     - FOR-1 FailureOwner vocabulary and single ownership router.
     - FOR-2 Runtime RecoveryPhase narrowing and semantic RecoveryKind deletion.
@@ -23,6 +23,9 @@ scope:
     - Keep FailureEnvelope as the single failure model.
     - Replace FailureDisposition with six-way FailureOwner.
     - Make classify_failure the single Failure Ownership Router.
+    - Make FailureClassification carry owner rather than disposition.
+    - Make ActionChoiceFailure carry owner rather than disposition.
+    - Update strict planner compatibility diagnostics to report owner.
     - Route only RUNTIME_RECOVERY failures into RecoveryPhase.
     - Keep STEP_PLANNER limited to choice_id selection with PlannerFailureContext.
     - Route TASK_PLANNER through TaskPlan revision and TaskPlanAuthority only.
@@ -33,6 +36,8 @@ scope:
     - New recovery state machine.
     - RecoveryCascade or any history/attempt/receipt/delta object system.
     - Reintroducing RecoveryPlan / RecoveryCommand.
+    - RecoveryKind semantic-owner deletion; this is FOR-2.
+    - RecoveryPhase owner enforcement; this is FOR-2.
     - Planner free action generation.
     - Planner-authored target, parameters, expected effects, evidence requirements, finish, or backend.
     - TaskPlan changes outside TaskPlanAuthority.
@@ -103,13 +108,17 @@ hard_gates:
     same_unit_legacy_deletion: required
 
 validation_policy:
-  docs_only_record:
-    required:
-      - yaml_parse
-      - git_diff_check
-    full_pytest: false
-    uv_build: false
-    pr_breadth: false
+  focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_for_1_failure_classification_uses_owner_not_disposition tests/test_horizontal_architecture_governance.py::test_for_1_actionchoice_failures_carry_failure_owner -q --tb=short --maxfail=20
+    - python -m pytest tests/test_generalist_planner.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=20
+  focused_result:
+    recovery_actionchoice_governance: 45_passed
+    adjacent_generalist_recovery_coordinator: 130_passed
+  architecture:
+    - tests/test_horizontal_architecture_governance.py::test_for_1_failure_classification_uses_owner_not_disposition
+    - tests/test_horizontal_architecture_governance.py::test_for_1_actionchoice_failures_carry_failure_owner
+  ruff:
+    - ruff check src/affordance_runtime/recovery_protocol.py src/affordance_runtime/action_choice.py src/affordance_runtime/generalist_planner.py src/affordance_runtime/recovery_coordinator.py tests/test_recovery_coordinator.py tests/test_action_choice.py tests/test_horizontal_architecture_governance.py
   implementation_closure:
     required:
       - focused_routing_tests
@@ -119,6 +128,11 @@ validation_policy:
       - uv_build
       - clean_6x2_pr_breadth
       - fresh_diagnostic
+
+status:
+  for_1: local_candidate
+  for_2: selected_next
+  full_for_closure: incomplete
 
 behavioral_evidence:
   local_non_qwen_model: ollama_llama3_1_8b

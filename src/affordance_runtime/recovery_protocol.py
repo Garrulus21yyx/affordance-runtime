@@ -29,10 +29,12 @@ class FailureKind(StrEnum):
     UNKNOWN = "unknown"
 
 
-class FailureDisposition(StrEnum):
-    RECOVERY = "recovery"
-    PROGRESS_PRECHECK = "progress_precheck"
-    USER_INPUT = "user_input"
+class FailureOwner(StrEnum):
+    PROGRESS = "progress"
+    RUNTIME_RECOVERY = "runtime_recovery"
+    STEP_PLANNER = "step_planner"
+    TASK_PLANNER = "task_planner"
+    USER = "user"
     TERMINAL = "terminal"
 
 
@@ -145,7 +147,7 @@ class FailureClassificationFacts:
 @dataclass(frozen=True)
 class FailureClassification:
     kind: FailureKind
-    disposition: FailureDisposition
+    owner: FailureOwner
     reason_code: str
     planner_deferral_kind: PlannerDeferralKind | None = None
     available_action_count: int = 0
@@ -241,7 +243,7 @@ def classify_failure(
         if resolved_facts.user_input_required:
             return FailureClassification(
                 kind=FailureKind.MISSING_USER_INPUT,
-                disposition=FailureDisposition.USER_INPUT,
+                owner=FailureOwner.USER,
                 reason_code="planner_clarification_user_input_required",
                 planner_deferral_kind=PlannerDeferralKind.USER_INPUT_REQUIRED,
                 available_action_count=resolved_facts.available_action_count,
@@ -249,14 +251,14 @@ def classify_failure(
         if resolved_facts.available_action_count > 0:
             return FailureClassification(
                 kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
-                disposition=FailureDisposition.RECOVERY,
+                owner=FailureOwner.STEP_PLANNER,
                 reason_code="planner_deferral_with_action_space",
                 planner_deferral_kind=PlannerDeferralKind.ACTION_SPACE_AVAILABLE,
                 available_action_count=resolved_facts.available_action_count,
             )
         return FailureClassification(
             kind=FailureKind.UNKNOWN,
-            disposition=FailureDisposition.TERMINAL,
+            owner=FailureOwner.TERMINAL,
             reason_code="planner_clarification_without_typed_action_space",
             planner_deferral_kind=PlannerDeferralKind.UNKNOWN,
         )
@@ -272,49 +274,54 @@ def classify_failure(
     ):
         return FailureClassification(
             kind=FailureKind.CURRENT_STEP_ALREADY_SATISFIED,
-            disposition=FailureDisposition.PROGRESS_PRECHECK,
+            owner=FailureOwner.PROGRESS,
             reason_code="current_step_already_satisfied",
         )
     if error_code in {"missing_user_input", "clarification_required"}:
-        return _classification(FailureKind.MISSING_USER_INPUT, FailureDisposition.USER_INPUT, error_code)
+        return _classification(FailureKind.MISSING_USER_INPUT, FailureOwner.USER, error_code)
     if error_code in {
         "no_feasible_action",
         "no_action_candidate",
         "no_feasible_action_choice",
     }:
-        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureDisposition.RECOVERY, error_code)
+        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureOwner.RUNTIME_RECOVERY, error_code)
     if error_code == "legacy_decision_without_proposal":
-        return _classification(FailureKind.UNKNOWN, FailureDisposition.TERMINAL, error_code)
+        return _classification(FailureKind.UNKNOWN, FailureOwner.TERMINAL, error_code)
     if error_code in {"grounding_ambiguous", "ambiguous_target"}:
-        return _classification(FailureKind.GROUNDING_AMBIGUOUS, FailureDisposition.RECOVERY, error_code)
+        return _classification(FailureKind.GROUNDING_AMBIGUOUS, FailureOwner.RUNTIME_RECOVERY, error_code)
     if failure.failure_class == FailureClass.AUTHORITY:
-        return _classification(FailureKind.AUTHORITY_BLOCKED, FailureDisposition.USER_INPUT, "authority_blocked")
+        return _classification(FailureKind.AUTHORITY_BLOCKED, FailureOwner.USER, "authority_blocked")
     if failure.phase == FailurePhase.INTAKE:
-        return _classification(FailureKind.INTENT_COMPILATION_REJECTED, FailureDisposition.USER_INPUT, "intake_failure")
+        return _classification(FailureKind.INTENT_COMPILATION_REJECTED, FailureOwner.USER, "intake_failure")
     if failure.phase == FailurePhase.PROPOSAL_VALIDATION:
-        return _classification(FailureKind.PLAN_OUTPUT_REJECTED, FailureDisposition.RECOVERY, "proposal_validation_failed")
+        return _classification(FailureKind.PLAN_OUTPUT_REJECTED, FailureOwner.STEP_PLANNER, "proposal_validation_failed")
     if failure.phase in {
         FailurePhase.EXECUTION_NOT_DISPATCHED,
         FailurePhase.EXECUTION_UNCERTAIN,
     }:
-        return _classification(FailureKind.EXECUTION_FAILED, FailureDisposition.RECOVERY, "execution_failed")
+        return _classification(FailureKind.EXECUTION_FAILED, FailureOwner.RUNTIME_RECOVERY, "execution_failed")
     if failure.phase == FailurePhase.VERIFICATION:
-        return _classification(FailureKind.VERIFICATION_FAILED, FailureDisposition.RECOVERY, "verification_failed")
+        return _classification(FailureKind.VERIFICATION_FAILED, FailureOwner.RUNTIME_RECOVERY, "verification_failed")
     if failure.phase in {FailurePhase.OBSERVATION, FailurePhase.FUSION}:
-        return _classification(FailureKind.OBSERVATION_INSUFFICIENT, FailureDisposition.RECOVERY, "observation_insufficient")
+        return _classification(FailureKind.OBSERVATION_INSUFFICIENT, FailureOwner.RUNTIME_RECOVERY, "observation_insufficient")
     if failure.phase == FailurePhase.PROVIDER_CONTEXT:
-        return _classification(FailureKind.PROVIDER_OR_SCHEMA_FAILURE, FailureDisposition.RECOVERY, "provider_or_schema_failure")
+        return _classification(FailureKind.PROVIDER_OR_SCHEMA_FAILURE, FailureOwner.RUNTIME_RECOVERY, "provider_or_schema_failure")
     if failure.phase == FailurePhase.PREFLIGHT:
-        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureDisposition.RECOVERY, "preflight_no_feasible_action")
+        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureOwner.RUNTIME_RECOVERY, "preflight_no_feasible_action")
     if failure.phase in {
         FailurePhase.TASK_PLANNING,
         FailurePhase.STEP_PLANNING,
         FailurePhase.SKILL_ACTIVATION,
     }:
-        return _classification(FailureKind.PLAN_OUTPUT_REJECTED, FailureDisposition.RECOVERY, "planning_output_rejected")
+        owner = (
+            FailureOwner.TASK_PLANNER
+            if failure.phase in {FailurePhase.TASK_PLANNING, FailurePhase.SKILL_ACTIVATION}
+            else FailureOwner.STEP_PLANNER
+        )
+        return _classification(FailureKind.PLAN_OUTPUT_REJECTED, owner, "planning_output_rejected")
     if failure.phase == FailurePhase.GROUNDING_BINDING:
-        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureDisposition.RECOVERY, "grounding_no_feasible_action")
-    return _classification(FailureKind.UNKNOWN, FailureDisposition.TERMINAL, "unknown_failure")
+        return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureOwner.RUNTIME_RECOVERY, "grounding_no_feasible_action")
+    return _classification(FailureKind.UNKNOWN, FailureOwner.TERMINAL, "unknown_failure")
 
 
 def classify_failure_kind(
@@ -328,11 +335,11 @@ def classify_failure_kind(
 
 def _classification(
     kind: FailureKind,
-    disposition: FailureDisposition,
+    owner: FailureOwner,
     reason_code: str,
 ) -> FailureClassification:
     return FailureClassification(
         kind=kind,
-        disposition=disposition,
+        owner=owner,
         reason_code=reason_code,
     )

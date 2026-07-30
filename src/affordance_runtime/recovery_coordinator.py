@@ -15,6 +15,7 @@ from affordance_runtime.recovery_protocol import (
     FailureClassification,
     FailureClassificationFacts,
     FailureKind,
+    FailureOwner,
     RecoveryBudgetCost,
     RecoveryDecision,
     RecoveryDimension,
@@ -146,7 +147,7 @@ def _strategy_order(
         for item in context.preferred_profile_commands
         if item in base and item not in {RecoveryKind.RETRY_IDEMPOTENT, RecoveryKind.COMPENSATE}
     )
-    if classification.disposition.value == "progress_precheck":
+    if classification.owner == FailureOwner.PROGRESS:
         base = (RecoveryKind.ABORT,)
         profile = ()
     return tuple(dict.fromkeys((*profile, *base)))
