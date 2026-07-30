@@ -24,6 +24,7 @@ from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
+from affordance_runtime.contract_failure_phase import ContractFailurePhase
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
@@ -115,6 +116,7 @@ TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 PLANNING_FAILURE_PHASE = PlanningFailurePhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
+CONTRACT_FAILURE_PHASE = ContractFailurePhase()
 PREFLIGHT_PHASE = PreflightPhase()
 EXECUTION_PHASE = ExecutionPhase()
 VERIFICATION_PHASE = VerificationPhase()
@@ -537,32 +539,27 @@ class RunCoordinator:
                     contract_binding.terminal.error_code,
                     latest_verification,
                 )
-            if contract_binding.failure is not None:
-                binding_failure = contract_binding.failure
-                recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=binding_failure.phase,
-                    failure_class=binding_failure.failure_class,
-                    error_code=binding_failure.error_code,
-                    message=binding_failure.message,
-                    available_commands=binding_failure.available_commands,
-                    snapshot=snapshot,
-                    proposal_id=binding_failure.proposal_id,
-                    expected_effect=binding_failure.expected_effect,
-                    recoverable=binding_failure.recoverable,
-                )
-                if recovery_kind in binding_failure.continue_recovery_kinds:
+            contract_failure = CONTRACT_FAILURE_PHASE.handle(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                snapshot=snapshot,
+                contract_binding=contract_binding,
+                recover_phase_failure=self._recover_phase_failure,
+            )
+            if contract_failure is not None:
+                parent = contract_failure.parent
+                if contract_failure.continue_observing:
                     continue
+                assert contract_failure.terminal is not None
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.ABORTED,
+                    contract_failure.terminal.status,
                     parent,
-                    binding_failure.error_code,
+                    contract_failure.terminal.error_code,
                     latest_verification,
                 )
             assert contract_binding.contract is not None
