@@ -997,4 +997,16 @@ delivery claims.
 - Started SAR-4B after `3ccea65`. Changed the public `PlannerPort.propose(request)` return contract to closed `PlannerResponse` and added a compatibility bridge that converts request-only `PlannerResponse` values back to legacy `PlannerDecision` for the current Coordinator consumer. Legacy `PlannerDecision`, `PlannerContext`, and three-argument planners remain compatibility debt; progress authority and finish authority remain unchanged.
 - Closed SAR-8C default recovery protocol cutover locally at `09d43041283078d4031828d01d0b129df4271148`. Default runtime recovery now routes through `RecoveryPhase` and canonical `RecoveryDecision` / `RecoveryOutcome`; legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade source/test protocols were physically removed. Full cutover gate passed with 1326 tests, Ruff, core mypy over 110 source files, `uv build`, and `git diff --check`; remote CI and promotion remain held.
 - Closed the strict ActionChoice fallback-retirement slice locally at `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. Strict Generalist no longer enters free PlannerProposalCandidate generation when Runtime ActionChoice construction fails; strict model-owned `ask_user` and `finish` actions are filtered out, and historical compatibility keeps the old candidate path for replay only. Full local gate passed with 1337 tests, Ruff, core mypy over 116 source files, `uv build`, and `git diff --check`.
-- Behavioral gate for SAR-8C plus Planner Selection remains not run: the local Ollama service is reachable only with `qwen2.5:7b`, and the current execution constraint requires a non-qwen Ollama model for future reruns/ablations. Next admissible step is to install/select a non-qwen Ollama model and run Planner Selection residual classification before SAR-9 phase extraction.
+- Local non-qwen Ollama `llama3.1:8b` is now available for targeted diagnostics.
+  A clean 3-case SAR-8C plus Planner Selection run at local
+  `7af5ec6960d89c9882b7cd28519c7559df08965a` observed 2/3 pass:
+  `enter-text` and `form-sequence` passed, while `choose-list` built the
+  correct `select_option` action but failed progress attribution after
+  verification. This is diagnostic evidence only, not PR breadth, remote CI, or
+  promotion evidence.
+- Next admissible architecture step before SAR-9 is Failure Ownership Router:
+  keep the single `FailureEnvelope`, replace `FailureDisposition` with six-way
+  `FailureOwner`, narrow `RecoveryPhase` to `RUNTIME_RECOVERY`, add structured
+  STEP_PLANNER/TASK_PLANNER/USER/PROGRESS handoff, delete semantic-owner
+  RecoveryKind values and duplicate owner mappings, then run the behavioral
+  classification gate.

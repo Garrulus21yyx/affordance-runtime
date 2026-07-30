@@ -98,28 +98,21 @@ horizontal architecture --/
 - a horizontal slice is not a vertical prerequisite unless the vertical change
   would otherwise grow, copy, or rely on the governed debt.
 
-The current vertical lane is protected cross-family / PR breadth confirmation.
-SG7 targeted protected-family confirmation is closed only within its recorded
-2-task x 2-seed scope. Current PR breadth evidence is bound to `407133d`: 12/12
-observed, 11/12 official reward passed, and 3 Runtime failures. The
-V-PRB-6B verifier-backed progress accounting integration closes the prior
-`enter-text:seed-1` required read-only availability failure, but PR breadth
-acceptance remains held because both `form-sequence` seeds still abort at the
-Runtime terminal-completion guard. `click-button:seed-1` reappeared as a
-structured intent-draft `json_invalid` failure in the breadth matrix, but a
-targeted post-`407133d` click-button recheck passed seeds 0 and 1, so that
-cluster remains monitored rather than production-admitted. The prior
-V-PRB-6A dependent-subgoal progress-target foundation is retained, but only as
-compatibility scaffolding. ODG-0 and ODG-2 through ODG-9 remain historical
-foundation/diagnostic records and advanced attribution is `EXPERIMENTAL_ONLY`.
-The default-path decision is now SAR-0 authoritative optimized architecture.
-S0/S1/S2 and TPA-0 through TPA-5 remain historical foundation work, but they no
-longer define the next default production target when they conflict with SAR-0.
-Future Runtime work follows substitutive one-in/one-out migration: replace an
-old authority, switch the real production path, then retire the old owner or
-projector. The next authorized default-path slice is SAR-1 deep immutability and
-stale contract-hash repair. Neither lane authorizes promotion while remote CI is
-disabled or required validation is unavailable.
+The current default path follows SAR-0 authoritative optimized architecture.
+S0/S1/S2, TPA-0 through TPA-5, and ODG-0 through ODG-9 are historical
+foundation/diagnostic records where they conflict with SAR-0; advanced
+attribution remains `EXPERIMENTAL_ONLY`. Future Runtime work follows
+substitutive one-in/one-out migration: replace an old authority, switch the
+real production path, then retire the old owner or projector.
+
+The implementation sequence has advanced through SAR-8C default RecoveryPhase
+cutover and Planner Selection ActionChoice fallback retirement for their
+recorded local scopes. The selected SAR-9 prerequisite is Failure Ownership
+Router: keep the single `FailureEnvelope`, replace disposition routing with
+six-way `FailureOwner`, narrow `RecoveryPhase` to Runtime-owned mechanical
+recovery, and delete duplicate planner/task/user/terminal recovery branches.
+Neither lane authorizes promotion while remote CI is disabled or required
+validation is unavailable.
 
 ODG-2 may add typed, authority-free progress and attribution contracts, but
 those contracts are not progress authority until later slices add shadow
@@ -424,7 +417,8 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | Debt | State | Required direction |
 | --- | --- | --- |
 | `RunCoordinator.run_sync` contains multiple phase algorithms | `in_progress` | extract one named responsibility at a time through immutable context and typed result |
-| standard `PlannerPort` still receives mutable `StateKernel` | `pending` | introduce frozen `PlannerStateView` / `PlanningRequest` before claiming immutable planner input |
+| standard `PlannerPort` still receives mutable `StateKernel` | `done for public contract / compatibility pending` | public `PlannerPort` is request-only; legacy compatibility signatures must continue shrinking behind explicit adapters |
+| failure routing and runtime recovery ownership are still mixed | `selected_next` | implement Failure Ownership Router: one `FailureEnvelope`, one `FailureOwner` enum, one router, RecoveryPhase accepts only `RUNTIME_RECOVERY`, no second recovery workflow |
 | Generalist Planner semantic fallback ownership review | `in_progress` | Planner Selection Simplification deleted the strict `semantic_action_resolver.py` default path and strict page/exact text/terminal-submit fallback functions; remaining historical-profile grammar must retire through ActionChoice or explicit compatibility-only owners |
 | `semantic_action_resolver.py` output/input boundary | `retired` | the module is removed from production source; historical V-PRB records remain archival evidence only |
 | PR breadth V-PRB-5A button-sequence semantics | `done` | clean `151fbef` PR breadth rerun passed both `click-button-sequence` seeds after dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs |

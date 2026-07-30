@@ -1,0 +1,129 @@
+slice_id: for-1-failure-owner-router
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+base_revision: 7af5ec6960d89c9882b7cd28519c7559df08965a
+change_type: failure_owner_routing_refactor_plan
+production_behavior_change: planned_not_in_this_record
+runtime_authority_changed: planned_for_followup_slices
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_record: plan_and_architecture_update_only
+  selected_next_sequence:
+    - FOR-1 FailureOwner vocabulary and single ownership router.
+    - FOR-2 Runtime RecoveryPhase narrowing and semantic RecoveryKind deletion.
+    - FOR-3 structured STEP_PLANNER / TASK_PLANNER / USER / PROGRESS handoff.
+    - FOR-4 duplicate routing deletion and behavioral classification gate.
+  included:
+    - Keep FailureEnvelope as the single failure model.
+    - Replace FailureDisposition with six-way FailureOwner.
+    - Make classify_failure the single Failure Ownership Router.
+    - Route only RUNTIME_RECOVERY failures into RecoveryPhase.
+    - Keep STEP_PLANNER limited to choice_id selection with PlannerFailureContext.
+    - Route TASK_PLANNER through TaskPlan revision and TaskPlanAuthority only.
+    - Route USER only for true user-owned information, approval, credential, or irreversible decisions.
+    - Route unknown, unsafe, denied, exhausted, and invariant-broken failures to TERMINAL.
+  excluded:
+    - New failure model.
+    - New recovery state machine.
+    - RecoveryCascade or any history/attempt/receipt/delta object system.
+    - Reintroducing RecoveryPlan / RecoveryCommand.
+    - Planner free action generation.
+    - Planner-authored target, parameters, expected effects, evidence requirements, finish, or backend.
+    - TaskPlan changes outside TaskPlanAuthority.
+    - Progress or finish authority changes in this documentation-only record.
+
+owner_routing:
+  PROGRESS:
+    - current criterion already satisfied.
+    - action effect observed but step not committed.
+    - step complete or all steps complete before task completion verification.
+  RUNTIME_RECOVERY:
+    - stale snapshot/page/locator.
+    - reground or rebind same semantic target.
+    - temporarily missing evidence source.
+    - uncertain side effect needing verification before retry.
+    - provider timeout or model schema repair.
+    - idempotent retry, backend switch, checkpoint restore, session restart, or compensation.
+  STEP_PLANNER:
+    - effect proven absent and current step still has alternatives.
+    - field validation or business-rule rejection within the same active step.
+  TASK_PLANNER:
+    - active step impossible.
+    - plan assumption invalid.
+    - dependency or step structure invalid.
+  USER:
+    - missing user-known value.
+    - genuine semantic ambiguity.
+    - approval, credential, or trusted authorization required.
+    - irreversible user decision.
+  TERMINAL:
+    - policy denied.
+    - unsafe action.
+    - budget exhausted.
+    - unrecoverable environment.
+    - unknown classification.
+    - invariant broken.
+
+hard_gates:
+  failure_routing:
+    failure_contract_count: 1
+    owner_router_count: 1
+    owner_enum_count: 1
+    full_history_in_statekernel: false
+  runtime_recovery:
+    accepts_only_runtime_owned_failures: true
+    task_replan_authority: false
+    step_planner_authority: false
+    user_interaction_authority: false
+    terminal_authority: false
+  step_planner:
+    output: choice_id_only
+    free_action_generation: prohibited
+    target_generation: prohibited
+    parameter_generation: prohibited
+    expected_effect_generation: prohibited
+    evidence_generation: prohibited
+  task_planner:
+    modifies_plan_only_through_taskplan_authority: true
+  progress:
+    already_satisfied_is_failure: false
+  state:
+    full_failure_history: trace_only
+    full_recovery_history: trace_only
+  migration:
+    new_router_framework: prohibited
+    second_failure_model: prohibited
+    second_recovery_state_machine: prohibited
+    same_unit_legacy_deletion: required
+
+validation_policy:
+  docs_only_record:
+    required:
+      - yaml_parse
+      - git_diff_check
+    full_pytest: false
+    uv_build: false
+    pr_breadth: false
+  implementation_closure:
+    required:
+      - focused_routing_tests
+      - actionchoice_tests
+      - full_pytest
+      - core_mypy
+      - uv_build
+      - clean_6x2_pr_breadth
+      - fresh_diagnostic
+
+behavioral_evidence:
+  local_non_qwen_model: ollama_llama3_1_8b
+  targeted_run_revision: 7af5ec6960d89c9882b7cd28519c7559df08965a
+  targeted_run_result: 3_observed_2_passed_1_failed
+  failure_note: choose_list_built_correct_select_option_but_failed_progress_attribution_after_verification
+  official_score_claimed: false
+  promotion: held

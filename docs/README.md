@@ -10,6 +10,7 @@ The current long-term production target is:
 - [Affordance Runtime Authoritative Optimized Architecture](superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
 - [Affordance Runtime Substitutive Refactor Execution Plan](superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
 - [SAR-0 change admission](change-admission/sar-0-authoritative-architecture-freeze.yaml)
+- [Failure Ownership Router admission](change-admission/for-1-failure-owner-router.yaml)
 
 SAR-0 supersedes the earlier simplified active-step target, the TaskPlanAuthority
 additive plan, and the ODG default-path architecture for future default
@@ -29,9 +30,11 @@ production work.
   anti-specialization and evidence rules.
 
 When a change updates the active architecture, plan, or evidence identity,
-update these durable files in the same commit. `implementation-status.md` owns
-the exact current HEAD identity; `current-implementation-plan.md` owns the
-active queue; this README owns navigation and conflict precedence only.
+update these durable files in the same commit. Git owns the exact repository
+HEAD identity (`git rev-parse HEAD`); `implementation-status.md` records the
+reviewed closure, implementation, and evidence identities;
+`current-implementation-plan.md` owns the active queue; this README owns
+navigation and conflict precedence only.
 
 ## Archive
 

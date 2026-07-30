@@ -722,16 +722,36 @@ class ActionOutcome:
 
 每个 effectful execution 最多产生一个最终 ActionOutcome。
 
-### 6.14 Failure / Recovery
+### 6.14 Failure Ownership Router / Recovery
 
 ```python
 @dataclass(frozen=True)
-class Failure:
-    phase: FailurePhase
-    code: str
-    reason: str
-    recoverable: bool
-    context: FailureContext
+class FailureEnvelope:
+    failure_id: str
+    phase: RuntimePhase
+    kind: FailureKind
+    reason_code: str
+    task_revision: int
+    state_version: int
+    snapshot_id: str = ""
+
+
+class FailureOwner(StrEnum):
+    PROGRESS = "progress"
+    RUNTIME_RECOVERY = "runtime_recovery"
+    STEP_PLANNER = "step_planner"
+    TASK_PLANNER = "task_planner"
+    USER = "user"
+    TERMINAL = "terminal"
+
+
+@dataclass(frozen=True)
+class FailureClassification:
+    kind: FailureKind
+    owner: FailureOwner
+    reason_code: str
+    planner_deferral_kind: PlannerDeferralKind | None = None
+    available_action_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -751,7 +771,59 @@ class RecoveryOutcome:
     error: str = ""
 ```
 
-纯 reobserve、replan、reground 不创建多层 receipt/delta/history 对象；trace 记录历史，StateKernel 保留当前 recovery 和 typed attempted keys。
+`FailureEnvelope` 是唯一 failure 输入模型。`classify_failure()` 是唯一
+Failure Ownership Router：它不创建第二个 failure，不执行恢复，不修改
+TaskPlan，不提交 progress，只决定下一步 owner。
+
+路由：
+
+```text
+FailureEnvelope
+    ↓
+Failure Ownership Router
+    ├── PROGRESS
+    ├── RUNTIME_RECOVERY
+    ├── STEP_PLANNER
+    ├── TASK_PLANNER
+    ├── USER
+    └── TERMINAL
+```
+
+Owner 语义：
+
+- `PROGRESS`：当前 criterion 已满足、动作 effect 已观察到但 step 未提交、step
+  complete、all steps complete 后进入 task completion verifier。不得进入
+  RecoveryPhase 或 Planner。
+- `RUNTIME_RECOVERY`：机械、有限、可验证的 runtime 修复，例如 reobserve、
+  wait-and-reobserve、active perception、reground、rebind contract、
+  idempotent retry、switch backend、revalidate approval、restore checkpoint、
+  restart session、compact context、repair model schema、switch provider、
+  compensate。
+- `STEP_PLANNER`：active step 仍有效，当前 observation 足够，原 choice
+  失败，需要在当前 step 的其它 Runtime-built choices 中重新选择。
+- `TASK_PLANNER`：active step 已不可执行、plan assumption invalid、dependency
+  或 step 结构需要改变。只通过 TaskPlan revision path 和 TaskPlanAuthority。
+- `USER`：仅用于缺少用户掌握的信息、真实语义歧义、approval、credential
+  或不可逆用户决策。
+- `TERMINAL`：policy denied、unsafe、能力不允许且无替代、预算耗尽、环境不可恢复、
+  side effect 无法验证、策略耗尽、未知分类或 invariant broken。
+
+安全优先级：
+
+1. current criterion satisfied → `PROGRESS`；
+2. policy / capability / safety block → `USER` 或 `TERMINAL`；
+3. side effect may have happened → `RUNTIME_RECOVERY` / verify side effect；
+4. missing user-owned information → `USER`；
+5. mechanical fix available → `RUNTIME_RECOVERY`；
+6. active step still valid → `STEP_PLANNER`；
+7. TaskPlan structurally needs revision → `TASK_PLANNER`；
+8. remaining unknown → `TERMINAL`。
+
+`RecoveryPhase` 只接受 `owner=RUNTIME_RECOVERY`。它不得处理 step/task
+replan、ask-user、clarify-intent、abort 或 terminal policy。纯 reobserve、
+reground、model-channel repair 等不创建多层 receipt/delta/history 对象；trace
+记录历史，StateKernel 保留当前 failure、current recovery decision/outcome、
+typed attempted keys 和 bounded summary。
 
 ---
 
@@ -773,7 +845,8 @@ class RecoveryOutcome:
 | 实际执行 | `Executor` | 只返回 receipt |
 | 效果与 step 验证 | `EffectVerifier` | 不写 StateKernel |
 | task completion 验证 | `TaskCompletionVerifier` | 不提交状态 |
-| Recovery 选择 | `RecoveryPolicy` | 不直接执行 backend |
+| Failure owner 路由 | `classify_failure()` / Failure Ownership Router | 不恢复、不重规划、不提交 progress |
+| Runtime recovery 选择 | `RecoveryPolicy` | 只处理 `RUNTIME_RECOVERY`，不拥有 step/task/user/terminal |
 | 状态与 canonical trace 顺序 | `RunCoordinator` | 不实现领域算法 |
 | Analytics/evolution | Event subscriber | 不影响本次 RunResult |
 | Benchmark scoring | Benchmark adapter | 不影响 Runtime completion |
@@ -799,16 +872,35 @@ while not state.terminal:
     if step_precheck.advanced:
         continue
 
-    request = planning_request_builder.build(state.view())
-    planner_response = planner.propose(request)
-
-    planning_result = planning_phase.admit(planner_response, request)
-    state.apply(planning_result.transition)
-    trace.append_all(planning_result.events)
-    if planning_result.no_execution:
+    choice_result = action_choice_builder.build(
+        task=state.task_spec_view,
+        step=state.active_step,
+        scope=state.active_step_scope,
+        observation=observation_result.observation,
+        capabilities=state.capability_view,
+        recent_outcomes=state.recent_action_outcomes,
+    )
+    if choice_result.failure is not None:
+        classification = classify_failure(choice_result.failure, state.failure_facts)
+        owner_result = failure_owner_router.dispatch(classification, state.view())
+        state.apply(owner_result.transition)
+        trace.append_all(owner_result.events)
         continue
 
-    execution_result = execution_phase.run(planning_result.contract)
+    if len(choice_result.choices) == 1:
+        selection = ActionSelection(choice_id=choice_result.choices[0].choice_id)
+    else:
+        request = choice_planning_request_builder.build(
+            state.view(),
+            choices=choice_result.choices,
+            last_failure=state.pending_planner_failure,
+        )
+        selection = step_planner.select(request)
+
+    choice = action_selection_validator.validate(selection, choice_result)
+    contract = action_contract_builder.build(choice, state.view())
+
+    execution_result = execution_phase.run(contract)
     state.apply(execution_result.transition)
     trace.append_all(execution_result.events)
 
@@ -816,10 +908,11 @@ while not state.terminal:
     state.apply(progress_result.transition)
     trace.append_all(progress_result.events)
 
-    if progress_result.requires_recovery:
-        recovery_result = recovery_phase.run(state.view(), progress_result.failure)
-        state.apply(recovery_result.transition)
-        trace.append_all(recovery_result.events)
+    if progress_result.failure is not None:
+        classification = classify_failure(progress_result.failure, state.failure_facts)
+        owner_result = failure_owner_router.dispatch(classification, state.view())
+        state.apply(owner_result.transition)
+        trace.append_all(owner_result.events)
         continue
 
     if progress_result.all_required_steps_complete:
@@ -860,9 +953,7 @@ StateKernel
 ### 9.2 Replan
 
 ```text
-Failure / PlanIssueReport
-    ↓
-RecoveryPolicy decides REPLAN_STEP or REPLAN_TASK
+FailureClassification(owner=TASK_PLANNER) / PlanIssueReport
     ↓
 TaskPlanGeneratorPort
     ↓ PlanCandidate
@@ -1066,15 +1157,24 @@ Action repeat guard 使用 typed `ActionKey` 和 last outcomes 的 bounded index
 
 ---
 
-## 14. 单一 Recovery 协议
+## 14. Failure Ownership 与单一 Runtime Recovery 协议
 
-当前两套 Recovery 机制收敛为：
+所有 failure 先经过唯一 ownership router：
 
 ```text
 Failure
+→ FailureClassification(owner)
+→ owner-specific next step
+```
+
+其中只有 `owner=RUNTIME_RECOVERY` 进入 RecoveryPhase：
+
+```text
+FailureEnvelope
+→ FailureClassification(owner=RUNTIME_RECOVERY)
 → RecoveryPolicy
 → RecoveryDecision
-→ RecoveryPhase execution if required
+→ RuntimeRecoveryDispatcher if required
 → RecoveryOutcome
 ```
 
@@ -1082,11 +1182,41 @@ StateKernel 只保存：
 
 - current failure；
 - current recovery decision；
+- current recovery outcome；
 - recovery count；
 - attempted strategy keys；
-- latest recovery outcome。
+- pending planner failure context。
 
-完整 incident、attempt、delta、receipt 和 history 进入 trace。只有真实外部副作用 recovery 需要 execution receipt。
+完整 incident、attempt、delta、receipt 和 history 进入 trace。不要恢复
+`RecoveryCascade` 或任何新的 history/attempt/receipt/delta 对象系统。
+只有真实外部副作用 recovery 需要 execution receipt。
+
+`RecoveryKind` 只表达 Runtime-owned mechanical recovery。以下语义不是
+RecoveryKind：
+
+- replan step/task → `TASK_PLANNER` owner；
+- choose alternate action → `STEP_PLANNER` owner；
+- ask user / clarification / approval → `USER` owner；
+- abort / deny / exhausted → `TERMINAL` owner。
+
+Step Planner handoff 使用最小 failure context：
+
+```python
+@dataclass(frozen=True)
+class PlannerFailureContext:
+    failure_id: str
+    kind: FailureKind
+    reason_code: str
+    failed_choice_id: str = ""
+    blocked_choice_ids: tuple[str, ...] = ()
+    observed_result_summary: str = ""
+    evidence_refs: tuple[str, ...] = ()
+    attempt_count: int = 0
+    remaining_attempts: int = 0
+```
+
+`ChoicePlanningRequest.last_failure` 可以携带该 context；模型仍只能返回
+`ActionSelection(choice_id=...)`。
 
 ---
 

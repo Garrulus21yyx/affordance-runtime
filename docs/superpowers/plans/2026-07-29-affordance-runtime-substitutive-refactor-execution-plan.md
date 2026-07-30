@@ -257,8 +257,9 @@ repository_head:
 latest_implementation_revisions:
   sar_8c_recovery_cutover: 09d43041283078d4031828d01d0b129df4271148
   planner_selection_actionchoice: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
+  planner_selection_targeted_repairs: 7af5ec6960d89c9882b7cd28519c7559df08965a
 migration_strategy: substitutive
-next_slice: planner_selection_behavioral_gate_then_sar_9_phase_extraction
+next_slice: failure_ownership_router_then_sar_9_phase_extraction
 stopped:
   - TPA-5B foundation-only implementation
   - new internal projections without deletion gate
@@ -269,7 +270,7 @@ production_authority:
   completion: runtime terminal success owner with SAR-7 behavioral gate evidence
   recovery: RecoveryPhase with canonical RecoveryDecision / RecoveryOutcome
   planner_selection: strict ActionChoice paths local_candidate
-  behavioral_gate: not_run_local_ollama_only_has_qwen2_5_7b
+  behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
 ```
 
 ## 4.4 Architecture gate 调整
@@ -1211,7 +1212,7 @@ RecoverySummary
 
 ## 12.3 Policy
 
-RecoveryPolicy输入：
+Failure owner routing 输入：
 
 ```text
 Failure
@@ -1220,28 +1221,45 @@ active step
 latest observation
 budgets
 attempted strategy keys
+typed action-space facts
 ```
 
-输出 bounded decision：
+先输出唯一 ownership classification：
+
+```text
+PROGRESS
+RUNTIME_RECOVERY
+STEP_PLANNER
+TASK_PLANNER
+USER
+TERMINAL
+```
+
+只有 `RUNTIME_RECOVERY` 继续进入 RecoveryPolicy。RecoveryPolicy 输出 bounded
+mechanical decision：
 
 ```text
 reobserve
 reground
 switch_backend
 retry
-replan_step
-replan_task
 restore_checkpoint
-ask_user
-terminate
+compact_context
+repair_model_schema
+switch_provider
+compensate
 ```
+
+`replan_step` / `replan_task` 属于 `TASK_PLANNER` owner；`ask_user` /
+approval / credential 属于 `USER` owner；abort / deny / exhausted 属于
+`TERMINAL` owner。它们不得作为 Runtime RecoveryKind 保留在默认路径。
 
 ## 12.4 Execution
 
 纯 runtime transition：
 
 ```text
-reobserve / replan / ask user
+reobserve / reground / compact context / repair schema
 ```
 
 不产生独立 receipt/delta链。
@@ -1264,7 +1282,8 @@ RecoveryHistory list
 parallel RecoveryHandler/Coordinator/Dispatcher职责
 ```
 
-保留一个 RecoveryPhase service。
+保留一个 RecoveryPhase service，但它只接受
+`FailureClassification(owner=RUNTIME_RECOVERY)`。
 
 ## 12.5.1 当前实现状态
 
@@ -1287,7 +1306,7 @@ validation:
 behavioral_gate:
   pr_breadth: not_run_after_sar_8c
   fresh_diagnostic: not_run_after_sar_8c
-  blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+  current_evidence: non_qwen_ollama_llama3_1_8b_targeted_3_case_run_observed_2_of_3_pass_at_local_7af5ec6_no_promotion
 promotion: held
 ```
 
@@ -1341,15 +1360,189 @@ compatibility_remaining:
 behavioral_gate:
   pr_breadth: not_run_after_actionchoice
   fresh_diagnostic: not_run_after_actionchoice
-  blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+  current_evidence: non_qwen_ollama_llama3_1_8b_targeted_3_case_run_observed_2_of_3_pass_at_local_7af5ec6_no_promotion
 promotion: held
 ```
 
 SAR-9 must not begin by copying remaining PlannerDecision, PlannerContext,
-or historical free-action candidate paths into a new `PlanningPhase`. Either
-run the behavioral gate with a non-qwen Ollama model and classify residuals, or
-record that gate as blocked by local model availability before extracting
-Coordinator phases.
+or historical free-action candidate paths into a new `PlanningPhase`. The local
+non-qwen Ollama targeted run proves the model availability blocker is gone, but
+it is not a PR-breadth or promotion gate. The remaining prerequisite is typed
+Failure Ownership routing and residual classification.
+
+---
+
+# 12B. FOR — Failure Ownership Router before SAR-9
+
+## 12B.1 Decision
+
+Do not create a second failure model or restore `RecoveryCascade`. Keep
+`FailureEnvelope` and upgrade `classify_failure()` into the single ownership
+router:
+
+```text
+FailureEnvelope
+    ↓
+Failure Ownership Router
+    ├── PROGRESS
+    ├── RUNTIME_RECOVERY
+    ├── STEP_PLANNER
+    ├── TASK_PLANNER
+    ├── USER
+    └── TERMINAL
+```
+
+Only `RUNTIME_RECOVERY` enters `RecoveryPhase`.
+
+## 12B.2 FOR-1 — FailureOwner vocabulary
+
+Replace `FailureDisposition` with:
+
+```python
+class FailureOwner(StrEnum):
+    PROGRESS = "progress"
+    RUNTIME_RECOVERY = "runtime_recovery"
+    STEP_PLANNER = "step_planner"
+    TASK_PLANNER = "task_planner"
+    USER = "user"
+    TERMINAL = "terminal"
+```
+
+Update `FailureClassification` and `ActionChoiceFailure` to carry `owner`.
+Delete the old disposition enum and duplicate phase-to-owner mappings.
+
+Exit gates:
+
+- one `FailureEnvelope` contract;
+- one ownership router;
+- current-step-already-satisfied routes to `PROGRESS`;
+- unknown routes fail-closed to `TERMINAL`;
+- no message-substring owner detection.
+
+## 12B.3 FOR-2 — Runtime recovery narrowing
+
+Delete semantic owner values from default `RecoveryKind`:
+
+```text
+REPLAN_STEP
+REPLAN_TASK
+ASK_USER
+CLARIFY_INTENT
+ABORT
+REQUEST_APPROVAL
+```
+
+Rename `RecoveryOwnerDispatcher` to `RuntimeRecoveryDispatcher` if present.
+`RecoveryPhase` must reject any classification whose owner is not
+`RUNTIME_RECOVERY` and must not contain planner, task, user, or terminal
+routing branches.
+
+## 12B.4 FOR-3 — Structured handoff
+
+STEP_PLANNER uses minimal failure context:
+
+```python
+@dataclass(frozen=True)
+class PlannerFailureContext:
+    failure_id: str
+    kind: FailureKind
+    reason_code: str
+    failed_choice_id: str = ""
+    blocked_choice_ids: tuple[str, ...] = ()
+    observed_result_summary: str = ""
+    evidence_refs: tuple[str, ...] = ()
+    attempt_count: int = 0
+    remaining_attempts: int = 0
+```
+
+`ChoicePlanningRequest.last_failure` may carry this context. The model still
+returns only `ActionSelection(choice_id=...)`.
+
+TASK_PLANNER uses the existing `TaskPlanRevisionTrigger -> TaskPlanGenerator ->
+PlanCandidate -> TaskPlanAuthority -> Coordinator replace` path. Do not create
+a parallel TaskPlannerFailureContext.
+
+USER uses a unified `UserInputRequest`. PROGRESS should eventually consume
+already-satisfied state before failure creation and remove the compatibility
+failure kind.
+
+## 12B.5 FOR-4 — deletion and behavioral gate
+
+Required deletion:
+
+- old `FailureDisposition`;
+- semantic-owner `RecoveryKind` values;
+- RecoveryPhase planner/task/user/terminal branches;
+- duplicate failure-owner mappings;
+- remaining strict free-action fallback gates in default source.
+
+Validation:
+
+- focused routing and ActionChoice tests;
+- full pytest at closure;
+- core mypy;
+- `uv build`;
+- clean 6x2 PR breadth;
+- fresh diagnostic.
+
+Current behavioral note: local non-qwen Ollama `llama3.1:8b` is available and
+a clean targeted 3-case run at local `7af5ec6` observed 2/3 pass. This is
+diagnostic evidence only; official score and promotion remain held.
+
+## 12B.6 Routing matrix
+
+| Failure condition | Owner |
+| --- | --- |
+| active step already satisfied | `PROGRESS` |
+| stale snapshot/page/locator | `RUNTIME_RECOVERY` |
+| same semantic target needs reground | `RUNTIME_RECOVERY` |
+| evidence source temporarily missing | `RUNTIME_RECOVERY` |
+| effect may have occurred | `RUNTIME_RECOVERY` |
+| provider timeout/schema invalid | `RUNTIME_RECOVERY` |
+| effect proven did not occur and other choices exist | `STEP_PLANNER` |
+| field validation / business rule rejection | `STEP_PLANNER` |
+| active step impossible | `TASK_PLANNER` |
+| plan assumption invalid | `TASK_PLANNER` |
+| dependency or step structure invalid | `TASK_PLANNER` |
+| missing user-owned value | `USER` |
+| genuine semantic ambiguity | `USER` |
+| approval / credential required | `USER` |
+| policy denied / unsafe / exhausted / unknown | `TERMINAL` |
+
+## 12B.7 Architecture gates
+
+```yaml
+failure_routing:
+  failure_contract_count: 1
+  owner_router_count: 1
+  owner_enum_count: 1
+  full_history_in_statekernel: false
+runtime_recovery:
+  accepts_only_runtime_owned_failures: true
+  task_replan_authority: false
+  step_planner_authority: false
+  user_interaction_authority: false
+  terminal_authority: false
+step_planner:
+  output: choice_id_only
+  free_action_generation: prohibited
+  target_generation: prohibited
+  parameter_generation: prohibited
+  expected_effect_generation: prohibited
+  evidence_generation: prohibited
+task_planner:
+  modifies_plan_only_through_taskplan_authority: true
+progress:
+  already_satisfied_is_failure: false
+state:
+  full_failure_history: trace_only
+  full_recovery_history: trace_only
+migration:
+  new_router_framework: prohibited
+  second_failure_model: prohibited
+  second_recovery_state_machine: prohibited
+  same_unit_legacy_deletion: required
+```
 
 ---
 
