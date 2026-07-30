@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-4 production PlannerResponse/provider cutover | SAR-4B public PlannerPort response contract is active after `3ccea65`; SAR-5 overall remains `in_progress` | Continue deleting legacy `PlannerDecision` / `PlannerContext` production consumption after public PlannerPort now returns closed `PlannerResponse`. StateKernel progress authority, finish authority, provider schema, and benchmark adapter may not change unless explicitly admitted by the SAR-4 packet. | SAR-7 single progress/finish authority; SAR-5 canonical scope deletion is also mandatory before SAR-7 |
+| Horizontal | SAR-7 single progress / finish authority | SAR-4 standard Generalist and Parent Planner implementations now return closed `PlannerResponse`; SAR-5 removed legacy terminal-readiness admission from the default PlanningRequest path; SAR-6A records canonical `ActionOutcomeRecorded`; SAR-7A extracted verifier-backed progress commit from `RunCoordinator`. | Continue replacing legacy planner-done / TaskSkill direct completion paths with one progress/finish owner, then delete remaining compatibility finish branches. | SAR-8 recovery unification and SAR-9 phase extraction |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -82,15 +82,17 @@ Current implementation-bearing review identity:
 
 ```yaml
 current_head:
-  revision: active local change after 3ccea65
-  role: sar_4b_plannerport_response_contract_cutover
+  revision: a35cd15
+  role: sar_7a_verifier_backed_progress_flow_extraction
 sar_4:
-  plannerport_response_contract: active_local_change
-  legacy_plannerdecision_consumer: pending_deletion
+  plannerport_response_contract: complete
+  standard_generalist_response_contract: complete
+  parent_adapter_response_contract: complete
+  legacy_plannerdecision_consumer: compatibility_window
   plannercontext_provider_path: pending_deletion
   legacy_three_argument_planners: compatibility_window
 sar_6:
-  action_outcome_recording: local_candidate
+  action_outcome_recording: local_candidate_at_2338432
   default_final_action_event: ActionOutcomeRecorded
   legacy_action_completed_default_event: removed
   progress_authority_changed: false
@@ -98,20 +100,28 @@ sar_6:
 sar_5:
   unified_observation_contract: foundation_complete
   exact_scope_gate: complete_for_selected_slice
-  canonical_scope_resolver: pending
-  action_family_and_destination_scope: pending
-  terminal_framework_deletion: pending
+  action_family_and_destination_scope: implemented_for_exact_active_step
+  terminal_framework_default_path: removed
+  canonical_scope_resolver: compatibility_fail_open_pending
   behavioral_exit_evidence: pending
   overall: in_progress
+sar_7:
+  verifier_backed_progress_flow_extracted: local_candidate
+  coordinator_progress_inline_branch_removed: true
+  planner_done_finish_path: pending_replacement
+  taskskill_direct_finish_path: pending_replacement
+  progress_authority_changed: false
+  finish_authority_changed: false
 coordinator_assessment:
   no_growth: true
-  actual_reduction: false
-  current_length_expected: true
-  actual_reduction_stage: sar_7_to_sar_9
+  actual_reduction: true
+  coordinator_lines: 3400
+  run_sync_lines: 1971
+  methods: 26
+  remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-4 production PlannerResponse/provider cutover and legacy deletion
-  - SAR-5 canonical observation/scope cutover and terminal-framework deletion
-  - SAR-7 single progress and finish
+  - SAR-7B replace planner-done finish path
+  - SAR-7C replace TaskSkill direct completion path
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
 hard_guardrails:
