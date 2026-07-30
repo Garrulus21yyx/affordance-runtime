@@ -776,21 +776,11 @@ async def _runtime_action_choice_decision(
         observation=UnifiedObservationView.from_planner_observation(request.observation),
     )
     if isinstance(choice_result, ActionChoiceFailure):
-        return PlannerDecision(
-            reason=choice_result.reason_code,
-            planner_context={
-                "task_revision": context.task_revision,
-                "state_version": context.state_version,
-                "snapshot_id": context.snapshot_id,
-                "affordance_count": len(context.affordances),
-                "planner_profile": planner_profile.value,
-                "action_choice_failure": {
-                    "kind": choice_result.kind.value,
-                    "reason_code": choice_result.reason_code,
-                    "disposition": choice_result.disposition.value,
-                },
-                **({"planner_admission": planner_admission} if planner_admission else {}),
-            },
+        return _action_choice_failure_decision(
+            choice_result,
+            context=context,
+            planner_profile=planner_profile,
+            planner_admission=planner_admission,
         )
     selection_result = ActionChoiceDispatcher().choose(choice_result, planner=planner)
     selection = (
@@ -799,7 +789,12 @@ async def _runtime_action_choice_decision(
         else selection_result
     )
     if isinstance(selection, ActionChoiceFailure):
-        return None
+        return _action_choice_failure_decision(
+            selection,
+            context=context,
+            planner_profile=planner_profile,
+            planner_admission=planner_admission,
+        )
     selected_choice = ActionSelectionValidator().validate(selection, choice_result)
     producer_id = (
         "runtime-action-choice"
@@ -819,6 +814,31 @@ async def _runtime_action_choice_decision(
         planner_admission=planner_admission,
         producer_id=producer_id,
         reason=reason,
+    )
+
+
+def _action_choice_failure_decision(
+    failure: ActionChoiceFailure,
+    *,
+    context: PlannerContext,
+    planner_profile: GeneralistPlannerProfile,
+    planner_admission: dict[str, object],
+) -> PlannerDecision:
+    return PlannerDecision(
+        reason=failure.reason_code,
+        planner_context={
+            "task_revision": context.task_revision,
+            "state_version": context.state_version,
+            "snapshot_id": context.snapshot_id,
+            "affordance_count": len(context.affordances),
+            "planner_profile": planner_profile.value,
+            "action_choice_failure": {
+                "kind": failure.kind.value,
+                "reason_code": failure.reason_code,
+                "disposition": failure.disposition.value,
+            },
+            **({"planner_admission": planner_admission} if planner_admission else {}),
+        },
     )
 
 

@@ -241,7 +241,7 @@ class ActionChoiceDispatcher:
         result: ActionChoiceBuildResult,
         *,
         planner: StepChoicePlannerPort,
-    ) -> ActionSelection | ActionChoiceFailure | Awaitable[ActionSelection]:
+    ) -> ActionSelection | ActionChoiceFailure | Awaitable[ActionSelection | ActionChoiceFailure]:
         if isinstance(result, ActionChoiceFailure):
             return result
         if len(result.choices) == 1:
@@ -258,16 +258,34 @@ class ActionChoiceDispatcher:
         selection = planner.select(request)
         if hasattr(selection, "__await__"):
             return _await_validated_selection(cast(Awaitable[ActionSelection], selection), result)
-        ActionSelectionValidator().validate(selection, result)
+        try:
+            ActionSelectionValidator().validate(selection, result)
+        except ValueError:
+            return ActionChoiceFailure(
+                kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
+                reason_code="invalid_action_choice_selection",
+            )
         return selection
 
 
 async def _await_validated_selection(
     selection: Awaitable[ActionSelection],
     choices: ActionChoiceSet,
-) -> ActionSelection:
-    resolved = await selection
-    ActionSelectionValidator().validate(resolved, choices)
+) -> ActionSelection | ActionChoiceFailure:
+    try:
+        resolved = await selection
+    except ValueError:
+        return ActionChoiceFailure(
+            kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
+            reason_code="invalid_action_choice_selection",
+        )
+    try:
+        ActionSelectionValidator().validate(resolved, choices)
+    except ValueError:
+        return ActionChoiceFailure(
+            kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
+            reason_code="invalid_action_choice_selection",
+        )
     return resolved
 
 

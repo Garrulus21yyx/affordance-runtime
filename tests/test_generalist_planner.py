@@ -445,6 +445,68 @@ def test_generalist_choice_selector_rejects_unknown_choice_id() -> None:
         asyncio.run(GeneralistLMPlanner(UnknownChoiceModel()).select(request))
 
 
+def test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection() -> None:
+    @dataclass
+    class UnknownChoiceModel:
+        provider: str = "fixed"
+        model: str = "choice-selector"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate({"choice_id": "choice:missing"})
+
+    request = _request_with_active_step(
+        criterion=(
+            StateCriterion(
+                criterion_id="criterion:first",
+                source_refs=(_request_source(),),
+                subject="semantic:first",
+                relation=CriterionRelation.EQUALS,
+                expected_value="Alice",
+                evidence_policy=_request_policy(),
+            ),
+            StateCriterion(
+                criterion_id="criterion:second",
+                source_refs=(_request_source(),),
+                subject="semantic:second",
+                relation=CriterionRelation.EQUALS,
+                expected_value="Alice",
+                evidence_policy=_request_policy(),
+            ),
+        ),
+        affordance=(
+            PlannerAffordanceView(
+                target_id="semantic:first",
+                surface="dom",
+                role="textbox",
+                label="First",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            ),
+            PlannerAffordanceView(
+                target_id="semantic:second",
+                surface="dom",
+                role="textbox",
+                label="Second",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            ),
+        ),
+    )
+
+    response = asyncio.run(GeneralistLMPlanner(UnknownChoiceModel()).propose(request))
+
+    assert isinstance(response, PlannerUnsupportedResponse)
+    assert response.reason_code == "invalid_action_choice_selection"
+
+
 def _assert_strict_semantic_resolver_retired(decision: Any) -> None:
     assert decision.proposal is not None
     assert decision.proposal.action_kind == PlannerActionKind.ASK_USER

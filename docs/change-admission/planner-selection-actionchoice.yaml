@@ -58,6 +58,9 @@ scope:
     - Strict public PlanningRequest path returns PlannerUnsupportedResponse for
       Runtime ActionChoiceFailure without calling the model or falling back to
       free PlannerProposal generation.
+    - Invalid ActionChoice selection from the Step Planner is converted to a
+      typed ActionChoiceFailure / PlannerUnsupportedResponse instead of raising
+      through the dispatcher or falling back to free PlannerProposal generation.
     - PlannerUnsupportedResponse compatibility conversion preserves the typed
       unsupported reason_code in PlannerDecision.planner_context so the current
       Coordinator consumer can route ActionChoice failures into recovery
@@ -118,6 +121,9 @@ validation:
   generalist_dispatcher_cutover:
     - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_exact_text_actionchoice tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_slider_actionchoice tests/test_generalist_planner.py::test_strict_planner_selects_choice_id_for_multiple_actionchoices tests/test_generalist_planner.py::test_generalist_choice_selector_rejects_unknown_choice_id -q --tb=short --maxfail=10
   generalist_dispatcher_cutover_result: 17_passed
+  invalid_selection_typed_failure:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_selects_choice_id_for_multiple_actionchoices tests/test_generalist_planner.py::test_generalist_choice_selector_rejects_unknown_choice_id tests/test_generalist_planner.py::test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call -q --tb=short --maxfail=10
+  invalid_selection_typed_failure_result: 17_passed
   generalist_dispatcher_architecture:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_generalist_uses_dispatcher_not_local_selection_branching -q --tb=short
   generalist_dispatcher_architecture_result: 1_passed

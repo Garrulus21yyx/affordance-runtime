@@ -542,9 +542,11 @@ def test_action_choice_dispatcher_validates_async_planner_selection() -> None:
     from affordance_runtime.action_choice import (
         ActionChoice,
         ActionChoiceDispatcher,
+        ActionChoiceFailure,
         ActionChoiceSet,
         ActionSelection,
     )
+    from affordance_runtime.recovery_protocol import FailureKind
 
     class Planner:
         async def select(self, request: object) -> ActionSelection:
@@ -589,5 +591,8 @@ def test_action_choice_dispatcher_validates_async_planner_selection() -> None:
 
     result = ActionChoiceDispatcher().choose(choices, planner=Planner())
 
-    with pytest.raises(ValueError, match="unknown choice_id"):
-        asyncio.run(result)
+    resolved = asyncio.run(result)
+
+    assert isinstance(resolved, ActionChoiceFailure)
+    assert resolved.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
+    assert resolved.reason_code == "invalid_action_choice_selection"
