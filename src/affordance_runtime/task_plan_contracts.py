@@ -146,6 +146,7 @@ class TaskPlanRevisionRequest:
     observation_refs: tuple[str, ...]
     remaining_budget_steps: int
     operation_class: OperationClass = OperationClass.READ_ONLY
+    task_id: str = ""
 
     def __post_init__(self) -> None:
         _validate_request_identity(
@@ -165,6 +166,8 @@ class TaskPlanRevisionRequest:
             raise ValueError("affected step must exist in previous plan")
         if not isinstance(self.operation_class, OperationClass):
             raise ValueError("unsupported operation class")
+        if self.task_id:
+            _require_nonblank("task_id", self.task_id)
         _require_unique_nonblank("observation refs", self.observation_refs)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")

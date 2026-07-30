@@ -14,6 +14,10 @@ from typing import Awaitable, Mapping, Protocol, cast
 
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.simplified_step_projection import (
+    LegacyStepProjectionStatus,
+    project_state_legacy_task_plan_to_step_view,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_contracts import (
@@ -21,6 +25,8 @@ from affordance_runtime.task_plan_contracts import (
     PlanCandidate,
     TaskPlanAuthority,
     TaskPlanDecisionStatus,
+    TaskPlanRevisionRequest,
+    TaskPlanRevisionTrigger,
 )
 from affordance_runtime.task_planning import (
     CriteriaEvidenceLedgerEntry,
@@ -153,7 +159,43 @@ class TaskPlanLifecycle:
         if previous_plan is None or state.plan_progress is None:
             raise ValueError("cannot replan without an active TaskPlan")
         context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
-        plan = _resolve_task_plan(self.planner.plan(context))
+        candidate_value = _initial_plan_candidate(self.planner, context)
+        if candidate_value is None:
+            plan = _resolve_task_plan(self.planner.plan(context))
+        else:
+            projection = project_state_legacy_task_plan_to_step_view(
+                task_spec=task_spec,
+                state=state,
+            )
+            if (
+                projection.status != LegacyStepProjectionStatus.PROJECTED
+                or projection.task_plan_view is None
+                or projection.step_progress_view is None
+            ):
+                raise ValueError("cannot admit replacement without projected previous plan")
+            candidate = _resolve_plan_candidate(candidate_value)
+            decision = self.authority.admit_revision(
+                TaskPlanRevisionRequest(
+                    task_spec_identity=task_spec.identity,
+                    task_revision=task_spec.revision,
+                    evaluated_at_state_version=state.version,
+                    previous_plan=projection.task_plan_view,
+                    previous_progress=projection.step_progress_view,
+                    trigger=TaskPlanRevisionTrigger(
+                        kind=_revision_trigger_kind(reason),
+                        reason_code=reason,
+                        affected_step_id=state.plan_progress.active_subgoal_id,
+                    ),
+                    operation_class=task_spec.operation_class,
+                    observation_refs=(snapshot.observation.snapshot_id,),
+                    remaining_budget_steps=budget.max_steps,
+                    task_id=task_spec.task_id,
+                ),
+                candidate,
+            )
+            if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
+                raise ValueError("replacement TaskPlan candidate was not accepted")
+            plan = decision.plan
         plan = _carry_forward_completed_subgoals(
             plan,
             previous_plan,
@@ -397,6 +439,18 @@ def _resolve_plan_candidate(value: PlanCandidate | Awaitable[PlanCandidate]) -> 
     if not inspect.isawaitable(value):
         return value
     return cast(PlanCandidate, resolve_awaitable(value))
+
+
+def _revision_trigger_kind(reason: str) -> str:
+    if "budget" in reason:
+        return "action_budget_exhausted"
+    if "verif" in reason:
+        return "criterion_unverifiable"
+    if "assumption" in reason:
+        return "plan_assumption_invalid"
+    if "requirement" in reason:
+        return "task_requirements_changed"
+    return "step_unexecutable"
 
 
 def _carry_forward_completed_subgoals(

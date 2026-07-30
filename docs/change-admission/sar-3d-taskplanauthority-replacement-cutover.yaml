@@ -1,0 +1,58 @@
+slice_id: sar-3d-taskplanauthority-replacement-cutover
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: bea01f8f14d6996e4e3049c7f55bcbf9037afd45
+change_type: substitutive_replacement_plan_admission_refactor
+task_execution_semantics_changed: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+planner_contract_changed: false
+provider_prompt_or_schema_changed: false
+benchmark_adapter_changed: false
+pr_breadth: not_required
+
+single_primary_owner:
+  Replacement TaskPlan admission through TaskPlanAuthority
+
+included:
+  - TaskPlanLifecycle replacement path accepts candidate-capable planner outputs through TaskPlanAuthority.admit_revision
+  - revision admission binds previous plan identity, previous progress identity, state version, trigger reason, and deterministic supersession lineage
+  - candidate replacement admission requires exact legacy Step projection of the installed previous TaskPlan and PlanProgress
+  - legacy replacement planners without candidate support remain behind the existing explicit compatibility fallback
+  - StateKernel.replace_task_plan remains the sole mutable replacement commit point
+
+excluded:
+  - Coordinator replace rewiring
+  - StateKernel TaskPlan/PlanProgress schema changes
+  - TaskProgress or active-step authority cutover
+  - SubgoalSpec production deletion
+  - PlanProgress production deletion
+  - finish authority changes
+  - provider prompt/schema changes
+  - benchmark adapter changes
+  - PR breadth or promotion claim
+
+remaining_sar_3_work:
+  - legacy initial and replacement compatibility fallback must be retired after all standard generators produce candidates
+  - legacy task_plan_flow replacement round trip must be removed
+  - StateKernel must cut over to canonical TaskPlan/TaskProgress naming
+  - SubgoalSpec and PlanProgress production imports must reach zero
+
+validation:
+  focused_lifecycle_tests: pass
+  focused_task_plan_contract_tests: pass
+  focused_generator_tests: pass
+  focused_task_plan_flow_tests: pass
+  architecture_tests: pass
+  full_pytest: pass
+  ruff: pass
+  mypy: pass
+  uv_build: pass
+  diff_check: pass
+
+closure_status: local_partial_candidate
+remote_ci_evidence: absent
+promotion_status: held
+next_slice_after_closure: sar-3e-legacy-taskplan-progress-retirement-plan

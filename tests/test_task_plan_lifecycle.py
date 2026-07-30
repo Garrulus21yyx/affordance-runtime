@@ -7,6 +7,8 @@ from affordance_runtime.contracts import Observation
 from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion, StepSpec
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
+    EvidenceKind,
+    EvidenceRequirement,
     OperationClass,
     SourcedTaskClaim,
     TaskClaimKind,
@@ -127,6 +129,15 @@ def _obligation_task() -> TaskSpec:
                 relation=TaskObligationRelation.IS_COMPLETED,
                 claim_ids=(claim.claim_id,),
                 evidence_requirements=("saved state is independently observed",),
+                typed_evidence_requirements=(
+                    EvidenceRequirement(
+                        kind=EvidenceKind.DOM_STATE,
+                        subject="setting",
+                        relation=TaskObligationRelation.IS_COMPLETED,
+                        minimum_strength="independent",
+                        source_constraints=("dom_state",),
+                    ),
+                ),
                 blocking=True,
                 terminal=True,
             ),
@@ -558,6 +569,36 @@ def test_replacement_carries_forward_exact_completed_spec_without_mutating_state
     assert state.plan_progress.completed_subgoal_ids == ["first"]
     assert state.plan_progress.evidence_by_subgoal == {"first": ["evidence:first"]}
     assert state.activate_next_subgoal() == "setting control is saved"
+
+
+def test_lifecycle_replacement_uses_taskplan_authority_revision_admission() -> None:
+    task = _obligation_task()
+    state = StateKernel(task_id=task.task_id, goal=task.objective)
+    snapshot = _snapshot()
+    state.remember_observation(snapshot.observation)
+    context = TaskPlanLifecycle.build_context(task, state, snapshot, Limits(), reason="initial")
+    previous = PlanningRouter().plan(context)
+    state.install_task_plan(previous)
+    state.activate_next_subgoal()
+    previous_version = state.version
+
+    transition = TaskPlanLifecycle(CandidateInitialPlanner()).propose_replacement(
+        task,
+        state,
+        snapshot,
+        Limits(),
+        reason="subgoal_action_budget_exhausted",
+    )
+
+    assert transition.validation.status == TaskPlanValidationStatus.ACCEPT
+    assert transition.previous_plan == previous
+    assert transition.plan.plan_version == previous.plan_version + 1
+    assert transition.plan.supersedes_plan_id == previous.plan_id
+    assert transition.plan.plan_id != previous.plan_id
+    assert transition.plan.based_on_state_version == previous_version
+    assert state.task_plan == previous
+    text = getsource(TaskPlanLifecycle.propose_replacement)
+    assert "admit_revision" in text
 
 
 def test_replacement_discards_model_redefinition_of_completed_spec() -> None:
