@@ -59,7 +59,7 @@ class SemanticTextInputConstraint:
     satisfied: bool = False
 
 
-CandidateT = TypeVar("CandidateT", bound=PlannerCandidateModel)
+CandidateT = TypeVar("CandidateT", bound=Any)
 
 CandidateIssueFn = Callable[[CandidateT, PlannerContext], str]
 CandidateBindFn = Callable[[CandidateT, PlannerContext], PlannerProposal]

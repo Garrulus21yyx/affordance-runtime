@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass, replace
-from typing import Any, Sequence, TypeVar, cast
+from typing import Any, Sequence, TypeVar
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -206,6 +206,60 @@ def _request_with_active_step(
     )
 
 
+def _request_without_active_step() -> PlanningRequest:
+    return PlanningRequest(
+        identity=PlanningRequestIdentity(
+            task_spec_identity="task:identity",
+            task_revision=1,
+            evaluated_at_state_version=7,
+            snapshot_id="snapshot:1",
+            page_revision="page:1",
+            environment_revision="env:1",
+        ),
+        task=PlannerTaskView(
+            task_spec_identity="task:identity",
+            task_revision=1,
+            objective="Click the current target",
+            constraints=(),
+            capabilities=(),
+            task_completion_criterion=None,
+            task_completion_projection_status="pending",
+        ),
+        step=PlannerStepView(
+            plan=None,
+            progress=None,
+            active_step=None,
+            activity_status=StepActivityStatus.NO_PLAN,
+            projection_status=PlannerStepProjectionStatus.NO_PLAN,
+        ),
+        observation=PlannerObservationView(
+            snapshot_id="snapshot:1",
+            page_revision="page:1",
+            environment_revision="env:1",
+            observed_text="",
+            affordances=(
+                PlannerAffordanceView(
+                    target_id="semantic:target",
+                    surface="dom",
+                    role="button",
+                    label="Target",
+                    supported_actions=("activate",),
+                    state={"enabled": True, "visible": True},
+                ),
+            ),
+            artifact_refs=(),
+        ),
+        remaining_budget=RuntimeBudgetView(
+            steps=3,
+            observations=3,
+            recoveries=1,
+            effectful_actions=3,
+            model_calls=1,
+        ),
+        permitted_action_kinds=(PlannerActionKind.ACTIVATE.value,),
+    )
+
+
 @dataclass
 class NoCallModel:
     provider: str = "fixed"
@@ -315,6 +369,47 @@ def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
     assert isinstance(response, PlannerUnsupportedResponse)
     assert response.reason_code == "no_feasible_action_choice"
     assert planner.model_call_count == 0
+
+
+def test_strict_planner_model_schema_excludes_effect_evidence_and_completion_authority() -> None:
+    @dataclass
+    class SchemaCapturingModel:
+        provider: str = "fixed"
+        model: str = "strict-schema"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+        schema_fields: tuple[str, ...] = ()
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, config
+            self.schema_fields = tuple(output_schema.model_fields)
+            return output_schema.model_validate(
+                {
+                    "action_kind": "activate",
+                    "target_affordance_id": "semantic:target",
+                    "parameters": {},
+                }
+            )
+
+    model = SchemaCapturingModel()
+    response = asyncio.run(GeneralistLMPlanner(model).propose(_request_without_active_step()))
+
+    assert isinstance(response, PlannerProposalResponse)
+    forbidden = {
+        "expected_effects",
+        "evidence_requirements",
+        "done",
+        "requires_clarification",
+        "result",
+        "uncertainty",
+        "subgoal",
+    }
+    assert forbidden.isdisjoint(model.schema_fields)
 
 
 def test_strict_planner_reports_typed_failure_when_choice_target_unresolved() -> None:
@@ -1398,15 +1493,18 @@ class ProposalModel:
             GENERALIST_PLANNER_PROMPT_VERSION,
             COMPATIBILITY_PLANNER_PROMPT_VERSION,
         }
-        return output_schema.model_validate(
-            {
-                "subgoal": "Save the selected theme",
-                "action_kind": PlannerActionKind.ACTIVATE,
-                "target_affordance_id": "dom_button_1",
-                "expected_effects": ["theme is saved"],
-                "evidence_requirements": ["saved theme evidence"],
-            }
-        )
+        payload: dict[str, object] = {
+            "action_kind": PlannerActionKind.ACTIVATE,
+            "target_affordance_id": "dom_button_1",
+            "parameters": {},
+        }
+        if "subgoal" in output_schema.model_fields:
+            payload["subgoal"] = "Save the selected theme"
+        if "expected_effects" in output_schema.model_fields:
+            payload["expected_effects"] = ["theme is saved"]
+        if "evidence_requirements" in output_schema.model_fields:
+            payload["evidence_requirements"] = ["saved theme evidence"]
+        return output_schema.model_validate(payload)
 
 
 @dataclass
@@ -1962,7 +2060,11 @@ def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(CandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(CandidateModel()).propose_legacy(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
     )
 
     assert decision.proposal is not None
@@ -2008,12 +2110,9 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
         async def generate_structured(
             self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
         ) -> T:
-            del messages, output_schema, config
-            return cast(
-                T,
-                PlannerProposalCandidate.model_validate(
-                    {"action_kind": "type_text", "parameters": {"text": "private-value"}}
-                ),
+            del messages, config
+            return output_schema.model_validate(
+                {"action_kind": "type_text", "parameters": {"text": "private-value"}}
             )
 
     with pytest.raises(StructuredModelError) as exc_info:

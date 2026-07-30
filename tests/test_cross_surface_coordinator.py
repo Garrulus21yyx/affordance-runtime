@@ -19,7 +19,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import VisualExecutor, WotExecutor
-from affordance_runtime.generalist_planner import GeneralistLMPlanner
+from affordance_runtime.generalist_planner import GeneralistLMPlanner, GeneralistPlannerProfile
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import ContractBuilder, ContractRequirements, PlannerActionKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
@@ -96,9 +96,7 @@ class GeneralistSurfaceModel:
         payload = {
             "action_kind": PlannerActionKind.FINISH if completed else PlannerActionKind.ACTIVATE,
             "target_affordance_id": "" if completed else context["affordances"][0]["id"],
-            "done": completed,
-            "result": {"verified": True} if completed else {},
-            "expected_effects": ["shared state enabled"],
+            "parameters": {},
         }
         return output_schema.model_validate(payload)
 
@@ -202,7 +200,10 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
         result = asyncio.run(
             RunCoordinator(
                 StaticObserver(affordance),
-                GeneralistLMPlanner(model),
+                GeneralistLMPlanner(
+                    model,
+                    planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
+                ),
                     executor,
                     contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
                     task_planner=None,
@@ -213,7 +214,7 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
         assert "PlannerProposalProduced" in events
         assert "ContractBuilt" in events
         validated = next(node for node in result.trace.nodes if node.kind == "PlannerProposalValidated")
-        assert validated.payload["provenance"]["profile_id"] == "strict-generalist"
+        assert validated.payload["provenance"]["profile_id"] == "historical-compatibility"
         assert "semantic_compiler" not in validated.payload
         assert result.status == RuntimeStep.DONE, result.error_code
         return result.status
