@@ -21,7 +21,7 @@ from affordance_runtime.recovery_coordinator import (
     RecoverySelectionContext,
 )
 from affordance_runtime.recovery_decision_compatibility import (
-    legacy_plan_from_recovery_decision,
+    legacy_command_from_recovery_decision,
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassification,
@@ -103,17 +103,14 @@ class RecoveryPhase:
             recovery_context,
             current_state_version=state.version,
         )
-        plan = legacy_plan_from_recovery_decision(
+        command = legacy_command_from_recovery_decision(
             decision,
-            failure,
             effect_status=failure.effect_status,
-            profile_digest=runtime_profile_digest,
             gap_ids=recovery_context.gap_ids,
         )
         state.current_failure = failure
         state.current_recovery_decision = decision
         state.current_recovery_outcome = None
-        command = plan.commands[0]
         state.current_recovery_command = command
         state.attempted_recovery_strategy_ids.add(decision.strategy_key)
         state.recovery_count += 1

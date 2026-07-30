@@ -66,6 +66,9 @@ scope:
     - TaskPlanLifecycle recovery summaries no longer read legacy
       current_recovery_plan; they use canonical current_recovery_decision kind
       and re-entry phase.
+    - RecoveryPhase no longer constructs RecoveryPlan through the compatibility
+      adapter; it projects only the pending RecoveryCommand needed by remaining
+      dispatcher/completion compatibility paths.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -133,9 +136,15 @@ validation:
   statekernel_no_legacy_recovery_plan_gate:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short
   statekernel_no_legacy_recovery_plan_gate_result: 1_passed
+  recovery_phase_command_adapter_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter -q --tb=short
+  recovery_phase_command_adapter_gate_result: 1_passed
   pending_command_cutover_focused:
     - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_obligation_progress_ledger.py tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short --maxfail=20
   pending_command_cutover_focused_result: 63_passed
+  command_adapter_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_obligation_progress_ledger.py tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter -q --tb=short --maxfail=20
+  command_adapter_focused_result: 64_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -147,5 +156,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_pending_command_state_local_candidate
+status: sar_8c_command_adapter_local_candidate
 next_slice: planner-selection-simplification-actionchoice

@@ -40,7 +40,38 @@ def legacy_plan_from_recovery_decision(
 ) -> RecoveryPlan:
     """Project one canonical decision to the legacy single-command shape."""
 
-    command = RecoveryCommand(
+    command = legacy_command_from_recovery_decision(
+        decision,
+        effect_status=effect_status,
+        profile_artifact_id=profile_artifact_id,
+        gap_ids=gap_ids,
+    )
+    return RecoveryPlan(
+        plan_id=f"recovery-plan-{uuid4().hex}",
+        failure_id=failure.failure_id,
+        based_on_state_version=decision.based_on_state_version,
+        semantic_family_key=failure.semantic_family_key,
+        commands=(command,),
+        stop_conditions=(
+            "declared_change_applied",
+            "effect_status_requires_inspection",
+            "no_safe_changed_strategy",
+            "recovery_budget_exhausted",
+        ),
+        profile_digest=profile_digest,
+    )
+
+
+def legacy_command_from_recovery_decision(
+    decision: RecoveryDecision,
+    *,
+    effect_status: EffectStatus,
+    profile_artifact_id: str = "",
+    gap_ids: tuple[str, ...] = (),
+) -> RecoveryCommand:
+    """Project one canonical decision to the temporary legacy command shape."""
+
+    return RecoveryCommand(
         command_id=decision.decision_id.replace("recovery-decision-", "recovery-command-", 1),
         failure_id=decision.failure_id,
         based_on_state_version=decision.based_on_state_version,
@@ -62,20 +93,6 @@ def legacy_plan_from_recovery_decision(
         compensation_contract_id=decision.compensation_contract_id,
         gap_ids=gap_ids if decision.kind == RecoveryKind.ACTIVE_PERCEPTION else (),
         profile_artifact_id=profile_artifact_id,
-    )
-    return RecoveryPlan(
-        plan_id=f"recovery-plan-{uuid4().hex}",
-        failure_id=failure.failure_id,
-        based_on_state_version=decision.based_on_state_version,
-        semantic_family_key=failure.semantic_family_key,
-        commands=(command,),
-        stop_conditions=(
-            "declared_change_applied",
-            "effect_status_requires_inspection",
-            "no_safe_changed_strategy",
-            "recovery_budget_exhausted",
-        ),
-        profile_digest=profile_digest,
     )
 
 
