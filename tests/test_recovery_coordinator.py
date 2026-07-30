@@ -1,7 +1,5 @@
 import pytest
-from pydantic import ValidationError
 
-from affordance_runtime.contracts import RiskLevel
 from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
@@ -11,34 +9,25 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.recovery_commands import (
-    RecoveryBudgetCost,
-    RecoveryChangeDimension,
-    RecoveryCommand,
-    RecoveryCommandKind,
-    RecoveryDelta,
-    RecoveryPlanValidator,
-    RecoveryReceipt,
-    RecoveryReentryPhase,
-)
 from affordance_runtime.recovery_coordinator import (
     RecoveryCoordinator,
     RecoveryHistoryItem,
     RecoverySelectionContext,
-)
-from affordance_runtime.recovery_decision_compatibility import (
-    legacy_plan_from_recovery_decision,
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassificationFacts,
     FailureDisposition,
     FailureKind,
     PlannerDeferralKind,
+    RecoveryBudgetCost,
+    RecoveryDecision,
+    RecoveryDimension,
     RecoveryKind,
+    RuntimePhase,
     classify_failure,
 )
 
-ALL_COMMANDS = frozenset(RecoveryCommandKind)
+ALL_COMMANDS = frozenset(RecoveryKind)
 
 
 def _decision(
@@ -46,7 +35,7 @@ def _decision(
     context: RecoverySelectionContext,
     *,
     current_state_version: int = 3,
-):
+) -> RecoveryDecision:
     return RecoveryCoordinator().decide(
         failure,
         classify_failure(
@@ -58,22 +47,6 @@ def _decision(
         ),
         context,
         current_state_version=current_state_version,
-    )
-
-
-def _plan(
-    failure: FailureEnvelope,
-    context: RecoverySelectionContext,
-    *,
-    current_state_version: int = 3,
-):
-    return legacy_plan_from_recovery_decision(
-        _decision(failure, context, current_state_version=current_state_version),
-        failure,
-        effect_status=failure.effect_status,
-        profile_digest=context.accepted_profile_digest,
-        profile_artifact_id=context.preferred_profile_artifact_id,
-        gap_ids=context.gap_ids,
     )
 
 
@@ -130,23 +103,23 @@ def _context(**updates: object) -> RecoverySelectionContext:
 
 def test_phase_general_coordinator_selects_safe_primary_strategy() -> None:
     expected = {
-        FailurePhase.INTAKE: RecoveryCommandKind.CLARIFY_INTENT,
-        FailurePhase.OBSERVATION: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.FUSION: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.TASK_PLANNING: RecoveryCommandKind.COMPACT_CONTEXT,
-        FailurePhase.STEP_PLANNING: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.PROPOSAL_VALIDATION: RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
-        FailurePhase.GROUNDING_BINDING: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.PREFLIGHT: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.EXECUTION_NOT_DISPATCHED: RecoveryCommandKind.REROUTE,
-        FailurePhase.VERIFICATION: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        FailurePhase.PROVIDER_CONTEXT: RecoveryCommandKind.COMPACT_CONTEXT,
-        FailurePhase.SKILL_ACTIVATION: RecoveryCommandKind.REPLAN_STEP,
+        FailurePhase.INTAKE: RecoveryKind.CLARIFY_INTENT,
+        FailurePhase.OBSERVATION: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.FUSION: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.TASK_PLANNING: RecoveryKind.COMPACT_CONTEXT,
+        FailurePhase.STEP_PLANNING: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.PROPOSAL_VALIDATION: RecoveryKind.REPAIR_MODEL_SCHEMA,
+        FailurePhase.GROUNDING_BINDING: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.PREFLIGHT: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.EXECUTION_NOT_DISPATCHED: RecoveryKind.REROUTE,
+        FailurePhase.VERIFICATION: RecoveryKind.ACTIVE_PERCEPTION,
+        FailurePhase.PROVIDER_CONTEXT: RecoveryKind.COMPACT_CONTEXT,
+        FailurePhase.SKILL_ACTIVATION: RecoveryKind.REPLAN_STEP,
     }
 
     for phase, kind in expected.items():
-        plan = _plan(_failure(phase), _context(), current_state_version=3)
-        assert plan.commands[0].kind == kind
+        decision = _decision(_failure(phase), _context(), current_state_version=3)
+        assert decision.kind == kind
 
 
 def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
@@ -156,28 +129,26 @@ def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
         effect_status=EffectStatus.MAY_HAVE_OCCURRED,
     )
 
-    plan = _plan(failure, _context(), current_state_version=3)
+    decision = _decision(failure, _context(), current_state_version=3)
 
-    assert plan.commands[0].kind == RecoveryCommandKind.INSPECT_POST_STATE
-    assert plan.commands[0].changed_dimensions == (RecoveryChangeDimension.EFFECT_STATUS,)
+    assert decision.kind == RecoveryKind.INSPECT_POST_STATE
+    assert decision.changed_dimensions == (RecoveryDimension.EFFECT_STATUS,)
 
 
 def test_irreducible_missing_evidence_asks_user_when_no_probe_or_reobserve_exists() -> None:
     failure = _failure(FailurePhase.OBSERVATION)
-    plan = _plan(
+    decision = _decision(
         failure,
         _context(
-            available_commands=frozenset(
-                {RecoveryCommandKind.ASK_USER, RecoveryCommandKind.ABORT}
-            ),
+            available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
             gap_ids=(),
             user_question="Which visible control is the intended target?",
         ),
         current_state_version=3,
     )
 
-    assert plan.commands[0].kind == RecoveryCommandKind.ASK_USER
-    assert plan.commands[0].reentry_phase == RecoveryReentryPhase.WAITING_USER
+    assert decision.kind == RecoveryKind.ASK_USER
+    assert decision.reentry_phase == RuntimePhase.WAITING_USER
 
 
 def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_replan() -> None:
@@ -200,17 +171,17 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
     assert classification.disposition == FailureDisposition.RECOVERY
     assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
-    plan = _plan(failure, _context(), current_state_version=3)
+    decision = _decision(failure, _context(), current_state_version=3)
 
-    assert plan.commands[0].kind == RecoveryCommandKind.COMPACT_CONTEXT
-    assert plan.commands[0].kind not in {
-        RecoveryCommandKind.ASK_USER,
-        RecoveryCommandKind.REPLAN_STEP,
-        RecoveryCommandKind.REPLAN_TASK,
+    assert decision.kind == RecoveryKind.COMPACT_CONTEXT
+    assert decision.kind not in {
+        RecoveryKind.ASK_USER,
+        RecoveryKind.REPLAN_STEP,
+        RecoveryKind.REPLAN_TASK,
     }
 
 
-def test_planner_deferral_does_not_default_to_ask_user_when_only_user_is_available() -> None:
+def test_planner_deferral_does_not_default_to_ask_user_when_action_space_is_unknown() -> None:
     failure = _failure(
         FailurePhase.STEP_PLANNING,
         failure_class=FailureClass.PLANNING,
@@ -221,18 +192,16 @@ def test_planner_deferral_does_not_default_to_ask_user_when_only_user_is_availab
         }
     )
 
-    plan = _plan(
+    decision = _decision(
         failure,
         _context(
-            available_commands=frozenset(
-                {RecoveryCommandKind.ASK_USER, RecoveryCommandKind.ABORT}
-            ),
+            available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
             available_action_count=0,
         ),
         current_state_version=3,
     )
 
-    assert plan.commands[0].kind == RecoveryCommandKind.ABORT
+    assert decision.kind == RecoveryKind.ABORT
 
 
 def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> None:
@@ -253,7 +222,7 @@ def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> N
     assert RecoveryCoordinator().strategy_order_for_test(
         failure,
         _context(available_action_count=0),
-    ) == (RecoveryCommandKind.ABORT,)
+    ) == (RecoveryKind.ABORT,)
 
 
 def test_no_feasible_action_choice_reason_classifies_as_no_feasible_action() -> None:
@@ -293,7 +262,7 @@ def test_legacy_decision_without_proposal_fails_closed_unknown() -> None:
     assert RecoveryCoordinator().strategy_order_for_test(
         failure,
         _context(available_action_count=0),
-    ) == (RecoveryCommandKind.ABORT,)
+    ) == (RecoveryKind.ABORT,)
 
 
 def test_user_input_required_clarification_is_not_model_deferral() -> None:
@@ -345,9 +314,9 @@ def test_already_satisfied_entry_requires_typed_rejection_reason_not_message_sub
     assert classification.disposition == FailureDisposition.PROGRESS_PRECHECK
     order = RecoveryCoordinator().strategy_order_for_test(typed_failure, _context())
 
-    assert RecoveryCommandKind.REPLAN_TASK not in order
-    assert RecoveryCommandKind.REPLAN_STEP not in order
-    assert RecoveryCommandKind.ASK_USER not in order
+    assert RecoveryKind.REPLAN_TASK not in order
+    assert RecoveryKind.REPLAN_STEP not in order
+    assert RecoveryKind.ASK_USER not in order
 
 
 def test_recovery_coordinator_decide_returns_canonical_decision() -> None:
@@ -366,120 +335,78 @@ def test_recovery_coordinator_decide_returns_canonical_decision() -> None:
     assert decision.strategy_key.startswith("strategy:active_perception:")
 
 
-def test_retry_and_compensation_contracts_reject_unsafe_shortcuts() -> None:
+def test_retry_and_compensation_decisions_reject_unsafe_shortcuts() -> None:
     common = {
-        "command_id": "command-1",
+        "decision_id": "decision-1",
         "failure_id": "failure-1",
         "based_on_state_version": 3,
-        "strategy_id": "strategy:retry",
-        "expected_change": "retry one confirmed absent idempotent effect",
-        "changed_dimensions": (RecoveryChangeDimension.OBSERVATION,),
+        "strategy_key": "strategy:retry",
+        "reason_code": "runtime_failure",
+        "changed_dimensions": (RecoveryDimension.OBSERVATION,),
         "preconditions": ("effect is absent",),
         "budget_cost": RecoveryBudgetCost(observations=1, timeout_ms=5_000),
-        "timeout_ms": 5_000,
-        "risk": RiskLevel.LOW,
-        "reentry_phase": RecoveryReentryPhase.PREFLIGHT,
+        "reentry_phase": RuntimePhase.PREFLIGHT,
     }
-    with pytest.raises(ValidationError, match="idempotency"):
-        RecoveryCommand(
-            **common,
-            kind=RecoveryCommandKind.RETRY_IDEMPOTENT,
-            effect_status=EffectStatus.CONFIRMED_NOT_OCCURRED,
-        )
-    with pytest.raises(ValidationError, match="effect is absent"):
-        RecoveryCommand(
-            **common,
-            kind=RecoveryCommandKind.RETRY_IDEMPOTENT,
-            effect_status=EffectStatus.MAY_HAVE_OCCURRED,
-            idempotency_key="effect:1",
-        )
-    with pytest.raises(ValidationError, match="ActionContract"):
-        RecoveryCommand(
-            **common,
-            kind=RecoveryCommandKind.COMPENSATE,
-            effect_status=EffectStatus.CONFIRMED_OCCURRED,
-        )
+    with pytest.raises(ValueError, match="idempotent retry"):
+        RecoveryDecision(**common, kind=RecoveryKind.RETRY_IDEMPOTENT)
+    with pytest.raises(ValueError, match="compensation"):
+        RecoveryDecision(**common, kind=RecoveryKind.COMPENSATE)
 
 
-def test_validator_rejects_stale_unavailable_overbudget_and_unaccepted_profile() -> None:
+def test_coordinator_skips_stale_unavailable_overbudget_and_unaccepted_profile() -> None:
     failure = _failure(FailurePhase.TASK_PLANNING)
-    plan = _plan(failure, _context(), current_state_version=3)
-    validator = RecoveryPlanValidator()
 
-    with pytest.raises(ValueError, match="stale"):
-        validator.validate(
-            plan,
-            failure,
-            current_state_version=4,
-            available_commands=ALL_COMMANDS,
-        )
-    with pytest.raises(ValueError, match="no owning"):
-        validator.validate(
-            plan,
-            failure,
-            current_state_version=3,
-            available_commands=frozenset({RecoveryCommandKind.ABORT}),
-        )
+    unavailable = _decision(
+        failure,
+        _context(available_commands=frozenset({RecoveryKind.ABORT})),
+        current_state_version=3,
+    )
+    assert unavailable.kind == RecoveryKind.ABORT
+
     no_budget = failure.model_copy(
         update={"remaining_budgets": RemainingRecoveryBudgets()}
     )
-    with pytest.raises(ValueError, match="budgets"):
-        validator.validate(
-            plan,
-            no_budget,
-            current_state_version=3,
-            available_commands=ALL_COMMANDS,
-        )
-    forged_command = plan.commands[0].model_copy(update={"profile_artifact_id": "artifact-forged"})
-    forged_plan = plan.model_copy(update={"commands": (forged_command,)})
-    with pytest.raises(ValueError, match="unaccepted"):
-        validator.validate(
-            forged_plan,
-            failure,
-            current_state_version=3,
-            available_commands=ALL_COMMANDS,
-        )
+    overbudget = _decision(no_budget, _context(), current_state_version=3)
+    assert overbudget.kind == RecoveryKind.ABORT
+
+    decision = _decision(failure, _context(), current_state_version=7)
+    assert decision.based_on_state_version == 7
 
 
 def test_repeated_strategy_changes_or_stops_and_a_b_oscillation_is_not_reentered() -> None:
     first_failure = _failure(FailurePhase.TASK_PLANNING)
-    first = _plan(first_failure, _context(), current_state_version=3)
-    first_id = first.commands[0].strategy_id
+    first = _decision(first_failure, _context(), current_state_version=3)
+    first_id = first.strategy_key
     repeated_failure = first_failure.model_copy(
         update={"attempted_strategy_ids": (first_id,)}
     )
 
-    second = _plan(repeated_failure, _context(), current_state_version=3)
+    second = _decision(repeated_failure, _context(), current_state_version=3)
 
-    assert second.commands[0].strategy_id != first_id
+    assert second.strategy_key != first_id
     history = (
         RecoveryHistoryItem(repeated_failure.semantic_family_key, first_id, "a", "b"),
-        RecoveryHistoryItem(repeated_failure.semantic_family_key, second.commands[0].strategy_id, "b", "a"),
+        RecoveryHistoryItem(repeated_failure.semantic_family_key, second.strategy_key, "b", "a"),
     )
     oscillating = repeated_failure.model_copy(
-        update={"attempted_strategy_ids": (second.commands[0].strategy_id,)}
+        update={"attempted_strategy_ids": (second.strategy_key,)}
     )
-    third = _plan(
+    third = _decision(
         oscillating,
         _context(history=history),
         current_state_version=3,
     )
-    assert third.commands[0].strategy_id not in {first_id, second.commands[0].strategy_id}
+    assert third.strategy_key not in {first_id, second.strategy_key}
 
 
-def test_successful_recovery_requires_non_empty_changed_delta() -> None:
-    with pytest.raises(ValidationError, match="non-empty RecoveryDelta"):
-        RecoveryReceipt(
-            command_id="command-1",
+def test_recovery_outcome_requires_non_empty_changed_dimensions() -> None:
+    from affordance_runtime.recovery_protocol import RecoveryOutcome
+
+    with pytest.raises(ValueError, match="changed_dimensions"):
+        RecoveryOutcome(
+            decision_id="decision-1",
+            failure_id="failure-1",
             success=True,
-            state_before="state-a",
-            state_after="state-b",
-            changed_dimensions=(RecoveryChangeDimension.OBSERVATION,),
-        )
-    with pytest.raises(ValidationError, match="next-attempt fingerprint"):
-        RecoveryDelta(
-            previous_attempt_fingerprint="same",
-            next_attempt_fingerprint="same",
-            changed_dimensions=(RecoveryChangeDimension.OBSERVATION,),
-            explanation="claimed observation change",
+            changed_dimensions=(),
+            next_phase=RuntimePhase.OBSERVING,
         )

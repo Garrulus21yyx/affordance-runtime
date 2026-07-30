@@ -82,8 +82,6 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "planner_context.py",
     "planner_model_orchestrator.py",
     "planning_contracts.py",
-    "recovery_command_dispatcher.py",
-    "recovery_handler.py",
     "recovery_protocol.py",
     "recovery_trace_projection.py",
     "task_action_family_resolution.py",
@@ -2421,6 +2419,18 @@ def test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher() -> No
     assert "RecoveryReentryPhase" not in coordinator_source
     assert "recovery_command_dispatcher" not in phase_source
     assert "RecoveryCommandDispatcher" not in phase_source
+
+
+def test_sar_8c_legacy_recovery_protocol_files_are_deleted() -> None:
+    for filename in (
+        "recovery.py",
+        "recovery_commands.py",
+        "recovery_command_dispatcher.py",
+        "recovery_completion.py",
+        "recovery_decision_compatibility.py",
+        "recovery_handler.py",
+    ):
+        assert not (SOURCE_ROOT / filename).exists()
 
 
 def test_sar_8c_recovery_trace_projection_is_decision_based() -> None:

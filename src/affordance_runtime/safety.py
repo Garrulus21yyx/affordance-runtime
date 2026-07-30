@@ -62,8 +62,8 @@ class TaskConstraintPolicy:
             return RuntimeErrorCode.POLICY_DENIED
         # Idempotency and compensation constrain recovery after an attempted
         # effect; their absence does not revoke authority for the first,
-        # explicitly requested execution.  BoundedRecoveryPolicy fails closed
-        # rather than retrying a non-idempotent contract blindly.
+        # explicitly requested execution.  The SAR-8 recovery policy fails
+        # closed rather than retrying a non-idempotent contract blindly.
         text = " ".join(
             [contract.intent, contract.action, *contract.required_capabilities]
         ).lower()

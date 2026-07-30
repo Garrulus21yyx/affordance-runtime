@@ -18,6 +18,7 @@ from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
     EvolutionArtifactType,
+    EvolutionRecoveryContext,
     EvolutionRegistry,
     EvolutionRegistryStore,
     EvolutionStatus,
@@ -28,7 +29,7 @@ from affordance_runtime.evolution import (
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.recovery import RecoveryAction, RecoveryContext
+from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
@@ -207,7 +208,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
             "phase": failure.phase.value,
             "normalized_error": failure.message,
         },
-        response=RecoveryAction.ABORT.value,
+        response=RecoveryKind.ABORT.value,
         max_applications=1,
         required_evidence=["failure_signature", "state_revision", "events.jsonl"],
         postconditions=["no_second_effect_attempt", "cascade_depth_lte_1"],
@@ -345,7 +346,7 @@ def _replay_evidence(category: str, result: Any, *, baseline_depth: int) -> Reco
     duplicate = int(sum(item == "retry_idempotent" for item in actions) > 1)
     unsafe = int("retry" in actions and category == "safety_smoke")
     if category in {"original", "task_family"}:
-        passed = depth <= baseline_depth and actions[-1:] == [RecoveryAction.ABORT.value]
+        passed = depth <= baseline_depth and actions[-1:] == [RecoveryKind.ABORT.value]
     elif category == "global_smoke":
         passed = result.status == RuntimeStep.DONE and not actions
     else:
@@ -389,10 +390,13 @@ def _prove_recovery_rollback(
         {"selector": "#save"},
         idempotency_key="recovery-fixture:save",
     )
-    context = RecoveryContext(failure_signature=signature, task_id="recovery-original")
-    patched = profile.recovery_policy().decide(contract, None, context).action == RecoveryAction.ABORT
+    context = EvolutionRecoveryContext(failure_signature=signature, task_id="recovery-original")
+    patched = profile.recovery_policy().decide(contract, None, context).kind == RecoveryKind.ABORT
     profile.rollback(artifact_id)
-    restored = profile.recovery_policy().decide(contract, None, context).action == RecoveryAction.RETRY
+    restored = (
+        profile.recovery_policy().decide(contract, None, context).kind
+        == RecoveryKind.RETRY_IDEMPOTENT
+    )
 
     rolled_back = deepcopy(loaded)
     rolled_back.rollback(artifact_id, reason="M8.3 rollback proof", reviewer="automated-recovery-gate")

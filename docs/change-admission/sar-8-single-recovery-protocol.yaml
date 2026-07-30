@@ -18,7 +18,7 @@ preconditions:
   already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
 
 scope:
-  current_slice: sar-8c-legacy-recovery-state-deletion-cutover
+  current_slice: sar-8c-legacy-recovery-protocol-physical-deletion
   included:
     - SAR-8 FailureKind taxonomy.
     - Pure FailureEnvelope to typed FailureClassification classifier.
@@ -36,46 +36,42 @@ scope:
       through RecoveryPhase instead of the legacy RecoveryHandler.
     - StateKernel no longer stores recovery_incident or recovery_diagnostics.
     - StateKernel stores canonical current_recovery_decision and
-      current_recovery_outcome alongside a narrowed temporary
-      current_recovery_command compatibility payload.
+      current_recovery_outcome without any legacy current_recovery_command
+      compatibility payload.
     - RecoveryPhase returns RecoveryApplicationResult with classification,
-      RecoveryDecision, optional RecoveryOutcome, command_kind, and trace parent.
-    - Immediate terminal recovery records RecoveryOutcome and clears the
-      temporary current_recovery_plan.
-    - Default CLI/runtime construction no longer injects BoundedRecoveryPolicy
-      into RunCoordinator.
+      RecoveryDecision, optional RecoveryOutcome, canonical recovery_kind, and
+      trace parent.
+    - Immediate terminal recovery records RecoveryOutcome and does not create
+      or clear any legacy recovery plan state.
+    - Default CLI/runtime construction no longer injects legacy recovery policy
+      objects into RunCoordinator.
     - Task planning, planner context, local benchmark metrics, adaptive routing
       metrics, and recovery evolution diagnostics read current FailureEnvelope /
-      RecoveryPlan / RecoveryHistory evidence instead of legacy incident
+      FailureEnvelope / RecoveryHistory evidence instead of legacy incident
       diagnostics.
     - Coordinator line count, run_sync length, and RunCoordinator method count
       decreased below the SAR-8C call-site migration ratchet.
-    - RecoveryDecision to RecoveryPlan/RecoveryCommand conversion is isolated
-      in recovery_decision_compatibility.py; RecoveryPlan no longer enters
-      StateKernel, while RecoveryCommand
-      remain compatibility trace/dispatcher payloads and are no longer selected
-      by the default Coordinator recovery owner.
+    - Legacy RecoveryDecision to RecoveryPlan/RecoveryCommand conversion has
+      been physically deleted from default source.
     - RecoveryStrategySelected default RecoveryPhase trace payload now records
       canonical RecoveryDecision instead of legacy RecoveryPlan.
-    - StateKernel no longer imports or stores RecoveryPlan/current_recovery_plan;
-      cross-turn recovery compatibility is narrowed to the pending
-      current_recovery_command plus canonical current_recovery_decision.
+    - StateKernel no longer imports or stores RecoveryPlan/current_recovery_plan
+      or pending current_recovery_command compatibility state.
     - RunCoordinator.run_sync no longer reads legacy current_recovery_plan for
       pending recovery command checks; it uses canonical current_recovery_decision
       through a migration helper.
     - TaskPlanLifecycle recovery summaries no longer read legacy
       current_recovery_plan; they use canonical current_recovery_decision kind
       and re-entry phase.
-    - RecoveryPhase no longer constructs RecoveryPlan through the compatibility
-      adapter; it projects only the pending RecoveryCommand needed by remaining
-      dispatcher/completion compatibility paths.
+    - RecoveryPhase no longer constructs RecoveryPlan or RecoveryCommand
+      compatibility payloads.
     - RecoveryCoordinator no longer exposes a legacy plan() API; decide() is
       the only canonical recovery selection entrypoint.
     - Task pipeline intake recovery uses RecoveryDecision plus the temporary
       command adapter instead of RecoveryCoordinator.plan().
-    - RecoveryHandler keeps legacy RecoveryEvaluation compatibility by locally
-      projecting a RecoveryPlan from RecoveryDecision, with unaccepted profile
-      strategy artifacts filtered before canonical decision selection.
+    - Legacy RecoveryHandler / RecoveryEvaluation compatibility was deleted
+      from default source; evolution recovery now uses a bounded
+      EvolutionRecoveryPolicy over canonical RecoveryKind.
     - RecoveryPhase owns pending recovery plan-change completion; Coordinator
       no longer constructs recovery receipt/delta/history for replan-step or
       replan-task success paths inline.
@@ -110,8 +106,7 @@ scope:
       current_recovery_decision.kind directly; the RecoveryKind to
       RecoveryCommandKind pending helper mapping has been deleted.
     - RunCoordinator recovery helper seams return canonical RecoveryKind for
-      branch decisions; RecoveryCommandKind remains inside RecoveryPhase /
-      dispatcher compatibility only.
+      branch decisions; RecoveryCommandKind has no default source owner.
     - RunCoordinator idempotent retry safety checks read canonical
       current_recovery_decision.idempotency_key and current_failure.effect_status
       instead of the legacy current_recovery_command payload.
@@ -124,16 +119,13 @@ scope:
       recovery_history for strategy oscillation checks.
     - RecoveryCoordinator no longer imports or uses legacy recovery_commands
       vocabulary; RecoverySelectionContext normalizes available/preferred
-      commands to canonical RecoveryKind and RuntimePhase, while RecoveryPhase
-      remains the temporary command adapter boundary.
+      commands to canonical RecoveryKind and RuntimePhase.
     - RunCoordinator and ProposalRejectionRecoveryPolicy no longer use
       RecoveryCommandKind or OWNER_DISPATCH_COMMANDS; Coordinator-facing
-      recovery availability is expressed as canonical RecoveryKind and the
-      legacy command vocabulary remains inside RecoveryPhase/owner-dispatch
-      compatibility.
+      recovery availability is expressed as canonical RecoveryKind.
     - "RecoveryApplicationResult exposes canonical recovery_kind: RecoveryKind
-      instead of legacy command_kind; RecoveryCommandKind remains an internal
-      RecoveryPhase adapter detail."
+      instead of legacy command_kind; RecoveryCommandKind is physically deleted
+      from default source."
     - Default Runtime wiring uses RecoveryOwnerDispatcher keyed by canonical
       RecoveryKind; Coordinator, model recovery owners, task pipeline, and
       benchmark runtime construction no longer depend on
@@ -146,17 +138,12 @@ scope:
       compatibility projections, or RecoveryCommandCompleted /
       RecoveryDeltaValidated events; pending recovery completion helpers commit
       canonical RecoveryOutcomeRecorded evidence.
-    - Legacy RecoveryHandler compatibility bridges preferred/available legacy
-      command enums into canonical RecoveryKind before constructing
-      RecoverySelectionContext, keeping core type gates aligned while leaving
-      offline compatibility tests isolated.
+    - recovery.py, recovery_commands.py, recovery_command_dispatcher.py,
+      recovery_completion.py, recovery_decision_compatibility.py, and
+      recovery_handler.py are physically deleted from default source.
+    - tests/test_recovery_command_dispatcher.py and tests/test_recovery_handler.py
+      are deleted with their legacy owner modules.
   excluded:
-    - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
-      compatibility trace/dispatcher modules.
-    - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt module
-      deletion from offline compatibility tests.
-    - Full RecoveryCommand / RecoveryReceipt physical deletion from owner
-      dispatcher and external recovery compatibility modules.
     - Planner ActionChoiceBuilder.
     - new task-family regex or deterministic fallback.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -182,21 +169,16 @@ failure_kind_policy:
       - abort
 
   remaining_sar_8_work:
-  - Replace RecoveryCommand/RecoveryReceipt trace/dispatcher
-    compatibility payloads with RecoveryOutcome where external recovery action
-    results are genuinely needed.
-  - Delete RecoveryPlan from the isolated recovery_decision_compatibility
-    adapter and recovery_coordinator.plan() compatibility API.
-  - Delete legacy RecoveryAction/Incident/Attempt/Cascade modules and their
-    dedicated compatibility tests after evolution/profile artifacts are migrated
-    or archived.
   - Preserve the planner clarification distinction learned from SAR-7 fresh
     diagnostic classification.
 
 validation:
   focused:
-    - python -m pytest tests/test_recovery_phase.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_handler.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py tests/test_recovery_evolution.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=10
-  focused_result: 136_passed
+    - PYTHONPATH=src python -m pytest -q tests/test_recovery.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_proposal_recovery_policy.py tests/test_evolution.py tests/test_recovery_evolution.py --tb=short --maxfail=3
+  focused_result: 42_passed
+  legacy_protocol_physical_deletion_architecture:
+    - PYTHONPATH=src python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8c_legacy_recovery_protocol_files_are_deleted tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads --tb=short
+  legacy_protocol_physical_deletion_architecture_result: 3_passed
   canonical_outcome_focused_result: 100_passed
   decision_trace_focused:
     - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py -q --tb=short --maxfail=20
@@ -335,18 +317,18 @@ validation:
     - uv build
     - git diff --check
   sar_8c_cutover_closure_result:
-    pytest: 1331_passed
+    pytest: 1326_passed
     ruff: passed
-    mypy_core: passed_116_source_files_ignore_optional_missing_imports
+    mypy_core: passed_110_source_files_ignore_optional_missing_imports
     uv_build: passed
     diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
-  full_pytest_result: 1331_passed
-  coordinator_lines: 2974
+  full_pytest_result: 1326_passed
+  coordinator_lines: 2971
   run_sync_lines: 1993
   runcoordinator_methods: 18
   ruff: passed
-  mypy: passed_116_core_source_files_ignore_optional_missing_imports
+  mypy: passed_110_core_source_files_ignore_optional_missing_imports
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
   uv_build: passed
   diff_check: passed

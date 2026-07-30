@@ -131,8 +131,8 @@ class LocalSaasRunCase:
             effective_recovery_actions=sum(
                 1
                 for node in result.trace.nodes
-                if node.kind == "RecoveryCommandCompleted"
-                and bool(node.payload.get("receipt", {}).get("success"))
+                if node.kind == "RecoveryOutcomeRecorded"
+                and bool(node.payload.get("outcome", {}).get("success"))
             ),
             duplicate_effect_risks=int(recovery_actions.count("retry_idempotent") > 1),
             semantic_replay_success=status_success and oracle_success,

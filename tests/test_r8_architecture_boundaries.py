@@ -22,7 +22,6 @@ EXTRACTED_CORE_COLLABORATORS = (
     "planner_context.py",
     "planner_model_orchestrator.py",
     "planning_contracts.py",
-    "recovery_handler.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
 )

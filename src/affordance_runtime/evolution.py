@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from affordance_runtime.benchmarks.spec import BenchmarkRun
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 from affordance_runtime.coordinator import RuntimeFeatures
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
-from affordance_runtime.recovery import (
-    BoundedRecoveryPolicy,
-    FailureSignature,
-    RecoveryAction,
-    RecoveryContext,
+from affordance_runtime.recovery_protocol import (
+    RecoveryBudgetCost,
     RecoveryDecision,
+    RecoveryDimension,
+    RecoveryKind,
+    RuntimePhase,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillPayload
 
@@ -208,12 +209,12 @@ _SIGNATURE_FIELDS = {
     "verifier_kind",
 }
 _SAFE_RECOVERY_RESPONSES = {
-    RecoveryAction.REOBSERVE,
-    RecoveryAction.VERIFY_STATE,
-    RecoveryAction.REROUTE,
-    RecoveryAction.REQUEST_APPROVAL,
-    RecoveryAction.COMPENSATE,
-    RecoveryAction.ABORT,
+    RecoveryKind.REOBSERVE,
+    RecoveryKind.INSPECT_POST_STATE,
+    RecoveryKind.REROUTE,
+    RecoveryKind.REQUEST_APPROVAL,
+    RecoveryKind.COMPENSATE,
+    RecoveryKind.ABORT,
 }
 _RISK_ORDER = {
     RiskLevel.LOW: 0,
@@ -221,6 +222,290 @@ _RISK_ORDER = {
     RiskLevel.HIGH: 2,
     RiskLevel.IRREVERSIBLE: 3,
 }
+
+
+@dataclass(frozen=True)
+class EvolutionFailureSignature:
+    phase: str
+    normalized_error: str
+    error_code: str
+    action: str
+    backend: str
+    target_fingerprint: str
+    verifier_kind: str
+    state_revision: str
+
+    @classmethod
+    def from_failure(
+        cls,
+        contract: ActionContract,
+        receipt: ExecutionReceipt | None,
+        *,
+        phase: str,
+        error_code: RuntimeErrorCode | None,
+        state_revision: str,
+    ) -> "EvolutionFailureSignature":
+        code = error_code or (receipt.error_code if receipt else None)
+        message = receipt.message if receipt else (code.value if code else "unknown")
+        return cls(
+            phase=phase,
+            normalized_error=_normalize_error(message),
+            error_code=code.value if code else "unknown",
+            action=contract.action,
+            backend=contract.backend,
+            target_fingerprint=contract.target_fingerprint,
+            verifier_kind=contract.verifier_plan[0].kind if contract.verifier_plan else "",
+            state_revision=state_revision,
+        )
+
+    def key(self, *, include_revision: bool = False) -> str:
+        value = {
+            "phase": self.phase,
+            "normalized_error": self.normalized_error,
+            "error_code": self.error_code,
+            "action": self.action,
+            "backend": self.backend,
+            "target_fingerprint": self.target_fingerprint,
+            "verifier_kind": self.verifier_kind,
+        }
+        if include_revision:
+            value["state_revision"] = self.state_revision
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class EvolutionRecoveryContext:
+    attempt: int = 0
+    recovery_count: int = 0
+    tried_backends: tuple[str, ...] = field(default_factory=tuple)
+    backend_fallback_count: int = 0
+    effect_may_have_occurred: bool = False
+    approval_available: bool = False
+    failure_signature: EvolutionFailureSignature | None = None
+    task_id: str = ""
+    failure_id: str = "evolution-failure"
+    current_state_version: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tried_backends", FrozenSequence(self.tried_backends))
+
+
+@dataclass
+class EvolutionRecoveryPolicy:
+    max_recoveries: int = 3
+    max_retries: int = 1
+    max_backend_fallbacks: int = 1
+    decision_override: Callable[
+        [ActionContract, ExecutionReceipt | None, EvolutionRecoveryContext, RuntimeErrorCode | None],
+        RecoveryDecision | None,
+    ] | None = None
+
+    def decide(
+        self,
+        contract: ActionContract,
+        receipt: ExecutionReceipt | None,
+        context: EvolutionRecoveryContext,
+        *,
+        error_code: RuntimeErrorCode | None = None,
+    ) -> RecoveryDecision:
+        if context.recovery_count >= self.max_recoveries:
+            return _evolution_recovery_decision(RecoveryKind.ABORT, context, "recovery budget exhausted")
+
+        if self.decision_override is not None:
+            override = self.decision_override(contract, receipt, context, error_code)
+            if override is not None:
+                return override
+
+        code = error_code or (receipt.error_code if receipt else None)
+        if code in {
+            RuntimeErrorCode.STALE_OBSERVATION,
+            RuntimeErrorCode.STALE_PAGE_REVISION,
+            RuntimeErrorCode.SNAPSHOT_MISMATCH,
+            RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
+            RuntimeErrorCode.LEASE_EXPIRED,
+        }:
+            return _evolution_recovery_decision(RecoveryKind.REOBSERVE, context, "contract state is stale")
+        if code in {RuntimeErrorCode.CAPABILITY_DENIED, RuntimeErrorCode.UNSAFE_ACTION}:
+            if context.approval_available:
+                return _evolution_recovery_decision(
+                    RecoveryKind.REQUEST_APPROVAL,
+                    context,
+                    "capability or approval is required",
+                )
+            return _evolution_recovery_decision(RecoveryKind.ABORT, context, "action is not authorized")
+
+        if context.effect_may_have_occurred:
+            return _evolution_recovery_decision(
+                RecoveryKind.INSPECT_POST_STATE,
+                context,
+                "execution outcome is uncertain; inspect post-state before retry",
+            )
+
+        if receipt is not None and receipt.success:
+            return _evolution_recovery_decision(
+                RecoveryKind.INSPECT_POST_STATE,
+                context,
+                "execution succeeded; verify expected effects",
+            )
+
+        if (
+            receipt is not None
+            and receipt.evidence.get("dispatched") is False
+            and contract.grounding_candidate is not None
+            and code == RuntimeErrorCode.EXECUTION_FAILED
+        ):
+            return _evolution_recovery_decision(
+                RecoveryKind.REROUTE,
+                context,
+                "selected grounding route failed before dispatch",
+                route_ref=contract.backend,
+            )
+
+        route_alternatives = contract.route_plan.viable_alternatives if contract.route_plan else ()
+        if route_alternatives:
+            alternative = route_alternatives[0]
+            return _evolution_recovery_decision(
+                RecoveryKind.REROUTE,
+                context,
+                "exclude failed grounding candidate and bind a fresh route",
+                route_ref=alternative.compatible_executor,
+            )
+
+        can_retry = (
+            context.attempt < self.max_retries
+            and bool(contract.idempotency_key)
+            and contract.risk != RiskLevel.IRREVERSIBLE
+        )
+        if can_retry:
+            return _evolution_recovery_decision(
+                RecoveryKind.RETRY_IDEMPOTENT,
+                context,
+                "idempotent action may be retried once",
+                idempotency_key=contract.idempotency_key,
+            )
+
+        tried = set(context.tried_backends)
+        fallbacks = [backend for backend in contract.fallback_backends if backend not in tried]
+        if fallbacks and context.backend_fallback_count < self.max_backend_fallbacks:
+            return _evolution_recovery_decision(
+                RecoveryKind.REROUTE,
+                context,
+                "use next untried contract fallback",
+                route_ref=fallbacks[0],
+            )
+
+        if contract.compensation:
+            return _evolution_recovery_decision(
+                RecoveryKind.COMPENSATE,
+                context,
+                "contract declares a compensation action",
+                compensation_contract_id=contract.compensation,
+            )
+
+        return _evolution_recovery_decision(RecoveryKind.ABORT, context, "no safe recovery remains")
+
+
+def _evolution_recovery_decision(
+    kind: RecoveryKind,
+    context: EvolutionRecoveryContext,
+    reason: str,
+    *,
+    route_ref: str = "",
+    idempotency_key: str = "",
+    compensation_contract_id: str = "",
+    profile_artifact_id: str = "",
+) -> RecoveryDecision:
+    return RecoveryDecision(
+        decision_id=f"evolution-recovery:{kind.value}:{context.current_state_version}",
+        failure_id=context.failure_id,
+        based_on_state_version=context.current_state_version,
+        strategy_key=(
+            f"strategy:{kind.value}:{profile_artifact_id}"
+            if profile_artifact_id
+            else f"strategy:{kind.value}:evolution"
+        ),
+        kind=kind,
+        reason_code=reason,
+        reentry_phase=_evolution_reentry_phase(kind),
+        changed_dimensions=(_evolution_dimension(kind),),
+        preconditions=(f"evolution policy selected {kind.value}",),
+        budget_cost=RecoveryBudgetCost(
+            recoveries=0 if kind == RecoveryKind.ABORT else 1,
+            observations=1
+            if kind
+            in {
+                RecoveryKind.REOBSERVE,
+                RecoveryKind.INSPECT_POST_STATE,
+                RecoveryKind.REROUTE,
+                RecoveryKind.RETRY_IDEMPOTENT,
+                RecoveryKind.COMPENSATE,
+            }
+            else 0,
+            replans=1
+            if kind
+            in {
+                RecoveryKind.COMPACT_CONTEXT,
+                RecoveryKind.REPAIR_MODEL_SCHEMA,
+                RecoveryKind.SWITCH_PROVIDER,
+                RecoveryKind.REPLAN_TASK,
+                RecoveryKind.REPLAN_STEP,
+            }
+            else 0,
+            user_escalations=1
+            if kind
+            in {
+                RecoveryKind.ASK_USER,
+                RecoveryKind.CLARIFY_INTENT,
+                RecoveryKind.REQUEST_APPROVAL,
+            }
+            else 0,
+        ),
+        route_ref=route_ref,
+        idempotency_key=idempotency_key,
+        compensation_contract_id=compensation_contract_id,
+    )
+
+
+def _evolution_dimension(kind: RecoveryKind) -> RecoveryDimension:
+    return {
+        RecoveryKind.REOBSERVE: RecoveryDimension.OBSERVATION,
+        RecoveryKind.INSPECT_POST_STATE: RecoveryDimension.EFFECT_STATUS,
+        RecoveryKind.REROUTE: RecoveryDimension.ROUTE,
+        RecoveryKind.REQUEST_APPROVAL: RecoveryDimension.APPROVAL,
+        RecoveryKind.COMPENSATE: RecoveryDimension.EFFECT_STATUS,
+        RecoveryKind.ABORT: RecoveryDimension.TERMINAL,
+        RecoveryKind.RETRY_IDEMPOTENT: RecoveryDimension.OBSERVATION,
+    }.get(kind, RecoveryDimension.CONTEXT)
+
+
+def _evolution_reentry_phase(kind: RecoveryKind) -> RuntimePhase:
+    return {
+        RecoveryKind.REOBSERVE: RuntimePhase.OBSERVING,
+        RecoveryKind.INSPECT_POST_STATE: RuntimePhase.VERIFYING,
+        RecoveryKind.REROUTE: RuntimePhase.PREFLIGHT,
+        RecoveryKind.REQUEST_APPROVAL: RuntimePhase.WAITING_APPROVAL,
+        RecoveryKind.COMPENSATE: RuntimePhase.PREFLIGHT,
+        RecoveryKind.ABORT: RuntimePhase.ABORTED,
+        RecoveryKind.RETRY_IDEMPOTENT: RuntimePhase.PREFLIGHT,
+    }.get(kind, RuntimePhase.PLANNING)
+
+
+def _recovery_kind(value: str) -> RecoveryKind:
+    legacy_aliases = {
+        "verify_state": RecoveryKind.INSPECT_POST_STATE,
+        "retry": RecoveryKind.RETRY_IDEMPOTENT,
+    }
+    if value in legacy_aliases:
+        return legacy_aliases[value]
+    return RecoveryKind(value)
+
+
+def _normalize_error(message: str) -> str:
+    value = message.lower().strip()
+    value = re.sub(r"https?://\S+", "<url>", value)
+    value = re.sub(r"\b[0-9a-f]{16,}\b", "<id>", value)
+    value = re.sub(r"\b\d+(?:\.\d+)?\b", "<n>", value)
+    return re.sub(r"\s+", " ", value)[:240]
 
 
 @dataclass(frozen=True)
@@ -248,7 +533,7 @@ class RecoveryPolicyPatchPayload:
         if unknown:
             raise ValueError(f"unsupported signature fields: {', '.join(unknown)}")
         try:
-            response = RecoveryAction(self.response)
+            response = _recovery_kind(self.response)
             RiskLevel(self.max_risk)
         except ValueError as exc:
             raise ValueError(f"invalid recovery policy enum: {exc}") from exc
@@ -261,7 +546,7 @@ class RecoveryPolicyPatchPayload:
         if not self.required_evidence or not self.postconditions:
             raise ValueError("recovery policy must require evidence and postconditions")
 
-    def matches(self, task_id: str, signature: FailureSignature, risk: RiskLevel) -> bool:
+    def matches(self, task_id: str, signature: EvolutionFailureSignature, risk: RiskLevel) -> bool:
         if task_id not in self.task_ids or _RISK_ORDER[risk] > _RISK_ORDER[RiskLevel(self.max_risk)]:
             return False
         return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
@@ -315,7 +600,7 @@ class RecoverySkillPayload:
         if unknown:
             raise ValueError(f"unsupported signature fields: {', '.join(unknown)}")
         try:
-            actions = [RecoveryAction(item) for item in self.steps]
+            actions = [_recovery_kind(item) for item in self.steps]
             RiskLevel(self.max_risk)
         except ValueError as exc:
             raise ValueError(f"invalid recovery skill enum: {exc}") from exc
@@ -328,7 +613,7 @@ class RecoverySkillPayload:
         if not self.required_evidence or not self.postconditions:
             raise ValueError("recovery skill must require evidence and postconditions")
 
-    def matches(self, task_id: str, signature: FailureSignature, risk: RiskLevel) -> bool:
+    def matches(self, task_id: str, signature: EvolutionFailureSignature, risk: RiskLevel) -> bool:
         if task_id not in self.task_ids or _RISK_ORDER[risk] > _RISK_ORDER[RiskLevel(self.max_risk)]:
             return False
         return all(str(getattr(signature, name)) == expected for name, expected in self.signature_match.items())
@@ -403,8 +688,8 @@ class CandidateRuntimeProfile:
                 features = replace(features, **payload.feature_overrides)
         return features
 
-    def recovery_policy(self) -> BoundedRecoveryPolicy:
-        return BoundedRecoveryPolicy(decision_override=self._recovery_override)
+    def recovery_policy(self) -> EvolutionRecoveryPolicy:
+        return EvolutionRecoveryPolicy(decision_override=self._recovery_override)
 
     def task_skills_for(self, task_family: str) -> tuple[TaskSkillPayload, ...]:
         return tuple(
@@ -418,7 +703,7 @@ class CandidateRuntimeProfile:
         self,
         contract: ActionContract,
         receipt: ExecutionReceipt | None,
-        context: RecoveryContext,
+        context: EvolutionRecoveryContext,
         error_code: RuntimeErrorCode | None,
     ) -> RecoveryDecision | None:
         del receipt, error_code
@@ -427,7 +712,11 @@ class CandidateRuntimeProfile:
             return None
         # Uncertain effects are always inspected before any learned response.
         if context.effect_may_have_occurred:
-            return RecoveryDecision(RecoveryAction.VERIFY_STATE, "candidate preserves inspect-before-recovery")
+            return _evolution_recovery_decision(
+                RecoveryKind.INSPECT_POST_STATE,
+                context,
+                "candidate preserves inspect-before-recovery",
+            )
         for artifact_id, payload in self.loaded.items():
             if not isinstance(payload, (RecoveryPolicyPatchPayload, RecoverySkillPayload)):
                 continue
@@ -438,11 +727,12 @@ class CandidateRuntimeProfile:
                 continue
             self.recovery_applications[artifact_id] = applied + 1
             if isinstance(payload, RecoveryPolicyPatchPayload):
-                action = RecoveryAction(payload.response)
+                kind = _recovery_kind(payload.response)
             else:
-                action = RecoveryAction(payload.steps[min(applied, len(payload.steps) - 1)])
-            return RecoveryDecision(
-                action,
+                kind = _recovery_kind(payload.steps[min(applied, len(payload.steps) - 1)])
+            return _evolution_recovery_decision(
+                kind,
+                context,
                 f"declarative recovery artifact {artifact_id}",
                 profile_artifact_id=artifact_id,
             )
@@ -572,7 +862,7 @@ class LoadedRuntimeProfile:
     artifact_ids: tuple[str, ...]
     task_skill_runtime: AcceptedTaskSkillRuntime | None
 
-    def recovery_policy(self) -> BoundedRecoveryPolicy:
+    def recovery_policy(self) -> EvolutionRecoveryPolicy:
         return self.profile.recovery_policy()
 
 

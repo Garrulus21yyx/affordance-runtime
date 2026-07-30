@@ -8,7 +8,9 @@ from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
     EvolutionArtifactType,
+    EvolutionFailureSignature,
     EvolutionProposal,
+    EvolutionRecoveryContext,
     EvolutionRegistry,
     EvolutionRegistryStore,
     EvolutionStatus,
@@ -20,7 +22,7 @@ from affordance_runtime.evolution import (
     RegressionRule,
     RuntimePatchPayload,
 )
-from affordance_runtime.recovery import FailureSignature, RecoveryAction, RecoveryContext
+from affordance_runtime.recovery_protocol import RecoveryKind
 
 
 def test_regression_gate_respects_metric_direction() -> None:
@@ -78,7 +80,7 @@ def test_evolution_payloads_are_immutable_from_source_collections_and_json_proje
         "recovery_policy",
         policy_tasks,
         signature,
-        RecoveryAction.REOBSERVE.value,
+        RecoveryKind.REOBSERVE.value,
         1,
         evidence,
         postconditions,
@@ -94,7 +96,7 @@ def test_evolution_payloads_are_immutable_from_source_collections_and_json_proje
     assert policy_payload.postconditions == ("no retry",)
     json.dumps(policy_payload.to_dict())
 
-    skill_steps = [RecoveryAction.REOBSERVE.value]
+    skill_steps = [RecoveryKind.REOBSERVE.value]
     skill_payload = RecoverySkillPayload(
         "1.0",
         "recovery_skill",
@@ -105,9 +107,9 @@ def test_evolution_payloads_are_immutable_from_source_collections_and_json_proje
         ["state checked"],
         ["no retry"],
     )
-    skill_steps.append(RecoveryAction.RETRY.value)
+    skill_steps.append(RecoveryKind.RETRY_IDEMPOTENT.value)
 
-    assert skill_payload.steps == (RecoveryAction.REOBSERVE.value,)
+    assert skill_payload.steps == (RecoveryKind.REOBSERVE.value,)
     json.dumps(skill_payload.to_dict())
 
 
@@ -269,8 +271,8 @@ def _recovery_contract() -> ActionContract:
     return ActionContract("contract", "save", "save", "click", "dom", "rev", {"selector": "#save"})
 
 
-def _failure_signature() -> FailureSignature:
-    return FailureSignature("acting", "timeout <n>", "execution_failed", "click", "dom", "target", "", "rev")
+def _failure_signature() -> EvolutionFailureSignature:
+    return EvolutionFailureSignature("acting", "timeout <n>", "execution_failed", "click", "dom", "target", "", "rev")
 
 
 def test_recovery_policy_patch_loads_matches_and_rolls_back() -> None:
@@ -299,17 +301,17 @@ def test_recovery_policy_patch_loads_matches_and_rolls_back() -> None:
     decision = profile.recovery_policy().decide(
         _recovery_contract(),
         None,
-        RecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
+        EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
     )
-    assert decision.action == RecoveryAction.ABORT
+    assert decision.kind == RecoveryKind.ABORT
     profile.rollback(artifact.id)
     fallback = profile.recovery_policy().decide(
         _recovery_contract(),
         None,
-        RecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
+        EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
     )
-    assert fallback.action == RecoveryAction.ABORT  # non-idempotent built-in default, no artifact reason
-    assert "declarative" not in fallback.reason
+    assert fallback.kind == RecoveryKind.ABORT  # non-idempotent built-in default, no artifact reason
+    assert "declarative" not in fallback.reason_code
 
 
 def test_recovery_skill_is_bounded_and_preserves_uncertain_effect_inspection() -> None:
@@ -337,15 +339,15 @@ def test_recovery_skill_is_bounded_and_preserves_uncertain_effect_inspection() -
     profile = CandidateRuntimeProfile()
     profile.load(artifact)
     policy = profile.recovery_policy()
-    context = RecoveryContext(failure_signature=_failure_signature(), task_id="settings")
-    assert policy.decide(_recovery_contract(), None, context).action == RecoveryAction.REOBSERVE
-    assert policy.decide(_recovery_contract(), None, context).action == RecoveryAction.ABORT
-    uncertain = RecoveryContext(
+    context = EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings")
+    assert policy.decide(_recovery_contract(), None, context).kind == RecoveryKind.REOBSERVE
+    assert policy.decide(_recovery_contract(), None, context).kind == RecoveryKind.ABORT
+    uncertain = EvolutionRecoveryContext(
         failure_signature=_failure_signature(),
         task_id="settings",
         effect_may_have_occurred=True,
     )
-    assert policy.decide(_recovery_contract(), None, uncertain).action == RecoveryAction.VERIFY_STATE
+    assert policy.decide(_recovery_contract(), None, uncertain).kind == RecoveryKind.INSPECT_POST_STATE
 
 
 def test_recovery_artifacts_reject_blind_retry_payload() -> None:
