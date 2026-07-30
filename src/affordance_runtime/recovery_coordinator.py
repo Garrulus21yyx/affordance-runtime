@@ -13,15 +13,26 @@ from affordance_runtime.failure_envelope import (
     FailurePhase,
 )
 from affordance_runtime.recovery_commands import (
-    RecoveryBudgetCost,
     RecoveryChangeDimension,
-    RecoveryCommand,
     RecoveryCommandKind,
     RecoveryPlan,
     RecoveryPlanValidator,
     RecoveryReentryPhase,
 )
-from affordance_runtime.recovery_protocol import FailureKind, classify_failure_kind
+from affordance_runtime.recovery_decision_compatibility import (
+    legacy_plan_from_recovery_decision,
+)
+from affordance_runtime.recovery_protocol import (
+    FailureClassification,
+    FailureClassificationFacts,
+    FailureKind,
+    RecoveryBudgetCost,
+    RecoveryDecision,
+    RecoveryDimension,
+    RecoveryKind,
+    RuntimePhase,
+    classify_failure,
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,8 @@ class RecoverySelectionContext:
     preferred_profile_artifact_id: str = ""
     history: tuple[RecoveryHistoryItem, ...] = ()
     abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED
+    available_action_count: int = 0
+    user_input_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,36 +77,42 @@ class RecoveryCoordinator:
         *,
         current_state_version: int,
     ) -> RecoveryPlan:
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=context.available_action_count,
+                user_input_required=context.user_input_required,
+            ),
+        )
         attempted = set(failure.attempted_strategy_ids)
-        ordered = _strategy_order(failure, context)
+        ordered = _strategy_order(failure, classification, context)
         for kind in ordered:
             strategy_id = _strategy_id(kind, failure.semantic_family_key)
             if strategy_id in attempted:
                 continue
             if _would_oscillate(context.history, failure.semantic_family_key, strategy_id):
                 continue
-            command = _command_for(
+            decision = _decision_for(
                 kind,
                 failure,
+                classification,
                 context,
                 current_state_version=current_state_version,
                 strategy_id=strategy_id,
             )
-            if command is None:
+            if decision is None or not decision.budget_cost.fits(failure.remaining_budgets):
                 continue
-            plan = RecoveryPlan(
-                plan_id=f"recovery-plan-{uuid4().hex}",
-                failure_id=failure.failure_id,
-                based_on_state_version=current_state_version,
-                semantic_family_key=failure.semantic_family_key,
-                commands=(command,),
-                stop_conditions=(
-                    "declared_change_applied",
-                    "effect_status_requires_inspection",
-                    "no_safe_changed_strategy",
-                    "recovery_budget_exhausted",
-                ),
+            plan = legacy_plan_from_recovery_decision(
+                decision,
+                failure,
+                effect_status=failure.effect_status,
                 profile_digest=context.accepted_profile_digest,
+                profile_artifact_id=(
+                    context.preferred_profile_artifact_id
+                    if kind in context.preferred_profile_commands
+                    else ""
+                ),
+                gap_ids=context.gap_ids,
             )
             try:
                 return self.validator.validate(
@@ -107,16 +126,55 @@ class RecoveryCoordinator:
                 continue
         raise ValueError("no safe changed recovery strategy is available")
 
+    def decide(
+        self,
+        failure: FailureEnvelope,
+        classification: FailureClassification,
+        context: RecoverySelectionContext,
+        *,
+        current_state_version: int,
+    ) -> RecoveryDecision:
+        attempted = set(failure.attempted_strategy_ids)
+        ordered = _strategy_order(failure, classification, context)
+        for kind in ordered:
+            strategy_id = _strategy_id(kind, failure.semantic_family_key)
+            if strategy_id in attempted:
+                continue
+            if _would_oscillate(context.history, failure.semantic_family_key, strategy_id):
+                continue
+            decision = _decision_for(
+                kind,
+                failure,
+                classification,
+                context,
+                current_state_version=current_state_version,
+                strategy_id=strategy_id,
+            )
+            if decision is None:
+                continue
+            if not decision.budget_cost.fits(failure.remaining_budgets):
+                continue
+            return decision
+        raise ValueError("no safe changed recovery strategy is available")
+
     def strategy_order_for_test(
         self,
         failure: FailureEnvelope,
         context: RecoverySelectionContext,
     ) -> tuple[RecoveryCommandKind, ...]:
-        return _strategy_order(failure, context)
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=context.available_action_count,
+                user_input_required=context.user_input_required,
+            ),
+        )
+        return _strategy_order(failure, classification, context)
 
 
 def _strategy_order(
     failure: FailureEnvelope,
+    classification: FailureClassification,
     context: RecoverySelectionContext,
 ) -> tuple[RecoveryCommandKind, ...]:
     base: tuple[RecoveryCommandKind, ...]
@@ -138,12 +196,15 @@ def _strategy_order(
             RecoveryCommandKind.ABORT,
         )
     else:
-        base = _strategy_order_for_kind(classify_failure_kind(failure), failure.phase)
+        base = _strategy_order_for_kind(classification.kind, failure.phase)
     profile = tuple(
         item
         for item in context.preferred_profile_commands
         if item in base and item not in {RecoveryCommandKind.RETRY_IDEMPOTENT, RecoveryCommandKind.COMPENSATE}
     )
+    if classification.disposition.value == "progress_precheck":
+        base = (RecoveryCommandKind.ABORT,)
+        profile = ()
     return tuple(dict.fromkeys((*profile, *base)))
 
 
@@ -222,6 +283,8 @@ def _strategy_order_for_kind(
             RecoveryCommandKind.ASK_USER,
             RecoveryCommandKind.ABORT,
         )
+    if kind == FailureKind.UNKNOWN:
+        return (RecoveryCommandKind.ABORT,)
     return _planning_strategy_order(phase)
 
 
@@ -260,14 +323,15 @@ def _planning_strategy_order(phase: FailurePhase) -> tuple[RecoveryCommandKind, 
     return (RecoveryCommandKind.ABORT,)
 
 
-def _command_for(
+def _decision_for(
     kind: RecoveryCommandKind,
     failure: FailureEnvelope,
+    classification: FailureClassification,
     context: RecoverySelectionContext,
     *,
     current_state_version: int,
     strategy_id: str,
-) -> RecoveryCommand | None:
+) -> RecoveryDecision | None:
     if kind not in context.available_commands:
         return None
     shape = _command_shape(kind)
@@ -291,27 +355,17 @@ def _command_for(
     if kind == RecoveryCommandKind.COMPENSATE:
         if not context.compensation_contract_id:
             return None
-    profile_artifact_id = (
-        context.preferred_profile_artifact_id
-        if kind in context.preferred_profile_commands
-        else ""
-    )
-    return RecoveryCommand(
-        command_id=f"recovery-command-{uuid4().hex}",
+    return RecoveryDecision(
+        decision_id=f"recovery-decision-{uuid4().hex}",
         failure_id=failure.failure_id,
         based_on_state_version=current_state_version,
-        strategy_id=strategy_id,
-        kind=kind,
-        effect_status=failure.effect_status,
-        profile_artifact_id=profile_artifact_id,
-        expected_change=shape.expected_change,
-        changed_dimensions=shape.changed_dimensions,
+        strategy_key=strategy_id,
+        kind=RecoveryKind(kind.value),
+        reason_code=classification.reason_code,
+        changed_dimensions=tuple(RecoveryDimension(item.value) for item in shape.changed_dimensions),
         preconditions=shape.preconditions,
         budget_cost=shape.budget_cost,
-        timeout_ms=shape.timeout_ms,
-        risk=shape.risk,
-        reentry_phase=reentry_phase,
-        gap_ids=context.gap_ids if kind == RecoveryCommandKind.ACTIVE_PERCEPTION else (),
+        reentry_phase=RuntimePhase(reentry_phase.value),
         candidate_id=context.fresh_candidate_id if kind == RecoveryCommandKind.REROUTE else "",
         route_ref=context.fresh_route_ref if kind == RecoveryCommandKind.REROUTE else "",
         provider_id=context.configured_provider_id if kind == RecoveryCommandKind.SWITCH_PROVIDER else "",

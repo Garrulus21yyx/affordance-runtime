@@ -376,14 +376,18 @@ pr_breadth_latest:
     planner_reached_for_already_satisfied_active_step: false
     recovery_protocol_changed: false
   sar_8:
-    status: sar_8a_local_candidate
+    status: sar_8b_local_candidate
     record: docs/change-admission/sar-8-single-recovery-protocol.yaml
-    current_slice: sar_8a_failure_taxonomy_and_strategy_selection
-    recovery_strategy_owner: recovery_protocol.FailureKind
+    current_slice: sar_8b_failure_classification_and_recovery_decision_cutover
+    recovery_strategy_owner: recovery_protocol.FailureClassification
+    recovery_decision_owner: recovery_protocol.RecoveryDecision
     planner_waiting_clarification_default_ask_user: false
     planner_waiting_clarification_default_replan: false
+    planner_waiting_clarification_requires_typed_action_space: true
     already_satisfied_recovery_kind: progress_precheck_not_recovery
-    coordinator_cutover: pending
+    coordinator_phase_general_entry: RecoveryCoordinator.decide_then_legacy_adapter
+    coordinator_cutover: partial_phase_general_entry_only
+    compatibility_adapter: recovery_decision_compatibility.py
     legacy_recovery_protocol_deletion: pending
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
@@ -531,8 +535,8 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-8a-failure-taxonomy-and-strategy-selection
-  next_runtime_slice: sar-8b-unified-recovery-decision-outcome-contracts
+  current_runtime_slice: sar-8b-failure-classification-and-recovery-decision-cutover
+  next_runtime_slice: sar-8c-recovery-phase-callsite-cutover-and-legacy-deletion
   sar_8_blocked_until: unblocked
   historical_required_before_sar_7:
     - sar_4_standard_generalist_parent_response_cutover

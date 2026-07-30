@@ -18,20 +18,30 @@ preconditions:
   already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
 
 scope:
-  current_slice: sar-8a-failure-taxonomy-and-strategy-selection
+  current_slice: sar-8b-failure-classification-and-recovery-decision-cutover
   included:
     - SAR-8 FailureKind taxonomy.
-    - Pure FailureEnvelope to FailureKind classifier.
+    - Pure FailureEnvelope to typed FailureClassification classifier.
     - RecoveryCoordinator strategy selection routed through FailureKind instead
       of raw phase/class mapping.
+    - RecoveryCoordinator.decide() returns canonical RecoveryDecision.
+    - RunCoordinator phase-general recovery entry calls decide() before the
+      temporary legacy adapter.
+    - RecoveryDecision to RecoveryPlan/RecoveryCommand conversion is isolated
+      in recovery_decision_compatibility.py for SAR-8C deletion.
     - planner_waiting_clarification maps to internal model/context/provider
-      recovery, not default ask_user or replan.
-    - entry_outcome_already_satisfied maps to current-step progress precheck
-      owner and is not treated as replan/ask_user recovery.
+      recovery only when typed action-space facts prove available actions.
+    - planner_waiting_clarification without typed action-space facts fails
+      closed to unknown/abort instead of default ask_user or replan.
+    - entry_outcome_already_satisfied is recognized only from typed
+      proposal_rejection code/reason_code, maps to current-step progress
+      precheck owner, and is not treated as replan/ask_user recovery.
   excluded:
-    - Coordinator recovery call-site rewrite.
+    - Full Coordinator recovery call-site rewrite.
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion.
     - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt deletion.
+    - StateKernel recovery schema reduction.
+    - RecoveryOutcome default-path cutover.
     - Planner ActionChoiceBuilder.
     - new task-family regex or deterministic fallback.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -57,9 +67,9 @@ failure_kind_policy:
       - abort
 
 remaining_sar_8_work:
-  - Replace RecoveryCommand/RecoveryPlan/RecoveryReceipt and legacy
-    RecoveryAction/Incident/Attempt/Cascade with a single RecoveryDecision and
-    RecoveryOutcome protocol.
+  - Complete SAR-8C by replacing RecoveryCommand/RecoveryPlan/RecoveryReceipt
+    and legacy RecoveryAction/Incident/Attempt/Cascade with a single
+    RecoveryDecision and RecoveryOutcome default protocol.
   - Rewire Coordinator to consume the unified protocol while deleting old
     branches instead of adding new ones.
   - Preserve the planner clarification distinction learned from SAR-7 fresh
@@ -68,13 +78,15 @@ remaining_sar_8_work:
 validation:
   focused:
     - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_coordinator.py
-  recovery_suite: 47_passed
-  architecture: 65_passed
-  full_pytest: 1275_passed
+    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_trace_projection.py
+    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter
+  recovery_and_architecture_focused: 96_passed
+  full_pytest: 1279_passed
   ruff: passed
-  mypy: passed_144_source_files
+  mypy: passed_109_non_benchmark_non_integration_source_files
+  mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
   uv_build: passed
   diff_check: passed
 
-status: sar_8a_local_candidate
-next_slice: sar-8b-unified-recovery-decision-outcome-contracts
+status: sar_8b_local_candidate
+next_slice: sar-8c-recovery-phase-callsite-cutover-and-legacy-deletion

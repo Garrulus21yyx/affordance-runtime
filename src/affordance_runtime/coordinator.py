@@ -80,12 +80,10 @@ from affordance_runtime.recovery_commands import (
     RecoveryReceipt as RecoveryCommandReceipt,
 )
 from affordance_runtime.recovery_completion import successful_recovery_completion
-from affordance_runtime.recovery_coordinator import (
-    RecoveryCoordinator,
-    RecoveryHistoryItem,
-    RecoverySelectionContext,
-)
+from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoveryHistoryItem, RecoverySelectionContext
+from affordance_runtime.recovery_decision_compatibility import legacy_plan_from_recovery_decision
 from affordance_runtime.recovery_handler import RecoveryHandler, RecoveryRequest
+from affordance_runtime.recovery_protocol import classify_failure
 from affordance_runtime.recovery_trace_projection import recovery_protocol_projections
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
@@ -2413,21 +2411,26 @@ class RunCoordinator:
             progress_fingerprint=semantic_progress_fingerprint(state),
         )
         state.transition(RuntimeStep.RECOVERING.value)
-        plan = self.recovery_coordinator.plan(
+        recovery_context = RecoverySelectionContext(
+            available_commands=available_commands,
+            current_attempt_fingerprint=failure.progress_fingerprint,
+            gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
+            accepted_profile_digest=self.runtime_profile_digest,
+            accepted_profile_artifact_ids=frozenset(self.loaded_profile_artifact_ids),
+            configured_provider_id=self.recovery_command_dispatcher.target_ref(RecoveryCommandKind.SWITCH_PROVIDER),
+            history=tuple(state.recovery_history),
+            abort_reentry_phase=abort_reentry_phase,
+        )
+        classification = classify_failure(failure)
+        recovery_decision = self.recovery_coordinator.decide(
+            failure, classification, recovery_context, current_state_version=state.version,
+        )
+        plan = legacy_plan_from_recovery_decision(
+            recovery_decision,
             failure,
-            RecoverySelectionContext(
-                available_commands=available_commands,
-                current_attempt_fingerprint=failure.progress_fingerprint,
-                gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
-                accepted_profile_digest=self.runtime_profile_digest,
-                accepted_profile_artifact_ids=frozenset(self.loaded_profile_artifact_ids),
-                configured_provider_id=self.recovery_command_dispatcher.target_ref(
-                    RecoveryCommandKind.SWITCH_PROVIDER
-                ),
-                history=tuple(state.recovery_history),
-                abort_reentry_phase=abort_reentry_phase,
-            ),
-            current_state_version=state.version,
+            effect_status=failure.effect_status,
+            profile_digest=self.runtime_profile_digest,
+            gap_ids=recovery_context.gap_ids,
         )
         state.current_failure = failure
         state.current_recovery_plan = plan

@@ -7,6 +7,7 @@ from affordance_runtime.failure_envelope import (
     FailureClass,
     FailureEnvelope,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -25,7 +26,14 @@ from affordance_runtime.recovery_coordinator import (
     RecoveryHistoryItem,
     RecoverySelectionContext,
 )
-from affordance_runtime.recovery_protocol import FailureKind, classify_failure_kind
+from affordance_runtime.recovery_protocol import (
+    FailureClassificationFacts,
+    FailureDisposition,
+    FailureKind,
+    PlannerDeferralKind,
+    RecoveryKind,
+    classify_failure,
+)
 
 ALL_COMMANDS = frozenset(RecoveryCommandKind)
 
@@ -75,6 +83,7 @@ def _context(**updates: object) -> RecoverySelectionContext:
         "configured_provider_id": "provider-configured-b",
         "idempotency_key": "effect:1",
         "compensation_contract_id": "compensation-contract-1",
+        "available_action_count": 1,
     }
     values.update(updates)
     return RecoverySelectionContext(**values)
@@ -143,7 +152,14 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
         }
     )
 
-    assert classify_failure_kind(failure) == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
+    classification = classify_failure(
+        failure,
+        FailureClassificationFacts(available_action_count=2),
+    )
+
+    assert classification.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
+    assert classification.disposition == FailureDisposition.RECOVERY
+    assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
     plan = RecoveryCoordinator().plan(failure, _context(), current_state_version=3)
 
@@ -171,7 +187,8 @@ def test_planner_deferral_does_not_default_to_ask_user_when_only_user_is_availab
         _context(
             available_commands=frozenset(
                 {RecoveryCommandKind.ASK_USER, RecoveryCommandKind.ABORT}
-            )
+            ),
+            available_action_count=0,
         ),
         current_state_version=3,
     )
@@ -179,9 +196,51 @@ def test_planner_deferral_does_not_default_to_ask_user_when_only_user_is_availab
     assert plan.commands[0].kind == RecoveryCommandKind.ABORT
 
 
-def test_already_satisfied_entry_is_progress_precheck_not_recovery_kind() -> None:
+def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> None:
     failure = _failure(
-        FailurePhase.TASK_PLANNING,
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "planner_waiting_clarification",
+            "message": "planner requested clarification but action space was not classified",
+        }
+    )
+
+    classification = classify_failure(failure)
+
+    assert classification.kind == FailureKind.UNKNOWN
+    assert classification.planner_deferral_kind == PlannerDeferralKind.UNKNOWN
+    assert RecoveryCoordinator().strategy_order_for_test(
+        failure,
+        _context(available_action_count=0),
+    ) == (RecoveryCommandKind.ABORT,)
+
+
+def test_user_input_required_clarification_is_not_model_deferral() -> None:
+    failure = _failure(
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "planner_waiting_clarification",
+            "message": "planner requested missing user information",
+        }
+    )
+
+    classification = classify_failure(
+        failure,
+        FailureClassificationFacts(user_input_required=True),
+    )
+
+    assert classification.kind == FailureKind.MISSING_USER_INPUT
+    assert classification.disposition == FailureDisposition.USER_INPUT
+    assert classification.planner_deferral_kind == PlannerDeferralKind.USER_INPUT_REQUIRED
+
+
+def test_already_satisfied_entry_requires_typed_rejection_reason_not_message_substring() -> None:
+    failure = _failure(
+        FailurePhase.PROPOSAL_VALIDATION,
         failure_class=FailureClass.VALIDATION,
     ).model_copy(
         update={
@@ -190,12 +249,42 @@ def test_already_satisfied_entry_is_progress_precheck_not_recovery_kind() -> Non
         }
     )
 
-    assert classify_failure_kind(failure) == FailureKind.CURRENT_STEP_ALREADY_SATISFIED
-    order = RecoveryCoordinator().strategy_order_for_test(failure, _context())
+    assert classify_failure(failure).kind == FailureKind.PLAN_OUTPUT_REJECTED
+
+    typed_failure = failure.model_copy(
+        update={
+            "proposal_rejection": ProposalRejectionContext(
+                code="entry_outcome_already_satisfied",
+                reason_code="entry_outcome_already_satisfied",
+            )
+        }
+    )
+
+    classification = classify_failure(typed_failure)
+
+    assert classification.kind == FailureKind.CURRENT_STEP_ALREADY_SATISFIED
+    assert classification.disposition == FailureDisposition.PROGRESS_PRECHECK
+    order = RecoveryCoordinator().strategy_order_for_test(typed_failure, _context())
 
     assert RecoveryCommandKind.REPLAN_TASK not in order
     assert RecoveryCommandKind.REPLAN_STEP not in order
     assert RecoveryCommandKind.ASK_USER not in order
+
+
+def test_recovery_coordinator_decide_returns_canonical_decision() -> None:
+    failure = _failure(FailurePhase.OBSERVATION)
+
+    decision = RecoveryCoordinator().decide(
+        failure,
+        classify_failure(failure),
+        _context(),
+        current_state_version=3,
+    )
+
+    assert decision.kind == RecoveryKind.ACTIVE_PERCEPTION
+    assert decision.failure_id == failure.failure_id
+    assert decision.based_on_state_version == 3
+    assert decision.strategy_key.startswith("strategy:active_perception:")
 
 
 def test_retry_and_compensation_contracts_reject_unsafe_shortcuts() -> None:

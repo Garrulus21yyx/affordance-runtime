@@ -2156,6 +2156,32 @@ def test_taskskill_progress_is_not_statekernel_authority() -> None:
     assert "state.task_skill" not in runtime_evidence
 
 
+def test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    recover_phase_failure = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_recover_phase_failure"
+    )
+    calls: list[str] = []
+    for node in ast.walk(recover_phase_failure):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if (
+                isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id == "self"
+                and node.func.value.attr == "recovery_coordinator"
+            ):
+                calls.append(node.func.attr)
+    assert "decide" in calls
+    assert "plan" not in calls
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
