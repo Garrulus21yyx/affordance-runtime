@@ -1,0 +1,59 @@
+slice_id: sar-7-3-bounded-action-dedupe
+parent_slice: sar-7-single-progress-finish-authority
+base_revision: d283e2657c9ff7083b3dcb92c5e1785b35ad327e
+change_type: action_dedupe_replacement
+production_behavior_change: compatibility_preserving_action_guard_storage_replacement
+task_execution_semantics_changed: false_for_canonical_action_progress_signatures
+progress_authority_changed: action_progress_list_replaced_by_bounded_recent_action_outcome_index
+finish_authority_changed: false
+promotion_status: held
+pr_breadth: not_run
+remote_ci: disabled
+
+included:
+  - add typed ActionKey(action_kind, target_id, parameter_digest)
+  - add bounded RecentActionOutcomeIndex
+  - replace StateKernel.action_progress list with StateKernel.recent_action_outcomes
+  - remove ActionProgressRecord from StateKernel
+  - update progress guard to parse canonical JSON signatures into ActionKey
+  - update planner request/context satisfied-action-target projection to read typed records
+  - update semantic progress fingerprint to use typed recent action outcomes
+
+excluded:
+  - Coordinator action_progress_signature call-site rewrite
+  - ActionOutcome-only progress cutover
+  - TaskProgress data-model cutover
+  - progress authority migration
+  - finish authority migration
+  - recovery protocol unification
+  - PR breadth
+  - fresh diagnostic
+  - promotion
+
+compatibility:
+  record_action_progress_signature_parameter: retained_for_current_call_sites
+  accepted_signature_shape: canonical_json_only
+  legacy_colon_signature: rejected
+  default_index_capacity: 40
+
+authority_invariants:
+  StateKernel_action_progress_list: removed
+  ActionProgressRecord: removed
+  dedupe_memory_bounded: true
+  progress_guard_uses_typed_key: true
+  receipt_success_completion: prohibited
+  external_reward_completion: prohibited
+  coordinator_control_flow_change: false
+
+validation:
+  red_green:
+    - /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_action_progress_index.py
+  focused: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_action_progress_index.py tests/test_horizontal_architecture_governance.py::test_action_dedupe_uses_bounded_typed_outcome_index tests/test_coordinator.py::test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied tests/test_coordinator.py::test_progress_guard_blocks_an_alternating_return_to_a_satisfied_effect => passed"
+  full_local_gate: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q => 1254 passed, 1 xfailed"
+  ruff: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m ruff check src tests scripts => passed"
+  mypy: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m mypy --ignore-missing-imports src => success over 141 source files"
+  uv_build: "uv build => passed"
+  diff_check: "git diff --check => passed"
+
+status: local_completion_candidate
+next_slice: sar-7-full-local-gate-and-review

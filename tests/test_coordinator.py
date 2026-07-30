@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass, replace
 from typing import Sequence, TypeVar
 
@@ -1225,35 +1226,50 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_pa
 def test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied() -> None:
     state = StateKernel("slider", "move slider several steps")
     state.remember_observation(Observation("rev-2"))
+    signature = json.dumps(
+        {"action_kind": "press_key", "target": "slider", "parameters": {"key": "ArrowRight"}},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     state.record_action_progress(
-        "press:slider:ArrowRight",
+        signature,
         "rev-2",
         verification_passed=True,
         effect_satisfied=False,
     )
 
-    assert state.check_progress_guard("press:slider:ArrowRight") is None
+    assert state.check_progress_guard(signature) is None
 
 
 def test_progress_guard_blocks_an_alternating_return_to_a_satisfied_effect() -> None:
     state = StateKernel("task-1", "Select controls")
     state.remember_observation(Observation("rev-3", page_revision="page-1"))
+    checkbox_a = json.dumps(
+        {"action_kind": "activate", "target": "checkbox-a", "parameters": {}},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    checkbox_b = json.dumps(
+        {"action_kind": "activate", "target": "checkbox-b", "parameters": {}},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     state.record_action_progress(
-        "activate:checkbox-a",
+        checkbox_a,
         "rev-1",
         verification_passed=True,
         effect_satisfied=True,
         post_page_revision="page-1",
     )
     state.record_action_progress(
-        "activate:checkbox-b",
+        checkbox_b,
         "rev-2",
         verification_passed=True,
         effect_satisfied=True,
         post_page_revision="page-1",
     )
 
-    assert state.check_progress_guard("activate:checkbox-a") == ProgressGuardReason.EFFECT_ALREADY_SATISFIED
+    assert state.check_progress_guard(checkbox_a) == ProgressGuardReason.EFFECT_ALREADY_SATISFIED
 
 
 T = TypeVar("T", bound=BaseModel)

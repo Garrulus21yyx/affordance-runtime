@@ -75,11 +75,10 @@ def semantic_progress_fingerprint(state: StateKernel) -> str:
             else []
         ),
         "satisfied_effects": [
-            item.signature
-            for item in state.action_progress
+            f"{item.key.action_kind}:{item.key.target_id}:{item.key.parameter_digest}"
+            for item in state.recent_action_outcomes.records
             if item.verification_passed and item.effect_satisfied
         ],
-        "pending_obligations": sorted(state.pending_obligations),
     }
     return json.dumps(progress, sort_keys=True, separators=(",", ":"))
 

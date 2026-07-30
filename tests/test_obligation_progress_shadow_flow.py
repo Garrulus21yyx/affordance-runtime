@@ -218,7 +218,7 @@ def test_shadow_trace_projection_is_read_only_and_uses_legacy_source() -> None:
     assert projection.comparison is not None
     assert projection.comparison.ready_obligation_ids == ("obligation:terminal",)
     assert state.version == version_before
-    assert state.obligation_progress is None
+    assert not hasattr(state, "obligation_progress")
 
 
 def test_role_pending_projection_remains_diagnostic_not_runtime_failure() -> None:

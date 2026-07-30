@@ -116,6 +116,17 @@ def test_builder_can_rebuild_provider_context_from_immutable_request() -> None:
     assert request_context.model_dump() == legacy_context.model_dump()
 
 
+def test_planning_request_builder_does_not_expose_legacy_pending_obligations() -> None:
+    envelope, state, snapshot = _fixture()
+    state.pending_obligations = ["legacy:string-obligation"]  # type: ignore[attr-defined]
+
+    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    context = PlannerContextBuilder().build(request)
+
+    assert request.pending_evidence_obligations == ()
+    assert context.pending_evidence_obligations == ()
+
+
 def test_request_context_does_not_expose_ready_step_as_active() -> None:
     from affordance_runtime.planning_request import (
         PlannerObservationView,

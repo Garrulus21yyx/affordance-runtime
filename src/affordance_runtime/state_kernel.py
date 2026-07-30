@@ -7,6 +7,8 @@ LangGraph, OpenHands, or a local planner can all use the same execution memory.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -19,14 +21,10 @@ from affordance_runtime.active_perception import (
 )
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.failure_envelope import FailureEnvelope
-from affordance_runtime.obligation_progress import (
-    ObligationProgressLedger,
-    ObligationProgressStateView,
-)
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.recovery import RecoveryIncident
 from affordance_runtime.recovery_commands import RecoveryDelta, RecoveryPlan, RecoveryReceipt
 from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
-from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import PlanProgress, TaskPlan
 from affordance_runtime.verification import VerificationReport
 
@@ -61,14 +59,99 @@ class ProgressGuardReason(StrEnum):
 
 
 @dataclass(frozen=True)
-class ActionProgressRecord:
+class ActionKey:
+    """Typed semantic identity for bounded action dedupe."""
+
+    action_kind: str
+    target_id: str
+    parameter_digest: str
+
+    def __post_init__(self) -> None:
+        if not self.action_kind:
+            raise ValueError("action key requires an action kind")
+        if not self.target_id:
+            raise ValueError("action key requires a target id")
+        if not self.parameter_digest:
+            raise ValueError("action key requires a parameter digest")
+
+    @classmethod
+    def from_signature(cls, signature: str) -> ActionKey:
+        try:
+            payload = json.loads(signature)
+        except json.JSONDecodeError as exc:
+            raise ValueError("action progress signature must be canonical JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("action progress signature must be a JSON object")
+        action_kind = str(payload.get("action_kind") or "")
+        target_id = str(payload.get("target") or "")
+        parameters = payload.get("parameters", {})
+        if not action_kind or not target_id or not isinstance(parameters, dict):
+            raise ValueError("action progress signature must include action_kind, target, and parameters")
+        digest_payload: dict[str, object] = {"parameters": parameters}
+        if payload.get("destination"):
+            digest_payload["destination"] = str(payload["destination"])
+        parameter_digest = hashlib.sha256(
+            json.dumps(
+                to_json_compatible(freeze_json(digest_payload)),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        return cls(
+            action_kind=action_kind,
+            target_id=target_id,
+            parameter_digest=f"sha256:{parameter_digest}",
+        )
+
+
+@dataclass(frozen=True)
+class RecentActionOutcomeRecord:
     """Minimal verified outcome used to block duplicate semantic actions."""
 
-    signature: str
+    key: ActionKey
     post_environment_revision: str
     verification_passed: bool
     effect_satisfied: bool
     post_page_revision: str = ""
+
+
+@dataclass
+class RecentActionOutcomeIndex:
+    """Bounded action outcome memory for progress guards."""
+
+    capacity: int = 40
+    records: list[RecentActionOutcomeRecord] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.capacity < 1:
+            raise ValueError("recent action outcome capacity must be positive")
+        if len(self.records) > self.capacity:
+            self.records = self.records[-self.capacity :]
+
+    def record(
+        self,
+        key: ActionKey,
+        post_environment_revision: str,
+        *,
+        verification_passed: bool,
+        effect_satisfied: bool,
+        post_page_revision: str = "",
+    ) -> None:
+        self.records.append(
+            RecentActionOutcomeRecord(
+                key=key,
+                post_environment_revision=post_environment_revision,
+                verification_passed=verification_passed,
+                effect_satisfied=effect_satisfied,
+                post_page_revision=post_page_revision,
+            )
+        )
+        if len(self.records) > self.capacity:
+            del self.records[: len(self.records) - self.capacity]
+
+    def latest(self, key: ActionKey) -> RecentActionOutcomeRecord | None:
+        return next((item for item in reversed(self.records) if item.key == key), None)
 
 
 @dataclass
@@ -97,11 +180,9 @@ class StateKernel:
     subgoals: list[str] = field(default_factory=list)
     task_plan: TaskPlan | None = None
     plan_progress: PlanProgress | None = None
-    obligation_progress: ObligationProgressLedger | None = None
     evidence: list[str] = field(default_factory=list)
     hidden_state_hypotheses: list[str] = field(default_factory=list)
     disproved_assumptions: list[str] = field(default_factory=list)
-    pending_obligations: list[str] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     receipts: list[ExecutionReceipt] = field(default_factory=list)
     phase: str = "created"
@@ -130,7 +211,7 @@ class StateKernel:
     transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)
     planner_history: list[dict[str, Any]] = field(default_factory=list)
-    action_progress: list[ActionProgressRecord] = field(default_factory=list)
+    recent_action_outcomes: RecentActionOutcomeIndex = field(default_factory=RecentActionOutcomeIndex)
     progress_guard_events: list[dict[str, str]] = field(default_factory=list)
     excluded_grounding_candidates: dict[str, list[str]] = field(default_factory=dict)
     grounding_fallback_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -150,21 +231,10 @@ class StateKernel:
                 self.evidence.append(value)
         self.version += 1
 
-    def add_obligation(self, obligation: str) -> None:
-        if obligation not in self.pending_obligations:
-            self.pending_obligations.append(obligation)
-            self.version += 1
-
     def record_disproved_assumption(self, assumption: str) -> None:
         value = assumption.strip()
         if value and value not in self.disproved_assumptions:
             self.disproved_assumptions.append(value)
-            self.version += 1
-
-    def satisfy_obligation(self, obligation: str) -> None:
-        remaining = [item for item in self.pending_obligations if item != obligation]
-        if remaining != self.pending_obligations:
-            self.pending_obligations = remaining
             self.version += 1
 
     def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
@@ -227,24 +297,17 @@ class StateKernel:
         effect_satisfied: bool | None = None,
         post_page_revision: str = "",
     ) -> None:
-        self.action_progress.append(
-            ActionProgressRecord(
-                signature=signature,
-                post_environment_revision=post_environment_revision,
-                verification_passed=verification_passed,
-                effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
-                post_page_revision=post_page_revision,
-            )
+        self.recent_action_outcomes.record(
+            ActionKey.from_signature(signature),
+            post_environment_revision,
+            verification_passed=verification_passed,
+            effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
+            post_page_revision=post_page_revision,
         )
         self.version += 1
 
     def check_progress_guard(self, signature: str) -> ProgressGuardReason | None:
-        if not self.action_progress:
-            return None
-        previous = next(
-            (item for item in reversed(self.action_progress) if item.signature == signature),
-            None,
-        )
+        previous = self.recent_action_outcomes.latest(ActionKey.from_signature(signature))
         if previous is None:
             return None
         same_page = (
@@ -382,24 +445,6 @@ class StateKernel:
         )
         self.subgoals = [item.objective for item in plan.subgoals]
         self.version += 1
-
-    def initialize_obligation_progress(self, task_spec: TaskSpec) -> None:
-        """Attach ODG-3 shadow storage without changing runtime authority."""
-
-        if self.obligation_progress is not None:
-            if self.obligation_progress.task_spec_identity != task_spec.identity:
-                raise ValueError("obligation progress already belongs to another TaskSpec")
-            if self.obligation_progress.task_revision != task_spec.revision:
-                raise ValueError("obligation progress already belongs to another revision")
-            return
-        self.obligation_progress = ObligationProgressLedger.from_task_spec(task_spec)
-
-    def obligation_progress_view(self) -> ObligationProgressStateView | None:
-        if self.obligation_progress is None:
-            return None
-        return self.obligation_progress.to_view(
-            evaluated_at_state_version=self.version,
-        )
 
     def current_revision(self) -> str:
         return self.observations[-1].environment_revision if self.observations else ""

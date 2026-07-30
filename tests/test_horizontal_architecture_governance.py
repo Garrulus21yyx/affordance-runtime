@@ -119,13 +119,11 @@ FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES = (
 STATE_KERNEL_MUTATIONS = {
     "activate_task_skill",
     "activate_next_subgoal",
-    "add_obligation",
     "checkpoint_task_skill_step",
     "complete_grounding_recovery",
     "complete_subgoal",
     "expose_task_skill_step",
     "fall_through_task_skill",
-    "initialize_obligation_progress",
     "install_task_plan",
     "remember_observation",
     "record_action_progress",
@@ -136,7 +134,6 @@ STATE_KERNEL_MUTATIONS = {
     "record_receipt",
     "record_subgoal_action",
     "replace_task_plan",
-    "satisfy_obligation",
     "transition",
     "update_task_skill_bindings",
 }
@@ -149,7 +146,6 @@ STATE_KERNEL_READS = {
     "current_revision",
     "excluded_candidates_for",
     "fallback_lineage_for",
-    "obligation_progress_view",
 }
 
 EXECUTION_COMMIT_MUTATIONS = {
@@ -787,7 +783,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-7.2 default progress-state cleanup" in status
+    assert "current_next_change_admission: sar-7.2/sar-7.3 semantic cleanup" in status
     assert "sar_5:" in status
     assert "overall_status: in_progress" in status
     assert "official_score_claimed=false" in evidence_text
@@ -1037,6 +1033,84 @@ def test_active_subgoal_is_read_only_and_no_longer_a_planner_context_debt() -> N
     assert "active_subgoal" not in STATE_KERNEL_MUTATIONS
     assert "active_subgoal" in STATE_KERNEL_READS
     assert ("planner_context.py", "active_subgoal") not in EXTRACTED_MUTATION_DEBT
+
+
+def test_legacy_pending_obligation_state_is_not_default_statekernel_progress() -> None:
+    source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    state_kernel = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "StateKernel"
+    )
+    annotated_fields = {
+        node.target.id
+        for node in state_kernel.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    method_names = {
+        node.name
+        for node in state_kernel.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "pending_obligations" not in annotated_fields
+    assert "add_obligation" not in method_names
+    assert "satisfy_obligation" not in method_names
+
+
+def test_odg_obligation_progress_is_not_default_statekernel_progress() -> None:
+    source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    state_kernel = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "StateKernel"
+    )
+    annotated_fields = {
+        node.target.id
+        for node in state_kernel.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    method_names = {
+        node.name
+        for node in state_kernel.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    imports = {
+        dependency
+        for node in ast.walk(tree)
+        for dependency in _import_dependencies(node)
+    }
+
+    assert "obligation_progress" not in annotated_fields
+    assert "initialize_obligation_progress" not in method_names
+    assert "obligation_progress_view" not in method_names
+    assert "affordance_runtime.obligation_progress" not in imports
+
+
+def test_action_dedupe_uses_bounded_typed_outcome_index() -> None:
+    source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    top_level_classes = {
+        node.name for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    state_kernel = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "StateKernel"
+    )
+    annotated_fields = {
+        node.target.id
+        for node in state_kernel.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+
+    assert "ActionProgressRecord" not in top_level_classes
+    assert "ActionKey" in top_level_classes
+    assert "RecentActionOutcomeIndex" in top_level_classes
+    assert "action_progress" not in annotated_fields
+    assert "recent_action_outcomes" in annotated_fields
 
 
 def test_control_module_growth_ratchets_cannot_expand() -> None:
@@ -2003,7 +2077,7 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-7.2 default progress-state cleanup" in status
+    assert "current_next_change_admission: sar-7.2/sar-7.3 semantic cleanup" in status
     assert "sar_6:" in status
     assert "same_unit_one_out_deletion" in status
     assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -157,7 +156,7 @@ class PlannerContextBuilder:
                     limits.max_effectful_actions - state.effectful_action_count,
                 ),
             },
-            pending_evidence_obligations=tuple(state.pending_obligations[-5:]),
+            pending_evidence_obligations=(),
             latest_outcome=latest_outcome,
             recent_proposals=tuple(state.planner_history[-1:]),
             verified_effects=verified_effects,
@@ -458,7 +457,7 @@ def _satisfied_action_targets(state: StateKernel) -> dict[str, tuple[str, ...]]:
     current_revision = state.current_revision()
     current_page_revision = state.current_page_revision()
     collected: dict[str, list[str]] = {}
-    for record in state.action_progress[-40:]:
+    for record in state.recent_action_outcomes.records:
         same_page = (
             record.post_page_revision == current_page_revision
             if record.post_page_revision and current_page_revision
@@ -466,12 +465,8 @@ def _satisfied_action_targets(state: StateKernel) -> dict[str, tuple[str, ...]]:
         )
         if not record.effect_satisfied or not same_page:
             continue
-        try:
-            signature = json.loads(record.signature)
-        except json.JSONDecodeError:
-            continue
-        action_kind = str(signature.get("action_kind") or "")
-        target_id = str(signature.get("target") or "")
+        action_kind = record.key.action_kind
+        target_id = record.key.target_id
         if not action_kind or not target_id:
             continue
         targets = collected.setdefault(action_kind, [])

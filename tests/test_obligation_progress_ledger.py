@@ -168,29 +168,26 @@ def test_ledger_view_is_deeply_immutable_and_not_shared_with_mutable_ledger() ->
     assert view.attempt_count_by_obligation[0].attempt_count == 1
 
 
-def test_state_kernel_can_hold_optional_ledger_without_changing_read_version() -> None:
+def test_obligation_ledger_remains_external_to_default_statekernel() -> None:
     task_spec = _task_spec()
     state = StateKernel(task_id=task_spec.task_id, goal=task_spec.objective)
-
-    assert state.obligation_progress_view() is None
     before = state.version
-    state.initialize_obligation_progress(task_spec)
-    after_initialize = state.version
-    view = state.obligation_progress_view()
 
-    assert state.obligation_progress is not None
+    ledger = ObligationProgressLedger.from_task_spec(task_spec)
+    view = ledger.to_view(evaluated_at_state_version=state.version)
+
     assert state.version == before
-    assert after_initialize == before
-    assert view is not None
     assert view.task_spec_identity == task_spec.identity
-    assert state.version == before
+    assert not hasattr(state, "obligation_progress")
+    assert not hasattr(state, "obligation_progress_view")
 
 
 def test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfaces() -> None:
     task_spec = _task_spec()
     state = StateKernel(task_id=task_spec.task_id, goal=task_spec.objective)
 
-    state.initialize_obligation_progress(task_spec)
+    ledger = ObligationProgressLedger.from_task_spec(task_spec)
+    ledger.record_attempt("obligation:first")
     assert TaskPlanLifecycle.completed(state) is False
     assert state.task_plan is None
     assert state.plan_progress is None

@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-7.1 semantic closure | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; terminal success is centralized in `runtime_terminal.commit_task_terminal_success`; progress commits are centralized in `task_plan_progress_flow`. | Close the bounded SAR-7.1 verifier/TaskSkill-trigger slice, then continue remaining SAR-7 full-milestone deletion items before SAR-8. | SAR-8 recovery unification and SAR-9 phase extraction |
+| Horizontal | SAR-7.2/7.3 semantic cleanup | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; SAR-7.1 added the task-completion verifier foundation and removed TaskSkill completion requests. | Remove legacy pending/ODG progress from default StateKernel and replace unbounded string action progress with bounded typed action outcomes, then run full local SAR-7 gate before SAR-8. | SAR-8 recovery unification and SAR-9 phase extraction |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -124,10 +124,10 @@ sar_7:
   finish_authority_changed: terminal_success_commit_centralized
 sar_7_full_milestone:
   canonical_taskprogress_cutover: incomplete
-  independent_task_completion_verifier: sar_7_1_foundation_in_progress
+  independent_task_completion_verifier: sar_7_1_foundation_local_candidate
   taskskill_progress_authority_removal: completion_trigger_removed_in_sar_7_1
-  odg_and_pending_obligation_state_removal: incomplete
-  action_dedupe_replacement: incomplete
+  odg_and_pending_obligation_state_removal: sar_7_2_local_candidate
+  action_dedupe_replacement: sar_7_3_local_candidate
   required_pr_breadth: not_run
   status: incomplete
 sar_7_1:
@@ -141,14 +141,13 @@ sar_7_1:
 coordinator_assessment:
   no_growth: true
   actual_reduction: true
-  coordinator_lines: 3378
-  run_sync_lines: 1945
-  methods: 25
+  coordinator_lines: 3397
+  run_sync_lines: 1963
+  methods: 26
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - close SAR-7.1 semantic closure
-  - SAR-7.2 default progress-state cleanup
-  - SAR-7.3 bounded action dedupe
+  - full local SAR-7.1-7.3 validation
+  - review whether remaining canonical TaskProgress cutover is SAR-7 or SAR-9 scope
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
 hard_guardrails:
