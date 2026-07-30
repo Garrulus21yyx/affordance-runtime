@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import cast
 
+from affordance_runtime.immutable import FrozenDict, FrozenList
 from affordance_runtime.simplified_runtime_contracts import (
     Criterion,
     FrozenScalar,
@@ -418,6 +419,13 @@ def _freeze_state_items(value: FrozenStateItems | dict[str, object]) -> FrozenSt
 def freeze_request_value(value: object) -> FrozenRequestValue:
     if _is_frozen_scalar(value):
         return value
+    if isinstance(value, FrozenDict):
+        return (
+            "__dict__",
+            tuple((str(key), freeze_request_value(item)) for key, item in value.items()),
+        )
+    if isinstance(value, FrozenList):
+        return ("__list__", tuple(freeze_request_value(item) for item in value))
     if isinstance(value, dict):
         return (
             "__dict__",

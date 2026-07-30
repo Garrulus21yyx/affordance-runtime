@@ -184,6 +184,38 @@ def test_planning_request_contracts_are_deeply_immutable() -> None:
         request.observation.affordances[0].state[0] = ("value", "Mallory")  # type: ignore[index]
 
 
+def test_request_summary_accepts_existing_frozen_json_values() -> None:
+    from affordance_runtime.immutable import freeze_json
+    from affordance_runtime.planning_request import (
+        freeze_request_mapping,
+        thaw_request_mapping,
+    )
+
+    raw_expected = {"field": "value", "value": ["Norfolk Island"]}
+    frozen_expected = freeze_json(raw_expected)
+
+    summary = freeze_request_mapping(
+        {
+            "verified_state_delta": [
+                {
+                    "observed": "Norfolk Island",
+                    "expected": frozen_expected,
+                }
+            ]
+        }
+    )
+    raw_expected["value"].append("Mutated")
+
+    assert thaw_request_mapping(summary) == {
+        "verified_state_delta": [
+            {
+                "observed": "Norfolk Island",
+                "expected": {"field": "value", "value": ["Norfolk Island"]},
+            }
+        ]
+    }
+
+
 def test_planning_request_rejects_raw_runtime_objects() -> None:
     from affordance_runtime.planning_request import (
         PlannerObservationView,
