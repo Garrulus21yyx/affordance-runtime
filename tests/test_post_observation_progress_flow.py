@@ -42,6 +42,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification import VerificationReport, VerificationStatus
 
@@ -340,13 +341,14 @@ def test_verified_task_progress_flow_commits_active_step_and_prepares_task_compl
 
 def test_task_skill_progress_commit_does_not_request_task_completion() -> None:
     state = StateKernel("skill-task", "complete skill task")
-    skill = state.activate_task_skill("skill-profile", "1.0", {})
+    skill = TaskSkillRunState("skill-profile", "1.0")
     skill.completed_step_ids.append("step-1")
     trace = TraceDag("run")
     parent = trace.add("TaskSkillStepCompleted", {"state": state.phase})
 
     commit = commit_task_skill_terminal_progress(
         state=state,
+        progress=skill,
         trace=trace,
         parent=parent,
     )

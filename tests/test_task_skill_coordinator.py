@@ -361,19 +361,21 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
         }
     )
 
+    runtime = _accepted_runtime(payload)
     result = RunCoordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=builder,
-        task_skill_runtime=_accepted_runtime(payload),
+        task_skill_runtime=runtime,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert world.name == "Margaret"
     assert planner.calls == 0
-    assert result.state.task_skill is not None
-    assert result.state.task_skill.completed_step_ids == ["step-1"]
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert progress.completed_step_ids == ["step-1"]
     events = [node.kind for node in result.trace.nodes]
     assert "TaskSkillActivated" in events
     assert "TaskSkillStepExposed" in events
@@ -408,12 +410,13 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
         }
     )
 
+    runtime = _accepted_runtime(payload)
     result = RunCoordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=builder,
-        task_skill_runtime=_accepted_runtime(payload),
+        task_skill_runtime=runtime,
     ).run_sync(
         TaskEnvelope(
             task_spec=_task(with_entity=True),
@@ -424,8 +427,9 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
     assert result.status == RuntimeStep.DONE
     assert world.name == "Margaret"
     assert planner.calls == 1
-    assert result.state.task_skill is not None
-    assert result.state.task_skill.completed_step_ids == []
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert progress.completed_step_ids == []
     events = [node.kind for node in result.trace.nodes]
     assert "PostconditionPassed" in events
     assert "TaskSkillStepEvidenceRejected" in events
@@ -437,20 +441,22 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
     observer = ProfileObserver(world, include_name=False)
     planner = CountingSystem2Planner()
 
+    runtime = _accepted_runtime(_payload())
     result = RunCoordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
-        task_skill_runtime=_accepted_runtime(_payload()),
+        task_skill_runtime=runtime,
         task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
     assert result.state.receipts == []
-    assert result.state.task_skill is not None
-    assert "matched 0" in result.state.task_skill.fallthrough_reason
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert "matched 0" in progress.fallthrough_reason
     assert "TaskSkillFellThrough" in [node.kind for node in result.trace.nodes]
 
 
@@ -460,20 +466,22 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
     planner = CountingSystem2Planner()
     task = _task(with_entity=True).model_copy(update={"requested_capabilities": ()})
 
+    runtime = _accepted_runtime(_payload())
     result = RunCoordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
-        task_skill_runtime=_accepted_runtime(_payload()),
+        task_skill_runtime=runtime,
         task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
     assert result.state.receipts == []
-    assert result.state.task_skill is not None
-    assert "cannot extend task capability authority" in result.state.task_skill.fallthrough_reason
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert "cannot extend task capability authority" in progress.fallthrough_reason
 
 
 def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gate() -> None:
@@ -486,6 +494,7 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
         steps=(replace(payload.steps[0], requires_approval=True),),
     )
 
+    runtime = _accepted_runtime(payload)
     result = RunCoordinator(
         observer,
         planner,
@@ -498,15 +507,16 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
                 )
             }
         ),
-        task_skill_runtime=_accepted_runtime(payload),
+        task_skill_runtime=runtime,
         task_planner=None,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
     assert result.state.receipts == []
-    assert result.state.task_skill is not None
-    assert "requires approval" in result.state.task_skill.fallthrough_reason
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert "requires approval" in progress.fallthrough_reason
 
 
 def test_failed_later_skill_step_preserves_verified_progress_and_falls_through() -> None:
@@ -534,23 +544,25 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
         }
     )
 
+    runtime = _accepted_runtime(payload)
     result = RunCoordinator(
         observer,
         planner,
         ProfileExecutor(world, fail_email_effect=True),
         contract_builder=builder,
-        task_skill_runtime=_accepted_runtime(payload),
+        task_skill_runtime=runtime,
     ).run_sync(TaskEnvelope(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert world.name == "Ada"
     assert world.email == ""
     assert planner.calls == 1
-    assert result.state.task_skill is not None
-    assert result.state.task_skill.completed_step_ids == ["step-1"]
-    assert result.state.task_skill.next_step_index == 1
-    assert result.state.task_skill.evidence
-    assert result.state.task_skill.fallthrough_reason == "TaskSkill step verification failed"
+    progress = runtime.progress_for(result.state)
+    assert progress is not None
+    assert progress.completed_step_ids == ["step-1"]
+    assert progress.next_step_index == 1
+    assert progress.evidence
+    assert progress.fallthrough_reason == "TaskSkill step verification failed"
     assert result.state.recovery_incident is not None
     assert result.state.recovery_incident.context["task_skill_id"] == payload.skill_id
     assert result.state.recovery_incident.context["task_skill_step_id"] == "step-2"

@@ -1,0 +1,58 @@
+slice_id: sar-7-5-taskskill-progress-state-removal
+parent_slice: sar-7-single-progress-finish-authority
+base_revision: 7efc61da5cff24a13190d507b3bb16b11b5bb4d5
+change_type: default_state_progress_authority_removal
+production_behavior_change: compatibility_preserving_taskskill_progress_owner_move
+task_execution_semantics_changed: false
+progress_authority_changed: TaskSkill_progress_removed_from_StateKernel_default_state
+finish_authority_changed: false
+promotion_status: held
+pr_breadth: not_run
+remote_ci: disabled
+
+included:
+  - move TaskSkillRunState out of StateKernel into TaskSkill compatibility progress
+  - remove StateKernel.task_skill default field
+  - remove StateKernel TaskSkill progress mutation methods
+  - make AcceptedTaskSkillRuntime own per-task TaskSkill progress during compatibility window
+  - make Coordinator read TaskSkill progress from AcceptedTaskSkillRuntime for trace and recovery context only
+  - remove TaskSkill progress from semantic_progress_fingerprint
+  - add architecture gate preventing TaskSkill progress from returning to StateKernel authority
+
+excluded:
+  - removing TaskSkill feature support
+  - deleting accepted TaskSkill runtime compatibility
+  - PlannerResponse production cutover
+  - PlannerDecision deletion
+  - TaskPlan/SubgoalSpec physical deletion
+  - recovery protocol unification
+  - PR breadth
+  - fresh diagnostic
+  - promotion
+
+authority_invariants:
+  StateKernel_taskskill_field: removed
+  StateKernel_taskskill_mutation_methods: removed
+  TaskSkill_progress_owner: AcceptedTaskSkillRuntime_compatibility_state
+  TaskSkill_completion_trigger: removed
+  TaskCompleted_writer: runtime_terminal.commit_task_terminal_success
+  progress_fingerprint_reads_taskskill: false
+  coordinator_control_flow_change: false
+  coordinator_lines: 3441
+  run_sync_lines: 1990
+  runcoordinator_methods: 25
+
+validation:
+  red_green:
+    - /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py -k taskskill_progress_is_not_statekernel_authority
+  focused: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_task_skills.py tests/test_task_skill_coordinator.py tests/test_post_observation_progress_flow.py tests/test_runtime_evidence.py tests/test_horizontal_architecture_governance.py => 81 passed"
+  mypy_initial: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m mypy --ignore-missing-imports src => success over 142 source files"
+  ruff_initial: "import ordering fixed with /home/yang/.venvs/affordance-browsergym-py312/bin/python -m ruff check src tests --fix"
+  full_local_gate: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q => 1255 passed, 1 xfailed"
+  ruff: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m ruff check src tests scripts => passed"
+  mypy: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m mypy --ignore-missing-imports src => success over 142 source files"
+  uv_build: "uv build => passed"
+  diff_check: "git diff --check => passed"
+
+status: local_completion_candidate
+next_slice: sar-7-full-local-gate-and-behavioral-review

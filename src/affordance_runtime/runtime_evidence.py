@@ -69,11 +69,6 @@ def semantic_progress_fingerprint(state: StateKernel) -> str:
             if state.plan_progress is not None
             else []
         ),
-        "completed_skill_steps": (
-            list(state.task_skill.completed_step_ids)
-            if state.task_skill is not None
-            else []
-        ),
         "satisfied_effects": [
             f"{item.key.action_kind}:{item.key.target_id}:{item.key.parameter_digest}"
             for item in state.recent_action_outcomes.records

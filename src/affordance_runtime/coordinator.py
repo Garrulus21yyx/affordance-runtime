@@ -128,6 +128,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidator,
     VerifierBackedSubgoalVerifier,
 )
+from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
@@ -161,6 +162,17 @@ class CoordinatorResult:
     error_code: RuntimeErrorCode | None = None
     verification: VerificationReport | None = None
     artifacts: list[ArtifactRef] = field(default_factory=list)
+
+
+def _task_skill_progress(
+    runtime: object | None,
+    state: StateKernel,
+) -> TaskSkillRunState | None:
+    progress_for = getattr(runtime, "progress_for", None)
+    if not callable(progress_for):
+        return None
+    progress = progress_for(state)
+    return progress if isinstance(progress, TaskSkillRunState) else None
 
 
 @dataclass
@@ -555,6 +567,7 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
+                    skill_progress = _task_skill_progress(self.task_skill_runtime, state)
                     if (
                         skill_decision.attempted
                         and skill_decision.reason.startswith("TaskSkill runtime error:")
@@ -625,7 +638,7 @@ class RunCoordinator:
                                 source=PlannerProposalSource.ACCEPTED_SKILL,
                                 producer_id=skill_payload.skill_id,
                                 version=skill_payload.version,
-                                evidence_refs=tuple(state.task_skill.evidence) if state.task_skill else (),
+                                evidence_refs=tuple(skill_progress.evidence) if skill_progress else (),
                             ),
                             reason="accepted TaskSkill exposed one semantic step",
                         )
@@ -649,6 +662,7 @@ class RunCoordinator:
                                 parent,
                                 state,
                                 skill_decision.reason,
+                                progress=skill_progress,
                             )
                         decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
                 else:
@@ -843,6 +857,7 @@ class RunCoordinator:
                             parent,
                             state,
                             reason,
+                            progress=_task_skill_progress(self.task_skill_runtime, state),
                             step_id=skill_step_id,
                         )
                         state.replan_count += 1
@@ -1018,6 +1033,7 @@ class RunCoordinator:
                             parent,
                             state,
                             reason,
+                            progress=_task_skill_progress(self.task_skill_runtime, state),
                             step_id=skill_step_id,
                         )
                         state.replan_count += 1
@@ -1080,6 +1096,7 @@ class RunCoordinator:
                             parent,
                             state,
                             reason,
+                            progress=_task_skill_progress(self.task_skill_runtime, state),
                             step_id=skill_step_id,
                         )
                         state.replan_count += 1
@@ -1184,6 +1201,7 @@ class RunCoordinator:
                         parent,
                         state,
                         requirement_error,
+                        progress=_task_skill_progress(self.task_skill_runtime, state),
                         step_id=skill_step_id,
                     )
                     state.replan_count += 1
@@ -1212,12 +1230,18 @@ class RunCoordinator:
                         parent,
                         state,
                         reason,
+                        progress=_task_skill_progress(self.task_skill_runtime, state),
                         step_id=skill_step_id,
                     )
                 state.transition(RuntimeStep.OBSERVING.value)
                 continue
             state.current_contract = contract
             state.transition(RuntimeStep.PREFLIGHT.value)
+            contract_skill_progress = (
+                _task_skill_progress(self.task_skill_runtime, state)
+                if skill_step_id and self.task_skill_runtime is not None
+                else None
+            )
             parent = trace.add(
                 "ContractBuilt",
                 {
@@ -1255,11 +1279,11 @@ class RunCoordinator:
                     ),
                     "task_skill": (
                         {
-                            "skill_id": state.task_skill.skill_id,
-                            "version": state.task_skill.version,
+                            "skill_id": contract_skill_progress.skill_id,
+                            "version": contract_skill_progress.version,
                             "step_id": skill_step_id,
                         }
-                        if skill_step_id and state.task_skill is not None
+                        if contract_skill_progress is not None
                         else None
                     ),
                     "gesture_binding": (
@@ -1984,6 +2008,7 @@ class RunCoordinator:
                             parent,
                             state,
                             reason,
+                            progress=_task_skill_progress(self.task_skill_runtime, state),
                             step_id=skill_step_id,
                         )
                     else:
@@ -1992,17 +2017,18 @@ class RunCoordinator:
                             report=skill_report,
                             artifact_refs=([verification_ref.path] if verification_ref else []),
                         )
+                        skill_progress = _task_skill_progress(self.task_skill_runtime, state)
                         parent = trace.add(
                             "TaskSkillStepCompleted",
                             {
                                 "state": state.phase,
-                                "skill_id": state.task_skill.skill_id if state.task_skill else "",
-                                "version": state.task_skill.version if state.task_skill else "",
+                                "skill_id": skill_progress.skill_id if skill_progress else "",
+                                "version": skill_progress.version if skill_progress else "",
                                 "step_id": skill_step_id,
                                 "completed_step_ids": (
-                                    list(state.task_skill.completed_step_ids) if state.task_skill is not None else []
+                                    list(skill_progress.completed_step_ids) if skill_progress is not None else []
                                 ),
-                                "evidence": (list(state.task_skill.evidence) if state.task_skill is not None else []),
+                                "evidence": (list(skill_progress.evidence) if skill_progress is not None else []),
                                 "criterion_evidence_links": [asdict(item) for item in skill_report.match.links],
                             },
                             parents=[parent.id],
@@ -2027,6 +2053,7 @@ class RunCoordinator:
                             )
                         skill_terminal_progress = commit_task_skill_terminal_progress(
                             state=state,
+                            progress=_task_skill_progress(self.task_skill_runtime, state),
                             trace=trace,
                             parent=parent,
                         )
@@ -2076,6 +2103,11 @@ class RunCoordinator:
                     observation=post_snapshot.observation,
                     task_planner_is_router=isinstance(self.task_planner, PlanningRouter),
                     skill_complete=skill_complete,
+                    skill_progress=(
+                        _task_skill_progress(self.task_skill_runtime, state)
+                        if self.task_skill_runtime is not None
+                        else None
+                    ),
                 )
                 parent = verified_progress_commit.parent
                 if verified_progress_commit.task_completion_requested:
@@ -2107,16 +2139,17 @@ class RunCoordinator:
             if skill_step_id and self.task_skill_runtime is not None:
                 reason = f"TaskSkill step verification {latest_verification.status.value}"
                 self.task_skill_runtime.fallthrough(state, reason)
+                skill_progress = _task_skill_progress(self.task_skill_runtime, state)
                 parent = trace.add(
                     "TaskSkillStepFailed",
                     {
                         "state": state.phase,
-                        "skill_id": state.task_skill.skill_id if state.task_skill else "",
-                        "version": state.task_skill.version if state.task_skill else "",
+                        "skill_id": skill_progress.skill_id if skill_progress else "",
+                        "version": skill_progress.version if skill_progress else "",
                         "step_id": skill_step_id,
                         "verification": latest_verification.status.value,
                         "preserved_completed_step_ids": (
-                            list(state.task_skill.completed_step_ids) if state.task_skill is not None else []
+                            list(skill_progress.completed_step_ids) if skill_progress is not None else []
                         ),
                     },
                     parents=[parent.id],
@@ -2126,6 +2159,7 @@ class RunCoordinator:
                     parent,
                     state,
                     reason,
+                    progress=skill_progress,
                     step_id=skill_step_id,
                 )
             if not self.features.recovery:
@@ -2140,10 +2174,15 @@ class RunCoordinator:
                     latest_verification,
                 )
             skill_failure_context: dict[str, Any] | None = None
-            if skill_step_id and state.task_skill is not None:
+            skill_progress = (
+                _task_skill_progress(self.task_skill_runtime, state)
+                if skill_step_id and self.task_skill_runtime is not None
+                else None
+            )
+            if skill_step_id and skill_progress is not None:
                 skill_failure_context = {
-                    "task_skill_id": state.task_skill.skill_id,
-                    "task_skill_version": state.task_skill.version,
+                    "task_skill_id": skill_progress.skill_id,
+                    "task_skill_version": skill_progress.version,
                     "task_skill_step_id": skill_step_id,
                     "selected_route": (
                         contract.gesture_binding.selected_route
@@ -2154,7 +2193,7 @@ class RunCoordinator:
                         ([verification_ref.path] if verification_ref else [])
                         + [item.source for item in latest_verification.evidence]
                     ),
-                    "preserved_completed_step_ids": list(state.task_skill.completed_step_ids),
+                    "preserved_completed_step_ids": list(skill_progress.completed_step_ids),
                 }
             recovery_result = self._recover(
                 state, contract, receipt, RuntimeErrorCode.VERIFICATION_FAILED,
@@ -2627,10 +2666,15 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
+            recovery_skill_progress = (
+                _task_skill_progress(self.task_skill_runtime, state)
+                if self.task_skill_runtime is not None
+                else None
+            )
             changed_skill_fallthrough = bool(
                 verification_confirms_effect_absent(verification)
-                and state.task_skill is not None
-                and not state.task_skill.active
+                and recovery_skill_progress is not None
+                and not recovery_skill_progress.active
             )
             if not verification.passed and not changed_skill_fallthrough:
                 failed_receipt = RecoveryCommandReceipt(
@@ -3241,9 +3285,9 @@ class RunCoordinator:
         state: StateKernel,
         reason: str,
         *,
+        progress: TaskSkillRunState | None = None,
         step_id: str = "",
     ) -> TraceNode:
-        progress = state.task_skill
         return trace.add(
             "TaskSkillFellThrough",
             {

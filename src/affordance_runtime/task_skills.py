@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, Callable, Iterable, Mapping
 
@@ -20,8 +20,9 @@ from affordance_runtime.criteria import (
 )
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
-from affordance_runtime.state_kernel import StateKernel, TaskSkillRunState
+from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_HANDLE_PATTERNS = (
@@ -530,6 +531,12 @@ class AcceptedTaskSkillRuntime:
     binding_resolver: TaskSkillBindingResolver | None = None
     executor: IncrementalTaskSkillExecutor = IncrementalTaskSkillExecutor()
     criteria_matcher: CriteriaEvidenceMatcher = CriteriaEvidenceMatcher()
+    _progress_by_task_id: dict[str, TaskSkillRunState] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         digests = frozenset(item.digest() for item in self.payloads)
@@ -550,13 +557,18 @@ class AcceptedTaskSkillRuntime:
             binding_resolver,
         )
 
+    def progress_for(self, state: StateKernel) -> TaskSkillRunState | None:
+        """Return compatibility TaskSkill progress without reading StateKernel progress state."""
+
+        return self._progress_by_task_id.get(state.task_id)
+
     def expose(
         self,
         task: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> TaskSkillRuntimeDecision:
-        active = state.task_skill
+        active = self.progress_for(state)
         if active is not None:
             if not active.active:
                 return TaskSkillRuntimeDecision(reason=active.fallthrough_reason)
@@ -565,14 +577,14 @@ class AcceptedTaskSkillRuntime:
                 None,
             )
             if payload is None:
-                state.fall_through_task_skill("accepted TaskSkill payload is no longer loaded")
+                self.fallthrough(state, "accepted TaskSkill payload is no longer loaded")
                 return TaskSkillRuntimeDecision(
                     attempted=True,
                     reason="accepted TaskSkill payload is no longer loaded",
                 )
             bindings = self._bindings(payload, task, snapshot, active)
             if bindings is not None:
-                state.update_task_skill_bindings(dict(bindings))
+                self._update_bindings(active, dict(bindings))
             return self._expose_payload(payload, task, state, snapshot, newly_activated=False)
 
         candidates: list[tuple[TaskSkillPayload, Mapping[str, Any]]] = []
@@ -590,7 +602,7 @@ class AcceptedTaskSkillRuntime:
                 reason="multiple accepted TaskSkills matched; use System 2",
             )
         payload, bindings = candidates[0]
-        state.activate_task_skill(payload.skill_id, payload.version, dict(bindings))
+        self._activate(state, payload.skill_id, payload.version, dict(bindings))
         return self._expose_payload(payload, task, state, snapshot, newly_activated=True)
 
     def verify_active_step(
@@ -601,7 +613,7 @@ class AcceptedTaskSkillRuntime:
         verification: VerificationReport,
         observation: Observation,
     ) -> SkillStepVerificationReport:
-        active = state.task_skill
+        active = self.progress_for(state)
         if active is None:
             raise ValueError("no TaskSkill progress to checkpoint")
         payload = next(
@@ -635,7 +647,7 @@ class AcceptedTaskSkillRuntime:
     ) -> bool:
         if not report.passed:
             raise ValueError("TaskSkill progress requires a passed criteria match report")
-        active = state.task_skill
+        active = self.progress_for(state)
         if active is None:
             raise ValueError("no TaskSkill progress to checkpoint")
         payload = next(
@@ -644,8 +656,8 @@ class AcceptedTaskSkillRuntime:
         if report.skill_id != payload.skill_id or report.skill_version != payload.version:
             raise ValueError("TaskSkill criteria report identity mismatch")
         evidence = [*report.match.evidence_ids, *artifact_refs]
-        state.checkpoint_task_skill_step(report.step_id, evidence)
-        return state.task_skill is not None and state.task_skill.next_step_index >= len(payload.steps)
+        self._checkpoint(active, report.step_id, evidence)
+        return active.next_step_index >= len(payload.steps)
 
     def contract_requirement_error(
         self,
@@ -661,7 +673,7 @@ class AcceptedTaskSkillRuntime:
         approval authority to a contract.
         """
 
-        active = state.task_skill
+        active = self.progress_for(state)
         if active is None:
             return "TaskSkill progress is missing"
         payload = next(
@@ -686,9 +698,12 @@ class AcceptedTaskSkillRuntime:
             return "TaskSkill step requires approval but the normal contract gate does not"
         return ""
 
-    @staticmethod
-    def fallthrough(state: StateKernel, reason: str) -> None:
-        state.fall_through_task_skill(reason)
+    def fallthrough(self, state: StateKernel, reason: str) -> None:
+        active = self.progress_for(state)
+        if active is None:
+            return
+        active.fallthrough_reason = reason
+        active.active_step_id = ""
 
     def _expose_payload(
         self,
@@ -699,7 +714,7 @@ class AcceptedTaskSkillRuntime:
         *,
         newly_activated: bool,
     ) -> TaskSkillRuntimeDecision:
-        active = state.task_skill
+        active = self.progress_for(state)
         if active is None:
             raise ValueError("TaskSkill activation state is missing")
         if active.next_step_index >= len(payload.steps):
@@ -714,7 +729,7 @@ class AcceptedTaskSkillRuntime:
         missing_capabilities = sorted(set(step.required_capabilities) - set(task.requested_capabilities))
         if missing_capabilities:
             reason = "TaskSkill cannot extend task capability authority: " + ", ".join(missing_capabilities)
-            state.fall_through_task_skill(reason)
+            self.fallthrough(state, reason)
             return TaskSkillRuntimeDecision(
                 payload,
                 SkillStepExposure(None, step.step_id, True, reason),
@@ -722,7 +737,7 @@ class AcceptedTaskSkillRuntime:
                 True,
                 reason,
             )
-        state.expose_task_skill_step(step.step_id)
+        self._expose_step(active, step.step_id)
         try:
             exposure = self.executor.expose_next(
                 payload,
@@ -735,7 +750,7 @@ class AcceptedTaskSkillRuntime:
         except ValueError as exc:
             exposure = SkillStepExposure(None, step.step_id, True, str(exc))
         if exposure.fallthrough:
-            state.fall_through_task_skill(exposure.reason)
+            self.fallthrough(state, exposure.reason)
         return TaskSkillRuntimeDecision(
             payload,
             exposure,
@@ -754,6 +769,43 @@ class AcceptedTaskSkillRuntime:
         if self.binding_resolver is not None:
             return self.binding_resolver(payload, task, snapshot, progress)
         return _default_skill_bindings(payload, task, snapshot, progress)
+
+    def _activate(
+        self,
+        state: StateKernel,
+        skill_id: str,
+        version: str,
+        bindings: dict[str, Any],
+    ) -> TaskSkillRunState:
+        active = self.progress_for(state)
+        if active is not None and active.active:
+            raise ValueError("another TaskSkill is already active")
+        progress = TaskSkillRunState(skill_id, version, dict(bindings))
+        self._progress_by_task_id[state.task_id] = progress
+        return progress
+
+    @staticmethod
+    def _update_bindings(progress: TaskSkillRunState, bindings: dict[str, Any]) -> None:
+        for name, value in bindings.items():
+            if progress.bindings.get(name) != value:
+                progress.bindings[name] = value
+
+    @staticmethod
+    def _expose_step(progress: TaskSkillRunState, step_id: str) -> None:
+        if not progress.active:
+            raise ValueError("no active TaskSkill can expose a step")
+        if progress.active_step_id != step_id:
+            progress.active_step_id = step_id
+
+    @staticmethod
+    def _checkpoint(progress: TaskSkillRunState, step_id: str, evidence: list[str]) -> None:
+        if progress.active_step_id != step_id:
+            raise ValueError("TaskSkill checkpoint does not match the active step")
+        if step_id not in progress.completed_step_ids:
+            progress.completed_step_ids.append(step_id)
+        progress.evidence.extend(item for item in evidence if item not in progress.evidence)
+        progress.next_step_index += 1
+        progress.active_step_id = ""
 
     @staticmethod
     def _trigger_matches(payload: TaskSkillPayload, task: TaskSpec) -> bool:

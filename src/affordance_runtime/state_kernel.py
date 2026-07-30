@@ -155,24 +155,6 @@ class RecentActionOutcomeIndex:
 
 
 @dataclass
-class TaskSkillRunState:
-    """Authoritative verified progress for one accepted TaskSkill activation."""
-
-    skill_id: str
-    version: str
-    bindings: dict[str, Any] = field(default_factory=dict)
-    next_step_index: int = 0
-    completed_step_ids: list[str] = field(default_factory=list)
-    evidence: list[str] = field(default_factory=list)
-    active_step_id: str = ""
-    fallthrough_reason: str = ""
-
-    @property
-    def active(self) -> bool:
-        return not self.fallthrough_reason
-
-
-@dataclass
 class StateKernel:
     task_id: str
     goal: str
@@ -215,7 +197,6 @@ class StateKernel:
     progress_guard_events: list[dict[str, str]] = field(default_factory=list)
     excluded_grounding_candidates: dict[str, list[str]] = field(default_factory=dict)
     grounding_fallback_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
-    task_skill: TaskSkillRunState | None = None
     version: int = 0
 
     @property
@@ -249,53 +230,6 @@ class StateKernel:
 
     def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
         self.planner_history.append(proposal)
-        self.version += 1
-
-    def activate_task_skill(
-        self,
-        skill_id: str,
-        version: str,
-        bindings: dict[str, Any],
-    ) -> TaskSkillRunState:
-        if self.task_skill is not None and self.task_skill.active:
-            raise ValueError("another TaskSkill is already active")
-        self.task_skill = TaskSkillRunState(skill_id, version, dict(bindings))
-        self.version += 1
-        return self.task_skill
-
-    def update_task_skill_bindings(self, bindings: dict[str, Any]) -> None:
-        if self.task_skill is None:
-            raise ValueError("no TaskSkill is active")
-        changed = False
-        for name, value in bindings.items():
-            if self.task_skill.bindings.get(name) != value:
-                self.task_skill.bindings[name] = value
-                changed = True
-        if changed:
-            self.version += 1
-
-    def expose_task_skill_step(self, step_id: str) -> None:
-        if self.task_skill is None or not self.task_skill.active:
-            raise ValueError("no active TaskSkill can expose a step")
-        if self.task_skill.active_step_id != step_id:
-            self.task_skill.active_step_id = step_id
-            self.version += 1
-
-    def checkpoint_task_skill_step(self, step_id: str, evidence: list[str]) -> None:
-        if self.task_skill is None or self.task_skill.active_step_id != step_id:
-            raise ValueError("TaskSkill checkpoint does not match the active step")
-        if step_id not in self.task_skill.completed_step_ids:
-            self.task_skill.completed_step_ids.append(step_id)
-        self.task_skill.evidence.extend(item for item in evidence if item not in self.task_skill.evidence)
-        self.task_skill.next_step_index += 1
-        self.task_skill.active_step_id = ""
-        self.version += 1
-
-    def fall_through_task_skill(self, reason: str) -> None:
-        if self.task_skill is None:
-            return
-        self.task_skill.fallthrough_reason = reason
-        self.task_skill.active_step_id = ""
         self.version += 1
 
     def record_action_progress(

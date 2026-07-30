@@ -117,13 +117,9 @@ FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES = (
 )
 
 STATE_KERNEL_MUTATIONS = {
-    "activate_task_skill",
     "activate_next_subgoal",
-    "checkpoint_task_skill_step",
     "complete_grounding_recovery",
     "complete_subgoal",
-    "expose_task_skill_step",
-    "fall_through_task_skill",
     "install_task_plan",
     "remember_observation",
     "record_action_progress",
@@ -135,7 +131,6 @@ STATE_KERNEL_MUTATIONS = {
     "record_subgoal_action",
     "replace_task_plan",
     "transition",
-    "update_task_skill_bindings",
 }
 
 STATE_KERNEL_READS = {
@@ -784,7 +779,8 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-7.4/sar-7.5 semantic cleanup" in status
+    assert "current_next_change_admission: sar-7.5 taskskill progress-state removal" in status
+    assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_5:" in status
     assert "overall_status: in_progress" in status
     assert "official_score_claimed=false" in evidence_text
@@ -2117,7 +2113,8 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-7.4/sar-7.5 semantic cleanup" in status
+    assert "current_next_change_admission: sar-7.5 taskskill progress-state removal" in status
+    assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_6:" in status
     assert "same_unit_one_out_deletion" in status
     assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan
@@ -2125,26 +2122,34 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "sar-3 plan vertical replacement" in current_plan
 
 
-def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:
-    mutation_names = {
+def test_taskskill_progress_is_not_statekernel_authority() -> None:
+    state_tree = ast.parse((SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8"))
+    forbidden_names = {
+        "TaskSkillRunState",
         "activate_task_skill",
         "checkpoint_task_skill_step",
         "expose_task_skill_step",
         "fall_through_task_skill",
         "update_task_skill_bindings",
     }
-    callers: set[tuple[str, str]] = set()
-    for path in SOURCE_ROOT.rglob("*.py"):
-        relative = str(path.relative_to(SOURCE_ROOT))
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in mutation_names
-            ):
-                callers.add((relative, node.func.attr))
-    assert callers == {("task_skills.py", name) for name in mutation_names}
+    declared_names = {
+        node.name
+        for node in ast.walk(state_tree)
+        if isinstance(node, ast.ClassDef | ast.FunctionDef)
+    }
+    assert not (declared_names & forbidden_names)
+
+    task_skill_fields: set[str] = set()
+    for node in ast.walk(state_tree):
+        if isinstance(node, ast.ClassDef) and node.name == "StateKernel":
+            for item in node.body:
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                    if item.target.id == "task_skill":
+                        task_skill_fields.add(item.target.id)
+    assert task_skill_fields == set()
+
+    runtime_evidence = (SOURCE_ROOT / "runtime_evidence.py").read_text(encoding="utf-8")
+    assert "state.task_skill" not in runtime_evidence
 
 
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:

@@ -19,6 +19,7 @@ from affordance_runtime.task_plan_progress import (
     current_state_evidence_refs,
 )
 from affordance_runtime.task_planning import SubgoalVerifierPort
+from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport
 
@@ -249,6 +250,7 @@ def commit_verified_task_progress(
     observation: Observation,
     task_planner_is_router: bool,
     skill_complete: bool,
+    skill_progress: TaskSkillRunState | None = None,
 ) -> VerifiedTaskProgressCommit:
     if state.task_plan is None or state.plan_progress is None:
         return VerifiedTaskProgressCommit(parent, False, False, False)
@@ -295,11 +297,11 @@ def commit_verified_task_progress(
             or skill_complete
         ):
             return VerifiedTaskProgressCommit(parent, True, True, False)
-        if skill_complete and state.task_skill is not None:
+        if skill_complete and skill_progress is not None:
             state.final_result = {
-                "task_skill_id": state.task_skill.skill_id,
-                "task_skill_version": state.task_skill.version,
-                "completed_step_ids": list(state.task_skill.completed_step_ids),
+                "task_skill_id": skill_progress.skill_id,
+                "task_skill_version": skill_progress.version,
+                "completed_step_ids": list(skill_progress.completed_step_ids),
             }
             parent = trace.add(
                 "TaskSkillCompleted",
@@ -329,14 +331,14 @@ def commit_verified_task_progress(
 def commit_task_skill_terminal_progress(
     *,
     state: StateKernel,
+    progress: TaskSkillRunState | None,
     trace: TraceDag,
     parent: TraceNode,
 ) -> TaskSkillTerminalProgressCommit:
     """Record verified TaskSkill completion without committing Runtime done."""
 
-    if state.task_plan is not None or state.task_skill is None:
+    if state.task_plan is not None or progress is None:
         return TaskSkillTerminalProgressCommit(parent, False)
-    progress = state.task_skill
     completed_step_ids = tuple(progress.completed_step_ids)
     parent = trace.add(
         "TaskSkillCompleted",
