@@ -355,20 +355,20 @@ class TaskPlanLifecycle:
                 ),
             )
         failure = state.current_failure
-        recovery_plan = state.current_recovery_plan
+        recovery_decision = state.current_recovery_decision
         recovery_summary = (
             TaskPlanningRecoverySummary(
                 incident_id=failure.failure_id,
                 root_error_code=failure.error_code,
                 terminal_outcome=(
-                    recovery_plan.commands[0].reentry_phase.value
-                    if recovery_plan is not None
+                    recovery_decision.reentry_phase.value
+                    if recovery_decision is not None
                     else ""
                 ),
                 findings=(failure.failure_class.value,),
                 attempted_actions=(
-                    (recovery_plan.commands[0].kind.value,)
-                    if recovery_plan is not None
+                    (recovery_decision.kind.value,)
+                    if recovery_decision is not None
                     else ()
                 ),
             )

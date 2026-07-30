@@ -62,6 +62,9 @@ scope:
     - RunCoordinator.run_sync no longer reads legacy current_recovery_plan for
       pending recovery command checks; it uses canonical current_recovery_decision
       through a migration helper.
+    - TaskPlanLifecycle recovery summaries no longer read legacy
+      current_recovery_plan; they use canonical current_recovery_decision kind
+      and re-entry phase.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -121,6 +124,9 @@ validation:
   run_sync_no_legacy_plan_gate:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_run_sync_does_not_read_legacy_recovery_plan_state -q --tb=short
   run_sync_no_legacy_plan_gate_result: 1_passed
+  taskplan_lifecycle_no_legacy_plan_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_plan_lifecycle_does_not_read_legacy_recovery_plan_state -q --tb=short
+  taskplan_lifecycle_no_legacy_plan_gate_result: 1_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
