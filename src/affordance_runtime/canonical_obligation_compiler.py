@@ -114,11 +114,7 @@ class CanonicalObligationCompiler:
                 else (
                     TaskObligationRelation.IS_COMPLETED
                     if completed_navigation_action
-                    else (
-                        TaskObligationRelation.EQUALS
-                        if literal_value
-                        else TaskObligationRelation.HAS_CHANGED
-                    )
+                    else _effect_relation_for_literal(effect.target, literal_value)
                 )
             )
             evidence_kind = (
@@ -175,7 +171,15 @@ class CanonicalObligationCompiler:
             obligation_id = obligation_ids[index]
             primary_evidence = effect.evidence[0]
             relation = primary_evidence.relation
-            literal_value = primary_evidence.value_ref if relation == TaskObligationRelation.EQUALS else ""
+            literal_value = (
+                primary_evidence.value_ref
+                if relation
+                in {
+                    TaskObligationRelation.EQUALS,
+                    TaskObligationRelation.IS_SELECTED,
+                }
+                else ""
+            )
             read = (
                 effect.operation_class
                 in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
@@ -407,6 +411,17 @@ def _success_criteria_marks_action_completed(
         and completion_words.intersection(tokens)
         for tokens in (_semantic_tokens(criterion) for criterion in success_criteria)
     )
+
+
+def _effect_relation_for_literal(
+    target: str,
+    literal_value: str,
+) -> TaskObligationRelation:
+    if not literal_value:
+        return TaskObligationRelation.HAS_CHANGED
+    if target.strip().casefold() in {"list", "dropdown", "select", "combobox"}:
+        return TaskObligationRelation.IS_SELECTED
+    return TaskObligationRelation.EQUALS
 
 
 def _semantic_tokens(value: str) -> set[str]:

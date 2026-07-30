@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Awaitable, Protocol, TypeAlias, cast
@@ -437,14 +438,12 @@ def _choice_for_criterion(
             parameters={"text": criterion.expected_value},
             criterion_ids=(criterion.criterion_id,),
         )
-    if isinstance(criterion.expected_value, (int, float)) and _supports(
-        target,
-        PlannerActionKind.PRESS_KEY,
-    ):
+    numeric_expected_value = _numeric_expected_value(criterion.expected_value)
+    if numeric_expected_value is not None and _supports(target, PlannerActionKind.PRESS_KEY):
         current_value = _numeric_state_value(target)
-        if current_value is None or current_value == criterion.expected_value:
+        if current_value is None or current_value == numeric_expected_value:
             return None
-        key = "ArrowRight" if criterion.expected_value > current_value else "ArrowLeft"
+        key = "ArrowRight" if numeric_expected_value > current_value else "ArrowLeft"
         return _make_choice(
             task_revision=task_revision,
             state_version=state_version,
@@ -647,6 +646,16 @@ def _numeric_state_value(target: UnifiedObservationTarget) -> int | float | None
                 return float(value)
             except ValueError:
                 continue
+    return None
+
+
+def _numeric_expected_value(value: object) -> int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", value.strip()):
+        return float(value)
     return None
 
 

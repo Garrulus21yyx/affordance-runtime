@@ -76,6 +76,12 @@ def resolve_active_step_target_ids(
     if ("submit" in lowered and "button" in lowered) or "submission" in lowered:
         submits = tuple(item.target_id for item in views if _is_submit(item))
         return submits if len(submits) == 1 else ()
+    if lowered in {"text_field", "text field", "textbox", "input_field", "input field"}:
+        textboxes = tuple(item.target_id for item in views if _is_textbox(item))
+        return textboxes if len(textboxes) == 1 else ()
+    if lowered in {"list", "dropdown", "select", "combobox"}:
+        selection_controls = tuple(item.target_id for item in views if _is_selection_control(item))
+        return selection_controls if len(selection_controls) == 1 else ()
     return ()
 
 
@@ -183,6 +189,25 @@ def _is_slider(item: ActiveStepTargetView) -> bool:
     role = item.role.casefold()
     state_input_type = str(item.state.get("input_type", "")).casefold()
     return role in {"slider", "range"} or state_input_type == "range"
+
+
+def _is_textbox(item: ActiveStepTargetView) -> bool:
+    role = item.role.casefold()
+    state_input_type = str(item.state.get("input_type", "")).casefold()
+    return role in {"textbox", "searchbox", "textarea"} or state_input_type in {
+        "text",
+        "search",
+        "textarea",
+    }
+
+
+def _is_selection_control(item: ActiveStepTargetView) -> bool:
+    role = item.role.casefold()
+    state_input_type = str(item.state.get("input_type", "")).casefold()
+    return role in {"combobox", "listbox", "select"} or state_input_type in {
+        "select",
+        "dropdown",
+    }
 
 
 def _is_submit(item: ActiveStepTargetView) -> bool:

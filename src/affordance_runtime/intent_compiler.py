@@ -706,8 +706,7 @@ def _canonicalize_requested_effects_draft(
         and (not incomplete_provider_graph or not multi_effect_sequence)
     ):
         return draft, (), False
-    if draft.task_structure == TaskStructure.FLAT:
-        draft = _normalize_flat_value_entry_draft(draft, request)
+    draft = _normalize_value_entry_draft(draft, request)
     try:
         graph = CanonicalObligationCompiler().compile_requested_effects(
             source_ledger,
@@ -735,26 +734,41 @@ def _canonicalize_requested_effects_draft(
     ), (), True
 
 
-def _normalize_flat_value_entry_draft(
+def _normalize_value_entry_draft(
     draft: IntentDraft,
     request: UserRequest,
 ) -> IntentDraft:
     """Prevent explicit value-entry imperatives from becoming read-only tasks."""
 
-    if not _looks_like_value_entry_request(request.raw_text):
-        return draft
-    literal_value = _extract_literal_entry_value(
-        request.raw_text,
+    raw_text = request.raw_text
+    select_value, select_target = _extract_literal_selection_value(raw_text)
+    value_entry = _looks_like_value_entry_request(raw_text)
+    literal_value = select_value or _extract_literal_entry_value(
+        raw_text,
         draft.candidate_success_criteria,
     )
+    if not select_value and not value_entry:
+        return draft
     updated_effects = tuple(
-        item.model_copy(update={"operation_class": OperationClass.REVERSIBLE_WRITE})
-        if item.operation_class == OperationClass.READ_ONLY
+        item.model_copy(
+            update={
+                "operation_class": OperationClass.REVERSIBLE_WRITE,
+                **({"target": select_target} if select_target and index == 0 else {}),
+            }
+        )
+        if item.operation_class in {OperationClass.READ_ONLY, OperationClass.EXTERNAL_SIDE_EFFECT}
         else item
-        for item in draft.requested_effects
+        for index, item in enumerate(draft.requested_effects)
     )
     constraints = draft.candidate_semantic_value_constraints
-    if literal_value and not any(
+    if not literal_value:
+        return draft.model_copy(
+            update={
+                "requested_effects": updated_effects,
+                "candidate_semantic_value_constraints": constraints,
+            }
+        )
+    if not any(
         item.relation == SemanticValueRelation.EXACT
         and item.value == literal_value
         and item.target in {effect.target for effect in updated_effects}
@@ -812,6 +826,7 @@ def _extract_literal_entry_value(
     del success_criteria
     for pattern in (
         r"\benter\s+(.+?)\s+as\s+",
+        r"\benter\s+['\"]([^'\"]+)['\"]\s+into\b",
         r"\btype\s+['\"]([^'\"]+)['\"]",
         r"\binput\s+['\"]([^'\"]+)['\"]",
         r"\bfill\s+['\"]([^'\"]+)['\"]",
@@ -820,6 +835,18 @@ def _extract_literal_entry_value(
         if match:
             return match.group(1).strip(" .,'\"")
     return ""
+
+
+def _extract_literal_selection_value(raw_text: str) -> tuple[str, str]:
+    for pattern, target in (
+        (r"\bselect\s+(['\"]?)([A-Za-z0-9_.@:/+-]+)\1\s+from\s+(?:the\s+)?(?:list|dropdown|select)\b", "list"),
+        (r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+(?:the\s+)?slider\b", "slider"),
+    ):
+        match = re.search(pattern, raw_text, flags=re.IGNORECASE)
+        if match:
+            value = match.group(2) if len(match.groups()) > 1 else match.group(1)
+            return value.strip(" .,'\""), target
+    return "", ""
 
 
 def _normalize_coverage_claim_references(

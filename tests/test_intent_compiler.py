@@ -603,7 +603,7 @@ def test_llm_compiler_repairs_reviewer_vetoed_unresolved_dependency_before_clari
             ),
         ),
         candidate_success_criteria=("Text field equals the text observed below after submit.",),
-        task_structure=TaskStructure.MULTI_STAGE,
+        task_structure=TaskStructure.FLAT,
         candidate_source_claims=(
             SourcedTaskClaim(
                 claim_id="provider-observe-text",
@@ -730,7 +730,7 @@ def test_llm_compiler_canonicalizes_multistage_requested_effects_when_provider_g
             ),
         ),
         candidate_success_criteria=("Button ONE was clicked.", "Button TWO was clicked."),
-        task_structure=TaskStructure.MULTI_STAGE,
+        task_structure=TaskStructure.FLAT,
         candidate_source_claims=(
             SourcedTaskClaim(
                 claim_id="provider-one",
@@ -822,6 +822,127 @@ def test_llm_compiler_canonicalizes_clicked_navigation_effects_as_completed_acti
     assert not alpha.terminal
     assert beta.terminal
     assert beta.depends_on == (alpha.obligation_id,)
+
+
+def test_llm_compiler_preserves_quoted_entry_value_in_multistage_graph() -> None:
+    draft = IntentDraft(
+        objective='Enter "Myron" into the text field and press Submit.',
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="text_field",
+                source_ref="enter-text",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="submit_button",
+                source_ref="enter-text",
+            ),
+        ),
+        candidate_success_criteria=(
+            'The text field contains the string "Myron".',
+            "The form is submitted.",
+        ),
+        task_structure=TaskStructure.MULTI_STAGE,
+    )
+    model = FixedModel(draft)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="enter-text",
+                raw_text='Enter "Myron" into the text field and press Submit.',
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    text_obligation, submit_obligation = result.task_spec.obligations
+    assert text_obligation.subject == "text_field"
+    assert text_obligation.relation == TaskObligationRelation.EQUALS
+    assert text_obligation.value_source == TaskObligationValueSource.LITERAL
+    assert text_obligation.expected_value == "Myron"
+    assert text_obligation.typed_evidence_requirements[0].value_ref == "Myron"
+    assert submit_obligation.depends_on == (text_obligation.obligation_id,)
+
+
+def test_llm_compiler_normalizes_select_from_list_value_in_multistage_graph() -> None:
+    draft = IntentDraft(
+        objective="Select Ertha from the list and click Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.EXTERNAL_SIDE_EFFECT,
+                target="Select Ertha from the list and click Submit.",
+                source_ref="choose-list",
+            ),
+        ),
+        candidate_success_criteria=("The user has selected Ertha from the list and clicked Submit.",),
+        task_structure=TaskStructure.FLAT,
+    )
+    model = FixedModel(draft)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="choose-list",
+                raw_text="Select Ertha from the list and click Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == "list"
+    assert obligation.relation == TaskObligationRelation.IS_SELECTED
+    assert obligation.value_source == TaskObligationValueSource.LITERAL
+    assert obligation.expected_value == "Ertha"
+    assert obligation.typed_evidence_requirements[0].value_ref == "Ertha"
+
+
+def test_llm_compiler_preserves_slider_numeric_value_in_multistage_graph() -> None:
+    draft = IntentDraft(
+        objective="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="slider",
+                source_ref="form-sequence",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="3rd checkbox",
+                source_ref="form-sequence",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="Submit button",
+                source_ref="form-sequence",
+            ),
+        ),
+        candidate_success_criteria=("Slider value is 7.", "The 3rd checkbox is checked.", "Form submitted."),
+        task_structure=TaskStructure.MULTI_STAGE,
+    )
+    model = FixedModel(draft)
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="form-sequence",
+                raw_text="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    slider_obligation = result.task_spec.obligations[0]
+    assert slider_obligation.subject == "slider"
+    assert slider_obligation.relation == TaskObligationRelation.EQUALS
+    assert slider_obligation.value_source == TaskObligationValueSource.LITERAL
+    assert slider_obligation.expected_value == "7"
+    assert slider_obligation.typed_evidence_requirements[0].value_ref == "7"
 
 
 def test_llm_compiler_repairs_a_provider_malformed_obligation_without_trusting_it() -> None:

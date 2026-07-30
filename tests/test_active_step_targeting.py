@@ -74,3 +74,37 @@ def test_resolves_role_prefixed_button_subject_to_unique_exact_label() -> None:
     )
 
     assert target_ids == ("semantic:one:1",)
+
+
+def test_resolves_canonical_text_field_subject_to_unique_textbox() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="text_field",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:tt:1",
+                role="textbox",
+                label="tt",
+                actions=("type_text",),
+                state={"visible": True, "enabled": True, "control_value": ""},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:tt:1",)
+
+
+def test_resolves_canonical_list_subject_to_unique_combobox() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="list",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:options:1",
+                role="combobox",
+                label="options",
+                actions=("select_option",),
+                state={"visible": True, "enabled": True, "selected_options": ("Ertha",)},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:options:1",)
