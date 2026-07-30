@@ -115,6 +115,9 @@ scope:
     - RunCoordinator idempotent retry safety checks read canonical
       current_recovery_decision.idempotency_key and current_failure.effect_status
       instead of the legacy current_recovery_command payload.
+    - StateKernel no longer stores current_recovery_command; RecoveryPhase
+      derives the temporary legacy command from current_recovery_decision and
+      current_failure only inside the compatibility adapter boundary.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -235,16 +238,24 @@ validation:
   pending_retry_payload_cutover:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_full_phase_recovery.py --maxfail=1 --tb=short -q
   pending_retry_payload_cutover_result: 14_passed
+  statekernel_recovery_command_removal:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_command tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_coordinator_groups_repeated_failure_and_aborts_loop tests/test_active_perception_coordinator.py tests/test_task_skill_coordinator.py tests/test_obligation_progress_ledger.py::test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfaces --maxfail=1 --tb=short -q
+  statekernel_recovery_command_removal_result: 31_passed
+  statekernel_recovery_command_removal_static:
+    yaml_parse: passed
+    ruff: passed
+    mypy_core: passed_3_core_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
-  coordinator_lines: 3298
-  run_sync_lines: 1944
-  runcoordinator_methods: 24
+  coordinator_lines: 2974
+  run_sync_lines: 1993
+  runcoordinator_methods: 18
   ruff: passed
   mypy: passed_110_core_source_files_ignore_optional_missing_imports
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_phase_observation_completion_local_candidate
-next_slice: planner-selection-simplification-actionchoice
+status: sar_8c_statekernel_recovery_command_removal_local_candidate
+next_slice: sar_8c_recovery_receipt_delta_state_removal

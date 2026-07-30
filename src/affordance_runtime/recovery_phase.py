@@ -129,7 +129,6 @@ class RecoveryPhase:
         state.current_failure = failure
         state.current_recovery_decision = decision
         state.current_recovery_outcome = None
-        state.current_recovery_command = command
         state.attempted_recovery_strategy_ids.add(decision.strategy_key)
         state.recovery_count += 1
         parent = _trace_recovery_protocol(
@@ -199,7 +198,7 @@ class RecoveryPhase:
         *,
         abort_reentry_phase: RecoveryReentryPhase,
     ) -> tuple[RecoveryCommandKind, TraceNode]:
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if command is None:
             raise ValueError("owner recovery dispatch requires a pending command")
         previous_fingerprint = (
@@ -217,7 +216,6 @@ class RecoveryPhase:
             parents=[parent.id],
         )
         if not dispatched.receipt.success or dispatched.delta is None:
-            state.current_recovery_command = None
             state.transition(abort_reentry_phase.value)
             state.current_recovery_outcome = RecoveryOutcome(
                 decision_id=state.current_recovery_decision.decision_id
@@ -245,7 +243,6 @@ class RecoveryPhase:
                 dispatched.delta.next_attempt_fingerprint,
             )
         )
-        state.current_recovery_command = None
         state.transition(RuntimeStep.OBSERVING.value)
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
@@ -284,7 +281,7 @@ class RecoveryPhase:
         plan_or_route_ref: str,
     ) -> TraceNode:
         failure = state.current_failure
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if failure is None or command is None or command.kind != kind:
             return parent
         completion = successful_recovery_completion(
@@ -298,7 +295,6 @@ class RecoveryPhase:
         state.recovery_deltas.append(completion.delta)
         state.recovery_receipts.append(completion.receipt)
         state.recovery_history.append(completion.history)
-        state.current_recovery_command = None
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -336,7 +332,7 @@ class RecoveryPhase:
         contract: ActionContract,
     ) -> tuple[TraceNode, bool]:
         failure = state.current_failure
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if failure is None or command is None:
             return parent, False
         if command.kind not in {
@@ -397,7 +393,6 @@ class RecoveryPhase:
                 next_fingerprint,
             )
         )
-        state.current_recovery_command = None
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -436,7 +431,7 @@ class RecoveryPhase:
         *,
         error_code: str,
     ) -> TraceNode:
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if command is None:
             return parent
         receipt = RecoveryCommandReceipt(
@@ -447,7 +442,6 @@ class RecoveryPhase:
             error_code=error_code,
         )
         state.recovery_receipts.append(receipt)
-        state.current_recovery_command = None
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -476,7 +470,7 @@ class RecoveryPhase:
         observation: Observation,
     ) -> TraceNode:
         failure = state.current_failure
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if (
             failure is None
             or command is None
@@ -532,7 +526,6 @@ class RecoveryPhase:
                 next_fingerprint,
             )
         )
-        state.current_recovery_command = None
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -571,7 +564,7 @@ class RecoveryPhase:
         post_state_inspection_failed: bool = False,
     ) -> tuple[TraceNode, bool]:
         failure = state.current_failure
-        command = state.current_recovery_command
+        command = _pending_legacy_command(state)
         if failure is None or command is None:
             return parent, False
         observation_commands = {
@@ -589,7 +582,6 @@ class RecoveryPhase:
                 error_code=RuntimeErrorCode.VERIFICATION_FAILED.value,
             )
             state.recovery_receipts.append(failed_receipt)
-            state.current_recovery_command = None
             state.current_recovery_outcome = RecoveryOutcome(
                 decision_id=state.current_recovery_decision.decision_id
                 if state.current_recovery_decision is not None
@@ -659,7 +651,6 @@ class RecoveryPhase:
                 next_fingerprint,
             )
         )
-        state.current_recovery_command = None
         state.current_recovery_outcome = RecoveryOutcome(
             decision_id=state.current_recovery_decision.decision_id
             if state.current_recovery_decision is not None
@@ -698,6 +689,20 @@ class RecoveryPhase:
             parents=[parent.id],
         )
         return parent, False
+
+
+def _pending_legacy_command(state: StateKernel) -> RecoveryCommand | None:
+    if state.current_recovery_outcome is not None:
+        return None
+    decision = state.current_recovery_decision
+    failure = state.current_failure
+    if decision is None or failure is None:
+        return None
+    return legacy_command_from_recovery_decision(
+        decision,
+        effect_status=failure.effect_status,
+        gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
+    )
 
 
 def _trace_recovery_protocol(
@@ -749,7 +754,6 @@ def _complete_immediate_recovery_command(
     state.recovery_deltas.append(completion.delta)
     state.recovery_receipts.append(completion.receipt)
     state.recovery_history.append(completion.history)
-    state.current_recovery_command = None
     state.current_recovery_outcome = RecoveryOutcome(
         decision_id=state.current_recovery_decision.decision_id
         if state.current_recovery_decision is not None

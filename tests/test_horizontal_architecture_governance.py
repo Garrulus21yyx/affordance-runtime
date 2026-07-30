@@ -2225,6 +2225,13 @@ def test_sar_8c_statekernel_does_not_store_legacy_recovery_plan() -> None:
     assert "current_recovery_plan" not in source
 
 
+def test_sar_8c_statekernel_does_not_store_legacy_recovery_command() -> None:
+    source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")
+
+    assert "RecoveryCommand" not in source
+    assert "current_recovery_command" not in source
+
+
 def test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter() -> None:
     source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
 

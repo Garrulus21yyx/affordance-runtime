@@ -1075,7 +1075,8 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
     assert result.status == RuntimeStep.ABORTED
     assert result.state.current_failure is not None
     assert result.state.current_failure.error_code == RuntimeErrorCode.EXECUTION_FAILED.value
-    assert result.state.current_recovery_command is None
+    assert result.state.current_recovery_decision is not None
+    assert result.state.current_recovery_decision.kind.value == "abort"
     assert result.state.recovery_receipts
     assert result.state.recovery_receipts[-1].command_id.startswith("recovery-command-")
     assert len(result.state.receipts) == 2

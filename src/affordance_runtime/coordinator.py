@@ -2936,6 +2936,8 @@ async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerD
 
 
 def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
+    if state.current_recovery_outcome is not None:
+        return None
     decision = state.current_recovery_decision
     return decision.kind if decision is not None else None
 

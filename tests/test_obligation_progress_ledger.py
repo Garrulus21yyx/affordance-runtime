@@ -192,5 +192,4 @@ def test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfa
     assert state.task_plan is None
     assert state.plan_progress is None
     assert state.current_failure is None
-    assert state.current_recovery_command is None
     assert state.recovery_receipts == []

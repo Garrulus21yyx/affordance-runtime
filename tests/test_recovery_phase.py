@@ -58,8 +58,6 @@ def test_recovery_phase_handles_phase_general_failure_through_decision_seam() ->
     assert state.current_failure == failure
     assert state.current_recovery_decision == result.decision
     assert state.current_recovery_outcome is None
-    assert state.current_recovery_command is not None
-    assert state.current_recovery_command.kind == RecoveryCommandKind.REOBSERVE
     assert state.attempted_recovery_strategy_ids == {result.decision.strategy_key}
     assert [node.kind for node in trace.nodes[-3:]] == [
         "FailureDetected",
@@ -108,7 +106,6 @@ def test_recovery_phase_records_immediate_terminal_outcome_without_pending_plan(
     assert result.outcome.next_phase.value == RuntimeStep.ABORTED.value
     assert state.current_recovery_decision == result.decision
     assert state.current_recovery_outcome == result.outcome
-    assert state.current_recovery_command is None
 
 
 def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> None:
