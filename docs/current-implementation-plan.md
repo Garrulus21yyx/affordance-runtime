@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | Planner Selection Simplification | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, removes legacy recovery incident/diagnostic default state, and records canonical recovery decision/outcome state. RecoveryPlan/RecoveryCommand compatibility payloads remain pending deletion. Planner Selection Simplification now has a local ActionChoice contract/dispatch foundation plus strict Generalist default-path cutover for unique exact text / slider choices and a choice-id-only selector path for multiple Runtime-built choices. | Next implementation-bearing slice should delete or quarantine remaining semantic resolver/fallback authority so strict Planner no longer generates action/target/parameters outside ActionChoice paths. | SAR-9 phase extraction after recovery and planner-selection deletion gates |
+| Horizontal | Planner Selection Simplification | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, records canonical recovery decision/outcome state, and physically removes the legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols at implementation revision `09d43041283078d4031828d01d0b129df4271148`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text / slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback at implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. | Next implementation-bearing slice should close the Planner Selection behavioral gate with a non-qwen Ollama model or explicitly leave it blocked by local model availability; SAR-9 should not start from unclassified planner-selection residuals. | SAR-9 phase extraction after recovery and planner-selection behavioral/deletion gates |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -90,6 +90,8 @@ reviewed_closure_revision:
   role: sar_7_behavioral_gate_local_complete_promotion_held
 implementation_revision:
   sar_7: 25ec6745ce08f6337c8d040cf1b31bd2a384ff6e
+  sar_8c: 09d43041283078d4031828d01d0b129df4271148
+  planner_selection_actionchoice: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -156,7 +158,7 @@ coordinator_assessment:
   methods: 24
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - Planner Selection Simplification semantic resolver and fallback deletion
+  - Planner Selection Simplification behavioral gate and residual classification using a non-qwen Ollama model
   - SAR-9 phase extraction and Coordinator reduction
 blocked_until:
   sar_8: unblocked
@@ -177,6 +179,8 @@ evidence:
   sar_8b_recovery_decision_cutover: docs/change-admission/sar-8-single-recovery-protocol.yaml
   sar_8c_recovery_phase_callsite_migration: docs/change-admission/sar-8-single-recovery-protocol.yaml
   sar_8c_legacy_recovery_state_deletion: docs/change-admission/sar-8-single-recovery-protocol.yaml
+  planner_selection_actionchoice: docs/change-admission/planner-selection-actionchoice.yaml
+  planner_selection_behavioral_gate: not_run_local_ollama_only_has_qwen2_5_7b
   independently_reproduced: false
   remote_ci: absent
   pr_breadth: passed_for_sar_7_gate

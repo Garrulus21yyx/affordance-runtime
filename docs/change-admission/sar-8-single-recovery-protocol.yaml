@@ -1,6 +1,7 @@
 slice_id: sar-8-single-recovery-protocol
 parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
 base_revision: 659e817cdf4b8b96588106f5d9aca4ba4646e691
+implementation_revision: 09d43041283078d4031828d01d0b129df4271148
 change_type: recovery_protocol_unification
 production_behavior_change: bounded_recovery_strategy_selection
 runtime_authority_changed: false
@@ -38,6 +39,9 @@ scope:
     - StateKernel stores canonical current_recovery_decision and
       current_recovery_outcome without any legacy current_recovery_command
       compatibility payload.
+    - Legacy RecoveryPlan / RecoveryCommand and RecoveryIncident / RecoveryAttempt
+      / RecoveryCascade default protocols are physically removed from source
+      and tests.
     - RecoveryPhase returns RecoveryApplicationResult with classification,
       RecoveryDecision, optional RecoveryOutcome, canonical recovery_kind, and
       trace parent.
@@ -332,6 +336,10 @@ validation:
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
   uv_build: passed
   diff_check: passed
+  behavioral_gate:
+    pr_breadth: not_run_after_sar_8c
+    fresh_diagnostic: not_run_after_sar_8c
+    blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
 
 status: sar_8c_default_recovery_protocol_cutover_local_candidate
 next_slice: planner-selection-simplification-actionchoice

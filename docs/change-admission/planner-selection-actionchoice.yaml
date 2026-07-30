@@ -1,6 +1,7 @@
 slice_id: planner-selection-actionchoice
 parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
 base_revision: d0515c9
+implementation_revision: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
 change_type: planner_selection_simplification
 production_behavior_change: false
 runtime_authority_changed: false
@@ -205,6 +206,8 @@ validation:
     diff_check: passed
   pr_breadth: not_run
   fresh_diagnostic: not_run
+  behavioral_gate_blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+  required_model_boundary: non_qwen_ollama_model_for_behavioral_rerun
 
 status: ps_strict_free_action_model_fallback_retirement_local_candidate
 next_slice: ps_6_behavioral_gate_and_residual_classification

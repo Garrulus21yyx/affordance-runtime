@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. The post-SAR-7 pre-SAR-8 classification records 26 `planner_waiting_clarification` residuals as model/action-choice owner and 9 `entry_outcome_already_satisfied` residuals as progress-precheck owner. SAR-8C now routes default Coordinator recovery through `RecoveryPhase`, removes `recovery_incident` / `recovery_diagnostics` from default `StateKernel`, and records canonical `current_recovery_decision` / `current_recovery_outcome`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text and slider choices, and a choice-id-only selector path for multiple Runtime-built choices; broader fallback deletion and promotion remain held. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. The post-SAR-7 pre-SAR-8 classification records 26 `planner_waiting_clarification` residuals as model/action-choice owner and 9 `entry_outcome_already_satisfied` residuals as progress-precheck owner. SAR-8C implementation revision `09d43041283078d4031828d01d0b129df4271148` routes default Coordinator recovery through `RecoveryPhase`, removes legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols, and records canonical `current_recovery_decision` / `current_recovery_outcome`. Planner Selection Simplification implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0` has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text and slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback. The behavioral gate is not run because local Ollama currently exposes only `qwen2.5:7b`; promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -395,24 +395,29 @@ pr_breadth_latest:
     runcoordinator_methods_after_legacy_state_deletion: 24
     statekernel_current_recovery_decision: canonical
     statekernel_current_recovery_outcome: canonical
-    compatibility_adapter: recovery_decision_compatibility.py
-    legacy_recovery_protocol_deletion: default_state_and_handler_removed_plan_command_payloads_pending
+    compatibility_adapter: removed_from_default_path
+    legacy_recovery_protocol_deletion: recovery_plan_command_and_incident_protocols_removed_at_09d4304
   planner_selection_simplification:
-    status: ps_3_choice_id_selector_local_candidate
+    status: ps_strict_free_action_model_fallback_retirement_local_candidate
     record: docs/change-admission/planner-selection-actionchoice.yaml
     actionchoice_contract: foundation
     actionchoice_builder:
       exact_text_equals: foundation
       slider_numeric_equals_press_key: foundation
+      checkbox_activation: foundation
+      select_option: foundation
+      terminal_activation: foundation
+      has_changed_activation: foundation
     dispatch:
       zero_choices: typed_failure_without_model_call
       one_choice: runtime_selection_without_model_call
-      multiple_choices: future_step_planner_choice_id_selection
+      multiple_choices: step_planner_choice_id_selection
     strict_generalist_unique_choice_cutover: exact_text_and_slider
     strict_generalist_multiple_choice_selector: choice_id_only_schema
-    fallback_deletion: strict_page_observed_text_and_exact_value_fallback_functions_deleted
+    fallback_deletion: strict_free_action_model_fallback_retired
     production_planner_cutover: partial_runtime_actionchoice_paths
     provider_schema_change: choice_id_only_for_multiple_actionchoices
+    behavioral_gate: not_run_local_ollama_only_has_qwen2_5_7b
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete

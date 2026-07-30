@@ -251,23 +251,25 @@ docs/architecture-governance-track.md
 ## 4.3 决议
 
 ```yaml
-current_head: b9849e1a1941dc3e36abdf4c1e60475766085902
-current_head_role: sar_5b_exact_scope_gate_local_candidate
+repository_head:
+  source: git
+  not_self_recorded: true
+latest_implementation_revisions:
+  sar_8c_recovery_cutover: 09d43041283078d4031828d01d0b129df4271148
+  planner_selection_actionchoice: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
 migration_strategy: substitutive
-next_slice: SAR-6-actioncontract-actionoutcome-canonicalization
+next_slice: planner_selection_behavioral_gate_then_sar_9_phase_extraction
 stopped:
   - TPA-5B foundation-only implementation
   - new internal projections without deletion gate
   - new generic digests without threat model
 production_authority:
-  plan: legacy until SAR-3 cutover
-  progress: legacy until SAR-7 cutover
-  completion: legacy until SAR-7 cutover
-  sar_5_overall: in_progress
-  selected_next: SAR-6 canonical execution and ActionOutcome with same-unit one-out deletion
-  mandatory_before_sar_7:
-    - SAR-4 production PlannerResponse/provider cutover and legacy deletion
-    - SAR-5 canonical observation/scope cutover and terminal-framework deletion
+  plan: PlanCandidate through TaskPlanAuthority admission
+  progress: TaskProgress / active-step progress path
+  completion: runtime terminal success owner with SAR-7 behavioral gate evidence
+  recovery: RecoveryPhase with canonical RecoveryDecision / RecoveryOutcome
+  planner_selection: strict ActionChoice paths local_candidate
+  behavioral_gate: not_run_local_ollama_only_has_qwen2_5_7b
 ```
 
 ## 4.4 Architecture gate 调整
@@ -1264,6 +1266,31 @@ parallel RecoveryHandler/Coordinator/Dispatcher职责
 
 保留一个 RecoveryPhase service。
 
+## 12.5.1 当前实现状态
+
+```yaml
+implementation_revision: 09d43041283078d4031828d01d0b129df4271148
+status: sar_8c_default_recovery_protocol_cutover_local_candidate
+completed:
+  - default Coordinator recovery routes through RecoveryPhase
+  - RecoveryCoordinator returns canonical RecoveryDecision
+  - RecoveryOutcome is the canonical recovery result record
+  - legacy RecoveryPlan / RecoveryCommand compatibility path is removed from the default source tree
+  - legacy RecoveryIncident / RecoveryAttempt / RecoveryCascade protocol is removed from the default source tree
+  - StateKernel no longer stores legacy recovery incident, plan, command, receipt, or delta state
+validation:
+  full_pytest: 1326_passed
+  ruff: passed
+  mypy_core: passed_110_source_files_ignore_optional_missing_imports
+  uv_build: passed
+  diff_check: passed
+behavioral_gate:
+  pr_breadth: not_run_after_sar_8c
+  fresh_diagnostic: not_run_after_sar_8c
+  blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+promotion: held
+```
+
 ## 12.6 Tests
 
 - stale → reobserve/reground；
@@ -1274,6 +1301,55 @@ parallel RecoveryHandler/Coordinator/Dispatcher职责
 - replan trigger进入 TaskPlanAuthority；
 - budget exhaustion；
 - recovery state minimal。
+
+---
+
+# 12A. Planner Selection Simplification — ActionChoice 收口
+
+SAR-9 之前必须先让 planning 入口从“自由生成动作”收敛为
+Runtime-owned `ActionChoice`：
+
+```text
+Current active StepSpec
+UnifiedObservation
+Capability / safety scope
+recent ActionOutcome
+        ↓
+ActionChoiceBuilder
+        ↓
+0 choices → typed Failure
+1 choice  → Runtime auto-selection
+N choices → Step Planner selects choice_id only
+```
+
+当前实现状态：
+
+```yaml
+implementation_revision: f7eded4f690fdb820272dfbe5d3a147794f6a4c0
+status: ps_strict_free_action_model_fallback_retirement_local_candidate
+completed:
+  - Runtime-owned ActionChoice / ActionChoiceSet / ActionChoiceFailure
+  - zero/one/many ActionChoice dispatch
+  - strict Generalist unique-choice no-model selection for supported exact actions
+  - strict Generalist multi-choice provider schema limited to choice_id
+  - strict free-action PlannerProposalCandidate provider fallback retired
+  - ask_user and finish removed from strict model-owned action authority
+compatibility_remaining:
+  - PlannerDecision remains as Coordinator / benchmark / historical compatibility consumer
+  - PlannerProposalCandidate remains in historical compatibility profile only
+  - reference and benchmark planners still use legacy compatibility signatures
+behavioral_gate:
+  pr_breadth: not_run_after_actionchoice
+  fresh_diagnostic: not_run_after_actionchoice
+  blocked_reason: local_ollama_service_only_exposes_qwen2_5_7b
+promotion: held
+```
+
+SAR-9 must not begin by copying remaining PlannerDecision, PlannerContext,
+or historical free-action candidate paths into a new `PlanningPhase`. Either
+run the behavioral gate with a non-qwen Ollama model and classify residuals, or
+record that gate as blocked by local model availability before extracting
+Coordinator phases.
 
 ---
 
