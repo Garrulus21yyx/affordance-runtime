@@ -2742,6 +2742,30 @@ def test_sar_9o_loop_lifecycle_is_behind_runtime_loop_phase() -> None:
     assert (SOURCE_ROOT / "runtime_loop_phase.py").is_file()
 
 
+def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    coordinator_tree = ast.parse(coordinator_source)
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_recover_phase_failure" not in method_names
+    assert "_recover_execution_failure" not in method_names
+    assert "_remaining_recovery_budgets" not in method_names
+    assert "make_failure_envelope" not in coordinator_source
+    assert "commit_non_runtime_failure_owner_handoff" not in coordinator_source
+    assert "self.recovery_failure_phase.recover_phase_failure" in coordinator_source
+    assert "self.recovery_failure_phase.recover_execution_failure" in coordinator_source
+    assert (SOURCE_ROOT / "recovery_failure_phase.py").is_file()
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(

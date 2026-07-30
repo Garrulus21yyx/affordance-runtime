@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-9O RuntimeLoopPhase extraction | SAR-9A-N extracted TaskPlan, progress, TaskSkill, planning decision, contract binding/failure, preflight, execution, verification, TaskSkill progress, verified progress, verification failure, perception, and planning-failure details from `RunCoordinator.run_sync`; SAR-9O now moves loop-start, budget-failure, planning-entry, verification-entry, and active-step activation lifecycle commits into `runtime_loop_phase.RuntimeLoopPhase`. | `RunCoordinator.run_sync` no longer inlines lifecycle `TaskCreated`/budget `TaskFailed` trace commits or PLANNING/VERIFYING phase-entry transitions; Coordinator still owns terminal result packaging and generic recovery envelope helpers. | SAR-9P recovery helper extraction or SAR-9 closure audit |
+| Horizontal | SAR-9P RecoveryFailurePhase extraction | SAR-9A-O extracted TaskPlan, progress, TaskSkill, planning decision, contract binding/failure, preflight, execution, verification, TaskSkill progress, verified progress, verification failure, perception, planning-failure, and loop lifecycle details from `RunCoordinator.run_sync`; SAR-9P now moves generic recovery failure envelope and owner handoff callbacks into `recovery_failure_phase.RecoveryFailurePhase`. | `RunCoordinator` no longer owns generic recovery envelope construction or recovery-budget view construction; Coordinator still owns terminal result packaging and SAR-9 has not cut over to pure PhaseResult / transition / event returns. | SAR-9 closure audit and full validation gate |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -114,7 +114,8 @@ implementation_revision:
   sar_9l_perception_phase_extraction: 9fc34e7ebe43e51e810b9ed99f7aeca919b2eb88
   sar_9m_planning_failure_phase_extraction: ab577b396a7dd344c3d7b3edb155c4b55ff15f3b
   sar_9n_contract_failure_phase_extraction: e87831de269091f4cd14435d09bf5b13f1d37251
-  sar_9o_loop_lifecycle_phase_extraction: local_candidate
+  sar_9o_loop_lifecycle_phase_extraction: 48cab04cc7d7fbd5674ddc37cb3b7e3b0da8b00f
+  sar_9p_recovery_failure_phase_extraction: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -176,12 +177,12 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 1471
+  coordinator_lines: 1219
   run_sync_lines: 523
-  methods: 17
+  methods: 14
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-9P recovery helper extraction or SAR-9 closure audit
+  - SAR-9 closure audit and full validation gate
 blocked_until:
   sar_8: unblocked
 hard_guardrails:
@@ -222,6 +223,7 @@ evidence:
   sar_9m_planning_failure_phase_extraction: docs/change-admission/sar-9m-planning-failure-phase-extraction.yaml
   sar_9n_contract_failure_phase_extraction: docs/change-admission/sar-9n-contract-failure-phase-extraction.yaml
   sar_9o_loop_lifecycle_phase_extraction: docs/change-admission/sar-9o-loop-lifecycle-phase-extraction.yaml
+  sar_9p_recovery_failure_phase_extraction: docs/change-admission/sar-9p-recovery-failure-phase-extraction.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false

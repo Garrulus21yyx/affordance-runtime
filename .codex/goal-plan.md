@@ -1212,3 +1212,14 @@ delivery claims.
   lines, `run_sync()` is 523 lines, and RunCoordinator remains at 17 methods.
   Generic recovery envelope helpers and pure PhaseResult cutover remain pending,
   so SAR-9 full phase extraction remains incomplete.
+- Started SAR-9P RecoveryFailurePhase extraction after
+  `48cab04cc7d7fbd5674ddc37cb3b7e3b0da8b00f`. Added
+  `recovery_failure_phase.RecoveryFailurePhase`, moved execution/preflight /
+  verification failure envelope construction, phase-general failure envelope
+  construction, non-runtime owner handoff delegation, runtime recovery decision
+  delegation, and recovery-budget view construction out of RunCoordinator.
+  Focused SAR-9A-P plus Coordinator/Generalist/full-phase/TaskSkill/contract
+  gates passed 173/173; changed-file Ruff and core mypy passed. Coordinator is
+  now 1219 lines, `run_sync()` remains 523 lines, and RunCoordinator is down to
+  14 methods. Pure PhaseResult cutover remains pending, so SAR-9 full phase
+  extraction remains incomplete.

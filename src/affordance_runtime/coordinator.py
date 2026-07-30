@@ -31,15 +31,6 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
 )
 from affordance_runtime.execution_phase import ExecutionPhase
-from affordance_runtime.failure_envelope import (
-    EffectStatus,
-    FailureClass,
-    FailurePhase,
-    ProposalRejectionContext,
-    RemainingRecoveryBudgets,
-    make_failure_envelope,
-)
-from affordance_runtime.failure_owner_flow import commit_non_runtime_failure_owner_handoff
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_phase import PerceptionPhase
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
@@ -57,13 +48,11 @@ from affordance_runtime.preflight_phase import PreflightPhase
 from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
+from affordance_runtime.recovery_failure_phase import RecoveryFailurePhase
 from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import (
-    FailureOwner,
     RecoveryKind,
-    RuntimePhase,
-    classify_failure,
 )
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
@@ -72,9 +61,6 @@ from affordance_runtime.route_calibration import (
     RouteScope,
 )
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
-from affordance_runtime.runtime_evidence import (
-    semantic_progress_fingerprint,
-)
 from affordance_runtime.runtime_loop_phase import RuntimeLoopPhase
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
@@ -201,6 +187,7 @@ class RunCoordinator:
     active_perception_flow: ActivePerceptionFlow = field(init=False, repr=False)
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
     recovery_phase: RecoveryPhase = field(init=False, repr=False)
+    recovery_failure_phase: RecoveryFailurePhase = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.perception_session = PerceptionSession(self.observer, self.artifacts)
@@ -215,6 +202,12 @@ class RunCoordinator:
         self.recovery_phase = RecoveryPhase(
             coordinator=self.recovery_coordinator,
             owner_dispatcher=self.recovery_owner_dispatcher,
+        )
+        self.recovery_failure_phase = RecoveryFailurePhase(
+            recovery_phase=self.recovery_phase,
+            budget=self.budget,
+            runtime_profile_digest=self.runtime_profile_digest,
+            loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
         )
         if self.task_planner is not None:
             self.task_plan_flow = TaskPlanFlow(
@@ -281,7 +274,7 @@ class RunCoordinator:
                 index_paths=self._index_paths,
                 trace_source_arbitration=self._trace_source_arbitration,
                 fulfill_targeted_perception=self._fulfill_targeted_perception,
-                recover_phase_failure=self._recover_phase_failure,
+                recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
             )
             parent = perception.parent
             if perception.latest_verification is not None:
@@ -323,7 +316,7 @@ class RunCoordinator:
                     task_plan_phase=task_plan_phase,
                     recovery_phase=self.recovery_phase,
                     pending_recovery_kind=_pending_recovery_kind,
-                    recover_phase_failure=self._recover_phase_failure,
+                    recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                     owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
@@ -368,7 +361,7 @@ class RunCoordinator:
                     task_skill_phase=task_skill_phase,
                     recovery_phase=self.recovery_phase,
                     pending_recovery_kind=_pending_recovery_kind,
-                    recover_phase_failure=self._recover_phase_failure,
+                    recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                     owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
@@ -399,7 +392,7 @@ class RunCoordinator:
                     error=exc,
                     recovery_phase=self.recovery_phase,
                     pending_recovery_kind=_pending_recovery_kind,
-                    recover_phase_failure=self._recover_phase_failure,
+                    recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                     owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
@@ -429,7 +422,7 @@ class RunCoordinator:
                         planner=self.planner,
                         recovery_phase=self.recovery_phase,
                         pending_recovery_kind=_pending_recovery_kind,
-                        recover_phase_failure=self._recover_phase_failure,
+                        recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                         owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
                             self.recovery_owner_dispatcher
                         ),
@@ -488,7 +481,7 @@ class RunCoordinator:
                 task_skill_runtime=self.task_skill_runtime,
                 skill_step_id=skill_step_id,
                 pending_recovery_kind=_pending_recovery_kind,
-                recover_phase_failure=self._recover_phase_failure,
+                recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                 owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
                     self.recovery_owner_dispatcher
                 ),
@@ -542,7 +535,7 @@ class RunCoordinator:
                 parent=parent,
                 snapshot=snapshot,
                 contract_binding=contract_binding,
-                recover_phase_failure=self._recover_phase_failure,
+                recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
             )
             if contract_failure is not None:
                 parent = contract_failure.parent
@@ -584,8 +577,8 @@ class RunCoordinator:
                 index_paths=self._index_paths,
                 trace_source_arbitration=self._trace_source_arbitration,
                 fulfill_targeted_perception=self._fulfill_targeted_perception,
-                recover_execution_failure=self._recover_execution_failure,
-                recover_phase_failure=self._recover_phase_failure,
+                recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
+                recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
                 terminal_recovery_status=lambda current_state: _terminal_recovery_status(
                     current_state,
                     fallback=RuntimeStep.ABORTED,
@@ -625,7 +618,7 @@ class RunCoordinator:
                 index_paths=self._index_paths,
                 trace_source_arbitration=self._trace_source_arbitration,
                 fulfill_targeted_perception=self._fulfill_targeted_perception,
-                recover_execution_failure=self._recover_execution_failure,
+                recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 terminal_recovery_status=lambda current_state: _terminal_recovery_status(
                     current_state,
                     fallback=RuntimeStep.FAILED,
@@ -741,7 +734,7 @@ class RunCoordinator:
                 skill_step_id=skill_step_id,
                 task_skill_runtime=self.task_skill_runtime,
                 task_skill_progress_for=_task_skill_progress,
-                recover_execution_failure=self._recover_execution_failure,
+                recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 trace_recovery_started=_trace_recovery_started,
                 terminal_recovery_status=_terminal_recovery_status,
             )
@@ -758,251 +751,6 @@ class RunCoordinator:
                 verification_failure.terminal.error_code,
                 latest_verification,
             )
-
-    def _recover_execution_failure(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        contract: ActionContract,
-        receipt: ExecutionReceipt | None,
-        error: RuntimeErrorCode | None,
-        *,
-        failure_context: dict[str, Any] | None = None,
-        verification: VerificationReport | None = None, verification_ref: str = "",
-    ) -> tuple[RecoveryKind, TraceNode]:
-        task_plan = state.task_plan
-        if verification is not None or error == RuntimeErrorCode.VERIFICATION_FAILED:
-            phase = FailurePhase.VERIFICATION
-            failure_class = FailureClass.VERIFICATION
-        elif state.phase == RuntimeStep.PREFLIGHT.value:
-            phase = FailurePhase.PREFLIGHT
-            failure_class = (
-                FailureClass.AUTHORITY
-                if error
-                in {
-                    RuntimeErrorCode.CAPABILITY_DENIED,
-                    RuntimeErrorCode.UNSAFE_ACTION,
-                    RuntimeErrorCode.APPROVAL_REQUIRED,
-                }
-                else FailureClass.VALIDATION
-            )
-        elif (
-            receipt is not None
-            and receipt.error_code == RuntimeErrorCode.EXECUTION_TIMEOUT
-            and receipt.evidence.get("dispatched") is not False
-        ):
-            phase = FailurePhase.EXECUTION_UNCERTAIN
-            failure_class = FailureClass.EXECUTION
-        else:
-            phase = FailurePhase.EXECUTION_NOT_DISPATCHED
-            failure_class = FailureClass.EXECUTION
-        failure_message = (
-            verification.reason
-            if verification is not None and verification.reason
-            else error.value
-            if isinstance(error, RuntimeErrorCode)
-            else str(error or "execution failed")
-        )
-        failure = make_failure_envelope(
-            run_id=envelope.task_id,
-            phase=phase,
-            failure_class=failure_class,
-            error_code=error or RuntimeErrorCode.EXECUTION_FAILED,
-            message=failure_message,
-            state_version=state.version,
-            task_revision=(
-                task_plan.task_revision
-                if task_plan is not None
-                else envelope.task_spec.revision
-                if envelope.task_spec is not None
-                else 1
-            ),
-            plan_version=task_plan.plan_version if task_plan is not None else 0,
-            active_subgoal_id=(
-                state.plan_progress.active_subgoal_id
-                if state.plan_progress is not None
-                else ""
-            ),
-            observation_epoch_id=state.current_snapshot_id,
-            snapshot_id=state.current_snapshot_id,
-            contract=contract,
-            receipt=receipt,
-            expected_effect=contract.intent,
-            evidence_refs=(verification_ref,) if verification_ref else (),
-            verification_ref=verification_ref,
-            attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),
-            rejected_assumptions=tuple(state.disproved_assumptions),
-            remaining_budgets=self._remaining_recovery_budgets(state),
-            progress_fingerprint=semantic_progress_fingerprint(state),
-            debug_context=failure_context or {},
-        )
-        available: set[RecoveryKind] = {RecoveryKind.ABORT}
-        if phase == FailurePhase.PREFLIGHT:
-            available.add(RecoveryKind.REOBSERVE)
-        if phase in {
-            FailurePhase.EXECUTION_UNCERTAIN,
-            FailurePhase.VERIFICATION,
-        }:
-            available.update(
-                {
-                    RecoveryKind.REOBSERVE,
-                    RecoveryKind.INSPECT_POST_STATE,
-                }
-            )
-        fresh_candidate_id = ""
-        fresh_route_ref = ""
-        route_plan = contract.route_plan
-        if route_plan is not None:
-            for candidate in route_plan.viable_alternatives:
-                if candidate.candidate_id != route_plan.selected_candidate.candidate_id:
-                    fresh_candidate_id = candidate.candidate_id
-                    available.add(RecoveryKind.REROUTE)
-                    break
-        if not fresh_candidate_id:
-            tried_backends = {item.backend for item in state.receipts}
-            for backend in contract.fallback_backends:
-                if backend not in tried_backends:
-                    fresh_route_ref = backend
-                    available.add(RecoveryKind.REROUTE)
-                    break
-        if contract.idempotency_key:
-            available.add(RecoveryKind.RETRY_IDEMPOTENT)
-        if contract.compensation:
-            available.add(RecoveryKind.COMPENSATE)
-        classification = classify_failure(failure)
-        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
-            return commit_non_runtime_failure_owner_handoff(
-                state,
-                trace,
-                parent,
-                failure=failure,
-                classification=classification,
-            )
-        recovery_result = self.recovery_phase.handle_phase_failure(
-            failure=failure,
-            state=state,
-            trace=trace,
-            parent=parent,
-            available_commands=frozenset(available),
-            runtime_profile_digest=self.runtime_profile_digest,
-            loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
-            fresh_candidate_id=fresh_candidate_id,
-            fresh_route_ref=fresh_route_ref,
-            idempotency_key=contract.idempotency_key,
-            compensation_contract_id=(
-                f"compensation:{contract.id}" if contract.compensation else ""
-            ),
-        )
-        parent = recovery_result.parent
-        recovery_kind = recovery_result.recovery_kind
-        if contract.grounding_candidate is not None:
-            if recovery_kind == RecoveryKind.REROUTE:
-                state.record_grounding_reroute(
-                    contract,
-                    "recovery reroute",
-                    exclude_candidate=True,
-                )
-            elif recovery_kind in {
-                RecoveryKind.REOBSERVE,
-                RecoveryKind.RETRY_IDEMPOTENT,
-            }:
-                state.record_grounding_reroute(
-                    contract,
-                    "recovery requires fresh observation",
-                    exclude_candidate=False,
-                )
-        return recovery_kind, parent
-
-    def _recover_phase_failure(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        *,
-        phase: FailurePhase,
-        failure_class: FailureClass,
-        error_code: RuntimeErrorCode | str,
-        message: str,
-        available_commands: frozenset[RecoveryKind],
-        snapshot: BrowserSnapshot | None = None,
-        proposal_id: str = "",
-        proposal_rejection: ProposalRejectionContext | None = None,
-        expected_effect: str = "",
-        recoverable: bool = True,
-        abort_reentry_phase: RuntimePhase = RuntimePhase.ABORTED,
-    ) -> tuple[RecoveryKind, TraceNode]:
-        task_plan = state.task_plan
-        failure = make_failure_envelope(
-            run_id=envelope.task_id,
-            phase=phase,
-            failure_class=failure_class,
-            error_code=error_code,
-            message=message,
-            state_version=state.version,
-            task_revision=(
-                task_plan.task_revision
-                if task_plan is not None
-                else envelope.task_spec.revision
-                if envelope.task_spec is not None
-                else 1
-            ),
-            plan_version=task_plan.plan_version if task_plan is not None else 0,
-            active_subgoal_id=(
-                state.plan_progress.active_subgoal_id
-                if state.plan_progress is not None
-                else ""
-            ),
-            observation_epoch_id=(
-                snapshot.observation.snapshot_id if snapshot is not None else state.current_snapshot_id
-            ),
-            snapshot_id=(
-                snapshot.observation.snapshot_id if snapshot is not None else state.current_snapshot_id
-            ),
-            proposal_id=proposal_id,
-            proposal_rejection=proposal_rejection,
-            expected_effect=expected_effect or envelope.goal,
-            effect_status=EffectStatus.NOT_DISPATCHED,
-            attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),
-            rejected_assumptions=tuple(state.disproved_assumptions),
-            remaining_budgets=self._remaining_recovery_budgets(state),
-            recoverable=recoverable,
-            progress_fingerprint=semantic_progress_fingerprint(state),
-        )
-        classification = classify_failure(failure)
-        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
-            return commit_non_runtime_failure_owner_handoff(
-                state,
-                trace,
-                parent,
-                failure=failure,
-                classification=classification,
-            )
-        recovery_result = self.recovery_phase.handle_phase_failure(
-            failure=failure,
-            state=state,
-            trace=trace,
-            parent=parent,
-            available_commands=available_commands,
-            runtime_profile_digest=self.runtime_profile_digest,
-            loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
-            abort_reentry_phase=abort_reentry_phase,
-        )
-        return recovery_result.recovery_kind, recovery_result.parent
-
-    def _remaining_recovery_budgets(self, state: StateKernel) -> RemainingRecoveryBudgets:
-        return RemainingRecoveryBudgets(
-            recoveries=max(0, self.budget.max_recoveries - state.recovery_count),
-            observations=max(0, self.budget.max_observations - state.observation_count),
-            replans=max(0, self.budget.max_replans - state.replan_count),
-            provider_switches=1,
-            user_escalations=1,
-            timeout_ms=120_000,
-            model_calls=max(0, self.budget.max_replans - state.replan_count),
-            estimated_cost=10.0,
-        )
 
     def _budget_error(self, state: StateKernel) -> RuntimeErrorCode | None:
         if state.step_count >= self.budget.max_steps:
