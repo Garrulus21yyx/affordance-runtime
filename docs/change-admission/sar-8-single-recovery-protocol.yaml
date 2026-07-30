@@ -122,6 +122,10 @@ scope:
       lists; RecoveryPhase writes command completion and delta evidence to trace
       payloads and stores only canonical current_recovery_outcome plus bounded
       recovery_history for strategy oscillation checks.
+    - RecoveryCoordinator no longer imports or uses legacy recovery_commands
+      vocabulary; RecoverySelectionContext normalizes available/preferred
+      commands to canonical RecoveryKind and RuntimePhase, while RecoveryPhase
+      remains the temporary command adapter boundary.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -258,6 +262,13 @@ validation:
     ruff: passed
     mypy_core: passed_5_source_files_ignore_optional_missing_imports
     diff_check: passed
+  recovery_coordinator_canonical_vocabulary:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_uses_canonical_recovery_vocabulary --maxfail=1 --tb=short -q
+  recovery_coordinator_canonical_vocabulary_result: 39_passed
+  recovery_coordinator_canonical_vocabulary_static:
+    ruff: passed
+    mypy_core: passed_2_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1325_passed
   coordinator_lines: 2974
@@ -269,5 +280,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_statekernel_recovery_receipt_delta_removal_local_candidate
+status: sar_8c_recovery_coordinator_canonical_vocabulary_local_candidate
 next_slice: planner-selection-simplification-actionchoice

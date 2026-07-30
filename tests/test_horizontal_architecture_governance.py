@@ -2270,6 +2270,15 @@ def test_sar_8c_recovery_coordinator_no_longer_exposes_plan_api() -> None:
     assert "plan" not in method_names
 
 
+def test_sar_8c_recovery_coordinator_uses_canonical_recovery_vocabulary() -> None:
+    source = (SOURCE_ROOT / "recovery_coordinator.py").read_text(encoding="utf-8")
+
+    assert "recovery_commands" not in source
+    assert "RecoveryCommandKind" not in source
+    assert "RecoveryChangeDimension" not in source
+    assert "RecoveryReentryPhase" not in source
+
+
 def test_sar_8c_coordinator_does_not_complete_recovery_plan_changes_inline() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     coordinator = next(

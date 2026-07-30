@@ -34,6 +34,7 @@ from affordance_runtime.recovery_protocol import (
     FailureClassificationFacts,
     RecoveryDecision,
     RecoveryDimension,
+    RecoveryKind,
     RecoveryOutcome,
     RuntimePhase,
     classify_failure,
@@ -83,11 +84,9 @@ class RecoveryPhase:
         available_action_count: int = 0,
         user_input_required: bool = False,
     ) -> RecoveryApplicationResult:
-        available = frozenset(
-            kind
-            for kind in available_commands
-            if kind not in OWNER_DISPATCH_COMMANDS
-            or kind in self.command_dispatcher.available_commands
+        available = _available_recovery_kinds(
+            available_commands,
+            self.command_dispatcher.available_commands,
         )
         state.transition(RuntimeStep.RECOVERING.value)
         recovery_context = RecoverySelectionContext(
@@ -104,7 +103,7 @@ class RecoveryPhase:
                 RecoveryCommandKind.SWITCH_PROVIDER
             ),
             history=tuple(state.recovery_history),
-            abort_reentry_phase=abort_reentry_phase,
+            abort_reentry_phase=RuntimePhase(abort_reentry_phase.value),
             available_action_count=available_action_count,
             user_input_required=user_input_required,
         )
@@ -677,6 +676,17 @@ class RecoveryPhase:
             parents=[parent.id],
         )
         return parent, False
+
+
+def _available_recovery_kinds(
+    available_commands: frozenset[RecoveryCommandKind],
+    owner_available_commands: frozenset[RecoveryCommandKind],
+) -> frozenset[RecoveryKind]:
+    return frozenset(
+        RecoveryKind(kind.value)
+        for kind in available_commands
+        if kind not in OWNER_DISPATCH_COMMANDS or kind in owner_available_commands
+    )
 
 
 def _pending_legacy_command(state: StateKernel) -> RecoveryCommand | None:
