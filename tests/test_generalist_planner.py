@@ -353,7 +353,7 @@ def test_strict_planner_reports_typed_failure_when_choice_target_unresolved() ->
             target_id="semantic:target",
             surface="dom",
             role="button",
-            label="Target",
+            label="Different",
             supported_actions=("activate",),
             state={"enabled": True, "visible": True},
         ),

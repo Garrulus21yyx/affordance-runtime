@@ -200,7 +200,7 @@ def test_action_choice_builder_distinguishes_unresolved_target_from_no_action() 
                 target_id="semantic:target",
                 surface="dom",
                 role="button",
-                label="Target",
+                label="Different",
                 supported_actions=("activate",),
                 state={"enabled": True, "visible": True},
             )
@@ -210,6 +210,75 @@ def test_action_choice_builder_distinguishes_unresolved_target_from_no_action() 
     assert isinstance(result, ActionChoiceFailure)
     assert result.kind == FailureKind.GROUNDING_AMBIGUOUS
     assert result.reason_code == "action_choice_target_unresolved"
+
+
+def test_action_choice_builder_resolves_unique_exact_label_subject() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:target",
+        subject="target",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=True,
+    )
+    step = _step(criterion=criterion, step_id="step:target")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:target-button",
+                surface="dom",
+                role="button",
+                label="Target",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].target_id == "semantic:target-button"
+
+
+def test_action_choice_builder_creates_has_changed_activation_choice_for_button() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:target",
+        subject="target",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(criterion=criterion, step_id="step:target")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:target-button",
+                surface="dom",
+                role="button",
+                label="Target",
+                supported_actions=("click",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.ACTIVATE
+    assert choice.target_id == "semantic:target-button"
+    assert choice.parameters == {}
 
 
 def test_action_choice_builder_creates_checkbox_activation_choice() -> None:

@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_5_terminal_submit_fallback_retirement
+  current_slice: ps_browsergym_click_actionchoice_cutover
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -72,6 +72,13 @@ scope:
       path now returns typed PlannerUnsupportedResponse for
       action_choice_target_unresolved instead of falling back to free
       PlannerProposal generation.
+    - ActionChoiceBuilder resolves a unique exact-label legacy subject to the
+      current semantic target id without fuzzy label or task-family matching.
+    - ActionChoiceBuilder derives bounded HAS_CHANGED activation choices for
+      activatable non-text, non-slider targets, covering BrowserGym click
+      button without restoring free PlannerProposal fallback.
+    - BrowserGym click-button strict generalist path now completes through a
+      Runtime-built unique ActionChoice with zero Step Planner model calls.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -150,17 +157,20 @@ validation:
     ruff: passed
     mypy_core: passed_3_source_files_ignore_optional_missing_imports
     diff_check: passed
+  browsergym_click_actionchoice_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_action_choice.py tests/test_generalist_planner.py tests/test_browsergym_adapter.py tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_target_unresolved_does_not_fallback_to_free_planner --maxfail=1 --tb=short
+  browsergym_click_actionchoice_cutover_result: 204_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
-    full_pytest_result: 1325_passed
+    full_pytest_result: 1335_passed
     full_ruff: ruff check src tests scripts
     full_ruff_result: passed
-    core_mypy: mypy --ignore-missing-imports src/affordance_runtime/coordinator.py src/affordance_runtime/recovery_phase.py src/affordance_runtime/state_kernel.py src/affordance_runtime/action_choice.py src/affordance_runtime/generalist_planner.py src/affordance_runtime/benchmarks/local.py src/affordance_runtime/benchmarks/generalization_rollout.py
-    core_mypy_result: passed_7_source_files
+    core_mypy: mypy --ignore-missing-imports --exclude 'src/affordance_runtime/benchmarks|src/affordance_runtime/langgraph' src/affordance_runtime
+    core_mypy_result: passed_116_source_files
     uv_build: passed
     diff_check: passed
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_unresolved_target_typed_failure_cutover_local_candidate
-next_slice: ps_6_historical_profile_grammar_quarantine
+status: ps_browsergym_click_actionchoice_cutover_local_candidate
+next_slice: ps_6_behavioral_gate_and_residual_classification

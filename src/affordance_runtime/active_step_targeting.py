@@ -53,6 +53,13 @@ def resolve_active_step_target_ids(
     current_ids = {item.target_id for item in views}
     if subject in current_ids:
         return (subject,)
+    exact_label_matches = tuple(
+        item.target_id
+        for item in views
+        if item.label.strip().casefold() == subject.strip().casefold()
+    )
+    if len(exact_label_matches) == 1:
+        return exact_label_matches
 
     text = " ".join((subject, *tuple(str(item) for item in targets)))
     checkbox = _resolve_checkbox_ordinal_target_id(text, views)

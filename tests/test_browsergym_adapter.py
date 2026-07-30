@@ -679,11 +679,10 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 3
-    assert result.model_call_count == 3
+    assert model.calls == 2
+    assert model.planner_calls == 0
+    assert result.model_call_count == 2
     assert environment.page.default_timeout_ms == 1_500
-    assert model.first_target_id.startswith("semantic:")
-    assert model.first_target_id != "dom_button_1"
     trace_rows = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
     events = [row["event_type"] for row in trace_rows]
     assert "PlannerContextBuilt" in events
@@ -693,26 +692,27 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert "PlannerProposalProduced" in events
     assert "ContractBuilt" in events
     route = next(row["payload"] for row in trace_rows if row["event_type"] == "RouteSelected")
-    assert route["semantic_target_id"] == model.first_target_id
+    assert model.first_target_id == ""
     assert route["candidate_id"].startswith("candidate:dom:")
-    planner_context = next(
-        row["payload"]["context"]
+    planner_context_event = next(
+        row["payload"]
         for row in trace_rows
         if row["event_type"] == "PlannerContextBuilt"
     )
-    assert planner_context["task_spec"]["operation_class"] == "reversible_write"
-    assert planner_context["task_spec"]["targets"] == ["target"]
-    assert planner_context["task_spec"]["task_structure"] == "flat"
-    assert "task_id" not in planner_context["task_spec"]
-    assert "click-button" not in json.dumps(planner_context)
-    assert "official_reward" not in json.dumps(planner_context)
+    assert planner_context_event["runtime_action_choice"]["choice_id"].startswith("choice:")
     task_plan_context = next(
         row["payload"]["planning_context"]
         for row in trace_rows
         if row["event_type"] == "TaskPlanProposed"
     )
+    assert task_plan_context["task_spec"]["operation_class"] == "reversible_write"
+    assert task_plan_context["task_spec"]["targets"] == ["target"]
+    assert task_plan_context["task_spec"]["task_structure"] == "flat"
     assert "task_id" not in task_plan_context["task_spec"]
     assert "click-button" not in json.dumps(task_plan_context)
+    assert "official_reward" not in json.dumps(task_plan_context)
+    assert route["semantic_target_id"].startswith("semantic:")
+    assert route["semantic_target_id"] != "dom_button_1"
     assert route["hard_gates"] and route["hard_gates"][0]["passed"] is True
     assert route["scores"] and route["decision_reason"]
 
@@ -746,8 +746,9 @@ def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Pat
     )
 
     assert result.runtime_status == "done"
-    assert model.calls == 3
-    assert result.model_call_count == 3
+    assert model.calls == 2
+    assert model.planner_calls == 0
+    assert result.model_call_count == 2
 
 
 def test_browsergym_model_stats_counts_repair_model_call_record() -> None:

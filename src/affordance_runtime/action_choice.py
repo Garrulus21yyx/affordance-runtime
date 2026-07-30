@@ -413,6 +413,15 @@ def _choice_for_criterion(
                 criterion=criterion,
                 target=target,
             )
+        if criterion.relation == CriterionRelation.HAS_CHANGED:
+            return _changed_activation_choice(
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=snapshot_id,
+                step_id=step_id,
+                criterion=criterion,
+                target=target,
+            )
         return None
     if isinstance(criterion.expected_value, str) and _supports(
         target,
@@ -537,6 +546,27 @@ def _activation_choice(
     )
 
 
+def _changed_activation_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    criterion: StateCriterion,
+    target: UnifiedObservationTarget,
+) -> ActionChoice | None:
+    if _target_looks_text_entry(target) or _target_looks_slider(target):
+        return None
+    return _activation_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        criterion=criterion,
+        target=target,
+    )
+
+
 def _make_choice(
     *,
     task_revision: int,
@@ -618,6 +648,27 @@ def _numeric_state_value(target: UnifiedObservationTarget) -> int | float | None
             except ValueError:
                 continue
     return None
+
+
+def _target_looks_text_entry(target: UnifiedObservationTarget) -> bool:
+    role = target.role.casefold()
+    input_type = str(target.state.get("input_type", "")).casefold()
+    return role in {"textbox", "searchbox", "textarea"} or input_type in {
+        "email",
+        "number",
+        "password",
+        "search",
+        "tel",
+        "text",
+        "textarea",
+        "url",
+    }
+
+
+def _target_looks_slider(target: UnifiedObservationTarget) -> bool:
+    role = target.role.casefold()
+    input_type = str(target.state.get("input_type", "")).casefold()
+    return role in {"slider", "range"} or input_type == "range"
 
 
 def _require_nonblank(label: str, value: str) -> None:
