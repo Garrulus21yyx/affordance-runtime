@@ -1,7 +1,7 @@
 slice_id: sar-6-actioncontract-actionoutcome-canonicalization
 parent_decision: sar-0-authoritative-architecture-freeze
 base_revision: b9849e1a1941dc3e36abdf4c1e60475766085902
-status: planned
+status: in_progress
 change_type: execution_outcome_canonicalization
 production_writers: 1
 
@@ -17,6 +17,12 @@ review_decision:
     terminal_framework_deletion: pending
     behavioral_exit_evidence: pending
   selected_next: sar-6-actioncontract-actionoutcome-canonicalization
+  sar_6a:
+    revision: "2338432"
+    status: local_candidate
+    default_final_action_event: ActionOutcomeRecorded
+    legacy_action_completed_default_event: removed
+    contractexecutionloop_bind_action_execution_default_seam: removed
   remote_ci: absent
   pr_breadth: held
   promotion: held
