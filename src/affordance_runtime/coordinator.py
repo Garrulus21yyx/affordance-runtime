@@ -98,6 +98,7 @@ from affordance_runtime.task_skill_progress_phase import TaskSkillProgressPhase
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerifierLadder
+from affordance_runtime.verification_failure_phase import VerificationFailurePhase
 from affordance_runtime.verification_phase import VerificationPhase
 from affordance_runtime.verified_progress_phase import VerifiedProgressPhase
 
@@ -117,6 +118,7 @@ EXECUTION_PHASE = ExecutionPhase()
 VERIFICATION_PHASE = VerificationPhase()
 TASK_SKILL_PROGRESS_PHASE = TaskSkillProgressPhase()
 VERIFIED_PROGRESS_PHASE = VerifiedProgressPhase()
+VERIFICATION_FAILURE_PHASE = VerificationFailurePhase()
 
 
 @dataclass(frozen=True)
@@ -1002,74 +1004,35 @@ class RunCoordinator:
                     )
                 if verified_progress.continue_observing:
                     continue
-            if not self.features.recovery:
-                state.transition(RuntimeStep.FAILED.value)
-                return self._finish(
-                    envelope,
-                    state,
-                    trace,
-                    RuntimeStep.FAILED,
-                    parent,
-                    RuntimeErrorCode.VERIFICATION_FAILED,
-                    latest_verification,
-                )
-            skill_failure_context: dict[str, Any] | None = None
-            skill_progress = (
-                _task_skill_progress(self.task_skill_runtime, state)
-                if skill_step_id and self.task_skill_runtime is not None
-                else None
-            )
-            if skill_step_id and skill_progress is not None:
-                skill_failure_context = {
-                    "task_skill_id": skill_progress.skill_id,
-                    "task_skill_version": skill_progress.version,
-                    "task_skill_step_id": skill_step_id,
-                    "selected_route": (
-                        contract.gesture_binding.selected_route
-                        if contract.gesture_binding is not None
-                        else contract.backend
-                    ),
-                    "source_evidence": (
-                        ([verification_ref.path] if verification_ref else [])
-                        + [item.source for item in latest_verification.evidence]
-                    ),
-                    "preserved_completed_step_ids": list(skill_progress.completed_step_ids),
-                }
-            recovery_result, parent = self._recover_execution_failure(
-                envelope,
-                state,
-                trace,
-                parent,
-                contract,
-                receipt,
-                RuntimeErrorCode.VERIFICATION_FAILED,
-                failure_context=skill_failure_context,
+            verification_failure = VERIFICATION_FAILURE_PHASE.run(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                contract=contract,
+                receipt=receipt,
                 verification=latest_verification,
-                verification_ref=verification_ref.path if verification_ref else "",
+                verification_ref=verification_ref,
+                post_snapshot=post_snapshot,
+                recovery_enabled=self.features.recovery,
+                skill_step_id=skill_step_id,
+                task_skill_runtime=self.task_skill_runtime,
+                task_skill_progress_for=_task_skill_progress,
+                recover_execution_failure=self._recover_execution_failure,
+                trace_recovery_started=_trace_recovery_started,
+                terminal_recovery_status=_terminal_recovery_status,
             )
-            parent = _trace_recovery_started(
-                trace,
-                parent,
-                state,
-                recovery_result,
-                verification_status=latest_verification.status.value,
-            )
-            if recovery_result in {
-                RecoveryKind.REOBSERVE,
-                RecoveryKind.INSPECT_POST_STATE,
-            }:
+            parent = verification_failure.parent
+            if verification_failure.continue_observing:
                 continue
-            final_recovery_status = _terminal_recovery_status(
-                state,
-                fallback=RuntimeStep.FAILED,
-            )
+            assert verification_failure.terminal is not None
             return self._finish(
                 envelope,
                 state,
                 trace,
-                final_recovery_status,
+                verification_failure.terminal.status,
                 parent,
-                RuntimeErrorCode.VERIFICATION_FAILED,
+                verification_failure.terminal.error_code,
                 latest_verification,
             )
 

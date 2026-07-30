@@ -1,0 +1,88 @@
+slice_id: sar-9k-verification-failure-phase-extraction
+parent_record: docs/change-admission/sar-9j-verified-progress-phase-extraction.yaml
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+base_revision: 82dd3876861f4ce2a0a59344154cf9dabe510a0b
+change_type: phase_extraction
+production_behavior_change: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+planner_behavior_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_slice: sar-9k-verification-failure-phase-extraction-local-candidate
+  included:
+    - Add VerificationFailurePhase as the Coordinator-facing seam for failed
+      post-action verification handling.
+    - Move recovery-disabled failed verification terminal handling, TaskSkill
+      failure context construction, verification-failure recovery dispatch,
+      recovery-start trace projection, and terminal recovery status selection
+      out of RunCoordinator.run_sync.
+    - Preserve the existing generic _recover_execution_failure owner for
+      preflight/execution/verification recovery envelope construction until a
+      later recovery-pure phase slice.
+  excluded:
+    - Generic _recover_execution_failure extraction or deletion.
+    - Post-state recovery inspection extraction.
+    - Pure PhaseResult / StateTransition / RuntimeEvent cutover.
+    - Recovery authority change, progress authority change, finish authority
+      change, PR breadth, fresh diagnostic, remote CI, or promotion claims.
+
+owner_matrix:
+  verification_failure_application_seam: verification_failure_phase.VerificationFailurePhase
+  generic_execution_recovery_owner: RunCoordinator._recover_execution_failure_until_later_slice
+  recovery_phase_owner: recovery_phase.RecoveryPhase
+  non_runtime_owner_handoff: failure_owner_flow.commit_non_runtime_failure_owner_handoff
+
+coordinator_ratchet:
+  before:
+    coordinator_lines: 1785
+    run_sync_lines: 845
+    run_coordinator_methods: 17
+  after:
+    coordinator_lines: 1748
+    run_sync_lines: 806
+    run_coordinator_methods: 17
+  interpretation:
+    coordinator_lines: decreased
+    run_sync_lines: decreased
+    method_count: unchanged
+  next_ratchet:
+    coordinator_lines_max: 1748
+    run_sync_lines_max: 806
+    run_coordinator_methods_max: 17
+
+architecture_gates:
+  added:
+    - tests/test_horizontal_architecture_governance.py::test_sar_9k_verification_failure_is_behind_verification_failure_phase
+  forbidden_in_run_sync:
+    - skill_failure_context
+    - verification_status
+    - VERIFICATION_FAILED
+
+validation_policy:
+  test_gate_level: subsystem
+  focused_and_adjacent:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection tests/test_horizontal_architecture_governance.py::test_sar_9b_progress_low_level_commits_are_behind_progress_phase tests/test_horizontal_architecture_governance.py::test_sar_9c_taskskill_selection_is_behind_taskskill_phase tests/test_horizontal_architecture_governance.py::test_sar_9d_planning_decision_handling_is_behind_planning_phase tests/test_horizontal_architecture_governance.py::test_sar_9e_contract_binding_is_behind_contract_binding_phase tests/test_horizontal_architecture_governance.py::test_sar_9f_preflight_handling_is_behind_preflight_phase tests/test_horizontal_architecture_governance.py::test_sar_9g_execution_handling_is_behind_execution_phase tests/test_horizontal_architecture_governance.py::test_sar_9h_verification_handling_is_behind_verification_phase tests/test_horizontal_architecture_governance.py::test_sar_9i_taskskill_verification_is_behind_taskskill_progress_phase tests/test_horizontal_architecture_governance.py::test_sar_9j_verified_progress_is_behind_verified_progress_phase tests/test_horizontal_architecture_governance.py::test_sar_9k_verification_failure_is_behind_verification_failure_phase tests/test_coordinator.py tests/test_generalist_planner.py tests/test_full_phase_recovery.py tests/test_task_skill_coordinator.py tests/test_contract_execution_loop.py tests/test_contracts.py -q --tb=short --maxfail=20
+  focused_and_adjacent_result: 168_passed
+  static:
+    - ruff check src/affordance_runtime/verification_failure_phase.py src/affordance_runtime/coordinator.py tests/test_horizontal_architecture_governance.py
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/verification_failure_phase.py src/affordance_runtime/coordinator.py
+    - git diff --check
+  full_pytest:
+    required: false
+    trigger: SAR-9 phase extraction closure or broader production cutover
+  behavioral:
+    pr_breadth: false
+    fresh_diagnostic: false
+
+status:
+  sar_9k_verification_failure_phase_extraction: local_candidate
+  coordinator_reduction: partial
+  pure_phase_result_cutover: pending
+  sar_9_full_phase_extraction: incomplete
+  next_slice: SAR-9L final_loop_recovery_and_result_cleanup

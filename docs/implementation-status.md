@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`; SAR-9E moves semantic / legacy contract binding, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into `contract_binding_phase.ContractBindingPhase`; SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into `preflight_phase.PreflightPhase`; SAR-9G moves action dispatch, receipt state/artifact recording, pending execution recovery completion, and receipt-failure recovery handling into `execution_phase.ExecutionPhase`; SAR-9H moves post-action observation, verification, evidence repair, ActionOutcomeRecorded, action-progress recording, postcondition trace, and route outcome recording into `verification_phase.VerificationPhase`; SAR-9I moves TaskSkill active-step verification, checkpoint/fallthrough traces, and no-TaskPlan TaskSkill terminal compatibility into `task_skill_progress_phase.TaskSkillProgressPhase`; SAR-9J moves grounding recovery completion, verifier-backed TaskPlan progress commit, task-completion verification, and final success commit delegation into `verified_progress_phase.VerifiedProgressPhase`. Focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`; SAR-9E moves semantic / legacy contract binding, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into `contract_binding_phase.ContractBindingPhase`; SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into `preflight_phase.PreflightPhase`; SAR-9G moves action dispatch, receipt state/artifact recording, pending execution recovery completion, and receipt-failure recovery handling into `execution_phase.ExecutionPhase`; SAR-9H moves post-action observation, verification, evidence repair, ActionOutcomeRecorded, action-progress recording, postcondition trace, and route outcome recording into `verification_phase.VerificationPhase`; SAR-9I moves TaskSkill active-step verification, checkpoint/fallthrough traces, and no-TaskPlan TaskSkill terminal compatibility into `task_skill_progress_phase.TaskSkillProgressPhase`; SAR-9J moves grounding recovery completion, verifier-backed TaskPlan progress commit, task-completion verification, and final success commit delegation into `verified_progress_phase.VerifiedProgressPhase`; SAR-9K moves failed-verification terminal/recovery handling into `verification_failure_phase.VerificationFailurePhase`. Focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,11 +53,11 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 coordinator_reduction:
-  interpretation: sar_9j_verified_progress_phase_extraction_local_candidate
+  interpretation: sar_9k_verification_failure_phase_extraction_local_candidate
   current_size_expected_for_stage: true
   within_ratchet: true
-  current_lines: 1785
-  run_sync_lines: 845
+  current_lines: 1748
+  run_sync_lines: 806
   method_count: 17
   actual_reduction_stage: sar_7_to_sar_9
   sar_9a_before:
@@ -103,6 +103,10 @@ coordinator_reduction:
   sar_9j_after:
     coordinator_lines: 1785
     run_sync_lines: 845
+    runcoordinator_methods: 17
+  sar_9k_after:
+    coordinator_lines: 1748
+    run_sync_lines: 806
     runcoordinator_methods: 17
   sar_9b_after:
     coordinator_lines: 2934
@@ -158,7 +162,7 @@ obligation_driven_progress:
   runtime_ticket_carry_shadow: foundation_only
   next_odg_slice: stopped_for_default_path
   advanced_attribution: experimental_only
-  coordinator_commit: authorized_for_bounded_sar_9j_phase_extraction_only
+  coordinator_commit: authorized_for_bounded_sar_9k_phase_extraction_only
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
   benchmark_rerun: not_required
@@ -408,7 +412,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-9J VerifiedProgressPhase extraction. SAR-9A moved TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase. SAR-9B routes post-observation and post-TaskPlan current-state progress through progress_phase.ProgressPhase. SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into task_skill_phase.TaskSkillPhase. SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into planning_phase.PlanningDecisionPhase. SAR-9E moves contract build/bind, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into contract_binding_phase.ContractBindingPhase. SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into preflight_phase.PreflightPhase. SAR-9G moves action dispatch, receipt state/artifact recording, pending execution recovery completion, and receipt-failure recovery handling into execution_phase.ExecutionPhase. SAR-9H moves post-action observation, verification, evidence repair, ActionOutcomeRecorded, action-progress recording, postcondition trace, and route outcome recording into verification_phase.VerificationPhase. SAR-9I moves TaskSkill active-step verification, checkpoint/fallthrough traces, and no-TaskPlan TaskSkill terminal compatibility into task_skill_progress_phase.TaskSkillProgressPhase. SAR-9J moves grounding recovery completion, verifier-backed TaskPlan progress commit, task-completion verification, and final success commit delegation into verified_progress_phase.VerifiedProgressPhase while preserving Coordinator ownership of verification-failure recovery. Promotion remains held.
+  current_next_change_admission: SAR-9K VerificationFailurePhase extraction. SAR-9A moved TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase. SAR-9B routes post-observation and post-TaskPlan current-state progress through progress_phase.ProgressPhase. SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into task_skill_phase.TaskSkillPhase. SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into planning_phase.PlanningDecisionPhase. SAR-9E moves contract build/bind, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into contract_binding_phase.ContractBindingPhase. SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into preflight_phase.PreflightPhase. SAR-9G moves action dispatch, receipt state/artifact recording, pending execution recovery completion, and receipt-failure recovery handling into execution_phase.ExecutionPhase. SAR-9H moves post-action observation, verification, evidence repair, ActionOutcomeRecorded, action-progress recording, postcondition trace, and route outcome recording into verification_phase.VerificationPhase. SAR-9I moves TaskSkill active-step verification, checkpoint/fallthrough traces, and no-TaskPlan TaskSkill terminal compatibility into task_skill_progress_phase.TaskSkillProgressPhase. SAR-9J moves grounding recovery completion, verifier-backed TaskPlan progress commit, task-completion verification, and final success commit delegation into verified_progress_phase.VerifiedProgressPhase. SAR-9K moves recovery-disabled failed verification terminal handling, TaskSkill failure context construction, verification-failure recovery dispatch, recovery-start trace projection, and terminal recovery status selection into verification_failure_phase.VerificationFailurePhase while preserving generic recovery envelope construction. Promotion remains held.
   pre_sar_8_planner_failure_classification:
     record: docs/change-admission/sar-8-pre-planner-failure-classification.yaml
     evidence: docs/evidence/runs/sar-7-planner-failure-classification-25ec674/
@@ -573,8 +577,8 @@ pr_breadth_latest:
     - total_core_complexity_must_decrease
 
 active_local_repair:
-  slice: sar-9j-verified-progress-phase-extraction
-  base_revision: 07411cf5014c0f5e0f830d0f0f6ca4d5eb003c9c
+  slice: sar-9k-verification-failure-phase-extraction
+  base_revision: 82dd3876861f4ce2a0a59344154cf9dabe510a0b
   status: local_candidate
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
@@ -614,12 +618,13 @@ active_local_repair:
   sar_9h_record: docs/change-admission/sar-9h-verification-phase-extraction.yaml
   sar_9i_record: docs/change-admission/sar-9i-taskskill-progress-phase-extraction.yaml
   sar_9j_record: docs/change-admission/sar-9j-verified-progress-phase-extraction.yaml
+  sar_9k_record: docs/change-admission/sar-9k-verification-failure-phase-extraction.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
   behavior_change: planned_for_sar_6_execution_outcome_contract_shape_only_until_cutover
   standard_path_authority: candidate_capable_initial_and_replacement_admission_cutover_only
-  coordinator_commit: authorized_for_bounded_sar_9j_phase_extraction_only
+  coordinator_commit: authorized_for_bounded_sar_9k_phase_extraction_only
   finish_gate_change: not_authorized
   planner_context_change: unchanged
   taskplan_generator_change: unchanged_after_plan_candidate_naming_retirement
@@ -632,8 +637,8 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-9j-verified-progress-phase-extraction
-  next_runtime_slice: sar-9k-verification-failure-recovery-phase-extraction
+  current_runtime_slice: sar-9k-verification-failure-phase-extraction
+  next_runtime_slice: sar-9l-final-loop-recovery-and-result-cleanup
   sar_8_blocked_until: unblocked
   historical_required_before_sar_7:
     - sar_4_standard_generalist_parent_response_cutover
