@@ -28,7 +28,6 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     SourcedTaskClaim,
-    TaskObligationRelation,
     TaskObligationSpec,
     TaskSpec,
 )
@@ -277,14 +276,9 @@ def _criterion_from_subgoal_and_obligation(
     obligation: TaskObligationSpec,
     claims_by_id: dict[str, SourcedTaskClaim],
 ) -> Criterion | None:
-    relation = _map_relation(obligation.relation)
-    if relation is None:
-        return None
+    relation = StateCriterionRelation(obligation.relation)
     if subgoal.outcome is not None:
-        outcome_relation = _map_relation(
-            TaskObligationRelation(subgoal.outcome.relation.value)
-        )
-        if outcome_relation != relation:
+        if subgoal.outcome.relation != relation:
             return None
         if subgoal.outcome.subject != obligation.subject:
             return None
@@ -306,9 +300,7 @@ def _criterion_from_obligation(
     relation: StateCriterionRelation | None = None,
     expected_value: str | None = None,
 ) -> Criterion | None:
-    resolved_relation = relation or _map_relation(obligation.relation)
-    if resolved_relation is None:
-        return None
+    resolved_relation = relation or StateCriterionRelation(obligation.relation)
     source_refs = _source_refs_for_obligation(obligation, claims_by_id)
     if not source_refs:
         return None
@@ -449,15 +441,6 @@ def _source_refs_for_obligation(
                 )
             )
     return tuple(refs)
-
-
-def _map_relation(
-    relation: TaskObligationRelation,
-) -> StateCriterionRelation | None:
-    try:
-        return StateCriterionRelation(relation.value)
-    except ValueError:
-        return None
 
 
 def _project_evidence_by_step(

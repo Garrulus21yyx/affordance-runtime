@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-1.1 hash-reachable hidden-mutability closure active local change after `21d49cad499d6e048c9d0eb659cba346010c4ff3`: SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1 has frozen ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, GestureTargetBinding locator payloads, VerificationEvidence/VerificationReport values, VerifierSpec expected values, SourceAssertion values, TraceNode payload/parent references, RecoveryTraceProjection payloads, TaskPlanTraceProjection payloads, RecoveryContext tried-backend sequences, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConformanceSurfaceResult evidence sequences, evolution/recovery-evolution artifact payloads, CanonicalTrace rows, ConfiguredApprovalProvider allowed-capability sets, RoutingDecision candidate/score payloads, TaskEnvelope constraints/capabilities, task API request/execution DTO payloads, semantic resolver/compiler payloads, canonical/intent proposal claim-id mappings, ordinal collection snapshot affordance state, and TaskSkillReplayDecision metrics at construction/materialization/append boundaries. Supplied ActionContract hashes are validated against the canonical frozen payload. Scanner evidence shows no remaining non-benchmark frozen dataclass with list/dict/Mapping/Sequence fields lacking `__post_init__`. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-2 semantic vocabulary unification active local change after `6ff0fb56ac2c79930d94b91b3c8bb3fe3e3361b9`: SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1.1 closed the remaining hash-reachable hidden-mutability checks for VerifierSpec expected values, SourceAssertion values, and supplied ActionContract hash consistency. SAR-2 now introduces `semantics.py` as the canonical semantic vocabulary, replaces TaskObligationRelation, SubgoalOutcomeRelation, and StateCriterionRelation with aliases to the single CriterionRelation enum, replaces duplicate evidence policy/strength names with canonical aliases, removes the simplified step relation projector, and turns no-op criterion subclasses into compatibility aliases to the atomic StateCriterion model. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -148,6 +148,23 @@ authoritative_optimized_architecture:
   next_slice: sar-2-relation-criterion-evidence-vocabulary-unification
   production_behavior_change: false
   promotion_status: held
+
+sar_2_semantic_vocabulary_unification:
+  record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml
+  status: local_completion_candidate
+  canonical_module: src/affordance_runtime/semantics.py
+  criterion_relation_enums: 1
+  canonical_evidence_policy_count: 1
+  canonical_atomic_criterion_model_count: 1
+  internal_relation_mapping_functions: 0
+  production_enum_value_cross_casts: 0
+  task_obligation_relation: compatibility_alias_to_criterion_relation
+  subgoal_outcome_relation: compatibility_alias_to_criterion_relation
+  state_criterion_relation: compatibility_alias_to_criterion_relation
+  criterion_evidence_policy: compatibility_alias_to_evidence_policy
+  nominal_criterion_subclasses: compatibility_aliases_to_state_criterion
+  runtime_authority_changed: false
+  next_slice: sar-3-plan-vertical-replacement
 
 sar_1_deep_immutability:
   record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
@@ -326,12 +343,12 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-2 relation / criterion / evidence vocabulary unification after SAR-1.1 local closure; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-3 plan vertical replacement after SAR-2 local closure; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-1-1-hash-reachable-hidden-mutability-closure
-  revision: 21d49cad499d6e048c9d0eb659cba346010c4ff3
+  slice: sar-2-relation-criterion-evidence-vocabulary-unification
+  revision: 6ff0fb56ac2c79930d94b91b3c8bb3fe3e3361b9
   status: active_local_change
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
@@ -351,6 +368,7 @@ active_local_repair:
   sar_0_freeze_record: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
   sar_1_record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
   sar_1_1_record: docs/change-admission/sar-1-1-hash-reachable-hidden-mutability-closure.yaml
+  sar_2_record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -362,7 +380,7 @@ active_local_repair:
   taskplan_generator_change: draft_foundation_only_with_legacy_production_path
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-2-relation-criterion-evidence-vocabulary-unification
+  next_runtime_slice: sar-3-plan-vertical-replacement
   promotion_status: held
 
 attribution_classification:
@@ -657,7 +675,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1.1 hash-reachable hidden-mutability closure is the active local change; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-2 relation / criterion / evidence vocabulary unification is next after SAR-1.1 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-2 semantic vocabulary unification is the active local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, SAR-1 deep-immutability gates, and SAR-2 canonical semantic vocabulary gates | none | SAR-3 plan vertical replacement is next after SAR-2 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover outside SAR-3, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover outside authorized SAR slices, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

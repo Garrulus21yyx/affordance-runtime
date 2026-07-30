@@ -21,6 +21,7 @@ from affordance_runtime.criteria import (
     evidence_requirements_from_descriptions,
 )
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
+from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.task_intake import (
     OperationClass,
     StrictModel,
@@ -91,19 +92,7 @@ class SubgoalSpec(StrictModel):
     max_recoveries: int = Field(default=2, ge=0, le=10)
 
 
-class SubgoalOutcomeRelation(StrEnum):
-    EQUALS = "equals"
-    CONTAINS = "contains"
-    MATCHES = "matches"
-    IS_VISIBLE = "is_visible"
-    IS_ABSENT = "is_absent"
-    IS_AVAILABLE = "is_available"
-    IS_SELECTED = "is_selected"
-    IS_CHECKED = "is_checked"
-    IS_EXPANDED = "is_expanded"
-    IS_COMPLETED = "is_completed"
-    IS_ORDERED_AS = "is_ordered_as"
-    HAS_CHANGED = "has_changed"
+SubgoalOutcomeRelation = CriterionRelation
 
 
 _ACTION_OUTCOME_RELATIONS: dict[TaskPlanActionFamily, frozenset[SubgoalOutcomeRelation]] = {

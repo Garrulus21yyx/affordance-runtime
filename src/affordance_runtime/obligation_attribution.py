@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Literal, cast
 
 from affordance_runtime.obligation_progress import (
@@ -15,25 +14,12 @@ from affordance_runtime.obligation_progress import (
     ReadyObligationView,
     validate_obligation_progress_state,
 )
+from affordance_runtime.semantics import EvidenceSourceKind, EvidenceStrength
 from affordance_runtime.task_intake import (
     TaskObligationRelation,
     TaskObligationSpec,
     TaskSpec,
 )
-
-
-class EvidenceStrength(StrEnum):
-    WEAK = "weak"
-    INDEPENDENT = "independent"
-    AUTHORITATIVE = "authoritative"
-
-
-class EvidenceSourceKind(StrEnum):
-    POST_ACTION_OBSERVATION = "post_action_observation"
-    INDEPENDENT_API = "independent_api"
-    EXECUTION_RECEIPT = "execution_receipt"
-    EXTERNAL_EVALUATOR = "external_evaluator"
-
 
 FrozenEvidenceValue = str | bool | int | float | None
 

@@ -10,6 +10,8 @@ from typing import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.semantics import CriterionRelation
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -105,19 +107,7 @@ class TaskObligationKind(StrEnum):
     EFFECT = "effect"
 
 
-class TaskObligationRelation(StrEnum):
-    EQUALS = "equals"
-    CONTAINS = "contains"
-    MATCHES = "matches"
-    IS_VISIBLE = "is_visible"
-    IS_ABSENT = "is_absent"
-    IS_AVAILABLE = "is_available"
-    IS_SELECTED = "is_selected"
-    IS_CHECKED = "is_checked"
-    IS_EXPANDED = "is_expanded"
-    IS_COMPLETED = "is_completed"
-    IS_ORDERED_AS = "is_ordered_as"
-    HAS_CHANGED = "has_changed"
+TaskObligationRelation = CriterionRelation
 
 
 class TaskObligationValueSource(StrEnum):

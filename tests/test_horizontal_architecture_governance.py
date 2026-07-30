@@ -781,7 +781,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-2 relation / criterion / evidence vocabulary unification" in status
+    assert "current_next_change_admission: sar-3 plan vertical replacement" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1857,28 +1857,62 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
     assert "legacy_compatibility_boundary: frozen payload readers use mapping and sequence" in status
     assert "adapter_boundary_thaw: explicit_only" in status
-    assert "freezes actioncontract, executionreceipt, plannerdecision diagnostic, observation, affordance, gesturetargetbinding locator, verifierspec expected values, sourceassertion values, verificationevidence" in current_plan
-    assert "supplied actioncontract hashes are checked against the canonical frozen payload" in current_plan
-    assert "tracenode payload boundaries" in current_plan
-    assert "recoverytraceprojection payloads" in current_plan
-    assert "taskplantraceprojection payloads" in current_plan
-    assert "recoverycontext tried-backend sequences" in current_plan
-    assert "browsersnapshot accessibility-tree payload boundaries" in current_plan
-    assert "pageaffordancemodel affordance-sequence boundaries" in current_plan
-    assert "thingaffordancemodel affordance/state-source payload boundaries" in current_plan
-    assert "conformancesurfaceresult evidence sequences" in current_plan
-    assert "evolution/recovery-evolution artifact payloads" in current_plan
-    assert "canonicaltrace rows" in current_plan
-    assert "configuredapprovalprovider allowed-capability boundaries" in current_plan
-    assert "routingdecision candidate/score payload boundaries" in current_plan
-    assert "taskenvelope constraint/capability boundaries" in current_plan
-    assert "task api request/execution dto boundaries" in current_plan
-    assert "semantic resolver/compiler payload boundaries" in current_plan
-    assert "canonical/intent proposal claim-id mappings" in current_plan
-    assert "ordinal collection snapshot affordance state" in current_plan
-    assert "taskskillreplaydecision metrics" in current_plan
-    assert "scanner evidence has no non-benchmark frozen dataclass" in current_plan
-    assert "durable status/readme references are synchronized to the current head" in current_plan
+    assert "verifierspec expected / criterion_ids / requirement_ids" in status
+    assert "sourceassertion value" in status
+    assert "supplied_contract_hash_consistency: enforced" in status
+    assert "sar-2 relation / criterion / evidence vocabulary unification" in current_plan
+
+
+def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() -> None:
+    record_path = CHANGE_ADMISSION_DIR / "sar-2-relation-criterion-evidence-vocabulary-unification.yaml"
+    semantics = (REPOSITORY_ROOT / "src/affordance_runtime/semantics.py").read_text(encoding="utf-8")
+    task_intake = (REPOSITORY_ROOT / "src/affordance_runtime/task_intake.py").read_text(encoding="utf-8")
+    task_planning = (REPOSITORY_ROOT / "src/affordance_runtime/task_planning.py").read_text(encoding="utf-8")
+    simplified_contracts = (
+        REPOSITORY_ROOT / "src/affordance_runtime/simplified_runtime_contracts.py"
+    ).read_text(encoding="utf-8")
+    simplified_projection = (
+        REPOSITORY_ROOT / "src/affordance_runtime/simplified_step_projection.py"
+    ).read_text(encoding="utf-8")
+    obligation_attribution = (
+        REPOSITORY_ROOT / "src/affordance_runtime/obligation_attribution.py"
+    ).read_text(encoding="utf-8")
+    record = " ".join(record_path.read_text(encoding="utf-8").split()).casefold()
+    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
+    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+
+    assert record_path.exists()
+    assert "class CriterionRelation(StrEnum):" in semantics
+    assert "class TaskObligationRelation" not in task_intake
+    assert "TaskObligationRelation = CriterionRelation" in task_intake
+    assert "class SubgoalOutcomeRelation" not in task_planning
+    assert "SubgoalOutcomeRelation = CriterionRelation" in task_planning
+    assert "class StateCriterionRelation" not in simplified_contracts
+    assert "StateCriterionRelation = CriterionRelation" in simplified_contracts
+    assert "class CriterionEvidencePolicy" not in simplified_contracts
+    assert "CriterionEvidencePolicy = EvidencePolicy" in simplified_contracts
+    assert "class EvidenceStrength" not in obligation_attribution
+    assert "class EvidenceSourceKind" not in obligation_attribution
+    assert "def _map_relation" not in simplified_projection
+    assert "class ValueCriterion" not in simplified_contracts
+    assert "class PresenceCriterion" not in simplified_contracts
+    assert "class AbsenceCriterion" not in simplified_contracts
+    assert "class NavigationCriterion" not in simplified_contracts
+    assert "slice_id: sar-2-relation-criterion-evidence-vocabulary-unification" in record
+    assert "criterion_relation_enums: 1" in record
+    assert "canonical_evidence_policy_count: 1" in record
+    assert "canonical_atomic_criterion_model_count: 1" in record
+    assert "internal_relation_mapping_functions: 0" in record
+    assert "production_enum_value_cross_casts: 0" in record
+    assert "runtime_authority_changed: false" in record
+    assert "sar_2_semantic_vocabulary_unification:" in status
+    assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
+    assert "criterion_relation_enums: 1" in status
+    assert "internal_relation_mapping_functions: 0" in status
+    assert "current_next_change_admission: sar-3 plan vertical replacement" in status
+    assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan
+    assert "simplified step projection no longer maps relation enum values" in current_plan
+    assert "sar-3 plan vertical replacement" in current_plan
 
 
 def test_taskskill_state_mutation_callers_are_frozen_to_taskskill_runtime() -> None:

@@ -11,24 +11,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, TypeAlias
 
+from affordance_runtime.semantics import (
+    CriterionRelation,
+    EvidencePolicy,
+    EvidenceStrength,
+)
 
-class EvidenceStrength(StrEnum):
-    WEAK = "weak"
-    INDEPENDENT = "independent"
-    AUTHORITATIVE = "authoritative"
-
-
-class StateCriterionRelation(StrEnum):
-    EQUALS = "equals"
-    CONTAINS = "contains"
-    MATCHES = "matches"
-    IS_VISIBLE = "is_visible"
-    IS_ABSENT = "is_absent"
-    IS_AVAILABLE = "is_available"
-    IS_SELECTED = "is_selected"
-    IS_CHECKED = "is_checked"
-    IS_COMPLETED = "is_completed"
-    HAS_CHANGED = "has_changed"
+StateCriterionRelation = CriterionRelation
+CriterionEvidencePolicy = EvidencePolicy
 
 
 class CompositeCriterionOperator(StrEnum):
@@ -79,18 +69,6 @@ class SourceReference:
 
 
 @dataclass(frozen=True)
-class CriterionEvidencePolicy:
-    minimum_strength: EvidenceStrength
-    allowed_source_kinds: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.minimum_strength, EvidenceStrength):
-            raise ValueError("unsupported evidence strength")
-        _require_tuple("allowed_source_kinds", self.allowed_source_kinds)
-        _require_unique_nonblank("allowed source kinds", self.allowed_source_kinds)
-
-
-@dataclass(frozen=True)
 class _CriterionBase:
     criterion_id: str
     source_refs: tuple[SourceReference, ...]
@@ -125,24 +103,10 @@ class StateCriterion(_CriterionBase):
         _reject_mutable_value(self.expected_value)
 
 
-@dataclass(frozen=True)
-class ValueCriterion(StateCriterion):
-    pass
-
-
-@dataclass(frozen=True)
-class PresenceCriterion(StateCriterion):
-    pass
-
-
-@dataclass(frozen=True)
-class AbsenceCriterion(StateCriterion):
-    pass
-
-
-@dataclass(frozen=True)
-class NavigationCriterion(StateCriterion):
-    pass
+ValueCriterion = StateCriterion
+PresenceCriterion = StateCriterion
+AbsenceCriterion = StateCriterion
+NavigationCriterion = StateCriterion
 
 
 @dataclass(frozen=True)
@@ -182,10 +146,6 @@ class CompositeCriterion(_CriterionBase):
 
 Criterion: TypeAlias = (
     StateCriterion
-    | ValueCriterion
-    | PresenceCriterion
-    | AbsenceCriterion
-    | NavigationCriterion
     | ArtifactCriterion
     | ApiCriterion
     | CompositeCriterion

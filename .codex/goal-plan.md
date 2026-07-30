@@ -969,3 +969,11 @@ delivery claims.
   `ActionContract.contract_hash` consistency. This slice remains authority-free:
   no Coordinator, StateKernel, PlannerPort, TaskPlan, progress, finish,
   provider, or benchmark behavior changes are in scope.
+- Started SAR-2 after `6ff0fb5`. Added `semantics.py` as the canonical semantic
+  vocabulary, converted `TaskObligationRelation`, `SubgoalOutcomeRelation`, and
+  `StateCriterionRelation` into aliases to `CriterionRelation`, converted
+  simplified/attribution evidence policy and strength names to canonical
+  aliases, made no-op criterion subclasses compatibility aliases to
+  `StateCriterion`, and removed the simplified step relation projector. The
+  active SAR-2 record is
+  `docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml`.
