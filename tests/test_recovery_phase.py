@@ -51,7 +51,7 @@ def test_recovery_phase_handles_phase_general_failure_through_decision_seam() ->
     )
 
     assert isinstance(result, RecoveryApplicationResult)
-    assert result.command_kind == RecoveryCommandKind.REOBSERVE
+    assert result.recovery_kind == RecoveryKind.REOBSERVE
     assert result.decision.kind == RecoveryKind.REOBSERVE
     assert result.outcome is None
     assert state.phase == RuntimeStep.OBSERVING.value
@@ -98,7 +98,7 @@ def test_recovery_phase_records_immediate_terminal_outcome_without_pending_plan(
         loaded_profile_artifact_ids=(),
     )
 
-    assert result.command_kind == RecoveryCommandKind.ABORT
+    assert result.recovery_kind == RecoveryKind.ABORT
     assert result.outcome is not None
     assert result.outcome.decision_id == result.decision.decision_id
     assert result.outcome.failure_id == failure.failure_id
@@ -152,4 +152,4 @@ def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> 
     )
 
     assert result.classification.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
-    assert result.command_kind != RecoveryCommandKind.ASK_USER
+    assert result.recovery_kind != RecoveryKind.ASK_USER

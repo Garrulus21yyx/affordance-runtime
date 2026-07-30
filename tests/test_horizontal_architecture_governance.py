@@ -2393,6 +2393,18 @@ def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> N
     assert "return recovery_result.command_kind" not in seam
 
 
+def test_sar_8c_recovery_phase_result_exposes_canonical_recovery_kind() -> None:
+    source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
+    result_section = source.split("class RecoveryApplicationResult:", 1)[1].split(
+        "\n\n",
+        1,
+    )[0]
+
+    assert "command_kind" not in result_section
+    assert "RecoveryCommandKind" not in result_section
+    assert "recovery_kind: RecoveryKind" in result_section
+
+
 def test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs() -> None:
     source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
 

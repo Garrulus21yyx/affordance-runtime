@@ -2353,7 +2353,7 @@ class RunCoordinator:
             ),
         )
         parent = recovery_result.parent
-        recovery_kind = RecoveryKind(recovery_result.command_kind.value)
+        recovery_kind = recovery_result.recovery_kind
         if contract.grounding_candidate is not None:
             if recovery_kind == RecoveryKind.REROUTE:
                 state.record_grounding_reroute(
@@ -2438,7 +2438,7 @@ class RunCoordinator:
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
             abort_reentry_phase=abort_reentry_phase,
         )
-        return RecoveryKind(recovery_result.command_kind.value), recovery_result.parent
+        return recovery_result.recovery_kind, recovery_result.parent
 
     def _remaining_recovery_budgets(self, state: StateKernel) -> RemainingRecoveryBudgets:
         return RemainingRecoveryBudgets(

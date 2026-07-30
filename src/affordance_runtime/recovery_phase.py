@@ -50,12 +50,12 @@ from affordance_runtime.verification import VerificationReport
 class RecoveryApplicationResult:
     classification: FailureClassification
     decision: RecoveryDecision
-    command_kind: RecoveryCommandKind
+    recovery_kind: RecoveryKind
     parent: TraceNode
     outcome: RecoveryOutcome | None = None
 
     def __iter__(self):
-        yield self.command_kind
+        yield self.recovery_kind
         yield self.parent
 
 
@@ -146,7 +146,12 @@ class RecoveryPhase:
             RecoveryCommandKind.RETRY_IDEMPOTENT,
         }:
             state.transition(RuntimeStep.OBSERVING.value)
-            return RecoveryApplicationResult(classification, decision, command.kind, parent)
+            return RecoveryApplicationResult(
+                classification,
+                decision,
+                RecoveryKind(command.kind.value),
+                parent,
+            )
         if command.kind in {
             RecoveryCommandKind.REPLAN_STEP,
             RecoveryCommandKind.REPLAN_TASK,
@@ -156,9 +161,14 @@ class RecoveryPhase:
                 f"{failure.phase.value}:{failure.error_code}:{failure.message}"
             )
             state.transition(RuntimeStep.OBSERVING.value)
-            return RecoveryApplicationResult(classification, decision, command.kind, parent)
+            return RecoveryApplicationResult(
+                classification,
+                decision,
+                RecoveryKind(command.kind.value),
+                parent,
+            )
         if command.kind in OWNER_DISPATCH_COMMANDS:
-            command_kind, parent = self._dispatch_owner_command(
+            recovery_kind, parent = self._dispatch_owner_command(
                 failure,
                 state,
                 trace,
@@ -168,11 +178,11 @@ class RecoveryPhase:
             return RecoveryApplicationResult(
                 classification,
                 decision,
-                command_kind,
+                recovery_kind,
                 parent,
                 state.current_recovery_outcome,
             )
-        command_kind, parent = _complete_immediate_recovery_command(
+        recovery_kind, parent = _complete_immediate_recovery_command(
             state,
             trace,
             parent,
@@ -183,7 +193,7 @@ class RecoveryPhase:
         return RecoveryApplicationResult(
             classification,
             decision,
-            command_kind,
+            recovery_kind,
             parent,
             state.current_recovery_outcome,
         )
@@ -196,7 +206,7 @@ class RecoveryPhase:
         parent: TraceNode,
         *,
         abort_reentry_phase: RecoveryReentryPhase,
-    ) -> tuple[RecoveryCommandKind, TraceNode]:
+    ) -> tuple[RecoveryKind, TraceNode]:
         command = _pending_legacy_command(state)
         if command is None:
             raise ValueError("owner recovery dispatch requires a pending command")
@@ -227,7 +237,7 @@ class RecoveryPhase:
                 next_phase=RuntimePhase(abort_reentry_phase.value),
                 error_code=dispatched.receipt.error_code,
             )
-            return RecoveryCommandKind.ABORT, parent
+            return RecoveryKind.ABORT, parent
         state.replan_count += 1
         state.record_disproved_assumption(
             f"{failure.phase.value}:{failure.error_code}:{failure.message}"
@@ -260,7 +270,7 @@ class RecoveryPhase:
             parents=[parent.id],
         )
         return (
-            command.kind,
+            RecoveryKind(command.kind.value),
             trace.add(
                 "RecoveryReenteredPhase",
                 {"state": state.phase, "reentry_phase": command.reentry_phase.value},
@@ -735,7 +745,7 @@ def _complete_immediate_recovery_command(
     failure: FailureEnvelope,
     decision: RecoveryDecision,
     command: RecoveryCommand,
-) -> tuple[RecoveryCommandKind, TraceNode]:
+) -> tuple[RecoveryKind, TraceNode]:
     terminal_phase = {
         RecoveryReentryPhase.WAITING_USER: RuntimeStep.WAITING_CLARIFICATION.value,
         RecoveryReentryPhase.WAITING_APPROVAL: RuntimeStep.WAITING_APPROVAL.value,
@@ -779,7 +789,7 @@ def _complete_immediate_recovery_command(
         parents=[parent.id],
     )
     return (
-        command.kind,
+        RecoveryKind(command.kind.value),
         trace.add(
             "RecoveryReenteredPhase",
             {"state": state.phase, "reentry_phase": command.reentry_phase.value},
