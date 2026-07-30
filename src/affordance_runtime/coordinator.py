@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from affordance_runtime.action_outcome_flow import record_contract_action_outcome_trace
 from affordance_runtime.active_perception import (
     PerceptionResolutionStatus,
 )
@@ -40,7 +39,6 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.failure_owner_flow import commit_non_runtime_failure_owner_handoff
-from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
@@ -75,7 +73,6 @@ from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_evidence import (
     semantic_progress_fingerprint,
     verification_confirms_effect_absent,
-    verification_satisfies_effect,
 )
 from affordance_runtime.runtime_terminal import (
     TaskCompletionVerifier,
@@ -107,7 +104,8 @@ from affordance_runtime.task_skill_phase import (
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
+from affordance_runtime.verification import VerificationReport, VerifierLadder
+from affordance_runtime.verification_phase import VerificationPhase
 
 OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
     {
@@ -122,6 +120,7 @@ PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
 PREFLIGHT_PHASE = PreflightPhase()
 EXECUTION_PHASE = ExecutionPhase()
+VERIFICATION_PHASE = VerificationPhase()
 
 
 @dataclass(frozen=True)
@@ -930,126 +929,32 @@ class RunCoordinator:
             assert execution_result.receipt is not None
             receipt = execution_result.receipt
             state.transition(RuntimeStep.VERIFYING.value)
-            post_snapshot = self.perception_session.capture(
-                envelope,
-                state,
-                state.observation_count + 1,
-            )
-            state.remember_observation(post_snapshot.observation)
-            post_ref = self._write_observation(envelope.task_id, state.observation_count, post_snapshot)
-            self._index(trace, post_ref)
-            self._index_paths(trace, post_snapshot.observation.artifact_refs)
-            parent = trace.add(
-                "PostActionObservationCaptured",
-                {
-                    "state": state.phase,
-                    "snapshot_id": post_snapshot.observation.snapshot_id,
-                    "page_revision": post_snapshot.observation.page_revision,
-                    "artifact_refs": ([post_ref.path] if post_ref else []) + list(post_snapshot.observation.artifact_refs),
-                },
-                parents=[parent.id],
-            )
-            parent = self._trace_source_arbitration(trace, parent, post_snapshot, state.phase)
-            latest_verification = self.contract_execution_loop.verify(
-                contract,
-                receipt,
-                post_snapshot.observation,
+            verification_result = VERIFICATION_PHASE.run(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                contract=contract,
+                receipt=receipt,
+                execution_observation=execution_observation,
+                action_signature=action_signature,
+                skill_step_id=skill_step_id,
+                contract_execution_loop=self.contract_execution_loop,
+                perception_session=self.perception_session,
                 structural_verification_enabled=self.features.structural_verification,
-                disabled_reason="structural verification disabled by benchmark ablation",
+                write_observation=self._write_observation,
+                write_verification=self._write_verification,
+                index_artifact=self._index,
+                index_paths=self._index_paths,
+                trace_source_arbitration=self._trace_source_arbitration,
+                fulfill_targeted_perception=self._fulfill_targeted_perception,
+                record_route_outcome=self._record_route_outcome,
+                decision_has_proposal=decision.proposal is not None,
             )
-            if (
-                latest_verification.status == VerificationStatus.INCONCLUSIVE
-                and self.features.structural_verification
-            ):
-                requested_sources = tuple(
-                    dict.fromkeys(
-                        item.source
-                        for item in post_snapshot.source_observations
-                        if item.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.API}
-                    )
-                ) or (GroundingSource.DOM, GroundingSource.ACCESSIBILITY)
-                repair_request = ActivePerceptionRequest(
-                    entity_key=contract.affordance_id,
-                    property_key="verification",
-                    requested_sources=requested_sources,
-                    reason="verifier is inconclusive and requires fresh independent structural evidence",
-                    max_observations=1,
-                )
-                repair_snapshot = replace(
-                    post_snapshot,
-                    active_perception_requests=(repair_request,),
-                )
-                parent = trace.add(
-                    "VerificationEvidenceRepairRequested",
-                    {
-                        "state": state.phase,
-                        "contract_id": contract.id,
-                        "verification_status": latest_verification.status.value,
-                    },
-                    parents=[parent.id],
-                )
-                repair_snapshot, parent = self._fulfill_targeted_perception(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    repair_snapshot,
-                )
-                if repair_snapshot.observation.snapshot_id != post_snapshot.observation.snapshot_id:
-                    post_snapshot = repair_snapshot
-                    latest_verification = self.contract_execution_loop.verify(
-                        contract,
-                        receipt,
-                        post_snapshot.observation,
-                        structural_verification_enabled=True,
-                        disabled_reason="",
-                    )
-                    parent = trace.add(
-                        "VerificationEvidenceReevaluated",
-                        {
-                            "state": state.phase,
-                            "contract_id": contract.id,
-                            "verification_status": latest_verification.status.value,
-                            "snapshot_id": post_snapshot.observation.snapshot_id,
-                        },
-                        parents=[parent.id],
-            )
-            state.latest_verification = latest_verification
-            parent = record_contract_action_outcome_trace(
-                self.contract_execution_loop, trace, parent, contract, execution_observation, state.version,
-                receipt, latest_verification, post_snapshot.observation, skill_step_id or contract.affordance_id, state.phase,
-            ).parent
-            if decision.proposal is not None:
-                state.record_action_progress(
-                    action_signature,
-                    post_snapshot.observation.environment_revision,
-                    verification_passed=latest_verification.passed,
-                    effect_satisfied=verification_satisfies_effect(latest_verification),
-                    post_page_revision=post_snapshot.observation.page_revision,
-                )
-            verification_ref = self._write_verification(envelope.task_id, state.step_count, latest_verification)
-            self._index(trace, verification_ref)
-            parent = trace.add(
-                "PostconditionPassed" if latest_verification.passed else "PostconditionFailed",
-                {
-                    "state": state.phase,
-                    "contract_id": contract.id,
-                    "status": latest_verification.status.value,
-                    "reason": latest_verification.reason,
-                    "artifact_refs": [verification_ref.path] if verification_ref else [],
-                    "evidence": [asdict(item) for item in latest_verification.evidence],
-                },
-                parents=[parent.id],
-            )
-            parent = self._record_route_outcome(
-                trace,
-                parent,
-                contract,
-                receipt,
-                latest_verification,
-                post_snapshot,
-                state.phase,
-            )
+            parent = verification_result.parent
+            post_snapshot = verification_result.post_snapshot
+            latest_verification = verification_result.verification
+            verification_ref = verification_result.verification_ref
             skill_complete = False
             if latest_verification.passed:
                 if skill_step_id and self.task_skill_runtime is not None:

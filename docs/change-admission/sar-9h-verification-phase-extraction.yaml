@@ -1,0 +1,96 @@
+slice_id: sar-9h-verification-phase-extraction
+parent_record: docs/change-admission/sar-9g-execution-phase-extraction.yaml
+parent_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+parent_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+base_revision: 26816106da9691629054f5154200b68d3f3fd378
+change_type: phase_extraction
+production_behavior_change: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+planner_behavior_changed: false
+statekernel_schema_changed: false
+promotion_status: held
+remote_ci: disabled
+
+scope:
+  current_slice: sar-9h-verification-phase-extraction-local-candidate
+  included:
+    - Add VerificationPhase as the Coordinator-facing seam for post-action
+      observation capture, verification execution, inconclusive-evidence repair,
+      ActionOutcomeRecorded trace projection, action-progress recording,
+      verification artifact write, postcondition trace projection, and route
+      outcome recording.
+    - Move PostActionObservationCaptured, VerificationEvidenceRepairRequested,
+      VerificationEvidenceReevaluated, PostconditionPassed / Failed, and route
+      outcome trace construction out of RunCoordinator.run_sync.
+    - Preserve TaskSkill progress, verified TaskPlan progress, task completion,
+      and verification-failure recovery handling for later phase slices.
+  excluded:
+    - TaskSkill verification/progress extraction.
+    - Verified TaskPlan progress / completion extraction.
+    - Verification-failure recovery extraction.
+    - Pure PhaseResult / StateTransition / RuntimeEvent cutover.
+    - Progress authority change, finish authority change, recovery authority
+      change, PR breadth, fresh diagnostic, remote CI, or promotion claims.
+
+owner_matrix:
+  verification_application_seam: verification_phase.VerificationPhase
+  contract_verification_owner: ContractExecutionLoop.verify
+  action_outcome_trace_owner: action_outcome_flow.record_contract_action_outcome_trace
+  route_outcome_owner: RunCoordinator._record_route_outcome_until_later_extraction
+  taskskill_progress_owner: RunCoordinator_until_next_extraction
+  verified_progress_owner: task_plan_progress_flow
+
+coordinator_ratchet:
+  before:
+    coordinator_lines: 2013
+    run_sync_lines: 1043
+    run_coordinator_methods: 18
+  after:
+    coordinator_lines: 1918
+    run_sync_lines: 949
+    run_coordinator_methods: 18
+  interpretation:
+    coordinator_lines: decreased
+    run_sync_lines: decreased
+    method_count: stable
+  next_ratchet:
+    coordinator_lines_max: 1918
+    run_sync_lines_max: 949
+    run_coordinator_methods_max: 18
+
+architecture_gates:
+  added:
+    - tests/test_horizontal_architecture_governance.py::test_sar_9h_verification_handling_is_behind_verification_phase
+  forbidden_in_run_sync:
+    - PostActionObservationCaptured
+    - VerificationEvidenceRepairRequested
+    - VerificationEvidenceReevaluated
+    - record_contract_action_outcome_trace
+    - record_action_progress
+    - PostconditionPassed
+    - PostconditionFailed
+
+validation_policy:
+  test_gate_level: subsystem
+  focused_and_adjacent:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection tests/test_horizontal_architecture_governance.py::test_sar_9b_progress_low_level_commits_are_behind_progress_phase tests/test_horizontal_architecture_governance.py::test_sar_9c_taskskill_selection_is_behind_taskskill_phase tests/test_horizontal_architecture_governance.py::test_sar_9d_planning_decision_handling_is_behind_planning_phase tests/test_horizontal_architecture_governance.py::test_sar_9e_contract_binding_is_behind_contract_binding_phase tests/test_horizontal_architecture_governance.py::test_sar_9f_preflight_handling_is_behind_preflight_phase tests/test_horizontal_architecture_governance.py::test_sar_9g_execution_handling_is_behind_execution_phase tests/test_horizontal_architecture_governance.py::test_sar_9h_verification_handling_is_behind_verification_phase tests/test_coordinator.py tests/test_generalist_planner.py tests/test_full_phase_recovery.py tests/test_task_skill_coordinator.py tests/test_contract_execution_loop.py tests/test_contracts.py -q --tb=short --maxfail=20
+  focused_and_adjacent_result: 165_passed
+  static:
+    - ruff check src/affordance_runtime/verification_phase.py src/affordance_runtime/coordinator.py tests/test_horizontal_architecture_governance.py
+    - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/verification_phase.py src/affordance_runtime/coordinator.py
+    - git diff --check
+  full_pytest:
+    required: false
+    trigger: SAR-9 phase extraction closure or broader production cutover
+  behavioral:
+    pr_breadth: false
+    fresh_diagnostic: false
+
+status:
+  sar_9h_verification_phase_extraction: local_candidate
+  coordinator_reduction: partial
+  pure_phase_result_cutover: pending
+  sar_9_full_phase_extraction: incomplete
+  next_slice: SAR-9I taskskill_verified_progress_phase_extraction
