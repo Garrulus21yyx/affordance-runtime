@@ -2345,6 +2345,12 @@ def test_sar_8c_legacy_recovery_incident_protocol_is_not_default_state() -> None
     assert "recovery_diagnostics:" not in state_source
 
 
+def test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind() -> None:
+    source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "_pending_recovery_command_kind" not in source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

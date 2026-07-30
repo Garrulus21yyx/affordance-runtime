@@ -352,11 +352,7 @@ class RunCoordinator:
             )
             recovered_verification = None
             recovery_inspection_failed = False
-            pending_recovery_command = state.current_recovery_command
-            if (
-                pending_recovery_command is not None
-                and pending_recovery_command.kind == RecoveryCommandKind.INSPECT_POST_STATE
-            ):
+            if _pending_recovery_kind(state) == RecoveryKind.INSPECT_POST_STATE:
                 contract = state.current_contract
                 execution_receipt = state.receipts[-1] if state.receipts else None
                 if contract is None or execution_receipt is None:
@@ -494,7 +490,7 @@ class RunCoordinator:
                         rejection.payload,
                         parents=[parent.id],
                     )
-                    if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_TASK:
+                    if _pending_recovery_kind(state) == RecoveryKind.REPLAN_TASK:
                         parent = self.recovery_phase.fail_pending_command(
                             state,
                             trace,
@@ -604,7 +600,7 @@ class RunCoordinator:
                         skill_decision.attempted
                         and skill_decision.reason.startswith("TaskSkill runtime error:")
                     ):
-                        if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
+                        if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
                             parent = self.recovery_phase.fail_pending_command(
                                 state,
                                 trace,
@@ -697,7 +693,7 @@ class RunCoordinator:
                     decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
             except ProviderModelError as exc:
                 error_code = RuntimeErrorCode(exc.kind.value)
-                if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
+                if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
                     parent = self.recovery_phase.fail_pending_command(
                         state,
                         trace,
@@ -764,7 +760,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
+                if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
                     parent = self.recovery_phase.fail_pending_command(
                         state,
                         trace,
@@ -854,10 +850,10 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if _pending_recovery_command_kind(state) in {
-                        RecoveryCommandKind.REGROUND,
-                        RecoveryCommandKind.REROUTE,
-                        RecoveryCommandKind.REPLAN_STEP,
+                    if _pending_recovery_kind(state) in {
+                        RecoveryKind.REGROUND,
+                        RecoveryKind.REROUTE,
+                        RecoveryKind.REPLAN_STEP,
                     }:
                         parent = self.recovery_phase.fail_pending_command(
                             state,
@@ -1030,9 +1026,9 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if _pending_recovery_command_kind(state) in {
-                        RecoveryCommandKind.REGROUND,
-                        RecoveryCommandKind.REROUTE,
+                    if _pending_recovery_kind(state) in {
+                        RecoveryKind.REGROUND,
+                        RecoveryKind.REROUTE,
                     }:
                         parent = self.recovery_phase.fail_pending_command(
                             state,
@@ -1092,9 +1088,9 @@ class RunCoordinator:
                         },
                         parents=[parent.id],
                     )
-                    if _pending_recovery_command_kind(state) in {
-                        RecoveryCommandKind.REGROUND,
-                        RecoveryCommandKind.REROUTE,
+                    if _pending_recovery_kind(state) in {
+                        RecoveryKind.REGROUND,
+                        RecoveryKind.REROUTE,
                     }:
                         parent = self.recovery_phase.fail_pending_command(
                             state,
@@ -2928,28 +2924,9 @@ async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerD
     return await value
 
 
-def _pending_recovery_command_kind(state: StateKernel) -> RecoveryCommandKind | None:
+def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
     decision = state.current_recovery_decision
-    if decision is None:
-        return None
-    return {
-        RecoveryKind.REPLAN_TASK: RecoveryCommandKind.REPLAN_TASK,
-        RecoveryKind.REPLAN_STEP: RecoveryCommandKind.REPLAN_STEP,
-        RecoveryKind.REGROUND: RecoveryCommandKind.REGROUND,
-        RecoveryKind.REROUTE: RecoveryCommandKind.REROUTE,
-        RecoveryKind.SWITCH_PROVIDER: RecoveryCommandKind.SWITCH_PROVIDER,
-        RecoveryKind.REPAIR_MODEL_SCHEMA: RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
-        RecoveryKind.COMPACT_CONTEXT: RecoveryCommandKind.COMPACT_CONTEXT,
-        RecoveryKind.CLARIFY_INTENT: RecoveryCommandKind.CLARIFY_INTENT,
-        RecoveryKind.ASK_USER: RecoveryCommandKind.ASK_USER,
-        RecoveryKind.REOBSERVE: RecoveryCommandKind.REOBSERVE,
-        RecoveryKind.ACTIVE_PERCEPTION: RecoveryCommandKind.ACTIVE_PERCEPTION,
-        RecoveryKind.INSPECT_POST_STATE: RecoveryCommandKind.INSPECT_POST_STATE,
-        RecoveryKind.RETRY_IDEMPOTENT: RecoveryCommandKind.RETRY_IDEMPOTENT,
-        RecoveryKind.COMPENSATE: RecoveryCommandKind.COMPENSATE,
-        RecoveryKind.REQUEST_APPROVAL: RecoveryCommandKind.REQUEST_APPROVAL,
-        RecoveryKind.ABORT: RecoveryCommandKind.ABORT,
-    }[decision.kind]
+    return decision.kind if decision is not None else None
 
 
 def _terminal_recovery_status(

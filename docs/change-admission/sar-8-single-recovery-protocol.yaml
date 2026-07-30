@@ -106,6 +106,9 @@ scope:
       explicit legacy_decision_without_proposal failure code and fails closed to
       unknown/abort instead of being treated as planner_failed or eligible for
       default step replan.
+    - RunCoordinator pending recovery checks use canonical
+      current_recovery_decision.kind directly; the RecoveryKind to
+      RecoveryCommandKind pending helper mapping has been deleted.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -217,6 +220,9 @@ validation:
   legacy_no_proposal_fail_closed_focused:
     - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_planner_response_contracts.py -q --tb=short --maxfail=20
   legacy_no_proposal_fail_closed_focused_result: 27_passed
+  pending_recovery_kind_cutover:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
+  pending_recovery_kind_cutover_result: 16_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
