@@ -88,7 +88,7 @@ class TaskSkillPhase:
             },
             parents=[parent.id],
         )
-        skill_progress = _task_skill_progress(task_skill_runtime, state)
+        skill_progress = task_skill_progress(task_skill_runtime, state)
         if (
             skill_decision.attempted
             and skill_decision.reason.startswith("TaskSkill runtime error:")
@@ -150,7 +150,7 @@ class TaskSkillPhase:
             )
 
         if skill_decision.attempted and skill_decision.reason:
-            parent = _trace_task_skill_fallthrough(
+            parent = trace_task_skill_fallthrough(
                 trace,
                 parent,
                 state,
@@ -165,7 +165,7 @@ class TaskSkillPhase:
         )
 
 
-def _task_skill_progress(
+def task_skill_progress(
     runtime: object | None,
     state: StateKernel,
 ) -> TaskSkillRunState | None:
@@ -176,7 +176,7 @@ def _task_skill_progress(
     return progress if isinstance(progress, TaskSkillRunState) else None
 
 
-def _trace_task_skill_fallthrough(
+def trace_task_skill_fallthrough(
     trace: TraceDag,
     parent: TraceNode,
     state: StateKernel,

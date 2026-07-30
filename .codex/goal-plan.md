@@ -1080,3 +1080,14 @@ delivery claims.
   changed-file Ruff and core mypy passed. Coordinator is now 2859 lines,
   `run_sync()` is 1869 lines, and RunCoordinator remains at 19 methods. SAR-9
   full phase extraction remains incomplete.
+- Started SAR-9D PlanningDecisionPhase extraction after
+  `c5f1895315516f96bc6ed0cc6596e31693412c19`. Added
+  `planning_phase.PlanningDecisionPhase`, moved PlannerDecision trace,
+  semantic proposal validation, planner terminal decision handling,
+  clarification, and legacy empty-decision classification out of
+  `RunCoordinator.run_sync`, while preserving Coordinator ownership of recovery
+  branch response and leaving contract binding for a later extraction. Focused
+  PlanningDecision/Coordinator/Generalist/full-phase/TaskSkill gates passed
+  139/139; changed-file Ruff and core mypy passed. Coordinator is now 2694
+  lines, `run_sync()` is 1701 lines, and RunCoordinator remains at 19 methods.
+  SAR-9 full phase extraction remains incomplete.

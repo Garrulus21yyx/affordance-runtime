@@ -47,12 +47,15 @@ from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposalValidator,
     ProposalRejected,
-    ProposalRejectionCode,
     bind_active_subgoal_verifiers,
     proposal_error_code,
     proposal_record,
 )
 from affordance_runtime.planning_contracts import PlannerDecision as PlannerDecision  # noqa: F401
+from affordance_runtime.planning_phase import (
+    PlanningDecisionPhase,
+    apply_taskskill_planning_fallthrough,
+)
 from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
@@ -80,7 +83,6 @@ from affordance_runtime.runtime_evidence import (
 )
 from affordance_runtime.runtime_terminal import (
     TaskCompletionVerifier,
-    commit_planner_terminal_decision,
     commit_task_terminal_success,
 )
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
@@ -120,6 +122,7 @@ OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
 )
 PROGRESS_PHASE = ProgressPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
+PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 
 
 @dataclass(frozen=True)
@@ -680,220 +683,106 @@ class RunCoordinator:
                     RuntimeErrorCode.PLANNER_FAILED,
                     latest_verification,
                 )
-            if decision.planner_context:
-                parent = trace.add(
-                    "PlannerContextBuilt",
-                    {"state": state.phase, **decision.planner_context},
-                    parents=[parent.id],
-                )
-            parent = trace.add(
-                "PlanProposed",
-                {
-                    "state": state.phase,
-                    "done": decision.done,
-                    "reason": decision.reason,
-                    "boundary": "semantic_proposal" if decision.proposal else "legacy_contract",
-                },
-                parents=[parent.id],
-            )
-            if decision.proposal is not None:
-                proposal = decision.proposal
-                provenance = decision.proposal_provenance
-                try:
-                    if envelope.task_spec is None:
-                        raise ProposalRejected(
-                            ProposalRejectionCode.UNSUPPORTED_ACTION,
-                            "semantic proposal requires a validated TaskSpec",
-                        )
-                    self.proposal_validator.validate(
-                        proposal,
-                        provenance,
-                        envelope.task_spec,
-                        state,
-                        snapshot,
-                    )
-                except ProposalRejected as exc:
-                    error_code = proposal_error_code(exc.code)
-                    recovery_decision = self.proposal_recovery_policy.decide(
-                        exc.code, exc.detail, exc.reason_code, proposal.target_affordance_id
-                    )
-                    parent = trace.add(
-                        "PlannerProposalRejected",
-                        {
-                            "state": state.phase,
-                            "proposal_id": proposal.proposal_id,
-                            "error_code": error_code.value,
-                            "rejection_code": exc.code.value,
-                            "rejection_reason_code": exc.reason_code,
-                            "reason": exc.detail,
-                            "validation_boundary": "PlannerProposalValidator",
-                            "provenance": (provenance.model_dump(mode="json") if provenance is not None else None),
-                        },
-                        parents=[parent.id],
-                    )
-                    if _pending_recovery_kind(state) in {
-                        RecoveryKind.REGROUND,
-                        RecoveryKind.REROUTE,
-                        RecoveryKind.REPLAN_STEP,
-                    }:
-                        parent = self.recovery_phase.fail_pending_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                        )
-                    if skill_step_id and self.task_skill_runtime is not None:
-                        reason = f"TaskSkill proposal validation rejected: {exc.detail or exc.code.value}"
-                        self.task_skill_runtime.fallthrough(state, reason)
-                        parent = self._trace_task_skill_fallthrough(
-                            trace,
-                            parent,
-                            state,
-                            reason,
-                            progress=_task_skill_progress(self.task_skill_runtime, state),
-                            step_id=skill_step_id,
-                        )
-                        state.replan_count += 1
-                        state.transition(RuntimeStep.OBSERVING.value)
-                        continue
-                    _recovery_kind, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.PROPOSAL_VALIDATION,
-                        failure_class=FailureClass.VALIDATION,
-                        error_code=error_code,
-                        message=recovery_decision.planner_feedback,
-                        available_commands=recovery_decision.available_commands,
-                        snapshot=snapshot,
-                        proposal_id=proposal.proposal_id,
-                        proposal_rejection=recovery_decision.rejection_context,
-                        expected_effect="; ".join(proposal.expected_effects),
-                        recoverable=recovery_decision.recoverable,
-                    )
-                    if _recovery_kind != RecoveryKind.ABORT:
-                        continue
-                    return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error_code, latest_verification)
-                if provenance is None:  # narrowed after source-neutral validation
-                    raise RuntimeError("validated proposal is missing provenance")
-                parent = trace.add(
-                    "PlannerProposalValidated",
-                    {
-                        "state": state.phase,
-                        "proposal_id": proposal.proposal_id,
-                        "validation_boundary": "PlannerProposalValidator",
-                        "source": provenance.source.value,
-                        "provenance": provenance.model_dump(mode="json"),
-                    },
-                    parents=[parent.id],
-                )
-                parent = trace.add(
-                    "PlannerProposalProduced",
-                    {
-                        "state": state.phase,
-                        "proposal_id": proposal.proposal_id,
-                        "based_on_task_revision": proposal.based_on_task_revision,
-                        "based_on_state_version": proposal.based_on_state_version,
-                        "snapshot_id": proposal.snapshot_id,
-                        "action_kind": proposal.action_kind.value,
-                        "target_affordance_id": proposal.target_affordance_id,
-                        "semantic_target": semantic_target_descriptor(
-                            snapshot,
-                            proposal.target_affordance_id,
-                        ),
-                        "semantic_destination": semantic_target_descriptor(
-                            snapshot,
-                            proposal.destination_affordance_id,
-                        ),
-                        "uncertainty": proposal.uncertainty,
-                        "requires_clarification": proposal.requires_clarification,
-                        "proposal": proposal.model_dump(mode="json"),
-                        "provenance": provenance.model_dump(mode="json"),
-                        "model_call": (
-                            decision.model_call.model_dump(mode="json") if decision.model_call is not None else None
-                        ),
-                    },
-                    parents=[parent.id],
-                )
-                parent = self.recovery_phase.complete_pending_plan_change(
-                    state,
-                    trace,
-                    parent,
-                    kind=RecoveryKind.REPLAN_STEP,
-                    plan_or_route_ref=proposal.proposal_id,
-                )
-                if proposal.done:
-                    state.record_planner_proposal(proposal_record(proposal, provenance))
-                    decision = replace(decision, done=True, result=dict(proposal.result))
-                elif proposal.requires_clarification:
-                    state.record_planner_proposal(proposal_record(proposal, provenance))
-                    state.final_result = {
-                        "clarification": proposal.subgoal or proposal.reason,
-                        "proposal_id": proposal.proposal_id,
-                        "task_revision": proposal.based_on_task_revision,
-                    }
-                    state.transition(RuntimeStep.WAITING_CLARIFICATION.value)
-                    parent = trace.add(
-                        "ClarificationRequested",
-                        {"state": state.phase, **state.final_result},
-                        parents=[parent.id],
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.WAITING_CLARIFICATION,
-                        parent,
-                        None,
-                        latest_verification,
-                    )
-            else:
-                parent = self.recovery_phase.complete_pending_plan_change(
-                    state,
-                    trace,
-                    parent,
-                    kind=RecoveryKind.REPLAN_STEP,
-                    plan_or_route_ref=f"planner-decision:state:{state.version}",
-                )
-            terminal_commit = commit_planner_terminal_decision(
+            planning_decision = PLANNING_DECISION_PHASE.handle(
                 decision=decision,
+                envelope=envelope,
                 state=state,
+                snapshot=snapshot,
                 trace=trace,
                 parent=parent,
-                completion=TaskCompletionVerifier().verify(
-                    task_spec=envelope.task_spec,
-                    state=state,
-                    verification=latest_verification,
-                    result=decision.result,
+                latest_verification=latest_verification,
+                proposal_validator=self.proposal_validator,
+                proposal_recovery_policy=self.proposal_recovery_policy,
+                recovery_phase=self.recovery_phase,
+                task_skill_runtime=self.task_skill_runtime,
+                skill_step_id=skill_step_id,
+                owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                    self.recovery_owner_dispatcher
                 ),
             )
-            parent = terminal_commit.parent
-            if terminal_commit.rejected:
-                _recovery_kind, parent = self._recover_phase_failure(
+            parent = planning_decision.parent
+            decision = planning_decision.decision
+            if planning_decision.terminal is not None:
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    planning_decision.terminal.status,
+                    parent,
+                    planning_decision.terminal.error_code,
+                    latest_verification,
+                )
+            if planning_decision.failure is not None:
+                failure = planning_decision.failure
+                if _pending_recovery_kind(state) in {
+                    RecoveryKind.REGROUND,
+                    RecoveryKind.REROUTE,
+                    RecoveryKind.REPLAN_STEP,
+                }:
+                    parent = self.recovery_phase.fail_pending_command(
+                        state,
+                        trace,
+                        parent,
+                        error_code=(
+                            failure.error_code.value
+                            if isinstance(failure.error_code, RuntimeErrorCode)
+                            else str(failure.error_code)
+                        ),
+                    )
+                if failure.skill_fallthrough_reason:
+                    parent = apply_taskskill_planning_fallthrough(
+                        task_skill_runtime=self.task_skill_runtime,
+                        state=state,
+                        trace=trace,
+                        parent=parent,
+                        reason=failure.skill_fallthrough_reason,
+                        step_id=skill_step_id,
+                    )
+                    state.replan_count += 1
+                    state.transition(RuntimeStep.OBSERVING.value)
+                    continue
+                recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
                     parent,
-                    phase=FailurePhase.PROPOSAL_VALIDATION,
-                    failure_class=FailureClass.VALIDATION,
-                    error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                    message=terminal_commit.message,
-                    available_commands=frozenset({RecoveryKind.ABORT}),
+                    phase=failure.phase,
+                    failure_class=failure.failure_class,
+                    error_code=failure.error_code,
+                    message=failure.message,
+                    available_commands=failure.available_commands,
                     snapshot=snapshot,
-                    recoverable=False,
+                    proposal_id=failure.proposal_id,
+                    proposal_rejection=failure.proposal_rejection,
+                    expected_effect=failure.expected_effect,
+                    recoverable=failure.recoverable,
                 )
+                if planning_decision.contract_missing:
+                    if (
+                        recovery_kind == RecoveryKind.REPLAN_STEP
+                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
+                    ):
+                        continue
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep(state.phase),
+                        parent,
+                        failure.return_error_code,
+                        latest_verification,
+                    )
+                if recovery_kind != RecoveryKind.ABORT:
+                    continue
                 return self._finish(
                     envelope,
                     state,
                     trace,
                     RuntimeStep.ABORTED,
                     parent,
-                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    failure.return_error_code,
                     latest_verification,
                 )
-            if terminal_commit.completed:
-                return self._finish(envelope, state, trace, RuntimeStep.DONE, parent, None, latest_verification)
             contract = decision.contract
             if decision.proposal is not None and not decision.proposal.requires_clarification:
                 if self.contract_builder is None or envelope.task_spec is None:
@@ -1028,61 +917,7 @@ class RunCoordinator:
                 state.record_planner_proposal(
                     proposal_record(decision.proposal, decision.proposal_provenance)
                 )
-            if contract is None:
-                unsupported_reason_code = str(
-                    decision.planner_context.get("unsupported_reason_code", "")
-                )
-                failure_error_code: RuntimeErrorCode | str = (
-                    unsupported_reason_code or "legacy_decision_without_proposal"
-                )
-                failure_message = (
-                    decision.reason or "planner returned neither a contract nor a result"
-                )
-                parent = trace.add(
-                    "TaskFailed",
-                    {
-                        "state": state.phase,
-                        "reason": failure_message,
-                        "error_code": (
-                            failure_error_code.value
-                            if isinstance(failure_error_code, RuntimeErrorCode)
-                            else failure_error_code
-                        ),
-                    },
-                    parents=[parent.id],
-                )
-                recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.STEP_PLANNING,
-                    failure_class=FailureClass.VALIDATION,
-                    error_code=failure_error_code,
-                    message=failure_message,
-                    available_commands=frozenset(
-                        {
-                            RecoveryKind.REPLAN_STEP,
-                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
-                            RecoveryKind.ABORT,
-                        }
-                    ),
-                    snapshot=snapshot,
-                )
-                if (
-                    recovery_kind == RecoveryKind.REPLAN_STEP
-                    or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                ):
-                    continue
-                return self._finish(
-                    envelope,
-                    state,
-                    trace,
-                    RuntimeStep(state.phase),
-                    parent,
-                    RuntimeErrorCode.PLANNER_FAILED,
-                    latest_verification,
-                )
+            assert contract is not None
             contract = self.contract_execution_loop.bind_contract(
                 contract,
                 envelope,
