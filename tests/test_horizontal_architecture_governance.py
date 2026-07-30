@@ -84,6 +84,7 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "planning_contracts.py",
     "recovery_command_dispatcher.py",
     "recovery_handler.py",
+    "recovery_protocol.py",
     "recovery_trace_projection.py",
     "semantic_action_resolver.py",
     "task_action_family_resolution.py",
@@ -106,6 +107,7 @@ STRICT_AUTHORITY_FREE_COLLABORATORS = (
     "active_step_scope.py",
     "semantic_action_resolver.py",
     "task_action_family_resolution.py",
+    "recovery_protocol.py",
     "unified_observation.py",
 )
 

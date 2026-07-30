@@ -21,6 +21,7 @@ from affordance_runtime.recovery_commands import (
     RecoveryPlanValidator,
     RecoveryReentryPhase,
 )
+from affordance_runtime.recovery_protocol import FailureKind, classify_failure_kind
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,13 @@ class RecoveryCoordinator:
                 continue
         raise ValueError("no safe changed recovery strategy is available")
 
+    def strategy_order_for_test(
+        self,
+        failure: FailureEnvelope,
+        context: RecoverySelectionContext,
+    ) -> tuple[RecoveryCommandKind, ...]:
+        return _strategy_order(failure, context)
+
 
 def _strategy_order(
     failure: FailureEnvelope,
@@ -130,97 +138,126 @@ def _strategy_order(
             RecoveryCommandKind.ABORT,
         )
     else:
-        base = {
-            FailurePhase.INTAKE: (
-                RecoveryCommandKind.CLARIFY_INTENT,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.OBSERVATION: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.FUSION: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.TASK_PLANNING: (
-                RecoveryCommandKind.COMPACT_CONTEXT,
-                RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
-                RecoveryCommandKind.SWITCH_PROVIDER,
-                RecoveryCommandKind.REPLAN_TASK,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.STEP_PLANNING: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.COMPACT_CONTEXT,
-                RecoveryCommandKind.REPLAN_STEP,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.PROPOSAL_VALIDATION: (
-                RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
-                RecoveryCommandKind.REPLAN_STEP,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.GROUNDING_BINDING: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.REGROUND,
-                RecoveryCommandKind.REROUTE,
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.PREFLIGHT: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.REQUEST_APPROVAL,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.EXECUTION_NOT_DISPATCHED: (
-                RecoveryCommandKind.REROUTE,
-                RecoveryCommandKind.REGROUND,
-                RecoveryCommandKind.RETRY_IDEMPOTENT,
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.EXECUTION_UNCERTAIN: (
-                RecoveryCommandKind.INSPECT_POST_STATE,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.VERIFICATION: (
-                RecoveryCommandKind.ACTIVE_PERCEPTION,
-                RecoveryCommandKind.REPLAN_STEP,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.PROVIDER_CONTEXT: (
-                RecoveryCommandKind.COMPACT_CONTEXT,
-                RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
-                RecoveryCommandKind.SWITCH_PROVIDER,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-            FailurePhase.SKILL_ACTIVATION: (
-                RecoveryCommandKind.REPLAN_STEP,
-                RecoveryCommandKind.REPLAN_TASK,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
-            ),
-        }[failure.phase]
+        base = _strategy_order_for_kind(classify_failure_kind(failure), failure.phase)
     profile = tuple(
         item
         for item in context.preferred_profile_commands
         if item in base and item not in {RecoveryCommandKind.RETRY_IDEMPOTENT, RecoveryCommandKind.COMPENSATE}
     )
     return tuple(dict.fromkeys((*profile, *base)))
+
+
+def _strategy_order_for_kind(
+    kind: FailureKind,
+    phase: FailurePhase,
+) -> tuple[RecoveryCommandKind, ...]:
+    if kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE:
+        return (
+            RecoveryCommandKind.COMPACT_CONTEXT,
+            RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+            RecoveryCommandKind.SWITCH_PROVIDER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.CURRENT_STEP_ALREADY_SATISFIED:
+        return (RecoveryCommandKind.ABORT,)
+    if kind == FailureKind.MISSING_USER_INPUT:
+        return (RecoveryCommandKind.ASK_USER, RecoveryCommandKind.ABORT)
+    if kind == FailureKind.GROUNDING_AMBIGUOUS:
+        return (
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.NO_FEASIBLE_ACTION:
+        return (
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.REROUTE,
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.PLAN_OUTPUT_REJECTED:
+        return _planning_strategy_order(phase)
+    if kind == FailureKind.INTENT_COMPILATION_REJECTED:
+        return (
+            RecoveryCommandKind.CLARIFY_INTENT,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.EXECUTION_FAILED:
+        return (
+            RecoveryCommandKind.REROUTE,
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.RETRY_IDEMPOTENT,
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.VERIFICATION_FAILED:
+        return (
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.REPLAN_STEP,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.OBSERVATION_INSUFFICIENT:
+        return (
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.REOBSERVE,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.PROVIDER_OR_SCHEMA_FAILURE:
+        return (
+            RecoveryCommandKind.COMPACT_CONTEXT,
+            RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+            RecoveryCommandKind.SWITCH_PROVIDER,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if kind == FailureKind.AUTHORITY_BLOCKED:
+        return (
+            RecoveryCommandKind.REQUEST_APPROVAL,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    return _planning_strategy_order(phase)
+
+
+def _planning_strategy_order(phase: FailurePhase) -> tuple[RecoveryCommandKind, ...]:
+    if phase == FailurePhase.TASK_PLANNING:
+        return (
+            RecoveryCommandKind.COMPACT_CONTEXT,
+            RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+            RecoveryCommandKind.SWITCH_PROVIDER,
+            RecoveryCommandKind.REPLAN_TASK,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if phase == FailurePhase.STEP_PLANNING:
+        return (
+            RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.COMPACT_CONTEXT,
+            RecoveryCommandKind.REPLAN_STEP,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if phase == FailurePhase.PROPOSAL_VALIDATION:
+        return (
+            RecoveryCommandKind.REPAIR_MODEL_SCHEMA,
+            RecoveryCommandKind.REPLAN_STEP,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    if phase == FailurePhase.SKILL_ACTIVATION:
+        return (
+            RecoveryCommandKind.REPLAN_STEP,
+            RecoveryCommandKind.REPLAN_TASK,
+            RecoveryCommandKind.ASK_USER,
+            RecoveryCommandKind.ABORT,
+        )
+    return (RecoveryCommandKind.ABORT,)
 
 
 def _command_for(
