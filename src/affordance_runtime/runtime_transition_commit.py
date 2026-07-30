@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.runtime_loop_phase import RuntimeLoopEvent, RuntimeLoopTransition
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
@@ -29,3 +30,21 @@ def commit_runtime_loop_event(
         event.payload,
         parents=list(parent_ids) if parent_ids else None,
     )
+
+
+def terminal_recovery_status(
+    state: StateKernel,
+    *,
+    fallback: RuntimeStep,
+) -> RuntimeStep:
+    current = RuntimeStep(state.phase)
+    if current in {
+        RuntimeStep.ABORTED,
+        RuntimeStep.FAILED,
+        RuntimeStep.WAITING_CLARIFICATION,
+        RuntimeStep.WAITING_APPROVAL,
+        RuntimeStep.DEFERRED,
+    }:
+        return current
+    state.transition(fallback.value)
+    return fallback

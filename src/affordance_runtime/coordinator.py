@@ -51,6 +51,7 @@ from affordance_runtime.runtime_result_phase import CoordinatorResult, RuntimeRe
 from affordance_runtime.runtime_transition_commit import (
     apply_runtime_loop_transition,
     commit_runtime_loop_event,
+    terminal_recovery_status,
 )
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
@@ -570,7 +571,7 @@ class RunCoordinator:
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                terminal_recovery_status=lambda current_state: _terminal_recovery_status(
+                terminal_recovery_status=lambda current_state: terminal_recovery_status(
                     current_state,
                     fallback=RuntimeStep.ABORTED,
                 ),
@@ -610,7 +611,7 @@ class RunCoordinator:
                 trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
-                terminal_recovery_status=lambda current_state: _terminal_recovery_status(
+                terminal_recovery_status=lambda current_state: terminal_recovery_status(
                     current_state,
                     fallback=RuntimeStep.FAILED,
                 ),
@@ -727,7 +728,7 @@ class RunCoordinator:
                 task_skill_progress_for=_task_skill_progress,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 trace_recovery_started=trace_recovery_started,
-                terminal_recovery_status=_terminal_recovery_status,
+                terminal_recovery_status=terminal_recovery_status,
             )
             parent = verification_failure.parent
             if verification_failure.continue_observing:
@@ -754,21 +755,3 @@ def _available_owner_recovery_kinds(
     dispatcher: RecoveryOwnerDispatcher,
 ) -> frozenset[RecoveryKind]:
     return dispatcher.available_kinds
-
-
-def _terminal_recovery_status(
-    state: StateKernel,
-    *,
-    fallback: RuntimeStep,
-) -> RuntimeStep:
-    current = RuntimeStep(state.phase)
-    if current in {
-        RuntimeStep.ABORTED,
-        RuntimeStep.FAILED,
-        RuntimeStep.WAITING_CLARIFICATION,
-        RuntimeStep.WAITING_APPROVAL,
-        RuntimeStep.DEFERRED,
-    }:
-        return current
-    state.transition(fallback.value)
-    return fallback

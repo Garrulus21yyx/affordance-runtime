@@ -2929,6 +2929,18 @@ def test_sar_9y_recovery_started_trace_commit_is_not_in_coordinator() -> None:
     assert "RecoveryStarted" in commit_source
 
 
+def test_sar_9z_terminal_recovery_status_commit_is_not_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "def _terminal_recovery_status" not in coordinator_source
+    assert "terminal_recovery_status=terminal_recovery_status" in coordinator_source
+    commit_source = (SOURCE_ROOT / "runtime_transition_commit.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def terminal_recovery_status" in commit_source
+    assert "RuntimeStep.WAITING_CLARIFICATION" in commit_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
