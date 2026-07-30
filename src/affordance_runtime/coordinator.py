@@ -48,7 +48,11 @@ from affordance_runtime.recovery_trace_commit import trace_recovery_started
 from affordance_runtime.route_calibration import RouteCalibrator
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_loop_phase import RuntimeLoopPhase
-from affordance_runtime.runtime_result_phase import CoordinatorResult, RuntimeResultPhase
+from affordance_runtime.runtime_result_phase import (
+    CoordinatorResult,
+    RuntimeResultPhase,
+    finish_phase_terminal,
+)
 from affordance_runtime.runtime_transition_commit import (
     apply_runtime_loop_transition,
     commit_runtime_loop_event,
@@ -256,14 +260,8 @@ class RunCoordinator:
             if perception.continue_observing:
                 continue
             if perception.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    perception.terminal.status,
-                    parent,
-                    perception.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, perception.terminal, parent, latest_verification
                 )
             assert perception.snapshot is not None
             snapshot = perception.snapshot
@@ -300,14 +298,8 @@ class RunCoordinator:
                     if planning_failure.continue_observing:
                         continue
                     assert planning_failure.terminal is not None
-                    return self.result_phase.finish(
-                        envelope,
-                        state,
-                        trace,
-                        planning_failure.terminal.status,
-                        parent,
-                        planning_failure.terminal.error_code,
-                        latest_verification,
+                    return finish_phase_terminal(
+                        self.result_phase, envelope, state, trace, planning_failure.terminal, parent, latest_verification
                     )
                 if task_plan_phase.current_state_completion_committed:
                     continue
@@ -345,14 +337,8 @@ class RunCoordinator:
                     if planning_failure.continue_observing:
                         continue
                     assert planning_failure.terminal is not None
-                    return self.result_phase.finish(
-                        envelope,
-                        state,
-                        trace,
-                        planning_failure.terminal.status,
-                        parent,
-                        planning_failure.terminal.error_code,
-                        latest_verification,
+                    return finish_phase_terminal(
+                        self.result_phase, envelope, state, trace, planning_failure.terminal, parent, latest_verification
                     )
                 assert task_skill_phase.decision is not None
                 decision = task_skill_phase.decision
@@ -375,14 +361,8 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    planning_failure.terminal.status,
-                    parent,
-                    planning_failure.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, planning_failure.terminal, parent, latest_verification
                 )
             except Exception as exc:
                 planning_failure = (
@@ -406,14 +386,8 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    planning_failure.terminal.status,
-                    parent,
-                    planning_failure.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, planning_failure.terminal, parent, latest_verification
                 )
             planning_decision = PLANNING_DECISION_PHASE.handle(
                 decision=decision,
@@ -435,14 +409,8 @@ class RunCoordinator:
             parent = planning_decision.parent
             decision = planning_decision.decision
             if planning_decision.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    planning_decision.terminal.status,
-                    parent,
-                    planning_decision.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, planning_decision.terminal, parent, latest_verification
                 )
             planning_failure = PLANNING_FAILURE_PHASE.handle_planning_decision_result(
                 envelope=envelope,
@@ -465,14 +433,8 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    planning_failure.terminal.status,
-                    parent,
-                    planning_failure.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, planning_failure.terminal, parent, latest_verification
                 )
             contract_binding = CONTRACT_BINDING_PHASE.bind(
                 decision=decision,
@@ -493,14 +455,8 @@ class RunCoordinator:
             if contract_binding.continue_observing:
                 continue
             if contract_binding.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    contract_binding.terminal.status,
-                    parent,
-                    contract_binding.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, contract_binding.terminal, parent, latest_verification
                 )
             contract_failure = CONTRACT_FAILURE_PHASE.handle(
                 envelope=envelope,
@@ -516,14 +472,8 @@ class RunCoordinator:
                 if contract_failure.continue_observing:
                     continue
                 assert contract_failure.terminal is not None
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    contract_failure.terminal.status,
-                    parent,
-                    contract_failure.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, contract_failure.terminal, parent, latest_verification
                 )
             assert contract_binding.contract is not None
             contract = contract_binding.contract
@@ -565,14 +515,8 @@ class RunCoordinator:
             if preflight_result.continue_observing:
                 continue
             if preflight_result.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    preflight_result.terminal.status,
-                    parent,
-                    preflight_result.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, preflight_result.terminal, parent, latest_verification
                 )
             execution_result = EXECUTION_PHASE.run(
                 envelope=envelope,
@@ -605,14 +549,8 @@ class RunCoordinator:
             if execution_result.continue_observing:
                 continue
             if execution_result.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    execution_result.terminal.status,
-                    parent,
-                    execution_result.terminal.error_code,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, execution_result.terminal, parent, latest_verification
                 )
             assert execution_result.receipt is not None
             receipt = execution_result.receipt
@@ -657,14 +595,8 @@ class RunCoordinator:
             )
             parent = task_skill_progress_result.parent
             if task_skill_progress_result.terminal is not None:
-                return self.result_phase.finish(
-                    envelope,
-                    state,
-                    trace,
-                    task_skill_progress_result.terminal.status,
-                    parent,
-                    None,
-                    latest_verification,
+                return finish_phase_terminal(
+                    self.result_phase, envelope, state, trace, task_skill_progress_result.terminal, parent, latest_verification
                 )
             skill_complete = task_skill_progress_result.skill_complete
             if latest_verification.passed:
@@ -683,14 +615,8 @@ class RunCoordinator:
                 )
                 parent = verified_progress.parent
                 if verified_progress.terminal is not None:
-                    return self.result_phase.finish(
-                        envelope,
-                        state,
-                        trace,
-                        verified_progress.terminal.status,
-                        parent,
-                        None,
-                        latest_verification,
+                    return finish_phase_terminal(
+                        self.result_phase, envelope, state, trace, verified_progress.terminal, parent, latest_verification
                     )
                 if verified_progress.continue_observing:
                     continue
@@ -716,12 +642,6 @@ class RunCoordinator:
             if verification_failure.continue_observing:
                 continue
             assert verification_failure.terminal is not None
-            return self.result_phase.finish(
-                envelope,
-                state,
-                trace,
-                verification_failure.terminal.status,
-                parent,
-                verification_failure.terminal.error_code,
-                latest_verification,
+            return finish_phase_terminal(
+                self.result_phase, envelope, state, trace, verification_failure.terminal, parent, latest_verification
             )

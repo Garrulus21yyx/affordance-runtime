@@ -792,7 +792,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-9ab taskskill progress accessor owner" in status
+    assert "current_next_change_admission: sar-9ac phase terminal finalization owner" in status
     assert "sar-7 clean pr breadth completed 12/12 observed and 12/12 passed" in status
     assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_5:" in status
@@ -2135,7 +2135,7 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-9ab taskskill progress accessor owner" in status
+    assert "current_next_change_admission: sar-9ac phase terminal finalization owner" in status
     assert "sar-7 clean pr breadth completed 12/12 observed and 12/12 passed" in status
     assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_6:" in status
@@ -2966,6 +2966,17 @@ def test_sar_9ab_taskskill_progress_accessor_is_not_in_coordinator() -> None:
         encoding="utf-8"
     )
     assert "def task_skill_progress" in task_skill_source
+
+
+def test_sar_9ac_phase_terminal_finalization_is_not_expanded_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert coordinator_source.count("self.result_phase.finish(") <= 1
+    assert "finish_phase_terminal(" in coordinator_source
+    result_phase_source = (SOURCE_ROOT / "runtime_result_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def finish_phase_terminal" in result_phase_source
 
 
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:

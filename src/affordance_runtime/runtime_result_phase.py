@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.contracts import RuntimeErrorCode
@@ -11,6 +11,11 @@ from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport
+
+
+class PhaseTerminalView(Protocol):
+    @property
+    def status(self) -> RuntimeStep: ...
 
 
 @dataclass
@@ -67,3 +72,24 @@ class RuntimeResultPhase:
             verification=verification,
             artifacts=artifact_refs,
         )
+
+
+def finish_phase_terminal(
+    result_phase: RuntimeResultPhase,
+    envelope: TaskEnvelope,
+    state: StateKernel,
+    trace: TraceDag,
+    terminal: PhaseTerminalView,
+    parent: TraceNode | None,
+    verification: VerificationReport | None,
+) -> CoordinatorResult:
+    error_code = getattr(terminal, "error_code", None)
+    return result_phase.finish(
+        envelope,
+        state,
+        trace,
+        terminal.status,
+        parent,
+        error_code if isinstance(error_code, RuntimeErrorCode) else None,
+        verification,
+    )
