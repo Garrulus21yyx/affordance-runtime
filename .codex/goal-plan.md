@@ -963,3 +963,9 @@ delivery claims.
   preserving JSON projection at artifact boundaries. Scanner evidence now shows
   no non-benchmark frozen dataclass with container fields missing constructor
   normalization.
+- Started SAR-1.1 after `21d49cad`. Added a bounded change-admission record and
+  RED/GREEN tests for the remaining hash-reachable hidden-mutability checks:
+  `VerifierSpec.expected`, `SourceAssertion.value`, and supplied
+  `ActionContract.contract_hash` consistency. This slice remains authority-free:
+  no Coordinator, StateKernel, PlannerPort, TaskPlan, progress, finish,
+  provider, or benchmark behavior changes are in scope.

@@ -82,6 +82,30 @@ def _target() -> UnifiedAffordance:
     )
 
 
+def test_source_assertion_value_is_deeply_immutable_from_source_payload() -> None:
+    raw_value = {"temperature": [20]}
+
+    assertion = SourceAssertion(
+        "api-temperature",
+        "semantic:target",
+        "temperature",
+        raw_value,
+        "json",
+        GroundingSource.API,
+        "snap-1",
+        "rev-1",
+        "page-1",
+        "api-parser-v1",
+        evidence_refs=("artifact:temperature",),
+    )
+
+    raw_value["temperature"].append(21)
+
+    assert assertion.value == {"temperature": [20]}
+    with pytest.raises(TypeError):
+        assertion.value["temperature"][0] = 21
+
+
 def test_assertion_arbiter_accepts_independent_normalized_agreement() -> None:
     arbitration = SourceAssertionArbiter().arbitrate(
         (

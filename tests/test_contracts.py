@@ -16,6 +16,7 @@ from affordance_runtime.contracts import (
     Observation,
     RuntimeErrorCode,
     Surface,
+    VerifierSpec,
 )
 from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.verification import preflight
@@ -69,7 +70,10 @@ def test_contract_binds_snapshot_target_and_canonical_hash() -> None:
         preflight(contract, replace(observation, target_fingerprints={"save": "target-2"}))
         == RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
     )
-    assert preflight(replace(contract, expires_at_s=time() - 1), observation) == RuntimeErrorCode.LEASE_EXPIRED
+    assert (
+        preflight(replace(contract, expires_at_s=time() - 1, contract_hash=""), observation)
+        == RuntimeErrorCode.LEASE_EXPIRED
+    )
 
 
 def test_action_contract_payloads_are_deeply_immutable_and_hash_stable() -> None:
@@ -111,6 +115,87 @@ def test_action_contract_payloads_are_deeply_immutable_and_hash_stable() -> None
         contract.parameters["text"] = "Bob"
     with pytest.raises(TypeError):
         contract.locator["bbox"][0] = 9
+
+
+def test_action_contract_verifier_expected_is_deeply_immutable_and_hash_stable() -> None:
+    lease = AffordanceLease.issue(
+        environment_revision="legacy-rev",
+        snapshot_id="snap-1",
+        page_revision="page-rev-1",
+        target_fingerprint="target-1",
+    )
+    raw_expected = {"values": [1]}
+    raw_criterion_ids = ["criterion:slider"]
+    raw_requirement_ids = ["requirement:slider"]
+    verifier = VerifierSpec(
+        kind="control_state",
+        target="slider",
+        expected=raw_expected,
+        criterion_ids=raw_criterion_ids,
+        requirement_ids=raw_requirement_ids,
+    )
+    affordance = Affordance(
+        "slider",
+        Surface.DOM,
+        "slider",
+        "Volume",
+        "press_key",
+        {"selector": "#volume"},
+        lease,
+    )
+
+    contract = ActionContract.from_affordance(
+        affordance,
+        intent="set volume",
+        backend="dom",
+        verifier_plan=[verifier],
+    )
+    original_hash = contract.contract_hash
+
+    raw_expected["values"].append(2)
+    raw_criterion_ids.append("criterion:mutated")
+    raw_requirement_ids.append("requirement:mutated")
+
+    assert contract.verifier_plan[0].expected == {"values": [1]}
+    assert contract.verifier_plan[0].criterion_ids == ("criterion:slider",)
+    assert contract.verifier_plan[0].requirement_ids == ("requirement:slider",)
+    assert contract.compute_hash() == original_hash
+    with pytest.raises(TypeError):
+        contract.verifier_plan[0].expected["values"][0] = 9
+
+
+def test_action_contract_rejects_supplied_stale_contract_hash() -> None:
+    lease = AffordanceLease.issue(
+        environment_revision="legacy-rev",
+        snapshot_id="snap-1",
+        page_revision="page-rev-1",
+        target_fingerprint="target-1",
+    )
+    affordance = Affordance(
+        "name",
+        Surface.DOM,
+        "textbox",
+        "Name",
+        "type",
+        {"selector": "#name"},
+        lease,
+    )
+    contract = ActionContract.from_affordance(
+        affordance,
+        intent="enter name",
+        backend="dom",
+        parameters={"text": "Alice"},
+    )
+
+    accepted = replace(contract, contract_hash=contract.contract_hash)
+    assert accepted.contract_hash == contract.contract_hash
+
+    with pytest.raises(ValueError, match="contract_hash"):
+        replace(contract, parameters={"text": "Bob"})
+
+    recomputed = replace(contract, parameters={"text": "Bob"}, contract_hash="")
+    assert recomputed.contract_hash != contract.contract_hash
+    assert recomputed.contract_hash == recomputed.compute_hash()
 
 
 def test_execution_receipt_evidence_is_deeply_immutable_from_source_payload() -> None:

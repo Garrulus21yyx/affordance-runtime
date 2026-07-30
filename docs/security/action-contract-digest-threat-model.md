@@ -1,6 +1,6 @@
 # ActionContract Digest Threat Model
 
-> Status: SAR-1 active correctness/security record.
+> Status: SAR-1.1 active correctness/security closure record.
 > Scope: ActionContract digest identity and approval-token binding.
 
 ## Boundary
@@ -86,6 +86,16 @@ The verification boundary is included in the same SAR-1 repair:
 construction/materialization time. This prevents post-verification evidence
 objects from changing after they have been linked into trace, progress
 diagnostics, recovery, or later attribution experiments.
+
+SAR-1.1 closes the remaining hash-reachable verifier-plan gap by freezing
+`VerifierSpec.expected` and normalizing its criterion and requirement identity
+sequences at construction. `ActionContract` now validates any supplied
+`contract_hash` against the canonical frozen payload and rejects stale hashes;
+callers that intentionally derive a replacement contract must pass an empty
+hash so the digest is recomputed from the new payload. The same closure freezes
+`SourceAssertion.value`, preventing source-local perception assertions from
+retaining caller-owned mutable JSON values after arbitration or grounding has
+accepted them.
 
 Trace nodes are also frozen at append time: `TraceNode.payload` is deeply
 immutable and `TraceNode.parents` cannot be mutated by the caller after

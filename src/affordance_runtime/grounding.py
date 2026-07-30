@@ -12,6 +12,7 @@ from time import time
 from typing import Any, TypeAlias
 
 from affordance_runtime.contracts import Observation, RiskLevel
+from affordance_runtime.immutable import freeze_json
 
 
 class EvidenceKind(StrEnum):
@@ -63,6 +64,8 @@ class SourceAssertion:
     material: bool = True
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "value", freeze_json(self.value))
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
         if not self.assertion_id or not self.entity_key or not self.property_key:
             raise ValueError("source assertion identity fields must be non-empty")
         if not self.value_type or not self.parser_id or not self.schema_version:

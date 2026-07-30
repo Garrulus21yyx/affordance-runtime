@@ -441,6 +441,11 @@ class VerifierSpec:
     requirement_ids: tuple[str, ...] = ()
     progress_scope: ProgressEvidenceScope = ProgressEvidenceScope.NONE
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expected", freeze_json(self.expected))
+        object.__setattr__(self, "criterion_ids", tuple(self.criterion_ids))
+        object.__setattr__(self, "requirement_ids", tuple(self.requirement_ids))
+
 
 @dataclass(frozen=True)
 class ActionContract:
@@ -491,8 +496,10 @@ class ActionContract:
         object.__setattr__(self, "fallback_backends", freeze_json(self.fallback_backends))
         if not self.page_revision:
             object.__setattr__(self, "page_revision", self.environment_revision)
-        if not self.contract_hash:
-            object.__setattr__(self, "contract_hash", self.compute_hash())
+        computed_hash = self.compute_hash()
+        if self.contract_hash and self.contract_hash != computed_hash:
+            raise ValueError("ActionContract contract_hash does not match canonical payload")
+        object.__setattr__(self, "contract_hash", computed_hash)
         if self.scope_authorization is not None:
             candidate = self.grounding_candidate
             authorization = self.scope_authorization

@@ -52,6 +52,10 @@ included:
   - IntentDraftRepairAttempt proposal claim-id mapping freeze
   - ordinal collection snapshot affordance state freeze
   - TaskSkillReplayDecision metrics freeze
+  - VerifierSpec expected value freeze and criterion/requirement identity sequence normalization
+  - SourceAssertion value freeze
+  - supplied ActionContract contract_hash consistency validation
+  - SAR-1.1 hash-reachable hidden-mutability closure
   - durable README/status/current-plan authority references synchronized to current HEAD
   - Trace and Artifact JSON writers project frozen payloads through canonical JSON-compatible data
   - BrowserGym adapter-boundary thaw for executor-owned payload dispatch
@@ -71,6 +75,7 @@ excluded:
 
 authority_invariants:
   action_contract_hash_computed_after_freeze: true
+  supplied_contract_hash_must_match_canonical_payload: true
   nested_contract_payload_mutation_after_construction: prohibited
   source_object_mutation_changes_contract_hash: false
   core_thaw: prohibited
@@ -112,6 +117,9 @@ validation:
   evolution_proposal_payloads_red_observed: tests/test_evolution.py::test_evolution_proposal_payloads_are_immutable_from_source_collections
   recovery_evolution_report_payloads_red_observed: tests/test_recovery_evolution.py::test_recovery_evolution_report_payloads_are_immutable_from_source_collections
   canonical_trace_rows_red_observed: tests/test_harness_learning.py::test_canonical_trace_rows_are_deeply_immutable_from_source_rows
+  verifier_expected_red_observed: tests/test_contracts.py::test_action_contract_verifier_expected_is_deeply_immutable_and_hash_stable
+  source_assertion_value_red_observed: tests/test_source_assertions.py::test_source_assertion_value_is_deeply_immutable_from_source_payload
+  supplied_stale_contract_hash_red_observed: tests/test_contracts.py::test_action_contract_rejects_supplied_stale_contract_hash
   focused_contract_tests: required
   architecture_tests: required
   full_pytest: required
@@ -120,7 +128,9 @@ validation:
   uv_build: required
   diff_check: required
 
-closure_status: local_completion_candidate
+closure_status: local_complete_after_sar_1_1
 remaining_scanner_findings: none_for_non_benchmark_frozen_dataclasses_with_container_fields_missing_post_init
+hash_reachable_contract_graph: covered
+hidden_any_mutability_checks: passed
 next_slice: sar-2-relation-criterion-evidence-vocabulary-unification
 promotion_status: held

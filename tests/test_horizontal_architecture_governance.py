@@ -781,7 +781,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-1 deep immutability" in status
+    assert "current_next_change_admission: sar-2 relation / criterion / evidence vocabulary unification" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1776,18 +1776,25 @@ def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> No
 
 def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     record_path = CHANGE_ADMISSION_DIR / "sar-1-deep-immutability-and-stale-contract-hash.yaml"
+    closure_record_path = CHANGE_ADMISSION_DIR / "sar-1-1-hash-reachable-hidden-mutability-closure.yaml"
     threat_model_path = REPOSITORY_ROOT / "docs/security/action-contract-digest-threat-model.md"
     record = " ".join(record_path.read_text(encoding="utf-8").split()).casefold()
+    closure_record = " ".join(closure_record_path.read_text(encoding="utf-8").split()).casefold()
     threat_model = " ".join(threat_model_path.read_text(encoding="utf-8").split()).casefold()
     status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
     current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
 
     assert record_path.exists()
+    assert closure_record_path.exists()
     assert threat_model_path.exists()
     assert "slice_id: sar-1-deep-immutability-and-stale-contract-hash" in record
+    assert "slice_id: sar-1-1-hash-reachable-hidden-mutability-closure" in closure_record
     assert "action_contract_hash_computed_after_freeze: true" in record
-    assert "closure_status: local_completion_candidate" in record
+    assert "closure_status: local_complete_after_sar_1_1" in record
+    assert "closure_status: local_complete" in closure_record
     assert "nested_contract_payload_mutation_after_construction: prohibited" in record
+    assert "supplied_contract_hash_must_match_canonical_payload: true" in record
+    assert "supplied_contract_hash_must_match_canonical_payload: true" in closure_record
     assert "executionreceipt evidence deep freeze" in record
     assert "verificationevidence observed and expected value deep freeze" in record
     assert "verificationreport evidence sequence freeze" in record
@@ -1813,6 +1820,9 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "gesturetargetbinding locator deep freeze" in record
     assert "ordinal collection snapshot affordance state freeze" in record
     assert "taskskillreplaydecision metrics freeze" in record
+    assert "verifierspec expected value freeze and criterion/requirement identity sequence normalization" in record
+    assert "sourceassertion value freeze" in record
+    assert "supplied actioncontract contract_hash consistency validation" in record
     assert "durable readme/status/current-plan authority references synchronized" in record
     assert "observation metadata, target_fingerprints, and artifact_refs deep freeze" in record
     assert "affordance locator, state, payload, backend_candidates, evidence, and lease provenance deep freeze" in record
@@ -1825,13 +1835,20 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "contract_hash was computed over payload a" in threat_model
     assert "payload changed to payload b" in threat_model
     assert "approval tokens match `contract_hash`" in threat_model
+    assert "sar-1.1 closes the remaining hash-reachable verifier-plan gap" in threat_model
+    assert "rejects stale hashes" in threat_model
     assert "sar_1_deep_immutability:" in status
+    assert "closure_record: docs/change-admission/sar-1-1-hash-reachable-hidden-mutability-closure.yaml" in status
     assert "threat_model: docs/security/action-contract-digest-threat-model.md" in status
     assert "immutable_helper: src/affordance_runtime/immutable.py" in status
     assert (
-        "current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields"
+        "current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields_plus_hash_reachable_any_checks"
         in status
     )
+    assert "status: local_complete_after_sar_1_1" in status
+    assert "hash_reachable_contract_graph: covered" in status
+    assert "hidden_any_mutability_checks: passed" in status
+    assert "supplied_contract_hash_consistency: enforced" in status
     assert (
         "remaining_scanner_findings: none_for_non_benchmark_frozen_dataclasses_with_container_fields_missing_post_init"
         in status
@@ -1840,7 +1857,8 @@ def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     assert "json_persistence_boundary: tracedag and artifactstore project frozen containers" in status
     assert "legacy_compatibility_boundary: frozen payload readers use mapping and sequence" in status
     assert "adapter_boundary_thaw: explicit_only" in status
-    assert "freezes actioncontract, executionreceipt, plannerdecision diagnostic, observation, affordance, gesturetargetbinding locator, verificationevidence" in current_plan
+    assert "freezes actioncontract, executionreceipt, plannerdecision diagnostic, observation, affordance, gesturetargetbinding locator, verifierspec expected values, sourceassertion values, verificationevidence" in current_plan
+    assert "supplied actioncontract hashes are checked against the canonical frozen payload" in current_plan
     assert "tracenode payload boundaries" in current_plan
     assert "recoverytraceprojection payloads" in current_plan
     assert "taskplantraceprojection payloads" in current_plan

@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-1 local completion candidate after `911c7051af9fe397263b8cb849a4c3030282c59e`: SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1 has frozen ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, GestureTargetBinding locator payloads, VerificationEvidence/VerificationReport values, TraceNode payload/parent references, RecoveryTraceProjection payloads, TaskPlanTraceProjection payloads, RecoveryContext tried-backend sequences, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConformanceSurfaceResult evidence sequences, evolution/recovery-evolution artifact payloads, CanonicalTrace rows, ConfiguredApprovalProvider allowed-capability sets, RoutingDecision candidate/score payloads, TaskEnvelope constraints/capabilities, task API request/execution DTO payloads, semantic resolver/compiler payloads, canonical/intent proposal claim-id mappings, ordinal collection snapshot affordance state, and TaskSkillReplayDecision metrics at construction/materialization/append boundaries. Scanner evidence shows no remaining non-benchmark frozen dataclass with list/dict/Mapping/Sequence fields lacking `__post_init__`. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-1.1 hash-reachable hidden-mutability closure active local change after `21d49cad499d6e048c9d0eb659cba346010c4ff3`: SAR-0 authoritative optimized architecture and SAR substitutive execution plan are the current default-target documents in `docs/superpowers/`; superseded simplified, TaskPlanAuthority, and former root architecture/design-freeze documents are archived or redirected. SAR-1 has frozen ActionContract nested JSON payloads, ExecutionReceipt evidence, PlannerDecision diagnostic maps, Observation payloads, Affordance payloads, GestureTargetBinding locator payloads, VerificationEvidence/VerificationReport values, VerifierSpec expected values, SourceAssertion values, TraceNode payload/parent references, RecoveryTraceProjection payloads, TaskPlanTraceProjection payloads, RecoveryContext tried-backend sequences, BrowserSnapshot accessibility trees, PageAffordanceModel affordance sequences, ThingAffordanceModel affordance/state-source payloads, ConformanceSurfaceResult evidence sequences, evolution/recovery-evolution artifact payloads, CanonicalTrace rows, ConfiguredApprovalProvider allowed-capability sets, RoutingDecision candidate/score payloads, TaskEnvelope constraints/capabilities, task API request/execution DTO payloads, semantic resolver/compiler payloads, canonical/intent proposal claim-id mappings, ordinal collection snapshot affordance state, and TaskSkillReplayDecision metrics at construction/materialization/append boundaries. Supplied ActionContract hashes are validated against the canonical frozen payload. Scanner evidence shows no remaining non-benchmark frozen dataclass with list/dict/Mapping/Sequence fields lacking `__post_init__`. Frozen payloads are projected back to JSON at trace/artifact write boundaries. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -151,9 +151,13 @@ authoritative_optimized_architecture:
 
 sar_1_deep_immutability:
   record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
+  closure_record: docs/change-admission/sar-1-1-hash-reachable-hidden-mutability-closure.yaml
   threat_model: docs/security/action-contract-digest-threat-model.md
-  status: local_completion_candidate
-  current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields
+  status: local_complete_after_sar_1_1
+  current_scope: all_non_benchmark_frozen_dataclass_runtime_payload_boundaries_with_container_fields_plus_hash_reachable_any_checks
+  hash_reachable_contract_graph: covered
+  hidden_any_mutability_checks: passed
+  supplied_contract_hash_consistency: enforced
   immutable_helper: src/affordance_runtime/immutable.py
   frozen_runtime_payloads:
     - ActionContract locator / parameters / hash-critical list fields
@@ -162,6 +166,8 @@ sar_1_deep_immutability:
     - Observation metadata / target_fingerprints / artifact_refs
     - Affordance locator / state / payload / backend_candidates / evidence / lease provenance
     - GestureTargetBinding locator
+    - VerifierSpec expected / criterion_ids / requirement_ids
+    - SourceAssertion value
     - VerificationEvidence observed / expected
     - VerificationReport evidence
     - VerifierEvaluation observed
@@ -320,13 +326,13 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-1 deep immutability and stale contract-hash repair; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-2 relation / criterion / evidence vocabulary unification after SAR-1.1 local closure; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-1-deep-immutability-and-stale-contract-hash
-  revision: 9574a80bd071be4658dcdd9c8445f18a2d5772cf
-  status: active_first_cut
+  slice: sar-1-1-hash-reachable-hidden-mutability-closure
+  revision: 21d49cad499d6e048c9d0eb659cba346010c4ff3
+  status: active_local_change
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -344,6 +350,7 @@ active_local_repair:
   taskplan_generator_draft_migration_record: docs/change-admission/tpa-5-taskplan-generator-draft-migration.yaml
   sar_0_freeze_record: docs/change-admission/sar-0-authoritative-architecture-freeze.yaml
   sar_1_record: docs/change-admission/sar-1-deep-immutability-and-stale-contract-hash.yaml
+  sar_1_1_record: docs/change-admission/sar-1-1-hash-reachable-hidden-mutability-closure.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -355,7 +362,7 @@ active_local_repair:
   taskplan_generator_change: draft_foundation_only_with_legacy_production_path
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-1-close-or-classify-remaining-mutable-runtime-boundaries
+  next_runtime_slice: sar-2-relation-criterion-evidence-vocabulary-unification
   promotion_status: held
 
 attribution_classification:
@@ -650,7 +657,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1 deep immutability is a local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-2 relation / criterion / evidence vocabulary unification is next after local verification; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-1.1 hash-reachable hidden-mutability closure is the active local change; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, and SAR-1 deep-immutability gates | none | SAR-2 relation / criterion / evidence vocabulary unification is next after SAR-1.1 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
