@@ -36,6 +36,7 @@ from affordance_runtime.recovery_decision_compatibility import (
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassificationFacts,
+    RecoveryKind,
     classify_failure,
 )
 from affordance_runtime.verification import VerificationReport
@@ -247,7 +248,7 @@ class RecoveryHandler:
             else ()
         )
         recovery_context = RecoverySelectionContext(
-            available_commands=frozenset(available),
+            available_commands=frozenset(RecoveryKind(item.value) for item in available),
             current_attempt_fingerprint=request.state_revision,
             fresh_candidate_id=alternative_id,
             fresh_route_ref=route_ref,
@@ -257,7 +258,7 @@ class RecoveryHandler:
                 if request.contract.compensation
                 else ""
             ),
-            preferred_profile_commands=preferred,
+            preferred_profile_commands=tuple(RecoveryKind(item.value) for item in preferred),
             preferred_profile_artifact_id=preferred_profile_artifact_id,
             accepted_profile_digest=request.accepted_profile_digest,
             accepted_profile_artifact_ids=accepted_profile_artifact_ids,

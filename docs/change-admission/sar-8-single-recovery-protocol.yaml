@@ -146,6 +146,10 @@ scope:
       compatibility projections, or RecoveryCommandCompleted /
       RecoveryDeltaValidated events; pending recovery completion helpers commit
       canonical RecoveryOutcomeRecorded evidence.
+    - Legacy RecoveryHandler compatibility bridges preferred/available legacy
+      command enums into canonical RecoveryKind before constructing
+      RecoverySelectionContext, keeping core type gates aligned while leaving
+      offline compatibility tests isolated.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -324,16 +328,28 @@ validation:
     ruff: passed
     mypy_core: passed_8_source_files_ignore_optional_missing_imports
     diff_check: passed
+  sar_8c_cutover_closure:
+    - PYTHONPATH=src python -m pytest -q
+    - ruff check src tests scripts
+    - mypy --ignore-missing-imports --exclude 'src/affordance_runtime/benchmarks|src/affordance_runtime/langgraph' src/affordance_runtime
+    - uv build
+    - git diff --check
+  sar_8c_cutover_closure_result:
+    pytest: 1331_passed
+    ruff: passed
+    mypy_core: passed_116_source_files_ignore_optional_missing_imports
+    uv_build: passed
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
-  full_pytest_result: 1325_passed
+  full_pytest_result: 1331_passed
   coordinator_lines: 2974
   run_sync_lines: 1993
   runcoordinator_methods: 18
   ruff: passed
-  mypy: passed_110_core_source_files_ignore_optional_missing_imports
+  mypy: passed_116_core_source_files_ignore_optional_missing_imports
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_phase_legacy_payload_deletion_local_candidate
+status: sar_8c_default_recovery_protocol_cutover_local_candidate
 next_slice: planner-selection-simplification-actionchoice
