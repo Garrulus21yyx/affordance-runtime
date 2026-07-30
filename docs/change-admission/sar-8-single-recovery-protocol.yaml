@@ -109,6 +109,9 @@ scope:
     - RunCoordinator pending recovery checks use canonical
       current_recovery_decision.kind directly; the RecoveryKind to
       RecoveryCommandKind pending helper mapping has been deleted.
+    - RunCoordinator recovery helper seams return canonical RecoveryKind for
+      branch decisions; RecoveryCommandKind remains inside RecoveryPhase /
+      dispatcher compatibility only.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -223,6 +226,9 @@ validation:
   pending_recovery_kind_cutover:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
   pending_recovery_kind_cutover_result: 16_passed
+  recovery_seam_kind_cutover:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=20
+  recovery_seam_kind_cutover_result: 17_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298

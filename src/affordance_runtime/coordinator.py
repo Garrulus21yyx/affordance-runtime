@@ -116,6 +116,10 @@ from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRu
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
 
+OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
+    RecoveryKind(kind.value) for kind in OWNER_DISPATCH_COMMANDS
+)
+
 
 @dataclass(frozen=True)
 class RunBudget:
@@ -288,7 +292,7 @@ class RunCoordinator:
                     )
                 if parent is None:
                     raise ValueError("observation recovery requires a trace parent")
-                recovery_command, parent = self._recover_phase_failure(
+                recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -304,7 +308,7 @@ class RunCoordinator:
                         }
                     ),
                 )
-                if recovery_command == RecoveryCommandKind.REOBSERVE:
+                if recovery_kind == RecoveryKind.REOBSERVE:
                     continue
                 return self._finish(
                     envelope,
@@ -415,7 +419,7 @@ class RunCoordinator:
                 state.perception_resolution is not None
                 and state.perception_resolution.blocks_effectful_action
             ):
-                _recovery_command, parent = self._recover_phase_failure(
+                _recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -497,7 +501,7 @@ class RunCoordinator:
                             parent,
                             error_code=flow_failure.error_code.value,
                         )
-                    recovery_command, parent = self._recover_phase_failure(
+                    recovery_kind, parent = self._recover_phase_failure(
                         envelope,
                         state,
                         trace,
@@ -516,8 +520,8 @@ class RunCoordinator:
                         snapshot=snapshot,
                     )
                     if (
-                        recovery_command == RecoveryCommandKind.REPLAN_TASK
-                        or recovery_command in OWNER_DISPATCH_COMMANDS
+                        recovery_kind == RecoveryKind.REPLAN_TASK
+                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
                     ):
                         continue
                     return self._finish(
@@ -607,7 +611,7 @@ class RunCoordinator:
                                 parent,
                                 error_code=RuntimeErrorCode.PLANNER_FAILED.value,
                             )
-                        recovery_command, parent = self._recover_phase_failure(
+                        recovery_kind, parent = self._recover_phase_failure(
                             envelope,
                             state,
                             trace,
@@ -626,8 +630,8 @@ class RunCoordinator:
                             snapshot=snapshot,
                         )
                         if (
-                            recovery_command == RecoveryCommandKind.REPLAN_STEP
-                            or recovery_command in OWNER_DISPATCH_COMMANDS
+                            recovery_kind == RecoveryKind.REPLAN_STEP
+                            or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
                         ):
                             continue
                         return self._finish(
@@ -706,7 +710,7 @@ class RunCoordinator:
                     "retry_after_s": exc.retry_after_s,
                     "resumable": exc.resumable,
                 }
-                _recovery_command, parent = self._recover_phase_failure(
+                _recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -724,7 +728,7 @@ class RunCoordinator:
                     snapshot=snapshot,
                     abort_reentry_phase=RecoveryReentryPhase.DEFERRED,
                 )
-                if _recovery_command in OWNER_DISPATCH_COMMANDS:
+                if _recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS:
                     continue
                 parent = trace.add(
                     "PlannerDeferred",
@@ -767,7 +771,7 @@ class RunCoordinator:
                         parent,
                         error_code=RuntimeErrorCode.PLANNER_FAILED.value,
                     )
-                recovery_command, parent = self._recover_phase_failure(
+                recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -786,8 +790,8 @@ class RunCoordinator:
                     snapshot=snapshot,
                 )
                 if (
-                    recovery_command == RecoveryCommandKind.REPLAN_STEP
-                    or recovery_command in OWNER_DISPATCH_COMMANDS
+                    recovery_kind == RecoveryKind.REPLAN_STEP
+                    or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
                 ):
                     continue
                 return self._finish(
@@ -875,7 +879,7 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    _recovery_command, parent = self._recover_phase_failure(
+                    _recovery_kind, parent = self._recover_phase_failure(
                         envelope,
                         state,
                         trace,
@@ -891,7 +895,7 @@ class RunCoordinator:
                         expected_effect="; ".join(proposal.expected_effects),
                         recoverable=recovery_decision.recoverable,
                     )
-                    if _recovery_command != RecoveryCommandKind.ABORT:
+                    if _recovery_kind != RecoveryKind.ABORT:
                         continue
                     return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error_code, latest_verification)
                 if provenance is None:  # narrowed after source-neutral validation
@@ -989,7 +993,7 @@ class RunCoordinator:
             )
             parent = terminal_commit.parent
             if terminal_commit.rejected:
-                _recovery_command, parent = self._recover_phase_failure(
+                _recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -1050,7 +1054,7 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    _recovery_command, parent = self._recover_phase_failure(
+                    _recovery_kind, parent = self._recover_phase_failure(
                         envelope,
                         state,
                         trace,
@@ -1112,7 +1116,7 @@ class RunCoordinator:
                         state.replan_count += 1
                         state.transition(RuntimeStep.OBSERVING.value)
                         continue
-                    recovery_command, parent = self._recover_phase_failure(
+                    recovery_kind, parent = self._recover_phase_failure(
                         envelope,
                         state,
                         trace,
@@ -1131,7 +1135,7 @@ class RunCoordinator:
                         proposal_id=decision.proposal.proposal_id,
                         expected_effect="; ".join(decision.proposal.expected_effects),
                     )
-                    if recovery_command == RecoveryCommandKind.REGROUND:
+                    if recovery_kind == RecoveryKind.REGROUND:
                         continue
                     return self._finish(
                         envelope,
@@ -1170,7 +1174,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                recovery_command, parent = self._recover_phase_failure(
+                recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -1189,8 +1193,8 @@ class RunCoordinator:
                     snapshot=snapshot,
                 )
                 if (
-                    recovery_command == RecoveryCommandKind.REPLAN_STEP
-                    or recovery_command in OWNER_DISPATCH_COMMANDS
+                    recovery_kind == RecoveryKind.REPLAN_STEP
+                    or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
                 ):
                     continue
                 return self._finish(
@@ -1634,7 +1638,7 @@ class RunCoordinator:
                         error,
                     )
                     parent = _trace_recovery_started(trace, parent, state, recovery_result)
-                    if recovery_result == RecoveryCommandKind.REOBSERVE:
+                    if recovery_result == RecoveryKind.REOBSERVE:
                         continue
                     final_recovery_status = _terminal_recovery_status(
                         state,
@@ -1649,7 +1653,7 @@ class RunCoordinator:
                         error,
                         latest_verification,
                     )
-                _recovery_command, parent = self._recover_phase_failure(
+                _recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -1686,7 +1690,7 @@ class RunCoordinator:
                 return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error, latest_verification)
             authorization_error = effective_gate.authorize(contract) if self.features.capability_gate else None
             if authorization_error is not None:
-                _recovery_command, parent = self._recover_phase_failure(
+                _recovery_kind, parent = self._recover_phase_failure(
                     envelope,
                     state,
                     trace,
@@ -1783,12 +1787,12 @@ class RunCoordinator:
                 )
                 parent = _trace_recovery_started(trace, parent, state, recovery_result)
                 if recovery_result in {
-                    RecoveryCommandKind.REOBSERVE,
-                    RecoveryCommandKind.RETRY_IDEMPOTENT,
-                    RecoveryCommandKind.REROUTE,
+                    RecoveryKind.REOBSERVE,
+                    RecoveryKind.RETRY_IDEMPOTENT,
+                    RecoveryKind.REROUTE,
                 }:
                     continue
-                if recovery_result == RecoveryCommandKind.INSPECT_POST_STATE:
+                if recovery_result == RecoveryKind.INSPECT_POST_STATE:
                     inspection = self.perception_session.capture(
                         envelope,
                         state,
@@ -2201,8 +2205,8 @@ class RunCoordinator:
                 verification_status=latest_verification.status.value,
             )
             if recovery_result in {
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.INSPECT_POST_STATE,
+                RecoveryKind.REOBSERVE,
+                RecoveryKind.INSPECT_POST_STATE,
             }:
                 continue
             final_recovery_status = _terminal_recovery_status(
@@ -2231,7 +2235,7 @@ class RunCoordinator:
         *,
         failure_context: dict[str, Any] | None = None,
         verification: VerificationReport | None = None, verification_ref: str = "",
-    ) -> tuple[RecoveryCommandKind, TraceNode]:
+    ) -> tuple[RecoveryKind, TraceNode]:
         task_plan = state.task_plan
         if verification is not None or error == RuntimeErrorCode.VERIFICATION_FAILED:
             phase = FailurePhase.VERIFICATION
@@ -2331,7 +2335,7 @@ class RunCoordinator:
             available.add(RecoveryCommandKind.RETRY_IDEMPOTENT)
         if contract.compensation:
             available.add(RecoveryCommandKind.COMPENSATE)
-        command_kind, parent = self.recovery_phase.handle_phase_failure(
+        recovery_result = self.recovery_phase.handle_phase_failure(
             failure=failure,
             state=state,
             trace=trace,
@@ -2346,23 +2350,25 @@ class RunCoordinator:
                 f"compensation:{contract.id}" if contract.compensation else ""
             ),
         )
+        parent = recovery_result.parent
+        recovery_kind = RecoveryKind(recovery_result.command_kind.value)
         if contract.grounding_candidate is not None:
-            if command_kind == RecoveryCommandKind.REROUTE:
+            if recovery_kind == RecoveryKind.REROUTE:
                 state.record_grounding_reroute(
                     contract,
                     "recovery reroute",
                     exclude_candidate=True,
                 )
-            elif command_kind in {
-                RecoveryCommandKind.REOBSERVE,
-                RecoveryCommandKind.RETRY_IDEMPOTENT,
+            elif recovery_kind in {
+                RecoveryKind.REOBSERVE,
+                RecoveryKind.RETRY_IDEMPOTENT,
             }:
                 state.record_grounding_reroute(
                     contract,
                     "recovery requires fresh observation",
                     exclude_candidate=False,
                 )
-        return command_kind, parent
+        return recovery_kind, parent
 
     def _recover_phase_failure(
         self,
@@ -2382,7 +2388,7 @@ class RunCoordinator:
         expected_effect: str = "",
         recoverable: bool = True,
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
-    ) -> tuple[RecoveryCommandKind, TraceNode]:
+    ) -> tuple[RecoveryKind, TraceNode]:
         available_commands = frozenset(
             kind
             for kind in available_commands
@@ -2436,7 +2442,7 @@ class RunCoordinator:
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
             abort_reentry_phase=abort_reentry_phase,
         )
-        return recovery_result.command_kind, recovery_result.parent
+        return RecoveryKind(recovery_result.command_kind.value), recovery_result.parent
 
     def _remaining_recovery_budgets(self, state: StateKernel) -> RemainingRecoveryBudgets:
         return RemainingRecoveryBudgets(
@@ -2951,7 +2957,7 @@ def _trace_recovery_started(
     trace: TraceDag,
     parent: TraceNode,
     state: StateKernel,
-    command: RecoveryCommandKind,
+    command: RecoveryKind,
     *,
     verification_status: str = "",
 ) -> TraceNode:

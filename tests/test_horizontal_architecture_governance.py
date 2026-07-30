@@ -2351,6 +2351,17 @@ def test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind() -> N
     assert "_pending_recovery_command_kind" not in source
 
 
+def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> None:
+    source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    seam = source.split("def _recover_phase_failure(", 1)[1].split(
+        "\n    def _remaining_recovery_budgets",
+        1,
+    )[0]
+
+    assert "tuple[RecoveryCommandKind, TraceNode]" not in seam
+    assert "return recovery_result.command_kind" not in seam
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
