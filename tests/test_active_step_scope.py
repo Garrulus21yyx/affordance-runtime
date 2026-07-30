@@ -52,6 +52,20 @@ def _proposal(target_id: str) -> PlannerProposal:
     )
 
 
+def _drag_proposal(target_id: str, destination_id: str) -> PlannerProposal:
+    return PlannerProposal(
+        proposal_id=f"proposal:{target_id}:{destination_id}",
+        based_on_task_revision=1,
+        based_on_state_version=1,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.DRAG,
+        target_affordance_id=target_id,
+        destination_affordance_id=destination_id,
+        parameters={},
+        expected_effects=("Item moved",),
+    )
+
+
 def test_active_step_scope_allows_current_step_target() -> None:
     from affordance_runtime.active_step_scope import ActiveStepScope
 
@@ -67,6 +81,54 @@ def test_active_step_scope_allows_current_step_target() -> None:
 
     assert decision.allowed is True
     assert decision.reason_code == "within_active_step_scope"
+
+
+def test_active_step_scope_blocks_wrong_action_kind_for_current_step_target() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        activity_status=StepActivityStatus.ACTIVE,
+        active_step_id="step:name",
+        permitted_target_ids=("semantic:name",),
+        permitted_action_kinds=(PlannerActionKind.TYPE_TEXT.value,),
+    )
+    proposal = PlannerProposal(
+        proposal_id="proposal:activate:name",
+        based_on_task_revision=1,
+        based_on_state_version=1,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id="semantic:name",
+        parameters={},
+    )
+
+    decision = scope.evaluate(proposal)
+
+    assert decision.allowed is False
+    assert decision.reason_code == "action_outside_active_step"
+
+
+def test_active_step_scope_blocks_drag_destination_outside_current_step() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        activity_status=StepActivityStatus.ACTIVE,
+        active_step_id="step:drag",
+        permitted_target_ids=("semantic:source",),
+        permitted_action_kinds=(PlannerActionKind.DRAG.value,),
+        permitted_destination_ids=("semantic:destination",),
+    )
+
+    decision = scope.evaluate(_drag_proposal("semantic:source", "semantic:other"))
+
+    assert decision.allowed is False
+    assert decision.reason_code == "destination_outside_active_step"
 
 
 def test_active_step_scope_blocks_cross_step_target() -> None:

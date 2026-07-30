@@ -984,6 +984,76 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
     assert caught.value.reason_code == "target_outside_active_step"
 
 
+def test_proposal_validator_enforces_active_step_action_family_when_available() -> None:
+    model = DomAdapter().transduce(
+        '<button id="submit">Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Submit")
+    state.remember_observation(observation)
+    active_target = model.affordances[0].id
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-active-action-scope",
+            task_id=state.task_id,
+            task_revision=2,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="step:theme",
+                    objective="Point activate submit",
+                    success_criteria=("submit completed",),
+                    evidence_requirements=("submit evidence",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.POINT_ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject=active_target,
+                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    spec = TaskSpec(
+        task_id="task-1",
+        revision=2,
+        objective="Submit",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("submit",),
+        success_criteria=("submit completed",),
+        source_request_ref="request-1",
+    )
+    proposal = _proposal(
+        state,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=active_target,
+        parameters={},
+    )
+
+    with pytest.raises(ProposalRejected) as caught:
+        PlannerProposalValidator().validate(
+            proposal,
+            TEST_PROPOSAL_PROVENANCE,
+            spec,
+            state,
+            BrowserSnapshot(observation, model),
+        )
+
+    assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+    assert caught.value.reason_code == "action_outside_active_step"
+
+
 def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
     spec, state, snapshot = _fixture()
 

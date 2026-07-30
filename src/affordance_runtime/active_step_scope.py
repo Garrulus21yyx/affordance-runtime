@@ -47,6 +47,9 @@ class ActiveStepScope:
     activity_status: StepActivityStatus
     active_step_id: str | None
     permitted_target_ids: tuple[str, ...] = ()
+    permitted_action_kinds: tuple[str, ...] = ()
+    permitted_destination_ids: tuple[str, ...] = ()
+    finish_allowed: bool = False
 
     @classmethod
     def from_active_step(
@@ -103,7 +106,13 @@ class ActiveStepScope:
         elif self.active_step_id is not None:
             raise ValueError("inactive scope cannot carry active step")
         _require_tuple("permitted_target_ids", self.permitted_target_ids)
+        _require_tuple("permitted_action_kinds", self.permitted_action_kinds)
+        _require_tuple("permitted_destination_ids", self.permitted_destination_ids)
         _require_unique_nonblank("permitted target ids", self.permitted_target_ids)
+        _require_unique_nonblank("permitted action kinds", self.permitted_action_kinds)
+        _require_unique_nonblank("permitted destination ids", self.permitted_destination_ids)
+        if not isinstance(self.finish_allowed, bool):
+            raise ValueError("finish_allowed must be boolean")
 
     def evaluate(self, proposal: Any) -> ActiveStepScopeDecision:
         if proposal.based_on_task_revision != self.task_revision:
@@ -113,17 +122,35 @@ class ActiveStepScope:
         if proposal.snapshot_id != self.snapshot_id:
             return ActiveStepScopeDecision(False, "stale_snapshot")
         action_kind = getattr(proposal.action_kind, "value", proposal.action_kind)
+        if action_kind == "finish":
+            if self.finish_allowed:
+                return ActiveStepScopeDecision(True, "finish_within_active_step_scope")
+            return ActiveStepScopeDecision(False, "finish_outside_active_step")
         if action_kind not in _TARGET_ACTIONS:
             return ActiveStepScopeDecision(True, "non_target_action")
         if self.active_step_id is None:
             return ActiveStepScopeDecision(False, "no_active_step")
-        if proposal.target_affordance_id in self.permitted_target_ids:
-            return ActiveStepScopeDecision(True, "within_active_step_scope")
-        return ActiveStepScopeDecision(
-            False,
-            "target_outside_active_step",
-            blocking_step_id=self.active_step_id,
-        )
+        if proposal.target_affordance_id not in self.permitted_target_ids:
+            return ActiveStepScopeDecision(
+                False,
+                "target_outside_active_step",
+                blocking_step_id=self.active_step_id,
+            )
+        if self.permitted_action_kinds and action_kind not in self.permitted_action_kinds:
+            return ActiveStepScopeDecision(
+                False,
+                "action_outside_active_step",
+                blocking_step_id=self.active_step_id,
+            )
+        destination_id = getattr(proposal, "destination_affordance_id", "")
+        if action_kind == "drag" and self.permitted_destination_ids:
+            if destination_id not in self.permitted_destination_ids:
+                return ActiveStepScopeDecision(
+                    False,
+                    "destination_outside_active_step",
+                    blocking_step_id=self.active_step_id,
+                )
+        return ActiveStepScopeDecision(True, "within_active_step_scope")
 
 
 def _criterion_subjects(step: StepSpec) -> tuple[str, ...]:

@@ -269,6 +269,7 @@ def _legacy_active_step_scope(
         activity_status=StepActivityStatus.ACTIVE,
         active_step_id=active_step_id,
         permitted_target_ids=(subject,),
+        permitted_action_kinds=((subgoal.action_family.value,) if subgoal.action_family is not None else ()),
     )
 
 
