@@ -102,6 +102,10 @@ scope:
     - Request-only PlannerUnsupportedResponse reason_code can reach the
       Coordinator recovery FailureEnvelope through the current PlannerDecision
       compatibility seam.
+    - Legacy PlannerDecision without proposal/contract/result is assigned the
+      explicit legacy_decision_without_proposal failure code and fails closed to
+      unknown/abort instead of being treated as planner_failed or eligible for
+      default step replan.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -210,6 +214,9 @@ validation:
   actionchoice_unsupported_reason_focused:
     - python -m pytest tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py::test_no_feasible_action_choice_reason_classifies_as_no_feasible_action tests/test_recovery_phase.py::test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
   actionchoice_unsupported_reason_focused_result: 10_passed
+  legacy_no_proposal_fail_closed_focused:
+    - python -m pytest tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_coordinator.py::test_legacy_planner_no_proposal_fails_closed_without_replan tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_planner_response_contracts.py -q --tb=short --maxfail=20
+  legacy_no_proposal_fail_closed_focused_result: 27_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298

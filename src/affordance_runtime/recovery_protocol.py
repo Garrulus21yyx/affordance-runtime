@@ -283,6 +283,8 @@ def classify_failure(
         "no_feasible_action_choice",
     }:
         return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureDisposition.RECOVERY, error_code)
+    if error_code == "legacy_decision_without_proposal":
+        return _classification(FailureKind.UNKNOWN, FailureDisposition.TERMINAL, error_code)
     if error_code in {"grounding_ambiguous", "ambiguous_target"}:
         return _classification(FailureKind.GROUNDING_AMBIGUOUS, FailureDisposition.RECOVERY, error_code)
     if failure.failure_class == FailureClass.AUTHORITY:

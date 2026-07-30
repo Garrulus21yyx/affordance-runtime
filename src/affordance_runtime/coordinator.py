@@ -1156,7 +1156,7 @@ class RunCoordinator:
                     decision.planner_context.get("unsupported_reason_code", "")
                 )
                 failure_error_code: RuntimeErrorCode | str = (
-                    unsupported_reason_code or RuntimeErrorCode.PLANNER_FAILED
+                    unsupported_reason_code or "legacy_decision_without_proposal"
                 )
                 failure_message = (
                     decision.reason or "planner returned neither a contract nor a result"

@@ -1565,6 +1565,17 @@ class UnsupportedChoicePlanner:
         )
 
 
+class LegacyNoProposalPlanner:
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope, state, snapshot
+        return PlannerDecision(reason="legacy planner did not produce an action")
+
+
 def test_request_planner_unsupported_reason_reaches_recovery_failure() -> None:
     result = RunCoordinator(
         observer=StableObserver(),
@@ -1580,6 +1591,21 @@ def test_request_planner_unsupported_reason_reaches_recovery_failure() -> None:
     )
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.reason_code == "no_feasible_action_choice"
+
+
+def test_legacy_planner_no_proposal_fails_closed_without_replan() -> None:
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=LegacyNoProposalPlanner(),
+        executor=FakeExecutor(),
+        budget=RunBudget(max_recoveries=2),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.error_code == "legacy_decision_without_proposal"
+    assert result.state.current_recovery_decision is not None
+    assert result.state.current_recovery_decision.kind.value == "abort"
+    assert result.state.replan_count == 0
 
 
 def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tmp_path) -> None:

@@ -274,6 +274,28 @@ def test_no_feasible_action_choice_reason_classifies_as_no_feasible_action() -> 
     assert classification.reason_code == "no_feasible_action_choice"
 
 
+def test_legacy_decision_without_proposal_fails_closed_unknown() -> None:
+    failure = _failure(
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "legacy_decision_without_proposal",
+            "message": "legacy planner returned neither a contract nor a result",
+        }
+    )
+
+    classification = classify_failure(failure)
+
+    assert classification.kind == FailureKind.UNKNOWN
+    assert classification.disposition == FailureDisposition.TERMINAL
+    assert classification.reason_code == "legacy_decision_without_proposal"
+    assert RecoveryCoordinator().strategy_order_for_test(
+        failure,
+        _context(available_action_count=0),
+    ) == (RecoveryCommandKind.ABORT,)
+
+
 def test_user_input_required_clarification_is_not_model_deferral() -> None:
     failure = _failure(
         FailurePhase.STEP_PLANNING,
