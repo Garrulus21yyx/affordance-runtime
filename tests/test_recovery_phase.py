@@ -1,3 +1,5 @@
+import pytest
+
 from affordance_runtime.failure_envelope import (
     FailureClass,
     FailurePhase,
@@ -130,6 +132,92 @@ def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> 
     state.transition(RuntimeStep.OBSERVING.value)
     parent = trace.add("Root", {"state": state.phase})
 
+    with pytest.raises(ValueError, match="RecoveryPhase only accepts Runtime-owned failures"):
+        RecoveryPhase(
+            coordinator=RecoveryCoordinator(),
+            owner_dispatcher=RecoveryOwnerDispatcher(),
+        ).handle_phase_failure(
+            failure=failure,
+            state=state,
+            trace=trace,
+            parent=parent,
+            available_commands=frozenset(
+                {
+                    RecoveryKind.COMPACT_CONTEXT,
+                    RecoveryKind.ASK_USER,
+                    RecoveryKind.ABORT,
+                }
+            ),
+            runtime_profile_digest="",
+            loaded_profile_artifact_ids=(),
+            available_action_count=2,
+        )
+
+    assert state.phase == RuntimeStep.OBSERVING.value
+    assert state.current_failure is None
+    assert state.current_recovery_decision is None
+
+
+def test_recovery_phase_rejects_user_owned_failure_before_mutating_state() -> None:
+    state = StateKernel("task-1", "choose next action")
+    failure = make_failure_envelope(
+        run_id="task-1",
+        phase=FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+        error_code="planner_waiting_clarification",
+        message="planner requested missing user information",
+        state_version=state.version,
+        expected_effect="choose a bounded action",
+        remaining_budgets=RemainingRecoveryBudgets(
+            recoveries=2,
+            user_escalations=1,
+            timeout_ms=10_000,
+        ),
+    )
+    trace = TraceDag("task-1")
+    state.transition(RuntimeStep.OBSERVING.value)
+    parent = trace.add("Root", {"state": state.phase})
+
+    with pytest.raises(ValueError, match="RecoveryPhase only accepts Runtime-owned failures"):
+        RecoveryPhase(
+            coordinator=RecoveryCoordinator(),
+            owner_dispatcher=RecoveryOwnerDispatcher(),
+        ).handle_phase_failure(
+            failure=failure,
+            state=state,
+            trace=trace,
+            parent=parent,
+            available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
+            runtime_profile_digest="",
+            loaded_profile_artifact_ids=(),
+            user_input_required=True,
+        )
+
+    assert state.phase == RuntimeStep.OBSERVING.value
+    assert state.current_failure is None
+    assert state.current_recovery_decision is None
+
+
+def test_recovery_phase_still_accepts_runtime_owned_observation_failure() -> None:
+    state = StateKernel("task-1", "observe current page")
+    failure = make_failure_envelope(
+        run_id="task-1",
+        phase=FailurePhase.OBSERVATION,
+        failure_class=FailureClass.MISSING_EVIDENCE,
+        error_code="observation_missing",
+        message="current observation is unavailable",
+        state_version=state.version,
+        expected_effect="observe the page",
+        remaining_budgets=RemainingRecoveryBudgets(
+            recoveries=2,
+            observations=2,
+            timeout_ms=10_000,
+        ),
+    )
+    trace = TraceDag("task-1")
+    state.transition(RuntimeStep.OBSERVING.value)
+    parent = trace.add("Root", {"state": state.phase})
+
     result = RecoveryPhase(
         coordinator=RecoveryCoordinator(),
         owner_dispatcher=RecoveryOwnerDispatcher(),
@@ -139,16 +227,11 @@ def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> 
         trace=trace,
         parent=parent,
         available_commands=frozenset(
-            {
-                RecoveryKind.COMPACT_CONTEXT,
-                RecoveryKind.ASK_USER,
-                RecoveryKind.ABORT,
-            }
+            {RecoveryKind.REOBSERVE, RecoveryKind.ABORT}
         ),
         runtime_profile_digest="",
         loaded_profile_artifact_ids=(),
-        available_action_count=2,
     )
 
-    assert result.classification.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
-    assert result.recovery_kind != RecoveryKind.ASK_USER
+    assert result.classification.kind == FailureKind.OBSERVATION_INSUFFICIENT
+    assert result.recovery_kind == RecoveryKind.REOBSERVE

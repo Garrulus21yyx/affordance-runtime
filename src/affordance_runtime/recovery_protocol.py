@@ -315,7 +315,7 @@ def classify_failure(
     }:
         owner = (
             FailureOwner.TASK_PLANNER
-            if failure.phase in {FailurePhase.TASK_PLANNING, FailurePhase.SKILL_ACTIVATION}
+            if failure.phase == FailurePhase.TASK_PLANNING
             else FailureOwner.STEP_PLANNER
         )
         return _classification(FailureKind.PLAN_OUTPUT_REJECTED, owner, "planning_output_rejected")

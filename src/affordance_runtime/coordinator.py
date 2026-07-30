@@ -39,6 +39,7 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
+from affordance_runtime.failure_owner_flow import commit_non_runtime_failure_owner_handoff
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
@@ -61,7 +62,12 @@ from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecover
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryPhase
-from affordance_runtime.recovery_protocol import RecoveryKind, RuntimePhase
+from affordance_runtime.recovery_protocol import (
+    FailureOwner,
+    RecoveryKind,
+    RuntimePhase,
+    classify_failure,
+)
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
@@ -2332,6 +2338,15 @@ class RunCoordinator:
             available.add(RecoveryKind.RETRY_IDEMPOTENT)
         if contract.compensation:
             available.add(RecoveryKind.COMPENSATE)
+        classification = classify_failure(failure)
+        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
+            return commit_non_runtime_failure_owner_handoff(
+                state,
+                trace,
+                parent,
+                failure=failure,
+                classification=classification,
+            )
         recovery_result = self.recovery_phase.handle_phase_failure(
             failure=failure,
             state=state,
@@ -2423,6 +2438,15 @@ class RunCoordinator:
             recoverable=recoverable,
             progress_fingerprint=semantic_progress_fingerprint(state),
         )
+        classification = classify_failure(failure)
+        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
+            return commit_non_runtime_failure_owner_handoff(
+                state,
+                trace,
+                parent,
+                failure=failure,
+                classification=classification,
+            )
         recovery_result = self.recovery_phase.handle_phase_failure(
             failure=failure,
             state=state,

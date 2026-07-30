@@ -19,6 +19,7 @@ from affordance_runtime.recovery_owner_dispatcher import (
 from affordance_runtime.recovery_protocol import (
     FailureClassification,
     FailureClassificationFacts,
+    FailureOwner,
     RecoveryDecision,
     RecoveryKind,
     RecoveryOutcome,
@@ -70,6 +71,15 @@ class RecoveryPhase:
         available_action_count: int = 0,
         user_input_required: bool = False,
     ) -> RecoveryApplicationResult:
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=available_action_count,
+                user_input_required=user_input_required,
+            ),
+        )
+        if classification.owner != FailureOwner.RUNTIME_RECOVERY:
+            raise ValueError("RecoveryPhase only accepts Runtime-owned failures")
         available = _available_recovery_kinds(
             available_commands,
             self.owner_dispatcher.available_kinds,
@@ -90,13 +100,6 @@ class RecoveryPhase:
             abort_reentry_phase=abort_reentry_phase,
             available_action_count=available_action_count,
             user_input_required=user_input_required,
-        )
-        classification = classify_failure(
-            failure,
-            FailureClassificationFacts(
-                available_action_count=recovery_context.available_action_count,
-                user_input_required=recovery_context.user_input_required,
-            ),
         )
         decision = self.coordinator.decide(
             failure,

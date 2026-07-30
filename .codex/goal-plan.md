@@ -1011,3 +1011,11 @@ delivery claims.
   Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-2
   remains next: narrow `RecoveryPhase` to `RUNTIME_RECOVERY`, delete
   semantic-owner RecoveryKind values, and remove duplicate owner mappings.
+- Closed FOR-2A locally. `RecoveryPhase` now classifies before state mutation
+  and accepts only `RUNTIME_RECOVERY` failures; non-runtime owners are routed
+  through a temporary owner handoff seam rather than Runtime recovery policy.
+  Focused recovery/actionchoice/governance tests passed 47/47, adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-2B
+  remains next: delete semantic-owner `RecoveryKind` values and duplicate owner
+  mappings, then move to structured non-runtime handoff and behavioral
+  classification.
