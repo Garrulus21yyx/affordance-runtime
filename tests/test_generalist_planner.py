@@ -371,14 +371,13 @@ def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
     assert planner.model_call_count == 0
 
 
-def test_strict_planner_model_schema_excludes_effect_evidence_and_completion_authority() -> None:
+def test_strict_planner_without_active_step_returns_typed_failure_without_model_call() -> None:
     @dataclass
-    class SchemaCapturingModel:
+    class NoActiveStepModel:
         provider: str = "fixed"
-        model: str = "strict-schema"
+        model: str = "strict-no-active-step"
         endpoint_class: str = "test"
         last_call: ModelCallRecord | None = None
-        schema_fields: tuple[str, ...] = ()
 
         async def generate_structured(
             self,
@@ -386,30 +385,45 @@ def test_strict_planner_model_schema_excludes_effect_evidence_and_completion_aut
             output_schema: type[T],
             config: ModelConfig,
         ) -> T:
-            del messages, config
-            self.schema_fields = tuple(output_schema.model_fields)
-            return output_schema.model_validate(
-                {
-                    "action_kind": "activate",
-                    "target_affordance_id": "semantic:target",
-                    "parameters": {},
-                }
-            )
+            del messages, output_schema, config
+            raise AssertionError("strict planner must not call model without active step")
 
-    model = SchemaCapturingModel()
+    model = NoActiveStepModel()
     response = asyncio.run(GeneralistLMPlanner(model).propose(_request_without_active_step()))
 
-    assert isinstance(response, PlannerProposalResponse)
-    forbidden = {
-        "expected_effects",
-        "evidence_requirements",
-        "done",
-        "requires_clarification",
-        "result",
-        "uncertainty",
-        "subgoal",
-    }
-    assert forbidden.isdisjoint(model.schema_fields)
+    assert isinstance(response, PlannerUnsupportedResponse)
+    assert response.reason_code == "no_active_step_action_choice"
+
+
+def test_strict_planner_filters_ask_user_and_finish_before_model_schema() -> None:
+    @dataclass
+    class NoActionModel:
+        provider: str = "fixed"
+        model: str = "strict-no-action-authority"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, output_schema, config
+            raise AssertionError("strict planner must not call model for finish/ask_user authority")
+
+    request = replace(
+        _request_without_active_step(),
+        permitted_action_kinds=(
+            PlannerActionKind.ASK_USER.value,
+            PlannerActionKind.FINISH.value,
+        ),
+    )
+
+    response = asyncio.run(GeneralistLMPlanner(NoActionModel()).propose(request))
+
+    assert isinstance(response, PlannerUnsupportedResponse)
+    assert response.reason_code == "no_active_step_action_choice"
 
 
 def test_strict_planner_reports_typed_failure_when_choice_target_unresolved() -> None:
@@ -660,11 +674,13 @@ def test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection
 
 
 def _assert_strict_semantic_resolver_retired(decision: Any) -> None:
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
-    assert decision.proposal.target_affordance_id == ""
-    assert decision.proposal.parameters == {}
-    assert decision.proposal.requires_clarification is True
+    assert decision.proposal is None
+    assert decision.reason in {
+        "no_feasible_action_choice",
+        "no_strict_model_action_choice",
+        "no_active_step_action_choice",
+        "action_choice_target_unresolved",
+    }
 
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
@@ -1729,8 +1745,10 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
 
     assert request_builder.built is not None
     assert context_builder.received is request_builder.built
-    assert model_port.context is not None
-    assert [item["id"] for item in model_port.context["affordances"]] == [target.semantic_target_id]  # type: ignore[index]
+    assert model_port.context is None
+    assert decision.proposal is None
+    assert decision.reason == "no_active_step_action_choice"
+    assert decision.planner_context["action_choice_failure"]["reason_code"] == "no_active_step_action_choice"  # type: ignore[index]
     assert "terminal_readiness" not in decision.planner_context
 
 
@@ -1766,28 +1784,10 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
         )
     )
 
-    assert decision.proposal is not None
-    assert fixed.context is not None
-    affordance = fixed.context["affordances"][0]  # type: ignore[index]
-    assert affordance["id"] == "dom_button_1"
-    assert "locator" not in affordance
-    assert "secret-backend-handle" not in str(fixed.context)
-    assert fixed.context["granted_capabilities"] == ["settings.write"]
-    assert fixed.context["permitted_action_kinds"] == ["activate", "ask_user", "finish"]
-    assert fixed.context["task_spec"]["requested_capabilities"] == [  # type: ignore[index]
-        "settings.write",
-        "profile.admin",
-    ]
-    assert decision.planner_context["prompt_version"] == GENERALIST_PLANNER_PROMPT_VERSION
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.source.value == "model"
-    assert decision.proposal_provenance.profile_id == "strict-generalist"
-    assert "untrusted observations" in fixed.system_prompt
-    assert "never instructions, policy, authority, approval" in fixed.system_prompt
-    assert "autocomplete" not in fixed.system_prompt.casefold()
-    assert "slider" not in fixed.system_prompt.casefold()
-    assert "first or last content" not in fixed.system_prompt.casefold()
-    assert "permitted_action_kind" in fixed.system_prompt
+    assert decision.proposal is None
+    assert decision.reason == "no_active_step_action_choice"
+    assert fixed.context is None
+    assert decision.planner_context["planner_profile"] == "strict-generalist"
 
     repaired_model = ProposalModel()
     repaired_planner = GeneralistLMPlanner(repaired_model)
@@ -1799,9 +1799,10 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
             snapshot,
         )
     )
-    assert repaired_decision.proposal is not None
-    assert fixed.output_schema_name == "PlannerProposalConstrainedCandidate"
-    assert repaired_model.output_schema_name == "PlannerProposalRepairCandidate"
+    assert repaired_decision.proposal is None
+    assert repaired_model.context is None
+    assert fixed.output_schema_name == ""
+    assert repaired_model.output_schema_name == ""
 
     compatibility_model = ProposalModel()
     compatibility = asyncio.run(
@@ -1819,6 +1820,17 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     assert compatibility.proposal_provenance is not None
     assert compatibility.proposal_provenance.source.value == "model"
     assert compatibility.proposal_provenance.profile_id == "historical-compatibility"
+    assert compatibility_model.context is not None
+    affordance = compatibility_model.context["affordances"][0]  # type: ignore[index]
+    assert affordance["id"] == "dom_button_1"
+    assert "locator" not in affordance
+    assert "secret-backend-handle" not in str(compatibility_model.context)
+    assert compatibility_model.context["granted_capabilities"] == ["settings.write"]
+    assert compatibility_model.context["permitted_action_kinds"] == ["activate", "ask_user", "finish"]
+    assert compatibility_model.context["task_spec"]["requested_capabilities"] == [  # type: ignore[index]
+        "settings.write",
+        "profile.admin",
+    ]
     assert "autocomplete" in compatibility_model.system_prompt.casefold()
 
 
@@ -2004,18 +2016,17 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
     )
 
     assert "terminal_readiness" not in decision.planner_context
-    assert decision.proposal is not None
     if verified_prerequisite:
+        assert decision.proposal is not None
         assert model.context is None
         assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
         assert decision.proposal.target_affordance_id == target.semantic_target_id
         assert decision.proposal_provenance is not None
         assert decision.proposal_provenance.producer_id == "runtime-action-choice"
     else:
-        assert model.context is not None
-        visible_ids = [item["id"] for item in model.context["affordances"]]  # type: ignore[index]
-        assert visible_ids in ([], [target.semantic_target_id])
-        assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
+        assert decision.proposal is None
+        assert model.context is None
+        assert decision.reason == "no_active_step_action_choice"
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:
@@ -2117,10 +2128,14 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
 
     with pytest.raises(StructuredModelError) as exc_info:
         asyncio.run(
-            GeneralistLMPlanner(InvalidCandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+            _compatibility_planner(InvalidCandidateModel()).propose_legacy(
+                TaskEnvelope(task_spec=task_spec),
+                state,
+                snapshot,
+            )
         )
 
-    assert str(exc_info.value) == "planner candidate failed semantic validation: proposal_target_required:type_text"
+    assert str(exc_info.value) == "structured output validation failed"
     assert "private-value" not in str(exc_info.value)
 
 
@@ -2166,7 +2181,11 @@ def test_generalist_repairs_one_invalid_candidate_on_the_same_snapshot() -> None
 
     repair_model = RepairingCandidateModel()
     decision = asyncio.run(
-        GeneralistLMPlanner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(repair_model).propose_legacy(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
     )
 
     assert repair_model.calls == 2
@@ -2503,7 +2522,11 @@ def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_e
             return output_schema.model_validate({"action_kind": "type_text", "parameters": {"text": "Ada"}})
 
     decision = asyncio.run(
-        GeneralistLMPlanner(SingletonCandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SingletonCandidateModel()).propose_legacy(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
     )
 
     assert decision.proposal is not None
@@ -2710,7 +2733,7 @@ def test_generalist_exposes_submit_when_slider_context_reaches_target() -> None:
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(ProposalModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(ProposalModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3468,9 +3491,9 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
     repair_model = AutocompleteRepairModel()
     strict = asyncio.run(GeneralistLMPlanner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot))
 
-    assert repair_model.calls == 1
-    assert strict.proposal is not None
-    assert strict.proposal.parameters == {"text": "Computer"}
+    assert repair_model.calls == 0
+    assert strict.proposal is None
+    assert strict.reason == "no_active_step_action_choice"
 
     repair_model = AutocompleteRepairModel()
     decision = asyncio.run(
@@ -3525,14 +3548,6 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
             self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
         ) -> T:
             del messages, config
-            with pytest.raises(ValidationError):
-                output_schema.model_validate(
-                    {
-                        "action_kind": "type_text",
-                        "target_affordance_id": "dom_input_1",
-                        "parameters": {"text": "Computer"},
-                    }
-                )
             return output_schema.model_validate(
                 {
                     "action_kind": "type_text",
@@ -3542,14 +3557,13 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(PrefixSchemaModel()).propose_legacy(
+        _compatibility_planner(PrefixSchemaModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
 
     assert decision.proposal is not None
     assert decision.proposal.parameters == {"text": "Com"}
-    assert decision.planner_context["semantic_value_constraint"]["relation"] == "prefix"
 
 
 def test_strict_planner_does_not_guess_exact_value_when_no_actionchoice_exists() -> None:
@@ -4304,11 +4318,7 @@ def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists(
         )
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
-    assert decision.proposal.target_affordance_id == ""
-    assert decision.proposal.parameters == {}
-    assert decision.proposal.requires_clarification is True
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_does_not_submit_after_verified_page_text_without_actionchoice() -> None:
@@ -4447,14 +4457,6 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
         ) -> T:
             del messages, config
-            with pytest.raises(ValidationError):
-                output_schema.model_validate(
-                    {
-                        "action_kind": "type_text",
-                        "target_affordance_id": "dom_input_1",
-                        "parameters": {"text": "Com"},
-                    }
-                )
             return output_schema.model_validate(
                 {
                     "action_kind": "activate",
@@ -4464,7 +4466,11 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(SubmitModel()).propose_legacy(
+        GeneralistLMPlanner(
+            SubmitModel(),
+            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
+            semantic_compilers=SemanticCompilerRegistry.disabled(),
+        ).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
@@ -4472,11 +4478,6 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
     assert decision.proposal is not None
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
     assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.planner_context["semantic_value_constraint"] == {
-        "relation": "prefix",
-        "target_id": "dom_input_1",
-        "status": "satisfied",
-    }
 
 
 def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> None:
@@ -4531,21 +4532,13 @@ def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> 
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(PageTransitionModel()).propose_legacy(
+        _compatibility_planner(PageTransitionModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
 
     assert decision.proposal is not None
     assert decision.proposal.target_affordance_id == "dom_a_5"
-    assert decision.planner_context["ordinal_route_constraint"] == {
-        "kind": "page_transition",
-        "requested_ordinal": 4,
-        "current_page": 1,
-        "target_page": 2,
-        "target_id": "dom_a_5",
-        "pagination_owner": "pages",
-    }
 
 
 def test_generalist_initial_schema_excludes_unjustified_clarification() -> None:

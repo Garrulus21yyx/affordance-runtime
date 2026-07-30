@@ -71,6 +71,7 @@ from affordance_runtime.planning_request_builder import (
     PlanningRequestBuilder,
     PlanningRequestLimits,
 )
+from affordance_runtime.recovery_protocol import FailureKind
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
@@ -253,49 +254,6 @@ class PlannerProposalCandidate(PlannerCandidateModel):
         )
 
 
-class StrictPlannerActionCandidate(BaseModel):
-    """Strict model action choice without progress, evidence, or completion authority."""
-
-    model_config = {"extra": "forbid", "frozen": True}
-
-    action_kind: PlannerActionKind
-    target_affordance_id: str = ""
-    destination_affordance_id: str = ""
-    parameters: dict[str, str | int | float | bool | list[str]] = Field(default_factory=dict)
-    reason: str = ""
-
-    def bind(
-        self,
-        context: "PlannerContext",
-        *,
-        compilation: SemanticCompilation | None = None,
-        compatibility_rewrites: bool = False,
-    ) -> PlannerProposal:
-        del compatibility_rewrites
-        action_kind = self.action_kind
-        target_affordance_id = self.target_affordance_id or _unique_compatible_target_id(
-            action_kind, context.affordances
-        )
-        parameters = dict(self.parameters)
-        destination_affordance_id = self.destination_affordance_id
-        if compilation is not None:
-            action_kind = PlannerActionKind(compilation.action_kind)
-            target_affordance_id = compilation.target_affordance_id
-            destination_affordance_id = compilation.destination_affordance_id
-            parameters = dict(compilation.parameters)
-        return PlannerProposal(
-            proposal_id=f"generalist-{context.task_revision}-{context.state_version}",
-            based_on_task_revision=context.task_revision,
-            based_on_state_version=context.state_version,
-            snapshot_id=context.snapshot_id,
-            action_kind=action_kind,
-            target_affordance_id=target_affordance_id,
-            destination_affordance_id=destination_affordance_id,
-            parameters=parameters,
-            reason=self.reason,
-        )
-
-
 @dataclass
 class GeneralistLMPlanner:
     model: ModelPort
@@ -444,6 +402,7 @@ class GeneralistLMPlanner:
             )
             if action_choice_decision is not None:
                 return action_choice_decision
+            raise RuntimeError("strict planner ActionChoice path did not return a decision")
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
             raise RuntimeError("planner semantic compiler profile was not initialized")
@@ -541,7 +500,18 @@ class GeneralistLMPlanner:
             source_destination_constrained = decision_constraints.require_bound_text_source
             typed_text_constraint = decision_constraints.text_constraint
             ordinal_constraint = decision_constraints.ordinal_constraint
+            initial_permitted = _strict_model_action_kinds(initial_permitted)
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
+        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST and not initial_permitted:
+            return _action_choice_failure_decision(
+                ActionChoiceFailure(
+                    kind=FailureKind.NO_FEASIBLE_ACTION,
+                    reason_code="no_strict_model_action_choice",
+                ),
+                context=context,
+                planner_profile=self.planner_profile,
+                planner_admission=planner_admission,
+            )
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
             # one requested, safely scoped next action. Strict mode preserves
@@ -557,11 +527,8 @@ class GeneralistLMPlanner:
                 and not context.verified_effects
             ):
                 initial_permitted = [item for item in initial_permitted if item != "finish"]
-        compatibility_mode = self.planner_profile == GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY
-        candidate_type = PlannerProposalCandidate if compatibility_mode else StrictPlannerActionCandidate
         initial_schema = (
-            _candidate_repair_schema(
-                candidate_type,
+            _repair_candidate_schema(
                 initial_permitted,
                 initial_targets,
                 allowed_press_keys=initial_press_keys,
@@ -573,13 +540,13 @@ class GeneralistLMPlanner:
             or initial_press_keys
             or constrained_text_values
             or source_destination_constrained
-            else _candidate_initial_schema(candidate_type, initial_permitted)
+            else _initial_candidate_schema(initial_permitted)
         )
+        compatibility_mode = True
         proposal = await self.model_orchestrator.propose(
             self._model_request(
                 context=context,
                 messages=messages,
-                candidate_type=candidate_type,
                 initial_schema=initial_schema,
                 permitted_action_kinds=initial_permitted,
                 compatible_target_ids=initial_targets,
@@ -608,12 +575,11 @@ class GeneralistLMPlanner:
         *,
         context: PlannerContext,
         messages: list[ModelMessage],
-        candidate_type: type[Any],
-        initial_schema: type[Any],
+        initial_schema: type[PlannerProposalCandidate],
         permitted_action_kinds: list[str],
         compatible_target_ids: dict[str, list[str]],
         compatibility_mode: bool,
-    ) -> PlannerModelRequest[Any]:
+    ) -> PlannerModelRequest[PlannerProposalCandidate]:
         """Bind immutable planner turn inputs before model orchestration."""
 
         return PlannerModelRequest(
@@ -621,7 +587,7 @@ class GeneralistLMPlanner:
             config=self.config,
             messages=tuple(messages),
             context=context,
-            candidate_type=candidate_type,
+            candidate_type=PlannerProposalCandidate,
             initial_schema=initial_schema,
             repair_permitted=tuple(permitted_action_kinds),
             repair_targets={key: tuple(value) for key, value in compatible_target_ids.items()},
@@ -807,7 +773,15 @@ async def _runtime_action_choice_decision(
 ) -> PlannerDecision | None:
     active_step = request.step.active_step
     if active_step is None:
-        return None
+        return _action_choice_failure_decision(
+            ActionChoiceFailure(
+                kind=FailureKind.NO_FEASIBLE_ACTION,
+                reason_code="no_active_step_action_choice",
+            ),
+            context=context,
+            planner_profile=planner_profile,
+            planner_admission=planner_admission,
+        )
     scope = ActiveStepScope.from_active_step(
         task_revision=request.identity.task_revision,
         evaluated_at_state_version=request.identity.evaluated_at_state_version,
@@ -1212,6 +1186,18 @@ def _drop_actions_without_targets(
     ]
 
 
+def _strict_model_action_kinds(permitted_action_kinds: list[str]) -> list[str]:
+    return [
+        item
+        for item in permitted_action_kinds
+        if item
+        not in {
+            PlannerActionKind.ASK_USER.value,
+            PlannerActionKind.FINISH.value,
+        }
+    ]
+
+
 def _repair_candidate_schema(
     permitted_action_kinds: list[str],
     compatible_target_ids: dict[str, list[str]],
@@ -1238,34 +1224,6 @@ def _initial_candidate_schema(permitted_action_kinds: list[str]) -> type[Planner
     """Constrain initial decoding without requiring repair-only target fields."""
 
     return build_initial_candidate_schema(PlannerProposalCandidate, permitted_action_kinds)
-
-
-def _candidate_repair_schema(
-    candidate_type: type[Any],
-    permitted_action_kinds: list[str],
-    compatible_target_ids: dict[str, list[str]],
-    *,
-    allowed_press_keys: tuple[str, ...] = (),
-    allowed_text_values: tuple[str, ...] = (),
-    require_drag_destination: bool = False,
-    drag_destination_ids: tuple[str, ...] = (),
-) -> type[Any]:
-    return build_repair_candidate_schema(
-        candidate_type,
-        permitted_action_kinds,
-        compatible_target_ids,
-        allowed_press_keys=allowed_press_keys,
-        allowed_text_values=allowed_text_values,
-        require_drag_destination=require_drag_destination,
-        drag_destination_ids=drag_destination_ids,
-    )
-
-
-def _candidate_initial_schema(
-    candidate_type: type[Any],
-    permitted_action_kinds: list[str],
-) -> type[Any]:
-    return build_initial_candidate_schema(candidate_type, permitted_action_kinds)
 
 
 def _strict_candidate_context_issue(proposal: PlannerProposal, context: PlannerContext) -> str:

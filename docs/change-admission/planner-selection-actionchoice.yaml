@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_strict_model_authority_schema_quarantine
+  current_slice: ps_strict_free_action_model_fallback_retirement
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -79,12 +79,22 @@ scope:
       button without restoring free PlannerProposal fallback.
     - BrowserGym click-button strict generalist path now completes through a
       Runtime-built unique ActionChoice with zero Step Planner model calls.
-    - Strict Generalist model fallback now uses StrictPlannerActionCandidate
-      instead of PlannerProposalCandidate; the provider schema no longer
-      exposes subgoal, expected_effects, evidence_requirements, done,
-      requires_clarification, result, or uncertainty fields.
+    - Strict Generalist free-action model fallback is retired; strict default
+      planning no longer exposes PlannerProposalCandidate or a replacement
+      action-kind/target/parameter schema to the provider outside bounded
+      ChoicePlanningRequest selection.
     - Historical compatibility profile still uses PlannerProposalCandidate and
       accepts singular expected_effect / evidence_need aliases for replay.
+    - Strict Generalist no longer enters the free action model candidate path
+      when no active step exists; it returns typed
+      no_active_step_action_choice without calling the model.
+    - Strict Generalist filters finish and ask_user out of model-owned action
+      authority; user clarification and task completion remain Runtime-owned
+      typed outcomes rather than Step Planner choices.
+    - Strict no-action-choice legacy grammar tests now assert typed
+      unsupported/no proposal instead of ask_user PlannerProposal synthesis.
+    - Historical compatibility profile retains old free PlannerProposalCandidate
+      generation and repair tests for replay-only behavior.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -97,9 +107,9 @@ scope:
     - PR breadth, fresh diagnostic, or promotion claim.
 
 authority_rules:
-  planner_generates_action_kind: bypassed_for_runtime_actionchoice_paths
-  planner_generates_target: bypassed_for_runtime_actionchoice_paths
-  planner_generates_parameters: bypassed_for_runtime_actionchoice_paths
+  planner_generates_action_kind: historical_compatibility_only
+  planner_generates_target: historical_compatibility_only
+  planner_generates_parameters: historical_compatibility_only
   planner_generates_expected_effects: prohibited_in_strict_provider_schema
   planner_generates_evidence_requirements: prohibited_in_strict_provider_schema
   actionchoice_backend_authority: prohibited
@@ -177,9 +187,16 @@ validation:
     focused:
       - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py tests/test_planner_model_orchestrator.py tests/test_action_choice.py tests/test_planner_response_contracts.py --maxfail=1 --tb=short
     focused_result: 138_passed
+  strict_free_action_model_fallback_retirement:
+    red:
+      - PYTHONPATH=src python -m pytest -q tests/test_generalist_planner.py::test_strict_planner_model_schema_excludes_ask_user_and_finish_actions --tb=short
+    red_result: failed_before_strict_action_authority_filter
+    focused:
+      - PYTHONPATH=src python -m pytest -q tests/test_semantic_compilers.py tests/test_generalist_planner.py tests/test_planner_model_orchestrator.py tests/test_action_choice.py tests/test_planner_response_contracts.py --maxfail=1 --tb=short
+    focused_result: 164_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
-    full_pytest_result: 1336_passed
+    full_pytest_result: 1337_passed
     full_ruff: ruff check src tests scripts
     full_ruff_result: passed
     core_mypy: mypy --ignore-missing-imports --exclude 'src/affordance_runtime/benchmarks|src/affordance_runtime/langgraph' src/affordance_runtime
@@ -189,5 +206,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_strict_model_authority_schema_quarantine_local_candidate
+status: ps_strict_free_action_model_fallback_retirement_local_candidate
 next_slice: ps_6_behavioral_gate_and_residual_classification

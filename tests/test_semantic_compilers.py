@@ -630,20 +630,20 @@ def test_strict_default_disables_compatibility_compilers_without_removing_drag()
     disabled_model = DragProposalModel()
     disabled = asyncio.run(GeneralistLMPlanner(disabled_model).propose_legacy(envelope, disabled_state, snapshot))
 
-    assert enabled.proposal is not None and disabled.proposal is not None
-    assert enabled.proposal.action_kind == disabled.proposal.action_kind == PlannerActionKind.DRAG
-    assert enabled.proposal.target_affordance_id == disabled.proposal.target_affordance_id == "dom_li_2"
-    assert enabled.proposal.destination_affordance_id == disabled.proposal.destination_affordance_id == "dom_li_3"
+    assert enabled.proposal is not None
+    assert enabled.proposal.action_kind == PlannerActionKind.DRAG
+    assert enabled.proposal.target_affordance_id == "dom_li_2"
+    assert enabled.proposal.destination_affordance_id == "dom_li_3"
+    assert disabled.proposal is None
+    assert disabled.reason == "no_active_step_action_choice"
     assert enabled_model.calls == 0
-    assert disabled_model.calls == 1
+    assert disabled_model.calls == 0
     assert enabled.planner_context["planner_profile"] == "historical-compatibility"
     assert enabled.planner_context["semantic_compiler"]["compiler_id"] == "typed-affordance-semantics-v1"
     assert enabled.proposal_provenance is not None
     assert enabled.proposal_provenance.source.value == "deterministic_rule"
     assert enabled.proposal_provenance.profile_id == "historical-compatibility"
     assert disabled.planner_context["planner_profile"] == "strict-generalist"
-    assert disabled.proposal_provenance is not None
-    assert disabled.proposal_provenance.source.value == "model"
     assert "semantic_compiler" not in disabled.planner_context
     assert "semantic_constraints" not in disabled.planner_context
 
@@ -655,9 +655,9 @@ def test_strict_profile_does_not_execute_task_grammar_before_model_authority(kin
 
     strict = asyncio.run(GeneralistLMPlanner(strict_model).propose_legacy(envelope, state, snapshot))
 
-    assert strict_model.calls == 1
-    assert strict.proposal is not None
-    assert strict.proposal.action_kind == PlannerActionKind.ASK_USER
+    assert strict_model.calls == 0
+    assert strict.proposal is None
+    assert strict.reason == "no_active_step_action_choice"
     assert strict.planner_context["planner_profile"] == "strict-generalist"
     assert "semantic_compiler" not in strict.planner_context
 

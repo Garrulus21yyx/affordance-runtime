@@ -59,7 +59,7 @@ class SemanticTextInputConstraint:
     satisfied: bool = False
 
 
-CandidateT = TypeVar("CandidateT", bound=Any)
+CandidateT = TypeVar("CandidateT", bound=PlannerCandidateModel)
 
 CandidateIssueFn = Callable[[CandidateT, PlannerContext], str]
 CandidateBindFn = Callable[[CandidateT, PlannerContext], PlannerProposal]
@@ -250,10 +250,16 @@ class PlannerModelOrchestrator:
         reserve_model_call: Callable[[], None],
     ) -> CandidateT:
         reserve_model_call()
-        generated = await model.generate_structured(messages, output_schema, config)
+        try:
+            generated = await model.generate_structured(messages, output_schema, config)
+        except ValidationError as exc:
+            raise StructuredModelError("structured output validation failed") from exc
         if output_schema is candidate_type:
             return generated
-        return candidate_type.model_validate(generated.model_dump())
+        try:
+            return candidate_type.model_validate(generated.model_dump())
+        except ValidationError as exc:
+            raise StructuredModelError("structured output validation failed") from exc
 
 
 def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
