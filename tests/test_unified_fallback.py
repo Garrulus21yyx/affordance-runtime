@@ -262,7 +262,7 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     assert len(contract_nodes) == 1
     assert not any(node.kind == "RecoveryStarted" for node in result.trace.nodes)
     assert not result.state.excluded_grounding_candidates
-    assert result.state.recovery_incident is None
+    assert result.state.current_failure is None
     assert result.state.effectful_action_count == 1
     assert [receipt.success for receipt in result.state.receipts] == [True]
 

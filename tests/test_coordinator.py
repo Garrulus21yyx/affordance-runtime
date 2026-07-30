@@ -28,7 +28,6 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryDecision
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
@@ -910,11 +909,6 @@ def test_coordinator_does_not_replan_into_an_unverified_non_idempotent_repeat() 
         planner=SubgoalAwarePlanner(),
         executor=FakeExecutor(),
         task_planner=planner,
-        recovery=BoundedRecoveryPolicy(
-            decision_override=lambda contract, receipt, context, error: RecoveryDecision(
-                RecoveryAction.REOBSERVE, "test local recovery"
-            )
-        ),
     ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
 
     assert result.status == RuntimeStep.ABORTED
@@ -1076,16 +1070,17 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
         )
     )
 
-    assert result.status == RuntimeStep.FAILED
-    assert result.state.recovery_incident is not None
-    assert result.state.recovery_incident.root_failure.normalized_error == "timeout <n> while saving record <n>"
-    assert len(result.state.recovery_incident.symptom_chain) == 0
-    assert result.state.recovery_diagnostics["cascade_depth"] == 1
-    assert result.state.recovery_diagnostics["duplicate_effect_risk_count"] == 0
-    assert len(result.state.receipts) == 1
+    assert result.status == RuntimeStep.ABORTED
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.error_code == RuntimeErrorCode.EXECUTION_FAILED.value
+    assert result.state.current_recovery_plan is None
+    assert result.state.recovery_receipts
+    assert result.state.recovery_receipts[-1].command_id.startswith("recovery-command-")
+    assert len(result.state.receipts) == 2
+    assert result.state.recovery_history[0].strategy_id.startswith("strategy:retry_idempotent:")
     events = [node.kind for node in result.trace.nodes]
-    assert "RecoveryStateInspected" in events
-    assert "RecoveryAborted" in events
+    assert "RecoveryCommandCompleted" in events
+    assert "RecoveryReenteredPhase" in events
 
 
 @dataclass
@@ -1299,11 +1294,6 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_pa
         contract_builder=_semantic_guard_builder(),
         task_planner=None,
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-        recovery=BoundedRecoveryPolicy(
-            decision_override=lambda contract, receipt, context, error: RecoveryDecision(
-                RecoveryAction.REOBSERVE, "replan after failed verification"
-            )
-        ),
     ).run_sync(TaskEnvelope(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.ABORTED

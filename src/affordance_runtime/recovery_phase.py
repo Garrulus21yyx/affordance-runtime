@@ -47,6 +47,10 @@ class RecoveryPhase:
         runtime_profile_digest: str,
         loaded_profile_artifact_ids: tuple[str, ...],
         abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
+        fresh_candidate_id: str = "",
+        fresh_route_ref: str = "",
+        idempotency_key: str = "",
+        compensation_contract_id: str = "",
     ) -> tuple[RecoveryCommandKind, TraceNode]:
         available = frozenset(
             kind
@@ -61,6 +65,10 @@ class RecoveryPhase:
             gap_ids=tuple(item.gap_id for item in state.evidence_gaps),
             accepted_profile_digest=runtime_profile_digest,
             accepted_profile_artifact_ids=frozenset(loaded_profile_artifact_ids),
+            fresh_candidate_id=fresh_candidate_id,
+            fresh_route_ref=fresh_route_ref,
+            idempotency_key=idempotency_key,
+            compensation_contract_id=compensation_contract_id,
             configured_provider_id=self.command_dispatcher.target_ref(
                 RecoveryCommandKind.SWITCH_PROVIDER
             ),
@@ -90,6 +98,8 @@ class RecoveryPhase:
             RecoveryCommandKind.REOBSERVE,
             RecoveryCommandKind.REGROUND,
             RecoveryCommandKind.ACTIVE_PERCEPTION,
+            RecoveryCommandKind.INSPECT_POST_STATE,
+            RecoveryCommandKind.RETRY_IDEMPOTENT,
         }:
             state.transition(RuntimeStep.OBSERVING.value)
             return command.kind, parent

@@ -20,8 +20,9 @@ The intake remediation is governed by
 [Intent Schema and Obligation Authority Governance](intent-schema-authority-governance-20260726.md).
 
 Runtime-first R1-R8 remains valid component and containment evidence.
-TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop, RecoveryHandler,
-PlannerContextBuilder, and BrowserGym adapter splits are retained. They do not
+TaskPlanFlow/TaskPlanLifecycle, PerceptionSession, ContractExecutionLoop,
+RecoveryPhase, PlannerContextBuilder, and BrowserGym adapter splits are
+retained; RecoveryHandler is historical compatibility evidence. They do not
 prove that the default planner is strict-generalist or that all pre-contract
 failures enter Recovery Cascade.
 
@@ -150,12 +151,11 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 3453
-  run_sync_lines: 2001
-  methods: 25
+  coordinator_lines: 3298
+  run_sync_lines: 1944
+  methods: 24
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-8C legacy recovery protocol and StateKernel recovery-state deletion
   - Planner Selection Simplification with Runtime-built ActionChoice
   - SAR-9 phase extraction and Coordinator reduction
 blocked_until:
@@ -176,6 +176,7 @@ evidence:
   sar_8a_recovery_taxonomy: docs/change-admission/sar-8-single-recovery-protocol.yaml
   sar_8b_recovery_decision_cutover: docs/change-admission/sar-8-single-recovery-protocol.yaml
   sar_8c_recovery_phase_callsite_migration: docs/change-admission/sar-8-single-recovery-protocol.yaml
+  sar_8c_legacy_recovery_state_deletion: docs/change-admission/sar-8-single-recovery-protocol.yaml
   independently_reproduced: false
   remote_ci: absent
   pr_breadth: passed_for_sar_7_gate

@@ -427,14 +427,6 @@ def _one_relevant_failure(state: StateKernel) -> dict[str, Any]:
             "status": verification.status.value,
             "reason": verification.reason[:240],
         }
-    if state.recovery_diagnostics:
-        findings = state.recovery_diagnostics.get("findings")
-        return {
-            "kind": "recovery",
-            "incident_id": state.recovery_diagnostics.get("incident_id", ""),
-            "finding": findings[-1] if isinstance(findings, list) and findings else "",
-            "terminal_outcome": state.recovery_diagnostics.get("terminal_outcome", ""),
-        }
     failure = state.current_failure
     if failure is not None:
         return {

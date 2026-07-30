@@ -2196,6 +2196,28 @@ def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     assert "state.current_recovery_plan = plan" not in body_source
 
 
+def test_sar_8c_legacy_recovery_incident_protocol_is_not_default_state() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    state_source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")
+
+    for forbidden in (
+        "BoundedRecoveryPolicy",
+        "RecoveryIncident",
+        "RecoveryAttempt",
+        "RecoveryCascadeDetector",
+        "RecoveryHandler",
+        "RecoveryRequest",
+        "RecoveryAction",
+        "RecoveryAttemptOutcome",
+        "self.recovery_handler",
+        "state.recovery_incident",
+        "state.recovery_diagnostics",
+    ):
+        assert forbidden not in coordinator_source
+    assert "recovery_incident:" not in state_source
+    assert "recovery_diagnostics:" not in state_source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

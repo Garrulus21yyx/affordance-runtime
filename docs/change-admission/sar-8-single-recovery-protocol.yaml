@@ -8,8 +8,8 @@ progress_authority_changed: false
 finish_authority_changed: false
 planner_behavior_changed: false
 planner_fallback_added: false
-coordinator_control_flow_changed: false
-statekernel_schema_changed: false
+coordinator_control_flow_changed: true
+statekernel_schema_changed: true
 promotion_status: held
 remote_ci: disabled
 
@@ -18,7 +18,7 @@ preconditions:
   already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
 
 scope:
-  current_slice: sar-8c-recovery-phase-callsite-migration
+  current_slice: sar-8c-legacy-recovery-state-deletion-cutover
   included:
     - SAR-8 FailureKind taxonomy.
     - Pure FailureEnvelope to typed FailureClassification classifier.
@@ -32,10 +32,21 @@ scope:
     - RunCoordinator._recover_phase_failure() delegates decision, adapter,
       trace projection, owner-dispatch, and immediate terminal recovery
       completion to RecoveryPhase.
-    - Coordinator line count decreased below the prior ratchet during the
-      call-site migration.
+    - RunCoordinator contract-backed execution and verification failures route
+      through RecoveryPhase instead of the legacy RecoveryHandler.
+    - StateKernel no longer stores recovery_incident or recovery_diagnostics.
+    - Default CLI/runtime construction no longer injects BoundedRecoveryPolicy
+      into RunCoordinator.
+    - Task planning, planner context, local benchmark metrics, adaptive routing
+      metrics, and recovery evolution diagnostics read current FailureEnvelope /
+      RecoveryPlan / RecoveryHistory evidence instead of legacy incident
+      diagnostics.
+    - Coordinator line count, run_sync length, and RunCoordinator method count
+      decreased below the SAR-8C call-site migration ratchet.
     - RecoveryDecision to RecoveryPlan/RecoveryCommand conversion is isolated
-      in recovery_decision_compatibility.py for SAR-8C deletion.
+      in recovery_decision_compatibility.py; RecoveryPlan/RecoveryCommand
+      remain compatibility trace/dispatcher payloads and are no longer selected
+      by the default Coordinator recovery owner.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -44,11 +55,11 @@ scope:
       proposal_rejection code/reason_code, maps to current-step progress
       precheck owner, and is not treated as replan/ask_user recovery.
   excluded:
-    - Full legacy recovery state rewrite.
-    - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion.
-    - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt deletion.
-    - StateKernel recovery schema reduction.
-    - RecoveryOutcome default-path cutover.
+    - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
+      compatibility trace/dispatcher modules.
+    - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt module
+      deletion from offline compatibility tests.
+    - RecoveryOutcome default-path replacement of RecoveryPlan trace payloads.
     - Planner ActionChoiceBuilder.
     - new task-family regex or deterministic fallback.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -74,29 +85,29 @@ failure_kind_policy:
       - abort
 
 remaining_sar_8_work:
-  - Complete SAR-8C by replacing RecoveryCommand/RecoveryPlan/RecoveryReceipt
-    and legacy RecoveryAction/Incident/Attempt/Cascade with a single
-    RecoveryDecision and RecoveryOutcome default protocol.
-  - Rewire Coordinator to consume the unified protocol while deleting old
-    branches instead of adding new ones.
+  - Replace RecoveryCommand/RecoveryPlan/RecoveryReceipt trace/dispatcher
+    compatibility payloads with RecoveryOutcome where external recovery action
+    results are genuinely needed.
+  - Delete legacy RecoveryAction/Incident/Attempt/Cascade modules and their
+    dedicated compatibility tests after evolution/profile artifacts are migrated
+    or archived.
   - Preserve the planner clarification distinction learned from SAR-7 fresh
     diagnostic classification.
 
 validation:
   focused:
-    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_coordinator.py
-    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_phase.py
-    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_trace_projection.py
-    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter
-    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8c_recover_phase_failure_delegates_to_recovery_phase
-  gate_b_recovery_coordinator_architecture: 123_passed
-  coordinator_lines: 3357
-  full_pytest: not_run_for_callsite_migration_commit
+    - python -m pytest tests/test_recovery_phase.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_handler.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py tests/test_recovery_evolution.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=10
+  focused_result: 136_passed
+  full_pytest: PYTHONPATH=src python -m pytest -q
+  full_pytest_result: 1282_passed
+  coordinator_lines: 3298
+  run_sync_lines: 1944
+  runcoordinator_methods: 24
   ruff: passed
-  mypy: passed_110_non_benchmark_non_integration_source_files
+  mypy: passed_110_core_source_files_ignore_optional_missing_imports
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
-  uv_build: not_required_until_legacy_deletion_cutover_commit
+  uv_build: passed
   diff_check: passed
 
-status: sar_8c_callsite_migration_local_candidate
-next_slice: sar-8c-legacy-recovery-protocol-and-state-deletion
+status: sar_8c_legacy_recovery_state_deletion_local_candidate
+next_slice: planner-selection-simplification-actionchoice

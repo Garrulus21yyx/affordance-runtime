@@ -439,7 +439,6 @@ def run_adaptive_routing_case(
         if expected_safe_block
         else result.status == RuntimeStep.DONE and world.saved and world.effects == 1
     )
-    diagnostics = result.state.recovery_diagnostics
     verifier_false_accepts = int(result.verification is not None and result.verification.passed and not world.saved)
     return AdaptiveRoutingAblationRun(
         profile,
@@ -461,7 +460,13 @@ def run_adaptive_routing_case(
         0,
         verifier_false_accepts,
         0 if world.effects <= 1 else world.effects - 1,
-        int(diagnostics.get("duplicate_effect_risk_count", 0)),
+        int(
+            sum(
+                ":retry_idempotent:" in item.strategy_id
+                for item in result.state.recovery_history
+            )
+            > 1
+        ),
         0.0,
         latency_ms,
         events,

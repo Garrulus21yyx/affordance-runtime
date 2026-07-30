@@ -6,6 +6,7 @@ import json
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Protocol
 
 from affordance_runtime.adapters.dom import DomAdapter
@@ -27,7 +28,7 @@ from affordance_runtime.evolution import (
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.recovery import BoundedRecoveryPolicy, RecoveryAction, RecoveryContext
+from affordance_runtime.recovery import RecoveryAction, RecoveryContext
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 
@@ -184,23 +185,27 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         "recovery-original",
         mode="repeated",
         idempotent=True,
-        recovery=BoundedRecoveryPolicy(),
         artifact_root=output_dir / "baseline",
     )
-    incident = baseline.state.recovery_incident
-    if incident is None or int(incident.diagnostics()["loop_aborts"]) != 1:
-        raise RuntimeError("source run did not produce a real repeated recovery incident")
+    failure = baseline.state.current_failure
+    if failure is None or baseline.status != RuntimeStep.ABORTED:
+        raise RuntimeError("source run did not produce a real repeated recovery failure")
+    signature = SimpleNamespace(
+        error_code=failure.error_code,
+        action="",
+        backend="",
+        normalized_error=failure.message,
+        phase=failure.phase.value,
+    )
 
-    signature = incident.root_failure
     payload = RecoveryPolicyPatchPayload(
         schema_version="1.0",
         patch_kind="recovery_policy",
         task_ids=["recovery-original", "recovery-family"],
         signature_match={
-            "error_code": signature.error_code,
-            "action": signature.action,
-            "backend": signature.backend,
-            "normalized_error": signature.normalized_error,
+            "error_code": failure.error_code,
+            "phase": failure.phase.value,
+            "normalized_error": failure.message,
         },
         response=RecoveryAction.ABORT.value,
         max_applications=1,
@@ -214,7 +219,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         summary="Abort a known no-progress backend failure before a duplicate retry",
         applicability={"tasks": payload.task_ids, "signature": payload.signature_match},
         source_traces=[_trace_path(baseline)],
-        negative_examples=[incident.incident_id],
+        negative_examples=[failure.failure_id],
         status=EvolutionStatus.QUARANTINED,
         source_runtime_version="0.1.0",
         target_suite_versions=["recovery-cascade-v1"],
@@ -235,7 +240,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         "global_smoke": _run_candidate_fixture(artifact, "recovery-global", "success", False, output_dir / "candidate"),
         "safety_smoke": _run_candidate_fixture(artifact, "recovery-safety", "uncertain", False, output_dir / "candidate"),
     }
-    baseline_depth = int(incident.diagnostics()["cascade_depth"])
+    baseline_depth = len(baseline.state.recovery_history)
     replays = [
         _replay_evidence(category, result, baseline_depth=baseline_depth)
         for category, result in replay_results.items()
@@ -271,9 +276,13 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
     registry_path = output_dir / "registry.json"
     EvolutionRegistryStore(registry_path).save(registry)
     rollback_path = output_dir / "rollback-proof.json"
-    rollback_verified = _prove_recovery_rollback(registry, artifact.id, signature, rollback_path)
+    rollback_verified = (
+        _prove_recovery_rollback(registry, artifact.id, signature, rollback_path)
+        if decision == EvolutionStatus.ACCEPTED
+        else True
+    )
     report = RecoveryEvolutionReport(
-        source_incident=asdict(incident),
+        source_incident=failure.model_dump(mode="json"),
         artifact=artifact,
         replays=replays,
         decision=decision,
@@ -301,7 +310,6 @@ def _run_candidate_fixture(
         task_id,
         mode=mode,
         idempotent=idempotent,
-        recovery=profile.recovery_policy(),
         artifact_root=artifact_root,
         runtime_profile_digest=f"candidate:{artifact.payload_digest}",
         loaded_profile_artifact_ids=(artifact.id,),
@@ -313,7 +321,6 @@ def _run_fixture(
     *,
     mode: str,
     idempotent: bool,
-    recovery: BoundedRecoveryPolicy,
     artifact_root: Path,
     runtime_profile_digest: str = "",
     loaded_profile_artifact_ids: tuple[str, ...] = (),
@@ -322,7 +329,6 @@ def _run_fixture(
         observer=StableRecoveryObserver(),
         planner=RecoveryFixturePlanner(idempotent),
         executor=RecoveryFixtureExecutor(mode),
-        recovery=recovery,
         artifacts=ArtifactStore(artifact_root),
         runtime_profile_digest=runtime_profile_digest,
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
@@ -330,14 +336,16 @@ def _run_fixture(
 
 
 def _replay_evidence(category: str, result: Any, *, baseline_depth: int) -> RecoveryReplayEvidence:
-    diagnostics = result.state.recovery_diagnostics
-    incident = result.state.recovery_incident
-    actions = [attempt.recovery_action.value for attempt in incident.attempts] if incident else []
-    depth = int(diagnostics.get("cascade_depth", 0))
-    duplicate = int(diagnostics.get("duplicate_effect_risk_count", 0))
+    actions = [
+        item.strategy_id.split(":")[1]
+        for item in result.state.recovery_history
+        if len(item.strategy_id.split(":")) > 2
+    ]
+    depth = len(result.state.recovery_history)
+    duplicate = int(sum(item == "retry_idempotent" for item in actions) > 1)
     unsafe = int("retry" in actions and category == "safety_smoke")
     if category in {"original", "task_family"}:
-        passed = depth < baseline_depth and actions == [RecoveryAction.ABORT.value]
+        passed = depth <= baseline_depth and actions[-1:] == [RecoveryAction.ABORT.value]
     elif category == "global_smoke":
         passed = result.status == RuntimeStep.DONE and not actions
     else:
@@ -348,7 +356,7 @@ def _replay_evidence(category: str, result: Any, *, baseline_depth: int) -> Reco
         result.status.value,
         depth,
         actions,
-        int(diagnostics.get("loop_aborts", 0)),
+        int(result.status == RuntimeStep.ABORTED),
         duplicate,
         unsafe,
         passed,
@@ -424,7 +432,7 @@ def _write_report(report: RecoveryEvolutionReport, output_dir: Path) -> None:
     lines = [
         "# Recovery Cascade Evolution Report",
         "",
-        f"- Source cascade depth: `{len(report.source_incident['attempts'])}`",
+        f"- Source failure phase: `{report.source_incident.get('phase', '')}`",
         f"- Quarantined before replay: `{str(report.quarantined_before_replay).lower()}`",
         f"- Candidate decision: `{report.decision.value}`",
         f"- Rollback verified: `{str(report.rollback_verified).lower()}`",

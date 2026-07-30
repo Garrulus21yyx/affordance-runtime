@@ -563,11 +563,11 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     assert progress.next_step_index == 1
     assert progress.evidence
     assert progress.fallthrough_reason == "TaskSkill step verification failed"
-    assert result.state.recovery_incident is not None
-    assert result.state.recovery_incident.context["task_skill_id"] == payload.skill_id
-    assert result.state.recovery_incident.context["task_skill_step_id"] == "step-2"
-    assert result.state.recovery_incident.context["selected_route"] == "dom"
-    assert result.state.recovery_incident.context["preserved_completed_step_ids"] == ["step-1"]
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.error_code == "verification_failed"
+    assert result.state.recovery_receipts
+    assert result.state.recovery_receipts[-1].command_id.startswith("recovery-command-")
+    assert result.state.recovery_receipts[-1].success
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TaskSkillStepCompleted") == 1
     assert "TaskSkillStepFailed" in events

@@ -354,16 +354,25 @@ class TaskPlanLifecycle:
                     environment_revision=snapshot.observation.environment_revision,
                 ),
             )
-        incident = state.recovery_incident
+        failure = state.current_failure
+        recovery_plan = state.current_recovery_plan
         recovery_summary = (
             TaskPlanningRecoverySummary(
-                incident_id=incident.incident_id,
-                root_error_code=incident.root_failure.error_code,
-                terminal_outcome=incident.terminal_outcome,
-                findings=tuple(item.value for item in incident.findings[:16]),
-                attempted_actions=tuple(item.recovery_action.value for item in incident.attempts[-16:]),
+                incident_id=failure.failure_id,
+                root_error_code=failure.error_code,
+                terminal_outcome=(
+                    recovery_plan.commands[0].reentry_phase.value
+                    if recovery_plan is not None
+                    else ""
+                ),
+                findings=(failure.failure_class.value,),
+                attempted_actions=(
+                    (recovery_plan.commands[0].kind.value,)
+                    if recovery_plan is not None
+                    else ()
+                ),
             )
-            if incident is not None
+            if failure is not None
             else None
         )
         return TaskPlanningContext(

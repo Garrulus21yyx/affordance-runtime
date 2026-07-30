@@ -23,7 +23,6 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
 )
-from affordance_runtime.recovery import BoundedRecoveryPolicy
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import PlanningRouter
@@ -469,7 +468,6 @@ def run_scenario(
                 else None
             ),
             features=runtime_features,
-            recovery=(loaded_profile.recovery_policy() if loaded_profile is not None else BoundedRecoveryPolicy()),
             task_skill_runtime=(loaded_profile.task_skill_runtime if loaded_profile is not None else None),
             runtime_profile_digest=(loaded_profile.profile_digest if loaded_profile is not None else ""),
             loaded_profile_artifact_ids=(loaded_profile.artifact_ids if loaded_profile is not None else ()),
