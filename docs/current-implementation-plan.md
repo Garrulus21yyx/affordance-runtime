@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-7 single progress / finish authority | SAR-4 standard Generalist and Parent Planner implementations now return closed `PlannerResponse`; SAR-5 removed legacy terminal-readiness admission from the default PlanningRequest path; SAR-6A records canonical `ActionOutcomeRecorded`; SAR-7A extracted verifier-backed progress commit from `RunCoordinator`. | Continue replacing legacy planner-done / TaskSkill direct completion paths with one progress/finish owner, then delete remaining compatibility finish branches. | SAR-8 recovery unification and SAR-9 phase extraction |
+| Horizontal | SAR-8 single recovery protocol | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; terminal success is centralized in `runtime_terminal.commit_task_terminal_success`; progress commits are centralized in `task_plan_progress_flow`. | Replace parallel recovery structures with one recovery decision/outcome protocol, then delete legacy recovery branches instead of relocating them. | SAR-9 phase extraction |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -82,8 +82,8 @@ Current implementation-bearing review identity:
 
 ```yaml
 current_head:
-  revision: a35cd15
-  role: sar_7a_verifier_backed_progress_flow_extraction
+  revision: 7053727bcce7ffb68fb701b7e1844cc33ca335bb
+  role: sar_7_single_progress_finish_authority_local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -106,22 +106,25 @@ sar_5:
   behavioral_exit_evidence: pending
   overall: in_progress
 sar_7:
-  verifier_backed_progress_flow_extracted: local_candidate
+  status: local_completion_candidate
+  record: docs/change-admission/sar-7-single-progress-finish-authority.yaml
+  verifier_backed_progress_flow_extracted: complete
   coordinator_progress_inline_branch_removed: true
-  planner_done_finish_path: pending_replacement
-  taskskill_direct_finish_path: pending_replacement
+  planner_done_finish_path: runtime_terminal_flow
+  taskskill_direct_finish_path: progress_flow_then_terminal_success_flow
+  task_completed_success_event_owner: runtime_terminal.commit_task_terminal_success
+  coordinator_inline_taskcompleted_sites: 0
+  coordinator_inline_decision_done_finish_sites: 0
   progress_authority_changed: false
-  finish_authority_changed: false
+  finish_authority_changed: terminal_success_commit_centralized
 coordinator_assessment:
   no_growth: true
   actual_reduction: true
-  coordinator_lines: 3400
-  run_sync_lines: 1971
-  methods: 26
+  coordinator_lines: 3378
+  run_sync_lines: 1945
+  methods: 25
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-7B replace planner-done finish path
-  - SAR-7C replace TaskSkill direct completion path
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
 hard_guardrails:

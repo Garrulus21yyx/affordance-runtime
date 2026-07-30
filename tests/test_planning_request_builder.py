@@ -14,7 +14,6 @@ from affordance_runtime.grounding import (
 from affordance_runtime.grounding import (
     EvidenceKind as GroundingEvidenceKind,
 )
-from affordance_runtime.planning_request import TargetAdmissionStatus
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.simplified_step_projection import LegacyStepProjectionStatus
@@ -222,7 +221,7 @@ def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
     assert request.step.projection_status.value == LegacyStepProjectionStatus.PROJECTION_INVALID.value
 
 
-def test_builder_embeds_legacy_terminal_admission_without_mutation() -> None:
+def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> None:
     from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 
     envelope, state, snapshot = _fixture()
@@ -330,7 +329,5 @@ def test_builder_embeds_legacy_terminal_admission_without_mutation() -> None:
 
     request = PlanningRequestBuilder().build(envelope, state, snapshot)
 
-    assert request.admission is not None
-    assert request.admission.excluded_target_ids == ()
-    assert request.admission.target_decisions[0].status == TargetAdmissionStatus.ALLOWED
+    assert request.admission is None
     assert state.version == before_version

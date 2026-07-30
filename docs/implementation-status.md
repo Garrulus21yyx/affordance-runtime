@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-4B active local change after `3ccea65`: PlannerPort public return contract is `PlannerResponse`; request-only planner responses are converted by `planner_compatibility.py` for the legacy Coordinator-internal `PlannerDecision` consumer. SAR-4 production deletion is not complete: legacy `PlannerDecision`, `PlannerContext`, and legacy three-argument planners remain compatibility debt. StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | `7053727bcce7ffb68fb701b7e1844cc33ca335bb`: SAR-7 single progress / finish authority local completion candidate. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,11 +53,11 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 coordinator_reduction:
-  interpretation: growth_frozen_not_reduced
+  interpretation: sar_7_progress_finish_inline_branches_reduced
   current_size_expected_for_stage: true
-  current_lines: 3456
-  run_sync_lines: 2028
-  method_count: 26
+  current_lines: 3378
+  run_sync_lines: 1945
+  method_count: 25
   actual_reduction_stage: sar_7_to_sar_9
   reduction_prerequisites:
     - canonical_action_outcome
@@ -355,7 +355,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-7 single progress / finish authority is in progress after SAR-4 standard Generalist and Parent Planner response cutover, SAR-5 default terminal-readiness admission deletion, SAR-6A canonical ActionOutcome recording, and SAR-7A verifier-backed progress flow extraction. PlannerContext remains compatibility debt; PlannerDecision remains a compatibility consumer; standard progress/finish authority has not fully cut over.
+  current_next_change_admission: SAR-8 single recovery protocol after SAR-7 local completion candidate. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator; PlannerContext and PlannerDecision remain compatibility debt for SAR-4 deletion work, but they are no longer completion authority.
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete
@@ -375,19 +375,23 @@ pr_breadth_latest:
     default_final_action_event: ActionOutcomeRecorded
     legacy_action_completed_default_event: removed
   sar_7:
-    status: in_progress
-    sar_7a_verifier_backed_progress_flow_extraction: local_candidate
-    implementation_revision: "a35cd15"
-    coordinator_lines: 3400
-    run_sync_lines: 1971
-    runcoordinator_methods: 26
-    planner_done_finish_path: pending_replacement
-    taskskill_direct_finish_path: pending_replacement
+    status: local_completion_candidate
+    record: docs/change-admission/sar-7-single-progress-finish-authority.yaml
+    sar_7a_verifier_backed_progress_flow_extraction: complete
+    sar_7b_planner_terminal_flow: complete
+    sar_7c_terminal_success_flow: complete
+    implementation_revision: "7053727bcce7ffb68fb701b7e1844cc33ca335bb"
+    coordinator_lines: 3378
+    run_sync_lines: 1945
+    runcoordinator_methods: 25
+    planner_done_finish_path: runtime_terminal_flow
+    taskskill_direct_finish_path: progress_flow_then_terminal_success_flow
+    task_completed_success_event_owner: runtime_terminal.commit_task_terminal_success
+    coordinator_inline_taskcompleted_sites: 0
+    coordinator_inline_decision_done_finish_sites: 0
     progress_authority_changed: false
-    finish_authority_changed: false
-  mandatory_followups_before_sar_7_completion:
-    - replace_planner_done_finish_path
-    - replace_taskskill_direct_finish_path
+    finish_authority_changed: terminal_success_commit_centralized
+  mandatory_followups_before_sar_7_completion: []
   sar_4:
     plannerport_response_contract: complete
     standard_generalist_response_contract: complete
@@ -752,7 +756,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-4 standard Generalist/Parent Planner response cutover, SAR-5 exact action/destination scope plus default terminal-readiness admission removal, SAR-6A canonical ActionOutcome recording, and SAR-7A verifier-backed progress flow extraction are local candidates; remote CI disabled | Coordinator 3400 lines / 26 methods; `run_sync` 1971 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, active-step admission, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, SAR-2 canonical semantic vocabulary gates, SAR-5 exact ActiveStepScope proposal gate, SAR-6A ActionOutcome recording gate, and SAR-7A progress-flow extraction gate | none | SAR-7 is in progress: planner-done finish and TaskSkill direct completion paths still require replacement before SAR-7 closure. TPA-5B foundation expansion, ODG-9 hookup, ODG-10, ODG-11, unauthorized alternate progress authority, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-4 standard Generalist/Parent Planner response cutover, SAR-5 exact action/destination scope plus default terminal-readiness admission removal, SAR-6A canonical ActionOutcome recording, and SAR-7 single progress / finish authority are local candidates; remote CI disabled | Coordinator 3378 lines / 25 methods; `run_sync` 1945 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, active-step admission, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, SAR-2 canonical semantic vocabulary gates, SAR-5 exact ActiveStepScope proposal gate, SAR-6A ActionOutcome recording gate, SAR-7 progress-flow extraction gate, SAR-7 planner-terminal gate, and SAR-7 terminal-success gate | none | SAR-8 is next: replace parallel recovery structures with one recovery decision/outcome protocol. TPA-5B foundation expansion, ODG-9 hookup, ODG-10, ODG-11, unauthorized alternate progress authority, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
