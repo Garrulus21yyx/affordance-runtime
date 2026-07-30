@@ -11,7 +11,7 @@ from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import FallbackModelPort, ModelCallRecord, ModelConfig, ModelMessage
-from affordance_runtime.recovery_commands import RecoveryCommandKind
+from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import UserRequest
@@ -266,7 +266,7 @@ def test_task_pipeline_wires_only_a_real_configured_provider_fallback() -> None:
         ),
     )
 
-    dispatcher = pipeline.coordinator.recovery_command_dispatcher
+    dispatcher = pipeline.coordinator.recovery_owner_dispatcher
 
-    assert dispatcher.available_commands == frozenset({RecoveryCommandKind.SWITCH_PROVIDER})
-    assert dispatcher.target_ref(RecoveryCommandKind.SWITCH_PROVIDER) == "fallback:fallback-model"
+    assert dispatcher.available_kinds == frozenset({RecoveryKind.SWITCH_PROVIDER})
+    assert dispatcher.target_ref(RecoveryKind.SWITCH_PROVIDER) == "fallback:fallback-model"

@@ -4,9 +4,8 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.recovery_command_dispatcher import RecoveryCommandDispatcher
-from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
+from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryApplicationResult, RecoveryPhase
 from affordance_runtime.recovery_protocol import FailureKind, RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
@@ -37,14 +36,14 @@ def test_recovery_phase_handles_phase_general_failure_through_decision_seam() ->
 
     result = RecoveryPhase(
         coordinator=RecoveryCoordinator(),
-        command_dispatcher=RecoveryCommandDispatcher(),
+        owner_dispatcher=RecoveryOwnerDispatcher(),
     ).handle_phase_failure(
         failure=failure,
         state=state,
         trace=trace,
         parent=parent,
         available_commands=frozenset(
-            {RecoveryCommandKind.REOBSERVE, RecoveryCommandKind.ABORT}
+            {RecoveryKind.REOBSERVE, RecoveryKind.ABORT}
         ),
         runtime_profile_digest="",
         loaded_profile_artifact_ids=(),
@@ -87,13 +86,13 @@ def test_recovery_phase_records_immediate_terminal_outcome_without_pending_plan(
 
     result = RecoveryPhase(
         coordinator=RecoveryCoordinator(),
-        command_dispatcher=RecoveryCommandDispatcher(),
+        owner_dispatcher=RecoveryOwnerDispatcher(),
     ).handle_phase_failure(
         failure=failure,
         state=state,
         trace=trace,
         parent=parent,
-        available_commands=frozenset({RecoveryCommandKind.ABORT}),
+        available_commands=frozenset({RecoveryKind.ABORT}),
         runtime_profile_digest="",
         loaded_profile_artifact_ids=(),
     )
@@ -133,7 +132,7 @@ def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> 
 
     result = RecoveryPhase(
         coordinator=RecoveryCoordinator(),
-        command_dispatcher=RecoveryCommandDispatcher(),
+        owner_dispatcher=RecoveryOwnerDispatcher(),
     ).handle_phase_failure(
         failure=failure,
         state=state,
@@ -141,9 +140,9 @@ def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> 
         parent=parent,
         available_commands=frozenset(
             {
-                RecoveryCommandKind.COMPACT_CONTEXT,
-                RecoveryCommandKind.ASK_USER,
-                RecoveryCommandKind.ABORT,
+                RecoveryKind.COMPACT_CONTEXT,
+                RecoveryKind.ASK_USER,
+                RecoveryKind.ABORT,
             }
         ),
         runtime_profile_digest="",

@@ -767,7 +767,7 @@ def run_browsergym_generalist_episode(
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
-            recovery_command_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
+            recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
         ).run_sync(TaskEnvelope(task_spec=task_spec), intake_trace)
         planner_error = next(
             (

@@ -15,17 +15,13 @@ from affordance_runtime.failure_envelope import (
 )
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
-from affordance_runtime.recovery_commands import (
-    RecoveryChangeDimension,
-    RecoveryCommandKind,
-    RecoveryDelta,
-    RecoveryReceipt,
-)
 from affordance_runtime.recovery_coordinator import RecoverySelectionContext
-from affordance_runtime.recovery_decision_compatibility import (
-    legacy_command_from_recovery_decision,
+from affordance_runtime.recovery_protocol import (
+    RecoveryDimension,
+    RecoveryKind,
+    RecoveryOutcome,
+    classify_failure,
 )
-from affordance_runtime.recovery_protocol import classify_failure
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import CompilationResult, CompilationStatus, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
@@ -54,14 +50,14 @@ class GeneralistTaskPipeline:
         if model is None:
             return
         model_dispatcher = recovery_dispatcher_for_model(model, planner=self.coordinator.planner)
-        if not model_dispatcher.available_commands:
+        if not model_dispatcher.available_kinds:
             return
-        handlers = dict(self.coordinator.recovery_command_dispatcher.handlers)
+        handlers = dict(self.coordinator.recovery_owner_dispatcher.handlers)
         for kind, handler in model_dispatcher.handlers.items():
             handlers.setdefault(kind, handler)
         self.coordinator = replace(
             self.coordinator,
-            recovery_command_dispatcher=type(self.coordinator.recovery_command_dispatcher)(handlers),
+            recovery_owner_dispatcher=type(self.coordinator.recovery_owner_dispatcher)(handlers),
         )
 
     async def run(self, request: UserRequest) -> TaskPipelineResult:
@@ -155,13 +151,13 @@ class GeneralistTaskPipeline:
             available_commands=(
                 frozenset(
                     {
-                        RecoveryCommandKind.CLARIFY_INTENT,
-                        RecoveryCommandKind.ASK_USER,
-                        RecoveryCommandKind.ABORT,
+                        RecoveryKind.CLARIFY_INTENT,
+                        RecoveryKind.ASK_USER,
+                        RecoveryKind.ABORT,
                     }
                 )
                 if clarification
-                else frozenset({RecoveryCommandKind.ABORT})
+                else frozenset({RecoveryKind.ABORT})
             ),
             current_attempt_fingerprint=failure.progress_fingerprint,
             user_question=message,
@@ -176,10 +172,6 @@ class GeneralistTaskPipeline:
             classification,
             recovery_context,
             current_state_version=0,
-        )
-        command = legacy_command_from_recovery_decision(
-            decision,
-            effect_status=failure.effect_status,
         )
         parent = trace.nodes[-1] if trace.nodes else None
         parent = trace.add(
@@ -206,47 +198,43 @@ class GeneralistTaskPipeline:
             },
             parents=[parent.id],
         )
-        parent = trace.add(
-            "RecoveryCommandStarted",
-            {"state": "intake", "command": command.model_dump(mode="json")},
-            parents=[parent.id],
-        )
         next_state = (
             "waiting_clarification"
-            if command.kind
-            in {RecoveryCommandKind.CLARIFY_INTENT, RecoveryCommandKind.ASK_USER}
+            if decision.kind in {RecoveryKind.CLARIFY_INTENT, RecoveryKind.ASK_USER}
             else "aborted"
         )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=failure.progress_fingerprint,
-            next_attempt_fingerprint=f"{command.strategy_id}:{next_state}",
-            changed_dimensions=command.changed_dimensions,
-            explanation=command.expected_change,
-        )
-        receipt = RecoveryReceipt(
-            command_id=command.command_id,
+        outcome = RecoveryOutcome(
+            decision_id=decision.decision_id,
+            failure_id=failure.failure_id,
             success=True,
-            state_before="intake:0",
-            state_after=next_state,
-            changed_dimensions=command.changed_dimensions,
-            delta=delta,
+            changed_dimensions=decision.changed_dimensions,
+            next_phase=decision.reentry_phase,
         )
         parent = trace.add(
-            "RecoveryCommandCompleted",
-            {"state": next_state, "receipt": receipt.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryDeltaValidated",
-            {"state": next_state, "delta": delta.model_dump(mode="json")},
+            "RecoveryOutcomeRecorded",
+            {
+                "state": next_state,
+                "outcome": {
+                    "decision_id": outcome.decision_id,
+                    "failure_id": outcome.failure_id,
+                    "success": outcome.success,
+                    "changed_dimensions": [
+                        item.value for item in outcome.changed_dimensions
+                    ],
+                    "next_phase": outcome.next_phase.value,
+                    "artifact_refs": list(outcome.artifact_refs),
+                    "observation_refs": list(outcome.observation_refs),
+                    "error_code": outcome.error_code,
+                },
+            },
             parents=[parent.id],
         )
         trace.add(
             (
                 "RecoveryEscalatedToUser"
-                if RecoveryChangeDimension.USER_INFORMATION in command.changed_dimensions
+                if RecoveryDimension.USER_INFORMATION in decision.changed_dimensions
                 else "RecoveryAborted"
             ),
-            {"state": next_state, "reentry_phase": command.reentry_phase.value},
+            {"state": next_state, "reentry_phase": decision.reentry_phase.value},
             parents=[parent.id],
         )

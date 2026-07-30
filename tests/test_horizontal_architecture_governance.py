@@ -2412,6 +2412,17 @@ def test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs() -> None:
     assert "OWNER_DISPATCH_COMMANDS" not in source
 
 
+def test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    phase_source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
+
+    assert "recovery_command_dispatcher" not in coordinator_source
+    assert "RecoveryCommandDispatcher" not in coordinator_source
+    assert "RecoveryReentryPhase" not in coordinator_source
+    assert "recovery_command_dispatcher" not in phase_source
+    assert "RecoveryCommandDispatcher" not in phase_source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

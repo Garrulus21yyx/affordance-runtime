@@ -69,11 +69,11 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.recovery_command_dispatcher import (
-    RecoveryCommandDispatcher,
+from affordance_runtime.recovery_owner_dispatcher import (
+    RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
 )
-from affordance_runtime.recovery_commands import RecoveryCommand, RecoveryCommandKind
+from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
@@ -423,15 +423,15 @@ class _ProviderSwitchOwner:
     target_ref: str = "fixture-provider-b"
     calls: int = 0
 
-    def execute(self, command: RecoveryCommand) -> RecoveryOwnerResult:
+    def execute(self, decision: RecoveryDecision) -> RecoveryOwnerResult:
         self.calls += 1
         return RecoveryOwnerResult(
             owner_id=self.owner_id,
-            kind=command.kind,
+            kind=decision.kind,
             success=True,
             state_before_ref="provider:fixture-a",
             state_after_ref="provider:fixture-b",
-            changed_dimensions=command.changed_dimensions,
+            changed_dimensions=(RecoveryDimension.PROVIDER,),
             evidence_refs=("fixture:provider-switch",),
         )
 
@@ -782,15 +782,15 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         planner=planner,
         executor=world,
         task_planner=None,
-        recovery_command_dispatcher=RecoveryCommandDispatcher(
-            {RecoveryCommandKind.SWITCH_PROVIDER: owner}
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
+            {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
     ).run_sync(TaskEnvelope(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     recovery_success = any(
-        node.kind == "RecoveryCommandCompleted"
-        and bool(node.payload.get("receipt", {}).get("success"))
+        node.kind == "RecoveryOutcomeRecorded"
+        and bool(node.payload.get("outcome", {}).get("success"))
         for node in result.trace.nodes
     )
     success = (

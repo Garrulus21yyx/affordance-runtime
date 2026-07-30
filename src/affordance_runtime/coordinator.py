@@ -58,15 +58,10 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.planning_contracts import PlannerDecision
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
-from affordance_runtime.recovery_command_dispatcher import (
-    RecoveryCommandDispatcher,
-)
-from affordance_runtime.recovery_commands import (
-    RecoveryReentryPhase,
-)
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
+from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryPhase
-from affordance_runtime.recovery_protocol import RecoveryKind
+from affordance_runtime.recovery_protocol import RecoveryKind, RuntimePhase
 from affordance_runtime.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
@@ -189,8 +184,8 @@ class RunCoordinator:
     loaded_profile_artifact_ids: tuple[str, ...] = ()
     route_calibrator: RouteCalibrator = field(default_factory=RouteCalibrator)
     recovery_coordinator: RecoveryCoordinator = field(default_factory=RecoveryCoordinator)
-    recovery_command_dispatcher: RecoveryCommandDispatcher = field(
-        default_factory=RecoveryCommandDispatcher
+    recovery_owner_dispatcher: RecoveryOwnerDispatcher = field(
+        default_factory=RecoveryOwnerDispatcher
     )
     task_plan_flow: TaskPlanFlow | None = field(init=False, default=None, repr=False)
     perception_session: PerceptionSession = field(init=False, repr=False)
@@ -210,7 +205,7 @@ class RunCoordinator:
         )
         self.recovery_phase = RecoveryPhase(
             coordinator=self.recovery_coordinator,
-            command_dispatcher=self.recovery_command_dispatcher,
+            owner_dispatcher=self.recovery_owner_dispatcher,
         )
         if self.task_planner is not None:
             self.task_plan_flow = TaskPlanFlow(
@@ -515,7 +510,7 @@ class RunCoordinator:
                         available_commands=frozenset(
                             {
                                 RecoveryKind.REPLAN_TASK,
-                                *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                                *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
                                 RecoveryKind.ABORT,
                             }
                         ),
@@ -625,7 +620,7 @@ class RunCoordinator:
                             available_commands=frozenset(
                                 {
                                     RecoveryKind.REPLAN_STEP,
-                                    *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                                    *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
                                     RecoveryKind.ABORT,
                                 }
                             ),
@@ -723,12 +718,12 @@ class RunCoordinator:
                     message=f"provider failure: {exc.kind.value}",
                     available_commands=frozenset(
                         {
-                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
                             RecoveryKind.ABORT,
                         }
                     ),
                     snapshot=snapshot,
-                    abort_reentry_phase=RecoveryReentryPhase.DEFERRED,
+                    abort_reentry_phase=RuntimePhase.DEFERRED,
                 )
                 if _recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS:
                     continue
@@ -785,7 +780,7 @@ class RunCoordinator:
                     available_commands=frozenset(
                         {
                             RecoveryKind.REPLAN_STEP,
-                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
                             RecoveryKind.ABORT,
                         }
                     ),
@@ -1188,7 +1183,7 @@ class RunCoordinator:
                     available_commands=frozenset(
                         {
                             RecoveryKind.REPLAN_STEP,
-                            *_available_owner_recovery_kinds(self.recovery_command_dispatcher),
+                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
                             RecoveryKind.ABORT,
                         }
                     ),
@@ -2389,7 +2384,7 @@ class RunCoordinator:
         proposal_rejection: ProposalRejectionContext | None = None,
         expected_effect: str = "",
         recoverable: bool = True,
-        abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
+        abort_reentry_phase: RuntimePhase = RuntimePhase.ABORTED,
     ) -> tuple[RecoveryKind, TraceNode]:
         task_plan = state.task_plan
         failure = make_failure_envelope(
@@ -2939,9 +2934,9 @@ def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
 
 
 def _available_owner_recovery_kinds(
-    dispatcher: RecoveryCommandDispatcher,
+    dispatcher: RecoveryOwnerDispatcher,
 ) -> frozenset[RecoveryKind]:
-    return frozenset(RecoveryKind(kind.value) for kind in dispatcher.available_commands)
+    return dispatcher.available_kinds
 
 
 def _terminal_recovery_status(

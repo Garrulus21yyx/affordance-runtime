@@ -134,6 +134,10 @@ scope:
     - "RecoveryApplicationResult exposes canonical recovery_kind: RecoveryKind
       instead of legacy command_kind; RecoveryCommandKind remains an internal
       RecoveryPhase adapter detail."
+    - Default Runtime wiring uses RecoveryOwnerDispatcher keyed by canonical
+      RecoveryKind; Coordinator, model recovery owners, task pipeline, and
+      benchmark runtime construction no longer depend on
+      RecoveryCommandDispatcher or RecoveryCommandKind.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -291,6 +295,13 @@ validation:
     ruff: passed
     mypy_core: passed_2_source_files_ignore_optional_missing_imports
     diff_check: passed
+  default_runtime_owner_dispatcher_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_proposal_recovery_policy.py tests/test_recovery_coordinator.py tests/test_recovery_phase.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_task_pipeline_multistage.py tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_result_exposes_canonical_recovery_kind --maxfail=1 --tb=short
+  default_runtime_owner_dispatcher_cutover_result: 80_passed
+  default_runtime_owner_dispatcher_cutover_static:
+    ruff: passed
+    mypy_core: passed_7_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1325_passed
   coordinator_lines: 2974
@@ -302,5 +313,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_phase_result_canonical_kind_local_candidate
+status: sar_8c_default_runtime_owner_dispatcher_cutover_local_candidate
 next_slice: planner-selection-simplification-actionchoice

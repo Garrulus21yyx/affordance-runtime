@@ -17,11 +17,11 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
 )
-from affordance_runtime.recovery_command_dispatcher import (
-    RecoveryCommandDispatcher,
+from affordance_runtime.recovery_owner_dispatcher import (
+    RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
 )
-from affordance_runtime.recovery_commands import RecoveryCommand, RecoveryCommandKind
+from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
@@ -206,17 +206,17 @@ class ProviderSwitchOwner:
     target_ref: str = "provider-b"
     calls: int = 0
 
-    def execute(self, command: RecoveryCommand) -> RecoveryOwnerResult:
+    def execute(self, decision: RecoveryDecision) -> RecoveryOwnerResult:
         self.calls += 1
         return RecoveryOwnerResult(
             owner_id=self.owner_id,
-            kind=command.kind,
+            kind=decision.kind,
             success=True,
             state_before_ref="provider:provider-a",
             state_after_ref=(
                 "provider:provider-a" if self.no_op else "provider:provider-b"
             ),
-            changed_dimensions=command.changed_dimensions,
+            changed_dimensions=(RecoveryDimension.PROVIDER,),
             evidence_refs=("artifact:provider-switch",),
         )
 
@@ -404,7 +404,7 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.OBSERVATION
     assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REOBSERVE.value
+    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REOBSERVE.value
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:reobserve:")
     recovery_receipt = next(
         node.payload["receipt"]
@@ -431,7 +431,7 @@ def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.STEP_PLANNING
     assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_STEP.value
+    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
     recovery_delta = next(
         node.payload["delta"]
@@ -459,7 +459,7 @@ def test_target_scope_rejection_replans_without_weakening_validation() -> None:
         "target_out_of_scope:relational_evidence_not_proven:semantic:wrong-target"
     )
     assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_STEP.value
+    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
     rejected = next(
         node for node in result.trace.nodes if node.kind == "PlannerProposalRejected"
     )
@@ -476,31 +476,26 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
         planner=planner,
         executor=NeverExecutor(),
         task_planner=None,
-        recovery_command_dispatcher=RecoveryCommandDispatcher(
-            {RecoveryCommandKind.SWITCH_PROVIDER: owner}
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
+            {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
     ).run_sync(TaskEnvelope("provider-owner-recovery", "produce a safe answer"))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 2
     assert owner.calls == 1
-    recovery_receipt = next(
-        node.payload["receipt"]
+    recovery_outcome = next(
+        node.payload["outcome"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     )
-    recovery_delta = next(
-        node.payload["delta"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryDeltaValidated"
-    )
-    assert recovery_receipt["success"]
-    assert recovery_delta["changed_dimensions"][0] == "provider"
+    assert recovery_outcome["success"]
+    assert recovery_outcome["changed_dimensions"][0] == "provider"
     events = [node.kind for node in result.trace.nodes]
     assert events.index("RecoveryCommandStarted") < events.index(
-        "RecoveryCommandCompleted"
+        "RecoveryOutcomeRecorded"
     )
-    assert events.index("RecoveryCommandCompleted") < events.index(
+    assert events.index("RecoveryOutcomeRecorded") < events.index(
         "RecoveryReenteredPhase"
     )
 
@@ -512,8 +507,8 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
         planner=ProviderFailOncePlanner(),
         executor=NeverExecutor(),
         task_planner=None,
-        recovery_command_dispatcher=RecoveryCommandDispatcher(
-            {RecoveryCommandKind.SWITCH_PROVIDER: owner}
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
+            {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
     ).run_sync(TaskEnvelope("provider-no-op-recovery", "produce a safe answer"))
 
@@ -521,13 +516,13 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
     assert result.state.phase == RuntimeStep.DEFERRED.value
     assert owner.calls == 1
     assert "RecoveryDeltaValidated" not in [node.kind for node in result.trace.nodes]
-    recovery_receipt = next(
-        node.payload["receipt"]
+    recovery_outcome = next(
+        node.payload["outcome"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     )
-    assert not recovery_receipt["success"]
-    assert recovery_receipt["error_code"] == "owning_port_no_op"
+    assert not recovery_outcome["success"]
+    assert recovery_outcome["error_code"] == "owning_port_no_op"
 
 
 def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget() -> None:
@@ -554,8 +549,8 @@ def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget
         if node.kind == "RecoveryStrategySelected"
     ]
     assert selected == [
-        RecoveryCommandKind.REPLAN_STEP.value,
-        RecoveryCommandKind.ABORT.value,
+        RecoveryKind.REPLAN_STEP.value,
+        RecoveryKind.ABORT.value,
     ]
 
 
@@ -574,7 +569,7 @@ def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.TASK_PLANNING
     assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_TASK.value
+    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_TASK.value
     events = [node.kind for node in result.trace.nodes]
     assert events.index("RecoveryCommandStarted") < events.index("TaskPlanAccepted")
     assert events.index("RecoveryCommandStarted") < events.index("RecoveryDeltaValidated")
@@ -626,7 +621,7 @@ def test_skill_activation_failure_falls_through_via_replan_step() -> None:
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.SKILL_ACTIVATION
     assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryCommandKind.REPLAN_STEP.value
+    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
 
 
 def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> None:
@@ -652,4 +647,4 @@ def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> No
         for node in result.trace.nodes
         if node.kind == "RecoveryStrategySelected"
     ]
-    assert selected == [RecoveryCommandKind.REGROUND.value, RecoveryCommandKind.ABORT.value]
+    assert selected == [RecoveryKind.REGROUND.value, RecoveryKind.ABORT.value]

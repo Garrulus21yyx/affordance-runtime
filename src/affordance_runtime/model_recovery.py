@@ -8,16 +8,12 @@ from typing import cast
 from affordance_runtime.model_port import FallbackModelPort, ModelPort
 from affordance_runtime.planner_context_recovery import context_compaction_owner_for_planner
 from affordance_runtime.planner_schema_recovery import schema_repair_owner_for_planner
-from affordance_runtime.recovery_command_dispatcher import (
-    RecoveryCommandDispatcher,
+from affordance_runtime.recovery_owner_dispatcher import (
+    RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
     RecoveryOwningPort,
 )
-from affordance_runtime.recovery_commands import (
-    RecoveryChangeDimension,
-    RecoveryCommand,
-    RecoveryCommandKind,
-)
+from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 
 
 @dataclass(frozen=True)
@@ -31,22 +27,22 @@ class FallbackProviderSwitchOwner:
     def target_ref(self) -> str:
         return self.model.next_profile_ref
 
-    def execute(self, command: RecoveryCommand) -> RecoveryOwnerResult:
+    def execute(self, decision: RecoveryDecision) -> RecoveryOwnerResult:
         before = self.model.active_profile_ref
-        if command.kind != RecoveryCommandKind.SWITCH_PROVIDER:
+        if decision.kind != RecoveryKind.SWITCH_PROVIDER:
             return RecoveryOwnerResult(
                 owner_id=self.owner_id,
-                kind=command.kind,
+                kind=decision.kind,
                 success=False,
                 state_before_ref=before,
                 state_after_ref=before,
-                error_code="unsupported_recovery_command",
+                error_code="unsupported_recovery_decision",
             )
         switched = self.model.switch_to_next_profile()
         if switched is None:
             return RecoveryOwnerResult(
                 owner_id=self.owner_id,
-                kind=command.kind,
+                kind=decision.kind,
                 success=False,
                 state_before_ref=before,
                 state_after_ref=before,
@@ -55,11 +51,11 @@ class FallbackProviderSwitchOwner:
         before, after = switched
         return RecoveryOwnerResult(
             owner_id=self.owner_id,
-            kind=command.kind,
+            kind=decision.kind,
             success=True,
             state_before_ref=before,
             state_after_ref=after,
-            changed_dimensions=(RecoveryChangeDimension.PROVIDER,),
+            changed_dimensions=(RecoveryDimension.PROVIDER,),
             evidence_refs=(f"model-profile-switch:{before}->{after}",),
         )
 
@@ -68,19 +64,19 @@ def recovery_dispatcher_for_model(
     model: ModelPort,
     *,
     planner: object | None = None,
-) -> RecoveryCommandDispatcher:
+) -> RecoveryOwnerDispatcher:
     """Expose only configured provider/context owners with real state changes."""
 
-    handlers: dict[RecoveryCommandKind, RecoveryOwningPort] = {}
+    handlers: dict[RecoveryKind, RecoveryOwningPort] = {}
     context_owner = context_compaction_owner_for_planner(planner)
     if context_owner is not None:
-        handlers[RecoveryCommandKind.COMPACT_CONTEXT] = context_owner
+        handlers[RecoveryKind.COMPACT_CONTEXT] = context_owner
     schema_owner = schema_repair_owner_for_planner(planner)
     if schema_owner is not None:
-        handlers[RecoveryCommandKind.REPAIR_MODEL_SCHEMA] = schema_owner
+        handlers[RecoveryKind.REPAIR_MODEL_SCHEMA] = schema_owner
     if isinstance(model, FallbackModelPort) and model.next_profile_ref:
-        handlers[RecoveryCommandKind.SWITCH_PROVIDER] = cast(
+        handlers[RecoveryKind.SWITCH_PROVIDER] = cast(
             "RecoveryOwningPort",
             FallbackProviderSwitchOwner(model),
         )
-    return RecoveryCommandDispatcher(handlers)
+    return RecoveryOwnerDispatcher(handlers)

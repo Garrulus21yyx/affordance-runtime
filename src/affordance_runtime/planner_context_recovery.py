@@ -5,12 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, cast, runtime_checkable
 
-from affordance_runtime.recovery_command_dispatcher import RecoveryOwnerResult, RecoveryOwningPort
-from affordance_runtime.recovery_commands import (
-    RecoveryChangeDimension,
-    RecoveryCommand,
-    RecoveryCommandKind,
-)
+from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerResult, RecoveryOwningPort
+from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 
 
 @runtime_checkable
@@ -33,22 +29,22 @@ class PlannerContextCompactionOwner:
     def target_ref(self) -> str:
         return self.planner.planner_context_ref()
 
-    def execute(self, command: RecoveryCommand) -> RecoveryOwnerResult:
+    def execute(self, decision: RecoveryDecision) -> RecoveryOwnerResult:
         before = self.planner.planner_context_ref()
-        if command.kind != RecoveryCommandKind.COMPACT_CONTEXT:
+        if decision.kind != RecoveryKind.COMPACT_CONTEXT:
             return RecoveryOwnerResult(
                 owner_id=self.owner_id,
-                kind=command.kind,
+                kind=decision.kind,
                 success=False,
                 state_before_ref=before,
                 state_after_ref=before,
-                error_code="unsupported_recovery_command",
+                error_code="unsupported_recovery_decision",
             )
         compacted = self.planner.compact_planner_context()
         if compacted is None:
             return RecoveryOwnerResult(
                 owner_id=self.owner_id,
-                kind=command.kind,
+                kind=decision.kind,
                 success=False,
                 state_before_ref=before,
                 state_after_ref=before,
@@ -57,11 +53,11 @@ class PlannerContextCompactionOwner:
         before, after = compacted
         return RecoveryOwnerResult(
             owner_id=self.owner_id,
-            kind=command.kind,
+            kind=decision.kind,
             success=True,
             state_before_ref=before,
             state_after_ref=after,
-            changed_dimensions=(RecoveryChangeDimension.CONTEXT,),
+            changed_dimensions=(RecoveryDimension.CONTEXT,),
             evidence_refs=(f"planner-context-compacted:{before}->{after}",),
         )
 

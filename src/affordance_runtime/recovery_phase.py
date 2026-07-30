@@ -7,10 +7,6 @@ from dataclasses import dataclass
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope
-from affordance_runtime.recovery_command_dispatcher import (
-    OWNER_DISPATCH_COMMANDS,
-    RecoveryCommandDispatcher,
-)
 from affordance_runtime.recovery_commands import (
     RecoveryCommand,
     RecoveryCommandKind,
@@ -28,6 +24,10 @@ from affordance_runtime.recovery_coordinator import (
 )
 from affordance_runtime.recovery_decision_compatibility import (
     legacy_command_from_recovery_decision,
+)
+from affordance_runtime.recovery_owner_dispatcher import (
+    OWNER_DISPATCH_RECOVERY_KINDS,
+    RecoveryOwnerDispatcher,
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassification,
@@ -64,7 +64,7 @@ class RecoveryPhase:
     """Apply phase-general recovery selection without exposing policy in Coordinator."""
 
     coordinator: RecoveryCoordinator
-    command_dispatcher: RecoveryCommandDispatcher
+    owner_dispatcher: RecoveryOwnerDispatcher
 
     def handle_phase_failure(
         self,
@@ -76,7 +76,7 @@ class RecoveryPhase:
         available_commands: frozenset[RecoveryKind],
         runtime_profile_digest: str,
         loaded_profile_artifact_ids: tuple[str, ...],
-        abort_reentry_phase: RecoveryReentryPhase = RecoveryReentryPhase.ABORTED,
+        abort_reentry_phase: RuntimePhase = RuntimePhase.ABORTED,
         fresh_candidate_id: str = "",
         fresh_route_ref: str = "",
         idempotency_key: str = "",
@@ -86,7 +86,7 @@ class RecoveryPhase:
     ) -> RecoveryApplicationResult:
         available = _available_recovery_kinds(
             available_commands,
-            self.command_dispatcher.available_commands,
+            self.owner_dispatcher.available_kinds,
         )
         state.transition(RuntimeStep.RECOVERING.value)
         recovery_context = RecoverySelectionContext(
@@ -99,11 +99,9 @@ class RecoveryPhase:
             fresh_route_ref=fresh_route_ref,
             idempotency_key=idempotency_key,
             compensation_contract_id=compensation_contract_id,
-            configured_provider_id=self.command_dispatcher.target_ref(
-                RecoveryCommandKind.SWITCH_PROVIDER
-            ),
+            configured_provider_id=self.owner_dispatcher.target_ref(RecoveryKind.SWITCH_PROVIDER),
             history=tuple(state.recovery_history),
-            abort_reentry_phase=RuntimePhase(abort_reentry_phase.value),
+            abort_reentry_phase=abort_reentry_phase,
             available_action_count=available_action_count,
             user_input_required=user_input_required,
         )
@@ -167,7 +165,7 @@ class RecoveryPhase:
                 RecoveryKind(command.kind.value),
                 parent,
             )
-        if command.kind in OWNER_DISPATCH_COMMANDS:
+        if decision.kind in OWNER_DISPATCH_RECOVERY_KINDS:
             recovery_kind, parent = self._dispatch_owner_command(
                 failure,
                 state,
@@ -205,38 +203,44 @@ class RecoveryPhase:
         trace: TraceDag,
         parent: TraceNode,
         *,
-        abort_reentry_phase: RecoveryReentryPhase,
+        abort_reentry_phase: RuntimePhase,
     ) -> tuple[RecoveryKind, TraceNode]:
-        command = _pending_legacy_command(state)
-        if command is None:
-            raise ValueError("owner recovery dispatch requires a pending command")
+        decision = state.current_recovery_decision
+        if decision is None:
+            raise ValueError("owner recovery dispatch requires a pending decision")
         previous_fingerprint = (
             failure.progress_fingerprint
             or f"{failure.semantic_family_key}:state:{failure.state_version}"
         )
-        dispatched = self.command_dispatcher.dispatch(
-            command,
+        dispatched = self.owner_dispatcher.dispatch(
+            decision,
+            failure=failure,
             previous_attempt_fingerprint=previous_fingerprint,
         )
+        state.current_recovery_outcome = dispatched.outcome
         parent = trace.add(
-            "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": dispatched.receipt.model_dump(mode="json")},
+            "RecoveryOutcomeRecorded",
+            {
+                "state": state.phase,
+                "outcome": {
+                    "decision_id": dispatched.outcome.decision_id,
+                    "failure_id": dispatched.outcome.failure_id,
+                    "success": dispatched.outcome.success,
+                    "changed_dimensions": [
+                        item.value for item in dispatched.outcome.changed_dimensions
+                    ],
+                    "next_phase": dispatched.outcome.next_phase.value,
+                    "artifact_refs": list(dispatched.outcome.artifact_refs),
+                    "observation_refs": list(dispatched.outcome.observation_refs),
+                    "error_code": dispatched.outcome.error_code,
+                },
+                "state_before_ref": dispatched.state_before_ref,
+                "state_after_ref": dispatched.state_after_ref,
+            },
             parents=[parent.id],
         )
-        if not dispatched.receipt.success or dispatched.delta is None:
+        if not dispatched.outcome.success:
             state.transition(abort_reentry_phase.value)
-            state.current_recovery_outcome = RecoveryOutcome(
-                decision_id=state.current_recovery_decision.decision_id
-                if state.current_recovery_decision is not None
-                else command.command_id,
-                failure_id=failure.failure_id,
-                success=False,
-                changed_dimensions=tuple(
-                    RecoveryDimension(item.value) for item in command.changed_dimensions
-                ),
-                next_phase=RuntimePhase(abort_reentry_phase.value),
-                error_code=dispatched.receipt.error_code,
-            )
             return RecoveryKind.ABORT, parent
         state.replan_count += 1
         state.record_disproved_assumption(
@@ -245,35 +249,17 @@ class RecoveryPhase:
         state.recovery_history.append(
             RecoveryHistoryItem(
                 failure.semantic_family_key,
-                command.strategy_id,
+                decision.strategy_key,
                 previous_fingerprint,
-                dispatched.delta.next_attempt_fingerprint,
+                dispatched.next_attempt_fingerprint,
             )
         )
         state.transition(RuntimeStep.OBSERVING.value)
-        state.current_recovery_outcome = RecoveryOutcome(
-            decision_id=state.current_recovery_decision.decision_id
-            if state.current_recovery_decision is not None
-            else command.command_id,
-            failure_id=failure.failure_id,
-            success=True,
-            changed_dimensions=tuple(
-                RecoveryDimension(item.value) for item in command.changed_dimensions
-            ),
-            next_phase=RuntimePhase.OBSERVING,
-            artifact_refs=dispatched.receipt.artifact_refs,
-            observation_refs=dispatched.receipt.observation_refs,
-        )
-        parent = trace.add(
-            "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": dispatched.delta.model_dump(mode="json")},
-            parents=[parent.id],
-        )
         return (
-            RecoveryKind(command.kind.value),
+            decision.kind,
             trace.add(
                 "RecoveryReenteredPhase",
-                {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+                {"state": state.phase, "reentry_phase": decision.reentry_phase.value},
                 parents=[parent.id],
             ),
         )
@@ -694,13 +680,12 @@ class RecoveryPhase:
 
 def _available_recovery_kinds(
     available_commands: frozenset[RecoveryKind],
-    owner_available_commands: frozenset[RecoveryCommandKind],
+    owner_available_commands: frozenset[RecoveryKind],
 ) -> frozenset[RecoveryKind]:
     return frozenset(
         kind
         for kind in available_commands
-        if RecoveryCommandKind(kind.value) not in OWNER_DISPATCH_COMMANDS
-        or RecoveryCommandKind(kind.value) in owner_available_commands
+        if kind not in OWNER_DISPATCH_RECOVERY_KINDS or kind in owner_available_commands
     )
 
 
