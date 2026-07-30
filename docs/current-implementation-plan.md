@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-8 single recovery protocol | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; SAR-7.1 added the task-completion verifier foundation, SAR-7.2 removed pending/ODG progress from default StateKernel, SAR-7.3 added bounded typed action outcomes, SAR-7.4 made `TaskProgress` the default progress field, SAR-7.5 removed TaskSkill progress from default StateKernel authority, and the clean SAR-7 PR breadth gate passed at `25ec674`. SAR-7 fresh diagnostic residuals have been classified before SAR-8, and `entry_outcome_already_satisfied` has been moved back to progress precheck. | SAR-8B routes phase-general recovery selection through typed `FailureClassification → RecoveryDecision`; legacy `RecoveryPlan/RecoveryCommand` is isolated behind `recovery_decision_compatibility.py` until SAR-8C deletes the old recovery call-site state. | Planner Selection Simplification, then SAR-9 phase extraction |
+| Horizontal | SAR-8 single recovery protocol | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; SAR-7.1 added the task-completion verifier foundation, SAR-7.2 removed pending/ODG progress from default StateKernel, SAR-7.3 added bounded typed action outcomes, SAR-7.4 made `TaskProgress` the default progress field, SAR-7.5 removed TaskSkill progress from default StateKernel authority, and the clean SAR-7 PR breadth gate passed at `25ec674`. SAR-7 fresh diagnostic residuals have been classified before SAR-8, and `entry_outcome_already_satisfied` has been moved back to progress precheck. | SAR-8C call-site migration routes phase-general recovery through `RecoveryPhase.handle_phase_failure`; legacy `RecoveryPlan/RecoveryCommand` is still isolated behind `recovery_decision_compatibility.py` until the next SAR-8C deletion commit removes old recovery call-site state. | Planner Selection Simplification, then SAR-9 phase extraction |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -155,7 +155,7 @@ coordinator_assessment:
   methods: 25
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-8C Coordinator recovery phase call-site cutover with legacy deletion
+  - SAR-8C legacy recovery protocol and StateKernel recovery-state deletion
   - Planner Selection Simplification with Runtime-built ActionChoice
   - SAR-9 phase extraction and Coordinator reduction
 blocked_until:
@@ -175,6 +175,7 @@ evidence:
   already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
   sar_8a_recovery_taxonomy: docs/change-admission/sar-8-single-recovery-protocol.yaml
   sar_8b_recovery_decision_cutover: docs/change-admission/sar-8-single-recovery-protocol.yaml
+  sar_8c_recovery_phase_callsite_migration: docs/change-admission/sar-8-single-recovery-protocol.yaml
   independently_reproduced: false
   remote_ci: absent
   pr_breadth: passed_for_sar_7_gate

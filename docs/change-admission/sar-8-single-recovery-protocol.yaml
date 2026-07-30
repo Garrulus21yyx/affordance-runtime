@@ -18,7 +18,7 @@ preconditions:
   already_satisfied_owner_repair: docs/change-admission/sar-7-6-already-satisfied-progress-precheck.yaml
 
 scope:
-  current_slice: sar-8b-failure-classification-and-recovery-decision-cutover
+  current_slice: sar-8c-recovery-phase-callsite-migration
   included:
     - SAR-8 FailureKind taxonomy.
     - Pure FailureEnvelope to typed FailureClassification classifier.
@@ -27,6 +27,13 @@ scope:
     - RecoveryCoordinator.decide() returns canonical RecoveryDecision.
     - RunCoordinator phase-general recovery entry calls decide() before the
       temporary legacy adapter.
+    - RecoveryPhase is the Coordinator-facing recovery application seam for
+      phase-general failures.
+    - RunCoordinator._recover_phase_failure() delegates decision, adapter,
+      trace projection, owner-dispatch, and immediate terminal recovery
+      completion to RecoveryPhase.
+    - Coordinator line count decreased below the prior ratchet during the
+      call-site migration.
     - RecoveryDecision to RecoveryPlan/RecoveryCommand conversion is isolated
       in recovery_decision_compatibility.py for SAR-8C deletion.
     - planner_waiting_clarification maps to internal model/context/provider
@@ -37,7 +44,7 @@ scope:
       proposal_rejection code/reason_code, maps to current-step progress
       precheck owner, and is not treated as replan/ask_user recovery.
   excluded:
-    - Full Coordinator recovery call-site rewrite.
+    - Full legacy recovery state rewrite.
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion.
     - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt deletion.
     - StateKernel recovery schema reduction.
@@ -78,15 +85,18 @@ remaining_sar_8_work:
 validation:
   focused:
     - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_coordinator.py
+    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_phase.py
     - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_recovery_trace_projection.py
     - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter
-  recovery_and_architecture_focused: 96_passed
-  full_pytest: 1279_passed
+    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_horizontal_architecture_governance.py::test_sar_8c_recover_phase_failure_delegates_to_recovery_phase
+  gate_b_recovery_coordinator_architecture: 123_passed
+  coordinator_lines: 3357
+  full_pytest: not_run_for_callsite_migration_commit
   ruff: passed
-  mypy: passed_109_non_benchmark_non_integration_source_files
+  mypy: passed_110_non_benchmark_non_integration_source_files
   mypy_full_src: blocked_by_optional_browsergym_and_langgraph_stubs
-  uv_build: passed
+  uv_build: not_required_until_legacy_deletion_cutover_commit
   diff_check: passed
 
-status: sar_8b_local_candidate
-next_slice: sar-8c-recovery-phase-callsite-cutover-and-legacy-deletion
+status: sar_8c_callsite_migration_local_candidate
+next_slice: sar-8c-legacy-recovery-protocol-and-state-deletion

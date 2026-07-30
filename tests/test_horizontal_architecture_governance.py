@@ -155,6 +155,7 @@ EXECUTION_COMMIT_MUTATIONS = {
 
 ALLOWED_STATE_MUTATION_MODULES = {
     "coordinator.py",
+    "recovery_phase.py",
     "runtime_terminal.py",
     "runtime.py",
 }
@@ -2157,6 +2158,25 @@ def test_taskskill_progress_is_not_statekernel_authority() -> None:
 
 
 def test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter() -> None:
+    tree = ast.parse((SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8"))
+    recovery_phase = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RecoveryPhase"
+    )
+    calls: list[str] = []
+    for node in ast.walk(recovery_phase):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if (
+                isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id == "self"
+                and node.func.value.attr == "coordinator"
+            ):
+                calls.append(node.func.attr)
+    assert "decide" in calls
+    assert "plan" not in calls
+
+
+def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
         node
@@ -2168,18 +2188,12 @@ def test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter() -> None:
         for node in run_coordinator.body
         if isinstance(node, ast.FunctionDef) and node.name == "_recover_phase_failure"
     )
-    calls: list[str] = []
-    for node in ast.walk(recover_phase_failure):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if (
-                isinstance(node.func.value, ast.Attribute)
-                and isinstance(node.func.value.value, ast.Name)
-                and node.func.value.value.id == "self"
-                and node.func.value.attr == "recovery_coordinator"
-            ):
-                calls.append(node.func.attr)
-    assert "decide" in calls
-    assert "plan" not in calls
+    body_source = ast.unparse(recover_phase_failure).casefold()
+
+    assert "self.recovery_phase.handle_phase_failure" in body_source
+    assert "recoveryselectioncontext" not in body_source
+    assert "legacy_plan_from_recovery_decision" not in body_source
+    assert "state.current_recovery_plan = plan" not in body_source
 
 
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
