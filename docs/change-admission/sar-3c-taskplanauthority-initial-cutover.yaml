@@ -1,0 +1,62 @@
+slice_id: sar-3c-taskplanauthority-initial-cutover
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: 4aa872c6e8536ee17d384a281d8e775678068683
+change_type: substitutive_initial_plan_admission_refactor
+task_execution_semantics_changed: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+planner_contract_changed: false
+provider_prompt_or_schema_changed: false
+benchmark_adapter_changed: false
+pr_breadth: not_required
+
+single_primary_owner:
+  Initial TaskPlan admission through TaskPlanAuthority
+
+included:
+  - TaskPlanLifecycle initial planning path accepts candidate-capable planner outputs through TaskPlanAuthority.admit_initial
+  - TaskPlanAuthority assigns deterministic initial plan identity, version, state-version lineage, and digest through TaskPlanAuthorityBinder
+  - legacy planners and no-canonical-obligation TaskSpecs without candidate support remain behind an explicit initial-plan compatibility fallback
+  - initial StateKernel.install_task_plan remains the sole mutable plan commit point
+
+excluded:
+  - replacement plan admission cutover
+  - mandatory PlanningRouter default-path candidate routing
+  - Coordinator plan install or replace rewiring
+  - StateKernel TaskPlan/PlanProgress schema changes
+  - TaskProgress or active-step authority cutover
+  - SubgoalSpec production deletion
+  - PlanProgress production deletion
+  - finish authority changes
+  - provider prompt/schema changes
+  - benchmark adapter changes
+  - PR breadth or promotion claim
+
+remaining_sar_3_work:
+  - TaskPlanAuthority must admit replacement plans in the production path
+  - legacy initial compatibility fallback must be retired after all standard generators produce candidates
+  - legacy task_plan_flow replacement round trip must be removed
+  - StateKernel must cut over to canonical TaskPlan/TaskProgress naming
+  - SubgoalSpec and PlanProgress production imports must reach zero
+
+validation:
+  focused_lifecycle_tests: pass
+  focused_task_plan_contract_tests: pass
+  focused_generator_tests: pass
+  focused_planning_request_tests: pass
+  focused_task_planning_tests: pass
+  focused_task_plan_flow_tests: pass
+  architecture_tests: pass
+  full_pytest: pass
+  ruff: pass
+  mypy: pass
+  uv_build: pass
+  diff_check: pass
+
+closure_status: local_partial_candidate
+remote_ci_evidence: absent
+promotion_status: held
+next_slice_after_closure: sar-3d-taskplanauthority-replacement-cutover

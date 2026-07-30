@@ -16,6 +16,12 @@ from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_plan_contracts import (
+    InitialTaskPlanRequest,
+    PlanCandidate,
+    TaskPlanAuthority,
+    TaskPlanDecisionStatus,
+)
 from affordance_runtime.task_planning import (
     CriteriaEvidenceLedgerEntry,
     PlanningAffordanceState,
@@ -95,6 +101,7 @@ class TaskPlanLifecycle:
 
     planner: TaskPlannerPort
     validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
+    authority: TaskPlanAuthority = field(default_factory=TaskPlanAuthority)
 
     def propose_initial(
         self,
@@ -104,7 +111,27 @@ class TaskPlanLifecycle:
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanTransition:
         context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
-        plan = _resolve_task_plan(self.planner.plan(context))
+        candidate_value = _initial_plan_candidate(self.planner, context)
+        if candidate_value is None:
+            plan = _legacy_initial_task_plan(self.planner, context)
+        else:
+            candidate = _resolve_plan_candidate(candidate_value)
+            decision = self.authority.admit_initial(
+                InitialTaskPlanRequest(
+                    task_spec_identity=task_spec.identity,
+                    task_revision=task_spec.revision,
+                    evaluated_at_state_version=state.version,
+                    objective=task_spec.objective,
+                    operation_class=task_spec.operation_class,
+                    observation_refs=(snapshot.observation.snapshot_id,),
+                    remaining_budget_steps=budget.max_steps,
+                    task_id=task_spec.task_id,
+                ),
+                candidate,
+            )
+            if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
+                raise ValueError("initial TaskPlan candidate was not accepted")
+            plan = decision.plan
         validation = self.validator.validate(
             plan,
             task_spec,
@@ -347,6 +374,29 @@ def _resolve_task_plan(value: TaskPlan | Awaitable[TaskPlan]) -> TaskPlan:
     if not inspect.isawaitable(value):
         return value
     return cast(TaskPlan, resolve_awaitable(value))
+
+
+def _legacy_initial_task_plan(
+    planner: TaskPlannerPort,
+    context: TaskPlanningContext,
+) -> TaskPlan:
+    return _resolve_task_plan(planner.plan(context))
+
+
+def _initial_plan_candidate(
+    planner: TaskPlannerPort,
+    context: TaskPlanningContext,
+) -> PlanCandidate | Awaitable[PlanCandidate] | None:
+    generate_candidate = getattr(planner, "generate_candidate", None)
+    if generate_candidate is not None:
+        return generate_candidate(context)
+    return None
+
+
+def _resolve_plan_candidate(value: PlanCandidate | Awaitable[PlanCandidate]) -> PlanCandidate:
+    if not inspect.isawaitable(value):
+        return value
+    return cast(PlanCandidate, resolve_awaitable(value))
 
 
 def _carry_forward_completed_subgoals(

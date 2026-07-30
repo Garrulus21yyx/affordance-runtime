@@ -16,12 +16,19 @@ from typing import Awaitable, Protocol
 
 from affordance_runtime.simplified_runtime_contracts import (
     SourceReference,
+    StateCriterion,
     StepProgressView,
     StepSpec,
     TaskPlanView,
 )
 from affordance_runtime.task_intake import OperationClass
-from affordance_runtime.task_planning import SubgoalSpec, TaskPlan, TaskPlanSource
+from affordance_runtime.task_planning import (
+    SubgoalOutcome,
+    SubgoalOutcomeRelation,
+    SubgoalSpec,
+    TaskPlan,
+    TaskPlanSource,
+)
 
 _FORBIDDEN_IMPLEMENTATION_DETAIL = re.compile(
     r"(?:\bselector\b|\bxpath\b|\bbackend\b|\bcoordinate\b|\blocator\b|#[-_\w]+|approval_token)",
@@ -91,6 +98,8 @@ class InitialTaskPlanRequest:
     objective: str
     observation_refs: tuple[str, ...]
     remaining_budget_steps: int
+    operation_class: OperationClass = OperationClass.READ_ONLY
+    task_id: str = ""
 
     def __post_init__(self) -> None:
         _validate_request_identity(
@@ -98,7 +107,11 @@ class InitialTaskPlanRequest:
             self.task_revision,
             self.evaluated_at_state_version,
         )
+        if self.task_id:
+            _require_nonblank("task_id", self.task_id)
         _require_nonblank("objective", self.objective)
+        if not isinstance(self.operation_class, OperationClass):
+            raise ValueError("unsupported operation class")
         _require_unique_nonblank("observation refs", self.observation_refs)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")
@@ -132,6 +145,7 @@ class TaskPlanRevisionRequest:
     trigger: TaskPlanRevisionTrigger
     observation_refs: tuple[str, ...]
     remaining_budget_steps: int
+    operation_class: OperationClass = OperationClass.READ_ONLY
 
     def __post_init__(self) -> None:
         _validate_request_identity(
@@ -149,6 +163,8 @@ class TaskPlanRevisionRequest:
             raise ValueError("previous progress plan version mismatch")
         if self.trigger.affected_step_id and self.trigger.affected_step_id not in self.previous_plan.step_ids:
             raise ValueError("affected step must exist in previous plan")
+        if not isinstance(self.operation_class, OperationClass):
+            raise ValueError("unsupported operation class")
         _require_unique_nonblank("observation refs", self.observation_refs)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")
@@ -286,6 +302,25 @@ class TaskPlanAuthorityBinder:
         )
 
 
+@dataclass(frozen=True)
+class TaskPlanAuthority:
+    binder: TaskPlanAuthorityBinder = TaskPlanAuthorityBinder()
+
+    def admit_initial(
+        self,
+        request: InitialTaskPlanRequest,
+        candidate: PlanCandidate,
+    ) -> TaskPlanDecision:
+        return TaskPlanDecision.accepted(self.binder.bind_initial(request, candidate))
+
+    def admit_revision(
+        self,
+        request: TaskPlanRevisionRequest,
+        candidate: PlanCandidate,
+    ) -> TaskPlanDecision:
+        return TaskPlanDecision.accepted(self.binder.bind_revision(request, candidate))
+
+
 class TaskPlanGeneratorPort(Protocol):
     def generate(
         self,
@@ -306,25 +341,50 @@ def _bind_task_plan(
 ) -> TaskPlan:
     return TaskPlan(
         plan_id=plan_id,
-        task_id=draft.task_spec_identity,
+        task_id=getattr(request, "task_id", "") or draft.task_spec_identity,
         task_revision=draft.task_revision,
         plan_version=plan_version,
         supersedes_plan_id=supersedes_plan_id,
         based_on_state_version=request.evaluated_at_state_version,
         generated_by=TaskPlanSource(draft.generated_by.value),
-        subgoals=tuple(_subgoal_from_step(step) for step in draft.steps),
+        subgoals=tuple(_subgoal_from_step(step, request.operation_class) for step in draft.steps),
         assumptions=draft.assumptions,
     )
 
 
-def _subgoal_from_step(step: StepSpec) -> SubgoalSpec:
+def _subgoal_from_step(step: StepSpec, task_operation: OperationClass) -> SubgoalSpec:
+    criterion = step.completion_criteria[0]
+    outcome = (
+        SubgoalOutcome(
+            subject=criterion.subject,
+            relation=SubgoalOutcomeRelation(criterion.relation.value),
+            value="" if criterion.expected_value is None else str(criterion.expected_value),
+        )
+        if isinstance(criterion, StateCriterion)
+        else None
+    )
     return SubgoalSpec(
         subgoal_id=step.step_id,
-        objective=step.objective,
+        objective=outcome.description() if outcome is not None else step.objective,
         depends_on=step.depends_on,
-        success_criteria=tuple(criterion.criterion_id for criterion in step.completion_criteria),
+        success_criteria=(
+            (outcome.description(),)
+            if outcome is not None
+            else tuple(criterion.criterion_id for criterion in step.completion_criteria)
+        ),
         evidence_requirements=tuple(ref.source_unit_id for ref in step.source_refs),
-        operation_class=OperationClass.READ_ONLY,
+        operation_class=(
+            OperationClass.READ_ONLY
+            if outcome is None
+            or outcome.relation
+            in {
+                SubgoalOutcomeRelation.IS_VISIBLE,
+                SubgoalOutcomeRelation.IS_ABSENT,
+                SubgoalOutcomeRelation.IS_AVAILABLE,
+            }
+            else task_operation
+        ),
+        outcome=outcome,
     )
 
 

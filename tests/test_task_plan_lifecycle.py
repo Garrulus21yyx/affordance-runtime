@@ -1,10 +1,21 @@
 from dataclasses import dataclass, replace
+from inspect import getsource
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
+from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion, StepSpec
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskSpec,
+)
+from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
 from affordance_runtime.task_plan_lifecycle import (
     TaskPlanLifecycle,
     TaskPlanReplacementReason,
@@ -31,6 +42,51 @@ class Limits:
     max_effectful_actions: int = 5
 
 
+class CandidateInitialPlanner:
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        task = context.task_spec
+        return PlanCandidate(
+            task_spec_identity=task.identity,
+            task_revision=task.revision,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="candidate-initial-test",
+            steps=(
+                StepSpec(
+                    step_id="setting-saved",
+                    objective="setting is saved",
+                    completion_criteria=(
+                        StateCriterion(
+                            criterion_id="criterion:setting-saved",
+                            source_refs=(
+                                SourceReference(
+                                    source_id="request-lifecycle",
+                                    source_unit_id="saved state is independently observed",
+                                    claim_id="claim-save-setting",
+                                ),
+                            ),
+                            subject="setting",
+                            relation=TaskObligationRelation.IS_COMPLETED,
+                        ),
+                    ),
+                    source_refs=(
+                        SourceReference(
+                            source_id="request-lifecycle",
+                            source_unit_id="saved state is independently observed",
+                            claim_id="claim-save-setting",
+                        ),
+                    ),
+                ),
+            ),
+            source_refs=(
+                SourceReference(
+                    source_id="request-lifecycle",
+                    source_unit_id="request-lifecycle:claim-save-setting",
+                    claim_id="claim-save-setting",
+                ),
+            ),
+        )
+
+
 def _task() -> TaskSpec:
     return TaskSpec(
         task_id="lifecycle-task",
@@ -42,6 +98,39 @@ def _task() -> TaskSpec:
         evidence_requirements=("saved state is independently observed",),
         requested_capabilities=("settings.write",),
         source_request_ref="request-lifecycle",
+    )
+
+
+def _obligation_task() -> TaskSpec:
+    claim = SourcedTaskClaim(
+        claim_id="claim-save-setting",
+        kind=TaskClaimKind.EFFECT,
+        statement="setting is saved",
+        source_ref="request-lifecycle",
+    )
+    return TaskSpec(
+        task_id="lifecycle-task",
+        revision=1,
+        objective="Save the selected setting",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("setting",),
+        success_criteria=("setting is saved",),
+        evidence_requirements=("saved state is independently observed",),
+        requested_capabilities=("settings.write",),
+        source_request_ref="request-lifecycle",
+        source_claims=(claim,),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="setting-saved",
+                kind=TaskObligationKind.EFFECT,
+                subject="setting",
+                relation=TaskObligationRelation.IS_COMPLETED,
+                claim_ids=(claim.claim_id,),
+                evidence_requirements=("saved state is independently observed",),
+                blocking=True,
+                terminal=True,
+            ),
+        ),
     )
 
 
@@ -80,6 +169,29 @@ def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> N
     assert state.activate_next_subgoal() == task.objective
     assert lifecycle.active_subgoal_spec(state) == transition.plan.subgoals[0]
     assert not lifecycle.completed(state)
+
+
+def test_lifecycle_initial_plan_uses_deterministic_authority_admission() -> None:
+    task = _obligation_task()
+    snapshot = _snapshot()
+    first_state = StateKernel(task_id=task.task_id, goal=task.objective)
+    second_state = StateKernel(task_id=task.task_id, goal=task.objective)
+    first_state.remember_observation(snapshot.observation)
+    second_state.remember_observation(snapshot.observation)
+    lifecycle = TaskPlanLifecycle(CandidateInitialPlanner())
+
+    first = lifecycle.propose_initial(task, first_state, snapshot, Limits())
+    second = lifecycle.propose_initial(task, second_state, snapshot, Limits())
+
+    assert first.validation.status == TaskPlanValidationStatus.ACCEPT
+    assert second.validation.status == TaskPlanValidationStatus.ACCEPT
+    assert first.plan.plan_id == second.plan.plan_id
+    assert first.plan.plan_version == 1
+    assert first.plan.supersedes_plan_id == ""
+    assert first.plan.based_on_state_version == first_state.version
+    text = getsource(TaskPlanLifecycle.propose_initial)
+    assert "admit_initial" in text
+    assert "_resolve_task_plan(self.planner.plan(context))" not in text
 
 
 def test_lifecycle_projects_bounded_current_state_without_password_value() -> None:
