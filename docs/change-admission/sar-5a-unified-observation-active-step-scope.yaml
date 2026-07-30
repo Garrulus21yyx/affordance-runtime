@@ -1,0 +1,55 @@
+slice_id: sar-5a-unified-observation-active-step-scope
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: 9c85df7b6796c61d769532a2918120dcf5a38e51
+change_type: active_step_scope_foundation
+task_execution_semantics_changed: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+planner_contract_changed: false
+provider_prompt_or_schema_changed: false
+benchmark_adapter_changed: false
+pr_breadth: not_required
+
+single_primary_owner:
+  Unified observation projection and active-step semantic proposal scope evaluation
+
+included:
+  - add UnifiedObservationView and UnifiedObservationTarget as immutable target-centric observation contracts
+  - add ActiveStepScope as a pure proposal scope evaluator for active-step targets
+  - add stale task/state/snapshot identity checks to the scope evaluator
+  - add architecture gate coverage as strict authority-free collaborators
+
+excluded:
+  - Coordinator proposal gate hookup
+  - PlannerContext provider-path retirement
+  - PlanningRequestBuilder observation replacement
+  - ActionContract binding changes
+  - Executor or verifier changes
+  - StateKernel mutation
+  - TaskProgress authority cutover
+  - finish authority changes
+  - PR breadth or promotion claim
+
+remaining_sar_5_work:
+  - project UnifiedObservationView in the standard PlanningRequest builder
+  - wire ActiveStepScope into pre-contract proposal admission
+  - prove provider payload equivalence or explicitly rerun PR breadth if payload changes
+  - retire legacy terminal/current-state scope checks from the default path after cutover
+
+validation:
+  focused_active_step_scope_tests: pass
+  focused_unified_observation_tests: pass
+  architecture_tests: pass
+  full_pytest: pass
+  ruff: pass
+  mypy: pass
+  uv_build: pass
+  diff_check: pass
+
+closure_status: local_partial_candidate
+remote_ci_evidence: absent
+promotion_status: held
+next_slice_after_closure: sar-5b-active-step-scope-runtime-hookup

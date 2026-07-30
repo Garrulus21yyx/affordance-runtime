@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | The commit containing this record (`feat: add planner response serialization foundation`) carries SAR-4A: closed semantic PlannerResponse contracts and a direct PlanningRequest-to-provider-message serializer. Legacy PlannerDecision, PlannerContext, production provider payloads, Coordinator control flow, StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | The commit containing this record carries SAR-5A: immutable target-centric UnifiedObservation contracts and a pure ActiveStepScope proposal scope evaluator. Coordinator proposal gating, PlannerContext provider-path retirement, PlanningRequestBuilder observation replacement, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -343,11 +343,11 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-4A PlannerResponse and provider serialization is active after SAR-3E local closure; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-5A UnifiedObservation and ActiveStepScope foundation is active after SAR-4A local closure; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-4a-planner-response-and-provider-serialization
+  slice: sar-5a-unified-observation-active-step-scope
   revision: current_record_commit
   status: local_partial_candidate
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
@@ -375,6 +375,7 @@ active_local_repair:
   sar_3d_record: docs/change-admission/sar-3d-taskplanauthority-replacement-cutover.yaml
   sar_3e_record: docs/change-admission/sar-3e-plan-candidate-naming-retirement.yaml
   sar_4a_record: docs/change-admission/sar-4a-planner-response-and-provider-serialization.yaml
+  sar_5a_record: docs/change-admission/sar-5a-unified-observation-active-step-scope.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -386,9 +387,11 @@ active_local_repair:
   taskplan_generator_change: unchanged_after_plan_candidate_naming_retirement
   planner_response_change: closed_response_union_foundation_only
   provider_serialization_change: direct_serializer_foundation_only
+  unified_observation_change: target_centric_contract_foundation_only
+  active_step_scope_change: pure_scope_evaluator_foundation_only
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-4b-provider-payload-cutover-or-sar-5-active-step-scope-foundation
+  next_runtime_slice: sar-5b-active-step-scope-runtime-hookup
   promotion_status: held
 
 attribution_classification:

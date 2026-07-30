@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import pytest
+
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
+from affordance_runtime.simplified_runtime_contracts import (
+    SourceReference,
+    StateCriterion,
+    StepActivityStatus,
+    StepSpec,
+)
+
+
+def _source() -> SourceReference:
+    return SourceReference(source_id="source:user", source_unit_id="unit:1")
+
+
+def _criterion(subject: str) -> StateCriterion:
+    return StateCriterion(
+        criterion_id=f"criterion:{subject}",
+        source_refs=(_source(),),
+        subject=subject,
+        relation=CriterionRelation.EQUALS,
+        expected_value="Alice",
+        evidence_policy=EvidencePolicy(
+            minimum_strength=EvidenceStrength.INDEPENDENT,
+            allowed_source_kinds=("dom_state",),
+        ),
+    )
+
+
+def _step() -> StepSpec:
+    return StepSpec(
+        step_id="step:name",
+        objective="Type Alice into Name",
+        completion_criteria=(_criterion("semantic:name"),),
+        source_refs=(_source(),),
+    )
+
+
+def _proposal(target_id: str) -> PlannerProposal:
+    return PlannerProposal(
+        proposal_id=f"proposal:{target_id}",
+        based_on_task_revision=1,
+        based_on_state_version=1,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.TYPE_TEXT,
+        target_affordance_id=target_id,
+        parameters={"text": "Alice"},
+        expected_effects=("Name equals Alice",),
+    )
+
+
+def test_active_step_scope_allows_current_step_target() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope.from_active_step(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        step=_step(),
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    decision = scope.evaluate(_proposal("semantic:name"))
+
+    assert decision.allowed is True
+    assert decision.reason_code == "within_active_step_scope"
+
+
+def test_active_step_scope_blocks_cross_step_target() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope.from_active_step(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        step=_step(),
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    decision = scope.evaluate(_proposal("semantic:submit"))
+
+    assert decision.allowed is False
+    assert decision.reason_code == "target_outside_active_step"
+    assert decision.blocking_step_id == "step:name"
+
+
+def test_active_step_scope_rejects_stale_proposal_identity() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope.from_active_step(
+        task_revision=2,
+        evaluated_at_state_version=4,
+        snapshot_id="snapshot-2",
+        step=_step(),
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    stale = PlannerProposal(
+        proposal_id="proposal:stale",
+        based_on_task_revision=1,
+        based_on_state_version=4,
+        snapshot_id="snapshot-2",
+        action_kind=PlannerActionKind.FINISH,
+    )
+
+    decision = scope.evaluate(stale)
+
+    assert decision.allowed is False
+    assert decision.reason_code == "stale_task_revision"
+
+
+def test_active_step_scope_does_not_permit_effectful_action_without_active_step() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    scope = ActiveStepScope.no_active_step(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        activity_status=StepActivityStatus.COMPLETED,
+    )
+
+    decision = scope.evaluate(_proposal("semantic:name"))
+
+    assert decision.allowed is False
+    assert decision.reason_code == "no_active_step"
+
+
+def test_active_step_scope_requires_active_status_for_active_step() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    with pytest.raises(ValueError, match="active status"):
+        ActiveStepScope.from_active_step(
+            task_revision=1,
+            evaluated_at_state_version=1,
+            snapshot_id="snapshot-1",
+            step=_step(),
+            activity_status=StepActivityStatus.READY_NOT_ACTIVATED,
+        )
