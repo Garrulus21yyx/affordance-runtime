@@ -161,6 +161,7 @@ EXECUTION_COMMIT_MUTATIONS = {
 
 ALLOWED_STATE_MUTATION_MODULES = {
     "coordinator.py",
+    "runtime_terminal.py",
     "runtime.py",
 }
 
@@ -1402,6 +1403,28 @@ def test_default_planning_request_path_does_not_import_terminal_readiness_framew
     assert "TerminalReadinessEvaluator" not in constraints
     assert "TerminalEffectBindingResolver" not in constraints
     assert "narrow_terminal_candidates" not in constraints
+
+
+def test_run_sync_does_not_inline_planner_done_finish_authority() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    source = ast.get_source_segment(
+        (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"),
+        run_sync,
+    )
+    assert source is not None
+    assert "if decision.done:" not in source
+    assert "TaskPlanStoppedIncomplete" not in source
+    assert "commit_planner_terminal_decision" in source
 
 
 def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:

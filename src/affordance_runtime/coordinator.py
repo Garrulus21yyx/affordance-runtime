@@ -101,7 +101,7 @@ from affordance_runtime.runtime_evidence import (
     verification_confirms_effect_absent,
     verification_satisfies_effect,
 )
-from affordance_runtime.runtime_terminal import is_safe_incomplete_terminal
+from affordance_runtime.runtime_terminal import commit_planner_terminal_decision
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
@@ -943,58 +943,37 @@ class RunCoordinator:
                     kind=RecoveryCommandKind.REPLAN_STEP,
                     plan_or_route_ref=f"planner-decision:state:{state.version}",
                 )
-            if decision.done:
-                if state.task_plan is not None and not TaskPlanLifecycle.completed(state):
-                    if is_safe_incomplete_terminal(decision, state):
-                        parent = trace.add(
-                            "TaskPlanStoppedIncomplete",
-                            {
-                                "state": state.phase,
-                                "task_plan_id": state.task_plan.plan_id,
-                                "result_status": str(decision.result.get("status") or ""),
-                                "reason": decision.reason,
-                            },
-                            parents=[parent.id],
-                        )
-                    else:
-                        parent = trace.add(
-                            "PlannerProposalRejected",
-                            {
-                                "state": state.phase,
-                                "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                                "reason": "planner cannot finish before verifier-backed subgoal completion",
-                            },
-                            parents=[parent.id],
-                        )
-                        _recovery_command, parent = self._recover_phase_failure(
-                            envelope,
-                            state,
-                            trace,
-                            parent,
-                            phase=FailurePhase.PROPOSAL_VALIDATION,
-                            failure_class=FailureClass.VALIDATION,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                            message="planner cannot finish before verifier-backed subgoal completion",
-                            available_commands=frozenset({RecoveryCommandKind.ABORT}),
-                            snapshot=snapshot,
-                            recoverable=False,
-                        )
-                        return self._finish(
-                            envelope,
-                            state,
-                            trace,
-                            RuntimeStep.ABORTED,
-                            parent,
-                            RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                            latest_verification,
-                        )
-                state.final_result = dict(decision.result)
-                state.transition(RuntimeStep.DONE.value)
-                parent = trace.add(
-                    "TaskCompleted",
-                    {"state": state.phase, "result": decision.result},
-                    parents=[parent.id],
+            terminal_commit = commit_planner_terminal_decision(
+                decision=decision,
+                state=state,
+                trace=trace,
+                parent=parent,
+            )
+            parent = terminal_commit.parent
+            if terminal_commit.rejected:
+                _recovery_command, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=FailurePhase.PROPOSAL_VALIDATION,
+                    failure_class=FailureClass.VALIDATION,
+                    error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    message=terminal_commit.message,
+                    available_commands=frozenset({RecoveryCommandKind.ABORT}),
+                    snapshot=snapshot,
+                    recoverable=False,
                 )
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    RuntimeStep.ABORTED,
+                    parent,
+                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    latest_verification,
+                )
+            if terminal_commit.completed:
                 return self._finish(envelope, state, trace, RuntimeStep.DONE, parent, None, latest_verification)
             contract = decision.contract
             if decision.proposal is not None and not decision.proposal.requires_clarification:
