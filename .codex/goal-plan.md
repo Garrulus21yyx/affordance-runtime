@@ -1172,3 +1172,14 @@ delivery claims.
   contract gates passed 168/168; changed-file Ruff and core mypy passed.
   Coordinator is now 1748 lines, `run_sync()` is 806 lines, and RunCoordinator
   remains at 17 methods. SAR-9 full phase extraction remains incomplete.
+- Started SAR-9L PerceptionPhase extraction after
+  `e9d67730a8da44fd21e6b94a9c908bc10b22e8ef`. Added
+  `perception_phase.PerceptionPhase`, moved observation capture,
+  ObservationCaptured trace projection, observation artifact indexing, source
+  arbitration, targeted perception fulfillment, pending post-state recovery
+  inspection, pending observation recovery completion, and perception-block
+  terminal handling out of `RunCoordinator.run_sync`. Focused SAR-9A-L plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 169/169;
+  changed-file Ruff and core mypy passed. Coordinator is now 1594 lines,
+  `run_sync()` is 651 lines, and RunCoordinator remains at 17 methods. SAR-9
+  full phase extraction remains incomplete.

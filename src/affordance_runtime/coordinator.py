@@ -40,6 +40,7 @@ from affordance_runtime.failure_envelope import (
 )
 from affordance_runtime.failure_owner_flow import commit_non_runtime_failure_owner_handoff
 from affordance_runtime.model_port import ProviderModelError
+from affordance_runtime.perception_phase import PerceptionPhase
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
 from affordance_runtime.planning import (
@@ -72,7 +73,6 @@ from affordance_runtime.route_calibration import (
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_evidence import (
     semantic_progress_fingerprint,
-    verification_confirms_effect_absent,
 )
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
@@ -110,6 +110,7 @@ OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
     }
 )
 PROGRESS_PHASE = ProgressPhase()
+PERCEPTION_PHASE = PerceptionPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
@@ -261,198 +262,43 @@ class RunCoordinator:
                 return self._finish(
                     envelope, state, trace, RuntimeStep.FAILED, parent, budget_error, latest_verification
                 )
-            if state.phase in {RuntimeStep.CREATED.value, RuntimeStep.RECOVERING.value}:
-                state.transition(RuntimeStep.OBSERVING.value)
-            try:
-                snapshot = self.perception_session.capture(
-                    envelope,
-                    state,
-                    state.observation_count + 1,
-                )
-            except Exception as exc:
-                if not self.features.recovery:
-                    state.transition(RuntimeStep.FAILED.value)
-                    parent = trace.add(
-                        "ObservationFailed",
-                        {
-                            "state": state.phase,
-                            "error_code": RuntimeErrorCode.PRECONDITION_FAILED.value,
-                            "reason": f"{type(exc).__name__}: {exc}"[:500],
-                        },
-                        parents=[parent.id] if parent else None,
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.FAILED,
-                        parent,
-                        RuntimeErrorCode.PRECONDITION_FAILED,
-                        latest_verification,
-                    )
-                if parent is None:
-                    raise ValueError("observation recovery requires a trace parent")
-                recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.OBSERVATION,
-                    failure_class=FailureClass.INTERNAL,
-                    error_code=RuntimeErrorCode.PRECONDITION_FAILED,
-                    message=f"{type(exc).__name__}: {exc}"[:500],
-                    available_commands=frozenset(
-                        {
-                            RecoveryKind.REOBSERVE,
-                            RecoveryKind.ABORT,
-                        }
-                    ),
-                )
-                if recovery_kind == RecoveryKind.REOBSERVE:
-                    continue
+            assert parent is not None
+            perception = PERCEPTION_PHASE.run(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                perception_session=self.perception_session,
+                contract_execution_loop=self.contract_execution_loop,
+                recovery_phase=self.recovery_phase,
+                task_skill_runtime=self.task_skill_runtime,
+                recovery_enabled=self.features.recovery,
+                pending_recovery_kind=_pending_recovery_kind,
+                task_skill_progress_for=_task_skill_progress,
+                write_observation=self._write_observation,
+                index_artifact=self._index,
+                index_paths=self._index_paths,
+                trace_source_arbitration=self._trace_source_arbitration,
+                fulfill_targeted_perception=self._fulfill_targeted_perception,
+                recover_phase_failure=self._recover_phase_failure,
+            )
+            parent = perception.parent
+            if perception.latest_verification is not None:
+                latest_verification = perception.latest_verification
+            if perception.continue_observing:
+                continue
+            if perception.terminal is not None:
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep(state.phase),
+                    perception.terminal.status,
                     parent,
-                    RuntimeErrorCode.PRECONDITION_FAILED,
+                    perception.terminal.error_code,
                     latest_verification,
                 )
-            state.remember_observation(snapshot.observation)
-            observation_ref = self._write_observation(envelope.task_id, state.observation_count, snapshot)
-            parent = trace.add(
-                "ObservationCaptured",
-                {
-                    "state": state.phase,
-                    "snapshot_id": snapshot.observation.snapshot_id,
-                    "page_revision": snapshot.observation.page_revision,
-                    "environment_revision": snapshot.observation.environment_revision,
-                    "url": snapshot.observation.url,
-                    "artifact_refs": ([observation_ref.path] if observation_ref else [])
-                    + list(snapshot.observation.artifact_refs),
-                    "perception_requirements": snapshot.observation.metadata.get("perception_requirements"),
-                    "source_observations": [
-                        {
-                            "source": item.source.value,
-                            "parser_id": item.parser_id,
-                            "observation_epoch_id": item.observation_epoch_id,
-                            "artifact_refs": list(item.artifact_refs),
-                        }
-                        for item in snapshot.source_observations
-                    ],
-                },
-                parents=[parent.id] if parent else None,
-            )
-            self._index(trace, observation_ref)
-            self._index_paths(trace, snapshot.observation.artifact_refs)
-            parent = self._trace_source_arbitration(trace, parent, snapshot, state.phase)
-            snapshot, parent = self._fulfill_targeted_perception(
-                envelope,
-                state,
-                trace,
-                parent,
-                snapshot,
-            )
-            recovered_verification = None
-            recovery_inspection_failed = False
-            if _pending_recovery_kind(state) == RecoveryKind.INSPECT_POST_STATE:
-                contract = state.current_contract
-                execution_receipt = state.receipts[-1] if state.receipts else None
-                if contract is None or execution_receipt is None:
-                    raise ValueError(
-                        "post-state recovery inspection requires contract and receipt lineage"
-                    )
-                recovered_verification = self.contract_execution_loop.verify(
-                    contract,
-                    execution_receipt,
-                    snapshot.observation,
-                    structural_verification_enabled=True,
-                    disabled_reason="",
-                )
-                state.latest_verification = recovered_verification
-                parent = trace.add(
-                    "RecoveryStateInspected",
-                    {
-                        "state": state.phase,
-                        "verification": recovered_verification.status.value,
-                        "snapshot_id": snapshot.observation.snapshot_id,
-                        "artifact_refs": snapshot.observation.artifact_refs,
-                    },
-                    parents=[parent.id],
-                )
-                recovery_skill_progress = (
-                    _task_skill_progress(self.task_skill_runtime, state)
-                    if self.task_skill_runtime is not None
-                    else None
-                )
-                changed_skill_fallthrough = bool(
-                    verification_confirms_effect_absent(recovered_verification)
-                    and recovery_skill_progress is not None
-                    and not recovery_skill_progress.active
-                )
-                recovery_inspection_failed = (
-                    not recovered_verification.passed and not changed_skill_fallthrough
-                )
-            parent, recovery_must_stop = self.recovery_phase.complete_pending_observation(
-                state,
-                trace,
-                parent,
-                snapshot,
-                verification=recovered_verification,
-                post_state_inspection_failed=recovery_inspection_failed,
-            )
-            if recovered_verification is not None:
-                latest_verification = recovered_verification
-            if recovery_must_stop:
-                state.transition(RuntimeStep.ABORTED.value)
-                return self._finish(
-                    envelope,
-                    state,
-                    trace,
-                    RuntimeStep.ABORTED,
-                    parent,
-                    RuntimeErrorCode.PRECONDITION_FAILED,
-                    latest_verification,
-                )
-            if (
-                state.perception_resolution is not None
-                and state.perception_resolution.blocks_effectful_action
-            ):
-                _recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.FUSION,
-                    failure_class=FailureClass.SOURCE_CONFLICT,
-                    error_code=RuntimeErrorCode.PRECONDITION_FAILED,
-                    message=state.perception_resolution.reason,
-                    available_commands=frozenset({RecoveryKind.ABORT}),
-                    snapshot=snapshot,
-                    recoverable=False,
-                )
-                parent = trace.add(
-                    (
-                        "PerceptionBlockedEffectfulRepeat"
-                        if state.receipts
-                        else "PerceptionBlockedEffectfulAction"
-                    ),
-                    {
-                        "state": state.phase,
-                        "resolution": state.perception_resolution.model_dump(mode="json"),
-                    },
-                    parents=[parent.id],
-                )
-                return self._finish(
-                    envelope,
-                    state,
-                    trace,
-                    RuntimeStep.ABORTED,
-                    parent,
-                    RuntimeErrorCode.PRECONDITION_FAILED,
-                    latest_verification,
-                )
+            assert perception.snapshot is not None
+            snapshot = perception.snapshot
             progress_commit = PROGRESS_PHASE.commit_post_observation(
                 envelope.task_spec, state, snapshot, self.budget, trace, parent
             )
