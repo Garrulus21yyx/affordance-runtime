@@ -22,6 +22,10 @@ from affordance_runtime.recovery_commands import (
     RecoveryReceipt,
 )
 from affordance_runtime.recovery_coordinator import RecoverySelectionContext
+from affordance_runtime.recovery_decision_compatibility import (
+    legacy_command_from_recovery_decision,
+)
+from affordance_runtime.recovery_protocol import classify_failure
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import CompilationResult, CompilationStatus, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
@@ -147,30 +151,36 @@ class GeneralistTaskPipeline:
             recoverable=clarification,
             progress_fingerprint="intake:uncompiled",
         )
-        plan = self.coordinator.recovery_coordinator.plan(
-            failure,
-            RecoverySelectionContext(
-                available_commands=(
-                    frozenset(
-                        {
-                            RecoveryCommandKind.CLARIFY_INTENT,
-                            RecoveryCommandKind.ASK_USER,
-                            RecoveryCommandKind.ABORT,
-                        }
-                    )
-                    if clarification
-                    else frozenset({RecoveryCommandKind.ABORT})
-                ),
-                current_attempt_fingerprint=failure.progress_fingerprint,
-                user_question=message,
-                accepted_profile_digest=self.coordinator.runtime_profile_digest,
-                accepted_profile_artifact_ids=frozenset(
-                    self.coordinator.loaded_profile_artifact_ids
-                ),
+        recovery_context = RecoverySelectionContext(
+            available_commands=(
+                frozenset(
+                    {
+                        RecoveryCommandKind.CLARIFY_INTENT,
+                        RecoveryCommandKind.ASK_USER,
+                        RecoveryCommandKind.ABORT,
+                    }
+                )
+                if clarification
+                else frozenset({RecoveryCommandKind.ABORT})
             ),
+            current_attempt_fingerprint=failure.progress_fingerprint,
+            user_question=message,
+            accepted_profile_digest=self.coordinator.runtime_profile_digest,
+            accepted_profile_artifact_ids=frozenset(
+                self.coordinator.loaded_profile_artifact_ids
+            ),
+        )
+        classification = classify_failure(failure)
+        decision = self.coordinator.recovery_coordinator.decide(
+            failure,
+            classification,
+            recovery_context,
             current_state_version=0,
         )
-        command = plan.commands[0]
+        command = legacy_command_from_recovery_decision(
+            decision,
+            effect_status=failure.effect_status,
+        )
         parent = trace.nodes[-1] if trace.nodes else None
         parent = trace.add(
             "FailureDetected",
@@ -179,7 +189,21 @@ class GeneralistTaskPipeline:
         )
         parent = trace.add(
             "RecoveryStrategySelected",
-            {"state": "intake", "plan": plan.model_dump(mode="json")},
+            {
+                "state": "intake",
+                "decision": {
+                    "decision_id": decision.decision_id,
+                    "failure_id": decision.failure_id,
+                    "based_on_state_version": decision.based_on_state_version,
+                    "strategy_key": decision.strategy_key,
+                    "kind": decision.kind.value,
+                    "reason_code": decision.reason_code,
+                    "reentry_phase": decision.reentry_phase.value,
+                    "changed_dimensions": [
+                        item.value for item in decision.changed_dimensions
+                    ],
+                },
+            },
             parents=[parent.id],
         )
         parent = trace.add(

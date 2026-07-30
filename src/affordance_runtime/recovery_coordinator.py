@@ -15,12 +15,7 @@ from affordance_runtime.failure_envelope import (
 from affordance_runtime.recovery_commands import (
     RecoveryChangeDimension,
     RecoveryCommandKind,
-    RecoveryPlan,
-    RecoveryPlanValidator,
     RecoveryReentryPhase,
-)
-from affordance_runtime.recovery_decision_compatibility import (
-    legacy_plan_from_recovery_decision,
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassification,
@@ -67,64 +62,6 @@ class RecoverySelectionContext:
 @dataclass(frozen=True)
 class RecoveryCoordinator:
     """Select and validate one changed strategy without mutating Runtime state."""
-
-    validator: RecoveryPlanValidator = RecoveryPlanValidator()
-
-    def plan(
-        self,
-        failure: FailureEnvelope,
-        context: RecoverySelectionContext,
-        *,
-        current_state_version: int,
-    ) -> RecoveryPlan:
-        classification = classify_failure(
-            failure,
-            FailureClassificationFacts(
-                available_action_count=context.available_action_count,
-                user_input_required=context.user_input_required,
-            ),
-        )
-        attempted = set(failure.attempted_strategy_ids)
-        ordered = _strategy_order(failure, classification, context)
-        for kind in ordered:
-            strategy_id = _strategy_id(kind, failure.semantic_family_key)
-            if strategy_id in attempted:
-                continue
-            if _would_oscillate(context.history, failure.semantic_family_key, strategy_id):
-                continue
-            decision = _decision_for(
-                kind,
-                failure,
-                classification,
-                context,
-                current_state_version=current_state_version,
-                strategy_id=strategy_id,
-            )
-            if decision is None or not decision.budget_cost.fits(failure.remaining_budgets):
-                continue
-            plan = legacy_plan_from_recovery_decision(
-                decision,
-                failure,
-                effect_status=failure.effect_status,
-                profile_digest=context.accepted_profile_digest,
-                profile_artifact_id=(
-                    context.preferred_profile_artifact_id
-                    if kind in context.preferred_profile_commands
-                    else ""
-                ),
-                gap_ids=context.gap_ids,
-            )
-            try:
-                return self.validator.validate(
-                    plan,
-                    failure,
-                    current_state_version=current_state_version,
-                    available_commands=context.available_commands,
-                    accepted_profile_artifact_ids=context.accepted_profile_artifact_ids,
-                )
-            except ValueError:
-                continue
-        raise ValueError("no safe changed recovery strategy is available")
 
     def decide(
         self,

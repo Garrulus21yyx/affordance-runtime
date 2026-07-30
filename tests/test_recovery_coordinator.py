@@ -26,6 +26,9 @@ from affordance_runtime.recovery_coordinator import (
     RecoveryHistoryItem,
     RecoverySelectionContext,
 )
+from affordance_runtime.recovery_decision_compatibility import (
+    legacy_plan_from_recovery_decision,
+)
 from affordance_runtime.recovery_protocol import (
     FailureClassificationFacts,
     FailureDisposition,
@@ -36,6 +39,42 @@ from affordance_runtime.recovery_protocol import (
 )
 
 ALL_COMMANDS = frozenset(RecoveryCommandKind)
+
+
+def _decision(
+    failure: FailureEnvelope,
+    context: RecoverySelectionContext,
+    *,
+    current_state_version: int = 3,
+):
+    return RecoveryCoordinator().decide(
+        failure,
+        classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=context.available_action_count,
+                user_input_required=context.user_input_required,
+            ),
+        ),
+        context,
+        current_state_version=current_state_version,
+    )
+
+
+def _plan(
+    failure: FailureEnvelope,
+    context: RecoverySelectionContext,
+    *,
+    current_state_version: int = 3,
+):
+    return legacy_plan_from_recovery_decision(
+        _decision(failure, context, current_state_version=current_state_version),
+        failure,
+        effect_status=failure.effect_status,
+        profile_digest=context.accepted_profile_digest,
+        profile_artifact_id=context.preferred_profile_artifact_id,
+        gap_ids=context.gap_ids,
+    )
 
 
 def _budgets() -> RemainingRecoveryBudgets:
@@ -106,7 +145,7 @@ def test_phase_general_coordinator_selects_safe_primary_strategy() -> None:
     }
 
     for phase, kind in expected.items():
-        plan = RecoveryCoordinator().plan(_failure(phase), _context(), current_state_version=3)
+        plan = _plan(_failure(phase), _context(), current_state_version=3)
         assert plan.commands[0].kind == kind
 
 
@@ -117,7 +156,7 @@ def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
         effect_status=EffectStatus.MAY_HAVE_OCCURRED,
     )
 
-    plan = RecoveryCoordinator().plan(failure, _context(), current_state_version=3)
+    plan = _plan(failure, _context(), current_state_version=3)
 
     assert plan.commands[0].kind == RecoveryCommandKind.INSPECT_POST_STATE
     assert plan.commands[0].changed_dimensions == (RecoveryChangeDimension.EFFECT_STATUS,)
@@ -125,7 +164,7 @@ def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
 
 def test_irreducible_missing_evidence_asks_user_when_no_probe_or_reobserve_exists() -> None:
     failure = _failure(FailurePhase.OBSERVATION)
-    plan = RecoveryCoordinator().plan(
+    plan = _plan(
         failure,
         _context(
             available_commands=frozenset(
@@ -161,7 +200,7 @@ def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_r
     assert classification.disposition == FailureDisposition.RECOVERY
     assert classification.planner_deferral_kind == PlannerDeferralKind.ACTION_SPACE_AVAILABLE
 
-    plan = RecoveryCoordinator().plan(failure, _context(), current_state_version=3)
+    plan = _plan(failure, _context(), current_state_version=3)
 
     assert plan.commands[0].kind == RecoveryCommandKind.COMPACT_CONTEXT
     assert plan.commands[0].kind not in {
@@ -182,7 +221,7 @@ def test_planner_deferral_does_not_default_to_ask_user_when_only_user_is_availab
         }
     )
 
-    plan = RecoveryCoordinator().plan(
+    plan = _plan(
         failure,
         _context(
             available_commands=frozenset(
@@ -324,7 +363,7 @@ def test_retry_and_compensation_contracts_reject_unsafe_shortcuts() -> None:
 
 def test_validator_rejects_stale_unavailable_overbudget_and_unaccepted_profile() -> None:
     failure = _failure(FailurePhase.TASK_PLANNING)
-    plan = RecoveryCoordinator().plan(failure, _context(), current_state_version=3)
+    plan = _plan(failure, _context(), current_state_version=3)
     validator = RecoveryPlanValidator()
 
     with pytest.raises(ValueError, match="stale"):
@@ -364,13 +403,13 @@ def test_validator_rejects_stale_unavailable_overbudget_and_unaccepted_profile()
 
 def test_repeated_strategy_changes_or_stops_and_a_b_oscillation_is_not_reentered() -> None:
     first_failure = _failure(FailurePhase.TASK_PLANNING)
-    first = RecoveryCoordinator().plan(first_failure, _context(), current_state_version=3)
+    first = _plan(first_failure, _context(), current_state_version=3)
     first_id = first.commands[0].strategy_id
     repeated_failure = first_failure.model_copy(
         update={"attempted_strategy_ids": (first_id,)}
     )
 
-    second = RecoveryCoordinator().plan(repeated_failure, _context(), current_state_version=3)
+    second = _plan(repeated_failure, _context(), current_state_version=3)
 
     assert second.commands[0].strategy_id != first_id
     history = (
@@ -380,7 +419,7 @@ def test_repeated_strategy_changes_or_stops_and_a_b_oscillation_is_not_reentered
     oscillating = repeated_failure.model_copy(
         update={"attempted_strategy_ids": (second.commands[0].strategy_id,)}
     )
-    third = RecoveryCoordinator().plan(
+    third = _plan(
         oscillating,
         _context(history=history),
         current_state_version=3,

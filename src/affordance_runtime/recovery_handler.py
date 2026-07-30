@@ -31,6 +31,13 @@ from affordance_runtime.recovery_coordinator import (
     RecoveryHistoryItem,
     RecoverySelectionContext,
 )
+from affordance_runtime.recovery_decision_compatibility import (
+    legacy_plan_from_recovery_decision,
+)
+from affordance_runtime.recovery_protocol import (
+    FailureClassificationFacts,
+    classify_failure,
+)
 from affordance_runtime.verification import VerificationReport
 
 
@@ -227,29 +234,59 @@ class RecoveryHandler:
             available.add(RecoveryCommandKind.COMPENSATE)
         if legacy_decision.action == RecoveryAction.REQUEST_APPROVAL:
             available.add(RecoveryCommandKind.REQUEST_APPROVAL)
-        preferred = (_command_kind_for_legacy(legacy_decision.action),)
-        plan = RecoveryCoordinator().plan(
-            failure,
-            RecoverySelectionContext(
-                available_commands=frozenset(available),
-                current_attempt_fingerprint=request.state_revision,
-                fresh_candidate_id=alternative_id,
-                fresh_route_ref=route_ref,
-                idempotency_key=request.contract.idempotency_key,
-                compensation_contract_id=(
-                    f"compensation:{request.contract.id}"
-                    if request.contract.compensation
-                    else ""
-                ),
-                preferred_profile_commands=preferred,
-                preferred_profile_artifact_id=legacy_decision.profile_artifact_id,
-                accepted_profile_digest=request.accepted_profile_digest,
-                accepted_profile_artifact_ids=frozenset(
-                    request.accepted_profile_artifact_ids
-                ),
-                history=request.recovery_history,
+        legacy_preferred_kind = _command_kind_for_legacy(legacy_decision.action)
+        accepted_profile_artifact_ids = frozenset(request.accepted_profile_artifact_ids)
+        preferred_profile_artifact_id = (
+            legacy_decision.profile_artifact_id
+            if legacy_decision.profile_artifact_id in accepted_profile_artifact_ids
+            else ""
+        )
+        preferred = (
+            (legacy_preferred_kind,)
+            if not legacy_decision.profile_artifact_id or preferred_profile_artifact_id
+            else ()
+        )
+        recovery_context = RecoverySelectionContext(
+            available_commands=frozenset(available),
+            current_attempt_fingerprint=request.state_revision,
+            fresh_candidate_id=alternative_id,
+            fresh_route_ref=route_ref,
+            idempotency_key=request.contract.idempotency_key,
+            compensation_contract_id=(
+                f"compensation:{request.contract.id}"
+                if request.contract.compensation
+                else ""
             ),
+            preferred_profile_commands=preferred,
+            preferred_profile_artifact_id=preferred_profile_artifact_id,
+            accepted_profile_digest=request.accepted_profile_digest,
+            accepted_profile_artifact_ids=accepted_profile_artifact_ids,
+            history=request.recovery_history,
+        )
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=recovery_context.available_action_count,
+                user_input_required=recovery_context.user_input_required,
+            ),
+        )
+        canonical_decision = RecoveryCoordinator().decide(
+            failure,
+            classification,
+            recovery_context,
             current_state_version=request.state_version,
+        )
+        plan = legacy_plan_from_recovery_decision(
+            canonical_decision,
+            failure,
+            effect_status=failure.effect_status,
+            profile_digest=recovery_context.accepted_profile_digest,
+            profile_artifact_id=(
+                recovery_context.preferred_profile_artifact_id
+                if canonical_decision.kind.value == legacy_preferred_kind.value
+                else ""
+            ),
+            gap_ids=recovery_context.gap_ids,
         )
         decision = RecoveryDecision(
             _legacy_action_for_command(plan.commands[0].kind),
