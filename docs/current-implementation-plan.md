@@ -128,7 +128,8 @@ sar_7_full_milestone:
   taskskill_progress_authority_removal: sar_7_5_local_completion_candidate
   odg_and_pending_obligation_state_removal: sar_7_2_local_candidate
   action_dedupe_replacement: sar_7_3_local_candidate
-  required_pr_breadth: not_run
+  required_pr_breadth: failed_at_b077c68
+  behavioral_evidence: docs/evidence/runs/sar-7-pr-breadth-b077c68/
   status: incomplete
 sar_7_1:
   status: local_completion_candidate
@@ -153,9 +154,11 @@ coordinator_assessment:
   methods: 25
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - behavioral SAR-7 review / PR breadth when authorized
+  - SAR-7 PR breadth residual classification
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
+blocked_until:
+  sar_8: clean SAR-7 behavioral gate or explicit re-scope decision
 hard_guardrails:
   - no new foundation-only chain
   - every canonical object requires same-unit legacy deletion

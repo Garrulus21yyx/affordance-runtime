@@ -7,7 +7,7 @@ task_execution_semantics_changed: false
 progress_authority_changed: TaskSkill_progress_removed_from_StateKernel_default_state
 finish_authority_changed: false
 promotion_status: held
-pr_breadth: not_run
+pr_breadth: failed_after_clean_b077c68_rerun
 remote_ci: disabled
 
 included:
@@ -53,6 +53,19 @@ validation:
   mypy: "/home/yang/.venvs/affordance-browsergym-py312/bin/python -m mypy --ignore-missing-imports src => success over 142 source files"
   uv_build: "uv build => passed"
   diff_check: "git diff --check => passed"
+  clean_pr_breadth:
+    command: "/home/yang/.venvs/affordance-browsergym-py312/bin/python scripts/run_browsergym_generalist.py --runtime-python /home/yang/.venvs/affordance-browsergym-py312/bin/python --output /tmp/affordance-sar7-pr-breadth-b077c68-20260730-112545 --llm-profile local --profile pr --planner-profile strict-generalist --seed-count 2 --episode-timeout-s 165 --model-call-timeout-s 10 --max-model-calls 15 --execution-reserve-s 15"
+    evidence: docs/evidence/runs/sar-7-pr-breadth-b077c68/
+    expected: 12
+    observed: 12
+    external_reward_passed: 6
+    external_reward_failed: 6
+    runtime_passed: 6
+    runtime_failed: 6
+    provider_failures: 0
+    invalidated: 0
+    unrun: 0
+    acceptance: failed
 
 status: local_completion_candidate
-next_slice: sar-7-full-local-gate-and-behavioral-review
+next_slice: sar-7-pr-breadth-residual-classification
