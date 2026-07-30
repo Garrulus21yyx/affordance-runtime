@@ -603,7 +603,7 @@ class TaskPlanningContext(StrictModel):
 
 
 @dataclass
-class PlanProgress:
+class TaskProgress:
     """Mutable execution progress, deliberately kept out of TaskPlan."""
 
     active_subgoal_id: str = ""
@@ -644,6 +644,8 @@ class PlanProgress:
         subgoal = next((item for item in plan.subgoals if item.subgoal_id == active_id), None)
         return subgoal is not None and self.action_count_by_subgoal.get(active_id, 0) >= subgoal.max_actions
 
+
+PlanProgress = TaskProgress
 
 class TaskPlanValidationIssue(StrictModel):
     code: str = Field(min_length=1)

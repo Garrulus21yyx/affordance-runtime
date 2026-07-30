@@ -359,7 +359,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-7.2/SAR-7.3 semantic cleanup after SAR-7.1 local completion candidate. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator. SAR-7.1 adds a TaskCompletionVerifier foundation, requires a passed TaskCompletionResult before the success writer, and removes TaskSkill progress commit task-completion requests. SAR-7.2 removes legacy pending-obligation and ODG obligation-progress state from the default StateKernel schema. SAR-7.3 replaces unbounded string action progress with bounded typed recent action outcomes. Full SAR-7 milestone closure still requires canonical TaskProgress cutover and authorized behavioral evidence.
+  current_next_change_admission: SAR-7.4/SAR-7.5 semantic cleanup after SAR-7.1-7.3 local completion candidates. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator. SAR-7.1 adds a TaskCompletionVerifier foundation, requires a passed TaskCompletionResult before the success writer, and removes TaskSkill progress commit task-completion requests. SAR-7.2 removes legacy pending-obligation and ODG obligation-progress state from the default StateKernel schema. SAR-7.3 replaces unbounded string action progress with bounded typed recent action outcomes. SAR-7.4 makes TaskProgress the default StateKernel progress field while keeping PlanProgress as a compatibility alias/property. Full SAR-7 milestone closure still requires TaskSkill progress-state removal and authorized behavioral evidence.
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete
@@ -396,7 +396,7 @@ pr_breadth_latest:
     progress_authority_changed: false
     finish_authority_changed: terminal_success_commit_centralized
   sar_7_full_milestone:
-    canonical_taskprogress_cutover: incomplete
+    canonical_taskprogress_cutover: sar_7_4_partial_default_field_cutover
     independent_task_completion_verifier: sar_7_1_foundation_local_candidate
     taskskill_progress_authority_removal: completion_trigger_removed_in_sar_7_1
     odg_and_pending_obligation_state_removal: sar_7_2_local_completion_candidate
@@ -424,8 +424,15 @@ pr_breadth_latest:
     action_progress_list: removed
     recent_action_outcomes: bounded_typed_index
     legacy_colon_signature: rejected
+  sar_7_4:
+    status: local_completion_candidate
+    record: docs/change-admission/sar-7-4-taskprogress-default-cutover.yaml
+    default_progress_field: task_progress
+    plan_progress: compatibility_alias_and_property
+    legacy_planprogress_class: removed
   mandatory_followups_before_sar_7_full_milestone_completion:
-    - canonical_taskprogress_cutover_or_explicit_rescope
+    - taskskill_progress_state_removal
+    - authorized_behavioral_evidence
   sar_4:
     plannerport_response_contract: complete
     standard_generalist_response_contract: complete
@@ -491,8 +498,8 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-7-2-7-3-semantic-cleanup
-  next_runtime_slice: sar-7-full-local-gate-and-review
+  current_runtime_slice: sar-7-4-taskprogress-default-cutover
+  next_runtime_slice: sar-7-5-taskskill-progress-state-removal
   historical_required_before_sar_7:
     - sar_4_standard_generalist_parent_response_cutover
     - sar_5_default_terminal_framework_deletion

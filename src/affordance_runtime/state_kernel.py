@@ -25,7 +25,7 @@ from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.recovery import RecoveryIncident
 from affordance_runtime.recovery_commands import RecoveryDelta, RecoveryPlan, RecoveryReceipt
 from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
-from affordance_runtime.task_planning import PlanProgress, TaskPlan
+from affordance_runtime.task_planning import TaskPlan, TaskProgress
 from affordance_runtime.verification import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -179,7 +179,7 @@ class StateKernel:
     constraints: dict[str, Any] = field(default_factory=dict)
     subgoals: list[str] = field(default_factory=list)
     task_plan: TaskPlan | None = None
-    plan_progress: PlanProgress | None = None
+    task_progress: TaskProgress | None = None
     evidence: list[str] = field(default_factory=list)
     hidden_state_hypotheses: list[str] = field(default_factory=list)
     disproved_assumptions: list[str] = field(default_factory=list)
@@ -217,6 +217,16 @@ class StateKernel:
     grounding_fallback_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
     task_skill: TaskSkillRunState | None = None
     version: int = 0
+
+    @property
+    def plan_progress(self) -> TaskProgress | None:
+        """Compatibility alias for callers not yet migrated to task_progress."""
+
+        return self.task_progress
+
+    @plan_progress.setter
+    def plan_progress(self, value: TaskProgress | None) -> None:
+        self.task_progress = value
 
     def remember_observation(self, observation: Observation) -> None:
         self.observations.append(observation)
@@ -378,7 +388,7 @@ class StateKernel:
         if plan.task_id != self.task_id:
             raise ValueError("TaskPlan task_id does not match run state")
         self.task_plan = plan
-        self.plan_progress = PlanProgress()
+        self.task_progress = TaskProgress()
         self.subgoals = [item.objective for item in plan.subgoals]
         self.version += 1
 
@@ -438,7 +448,7 @@ class StateKernel:
         if any(replacement_by_id[subgoal_id] != previous_by_id[subgoal_id] for subgoal_id in completed):
             raise ValueError("replanned TaskPlan cannot redefine a verified subgoal")
         self.task_plan = plan
-        self.plan_progress = PlanProgress(
+        self.task_progress = TaskProgress(
             completed_subgoal_ids=list(self.plan_progress.completed_subgoal_ids),
             evidence_by_subgoal={key: list(value) for key, value in self.plan_progress.evidence_by_subgoal.items()},
             task_replan_count=self.plan_progress.task_replan_count + 1,

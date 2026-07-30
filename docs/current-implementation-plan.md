@@ -123,7 +123,7 @@ sar_7:
   progress_authority_changed: false
   finish_authority_changed: terminal_success_commit_centralized
 sar_7_full_milestone:
-  canonical_taskprogress_cutover: incomplete
+  canonical_taskprogress_cutover: sar_7_4_partial_default_field_cutover
   independent_task_completion_verifier: sar_7_1_foundation_local_candidate
   taskskill_progress_authority_removal: completion_trigger_removed_in_sar_7_1
   odg_and_pending_obligation_state_removal: sar_7_2_local_candidate
@@ -146,8 +146,8 @@ coordinator_assessment:
   methods: 26
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - full local SAR-7.1-7.3 validation
-  - review whether remaining canonical TaskProgress cutover is SAR-7 or SAR-9 scope
+  - SAR-7.5 TaskSkill progress-state removal
+  - full local SAR-7.1-7.5 validation
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
 hard_guardrails:
