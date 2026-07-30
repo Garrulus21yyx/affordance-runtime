@@ -238,3 +238,150 @@ def test_planning_request_rejects_raw_runtime_objects() -> None:
             permitted_action_kinds=("finish",),
             raw_state=StateKernel(task_id="task", goal="Do it"),  # type: ignore[call-arg]
         )
+
+
+def test_planning_request_provider_serializer_emits_deterministic_payload_without_context_object() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerAffordanceView,
+        PlannerObservationView,
+        PlannerStepView,
+        PlannerTaskView,
+        PlanningRequest,
+        PlanningRequestIdentity,
+        RuntimeBudgetView,
+    )
+    from affordance_runtime.planning_request_serializer import (
+        PlanningRequestProviderSerializer,
+    )
+
+    request = PlanningRequest(
+        identity=PlanningRequestIdentity(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=7,
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+        ),
+        task=PlannerTaskView(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            objective="Type Alice",
+            constraints=("no navigation",),
+            capabilities=("browser.write",),
+            task_completion_criterion=None,
+            task_completion_projection_status="pending",
+            task_summary=(("objective", "Type Alice"),),
+        ),
+        step=PlannerStepView(
+            plan=None,
+            progress=None,
+            active_step=None,
+            activity_status=StepActivityStatus.NO_PLAN,
+        ),
+        observation=PlannerObservationView(
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+            observed_text="Name",
+            affordances=(
+                PlannerAffordanceView(
+                    target_id="semantic:name",
+                    surface="dom",
+                    role="textbox",
+                    label="Name",
+                    supported_actions=("type_text",),
+                    state={"value": ""},
+                    confidence=0.9,
+                    source_refs=("source:control:1",),
+                ),
+            ),
+            artifact_refs=("artifact:sha256:abc",),
+        ),
+        remaining_budget=RuntimeBudgetView(
+            steps=1,
+            observations=2,
+            recoveries=3,
+            effectful_actions=4,
+            model_calls=5,
+        ),
+        permitted_action_kinds=("type_text",),
+        verified_effects=("criterion:name",),
+    )
+
+    payload = PlanningRequestProviderSerializer(
+        system_prompt="use semantic actions only",
+        prompt_version="sar-4-test",
+    ).serialize(request)
+
+    assert payload.prompt_version == "sar-4-test"
+    assert [item.role for item in payload.messages] == ["system", "user"]
+    assert payload.messages[0].content == "use semantic actions only"
+    assert payload.context["identity"]["snapshot_id"] == "snapshot-1"  # type: ignore[index]
+    assert payload.context["step"]["activity_status"] == "no_plan"  # type: ignore[index]
+    assert payload.context["observation"]["affordances"][0]["target_id"] == "semantic:name"  # type: ignore[index]
+    assert "PlannerContext" not in payload.messages[1].content
+    assert payload.messages[1].content == payload.messages[1].content
+
+
+def test_planning_request_provider_serializer_payload_is_immutable() -> None:
+    from affordance_runtime.planning_request import (
+        PlannerObservationView,
+        PlannerStepView,
+        PlannerTaskView,
+        PlanningRequest,
+        PlanningRequestIdentity,
+        RuntimeBudgetView,
+    )
+    from affordance_runtime.planning_request_serializer import (
+        PlanningRequestProviderSerializer,
+    )
+
+    request = PlanningRequest(
+        identity=PlanningRequestIdentity(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            evaluated_at_state_version=1,
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+        ),
+        task=PlannerTaskView(
+            task_spec_identity="sha256:task",
+            task_revision=1,
+            objective="Finish",
+            constraints=(),
+            capabilities=(),
+            task_completion_criterion=None,
+            task_completion_projection_status="pending",
+        ),
+        step=PlannerStepView(
+            plan=None,
+            progress=None,
+            active_step=None,
+            activity_status=StepActivityStatus.NO_PLAN,
+        ),
+        observation=PlannerObservationView(
+            snapshot_id="snapshot-1",
+            page_revision="page-1",
+            environment_revision="env-1",
+            observed_text="",
+            affordances=(),
+            artifact_refs=(),
+        ),
+        remaining_budget=RuntimeBudgetView(
+            steps=1,
+            observations=1,
+            recoveries=1,
+            effectful_actions=1,
+            model_calls=1,
+        ),
+        permitted_action_kinds=("finish",),
+    )
+
+    payload = PlanningRequestProviderSerializer().serialize(request)
+
+    with pytest.raises(TypeError):
+        payload.messages[0] = payload.messages[1]  # type: ignore[index]
+    with pytest.raises(TypeError):
+        payload.context["task"]["objective"] = "mutated"  # type: ignore[index]

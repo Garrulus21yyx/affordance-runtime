@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-3E PlanCandidate naming retirement active local change after `0a53cc438072e5ad6e3e640ee846fecf93b8811a`: SAR-3D candidate-capable replacement admission is committed and pushed. SAR-3E removes the `TaskPlanDraft` compatibility alias and draft-generator naming from production source, keeping `PlanCandidate` as the only unaccepted plan model name. Legacy TaskPlan/SubgoalSpec/PlanProgress production model cutover, StateKernel schema, progress authority, finish authority, Coordinator control flow, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | The commit containing this record (`feat: add planner response serialization foundation`) carries SAR-4A: closed semantic PlannerResponse contracts and a direct PlanningRequest-to-provider-message serializer. Legacy PlannerDecision, PlannerContext, production provider payloads, Coordinator control flow, StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -343,13 +343,13 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-3E PlanCandidate naming retirement is active after SAR-3D local closure; SAR-4 PlannerResponse and serialization remains next after this bounded deletion; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-4A PlannerResponse and provider serialization is active after SAR-3E local closure; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-3e-plan-candidate-naming-retirement
-  revision: 0a53cc438072e5ad6e3e640ee846fecf93b8811a
-  status: active_local_change
+  slice: sar-4a-planner-response-and-provider-serialization
+  revision: current_record_commit
+  status: local_partial_candidate
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -374,6 +374,7 @@ active_local_repair:
   sar_3c_record: docs/change-admission/sar-3c-taskplanauthority-initial-cutover.yaml
   sar_3d_record: docs/change-admission/sar-3d-taskplanauthority-replacement-cutover.yaml
   sar_3e_record: docs/change-admission/sar-3e-plan-candidate-naming-retirement.yaml
+  sar_4a_record: docs/change-admission/sar-4a-planner-response-and-provider-serialization.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -382,10 +383,12 @@ active_local_repair:
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: unchanged
-  taskplan_generator_change: plan_candidate_naming_only_after_candidate_capable_admission_cutovers
+  taskplan_generator_change: unchanged_after_plan_candidate_naming_retirement
+  planner_response_change: closed_response_union_foundation_only
+  provider_serialization_change: direct_serializer_foundation_only
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-4-planner-response-and-serialization
+  next_runtime_slice: sar-4b-provider-payload-cutover-or-sar-5-active-step-scope-foundation
   promotion_status: held
 
 attribution_classification:
