@@ -2461,13 +2461,18 @@ class RunCoordinator:
         state: StateKernel,
         contract: ActionContract,
     ) -> RuntimeErrorCode | None:
-        command = state.current_recovery_command
-        if command is None or command.kind != RecoveryCommandKind.RETRY_IDEMPOTENT:
+        decision = state.current_recovery_decision
+        if decision is None or decision.kind != RecoveryKind.RETRY_IDEMPOTENT:
             return None
+        effect_status = (
+            state.current_failure.effect_status
+            if state.current_failure is not None
+            else EffectStatus.NOT_DISPATCHED
+        )
         if (
             not contract.idempotency_key
-            or contract.idempotency_key != command.idempotency_key
-            or command.effect_status
+            or contract.idempotency_key != decision.idempotency_key
+            or effect_status
             not in {EffectStatus.NOT_DISPATCHED, EffectStatus.CONFIRMED_NOT_OCCURRED}
         ):
             return RuntimeErrorCode.UNSAFE_ACTION

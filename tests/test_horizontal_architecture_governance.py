@@ -2351,6 +2351,12 @@ def test_sar_8c_coordinator_pending_recovery_uses_canonical_decision_kind() -> N
     assert "_pending_recovery_command_kind" not in source
 
 
+def test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload() -> None:
+    source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "state.current_recovery_command" not in source
+
+
 def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> None:
     source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     seam = source.split("def _recover_phase_failure(", 1)[1].split(
