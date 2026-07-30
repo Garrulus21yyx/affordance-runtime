@@ -15,6 +15,10 @@ from enum import StrEnum
 from typing import Awaitable, Protocol, TypeAlias, cast
 
 from affordance_runtime.active_step_scope import ActiveStepScope
+from affordance_runtime.active_step_targeting import (
+    ActiveStepTargetView,
+    resolve_active_step_target_ids,
+)
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.recovery_protocol import FailureDisposition, FailureKind
@@ -319,6 +323,7 @@ class ActionChoiceBuilder:
             )
 
         targets = {item.target_id: item for item in observation.targets}
+        target_views = tuple(_target_view(item) for item in observation.targets)
         choices: list[ActionChoice] = []
         unresolved_target = False
         for criterion in step.completion_criteria:
@@ -326,20 +331,29 @@ class ActionChoiceBuilder:
                 continue
             if criterion.subject not in scope.permitted_target_ids:
                 continue
-            target = targets.get(criterion.subject)
-            if target is None:
+            target_ids = resolve_active_step_target_ids(
+                subject=criterion.subject,
+                targets=scope.permitted_target_ids,
+                affordances=target_views,
+            )
+            if not target_ids:
                 unresolved_target = True
                 continue
-            choice = _choice_for_criterion(
-                task_revision=task_revision,
-                state_version=state_version,
-                snapshot_id=observation.snapshot_id,
-                step_id=step.step_id,
-                criterion=criterion,
-                target=target,
-            )
-            if choice is not None:
-                choices.append(choice)
+            for target_id in target_ids:
+                target = targets.get(target_id)
+                if target is None:
+                    unresolved_target = True
+                    continue
+                choice = _choice_for_criterion(
+                    task_revision=task_revision,
+                    state_version=state_version,
+                    snapshot_id=observation.snapshot_id,
+                    step_id=step.step_id,
+                    criterion=criterion,
+                    target=target,
+                )
+                if choice is not None:
+                    choices.append(choice)
 
         if not choices:
             if unresolved_target:
@@ -433,6 +447,16 @@ def _choice_for_criterion(
             criterion_ids=(criterion.criterion_id,),
         )
     return None
+
+
+def _target_view(target: UnifiedObservationTarget) -> ActiveStepTargetView:
+    return ActiveStepTargetView(
+        target_id=target.target_id,
+        role=target.role,
+        label=target.label,
+        actions=target.supported_actions,
+        state=target.state,
+    )
 
 
 def _checked_choice(

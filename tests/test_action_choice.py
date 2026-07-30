@@ -350,6 +350,40 @@ def test_action_choice_builder_creates_terminal_activation_choice() -> None:
     assert choice.criterion_ids == ("criterion:submit",)
 
 
+def test_action_choice_builder_resolves_legacy_submission_subject_to_unique_submit() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:submit",
+        subject="settings submission",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=True,
+    )
+    step = _step(criterion=criterion, step_id="step:submit")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:submit",
+                surface="dom",
+                role="button",
+                label="Submit",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.ACTIVATE
+    assert choice.target_id == "semantic:submit"
+
+
 def test_action_choice_builder_does_not_expose_backend_or_verifier_authority() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

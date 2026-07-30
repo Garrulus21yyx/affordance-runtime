@@ -317,7 +317,7 @@ def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
     assert planner.model_call_count == 0
 
 
-def test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved() -> None:
+def test_strict_planner_reports_typed_failure_when_choice_target_unresolved() -> None:
     @dataclass
     class ActivateModel:
         provider: str = "fixed"
@@ -365,10 +365,9 @@ def test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved
 
     response = asyncio.run(planner.propose(request))
 
-    assert isinstance(response, PlannerProposalResponse)
-    assert response.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert response.proposal.target_affordance_id == "semantic:target"
-    assert planner.model_call_count == 1
+    assert isinstance(response, PlannerUnsupportedResponse)
+    assert response.reason_code == "action_choice_target_unresolved"
+    assert planner.model_call_count == 0
 
 
 def test_strict_planner_selects_choice_id_for_multiple_actionchoices() -> None:
@@ -1906,12 +1905,19 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
         )
     )
 
-    assert model.context is not None
-    visible_ids = [item["id"] for item in model.context["affordances"]]  # type: ignore[index]
-    assert visible_ids in ([], [target.semantic_target_id])
     assert "terminal_readiness" not in decision.planner_context
     assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
+    if verified_prerequisite:
+        assert model.context is None
+        assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+        assert decision.proposal.target_affordance_id == target.semantic_target_id
+        assert decision.proposal_provenance is not None
+        assert decision.proposal_provenance.producer_id == "runtime-action-choice"
+    else:
+        assert model.context is not None
+        visible_ids = [item["id"] for item in model.context["affordances"]]  # type: ignore[index]
+        assert visible_ids in ([], [target.semantic_target_id])
+        assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:

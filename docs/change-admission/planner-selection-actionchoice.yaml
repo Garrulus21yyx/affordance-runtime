@@ -65,10 +65,13 @@ scope:
       unsupported reason_code in PlannerDecision.planner_context so the current
       Coordinator consumer can route ActionChoice failures into recovery
       without collapsing them to generic planner_failed.
+    - ActionChoiceBuilder resolves narrow legacy submission subjects to a
+      unique submit target through the active-step target resolver.
     - ActionChoiceBuilder distinguishes unresolved legacy target binding from
-      matched targets with no feasible action; strict Generalist preserves the
-      legacy PlannerProposal path only for action_choice_target_unresolved
-      during the compatibility window.
+      matched targets with no feasible action; strict public PlanningRequest
+      path now returns typed PlannerUnsupportedResponse for
+      action_choice_target_unresolved instead of falling back to free
+      PlannerProposal generation.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -140,6 +143,13 @@ validation:
   unresolved_target_compatibility_fallback:
     - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_falls_back_to_legacy_model_when_choice_target_unresolved tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call tests/test_browsergym_adapter.py::test_generalist_planner_port_runs_browsergym_without_external_action_policy tests/test_browsergym_adapter.py::test_browsergym_episode_report_counts_successful_intent_repair tests/test_generalist_planner.py::test_strict_planner_uses_active_step_admission_without_terminal_readiness --maxfail=1 --tb=short -q
   unresolved_target_compatibility_fallback_result: 20_passed
+  unresolved_target_typed_failure_cutover:
+    - PYTHONPATH=src python -m pytest -q tests/test_action_choice.py tests/test_generalist_planner.py tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_target_unresolved_does_not_fallback_to_free_planner --maxfail=1 --tb=short
+  unresolved_target_typed_failure_cutover_result: 130_passed
+  unresolved_target_typed_failure_cutover_static:
+    ruff: passed
+    mypy_core: passed_3_source_files_ignore_optional_missing_imports
+    diff_check: passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
     full_pytest_result: 1325_passed
@@ -152,5 +162,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_unresolved_target_compatibility_fallback_local_candidate
+status: ps_5_unresolved_target_typed_failure_cutover_local_candidate
 next_slice: ps_6_historical_profile_grammar_quarantine

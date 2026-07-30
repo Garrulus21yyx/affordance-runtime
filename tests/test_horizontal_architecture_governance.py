@@ -2450,6 +2450,17 @@ def test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads() -> None:
         assert forbidden not in source
 
 
+def test_ps_actionchoice_target_unresolved_does_not_fallback_to_free_planner() -> None:
+    source = (SOURCE_ROOT / "generalist_planner.py").read_text(encoding="utf-8")
+    runtime_section = source.split("async def _runtime_action_choice_decision", 1)[1].split(
+        "\ndef _action_choice_failure_decision",
+        1,
+    )[0]
+
+    assert 'reason_code == "action_choice_target_unresolved"' not in runtime_section
+    assert "action_choice_target_unresolved" not in runtime_section
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

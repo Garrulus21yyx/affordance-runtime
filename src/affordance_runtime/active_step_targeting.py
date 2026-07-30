@@ -46,7 +46,7 @@ def resolve_active_step_target_ids(
     - exact current target id;
     - checkbox ordinal, e.g. ``checkbox_3_state`` or ``3rd checkbox``;
     - unique slider target for ``slider_value`` subjects;
-    - unique submit/button target for ``submit_button`` subjects.
+    - unique submit/button target for ``submit_button`` or submission subjects.
     """
 
     views = tuple(affordances)
@@ -63,7 +63,7 @@ def resolve_active_step_target_ids(
     if "slider" in lowered:
         sliders = tuple(item.target_id for item in views if _is_slider(item))
         return sliders if len(sliders) == 1 else ()
-    if "submit" in lowered and "button" in lowered:
+    if ("submit" in lowered and "button" in lowered) or "submission" in lowered:
         submits = tuple(item.target_id for item in views if _is_submit(item))
         return submits if len(submits) == 1 else ()
     return ()
@@ -124,4 +124,4 @@ def _is_submit(item: ActiveStepTargetView) -> bool:
     state_input_type = str(item.state.get("input_type", "")).casefold()
     if state_input_type == "submit":
         return True
-    return role in {"button", "submit"} and "submit" in label
+    return role in {"button", "submit"} and ("submit" in label or "submission" in label)
