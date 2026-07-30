@@ -6,7 +6,14 @@ import inspect
 from typing import Any, Awaitable, Protocol, TypeAlias, cast
 
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.planning_contracts import (
+    PlannerClarificationResponse,
+    PlannerDecision,
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+    PlannerResponse,
+    PlannerUnsupportedResponse,
+)
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import TaskEnvelope
@@ -26,7 +33,7 @@ class RequestPlannerPort(Protocol):
     def propose(
         self,
         request: PlanningRequest,
-    ) -> PlannerDecision | Awaitable[PlannerDecision]: ...
+    ) -> PlannerResponse | Awaitable[PlannerResponse]: ...
 
 
 PlannerCompatibilityPort: TypeAlias = RequestPlannerPort | LegacyPlannerPort
@@ -48,7 +55,7 @@ def propose_with_planner_compatibility(
     """
 
     if request is not None and _planner_accepts_request_only(planner):
-        return cast(Any, planner).propose(request)
+        return _resolve_planner_compatibility_response(cast(Any, planner).propose(request))
     return cast(Any, planner).propose(envelope, state, snapshot)
 
 
@@ -83,3 +90,31 @@ def _planner_accepts_request_only(planner: PlannerCompatibilityPort) -> bool:
         }
     ]
     return len(positional) == 1
+
+
+def planner_response_to_decision(response: PlannerResponse) -> PlannerDecision:
+    if isinstance(response, PlannerProposalResponse):
+        return PlannerDecision(
+            proposal=response.proposal,
+            proposal_provenance=response.proposal_provenance,
+            reason=response.reason,
+        )
+    if isinstance(response, PlannerDoneResponse):
+        return PlannerDecision(done=True, result=response.result, reason=response.reason)
+    if isinstance(response, PlannerClarificationResponse):
+        return PlannerDecision(done=False, reason=response.question)
+    if isinstance(response, PlannerUnsupportedResponse):
+        return PlannerDecision(done=False, reason=response.message or response.reason_code)
+    raise TypeError(f"unsupported planner response: {type(response).__name__}")
+
+
+def _resolve_planner_compatibility_response(
+    value: PlannerResponse | Awaitable[PlannerResponse],
+) -> PlannerDecision | Awaitable[PlannerDecision]:
+    if inspect.isawaitable(value):
+        return _await_planner_response(value)
+    return planner_response_to_decision(value)
+
+
+async def _await_planner_response(value: Awaitable[PlannerResponse]) -> PlannerDecision:
+    return planner_response_to_decision(await value)

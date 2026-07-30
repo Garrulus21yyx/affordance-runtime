@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `2338432` (`feat: record canonical action outcomes`), role=`sar_6a_action_outcome_recording_local_candidate`: the default RunCoordinator path records a canonical `ActionOutcomeRecorded` event after post-action verification and no longer emits the legacy `ActionCompleted` final action event. `ContractExecutionLoop.bind_action_execution()` is removed from the default execution seam; ODG `BoundActionExecution` remains experimental-only. StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-4B active local change after `3ccea65`: PlannerPort public return contract is `PlannerResponse`; request-only planner responses are converted by `planner_compatibility.py` for the legacy Coordinator-internal `PlannerDecision` consumer. SAR-4 production deletion is not complete: legacy `PlannerDecision`, `PlannerContext`, and legacy three-argument planners remain compatibility debt. StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -355,7 +355,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-6 ActionContract / ActionOutcome canonicalization is in progress after SAR-6A canonical outcome recording; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-4 production PlannerResponse/provider cutover is in progress after SAR-6A canonical outcome recording; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path until its deletion slice, and standard progress authority may not change before SAR-7
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete
@@ -377,6 +377,11 @@ pr_breadth_latest:
   mandatory_followups_before_sar_7:
     - sar_4_production_plannerresponse_provider_cutover_and_legacy_deletion
     - sar_5_canonical_scope_cutover_and_terminal_framework_deletion
+  sar_4:
+    plannerport_response_contract: active_local_change
+    legacy_plannerdecision_consumer: pending_deletion
+    plannercontext_provider_path: pending_deletion
+    legacy_three_argument_planners: compatibility_window
   hard_guardrails:
     - no_new_foundation_only_chain
     - every_canonical_object_requires_same_unit_legacy_deletion
@@ -386,10 +391,9 @@ pr_breadth_latest:
     - total_core_complexity_must_decrease
 
 active_local_repair:
-  slice: sar-6-actioncontract-actionoutcome-canonicalization
-  base_revision: b9849e1a1941dc3e36abdf4c1e60475766085902
-  implementation_revision: "2338432"
-  status: in_progress
+  slice: sar-4-production-plannerresponse-provider-cutover
+  base_revision: 3ccea65
+  status: active_local_change
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -437,7 +441,7 @@ active_local_repair:
   taskplan_required: false
   additive_foundation_expansion: stopped
   current_runtime_slice: sar-6-actioncontract-actionoutcome-canonicalization
-  next_runtime_slice: sar-4-production-plannerresponse-provider-cutover
+  next_runtime_slice: sar-5-canonical-scope-and-terminal-framework-deletion
   required_before_sar_7:
     - sar_4_production_cutover_and_legacy_deletion
     - sar_5_canonical_scope_and_terminal_framework_deletion
