@@ -2432,6 +2432,24 @@ def test_sar_8c_recovery_trace_projection_is_decision_based() -> None:
     assert "RecoveryDecisionStarted" in source
 
 
+def test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads() -> None:
+    source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
+
+    for forbidden in (
+        "RecoveryCommand",
+        "RecoveryReceipt",
+        "RecoveryDelta",
+        "RecoveryReentryPhase",
+        "recovery_commands",
+        "legacy_command_from_recovery_decision",
+        "successful_recovery_completion",
+        "_pending_legacy_command",
+        "RecoveryCommandCompleted",
+        "RecoveryDeltaValidated",
+    ):
+        assert forbidden not in source
+
+
 def test_obligation_attribution_flow_is_diagnostic_only_runtime_projection() -> None:
     filename = "obligation_attribution_flow.py"
     tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))

@@ -354,7 +354,7 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
     assert "EnvironmentDriftDetected" in [node.kind for node in result.trace.nodes]
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase.value == "preflight"
-    assert "RecoveryDeltaValidated" in [node.kind for node in result.trace.nodes]
+    assert "RecoveryOutcomeRecorded" in [node.kind for node in result.trace.nodes]
 
 
 class StableObserver:
@@ -1077,17 +1077,17 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
     assert result.state.current_failure.error_code == RuntimeErrorCode.EXECUTION_FAILED.value
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == "abort"
-    recovery_receipts = [
-        node.payload["receipt"]
+    recovery_outcomes = [
+        node.payload["outcome"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     ]
-    assert recovery_receipts
-    assert recovery_receipts[-1]["command_id"].startswith("recovery-command-")
+    assert recovery_outcomes
+    assert recovery_outcomes[-1]["success"] is True
     assert len(result.state.receipts) == 2
     assert result.state.recovery_history[0].strategy_id.startswith("strategy:retry_idempotent:")
     events = [node.kind for node in result.trace.nodes]
-    assert "RecoveryCommandCompleted" in events
+    assert "RecoveryOutcomeRecorded" in events
     assert "RecoveryReenteredPhase" in events
 
 
@@ -1514,12 +1514,12 @@ def test_coordinator_rejects_missing_proposal_provenance_before_execution() -> N
     assert result.state.receipts == []
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase.value == "proposal_validation"
-    recovery_delta = next(
-        node.payload["delta"]
+    recovery_outcome = next(
+        node.payload["outcome"]
         for node in reversed(result.trace.nodes)
-        if node.kind == "RecoveryDeltaValidated"
+        if node.kind == "RecoveryOutcomeRecorded"
     )
-    assert recovery_delta["changed_dimensions"][0] == "terminal"
+    assert recovery_outcome["changed_dimensions"][0] == "terminal"
 
 
 class ClarifyingPlanner(AsyncSemanticSavePlanner):
@@ -1639,11 +1639,11 @@ def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tm
     assert event.payload["resumable"] is True
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase.value == "provider_context"
-    recovery_delta = next(
-        node.payload["delta"]
+    recovery_outcome = next(
+        node.payload["outcome"]
         for node in reversed(result.trace.nodes)
-        if node.kind == "RecoveryDeltaValidated"
+        if node.kind == "RecoveryOutcomeRecorded"
     )
-    assert recovery_delta["changed_dimensions"][0] == "terminal"
+    assert recovery_outcome["changed_dimensions"][0] == "terminal"
     assert "FailureDetected" in [node.kind for node in result.trace.nodes]
     assert (tmp_path / "artifacts/provider-defer/run.json").exists()

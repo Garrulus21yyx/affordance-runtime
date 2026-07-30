@@ -565,14 +565,13 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     assert progress.fallthrough_reason == "TaskSkill step verification failed"
     assert result.state.current_failure is not None
     assert result.state.current_failure.error_code == "verification_failed"
-    recovery_receipts = [
-        node.payload["receipt"]
+    recovery_outcomes = [
+        node.payload["outcome"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     ]
-    assert recovery_receipts
-    assert recovery_receipts[-1]["command_id"].startswith("recovery-command-")
-    assert recovery_receipts[-1]["success"]
+    assert recovery_outcomes
+    assert recovery_outcomes[-1]["success"]
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TaskSkillStepCompleted") == 1
     assert "TaskSkillStepFailed" in events

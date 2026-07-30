@@ -141,6 +141,11 @@ scope:
     - Recovery protocol trace projection is decision-based and emits
       RecoveryDecisionStarted instead of RecoveryCommandStarted; it no longer
       imports or serializes RecoveryCommand.
+    - RecoveryPhase no longer imports or constructs RecoveryCommand,
+      RecoveryReceipt, RecoveryDelta, RecoveryReentryPhase, legacy command
+      compatibility projections, or RecoveryCommandCompleted /
+      RecoveryDeltaValidated events; pending recovery completion helpers commit
+      canonical RecoveryOutcomeRecorded evidence.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -312,6 +317,13 @@ validation:
     ruff: passed
     mypy_core: passed_8_source_files_ignore_optional_missing_imports
     diff_check: passed
+  recovery_phase_legacy_payload_deletion:
+    - PYTHONPATH=src python -m pytest -q tests/test_recovery_phase.py tests/test_recovery_trace_projection.py tests/test_full_phase_recovery.py tests/test_uncertain_effect_coordinator.py tests/test_coordinator.py tests/test_task_skill_coordinator.py tests/test_active_perception_coordinator.py tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_no_longer_uses_legacy_command_payloads tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_trace_projection_is_decision_based tests/test_horizontal_architecture_governance.py::test_sar_8c_default_runtime_uses_canonical_recovery_owner_dispatcher --maxfail=1 --tb=short
+  recovery_phase_legacy_payload_deletion_result: 59_passed
+  recovery_phase_legacy_payload_deletion_static:
+    ruff: passed
+    mypy_core: passed_8_source_files_ignore_optional_missing_imports
+    diff_check: passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1325_passed
   coordinator_lines: 2974
@@ -323,5 +335,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_trace_decision_projection_local_candidate
+status: sar_8c_recovery_phase_legacy_payload_deletion_local_candidate
 next_slice: planner-selection-simplification-actionchoice

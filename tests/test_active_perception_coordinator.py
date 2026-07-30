@@ -454,17 +454,11 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     assert "EvidenceGapResolved" in events
     assert "RecoveryStateInspected" in events
     assert "FailureDetected" in events
-    assert "RecoveryCommandCompleted" in events
-    assert "RecoveryDeltaValidated" in events
-    recovery_receipt = next(
-        node.payload["receipt"]
+    assert "RecoveryOutcomeRecorded" in events
+    recovery_outcome = next(
+        node.payload["outcome"]
         for node in reversed(result.trace.nodes)
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     )
-    recovery_delta = next(
-        node.payload["delta"]
-        for node in reversed(result.trace.nodes)
-        if node.kind == "RecoveryDeltaValidated"
-    )
-    assert recovery_receipt["success"]
-    assert recovery_delta["changed_dimensions"][0] == "effect_status"
+    assert recovery_outcome["success"]
+    assert recovery_outcome["changed_dimensions"][0] == "effect_status"

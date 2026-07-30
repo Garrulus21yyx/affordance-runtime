@@ -128,13 +128,13 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     assert result.state.current_failure is not None
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == "inspect_post_state"
-    recovery_receipts = [
-        node.payload["receipt"]
+    recovery_outcomes = [
+        node.payload["outcome"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryCommandCompleted"
+        if node.kind == "RecoveryOutcomeRecorded"
     ]
-    assert recovery_receipts
-    assert recovery_receipts[-1]["command_id"].startswith("recovery-command-")
+    assert recovery_outcomes
+    assert recovery_outcomes[-1]["success"]
     assert result.state.recovery_history
     assert ":inspect_post_state:" in result.state.recovery_history[-1].strategy_id
     events = [node.kind for node in result.trace.nodes]
