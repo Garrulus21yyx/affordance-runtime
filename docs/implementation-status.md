@@ -832,8 +832,7 @@ v_prb_3_architecture_follow_up:
   deep_immutable_output: not_applicable_after_module_deletion
   typed_input_boundary: replaced_by_runtime_actionchoice
   extracted_cluster: V-PRB-3 empty clarification resolution
-  still_in_generalist_planner:
-    - strict-submit-after-text-fallback
+  still_in_generalist_planner: []
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or

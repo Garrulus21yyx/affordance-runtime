@@ -6,7 +6,7 @@ production_behavior_change: false
 runtime_authority_changed: false
 progress_authority_changed: false
 finish_authority_changed: false
-planner_behavior_changed: false
+planner_behavior_changed: true
 provider_schema_changed: false
 coordinator_control_flow_changed: false
 statekernel_schema_changed: false
@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_4_strict_semantic_resolver_deletion
+  current_slice: ps_5_terminal_submit_fallback_retirement
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -45,13 +45,16 @@ scope:
       select IS_SELECTED option choice, and terminal IS_COMPLETED activation.
     - strict semantic_action_resolver.py is physically deleted from production
       source and removed from executable collaborator manifests.
+    - Strict terminal-submit-after-text fallback is deleted from Generalist
+      Planner; terminal submit actions must now come from Runtime-built
+      ActionChoice terminal criteria rather than historical verified-text
+      context synthesis.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
     - Full provider path deletion of PlannerProposalCandidate schema.
     - ActionContract builder changes.
     - Executor, verifier, preflight, approval, or capability changes.
-    - Full deterministic fallback deletion.
     - Task Planner action-family retirement.
     - TargetIntent migration.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -84,6 +87,9 @@ validation:
   focused:
     - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_semantic_compilers.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=20
   focused_result: 183_passed
+  ps_5_focused:
+    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py -q --tb=short --maxfail=20
+  ps_5_focused_result: 100_passed
   architecture:
     - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
   architecture_result: 9_passed
@@ -105,5 +111,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_4_strict_semantic_resolver_deleted_local_candidate
-next_slice: ps_5_terminal_submit_fallback_and_historical_grammar_retirement
+status: ps_5_strict_fallbacks_deleted_local_candidate
+next_slice: ps_6_historical_profile_grammar_quarantine

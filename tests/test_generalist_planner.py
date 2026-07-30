@@ -4058,7 +4058,7 @@ def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists(
     assert decision.proposal.requires_clarification is True
 
 
-def test_strict_planner_submits_after_verified_page_text_entry_when_model_asks() -> None:
+def test_strict_planner_does_not_submit_after_verified_page_text_without_actionchoice() -> None:
     model = _authored_dom_adapter().transduce(
         '<div>LO4e</div><input id="tt" type="text"><button>Submit</button>',
         environment_revision="rev-1",
@@ -4152,10 +4152,7 @@ def test_strict_planner_submits_after_verified_page_text_entry_when_model_asks()
         )
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_satisfied_prefix_control_value_leaves_submit_available() -> None:

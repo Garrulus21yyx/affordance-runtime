@@ -350,9 +350,9 @@ batched into a single mixed patch:
 6. **Planner Selection Simplification** — continue replacing Planner-authored
    action/target/parameter generation with Runtime-built `ActionChoice`
    candidates. The strict `semantic_action_resolver.py` default path and
-   strict page/exact text fallback functions are retired; remaining
-   terminal-submit compatibility fallback and historical-profile grammar must
-   move through ActionChoice or explicit compatibility-only owners before SAR-9.
+   strict page/exact text/terminal-submit fallback functions are retired;
+   remaining historical-profile grammar must move through ActionChoice or
+   explicit compatibility-only owners before SAR-9.
 7. **P3 intent semantic normalizer** — isolate source-bound value-entry lexical
    normalization from `LLMIntentCompiler`; the normalizer may propose typed
    semantics but may not create READY authority or bypass canonical graph

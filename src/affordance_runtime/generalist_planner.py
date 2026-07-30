@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
@@ -538,29 +537,6 @@ class GeneralistLMPlanner:
                 compatibility_mode=compatibility_mode,
             )
         )
-        fallback_proposal = None
-        fallback_producer_id = ""
-        if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            if fallback_proposal is None:
-                fallback_proposal = _strict_submit_after_text_fallback(context, proposal)
-                fallback_producer_id = "strict-submit-after-text-fallback"
-        if fallback_proposal is not None:
-            return _planner_decision(
-                proposal=fallback_proposal,
-                provenance=PlannerProposalProvenance(
-                    source=PlannerProposalSource.DETERMINISTIC_RULE,
-                    producer_id=fallback_producer_id,
-                    profile_id=self.planner_profile.value,
-                    version=self.config.prompt_version,
-                ),
-                context=context,
-                semantic_compilers=semantic_compilers,
-                planner_admission=planner_admission,
-                constraints=constraints,
-                typed_text_constraint=typed_text_constraint,
-                ordinal_constraint=ordinal_constraint,
-                model_call=self.model.last_call,
-            )
         return _planner_decision(
             proposal=proposal,
             provenance=PlannerProposalProvenance(
@@ -958,49 +934,6 @@ def _planner_response(decision: PlannerDecision) -> PlannerResponse:
         reason_code="legacy_decision_without_proposal",
         message=decision.reason,
     )
-
-
-def _strict_submit_after_text_fallback(
-    context: PlannerContext,
-    proposal: PlannerProposal,
-) -> PlannerProposal | None:
-    """Activate one terminal control after verifier-backed text entry."""
-
-    if proposal.action_kind != PlannerActionKind.ASK_USER:
-        return None
-    if context.active_subgoal not in context.verified_effects:
-        return None
-    if not context.satisfied_action_targets.get(PlannerActionKind.TYPE_TEXT.value):
-        return None
-    objective = str(context.task_spec.get("objective") or "").casefold()
-    if not any(word in objective for word in ("submit", "save", "done", "confirm", "send")):
-        return None
-    compatible = _compatible_target_ids(context).get(PlannerActionKind.ACTIVATE.value, [])
-    terminal_ids = [
-        item.id
-        for item in context.affordances
-        if item.id in compatible
-        and item.state.get("enabled") is not False
-        and _label_has_terminal_word(item.label)
-    ]
-    if len(terminal_ids) != 1:
-        return None
-    return PlannerProposalCandidate(
-        subgoal=context.active_subgoal,
-        action_kind=PlannerActionKind.ACTIVATE,
-        target_affordance_id=terminal_ids[0],
-        expected_effects=("submitted",),
-        evidence_requirements=tuple(
-            str(item)
-            for item in context.task_spec.get("evidence_requirements", ())
-            if isinstance(item, str) and item
-        ),
-    ).bind(context)
-
-
-def _label_has_terminal_word(label: str) -> bool:
-    words = ("submit", "save", "done", "confirm", "send", "create", "continue", "next", "ok")
-    return any(re.search(rf"\b{re.escape(word)}\b", label.casefold()) for word in words)
 
 
 def _strict_candidate_prebind_issue(
