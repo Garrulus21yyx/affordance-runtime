@@ -102,6 +102,7 @@ from affordance_runtime.runtime_evidence import (
     verification_satisfies_effect,
 )
 from affordance_runtime.runtime_terminal import (
+    TaskCompletionVerifier,
     commit_planner_terminal_decision,
     commit_task_terminal_success,
 )
@@ -952,6 +953,12 @@ class RunCoordinator:
                 state=state,
                 trace=trace,
                 parent=parent,
+                completion=TaskCompletionVerifier().verify(
+                    task_spec=envelope.task_spec,
+                    state=state,
+                    verification=latest_verification,
+                    result=decision.result,
+                ),
             )
             parent = terminal_commit.parent
             if terminal_commit.rejected:
@@ -2024,11 +2031,17 @@ class RunCoordinator:
                             parent=parent,
                         )
                         parent = skill_terminal_progress.parent
+                        completion = TaskCompletionVerifier().verify(
+                            task_spec=envelope.task_spec,
+                            state=state,
+                            verification=latest_verification,
+                            result=skill_terminal_progress.result_payload(),
+                        )
                         terminal = commit_task_terminal_success(
                             state=state,
                             trace=trace,
                             parent=parent,
-                            result=skill_terminal_progress.result_payload(),
+                            completion=completion,
                         )
                         parent = terminal.parent
                         return self._finish(
@@ -2066,11 +2079,17 @@ class RunCoordinator:
                 )
                 parent = verified_progress_commit.parent
                 if verified_progress_commit.task_completion_requested:
+                    completion = TaskCompletionVerifier().verify(
+                        task_spec=envelope.task_spec,
+                        state=state,
+                        verification=latest_verification,
+                        result=state.final_result,
+                    )
                     terminal = commit_task_terminal_success(
                         state=state,
                         trace=trace,
                         parent=parent,
-                        result=state.final_result,
+                        completion=completion,
                     )
                     parent = terminal.parent
                     return self._finish(

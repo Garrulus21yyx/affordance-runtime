@@ -31,6 +31,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_plan_progress_flow import (
     commit_post_observation_progress,
+    commit_task_skill_terminal_progress,
     commit_verified_task_progress,
 )
 from affordance_runtime.task_planning import (
@@ -334,4 +335,26 @@ def test_verified_task_progress_flow_commits_active_step_and_prepares_task_compl
         "ActionOutcomeRecorded",
         "SubgoalCompleted",
         "TaskPlanCompleted",
+    ]
+
+
+def test_task_skill_progress_commit_does_not_request_task_completion() -> None:
+    state = StateKernel("skill-task", "complete skill task")
+    skill = state.activate_task_skill("skill-profile", "1.0", {})
+    skill.completed_step_ids.append("step-1")
+    trace = TraceDag("run")
+    parent = trace.add("TaskSkillStepCompleted", {"state": state.phase})
+
+    commit = commit_task_skill_terminal_progress(
+        state=state,
+        trace=trace,
+        parent=parent,
+    )
+
+    assert commit.task_completion_requested is False
+    assert commit.completed_step_ids == ("step-1",)
+    assert state.phase != "done"
+    assert [node.kind for node in trace.nodes] == [
+        "TaskSkillStepCompleted",
+        "TaskSkillCompleted",
     ]

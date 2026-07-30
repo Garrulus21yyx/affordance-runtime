@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `17ea270ebe6fab0342175b79362227f935492b08`: SAR-7 single progress / finish authority closure documentation over implementation revision `7053727bcce7ffb68fb701b7e1844cc33ca335bb`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 closure revision is `17ea270ebe6fab0342175b79362227f935492b08` over implementation revision `7053727bcce7ffb68fb701b7e1844cc33ca335bb`. This is SAR-7 authority centralization local completion candidate evidence, not full SAR-7 milestone closure. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -355,7 +355,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-8 single recovery protocol after SAR-7 local completion candidate. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator; PlannerContext and PlannerDecision remain compatibility debt for SAR-4 deletion work, but they are no longer completion authority.
+  current_next_change_admission: SAR-7.2 default progress-state cleanup after SAR-7.1 local completion candidate. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator. SAR-7.1 adds a TaskCompletionVerifier foundation, requires a passed TaskCompletionResult before the success writer, and removes TaskSkill progress commit task-completion requests. Full SAR-7 milestone closure still requires canonical TaskProgress cutover, default ODG/pending-obligation state removal, bounded action dedupe, and authorized behavioral evidence.
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete
@@ -375,7 +375,7 @@ pr_breadth_latest:
     default_final_action_event: ActionOutcomeRecorded
     legacy_action_completed_default_event: removed
   sar_7:
-    status: local_completion_candidate
+    status: sar_7_authority_centralization_local_completion_candidate
     record: docs/change-admission/sar-7-single-progress-finish-authority.yaml
     sar_7a_verifier_backed_progress_flow_extraction: complete
     sar_7b_planner_terminal_flow: complete
@@ -391,7 +391,26 @@ pr_breadth_latest:
     coordinator_inline_decision_done_finish_sites: 0
     progress_authority_changed: false
     finish_authority_changed: terminal_success_commit_centralized
-  mandatory_followups_before_sar_7_completion: []
+  sar_7_full_milestone:
+    canonical_taskprogress_cutover: incomplete
+    independent_task_completion_verifier: sar_7_1_foundation_in_progress
+    taskskill_progress_authority_removal: completion_trigger_removed_in_sar_7_1
+    odg_and_pending_obligation_state_removal: incomplete
+    action_dedupe_replacement: incomplete
+    required_pr_breadth: not_run
+    status: incomplete
+  sar_7_1:
+    status: local_completion_candidate
+    record: docs/change-admission/sar-7-1-semantic-closure.yaml
+    task_completion_verifier: foundation
+    terminal_success_requires_completion_result: true
+    taskskill_progress_commit_requests_task_completion: false
+    compatibility_allowances:
+      - legacy_no_task_spec_completion
+      - legacy_no_effect_no_receipt_completion
+  mandatory_followups_before_sar_7_full_milestone_completion:
+    - odg_pending_obligation_default_state_removal
+    - bounded_action_dedupe
   sar_4:
     plannerport_response_contract: complete
     standard_generalist_response_contract: complete
@@ -457,8 +476,8 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-7-single-progress-finish-authority
-  next_runtime_slice: sar-8-single-recovery-protocol
+  current_runtime_slice: sar-7-1-semantic-closure
+  next_runtime_slice: sar-7-2-default-progress-state-cleanup
   historical_required_before_sar_7:
     - sar_4_standard_generalist_parent_response_cutover
     - sar_5_default_terminal_framework_deletion

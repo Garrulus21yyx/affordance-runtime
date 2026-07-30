@@ -100,5 +100,6 @@ validation:
   uv_build: "uv build => passed"
   diff_check: "git diff --check => passed"
 
-status: local_completion_candidate
-next_slice: sar-8-single-recovery-protocol
+status: sar_7_authority_centralization_local_completion_candidate
+next_slice: bounded-sar-7-1-semantic-closure-before-sar-8
+full_sar_7_milestone_status: incomplete

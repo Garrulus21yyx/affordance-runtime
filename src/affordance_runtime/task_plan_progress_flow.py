@@ -350,7 +350,7 @@ def commit_task_skill_terminal_progress(
     )
     return TaskSkillTerminalProgressCommit(
         parent=parent,
-        task_completion_requested=True,
+        task_completion_requested=False,
         task_skill_id=progress.skill_id,
         task_skill_version=progress.version,
         completed_step_ids=completed_step_ids,

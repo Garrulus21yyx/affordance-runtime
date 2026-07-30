@@ -787,7 +787,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-8 single recovery protocol" in status
+    assert "current_next_change_admission: sar-7.2 default progress-state cleanup" in status
     assert "sar_5:" in status
     assert "overall_status: in_progress" in status
     assert "official_score_claimed=false" in evidence_text
@@ -2003,7 +2003,7 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-8 single recovery protocol" in status
+    assert "current_next_change_admission: sar-7.2 default progress-state cleanup" in status
     assert "sar_6:" in status
     assert "same_unit_one_out_deletion" in status
     assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan
