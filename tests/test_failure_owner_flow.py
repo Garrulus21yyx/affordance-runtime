@@ -68,6 +68,8 @@ def test_step_planner_handoff_is_structured_not_runtime_recovery() -> None:
     assert handoff.owner == FailureOwner.STEP_PLANNER
     assert handoff.target_phase == RuntimePhase.PLANNING
     assert handoff.changed_dimensions == (RecoveryDimension.STEP_PLAN,)
+    assert handoff.compatibility_recovery_kind == RecoveryKind.REPLAN_STEP
+    assert handoff.budget_cost.replans == 1
     assert handoff.reason_code == classification.reason_code
     assert handoff.replan_scope == "step"
     assert handoff.user_question == ""
@@ -82,6 +84,8 @@ def test_user_handoff_preserves_question_without_runtime_policy() -> None:
     assert handoff.owner == FailureOwner.USER
     assert handoff.target_phase == RuntimePhase.WAITING_USER
     assert handoff.changed_dimensions == (RecoveryDimension.USER_INFORMATION,)
+    assert handoff.compatibility_recovery_kind == RecoveryKind.CLARIFY_INTENT
+    assert handoff.budget_cost.user_escalations == 1
     assert handoff.user_question
     assert handoff.replan_scope == ""
 
@@ -105,8 +109,8 @@ def test_unrecoverable_owner_handoff_is_terminal_abort() -> None:
     assert isinstance(decision, FailureOwnerHandoffDecision)
     assert handoff.owner == FailureOwner.TERMINAL
     assert handoff.target_phase == RuntimePhase.ABORTED
-    assert decision.kind == RecoveryKind.ABORT
-    assert decision.changed_dimensions == (RecoveryDimension.TERMINAL,)
+    assert decision.decision.kind == RecoveryKind.ABORT
+    assert decision.decision.changed_dimensions == (RecoveryDimension.TERMINAL,)
     assert decision.handoff.owner == FailureOwner.TERMINAL
 
 

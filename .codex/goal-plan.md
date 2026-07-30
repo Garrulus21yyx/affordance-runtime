@@ -1034,3 +1034,11 @@ delivery claims.
   passed 5/5 and adjacent Generalist/full-phase-recovery/Coordinator tests
   passed 130/130. FOR-4 remains next: delete duplicate mappings / temporary
   handoff shape and run behavioral classification before SAR-9.
+- Closed the FOR-4 code deletion gate locally. `FailureOwnerHandoff` now carries
+  the compatibility `RecoveryKind` and `RecoveryBudgetCost`, deleting the
+  duplicate `_recovery_kind_for_handoff()` and `_budget_cost_for_handoff()`
+  helpers, and `FailureOwnerHandoffDecision` no longer exposes implicit
+  `__getattr__` compatibility. Focused FOR tests passed 55/55 and adjacent
+  Generalist/full-phase-recovery/Coordinator tests passed 130/130. The
+  remaining FOR-4 item is targeted behavioral classification on a clean
+  non-qwen Ollama `llama3.1:8b` revision before SAR-9.

@@ -75,5 +75,6 @@ validation_policy:
 
 status:
   for_3_structured_owner_handoff: local_candidate
-  for_4_routing_deletion_gate: selected_next
-  full_for_closure: incomplete
+  for_4_code_deletion_gate: local_candidate
+  for_4_behavioral_classification: selected_next
+  full_for_closure: incomplete_until_behavioral_classification_recorded

@@ -108,15 +108,16 @@ real production path, then retire the old owner or projector.
 The implementation sequence has advanced through SAR-8C default RecoveryPhase
 cutover, Planner Selection ActionChoice fallback retirement, FOR-1
 FailureOwner vocabulary, FOR-2A Runtime RecoveryPhase narrowing, FOR-2B
-runtime recovery policy cleanup, and FOR-3 structured owner handoff for their
+runtime recovery policy cleanup, FOR-3 structured owner handoff, and FOR-4
+code deletion gate for their
 recorded local scopes.
 `RecoveryPhase` now rejects non-`RUNTIME_RECOVERY` owners before state mutation,
 and `RecoveryCoordinator` itself rejects non-runtime owners; runtime strategy
 order no longer emits semantic-owner `RecoveryKind` fallbacks. Non-runtime
 owner routing now goes through typed `FailureOwnerHandoff` /
-`FailureOwnerHandoffDecision` contracts. The selected SAR-9 prerequisite
-remains FOR-4: remove duplicate owner mappings and temporary handoff shape, and
-run the behavioral classification gate.
+`FailureOwnerHandoffDecision` contracts, and duplicate owner-to-kind/budget
+helper mappings plus implicit wrapper compatibility are removed. The selected
+SAR-9 prerequisite remains FOR-4 targeted behavioral classification.
 Neither lane authorizes promotion while remote CI is disabled or required
 validation is unavailable.
 
@@ -424,7 +425,7 @@ Baselining debt prevents it from spreading; it does not declare it healthy.
 | --- | --- | --- |
 | `RunCoordinator.run_sync` contains multiple phase algorithms | `in_progress` | extract one named responsibility at a time through immutable context and typed result |
 | standard `PlannerPort` still receives mutable `StateKernel` | `done for public contract / compatibility pending` | public `PlannerPort` is request-only; legacy compatibility signatures must continue shrinking behind explicit adapters |
-| failure routing and runtime recovery ownership are still mixed | `FOR-3 local candidate / FOR-4 selected` | `FailureOwner` replaces `FailureDisposition`; RecoveryPhase and RecoveryCoordinator now accept only `RUNTIME_RECOVERY`; runtime policy no longer emits semantic-owner RecoveryKind fallbacks; non-runtime routing has typed handoff contracts. Next delete duplicate mappings and temporary handoff shape without a second recovery workflow |
+| failure routing and runtime recovery ownership are still mixed | `FOR-4 code local candidate / behavioral gate pending` | `FailureOwner` replaces `FailureDisposition`; RecoveryPhase and RecoveryCoordinator now accept only `RUNTIME_RECOVERY`; runtime policy no longer emits semantic-owner RecoveryKind fallbacks; non-runtime routing has typed handoff contracts; duplicate helper mappings are removed. Next run targeted behavioral classification before SAR-9 |
 | Generalist Planner semantic fallback ownership review | `in_progress` | Planner Selection Simplification deleted the strict `semantic_action_resolver.py` default path and strict page/exact text/terminal-submit fallback functions; remaining historical-profile grammar must retire through ActionChoice or explicit compatibility-only owners |
 | `semantic_action_resolver.py` output/input boundary | `retired` | the module is removed from production source; historical V-PRB records remain archival evidence only |
 | PR breadth V-PRB-5A button-sequence semantics | `done` | clean `151fbef` PR breadth rerun passed both `click-button-sequence` seeds after dependency/terminal, clicked-navigation relation, and completed-click progress-evidence repairs |

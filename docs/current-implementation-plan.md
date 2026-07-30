@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | Failure Ownership Router before SAR-9 | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, records canonical recovery decision/outcome state, and physically removes the legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols at implementation revision `09d43041283078d4031828d01d0b129df4271148`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text / slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback at implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. Local follow-up commits through `7af5ec6960d89c9882b7cd28519c7559df08965a` repair role-labeled active-step targets, source-bound values, selected options, and unknown slider state; a clean targeted non-qwen Ollama `llama3.1:8b` 3-case run observed 2/3 pass with no promotion claim. FOR-1 replaces `FailureDisposition` with six-way `FailureOwner` in classification and ActionChoice failures. FOR-2A narrows `RecoveryPhase` so it accepts only `RUNTIME_RECOVERY` failures. FOR-2B makes `RecoveryCoordinator` itself runtime-owner-only and removes semantic-owner `RecoveryKind` fallbacks from runtime strategy order. FOR-3 adds typed `FailureOwnerHandoff` / `FailureOwnerHandoffDecision` so non-runtime routing has explicit owner, target phase, changed dimension, replan scope, and user question. | Finish FOR-4: remove duplicate owner mappings and the temporary handoff shape, then run the behavioral classification gate. SAR-9 must not start by copying mixed recovery/planner owner logic into phases. | SAR-9 phase extraction after Failure Ownership Router closure and behavioral classification |
+| Horizontal | Failure Ownership Router before SAR-9 | SAR-8C routes default Coordinator recovery through `RecoveryPhase`, records canonical recovery decision/outcome state, and physically removes the legacy RecoveryPlan/RecoveryCommand and RecoveryIncident/Attempt/Cascade default protocols at implementation revision `09d43041283078d4031828d01d0b129df4271148`. Planner Selection Simplification has a local ActionChoice contract/dispatch foundation, strict Generalist default-path cutover for unique exact text / slider choices, a choice-id-only selector path for multiple Runtime-built choices, and retired strict free-action model fallback at implementation revision `f7eded4f690fdb820272dfbe5d3a147794f6a4c0`. Local follow-up commits through `7af5ec6960d89c9882b7cd28519c7559df08965a` repair role-labeled active-step targets, source-bound values, selected options, and unknown slider state; a clean targeted non-qwen Ollama `llama3.1:8b` 3-case run observed 2/3 pass with no promotion claim. FOR-1 replaces `FailureDisposition` with six-way `FailureOwner` in classification and ActionChoice failures. FOR-2A narrows `RecoveryPhase` so it accepts only `RUNTIME_RECOVERY` failures. FOR-2B makes `RecoveryCoordinator` itself runtime-owner-only and removes semantic-owner `RecoveryKind` fallbacks from runtime strategy order. FOR-3 adds typed `FailureOwnerHandoff` / `FailureOwnerHandoffDecision`. FOR-4 code deletion gate removes duplicate owner-to-kind/budget mappings and implicit wrapper compatibility; targeted behavioral classification remains pending on the clean FOR-4 revision. | Run FOR-4 targeted behavioral classification with non-qwen Ollama, then SAR-9 phase extraction may start without copying mixed recovery/planner owner logic into phases. | SAR-9 phase extraction after Failure Ownership Router closure and behavioral classification |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -96,7 +96,8 @@ implementation_revision:
   failure_owner_router: ed7b1bcbab13ff6b0c13a635f9f07d8ff3f1a05f
   failure_owner_recovery_phase_narrowing: 9f135541c9e27da78acd02f35b45a24c6784f406
   failure_owner_recovery_policy_cleanup: d41dcec83a8310a44970a2ab036f920230d54910
-  failure_owner_structured_handoff: local_candidate_at_this_revision
+  failure_owner_structured_handoff: 83b4e24896af87ec932fdcecccd2694b6855ba7c
+  failure_owner_routing_deletion_gate: local_candidate_at_this_revision
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -163,7 +164,7 @@ coordinator_assessment:
   methods: 18
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - FOR-4 routing deletion gate and behavioral classification
+  - FOR-4 targeted behavioral classification
   - SAR-9 phase extraction and Coordinator reduction
 blocked_until:
   sar_8: unblocked
@@ -189,6 +190,7 @@ evidence:
   failure_owner_recovery_phase_narrowing: docs/change-admission/for-2-runtime-recovery-phase-narrowing.yaml
   failure_owner_recovery_policy_cleanup: docs/change-admission/for-2b-runtime-recovery-policy-cleanup.yaml
   failure_owner_structured_handoff: docs/change-admission/for-3-structured-owner-handoff.yaml
+  failure_owner_routing_deletion_gate: docs/change-admission/for-4-routing-deletion-and-behavioral-classification.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   independently_reproduced: false
   remote_ci: absent

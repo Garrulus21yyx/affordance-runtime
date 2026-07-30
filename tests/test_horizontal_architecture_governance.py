@@ -2289,6 +2289,39 @@ def test_for_3_failure_owner_flow_uses_structured_handoff_contracts() -> None:
     assert "RecoveryCoordinator" not in imported_names
 
 
+def test_for_4_failure_owner_flow_has_single_owner_mapping() -> None:
+    source = (SOURCE_ROOT / "failure_owner_flow.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    function_names = {
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_recovery_kind_for_handoff" not in function_names
+    assert "_budget_cost_for_handoff" not in function_names
+
+    handoff_decision = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoffDecision"
+    )
+    assert "__getattr__" not in {
+        node.name for node in handoff_decision.body if isinstance(node, ast.FunctionDef)
+    }
+
+    handoff = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoff"
+    )
+    annotations = {
+        item.target.id: ast.unparse(item.annotation)
+        for item in handoff.body
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+    }
+    assert annotations["compatibility_recovery_kind"] == "RecoveryKind"
+    assert annotations["budget_cost"] == "RecoveryBudgetCost"
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
