@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-5B ActiveStepScope validator hookup active local change after `7231201cdc094669beceb920b25d4788ac09275d`: exact legacy active-subgoal outcome subjects are enforced by ActiveStepScope inside PlannerProposalValidator when they match a current target ID. Coordinator/run_sync, StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | `b9849e1a1941dc3e36abdf4c1e60475766085902` (`feat: enforce exact active step proposal scope`), role=`sar_5b_exact_scope_gate_local_candidate`: exact legacy active-subgoal outcome subjects are enforced by ActiveStepScope inside PlannerProposalValidator when they match a current target ID. Coordinator/run_sync, StateKernel schema, progress authority, finish authority, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -51,6 +51,18 @@ status_alignment:
   snapshot: current
   state: passing
   meaning: not a one-time milestone closure
+
+coordinator_reduction:
+  interpretation: growth_frozen_not_reduced
+  current_size_expected_for_stage: true
+  current_lines: 3461
+  run_sync_lines: 2034
+  method_count: 26
+  actual_reduction_stage: sar_7_to_sar_9
+  reduction_prerequisites:
+    - canonical_action_outcome
+    - single_progress_finish_authority
+    - single_recovery_protocol
 
 immutable_planner_input:
   public_contract_migrated: true
@@ -343,13 +355,36 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-5B ActiveStepScope validator hookup is active after SAR-5A local closure; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-6 ActionContract / ActionOutcome canonicalization is selected after SAR-5B exact-scope local candidate; Coordinator growth-freeze constraints must be respected, PlannerContext remains compatibility-only for the current provider path, and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
+  sar_5:
+    unified_observation_contract: foundation_complete
+    exact_active_target_gate: local_candidate
+    canonical_scope_resolver: pending
+    action_family_and_destination_scope: pending
+    terminal_framework_deletion: pending
+    behavioral_exit_evidence: pending
+    overall_status: in_progress
+  sar_6:
+    selected_next: true
+    record: docs/change-admission/sar-6-actioncontract-actionoutcome-canonicalization.yaml
+    goal: canonical_execution_and_action_outcome_with_same_unit_one_out_deletion
+    status: planned
+  mandatory_followups_before_sar_7:
+    - sar_4_production_plannerresponse_provider_cutover_and_legacy_deletion
+    - sar_5_canonical_scope_cutover_and_terminal_framework_deletion
+  hard_guardrails:
+    - no_new_foundation_only_chain
+    - every_canonical_object_requires_same_unit_legacy_deletion
+    - no_second_execution_result_authority
+    - no_second_progress_or_finish_authority
+    - no_coordinator_shortening_by_relocating_unchanged_branches
+    - total_core_complexity_must_decrease
 
 active_local_repair:
-  slice: sar-5b-active-step-scope-validator-hookup
-  revision: 7231201cdc094669beceb920b25d4788ac09275d
-  status: active_local_change
+  slice: sar-6-actioncontract-actionoutcome-canonicalization
+  base_revision: b9849e1a1941dc3e36abdf4c1e60475766085902
+  status: planned
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
   planning_request_record: docs/change-admission/tpa-2-immutable-planning-request.yaml
@@ -377,10 +412,11 @@ active_local_repair:
   sar_4a_record: docs/change-admission/sar-4a-planner-response-and-provider-serialization.yaml
   sar_5a_record: docs/change-admission/sar-5a-unified-observation-active-step-scope.yaml
   sar_5b_record: docs/change-admission/sar-5b-active-step-scope-validator-hookup.yaml
+  sar_6_record: docs/change-admission/sar-6-actioncontract-actionoutcome-canonicalization.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
-  behavior_change: false
+  behavior_change: planned_for_sar_6_execution_outcome_contract_shape_only_until_cutover
   standard_path_authority: candidate_capable_initial_and_replacement_admission_cutover_only
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
@@ -390,9 +426,15 @@ active_local_repair:
   provider_serialization_change: direct_serializer_foundation_only
   unified_observation_change: target_centric_contract_foundation_only
   active_step_scope_change: exact_legacy_active_subgoal_validator_hookup
+  sar_5_overall_status: in_progress
+  canonical_scope_resolver: pending
+  terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
   next_runtime_slice: sar-6-actioncontract-actionoutcome-canonicalization
+  required_before_sar_7:
+    - sar_4_production_cutover_and_legacy_deletion
+    - sar_5_canonical_scope_and_terminal_framework_deletion
   promotion_status: held
 
 attribution_classification:
@@ -687,7 +729,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-2 semantic vocabulary unification is the active local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, and SAR-2 canonical semantic vocabulary gates | none | SAR-3 plan vertical replacement is next after SAR-2 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover outside SAR-3, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover outside authorized SAR slices, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-5B exact active-step proposal scope gate is the current local candidate and SAR-5 overall remains `in_progress`; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, SAR-2 canonical semantic vocabulary gates, and SAR-5B exact ActiveStepScope proposal gate | none | SAR-6 ActionContract / ActionOutcome canonicalization is next with same-unit one-out deletion; SAR-4 production PlannerResponse/provider cutover and SAR-5 canonical scope plus terminal-framework deletion are mandatory before SAR-7. TPA-5B foundation expansion, ODG-9 hookup, ODG-10, ODG-11, unauthorized active-step authority cutover, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

@@ -3,7 +3,7 @@
 > **文档类型：** Substitutive Refactor Execution Plan  
 > **状态：** PROPOSED_FOR_EXECUTION  
 > **唯一目标架构：** `2026-07-29-affordance-runtime-authoritative-optimized-architecture.md`  
-> **代码基线：** `648c2da4f6b51c87c5488b6073f0c4b83bf80677`  
+> **当前实现承载基线：** `b9849e1a1941dc3e36abdf4c1e60475766085902`
 > **日期：** 2026-07-29  
 > **核心策略：** 从 additive migration 切换到 substitutive migration  
 > **生产权威约束：** 任一 revision 只能有一个 progress authority、一个 plan admission authority、一个 completion authority  
@@ -251,9 +251,10 @@ docs/architecture-governance-track.md
 ## 4.3 决议
 
 ```yaml
-current_head: 648c2da4f6b51c87c5488b6073f0c4b83bf80677
+current_head: b9849e1a1941dc3e36abdf4c1e60475766085902
+current_head_role: sar_5b_exact_scope_gate_local_candidate
 migration_strategy: substitutive
-next_slice: SAR-1-deep-immutability-and-contract-hash
+next_slice: SAR-6-actioncontract-actionoutcome-canonicalization
 stopped:
   - TPA-5B foundation-only implementation
   - new internal projections without deletion gate
@@ -262,6 +263,11 @@ production_authority:
   plan: legacy until SAR-3 cutover
   progress: legacy until SAR-7 cutover
   completion: legacy until SAR-7 cutover
+  sar_5_overall: in_progress
+  selected_next: SAR-6 canonical execution and ActionOutcome with same-unit one-out deletion
+  mandatory_before_sar_7:
+    - SAR-4 production PlannerResponse/provider cutover and legacy deletion
+    - SAR-5 canonical observation/scope cutover and terminal-framework deletion
 ```
 
 ## 4.4 Architecture gate 调整
@@ -975,6 +981,20 @@ Planner可见 target集合会变化，必须运行 PR breadth及多 surface scen
 
 SAR-1 已保证深层 immutable和hash正确。本阶段只重组 owner和字段范围，不再次引入平行合同。
 
+SAR-5B 的 exact active-step proposal scope gate 已在
+`b9849e1a1941dc3e36abdf4c1e60475766085902` 成为本地候选，但 SAR-5
+整体仍是 `in_progress`。SAR-6 可以先做，因为它依赖 SAR-1 的
+immutable/hash 基础；但 SAR-7 之前必须先完成：
+
+```text
+SAR-4 production PlannerResponse/provider cutover and legacy deletion
+SAR-5 canonical observation/scope cutover and terminal-framework deletion
+```
+
+Coordinator 当前解释为 growth-frozen, not reduced。SAR-6 的验收目标是
+不增长且不新增第二套 execution result authority；实际 run_sync/Coordinator
+缩减放在 SAR-7 至 SAR-9。
+
 ## 10.2 子合同
 
 ```text
@@ -1026,6 +1046,31 @@ Canonical trace每个 execution写一次 `ActionOutcomeRecorded`；旧细粒度�
 - contract中 analytics route fields；
 - duplicate execution identity字段；
 - action后多个相互竞争的 final event。
+
+最低 one-in/one-out 要求：
+
+```yaml
+minimum_same_unit_one_out_deletions:
+  - BoundActionExecution default production path
+  - attribution ticket execution sidecar in default execution flow
+  - duplicate contract/execution identity fields
+  - ActionContract analytics route-score authority fields
+  - ActionContract full alternative-candidate authority fields
+  - multiple competing final action result events as production progress inputs
+```
+
+禁止：
+
+```yaml
+forbidden:
+  - progress_authority_change
+  - finish_authority_change
+  - receipt_success_completion
+  - external_reward_completion
+  - second_execution_result_authority
+  - coordinator_growth
+  - foundation_only_without_same_unit_deletion
+```
 
 ## 10.7 Tests
 
@@ -1660,14 +1705,21 @@ claims:
 
 # 20. 立即下一步
 
-基线 `648c2da...` 的下一项不再是旧定义的 `TPA-5B LLM TaskPlan generator draft migration`。
+基线 `b9849e1a1941dc3e36abdf4c1e60475766085902` 的下一项是
+`SAR-6 ActionContract / ActionOutcome canonicalization`。旧定义的
+`TPA-5B LLM TaskPlan generator draft migration`、ODG default-path hookup 和
+foundation-only expansion 均不得重新成为默认路径。
 
 立即执行：
 
 ```text
-SAR-0：将本架构设为唯一权威，停止 additive foundation
+SAR-6：canonical execution / ActionOutcome，并在同一单元删除旧 execution result authority
     ↓
-SAR-1：深层不可变与 ActionContract stale hash correctness
+SAR-4：production PlannerResponse / provider cutover，并删除 legacy PlannerDecision / PlannerContext production path
+    ↓
+SAR-5：canonical observation / active-step scope cutover，并删除 terminal mini-framework
+    ↓
+SAR-7：single progress / finish authority
 ```
 
 原因：

@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-5B ActiveStepScope validator hookup | SAR-5A UnifiedObservation and ActiveStepScope foundation is closed as a local partial candidate | Exact legacy active-subgoal outcome subjects are enforced by ActiveStepScope inside PlannerProposalValidator when they match a current target ID. Coordinator/run_sync, StateKernel schema, progress authority, finish authority, provider prompt/schema, and benchmark adapter remain unchanged | SAR-6 ActionContract / ActionOutcome canonicalization |
+| Horizontal | SAR-6 ActionContract / ActionOutcome canonicalization | SAR-5B exact active-step proposal scope gate is a local candidate at `b9849e1a1941dc3e36abdf4c1e60475766085902`; SAR-5 overall remains `in_progress` | Canonicalize execution identity and ActionOutcome with same-unit one-out deletion. Coordinator/run_sync, StateKernel progress authority, finish authority, provider schema, and benchmark adapter may not change unless explicitly admitted by the SAR-6 packet. | SAR-7 single progress/finish authority; SAR-4 production cutover and SAR-5 canonical scope deletion are mandatory before SAR-7 |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -76,6 +76,47 @@ legacy_root_architecture_docs: archived_with_redirects
 current_architecture_entrypoint: docs/README.md
 current_authoritative_spec: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
 current_authoritative_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+```
+
+Current implementation-bearing review identity:
+
+```yaml
+current_head:
+  revision: b9849e1a1941dc3e36abdf4c1e60475766085902
+  role: sar_5b_exact_scope_gate_local_candidate
+sar_5:
+  unified_observation_contract: foundation_complete
+  exact_scope_gate: complete_for_selected_slice
+  canonical_scope_resolver: pending
+  action_family_and_destination_scope: pending
+  terminal_framework_deletion: pending
+  behavioral_exit_evidence: pending
+  overall: in_progress
+coordinator_assessment:
+  no_growth: true
+  actual_reduction: false
+  current_length_expected: true
+  actual_reduction_stage: sar_7_to_sar_9
+selected_next_sequence:
+  - SAR-6 canonical execution and ActionOutcome with actual one-out deletion
+  - SAR-4 production PlannerResponse/provider cutover and legacy deletion
+  - SAR-5 canonical observation/scope cutover and terminal-framework deletion
+  - SAR-7 single progress and finish
+  - SAR-8 single recovery
+  - SAR-9 phase extraction and Coordinator reduction
+hard_guardrails:
+  - no new foundation-only chain
+  - every canonical object requires same-unit legacy deletion
+  - no second execution result authority
+  - no second progress or finish authority
+  - no Coordinator shortening by merely relocating unchanged branches
+  - total core complexity must decrease
+evidence:
+  local_full_gate: reported_pass
+  independently_reproduced: false
+  remote_ci: absent
+  pr_breadth: held
+  promotion: held
 ```
 
 ### Review-driven remediation sequence
@@ -371,9 +412,16 @@ and direct PlanningRequest provider serialization. SAR-5A is closed as a
 foundation for immutable target-centric UnifiedObservation and pure
 ActiveStepScope proposal scope evaluation. SAR-5B hooks ActiveStepScope into
 PlannerProposalValidator for exact active-subgoal target enforcement without
-changing Coordinator/run_sync. Full legacy TaskPlan/PlanProgress model cutover
-and PlannerContext provider-path retirement remain open for later dedicated
-slices. Canonical
+changing Coordinator/run_sync. SAR-5B is the selected-slice local candidate, but
+SAR-5 overall remains `in_progress`: canonical scope resolution, action-family
+and destination scope, terminal-framework deletion, and behavioral exit evidence
+are still pending. SAR-6 is now the next main slice and must canonicalize
+execution/outcome by replacing legacy execution-result surfaces in the same
+unit, not by adding another foundation-only chain. Before SAR-7 starts,
+SAR-4 production PlannerResponse/provider cutover and SAR-5 canonical
+observation/scope plus terminal-framework deletion must be closed. Full legacy
+TaskPlan/PlanProgress model cutover and PlannerContext provider-path retirement
+remain open for later dedicated slices. Canonical
 semantic vocabulary lives in `semantics.py`; simplified step projection no
 longer maps relation enum values. ODG advanced attribution
 remains
