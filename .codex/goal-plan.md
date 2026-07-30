@@ -1042,3 +1042,11 @@ delivery claims.
   Generalist/full-phase-recovery/Coordinator tests passed 130/130. The
   remaining FOR-4 item is targeted behavioral classification on a clean
   non-qwen Ollama `llama3.1:8b` revision before SAR-9.
+- Recorded FOR-4 targeted behavioral classification on clean revision
+  `ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154` using local non-qwen Ollama
+  `llama3.1:8b`. The 3-case targeted run observed 3/3 and passed 1/3:
+  `form-sequence` passed, `choose-list` clustered as execution owner, and
+  `enter-text` clustered as intent/planning owner. Evidence is recorded in
+  `docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md`.
+  This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence.
+  SAR-9 phase extraction is now the next selected work.

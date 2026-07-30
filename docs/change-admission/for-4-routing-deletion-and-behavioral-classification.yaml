@@ -13,7 +13,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_record: for_4_routing_deletion_code_local_candidate_behavior_pending
+  current_record: for_4_routing_deletion_and_behavioral_classification_local_candidate
   included:
     - FailureOwnerHandoff carries the compatibility RecoveryKind and budget cost.
     - Delete duplicate _recovery_kind_for_handoff mapping.
@@ -62,7 +62,19 @@ validation_policy:
     - git diff --check
   behavioral:
     required_model: ollama_llama3_1_8b
-    targeted_3_case: pending_after_clean_commit
+    targeted_3_case: recorded
+    command: LLM_ACTIVE_PROFILE=local LLM_LOCAL_PROVIDER=ollama LLM_LOCAL_MODEL_ID=llama3.1:8b python scripts/run_browsergym_generalist.py --output /tmp/affordance-for4-targeted-ccb6bf1 --profile smoke --planner-profile strict-generalist --task enter-text --task form-sequence --task choose-list --seed-count 1 --episode-timeout-s 165 --model-call-timeout-s 10 --max-model-calls 15
+    report: /tmp/affordance-for4-targeted-ccb6bf1/browsergym-report.json
+    evidence: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
+    revision: ccb6bf15f7719a6c61eaf9761e868e1c1d4c8154
+    result:
+      observed: 3
+      passed: 1
+      failed: 2
+      provider_failures: 0
+      clusters:
+        - choose-list:seed-0 execution_failed EXECUTION
+        - enter-text:seed-0 intent_compilation_rejected INTENT_PLANNING
     pr_breadth: false
     fresh_diagnostic: false
   full_pytest:
@@ -71,5 +83,6 @@ validation_policy:
 
 status:
   for_4_code_deletion_gate: local_candidate
-  behavioral_classification: pending_targeted_run
-  full_for_closure: incomplete_until_behavioral_classification_recorded
+  behavioral_classification: targeted_recorded
+  full_for_closure: local_candidate
+  next_slice: SAR-9 phase extraction and Coordinator reduction
