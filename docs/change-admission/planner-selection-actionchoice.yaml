@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_1_ps_2_actionchoice_contracts_dispatch_and_first_default_cutover
+  current_slice: ps_3_choice_id_selector_cutover
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -35,10 +35,16 @@ scope:
     - Strict exact-value text fallback function and call site are deleted; the
       remaining legacy exact-value test passes only through the older semantic
       resolver compatibility path and is pending PS-4 retirement.
+    - Strict Generalist implements select(ChoicePlanningRequest) and exposes a
+      choice-id-only model schema.
+    - Multiple Runtime-built ActionChoices call the Step Planner selector only
+      for choice_id and reject unknown selected choices.
+    - Multiple-choice selections are converted back to PlannerProposal only as
+      a temporary compatibility output for the current Coordinator consumer.
   excluded:
     - Coordinator call-site integration.
-    - PlannerPort replacement with select(choice_id).
-    - Provider schema changes.
+    - Public PlannerPort replacement with select(choice_id).
+    - Full provider path deletion of PlannerProposalCandidate schema.
     - ActionContract builder changes.
     - Executor, verifier, preflight, approval, or capability changes.
     - Full deterministic fallback deletion.
@@ -47,9 +53,9 @@ scope:
     - PR breadth, fresh diagnostic, or promotion claim.
 
 authority_rules:
-  planner_generates_action_kind: bypassed_for_unique_exact_text_and_slider_choices
-  planner_generates_target: bypassed_for_unique_exact_text_and_slider_choices
-  planner_generates_parameters: bypassed_for_unique_exact_text_and_slider_choices
+  planner_generates_action_kind: bypassed_for_runtime_actionchoice_paths
+  planner_generates_target: bypassed_for_runtime_actionchoice_paths
+  planner_generates_parameters: bypassed_for_runtime_actionchoice_paths
   planner_generates_expected_effects: unchanged_legacy_path_pending
   planner_generates_evidence_requirements: unchanged_legacy_path_pending
   actionchoice_backend_authority: prohibited
@@ -73,7 +79,7 @@ dispatch_rules:
 validation:
   focused:
     - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_planner_response_contracts.py -q --tb=short --maxfail=10
-  focused_result: 100_passed
+  focused_result: 102_passed
   architecture:
     - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
   architecture_result: 9_passed
@@ -95,5 +101,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_1_ps_2_exact_text_slider_cutover_local_candidate
-next_slice: ps_3_choice_id_step_planner_cutover
+status: ps_3_choice_id_selector_local_candidate
+next_slice: ps_4_semantic_resolver_and_fallback_deletion

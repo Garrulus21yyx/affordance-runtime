@@ -5,6 +5,7 @@ from typing import Any, Sequence, TypeVar, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from affordance_runtime.action_choice import ActionChoice, ChoicePlanningRequest
 from affordance_runtime.adapters.dom import AuthoredInteractiveExtension, DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot, _bounded_control_value
 from affordance_runtime.compatibility_planner_algorithms import (
@@ -129,14 +130,16 @@ def _request_policy() -> EvidencePolicy:
 
 def _request_with_active_step(
     *,
-    criterion: StateCriterion,
-    affordance: PlannerAffordanceView,
+    criterion: StateCriterion | tuple[StateCriterion, ...],
+    affordance: PlannerAffordanceView | tuple[PlannerAffordanceView, ...],
     active_step_action_family: str = "",
 ) -> PlanningRequest:
+    criteria = criterion if isinstance(criterion, tuple) else (criterion,)
+    affordances = affordance if isinstance(affordance, tuple) else (affordance,)
     step = StepSpec(
         step_id="step:current",
         objective="Complete the current step",
-        completion_criteria=(criterion,),
+        completion_criteria=criteria,
         source_refs=(_request_source(),),
     )
     plan = TaskPlanView(
@@ -185,7 +188,7 @@ def _request_with_active_step(
             page_revision="page:1",
             environment_revision="env:1",
             observed_text="",
-            affordances=(affordance,),
+            affordances=affordances,
             artifact_refs=(),
         ),
         remaining_budget=RuntimeBudgetView(
@@ -280,6 +283,138 @@ def test_strict_planner_auto_selects_unique_slider_actionchoice() -> None:
     assert response.proposal_provenance is not None
     assert response.proposal_provenance.producer_id == "runtime-action-choice"
     assert planner.model_call_count == 0
+
+
+def test_strict_planner_selects_choice_id_for_multiple_actionchoices() -> None:
+    @dataclass
+    class ChoiceModel:
+        provider: str = "fixed"
+        model: str = "choice-selector"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+        output_schema_fields: tuple[str, ...] = ()
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del config
+            self.output_schema_fields = tuple(output_schema.model_fields)
+            assert "action_kind" not in self.output_schema_fields
+            assert "target_affordance_id" not in self.output_schema_fields
+            assert "parameters" not in self.output_schema_fields
+            assert "expected_effects" not in self.output_schema_fields
+            assert "evidence_requirements" not in self.output_schema_fields
+            payload = __import__("json").loads(messages[1].content)
+            return output_schema.model_validate(
+                {"choice_id": payload["choices"][1]["choice_id"]}
+            )
+
+    request = _request_with_active_step(
+        criterion=(
+            StateCriterion(
+                criterion_id="criterion:first",
+                source_refs=(_request_source(),),
+                subject="semantic:first",
+                relation=CriterionRelation.EQUALS,
+                expected_value="Alice",
+                evidence_policy=_request_policy(),
+            ),
+            StateCriterion(
+                criterion_id="criterion:second",
+                source_refs=(_request_source(),),
+                subject="semantic:second",
+                relation=CriterionRelation.EQUALS,
+                expected_value="Alice",
+                evidence_policy=_request_policy(),
+            ),
+        ),
+        affordance=(
+            PlannerAffordanceView(
+                target_id="semantic:first",
+                surface="dom",
+                role="textbox",
+                label="First",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            ),
+            PlannerAffordanceView(
+                target_id="semantic:second",
+                surface="dom",
+                role="textbox",
+                label="Second",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            ),
+        ),
+    )
+    model = ChoiceModel()
+    planner = GeneralistLMPlanner(model)
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerProposalResponse)
+    assert response.proposal.action_kind == PlannerActionKind.TYPE_TEXT
+    assert response.proposal.target_affordance_id == "semantic:second"
+    assert response.proposal.parameters == {"text": "Alice"}
+    assert response.proposal_provenance is not None
+    assert response.proposal_provenance.producer_id == "runtime-action-choice-selector"
+    assert planner.model_call_count == 1
+
+
+def test_generalist_choice_selector_rejects_unknown_choice_id() -> None:
+    @dataclass
+    class UnknownChoiceModel:
+        provider: str = "fixed"
+        model: str = "choice-selector"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate({"choice_id": "choice:missing"})
+
+    choices = (
+        ActionChoice(
+            choice_id="choice:one",
+            task_revision=1,
+            state_version=7,
+            snapshot_id="snapshot:1",
+            active_step_id="step:current",
+            action_kind=PlannerActionKind.TYPE_TEXT,
+            target_id="semantic:first",
+            parameters={"text": "Alice"},
+            criterion_ids=("criterion:first",),
+        ),
+        ActionChoice(
+            choice_id="choice:second",
+            task_revision=1,
+            state_version=7,
+            snapshot_id="snapshot:1",
+            active_step_id="step:current",
+            action_kind=PlannerActionKind.TYPE_TEXT,
+            target_id="semantic:second",
+            parameters={"text": "Alice"},
+            criterion_ids=("criterion:second",),
+        ),
+    )
+    request = ChoicePlanningRequest(
+        task_revision=1,
+        state_version=7,
+        snapshot_id="snapshot:1",
+        active_step_id="step:current",
+        choices=choices,
+    )
+
+    with pytest.raises(ValueError, match="unknown choice"):
+        asyncio.run(GeneralistLMPlanner(UnknownChoiceModel()).select(request))
 
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
