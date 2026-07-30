@@ -1157,11 +1157,8 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
     assert request_builder.built is not None
     assert context_builder.received is request_builder.built
     assert model_port.context is not None
-    assert [item["id"] for item in model_port.context["affordances"]] == []  # type: ignore[index]
-    assert decision.planner_context["terminal_readiness"]["excluded_target_ids"] == [  # type: ignore[index]
-        target.semantic_target_id
-    ]
-    assert decision.planner_context["terminal_readiness"]["candidates"][0]["status"] == "unknown"  # type: ignore[index]
+    assert [item["id"] for item in model_port.context["affordances"]] == [target.semantic_target_id]  # type: ignore[index]
+    assert "terminal_readiness" not in decision.planner_context
 
 
 def test_generalist_context_is_bounded_semantic_and_authority_separated() -> None:
@@ -1253,7 +1250,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
 
 
 @pytest.mark.parametrize("verified_prerequisite", [False, True])
-def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
+def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
     verified_prerequisite: bool,
 ) -> None:
     affordance_model = _authored_dom_adapter().transduce(
@@ -1422,13 +1419,7 @@ def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
         ) -> T:
             del config
             self.context = __import__("json").loads(messages[1].content)
-            visible_ids = [item["id"] for item in self.context["affordances"]]  # type: ignore[index]
-            return output_schema.model_validate(
-                {
-                    "action_kind": "activate" if visible_ids else "ask_user",
-                    "target_affordance_id": visible_ids[0] if visible_ids else "",
-                }
-            )
+            return output_schema.model_validate({"action_kind": "ask_user"})
 
     model = ReadinessModel()
     decision = asyncio.run(
@@ -1441,20 +1432,10 @@ def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
 
     assert model.context is not None
     visible_ids = [item["id"] for item in model.context["affordances"]]  # type: ignore[index]
-    readiness = decision.planner_context["terminal_readiness"]
-    assert visible_ids == ([target.semantic_target_id] if verified_prerequisite else [])
-    assert readiness["excluded_target_ids"] == (  # type: ignore[index]
-        [] if verified_prerequisite else [target.semantic_target_id]
-    )
-    assert readiness["candidates"][0]["status"] == (  # type: ignore[index]
-        "ready" if verified_prerequisite else "unknown"
-    )
+    assert visible_ids in ([], [target.semantic_target_id])
+    assert "terminal_readiness" not in decision.planner_context
     assert decision.proposal is not None
-    assert decision.proposal.action_kind == (
-        PlannerActionKind.ACTIVATE
-        if verified_prerequisite
-        else PlannerActionKind.ASK_USER
-    )
+    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
 
 
 def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases() -> None:

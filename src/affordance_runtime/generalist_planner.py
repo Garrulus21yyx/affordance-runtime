@@ -299,14 +299,14 @@ class GeneralistLMPlanner:
 
     async def _propose_decision(self, request: PlanningRequest) -> PlannerDecision:
         context = self._context_builder().build(request)
-        terminal_readiness: dict[str, object] = {}
+        planner_admission: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
             admission_result = self.decision_constraints.apply_admission(
                 context,
                 request.admission,
             )
             context = admission_result.context
-            terminal_readiness = _terminal_readiness_payload(
+            planner_admission = _planner_admission_payload(
                 admission_result.summary,
                 request.admission,
             )
@@ -343,8 +343,8 @@ class GeneralistLMPlanner:
                         "evidence_ref": compiled.evidence_ref,
                     },
                     **(
-                        {"terminal_readiness": terminal_readiness}
-                        if terminal_readiness
+                        {"planner_admission": planner_admission}
+                        if planner_admission
                         else {}
                     ),
                 },
@@ -484,7 +484,7 @@ class GeneralistLMPlanner:
                 ),
                 context=context,
                 semantic_compilers=semantic_compilers,
-                terminal_readiness=terminal_readiness,
+                planner_admission=planner_admission,
                 constraints=constraints,
                 typed_text_constraint=typed_text_constraint,
                 ordinal_constraint=ordinal_constraint,
@@ -500,7 +500,7 @@ class GeneralistLMPlanner:
             ),
             context=context,
             semantic_compilers=semantic_compilers,
-            terminal_readiness=terminal_readiness,
+            planner_admission=planner_admission,
             constraints=constraints,
             typed_text_constraint=typed_text_constraint,
             ordinal_constraint=ordinal_constraint,
@@ -664,7 +664,7 @@ def _request_limits(
     )
 
 
-def _terminal_readiness_payload(
+def _planner_admission_payload(
     summary: PlannerAdmissionSummary,
     admission: PlannerAdmissionView | None,
 ) -> dict[str, object]:
@@ -682,7 +682,7 @@ def _terminal_readiness_payload(
         payload["candidates"] = [
             {
                 "semantic_target_id": item.target_id,
-                "status": _terminal_readiness_status(item.status),
+                "status": _planner_admission_status(item.status),
                 "blocking_obligation_ids": list(item.blocking_step_ids),
                 "unknown_obligation_ids": list(item.unknown_step_ids),
             }
@@ -691,7 +691,7 @@ def _terminal_readiness_payload(
     return payload
 
 
-def _terminal_readiness_status(status: TargetAdmissionStatus) -> str:
+def _planner_admission_status(status: TargetAdmissionStatus) -> str:
     return {
         TargetAdmissionStatus.ALLOWED: "ready",
         TargetAdmissionStatus.BLOCKED: "blocked",
@@ -706,7 +706,7 @@ def _planner_decision(
     provenance: PlannerProposalProvenance,
     context: PlannerContext,
     semantic_compilers: SemanticCompilerRegistry,
-    terminal_readiness: dict[str, object],
+    planner_admission: dict[str, object],
     constraints: Any,
     typed_text_constraint: Any,
     ordinal_constraint: Any,
@@ -724,8 +724,8 @@ def _planner_decision(
         "planner_profile": provenance.profile_id,
         "semantic_compiler_registry_digest": semantic_compilers.digest,
     }
-    if terminal_readiness:
-        planner_context["terminal_readiness"] = terminal_readiness
+    if planner_admission:
+        planner_context["planner_admission"] = planner_admission
     if constraints is not None:
         planner_context["semantic_constraints"] = {
             "compiler_id": constraints.compiler_id,

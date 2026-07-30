@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import OrdinalRouteConstraint, resolve_global_ordinal_constraint
 from affordance_runtime.planner_context import PlannerContext
 from affordance_runtime.planner_model_orchestrator import (
@@ -19,12 +18,6 @@ from affordance_runtime.planning_request import (
     PlannerAdmissionSummary,
     PlannerAdmissionView,
     TargetAdmissionStatus,
-)
-from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.terminal_readiness import (
-    TaskObligationViewCompiler,
-    TerminalEffectBindingResolver,
-    TerminalReadinessEvaluator,
 )
 
 
@@ -169,53 +162,3 @@ class StrictDecisionConstraintBuilder:
                 ),
             ),
         )
-
-    def narrow_terminal_candidates(
-        self,
-        context: PlannerContext,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> tuple[PlannerContext, dict[str, object]]:
-        plan = state.task_plan
-        progress = state.plan_progress
-        if plan is None or progress is None or not snapshot.unified_affordances:
-            return context, {}
-        resolution = TerminalEffectBindingResolver().resolve(
-            plan=plan,
-            progress=progress,
-            unified_affordances=snapshot.unified_affordances,
-            observation=snapshot.observation,
-        )
-        if not resolution.bindings and not resolution.unresolved_target_ids:
-            return context, {}
-        view = TaskObligationViewCompiler().compile(
-            plan=plan,
-            progress=progress,
-            bindings=resolution.bindings,
-            task_revision=context.task_revision,
-            observation_epoch_id=context.snapshot_id,
-            target_fingerprints=snapshot.observation.target_fingerprints,
-        )
-        decision = TerminalReadinessEvaluator().evaluate(
-            task_revision=context.task_revision,
-            observation_epoch_id=context.snapshot_id,
-            candidates=view.candidates,
-            obligations=view.obligations,
-        )
-        excluded = set(resolution.unresolved_target_ids) | set(decision.blocked_target_ids)
-        narrowed = context.model_copy(
-            update={"affordances": tuple(item for item in context.affordances if item.id not in excluded)}
-        )
-        return narrowed, {
-            "excluded_target_ids": sorted(excluded),
-            "unresolved_target_ids": list(resolution.unresolved_target_ids),
-            "candidates": [
-                {
-                    "semantic_target_id": item.semantic_target_id,
-                    "status": item.status.value,
-                    "blocking_obligation_ids": list(item.blocking_obligation_ids),
-                    "unknown_obligation_ids": list(item.unknown_obligation_ids),
-                }
-                for item in decision.candidates
-            ],
-        }

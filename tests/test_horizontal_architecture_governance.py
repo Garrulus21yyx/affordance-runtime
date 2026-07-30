@@ -1392,6 +1392,18 @@ def test_parent_agent_adapter_uses_request_context_core() -> None:
     assert "closure_status: parent_agent_request_migration_foundation" in tpa_3_4
 
 
+def test_default_planning_request_path_does_not_import_terminal_readiness_framework() -> None:
+    builder = (SOURCE_ROOT / "planning_request_builder.py").read_text(encoding="utf-8")
+    constraints = (SOURCE_ROOT / "decision_constraints.py").read_text(encoding="utf-8")
+
+    assert "planner_admission_projection" not in builder
+    assert "LegacyPlannerAdmissionProjector" not in builder
+    assert "terminal_readiness" not in builder
+    assert "TerminalReadinessEvaluator" not in constraints
+    assert "TerminalEffectBindingResolver" not in constraints
+    assert "narrow_terminal_candidates" not in constraints
+
+
 def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:
     tree = ast.parse((SOURCE_ROOT / "planners.py").read_text(encoding="utf-8"))
     for class_name in ("PricingPlanner", "SettingsPlanner", "ExportPlanner"):

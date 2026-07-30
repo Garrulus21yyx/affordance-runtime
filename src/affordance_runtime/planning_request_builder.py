@@ -8,8 +8,9 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Affordance
-from affordance_runtime.planner_admission_projection import LegacyPlannerAdmissionProjector
 from affordance_runtime.planning_request import (
+    PlannerAdmissionSource,
+    PlannerAdmissionView,
     PlannerAffordanceView,
     PlannerObservationView,
     PlannerOutcomeSummary,
@@ -20,6 +21,8 @@ from affordance_runtime.planning_request import (
     PlanningRequest,
     PlanningRequestIdentity,
     RuntimeBudgetView,
+    TargetAdmissionDecision,
+    TargetAdmissionStatus,
     freeze_request_mapping,
 )
 from affordance_runtime.runtime import TaskEnvelope
@@ -61,7 +64,6 @@ class PlanningRequestBuilder:
     limits: PlanningRequestLimits = PlanningRequestLimits()
     accepted_knowledge: tuple[str, ...] = ()
     allow_finish: bool = True
-    admission_projector: LegacyPlannerAdmissionProjector = LegacyPlannerAdmissionProjector()
 
     def build(
         self,
@@ -98,10 +100,9 @@ class PlanningRequestBuilder:
                 for item in permitted_action_kinds
                 if item not in _EFFECTFUL_ACTION_KINDS
             )
-        admission = self.admission_projector.project(
+        admission = _active_step_admission(
             task_revision=task_spec.revision,
-            task_plan=state.task_plan,
-            plan_progress=state.plan_progress,
+            step_view=step_view,
             snapshot=snapshot,
         )
         request = PlanningRequest(
@@ -208,6 +209,55 @@ def _planner_step_view(
         projection_status=PlannerStepProjectionStatus.PROJECTED,
         active_step_action_family=_active_step_action_family(active_step),
     )
+
+
+def _active_step_admission(
+    *,
+    task_revision: int,
+    step_view: PlannerStepView,
+    snapshot: BrowserSnapshot,
+) -> PlannerAdmissionView | None:
+    active_step = step_view.active_step
+    if active_step is None or step_view.activity_status != StepActivityStatus.ACTIVE:
+        return None
+    allowed = _active_step_subjects(active_step)
+    if not allowed:
+        return None
+    current_target_ids = tuple(dict.fromkeys(item.id for item in _planner_affordance_inventory(snapshot)))
+    if not set(current_target_ids).intersection(allowed):
+        return None
+    decisions = tuple(
+        TargetAdmissionDecision(
+            target_id=target_id,
+            status=TargetAdmissionStatus.BLOCKED,
+            reason_code="outside_active_step_scope",
+            blocking_step_ids=(active_step.step_id,),
+        )
+        for target_id in current_target_ids
+        if target_id not in allowed
+    )
+    if not decisions:
+        return PlannerAdmissionView(
+            source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
+            task_revision=task_revision,
+            snapshot_id=snapshot.observation.snapshot_id,
+        )
+    return PlannerAdmissionView(
+        source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
+        task_revision=task_revision,
+        snapshot_id=snapshot.observation.snapshot_id,
+        target_decisions=decisions,
+        excluded_target_ids=tuple(item.target_id for item in decisions),
+    )
+
+
+def _active_step_subjects(active_step: object) -> frozenset[str]:
+    subjects: list[str] = []
+    for criterion in getattr(active_step, "completion_criteria", ()) + getattr(active_step, "preconditions", ()):
+        subject = getattr(criterion, "subject", "")
+        if isinstance(subject, str) and subject.strip():
+            subjects.append(subject)
+    return frozenset(subjects)
 
 
 def _compatibility_active_step_objective(state: StateKernel) -> str:
