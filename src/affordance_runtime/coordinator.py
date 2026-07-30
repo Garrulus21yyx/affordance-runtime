@@ -45,12 +45,12 @@ from affordance_runtime.recovery_protocol import (
 )
 from affordance_runtime.route_calibration import RouteCalibrator
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
-from affordance_runtime.runtime_loop_phase import (
-    RuntimeLoopEvent,
-    RuntimeLoopPhase,
-    RuntimeLoopTransition,
-)
+from affordance_runtime.runtime_loop_phase import RuntimeLoopPhase
 from affordance_runtime.runtime_result_phase import CoordinatorResult, RuntimeResultPhase
+from affordance_runtime.runtime_transition_commit import (
+    apply_runtime_loop_transition,
+    commit_runtime_loop_event,
+)
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_flow import TaskPlanFlow
@@ -230,13 +230,13 @@ class RunCoordinator:
         )
         state = loop_start.state
         trace = loop_start.trace
-        parent = _commit_runtime_loop_event(trace, loop_start.event)
+        parent = commit_runtime_loop_event(trace, loop_start.event)
         latest_verification: VerificationReport | None = None
         while True:
             budget_result = RUNTIME_LOOP_PHASE.check_budget(state=state, budget=self.budget)
             if budget_result is not None:
-                _apply_runtime_loop_transition(state, budget_result.transition)
-                parent = _commit_runtime_loop_event(trace, budget_result.event, parent)
+                apply_runtime_loop_transition(state, budget_result.transition)
+                parent = commit_runtime_loop_event(trace, budget_result.event, parent)
                 return self.result_phase.finish(
                     envelope,
                     state,
@@ -327,7 +327,7 @@ class RunCoordinator:
                     )
                 if task_plan_phase.current_state_completion_committed:
                     continue
-            _apply_runtime_loop_transition(state, RUNTIME_LOOP_PHASE.enter_planning(has_task_plan=state.task_plan is not None))
+            apply_runtime_loop_transition(state, RUNTIME_LOOP_PHASE.enter_planning(has_task_plan=state.task_plan is not None))
             skill_step_id = ""
             try:
                 task_skill_phase = TASK_SKILL_PHASE.select(
@@ -632,7 +632,7 @@ class RunCoordinator:
                 )
             assert execution_result.receipt is not None
             receipt = execution_result.receipt
-            _apply_runtime_loop_transition(state, RUNTIME_LOOP_PHASE.enter_verifying())
+            apply_runtime_loop_transition(state, RUNTIME_LOOP_PHASE.enter_verifying())
             verification_result = VERIFICATION_PHASE.run(
                 envelope=envelope,
                 state=state,
@@ -771,30 +771,6 @@ def _terminal_recovery_status(
         return current
     state.transition(fallback.value)
     return fallback
-
-
-def _apply_runtime_loop_transition(
-    state: StateKernel,
-    transition: RuntimeLoopTransition,
-) -> None:
-    state.transition(transition.phase.value)
-    if transition.activate_next_subgoal:
-        state.activate_next_subgoal()
-
-
-def _commit_runtime_loop_event(
-    trace: TraceDag,
-    event: RuntimeLoopEvent,
-    parent: TraceNode | None = None,
-) -> TraceNode:
-    parent_ids = event.parent_ids
-    if not parent_ids and parent is not None:
-        parent_ids = (parent.id,)
-    return trace.add(
-        event.kind,
-        event.payload,
-        parents=list(parent_ids) if parent_ids else None,
-    )
 
 
 def _trace_recovery_started(

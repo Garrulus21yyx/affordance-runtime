@@ -162,6 +162,7 @@ ALLOWED_STATE_MUTATION_MODULES = {
     "recovery_phase.py",
     "runtime_terminal.py",
     "runtime_loop_phase.py",
+    "runtime_transition_commit.py",
     "runtime.py",
     "task_plan_phase.py",
     "verification_failure_phase.py",
@@ -2899,6 +2900,20 @@ def test_sar_9w_runtime_budget_check_is_not_a_runcoordinator_method() -> None:
     assert "class RuntimeBudgetView" in runtime_loop_source
     assert "def check_budget" in runtime_loop_source
     assert "def _budget_error" in runtime_loop_source
+
+
+def test_sar_9x_runtime_loop_transition_commit_helpers_are_not_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "def _apply_runtime_loop_transition" not in coordinator_source
+    assert "def _commit_runtime_loop_event" not in coordinator_source
+    assert "RuntimeLoopEvent" not in coordinator_source
+    assert "RuntimeLoopTransition" not in coordinator_source
+    commit_source = (SOURCE_ROOT / "runtime_transition_commit.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def apply_runtime_loop_transition" in commit_source
+    assert "def commit_runtime_loop_event" in commit_source
 
 
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
