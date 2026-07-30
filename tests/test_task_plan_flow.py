@@ -132,6 +132,33 @@ class InvalidPlanner:
         return plan.model_copy(update={"task_id": "wrong-task"})
 
 
+class AlreadySatisfiedEntryPlanner:
+    def plan(self, context):  # type: ignore[no-untyped-def]
+        outcome = SubgoalOutcome(
+            subject="Save setting",
+            relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+        )
+        return TaskPlan(
+            plan_id="plan-already-satisfied-entry",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=1,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="save-available",
+                    objective=outcome.description(),
+                    success_criteria=(outcome.description(),),
+                    evidence_requirements=("current button availability",),
+                    operation_class=OperationClass.READ_ONLY,
+                    action_family=TaskPlanActionFamily.WAIT,
+                    outcome=outcome,
+                ),
+            ),
+        )
+
+
 def test_flow_preserves_initial_validation_issues_without_mutating_state() -> None:
     state = _state()
     result = TaskPlanFlow(TaskPlanLifecycle(InvalidPlanner())).prepare(
@@ -148,6 +175,25 @@ def test_flow_preserves_initial_validation_issues_without_mutating_state() -> No
     assert result.failure.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
     assert result.failure.failure_class == FailureClass.VALIDATION
     assert {item.code for item in result.failure.issues} == {"task_id_mismatch"}
+    assert state.task_plan is None
+
+
+def test_flow_treats_already_satisfied_entry_as_progress_precheck_not_plan_failure() -> None:
+    state = _state()
+    result = TaskPlanFlow(TaskPlanLifecycle(AlreadySatisfiedEntryPlanner())).prepare(
+        _task(),
+        state,
+        _snapshot(),
+        Limits(),
+    )
+
+    assert result.kind == TaskPlanFlowKind.INITIAL
+    assert result.accepted
+    assert result.transition is not None
+    assert result.failure is None
+    assert {item.code for item in result.transition.validation.issues} == {
+        "entry_outcome_already_satisfied"
+    }
     assert state.task_plan is None
 
 

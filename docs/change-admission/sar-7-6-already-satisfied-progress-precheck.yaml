@@ -1,0 +1,69 @@
+slice_id: sar-7-6-already-satisfied-progress-precheck
+parent_decision: sar-7-single-progress-finish-authority
+input_classification: docs/change-admission/sar-8-pre-planner-failure-classification.yaml
+base_revision: 2cf111002dcb27e5aa3f258768e1f1255e13ca42
+change_type: bounded_progress_owner_repair
+production_behavior_change: true
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: bounded_existing_progress_seam_call
+statekernel_schema_changed: false
+planner_prompt_or_schema_changed: false
+recovery_protocol_changed: false
+promotion_status: held
+remote_ci: disabled
+
+purpose:
+  - Close the clear SAR-7 fresh diagnostic residual in which an already
+    satisfied current step was treated as TaskPlan validation/replan failure.
+  - Keep already-satisfied step handling under the current-state progress
+    precheck owner before SAR-8 recovery protocol unification.
+
+included:
+  - TaskPlanFlow accepts validation reports whose only issue is
+    entry_outcome_already_satisfied so the plan can be installed and checked
+    by the existing progress precheck.
+  - RunCoordinator invokes the existing current-state completion seam
+    immediately after accepting and activating a TaskPlan.
+  - Regression coverage that the already-satisfied initial active step is
+    completed before reaching Planner and without recovery.
+
+excluded:
+  - SAR-8 recovery protocol unification
+  - new Planner fallback rules
+  - task-family, URL, selector, or lexical repair branches
+  - TaskPlan deletion or replacement semantics
+  - TaskProgress data-model replacement
+  - finish-authority changes
+  - benchmark promotion claims
+
+authority_boundary:
+  accepted_plan_writer: unchanged
+  step_completion_writer: task_plan_progress_flow.commit_current_state_completion
+  task_completed_writer: unchanged
+  planner_authority: unchanged
+  recovery_authority: unchanged
+
+behavioral_claim:
+  already_satisfied_current_step:
+    previous: task_plan_validation_failure_then_recovery
+    current: accepted_plan_then_current_state_subgoal_completion
+  planner_reached_for_already_satisfied_active_step: false
+  task_plan_replacement_required: false
+
+validation:
+  focused:
+    - PYTHONPATH=src:. /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q tests/test_coordinator.py::test_coordinator_prechecks_initial_already_satisfied_step_before_planning tests/test_task_plan_flow.py::test_flow_treats_already_satisfied_entry_as_progress_precheck_not_plan_failure
+  broader_local_gate:
+    pytest: 1272_passed
+    architecture: 65_passed
+    ruff: passed
+    mypy: passed_143_source_files
+    uv_build: passed
+    diff_check: passed
+  pr_breadth: not_run
+  fresh_diagnostic: not_run
+
+next_slice: sar-8-single-recovery-protocol
+status: local_repair_complete_promotion_held

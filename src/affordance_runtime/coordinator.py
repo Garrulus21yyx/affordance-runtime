@@ -117,6 +117,7 @@ from affordance_runtime.task_plan_flow import (
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
+    commit_current_state_completion,
     commit_post_observation_progress,
     commit_task_skill_terminal_progress,
     commit_verified_task_progress,
@@ -535,6 +536,17 @@ class RunCoordinator:
                         kind=RecoveryCommandKind.REPLAN_TASK,
                         plan_or_route_ref=task_plan.plan_id,
                     )
+                    current_state_parent = commit_current_state_completion(
+                        envelope.task_spec,
+                        state,
+                        snapshot,
+                        self.budget,
+                        trace,
+                        parent,
+                    )
+                    if current_state_parent is not None:
+                        parent = current_state_parent
+                        continue
             state.transition(RuntimeStep.PLANNING.value)
             if state.task_plan is not None:
                 state.activate_next_subgoal()

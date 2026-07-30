@@ -582,6 +582,46 @@ class CurrentStateReadOnlyPlanner:
         return PlannerDecision(done=True, result={"completed_active_subgoal": active_id})
 
 
+class InitialAlreadySatisfiedTaskPlanner:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        return TaskPlan(
+            plan_id="plan-initial-current-state",
+            task_id=context.task_spec.task_id,
+            task_revision=context.task_spec.revision,
+            plan_version=1,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="submit-button-available",
+                    objective="submit button is available",
+                    success_criteria=("submit button is available",),
+                    evidence_requirements=("current submit button observation",),
+                    operation_class=OperationClass.READ_ONLY,
+                    action_family=TaskPlanActionFamily.WAIT,
+                    outcome=SubgoalOutcome(
+                        subject="submit_button",
+                        relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+                    ),
+                ),
+            ),
+        )
+
+
+class InitialAlreadySatisfiedPlanner:
+    def propose(
+        self,
+        envelope: TaskEnvelope,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+    ) -> PlannerDecision:
+        del envelope, snapshot
+        active_id = state.task_progress.active_subgoal_id if state.task_progress else ""
+        if active_id == "submit-button-available":
+            raise AssertionError("already-satisfied active step reached Planner")
+        return PlannerDecision(done=True, result={"completed_active_subgoal": active_id})
+
+
 class CurrentStateReadOnlyObserver:
     def __init__(self) -> None:
         self.snapshots = [
@@ -674,6 +714,40 @@ def _current_state_read_only_task() -> TaskSpec:
     )
 
 
+def _current_state_availability_task() -> TaskSpec:
+    submit_claim = SourcedTaskClaim(
+        claim_id="claim-submit-available",
+        kind=TaskClaimKind.DEPENDENCY,
+        statement="submit button is available",
+        source_ref="current-state-availability-request",
+    )
+    return TaskSpec(
+        task_id="current-state-availability",
+        revision=1,
+        objective="Confirm submit button is available",
+        operation_class=OperationClass.READ_ONLY,
+        targets=("submit button",),
+        success_criteria=("submit button is available",),
+        evidence_requirements=("current submit button observation",),
+        requested_capabilities=(),
+        source_request_ref="current-state-availability-request",
+        source_claims=(submit_claim,),
+        obligations=(
+            TaskObligationSpec(
+                obligation_id="submit-button-available",
+                kind=TaskObligationKind.PREDICATE,
+                subject="submit_button",
+                relation=TaskObligationRelation.IS_AVAILABLE,
+                value_source=TaskObligationValueSource.OBSERVATION,
+                claim_ids=(submit_claim.claim_id,),
+                evidence_requirements=("current submit button observation",),
+                blocking=True,
+                terminal=True,
+            ),
+        ),
+    )
+
+
 def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() -> None:
     result = RunCoordinator(
         observer=TwoStageObserver(),
@@ -717,6 +791,30 @@ def test_coordinator_completes_current_state_read_only_subgoal_without_replannin
         if node.kind == "SubgoalCompletedFromCurrentObservation"
     )
     assert current_state_completion.payload["subgoal_id"] == "submit-button-available"
+
+
+def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() -> None:
+    result = RunCoordinator(
+        observer=CurrentStateReadOnlyObserver(),
+        planner=InitialAlreadySatisfiedPlanner(),
+        executor=FakeExecutor(),
+        task_planner=InitialAlreadySatisfiedTaskPlanner(),
+    ).run_sync(TaskEnvelope(task_spec=_current_state_availability_task()))
+
+    assert result.status == RuntimeStep.DONE
+    assert result.state.task_progress is not None
+    assert result.state.task_progress.completed_subgoal_ids == [
+        "submit-button-available"
+    ]
+    events = [node.kind for node in result.trace.nodes]
+    assert "PlannerProposalRejected" not in events
+    assert "FailureDetected" not in events
+    assert "RecoveryStrategySelected" not in events
+    assert "TaskPlanRejected" not in events
+    assert "TaskReplanned" not in events
+    assert events.index("TaskPlanAccepted") < events.index(
+        "SubgoalCompletedFromCurrentObservation"
+    )
 
 
 def test_coordinator_commits_typed_task_plan_flow_replacement_reason() -> None:

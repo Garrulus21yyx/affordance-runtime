@@ -26,6 +26,7 @@ from affordance_runtime.task_planning import (
     SubgoalOutcomeRelation,
     SubgoalSpec,
     TaskPlanValidationIssue,
+    TaskPlanValidationReport,
     TaskPlanValidationStatus,
     task_planning_context_summary,
 )
@@ -404,7 +405,9 @@ def _validated_result(
 ) -> TaskPlanFlowResult:
     report = transition.validation
     failure = None
-    if report.status != TaskPlanValidationStatus.ACCEPT:
+    if report.status != TaskPlanValidationStatus.ACCEPT and not _current_state_precheck_only(
+        report
+    ):
         issue_codes = ",".join(dict.fromkeys(item.code for item in report.issues))
         detail = f" [{issue_codes}]" if issue_codes else ""
         failure = TaskPlanFlowFailure(
@@ -419,6 +422,14 @@ def _validated_result(
         transition=transition,
         replacement=replacement,
         failure=failure,
+    )
+
+
+def _current_state_precheck_only(report: TaskPlanValidationReport) -> bool:
+    return (
+        report.status == TaskPlanValidationStatus.REPAIRABLE
+        and bool(report.issues)
+        and all(item.code == "entry_outcome_already_satisfied" for item in report.issues)
     )
 
 
