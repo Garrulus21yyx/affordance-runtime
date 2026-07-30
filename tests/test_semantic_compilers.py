@@ -23,25 +23,9 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.runtime import TaskEnvelope
-from affordance_runtime.semantic_action_resolver import SemanticActionResolution
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry, SemanticConstraints
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-
-
-def test_semantic_action_resolution_parameters_are_immutable_from_source_payload() -> None:
-    parameters = {"values": ["Alice"]}
-
-    resolution = SemanticActionResolution(
-        action_kind=PlannerActionKind.TYPE_TEXT,
-        target_affordance_id="field-1",
-        parameters=parameters,
-    )
-    parameters["values"].append("Mallory")
-
-    assert resolution.parameters["values"] == ["Alice"]
-    with pytest.raises(TypeError):
-        resolution.parameters["values"][0] = "Mallory"
 
 
 def test_semantic_compilation_payloads_are_immutable_from_source_collections() -> None:

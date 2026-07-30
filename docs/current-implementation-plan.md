@@ -347,11 +347,12 @@ batched into a single mixed patch:
    frozen, or earlier only if 5A/5B evidence proves mutable `StateKernel` input
    is the root cause, introduce frozen `PlannerStateView` / `PlanningRequest`
    so the standard Planner contract no longer receives mutable `StateKernel`.
-6. **P2 semantic fallback owner extraction** — continue extracting the
-   remaining SG7-triggered exact-value, page-observed-text, and terminal-submit
-   fallbacks out of `GeneralistLMPlanner`; V-PRB-3's
-   `semantic_action_resolver.py` is only one extracted cluster and still has
-   deep-immutability/input-typing debt.
+6. **Planner Selection Simplification** — continue replacing Planner-authored
+   action/target/parameter generation with Runtime-built `ActionChoice`
+   candidates. The strict `semantic_action_resolver.py` default path and
+   strict page/exact text fallback functions are retired; remaining
+   terminal-submit compatibility fallback and historical-profile grammar must
+   move through ActionChoice or explicit compatibility-only owners before SAR-9.
 7. **P3 intent semantic normalizer** — isolate source-bound value-entry lexical
    normalization from `LLMIntentCompiler`; the normalizer may propose typed
    semantics but may not create READY authority or bypass canonical graph

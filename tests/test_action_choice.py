@@ -177,6 +177,144 @@ def test_action_choice_builder_returns_typed_failure_for_no_feasible_action() ->
     assert result.reason_code == "no_feasible_action_choice"
 
 
+def test_action_choice_builder_creates_checkbox_activation_choice() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:checkbox",
+        subject="semantic:checkbox",
+        relation=CriterionRelation.IS_CHECKED,
+        expected_value=True,
+    )
+    step = _step(criterion=criterion, step_id="step:checkbox")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:checkbox",
+                surface="dom",
+                role="checkbox",
+                label="Subscribe",
+                supported_actions=("activate",),
+                state={"checked": False, "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.ACTIVATE
+    assert choice.target_id == "semantic:checkbox"
+    assert choice.parameters == {}
+
+
+def test_action_choice_builder_skips_already_checked_checkbox() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+    from affordance_runtime.recovery_protocol import FailureKind
+
+    criterion = _criterion(
+        criterion_id="criterion:checkbox",
+        subject="semantic:checkbox",
+        relation=CriterionRelation.IS_CHECKED,
+        expected_value=True,
+    )
+    step = _step(criterion=criterion, step_id="step:checkbox")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:checkbox",
+                surface="dom",
+                role="checkbox",
+                label="Subscribe",
+                supported_actions=("activate",),
+                state={"checked": True, "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.kind == FailureKind.NO_FEASIBLE_ACTION
+
+
+def test_action_choice_builder_creates_select_option_choice() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:option",
+        subject="semantic:select",
+        relation=CriterionRelation.IS_SELECTED,
+        expected_value="Blue",
+    )
+    step = _step(criterion=criterion, step_id="step:select")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:select",
+                surface="dom",
+                role="combobox",
+                label="Color",
+                supported_actions=("select_option",),
+                state={"selected_options": ("Red",), "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.SELECT_OPTION
+    assert choice.target_id == "semantic:select"
+    assert choice.parameters == {"option": "Blue"}
+
+
+def test_action_choice_builder_creates_terminal_activation_choice() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:submit",
+        subject="semantic:submit",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=True,
+    )
+    step = _step(criterion=criterion, step_id="step:submit")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:submit",
+                surface="dom",
+                role="button",
+                label="Submit",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.ACTIVATE
+    assert choice.target_id == "semantic:submit"
+    assert choice.criterion_ids == ("criterion:submit",)
+
+
 def test_action_choice_builder_does_not_expose_backend_or_verifier_authority() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

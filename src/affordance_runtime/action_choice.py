@@ -335,7 +335,36 @@ def _choice_for_criterion(
     criterion: StateCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
+    if target.state.get("enabled") is False or target.state.get("visible") is False:
+        return None
     if criterion.relation != CriterionRelation.EQUALS:
+        if criterion.relation == CriterionRelation.IS_CHECKED:
+            return _checked_choice(
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=snapshot_id,
+                step_id=step_id,
+                criterion=criterion,
+                target=target,
+            )
+        if criterion.relation == CriterionRelation.IS_SELECTED:
+            return _selected_choice(
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=snapshot_id,
+                step_id=step_id,
+                criterion=criterion,
+                target=target,
+            )
+        if criterion.relation == CriterionRelation.IS_COMPLETED:
+            return _activation_choice(
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=snapshot_id,
+                step_id=step_id,
+                criterion=criterion,
+                target=target,
+            )
         return None
     if isinstance(criterion.expected_value, str) and _supports(
         target,
@@ -370,6 +399,84 @@ def _choice_for_criterion(
             criterion_ids=(criterion.criterion_id,),
         )
     return None
+
+
+def _checked_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    criterion: StateCriterion,
+    target: UnifiedObservationTarget,
+) -> ActionChoice | None:
+    if not _supports(target, PlannerActionKind.ACTIVATE):
+        return None
+    if target.state.get("checked") is True:
+        return None
+    return _activation_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        criterion=criterion,
+        target=target,
+    )
+
+
+def _selected_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    criterion: StateCriterion,
+    target: UnifiedObservationTarget,
+) -> ActionChoice | None:
+    if not isinstance(criterion.expected_value, str):
+        return None
+    if not _supports(target, PlannerActionKind.SELECT_OPTION):
+        return None
+    selected = {
+        str(item).strip().casefold()
+        for item in target.state.get("selected_options", ())
+        if isinstance(item, str) and item.strip()
+    }
+    if criterion.expected_value.strip().casefold() in selected:
+        return None
+    return _make_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        action_kind=PlannerActionKind.SELECT_OPTION,
+        target_id=target.target_id,
+        parameters={"option": criterion.expected_value},
+        criterion_ids=(criterion.criterion_id,),
+    )
+
+
+def _activation_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    criterion: StateCriterion,
+    target: UnifiedObservationTarget,
+) -> ActionChoice | None:
+    if not _supports(target, PlannerActionKind.ACTIVATE):
+        return None
+    return _make_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_id=target.target_id,
+        parameters={},
+        criterion_ids=(criterion.criterion_id,),
+    )
 
 
 def _make_choice(
@@ -432,7 +539,9 @@ def _validate_scope_identity(
 
 def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool:
     compatible = {
+        PlannerActionKind.ACTIVATE: {"activate", "click"},
         PlannerActionKind.TYPE_TEXT: {"fill", "type", "type_text"},
+        PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
         PlannerActionKind.PRESS_KEY: {"press", "press_key"},
     }.get(kind, set())
     return bool(compatible.intersection(target.supported_actions))

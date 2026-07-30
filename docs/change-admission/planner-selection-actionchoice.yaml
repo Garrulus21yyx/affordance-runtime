@@ -14,7 +14,7 @@ promotion_status: held
 remote_ci: disabled
 
 scope:
-  current_slice: ps_3_choice_id_selector_cutover
+  current_slice: ps_4_strict_semantic_resolver_deletion
   included:
     - Runtime-owned ActionChoice contract.
     - Runtime-owned ActionChoiceSet and ActionChoiceFailure result boundary.
@@ -32,15 +32,19 @@ scope:
       runtime-action-choice provenance.
     - Strict page-observed text fallback is deleted from default Generalist
       Planner behavior.
-    - Strict exact-value text fallback function and call site are deleted; the
-      remaining legacy exact-value test passes only through the older semantic
-      resolver compatibility path and is pending PS-4 retirement.
+    - Strict exact-value text fallback function and call site are deleted; tests
+      now assert that strict Planner clarification paths do not synthesize
+      action, target, or parameters without Runtime-built ActionChoice input.
     - Strict Generalist implements select(ChoicePlanningRequest) and exposes a
       choice-id-only model schema.
     - Multiple Runtime-built ActionChoices call the Step Planner selector only
       for choice_id and reject unknown selected choices.
     - Multiple-choice selections are converted back to PlannerProposal only as
       a temporary compatibility output for the current Coordinator consumer.
+    - ActionChoiceBuilder now covers bounded checkbox IS_CHECKED activation,
+      select IS_SELECTED option choice, and terminal IS_COMPLETED activation.
+    - strict semantic_action_resolver.py is physically deleted from production
+      source and removed from executable collaborator manifests.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -78,8 +82,8 @@ dispatch_rules:
 
 validation:
   focused:
-    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_planner_response_contracts.py -q --tb=short --maxfail=10
-  focused_result: 102_passed
+    - python -m pytest tests/test_generalist_planner.py tests/test_action_choice.py tests/test_semantic_compilers.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=20
+  focused_result: 183_passed
   architecture:
     - python -m pytest tests/test_action_choice.py tests/test_horizontal_architecture_governance.py::test_strict_authority_free_collaborators_do_not_import_state_or_benchmarks -q --tb=short --maxfail=5
   architecture_result: 9_passed
@@ -91,15 +95,15 @@ validation:
   mypy_result: passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
-    full_pytest_result: 1293_passed
+    full_pytest_result: 1298_passed
     full_ruff: ruff check src tests scripts
     full_ruff_result: passed
     core_mypy: /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime
-    core_mypy_result: passed_147_source_files
+    core_mypy_result: passed_146_source_files
     uv_build: passed
     diff_check: passed
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_3_choice_id_selector_local_candidate
-next_slice: ps_4_semantic_resolver_and_fallback_deletion
+status: ps_4_strict_semantic_resolver_deleted_local_candidate
+next_slice: ps_5_terminal_submit_fallback_and_historical_grammar_retirement

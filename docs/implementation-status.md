@@ -826,16 +826,14 @@ v_prb_5_downstream_planning_follow_up:
   promotion_status: held
 
 v_prb_3_architecture_follow_up:
-  status: in_progress
-  resolver_manifest: done; semantic_action_resolver.py is listed in the executable authority-free collaborator manifest
+  status: retired_by_planner_selection_simplification
+  resolver_manifest: retired; semantic_action_resolver.py is removed from production source and from executable authority-free collaborator manifests
   action_family_resolver_manifest: done; task_action_family_resolution.py is listed in the executable authority-free collaborator manifest and strict pure-owner dependency gate
-  deep_immutable_output: pending
-  typed_input_boundary: pending
+  deep_immutable_output: not_applicable_after_module_deletion
+  typed_input_boundary: replaced_by_runtime_actionchoice
   extracted_cluster: V-PRB-3 empty clarification resolution
   still_in_generalist_planner:
     - strict-submit-after-text-fallback
-    - strict-exact-value-text-fallback
-    - strict-page-observed-text-fallback
 ```
 
 Earlier remote failures were classified and repaired as narrow CI/harness or

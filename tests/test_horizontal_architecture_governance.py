@@ -86,7 +86,6 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_handler.py",
     "recovery_protocol.py",
     "recovery_trace_projection.py",
-    "semantic_action_resolver.py",
     "task_action_family_resolution.py",
     "obligation_attribution_flow.py",
     "obligation_progress_shadow_flow.py",
@@ -106,7 +105,6 @@ FORBIDDEN_NEUTRAL_DEPENDENCIES = (
 STRICT_AUTHORITY_FREE_COLLABORATORS = (
     "action_choice.py",
     "active_step_scope.py",
-    "semantic_action_resolver.py",
     "task_action_family_resolution.py",
     "recovery_protocol.py",
     "unified_observation.py",
@@ -312,7 +310,7 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "v-prb-5b entry action-family resolution" in current_plan
     assert "v-prb-6 terminal completion guard classification" in current_plan
     assert "sar-3a direct rule plancandidate generation" in current_plan
-    assert "p2 semantic fallback owner extraction" in current_plan
+    assert "planner selection simplification" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
 
 

@@ -417,6 +417,14 @@ def test_generalist_choice_selector_rejects_unknown_choice_id() -> None:
         asyncio.run(GeneralistLMPlanner(UnknownChoiceModel()).select(request))
 
 
+def _assert_strict_semantic_resolver_retired(decision: Any) -> None:
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ASK_USER
+    assert decision.proposal.target_affordance_id == ""
+    assert decision.proposal.parameters == {}
+    assert decision.proposal.requires_clarification is True
+
+
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
     marker_attribute="data-runtime-interactive",
     backend_handle_attribute="data-runtime-handle",
@@ -3291,7 +3299,7 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
     assert decision.planner_context["semantic_value_constraint"]["relation"] == "prefix"
 
 
-def test_strict_planner_uses_exact_value_fallback_when_model_asks_empty_clarification() -> None:
+def test_strict_planner_does_not_guess_exact_value_when_no_actionchoice_exists() -> None:
     model = _authored_dom_adapter().transduce(
         '<input id="tt" type="date"><button>Submit</button>',
         environment_revision="rev-1",
@@ -3362,16 +3370,10 @@ def test_strict_planner_uses_exact_value_fallback_when_model_asks_empty_clarific
         )
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
-    assert decision.proposal.target_affordance_id == "dom_input_1"
-    assert decision.proposal.parameters == {"text": "01/18/2019"}
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.source == "deterministic_rule"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
-def test_strict_planner_resolves_empty_clarification_to_unique_requested_button() -> None:
+def test_strict_planner_does_not_guess_unique_requested_button_without_actionchoice() -> None:
     model = _authored_dom_adapter().transduce(
         "<button>No</button><button>OK</button><button>Submit</button><input>",
         environment_revision="rev-1",
@@ -3395,15 +3397,10 @@ def test_strict_planner_resolves_empty_clarification_to_unique_requested_button(
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
-def test_strict_planner_resolves_empty_clarification_to_selected_option_submit() -> None:
+def test_strict_planner_does_not_guess_selected_option_submit_without_actionchoice() -> None:
     model = _authored_dom_adapter().transduce(
         '<select><option selected>Ertha</option><option>Merridie</option></select><button>Submit</button>',
         environment_revision="rev-1",
@@ -3436,15 +3433,10 @@ def test_strict_planner_resolves_empty_clarification_to_selected_option_submit()
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
-def test_strict_planner_resolves_empty_clarification_to_target_derived_text_value() -> None:
+def test_strict_planner_does_not_guess_target_derived_text_value_without_actionchoice() -> None:
     model = _authored_dom_adapter().transduce(
         "<input id='tt' type='text'><button>Submit</button>",
         environment_revision="rev-1",
@@ -3489,16 +3481,10 @@ def test_strict_planner_resolves_empty_clarification_to_target_derived_text_valu
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.TYPE_TEXT
-    assert decision.proposal.target_affordance_id == "dom_input_1"
-    assert decision.proposal.parameters == {"text": "Myron"}
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
-def test_strict_planner_resolves_empty_clarification_to_slider_press_key() -> None:
+def test_strict_planner_does_not_guess_slider_press_key_without_actionchoice() -> None:
     model = _authored_dom_adapter().transduce(
         '<span class="ui-slider-handle" role="slider" tabindex="0">0</span><button>Submit</button>',
         environment_revision="rev-1",
@@ -3548,16 +3534,10 @@ def test_strict_planner_resolves_empty_clarification_to_slider_press_key() -> No
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.PRESS_KEY
-    assert decision.proposal.target_affordance_id == "dom_span_1"
-    assert decision.proposal.parameters == {"key": "ArrowRight"}
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
-def test_strict_planner_resolves_slider_even_when_model_asks_explanatory_clarification() -> None:
+def test_strict_planner_does_not_override_explanatory_slider_clarification_without_actionchoice() -> None:
     @dataclass
     class SliderClarificationModel:
         provider: str = "fixed"
@@ -3632,13 +3612,7 @@ def test_strict_planner_resolves_slider_even_when_model_asks_explanatory_clarifi
         )
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.PRESS_KEY
-    assert decision.proposal.target_affordance_id == "dom_span_1"
-    assert decision.proposal.parameters == {"key": "ArrowRight"}
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() -> None:
@@ -3708,12 +3682,7 @@ def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() ->
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_input_3"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> None:
@@ -3783,12 +3752,7 @@ def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> Non
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_input_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() -> None:
@@ -3865,12 +3829,7 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_text() -> None:
@@ -3944,12 +3903,7 @@ def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_t
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal_is_stale() -> None:
@@ -4026,12 +3980,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
-    assert decision.proposal is not None
-    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
-    assert decision.proposal.target_affordance_id == "dom_button_1"
-    assert decision.proposal.requires_clarification is False
-    assert decision.proposal_provenance is not None
-    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+    _assert_strict_semantic_resolver_retired(decision)
 
 
 def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists() -> None:
