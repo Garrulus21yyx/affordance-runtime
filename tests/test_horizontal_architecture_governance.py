@@ -2268,6 +2268,21 @@ def test_sar_8c_coordinator_does_not_complete_recovery_plan_changes_inline() -> 
     assert "_complete_pending_recovery_plan_change" not in method_names
 
 
+def test_sar_8c_coordinator_does_not_complete_recovery_binding_inline() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name for node in coordinator.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_complete_pending_recovery_binding" not in method_names
+    assert "_fail_pending_recovery_command" not in method_names
+
+
 def test_sar_8c_legacy_recovery_incident_protocol_is_not_default_state() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     state_source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")

@@ -456,7 +456,7 @@ class RunCoordinator:
                         parents=[parent.id],
                     )
                     if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_TASK:
-                        parent = self._fail_pending_recovery_command(
+                        parent = self.recovery_phase.fail_pending_command(
                             state,
                             trace,
                             parent,
@@ -566,7 +566,7 @@ class RunCoordinator:
                         and skill_decision.reason.startswith("TaskSkill runtime error:")
                     ):
                         if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
-                            parent = self._fail_pending_recovery_command(
+                            parent = self.recovery_phase.fail_pending_command(
                                 state,
                                 trace,
                                 parent,
@@ -659,7 +659,7 @@ class RunCoordinator:
             except ProviderModelError as exc:
                 error_code = RuntimeErrorCode(exc.kind.value)
                 if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
-                    parent = self._fail_pending_recovery_command(
+                    parent = self.recovery_phase.fail_pending_command(
                         state,
                         trace,
                         parent,
@@ -726,7 +726,7 @@ class RunCoordinator:
                     parents=[parent.id],
                 )
                 if _pending_recovery_command_kind(state) == RecoveryCommandKind.REPLAN_STEP:
-                    parent = self._fail_pending_recovery_command(
+                    parent = self.recovery_phase.fail_pending_command(
                         state,
                         trace,
                         parent,
@@ -820,7 +820,7 @@ class RunCoordinator:
                         RecoveryCommandKind.REROUTE,
                         RecoveryCommandKind.REPLAN_STEP,
                     }:
-                        parent = self._fail_pending_recovery_command(
+                        parent = self.recovery_phase.fail_pending_command(
                             state,
                             trace,
                             parent,
@@ -995,7 +995,7 @@ class RunCoordinator:
                         RecoveryCommandKind.REGROUND,
                         RecoveryCommandKind.REROUTE,
                     }:
-                        parent = self._fail_pending_recovery_command(
+                        parent = self.recovery_phase.fail_pending_command(
                             state,
                             trace,
                             parent,
@@ -1057,7 +1057,7 @@ class RunCoordinator:
                         RecoveryCommandKind.REGROUND,
                         RecoveryCommandKind.REROUTE,
                     }:
-                        parent = self._fail_pending_recovery_command(
+                        parent = self.recovery_phase.fail_pending_command(
                             state,
                             trace,
                             parent,
@@ -1336,7 +1336,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-            parent, binding_recovery_failed = self._complete_pending_recovery_binding(
+            parent, binding_recovery_failed = self.recovery_phase.complete_pending_binding(
                 state,
                 trace,
                 parent,
@@ -1661,7 +1661,7 @@ class RunCoordinator:
 
             retry_error = self._pending_retry_contract_error(state, contract)
             if retry_error is not None:
-                parent = self._fail_pending_recovery_command(
+                parent = self.recovery_phase.fail_pending_command(
                     state,
                     trace,
                     parent,
@@ -2530,121 +2530,6 @@ class RunCoordinator:
             parents=[parent.id],
         )
         return parent, verification, False
-
-    @staticmethod
-    def _complete_pending_recovery_binding(
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        contract: ActionContract,
-    ) -> tuple[TraceNode, bool]:
-        failure = state.current_failure
-        command = state.current_recovery_command
-        if failure is None or command is None:
-            return parent, False
-        if command.kind not in {
-            RecoveryCommandKind.REGROUND,
-            RecoveryCommandKind.REROUTE,
-        }:
-            return parent, False
-        candidate_id = (
-            contract.grounding_candidate.candidate_id
-            if contract.grounding_candidate is not None
-            else ""
-        )
-        fresh_epoch = bool(contract.snapshot_id and contract.snapshot_id != failure.snapshot_id)
-        route_matches = bool(
-            command.kind == RecoveryCommandKind.REGROUND
-            or (command.candidate_id and candidate_id == command.candidate_id)
-            or (command.route_ref and contract.backend == command.route_ref)
-        )
-        if not fresh_epoch or not route_matches:
-            parent = RunCoordinator._fail_pending_recovery_command(
-                state,
-                trace,
-                parent,
-                error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-            )
-            return parent, True
-        previous_fingerprint = (
-            failure.progress_fingerprint
-            or f"{failure.semantic_family_key}:state:{failure.state_version}"
-        )
-        next_fingerprint = (
-            f"{failure.semantic_family_key}:{command.strategy_id}:"
-            f"contract:{contract.contract_hash or contract.id}"
-        )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=previous_fingerprint,
-            next_attempt_fingerprint=next_fingerprint,
-            changed_dimensions=command.changed_dimensions,
-            new_plan_or_route_ref=candidate_id or contract.id,
-            explanation=command.expected_change,
-        )
-        receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=True,
-            state_before=f"state:{failure.state_version}",
-            state_after=f"state:{state.version}",
-            changed_dimensions=command.changed_dimensions,
-            route_refs=tuple(item for item in (candidate_id, contract.id) if item),
-            delta=delta,
-        )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
-        state.recovery_history.append(
-            RecoveryHistoryItem(
-                failure.semantic_family_key,
-                command.strategy_id,
-                previous_fingerprint,
-                next_fingerprint,
-            )
-        )
-        state.current_recovery_command = None
-        parent = trace.add(
-            "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": delta.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        return (
-            trace.add(
-                "RecoveryReenteredPhase",
-                {"state": state.phase, "reentry_phase": command.reentry_phase.value},
-                parents=[parent.id],
-            ),
-            False,
-        )
-
-    @staticmethod
-    def _fail_pending_recovery_command(
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        *,
-        error_code: str,
-    ) -> TraceNode:
-        command = state.current_recovery_command
-        if command is None:
-            return parent
-        receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=False,
-            state_before=f"state:{command.based_on_state_version}",
-            state_after=f"state:{state.version}",
-            error_code=error_code,
-        )
-        state.recovery_receipts.append(receipt)
-        state.current_recovery_command = None
-        return trace.add(
-            "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
-            parents=[parent.id],
-        )
 
     @staticmethod
     def _pending_retry_contract_error(

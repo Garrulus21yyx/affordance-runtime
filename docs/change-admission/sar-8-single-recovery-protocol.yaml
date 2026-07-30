@@ -79,6 +79,9 @@ scope:
     - RecoveryPhase owns pending recovery plan-change completion; Coordinator
       no longer constructs recovery receipt/delta/history for replan-step or
       replan-task success paths inline.
+    - RecoveryPhase owns pending recovery binding completion and failed pending
+      command completion; Coordinator no longer owns the reground/reroute
+      receipt/delta/history construction helper.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -173,6 +176,12 @@ validation:
   recovery_plan_change_helper_focused:
     - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=10
   recovery_plan_change_helper_focused_result: 37_passed
+  recovery_binding_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_binding_inline -q --tb=short
+  recovery_binding_helper_migration_gate_result: 1_passed
+  recovery_binding_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_active_perception_coordinator.py -q --tb=short --maxfail=10
+  recovery_binding_helper_focused_result: 42_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -184,5 +193,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_phase_plan_change_completion_local_candidate
+status: sar_8c_recovery_phase_binding_completion_local_candidate
 next_slice: planner-selection-simplification-actionchoice

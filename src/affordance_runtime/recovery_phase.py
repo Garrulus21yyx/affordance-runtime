@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.contracts import ActionContract, RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.recovery_command_dispatcher import (
     OWNER_DISPATCH_COMMANDS,
@@ -12,7 +13,11 @@ from affordance_runtime.recovery_command_dispatcher import (
 from affordance_runtime.recovery_commands import (
     RecoveryCommand,
     RecoveryCommandKind,
+    RecoveryDelta,
     RecoveryReentryPhase,
+)
+from affordance_runtime.recovery_commands import (
+    RecoveryReceipt as RecoveryCommandReceipt,
 )
 from affordance_runtime.recovery_completion import successful_recovery_completion
 from affordance_runtime.recovery_coordinator import (
@@ -307,6 +312,144 @@ class RecoveryPhase:
         return trace.add(
             "RecoveryReenteredPhase",
             {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+            parents=[parent.id],
+        )
+
+    @staticmethod
+    def complete_pending_binding(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        contract: ActionContract,
+    ) -> tuple[TraceNode, bool]:
+        failure = state.current_failure
+        command = state.current_recovery_command
+        if failure is None or command is None:
+            return parent, False
+        if command.kind not in {
+            RecoveryCommandKind.REGROUND,
+            RecoveryCommandKind.REROUTE,
+        }:
+            return parent, False
+        candidate_id = (
+            contract.grounding_candidate.candidate_id
+            if contract.grounding_candidate is not None
+            else ""
+        )
+        fresh_epoch = bool(contract.snapshot_id and contract.snapshot_id != failure.snapshot_id)
+        route_matches = bool(
+            command.kind == RecoveryCommandKind.REGROUND
+            or (command.candidate_id and candidate_id == command.candidate_id)
+            or (command.route_ref and contract.backend == command.route_ref)
+        )
+        if not fresh_epoch or not route_matches:
+            parent = RecoveryPhase.fail_pending_command(
+                state,
+                trace,
+                parent,
+                error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
+            )
+            return parent, True
+        previous_fingerprint = (
+            failure.progress_fingerprint
+            or f"{failure.semantic_family_key}:state:{failure.state_version}"
+        )
+        next_fingerprint = (
+            f"{failure.semantic_family_key}:{command.strategy_id}:"
+            f"contract:{contract.contract_hash or contract.id}"
+        )
+        delta = RecoveryDelta(
+            previous_attempt_fingerprint=previous_fingerprint,
+            next_attempt_fingerprint=next_fingerprint,
+            changed_dimensions=command.changed_dimensions,
+            new_plan_or_route_ref=candidate_id or contract.id,
+            explanation=command.expected_change,
+        )
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=True,
+            state_before=f"state:{failure.state_version}",
+            state_after=f"state:{state.version}",
+            changed_dimensions=command.changed_dimensions,
+            route_refs=tuple(item for item in (candidate_id, contract.id) if item),
+            delta=delta,
+        )
+        state.recovery_deltas.append(delta)
+        state.recovery_receipts.append(receipt)
+        state.recovery_history.append(
+            RecoveryHistoryItem(
+                failure.semantic_family_key,
+                command.strategy_id,
+                previous_fingerprint,
+                next_fingerprint,
+            )
+        )
+        state.current_recovery_command = None
+        state.current_recovery_outcome = RecoveryOutcome(
+            decision_id=state.current_recovery_decision.decision_id
+            if state.current_recovery_decision is not None
+            else command.command_id,
+            failure_id=failure.failure_id,
+            success=True,
+            changed_dimensions=tuple(
+                RecoveryDimension(item.value) for item in command.changed_dimensions
+            ),
+            next_phase=RuntimePhase(command.reentry_phase.value),
+        )
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return (
+            trace.add(
+                "RecoveryReenteredPhase",
+                {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+                parents=[parent.id],
+            ),
+            False,
+        )
+
+    @staticmethod
+    def fail_pending_command(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        *,
+        error_code: str,
+    ) -> TraceNode:
+        command = state.current_recovery_command
+        if command is None:
+            return parent
+        receipt = RecoveryCommandReceipt(
+            command_id=command.command_id,
+            success=False,
+            state_before=f"state:{command.based_on_state_version}",
+            state_after=f"state:{state.version}",
+            error_code=error_code,
+        )
+        state.recovery_receipts.append(receipt)
+        state.current_recovery_command = None
+        state.current_recovery_outcome = RecoveryOutcome(
+            decision_id=state.current_recovery_decision.decision_id
+            if state.current_recovery_decision is not None
+            else command.command_id,
+            failure_id=command.failure_id,
+            success=False,
+            changed_dimensions=tuple(
+                RecoveryDimension(item.value) for item in command.changed_dimensions
+            ),
+            next_phase=RuntimePhase.ABORTED,
+            error_code=error_code,
+        )
+        return trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
             parents=[parent.id],
         )
 
