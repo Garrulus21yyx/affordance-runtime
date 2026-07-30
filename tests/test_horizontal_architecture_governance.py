@@ -2311,6 +2311,18 @@ def test_sar_8c_coordinator_does_not_complete_recovery_observation_inline() -> N
     assert "_complete_pending_recovery_observation" not in method_names
 
 
+def test_ps_actionchoice_generalist_uses_dispatcher_not_local_selection_branching() -> None:
+    source = (SOURCE_ROOT / "generalist_planner.py").read_text(encoding="utf-8")
+    runtime_section = source.split("async def _runtime_action_choice_decision", 1)[1].split(
+        "\ndef _choice_to_decision",
+        1,
+    )[0]
+
+    assert "ActionChoiceDispatcher" in runtime_section
+    assert "len(choice_result.choices)" not in runtime_section
+    assert "planner.select(ChoicePlanningRequest.from_choice_set" not in runtime_section
+
+
 def test_sar_8c_legacy_recovery_incident_protocol_is_not_default_state() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     state_source = (SOURCE_ROOT / "state_kernel.py").read_text(encoding="utf-8")

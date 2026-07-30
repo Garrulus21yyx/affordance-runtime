@@ -7,13 +7,15 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, Awaitable, cast
 
 from pydantic import BaseModel, Field
 
 from affordance_runtime.action_choice import (
     ActionChoice,
     ActionChoiceBuilder,
+    ActionChoiceDispatcher,
+    ActionChoiceFailure,
     ActionChoiceSet,
     ActionSelection,
     ActionSelectionValidator,
@@ -774,26 +776,33 @@ async def _runtime_action_choice_decision(
     )
     if not isinstance(choice_result, ActionChoiceSet):
         return None
-    if len(choice_result.choices) == 1:
-        return _choice_to_decision(
-            choice=choice_result.choices[0],
-            active_step=active_step,
-            context=context,
-            planner_profile=planner_profile,
-            planner_admission=planner_admission,
-            producer_id="runtime-action-choice",
-            reason="runtime_unique_action_choice",
-        )
-    selection = await planner.select(ChoicePlanningRequest.from_choice_set(choice_result))
+    selection_result = ActionChoiceDispatcher().choose(choice_result, planner=planner)
+    selection = (
+        await cast(Awaitable[ActionSelection], selection_result)
+        if hasattr(selection_result, "__await__")
+        else selection_result
+    )
+    if isinstance(selection, ActionChoiceFailure):
+        return None
     selected_choice = ActionSelectionValidator().validate(selection, choice_result)
+    producer_id = (
+        "runtime-action-choice"
+        if selection.reason_summary == "runtime_unique_choice"
+        else "runtime-action-choice-selector"
+    )
+    reason = (
+        "runtime_unique_action_choice"
+        if selection.reason_summary == "runtime_unique_choice"
+        else "runtime_selected_action_choice"
+    )
     return _choice_to_decision(
         choice=selected_choice,
         active_step=active_step,
         context=context,
         planner_profile=planner_profile,
         planner_admission=planner_admission,
-        producer_id="runtime-action-choice-selector",
-        reason="runtime_selected_action_choice",
+        producer_id=producer_id,
+        reason=reason,
     )
 
 

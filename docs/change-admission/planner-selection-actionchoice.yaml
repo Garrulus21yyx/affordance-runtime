@@ -52,6 +52,9 @@ scope:
     - ActionChoiceDispatcher validates async Step Planner selections after
       awaiting them; sync and async selector paths now share the same
       choice_id membership and identity validator.
+    - Strict Generalist Runtime ActionChoice path uses ActionChoiceDispatcher
+      for zero/one/many dispatch instead of maintaining a second local
+      one-choice and multi-choice selection branch.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -105,6 +108,12 @@ validation:
   dispatcher_async_validation:
     - python -m pytest tests/test_action_choice.py -q --tb=short --maxfail=10
   dispatcher_async_validation_result: 13_passed
+  generalist_dispatcher_cutover:
+    - python -m pytest tests/test_action_choice.py tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_exact_text_actionchoice tests/test_generalist_planner.py::test_strict_planner_auto_selects_unique_slider_actionchoice tests/test_generalist_planner.py::test_strict_planner_selects_choice_id_for_multiple_actionchoices tests/test_generalist_planner.py::test_generalist_choice_selector_rejects_unknown_choice_id -q --tb=short --maxfail=10
+  generalist_dispatcher_cutover_result: 17_passed
+  generalist_dispatcher_architecture:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_generalist_uses_dispatcher_not_local_selection_branching -q --tb=short
+  generalist_dispatcher_architecture_result: 1_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
     full_pytest_result: 1298_passed
@@ -117,5 +126,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_actionchoice_dispatcher_validation_local_candidate
+status: ps_5_generalist_actionchoice_dispatcher_cutover_local_candidate
 next_slice: ps_6_historical_profile_grammar_quarantine
