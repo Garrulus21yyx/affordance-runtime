@@ -70,6 +70,6 @@ validation_policy:
 status:
   for_2a_runtime_recovery_phase_narrowing: local_candidate
   for_2b_runtime_recovery_policy_cleanup: local_candidate
-  for_3_structured_owner_handoff: selected_next
-  for_4_routing_deletion_gate: pending
+  for_3_structured_owner_handoff: local_candidate
+  for_4_routing_deletion_gate: selected_next
   full_for_closure: incomplete

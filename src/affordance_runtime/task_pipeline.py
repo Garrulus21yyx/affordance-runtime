@@ -152,7 +152,7 @@ class GeneralistTaskPipeline:
             failure,
             classification,
             current_state_version=0,
-        )
+        ).decision
         parent = trace.nodes[-1] if trace.nodes else None
         parent = trace.add(
             "FailureDetected",

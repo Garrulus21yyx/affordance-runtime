@@ -1027,3 +1027,10 @@ delivery claims.
   Focused FOR recovery/actionchoice/governance tests passed 48/48 and adjacent
   Generalist/full-phase-recovery/Coordinator tests passed 130/130. FOR-3 is
   next: replace the temporary handoff with structured owner handoff context.
+- Closed FOR-3 locally. Added `FailureOwnerHandoff` and
+  `FailureOwnerHandoffDecision`, routed non-runtime owner decision construction
+  through `build_failure_owner_handoff()`, and kept the handoff module free of
+  RecoveryPhase / RecoveryCoordinator imports. Focused handoff/governance tests
+  passed 5/5 and adjacent Generalist/full-phase-recovery/Coordinator tests
+  passed 130/130. FOR-4 remains next: delete duplicate mappings / temporary
+  handoff shape and run behavioral classification before SAR-9.

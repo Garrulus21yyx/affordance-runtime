@@ -8,6 +8,7 @@ forced through Runtime recovery policy.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import uuid4
 
 from affordance_runtime.failure_envelope import FailureEnvelope, FailurePhase
@@ -27,6 +28,43 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
 
 
+@dataclass(frozen=True)
+class FailureOwnerHandoff:
+    failure_id: str
+    owner: FailureOwner
+    reason_code: str
+    target_phase: RuntimePhase
+    changed_dimensions: tuple[RecoveryDimension, ...]
+    replan_scope: str = ""
+    user_question: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.failure_id.strip():
+            raise ValueError("failure owner handoff failure_id is required")
+        if not self.reason_code.strip():
+            raise ValueError("failure owner handoff reason_code is required")
+        if self.owner == FailureOwner.RUNTIME_RECOVERY:
+            raise ValueError("non-runtime failure owner handoff cannot target runtime recovery")
+        if not self.changed_dimensions:
+            raise ValueError("failure owner handoff changed_dimensions are required")
+        object.__setattr__(
+            self,
+            "changed_dimensions",
+            tuple(RecoveryDimension(str(item)) for item in self.changed_dimensions),
+        )
+        object.__setattr__(self, "owner", FailureOwner(str(self.owner)))
+        object.__setattr__(self, "target_phase", RuntimePhase(str(self.target_phase)))
+
+
+@dataclass(frozen=True)
+class FailureOwnerHandoffDecision:
+    decision: RecoveryDecision
+    handoff: FailureOwnerHandoff
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.decision, name)
+
+
 def commit_non_runtime_failure_owner_handoff(
     state: StateKernel,
     trace: TraceDag,
@@ -43,11 +81,12 @@ def commit_non_runtime_failure_owner_handoff(
     Terminal boundaries.
     """
 
-    decision = non_runtime_failure_owner_decision(
+    handoff_decision = non_runtime_failure_owner_decision(
         failure,
         classification,
         current_state_version=state.version,
     )
+    decision = handoff_decision.decision
     if decision.strategy_key in failure.attempted_strategy_ids:
         classification = FailureClassification(
             kind=classification.kind,
@@ -56,11 +95,12 @@ def commit_non_runtime_failure_owner_handoff(
             planner_deferral_kind=classification.planner_deferral_kind,
             available_action_count=classification.available_action_count,
         )
-        decision = non_runtime_failure_owner_decision(
+        handoff_decision = non_runtime_failure_owner_decision(
             failure,
             classification,
             current_state_version=state.version,
         )
+        decision = handoff_decision.decision
 
     state.current_failure = failure
     state.current_recovery_decision = decision
@@ -124,76 +164,110 @@ def non_runtime_failure_owner_decision(
     classification: FailureClassification,
     *,
     current_state_version: int,
-) -> RecoveryDecision:
-    if not failure.recoverable:
-        kind = RecoveryKind.ABORT
-        dimension = RecoveryDimension.TERMINAL
-        reentry = RuntimePhase.ABORTED
-        cost = RecoveryBudgetCost(recoveries=0)
-    else:
-        kind, dimension, reentry, cost = _recoverable_owner_shape(failure, classification)
+) -> FailureOwnerHandoffDecision:
+    handoff = build_failure_owner_handoff(failure, classification)
+    kind = _recovery_kind_for_handoff(handoff, failure)
+    cost = _budget_cost_for_handoff(handoff, kind)
     strategy_key = (
         f"strategy:{kind.value}:"
         f"{failure.semantic_family_key.removeprefix('sha256:')[:16]}"
     )
-    return RecoveryDecision(
+    decision = RecoveryDecision(
         decision_id=f"failure-owner-decision-{uuid4().hex}",
         failure_id=failure.failure_id,
         based_on_state_version=current_state_version,
         strategy_key=strategy_key,
         kind=kind,
         reason_code=classification.reason_code,
-        reentry_phase=reentry,
-        changed_dimensions=(dimension,),
-        preconditions=(f"failure owner is {classification.owner.value}",),
+        reentry_phase=handoff.target_phase,
+        changed_dimensions=handoff.changed_dimensions,
+        preconditions=(f"failure owner is {handoff.owner.value}",),
         budget_cost=cost,
-        question=(
-            "What information or authority is required to continue safely?"
-            if classification.owner == FailureOwner.USER and kind != RecoveryKind.ABORT
-            else ""
+        question=handoff.user_question if kind != RecoveryKind.ABORT else "",
+    )
+    return FailureOwnerHandoffDecision(decision=decision, handoff=handoff)
+
+
+def build_failure_owner_handoff(
+    failure: FailureEnvelope,
+    classification: FailureClassification,
+) -> FailureOwnerHandoff:
+    if classification.owner == FailureOwner.RUNTIME_RECOVERY:
+        raise ValueError("non-runtime failure owner handoff received runtime recovery owner")
+    owner = FailureOwner.TERMINAL if not failure.recoverable else classification.owner
+    dimension, target_phase, replan_scope, question = {
+        FailureOwner.PROGRESS: (
+            RecoveryDimension.TERMINAL,
+            RuntimePhase.ABORTED,
+            "",
+            "",
         ),
+        FailureOwner.STEP_PLANNER: (
+            RecoveryDimension.STEP_PLAN,
+            RuntimePhase.PLANNING,
+            "step",
+            "",
+        ),
+        FailureOwner.TASK_PLANNER: (
+            RecoveryDimension.TASK_PLAN,
+            RuntimePhase.PLANNING,
+            "task",
+            "",
+        ),
+        FailureOwner.USER: (
+            RecoveryDimension.USER_INFORMATION,
+            RuntimePhase.WAITING_USER,
+            "",
+            "What information or authority is required to continue safely?",
+        ),
+        FailureOwner.TERMINAL: (
+            RecoveryDimension.TERMINAL,
+            RuntimePhase.ABORTED,
+            "",
+            "",
+        ),
+    }[owner]
+    return FailureOwnerHandoff(
+        failure_id=failure.failure_id,
+        owner=owner,
+        reason_code=classification.reason_code,
+        target_phase=target_phase,
+        changed_dimensions=(dimension,),
+        replan_scope=replan_scope,
+        user_question=question,
     )
 
 
-def _recoverable_owner_shape(
+def _recovery_kind_for_handoff(
+    handoff: FailureOwnerHandoff,
     failure: FailureEnvelope,
-    classification: FailureClassification,
-) -> tuple[RecoveryKind, RecoveryDimension, RuntimePhase, RecoveryBudgetCost]:
-    kind, dimension, reentry, cost = {
-        FailureOwner.PROGRESS: (
-            RecoveryKind.ABORT,
-            RecoveryDimension.TERMINAL,
-            RuntimePhase.ABORTED,
-            RecoveryBudgetCost(recoveries=0),
-        ),
-        FailureOwner.STEP_PLANNER: (
-            RecoveryKind.REPLAN_STEP,
-            RecoveryDimension.STEP_PLAN,
-            RuntimePhase.PLANNING,
-            RecoveryBudgetCost(replans=1),
-        ),
-        FailureOwner.TASK_PLANNER: (
-            RecoveryKind.REPLAN_TASK,
-            RecoveryDimension.TASK_PLAN,
-            RuntimePhase.PLANNING,
-            RecoveryBudgetCost(replans=1),
-        ),
-        FailureOwner.USER: (
+) -> RecoveryKind:
+    if handoff.owner in {FailureOwner.PROGRESS, FailureOwner.TERMINAL}:
+        return RecoveryKind.ABORT
+    if handoff.owner == FailureOwner.STEP_PLANNER:
+        return RecoveryKind.REPLAN_STEP
+    if handoff.owner == FailureOwner.TASK_PLANNER:
+        return RecoveryKind.REPLAN_TASK
+    if handoff.owner == FailureOwner.USER:
+        return (
             RecoveryKind.CLARIFY_INTENT
             if failure.phase == FailurePhase.INTAKE
-            else RecoveryKind.ASK_USER,
-            RecoveryDimension.USER_INFORMATION,
-            RuntimePhase.WAITING_USER,
-            RecoveryBudgetCost(user_escalations=1),
-        ),
-        FailureOwner.TERMINAL: (
-            RecoveryKind.ABORT,
-            RecoveryDimension.TERMINAL,
-            RuntimePhase.ABORTED,
-            RecoveryBudgetCost(recoveries=0),
-        ),
-    }[classification.owner]
-    return kind, dimension, reentry, cost
+            else RecoveryKind.ASK_USER
+        )
+    raise ValueError(f"unsupported failure owner handoff: {handoff.owner}")
+
+
+def _budget_cost_for_handoff(
+    handoff: FailureOwnerHandoff,
+    kind: RecoveryKind,
+) -> RecoveryBudgetCost:
+    if kind == RecoveryKind.ABORT:
+        return RecoveryBudgetCost(recoveries=0)
+    if handoff.owner in {FailureOwner.STEP_PLANNER, FailureOwner.TASK_PLANNER}:
+        return RecoveryBudgetCost(replans=1)
+    if handoff.owner == FailureOwner.USER:
+        return RecoveryBudgetCost(user_escalations=1)
+    return RecoveryBudgetCost(recoveries=0)
 
 
 def _runtime_step_for_owner_decision(decision: RecoveryDecision) -> str | None:

@@ -2250,6 +2250,45 @@ def test_for_2b_recovery_coordinator_runtime_policy_excludes_semantic_owner_kind
     assert "RecoveryKind.ASK_USER" in module_source
 
 
+def test_for_3_failure_owner_flow_uses_structured_handoff_contracts() -> None:
+    source = (SOURCE_ROOT / "failure_owner_flow.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    class_names = {
+        node.name for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+
+    assert "FailureOwnerHandoff" in class_names
+    assert "FailureOwnerHandoffDecision" in class_names
+    assert "build_failure_owner_handoff" in {
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+
+    handoff = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoff"
+    )
+    annotations = {
+        item.target.id: ast.unparse(item.annotation)
+        for item in handoff.body
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+    }
+
+    assert annotations["owner"] == "FailureOwner"
+    assert annotations["target_phase"] == "RuntimePhase"
+    assert annotations["changed_dimensions"] == "tuple[RecoveryDimension, ...]"
+    assert annotations["replan_scope"] == "str"
+    assert annotations["user_question"] == "str"
+    imported_names = {
+        alias.name.rsplit(".", maxsplit=1)[-1]
+        for node in tree.body
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    }
+    assert "RecoveryPhase" not in imported_names
+    assert "RecoveryCoordinator" not in imported_names
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
