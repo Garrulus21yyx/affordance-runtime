@@ -28,7 +28,11 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanDraft,
     TaskPlanGeneratorSource,
 )
-from affordance_runtime.task_planning import TaskPlanningContext
+from affordance_runtime.task_planning import (
+    SubgoalOutcome,
+    TaskPlanCandidate,
+    TaskPlanningContext,
+)
 
 
 class TaskPlanDraftGeneratorPort(Protocol):
@@ -175,6 +179,48 @@ def _steps_from_task_spec(
             ),
             source_refs=source_refs,
         ),
+    )
+
+
+def plan_candidate_from_provider_candidate(
+    candidate: TaskPlanCandidate,
+    context: TaskPlanningContext,
+) -> TaskPlanDraft:
+    task_spec = context.task_spec
+    source_refs = _task_source_refs(task_spec)
+    steps = []
+    for item in candidate.subgoals:
+        outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
+        steps.append(
+            StepSpec(
+                step_id=item.subgoal_id,
+                objective=outcome.description(),
+                depends_on=item.depends_on,
+                completion_criteria=(
+                    StateCriterion(
+                        criterion_id=f"criterion:{item.subgoal_id}",
+                        source_refs=source_refs,
+                        subject=outcome.subject,
+                        relation=StateCriterionRelation(outcome.relation),
+                        expected_value=outcome.value or None,
+                        evidence_policy=CriterionEvidencePolicy(
+                            minimum_strength=EvidenceStrength.INDEPENDENT,
+                            allowed_source_kinds=("dom_state",),
+                        ),
+                    ),
+                ),
+                source_refs=source_refs,
+            )
+        )
+    return TaskPlanDraft(
+        task_spec_identity=task_spec.identity,
+        task_revision=task_spec.revision,
+        generated_by=TaskPlanGeneratorSource.LLM,
+        generator_id="llm-task-planner",
+        generator_version="sar-3-provider-candidate",
+        steps=tuple(steps),
+        assumptions=candidate.assumptions,
+        source_refs=source_refs,
     )
 
 

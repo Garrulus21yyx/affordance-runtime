@@ -979,3 +979,4 @@ delivery claims.
   `docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml`.
 
 - Started SAR-3A after `6efce23`. Added direct rule PlanCandidate generation: `PlanCandidate` is now the canonical unaccepted plan model, `TaskPlanDraft` is compatibility-only, and the rule generator no longer calls `RuleTaskPlanner` or `TaskPlanDraftProjector`. SAR-3B LLM candidate cutover, TaskPlanAuthority production admission, StateKernel plan/progress cutover, SAR-4, SAR-5, and SAR-6 remain open.
+- Started SAR-3B after `a59f24c`. Added `LLMTaskPlanner.generate_candidate()` so LLM provider candidates project to canonical `PlanCandidate`/`StepSpec` without exposing `_bind_candidate` or `_bind_subgoal_candidate`. Existing `plan()` remains a compatibility wrapper for current TaskPlannerPort production call sites. SAR-3C TaskPlanAuthority initial cutover, replacement cutover, legacy SubgoalSpec/PlanProgress deletion, SAR-4, SAR-5, and SAR-6 remain open.

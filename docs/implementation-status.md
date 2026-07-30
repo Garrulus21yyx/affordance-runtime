@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-3A direct rule PlanCandidate generation active local change after `6efce23e2e8eba76cc726d57adf39362747c9a76`: SAR-2 semantic vocabulary unification is committed and pushed. SAR-3A begins the substitutive plan vertical replacement by making `PlanCandidate` the canonical unaccepted plan model, keeping `TaskPlanDraft` only as a compatibility alias, and changing the rule generator to build StepSpec candidate steps directly from canonical TaskSpec obligations instead of calling `RuleTaskPlanner` and projecting a legacy TaskPlan. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-3B LLM PlanCandidate generation active local change after `a59f24ce593374b0ca7e924a1dad2aa86363ae39`: SAR-2 semantic vocabulary unification is committed and pushed, and SAR-3A direct rule PlanCandidate generation is committed and pushed. SAR-3B projects LLM provider candidates into canonical `PlanCandidate`/`StepSpec` objects through `LLMTaskPlanner.generate_candidate()` while preserving existing one-repair behavior and keeping legacy `plan()` as a compatibility wrapper for current production call sites. Production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -343,12 +343,12 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-3A direct rule PlanCandidate generation is active after SAR-2 local closure; SAR-3B LLM PlanCandidate generation remains next; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-3B LLM PlanCandidate generation is active after SAR-3A local closure; SAR-3C TaskPlanAuthority initial production admission remains next; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-3a-direct-rule-plan-candidate-generation
-  revision: 6efce23e2e8eba76cc726d57adf39362747c9a76
+  slice: sar-3b-llm-plan-candidate-generation
+  revision: a59f24ce593374b0ca7e924a1dad2aa86363ae39
   status: active_local_change
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
@@ -370,6 +370,7 @@ active_local_repair:
   sar_1_1_record: docs/change-admission/sar-1-1-hash-reachable-hidden-mutability-closure.yaml
   sar_2_record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml
   sar_3a_record: docs/change-admission/sar-3a-direct-rule-plan-candidate-generation.yaml
+  sar_3b_record: docs/change-admission/sar-3b-llm-plan-candidate-generation.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -381,7 +382,7 @@ active_local_repair:
   taskplan_generator_change: direct_rule_candidate_generation_without_legacy_taskplan_round_trip
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-3b-llm-plan-candidate-generation
+  next_runtime_slice: sar-3c-taskplanauthority-initial-cutover
   promotion_status: held
 
 attribution_classification:

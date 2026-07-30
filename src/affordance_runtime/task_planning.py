@@ -1374,6 +1374,16 @@ class LLMTaskPlanner:
     config: ModelConfig = field(default_factory=task_planner_model_config)
 
     async def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        candidate = await self._provider_candidate(context)
+        return _legacy_plan_from_provider_candidate(candidate, context)
+
+    async def generate_candidate(self, context: TaskPlanningContext):  # noqa: ANN201
+        from affordance_runtime.task_plan_generators import plan_candidate_from_provider_candidate
+
+        candidate = await self._provider_candidate(context)
+        return plan_candidate_from_provider_candidate(candidate, context)
+
+    async def _provider_candidate(self, context: TaskPlanningContext) -> TaskPlanCandidate:
         task_spec = context.task_spec
         planner_context = context.model_dump(mode="json", exclude={"task_spec"})
         planner_context["task_spec"] = task_spec_planning_summary(task_spec)
@@ -1390,7 +1400,7 @@ class LLMTaskPlanner:
         provider_model = task_plan_provider_model_for_context(context)
         envelope = await self.model.generate_structured(messages, provider_model, self.config)
         candidate = envelope.to_candidate()
-        plan = self._bind_candidate(candidate, context)
+        plan = _legacy_plan_from_provider_candidate(candidate, context)
         report = self.validator.validate(
             plan,
             task_spec,
@@ -1400,7 +1410,7 @@ class LLMTaskPlanner:
             planning_context=context,
         )
         if report.status != TaskPlanValidationStatus.REPAIRABLE:
-            return plan
+            return candidate
         repair_context = {
             "validation_errors": [item.model_dump(mode="json") for item in report.issues],
             "repair_directives": [
@@ -1418,38 +1428,41 @@ class LLMTaskPlanner:
             provider_model,
             self.config,
         )
-        return self._bind_candidate(repaired_envelope.to_candidate(), context)
+        return repaired_envelope.to_candidate()
 
-    @staticmethod
-    def _bind_candidate(candidate: TaskPlanCandidate, context: TaskPlanningContext) -> TaskPlan:
-        task_spec = context.task_spec
-        return TaskPlan(
-            plan_id=f"plan-{uuid4().hex}",
-            task_id=task_spec.task_id,
-            task_revision=task_spec.revision,
-            plan_version=context.current_plan_version + 1,
-            supersedes_plan_id=context.current_plan_id,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.LLM,
-            subgoals=tuple(LLMTaskPlanner._bind_subgoal_candidate(item) for item in candidate.subgoals),
-            assumptions=candidate.assumptions,
-        )
 
-    @staticmethod
-    def _bind_subgoal_candidate(item: TaskPlanSubgoalCandidate) -> SubgoalSpec:
-        outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
-        return SubgoalSpec(
-            subgoal_id=item.subgoal_id,
-            objective=outcome.description(),
-            depends_on=item.depends_on,
-            success_criteria=(outcome.description(),),
-            evidence_requirements=item.evidence_requirements,
-            operation_class=item.operation_class,
-            action_family=TaskPlanActionFamily(item.action_family),
-            outcome=outcome,
-            max_actions=item.max_actions,
-            max_recoveries=item.max_recoveries,
-        )
+def _legacy_plan_from_provider_candidate(
+    candidate: TaskPlanCandidate,
+    context: TaskPlanningContext,
+) -> TaskPlan:
+    task_spec = context.task_spec
+    return TaskPlan(
+        plan_id=f"plan-{uuid4().hex}",
+        task_id=task_spec.task_id,
+        task_revision=task_spec.revision,
+        plan_version=context.current_plan_version + 1,
+        supersedes_plan_id=context.current_plan_id,
+        based_on_state_version=context.state_version,
+        generated_by=TaskPlanSource.LLM,
+        subgoals=tuple(_legacy_subgoal_from_provider_candidate(item) for item in candidate.subgoals),
+        assumptions=candidate.assumptions,
+    )
+
+
+def _legacy_subgoal_from_provider_candidate(item: TaskPlanSubgoalCandidate) -> SubgoalSpec:
+    outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
+    return SubgoalSpec(
+        subgoal_id=item.subgoal_id,
+        objective=outcome.description(),
+        depends_on=item.depends_on,
+        success_criteria=(outcome.description(),),
+        evidence_requirements=item.evidence_requirements,
+        operation_class=item.operation_class,
+        action_family=TaskPlanActionFamily(item.action_family),
+        outcome=outcome,
+        max_actions=item.max_actions,
+        max_recoveries=item.max_recoveries,
+    )
 
 
 @dataclass(frozen=True)

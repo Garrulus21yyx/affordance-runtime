@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from affordance_runtime.contracts import Observation
@@ -17,6 +19,7 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     TaskStructure,
 )
+from affordance_runtime.task_plan_contracts import PlanCandidate
 from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
@@ -49,6 +52,8 @@ from affordance_runtime.task_planning import (
     task_spec_planning_summary,
 )
 from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
 
 def _task() -> TaskSpec:
@@ -2159,6 +2164,27 @@ def test_llm_task_planner_repairs_once_then_returns_runtime_bound_plan() -> None
         TaskPlanValidator().validate(plan, task, state_version=4).status
         == TaskPlanValidationStatus.ACCEPT
     )
+
+
+def test_llm_task_planner_generates_plan_candidate_without_legacy_binding() -> None:
+    import asyncio
+
+    model = RepairingTaskPlanModel()
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    context = _context().model_copy(update={"task_spec": task})
+
+    candidate = asyncio.run(LLMTaskPlanner(model).generate_candidate(context))
+
+    assert isinstance(candidate, PlanCandidate)
+    assert model.calls == 2
+    assert tuple(step.step_id for step in candidate.steps) == (
+        "discover",
+        "write",
+        "confirm",
+    )
+    source = (SOURCE_ROOT / "task_planning.py").read_text(encoding="utf-8")
+    assert "def _bind_candidate" not in source
+    assert "def _bind_subgoal_candidate" not in source
 
 
 class ActionInstructionRepairModel:

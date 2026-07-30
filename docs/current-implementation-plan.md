@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-3A direct rule PlanCandidate generation | SAR-2 relation / criterion / evidence vocabulary unification is closed as a local completion candidate | PlanCandidate is the canonical unaccepted plan model; TaskPlanDraft is compatibility-only; rule candidate generation reads canonical TaskSpec obligations directly and no longer uses RuleTaskPlanner or TaskPlanDraftProjector; production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, and benchmark adapter remain unchanged | SAR-3B LLM PlanCandidate generation |
+| Horizontal | SAR-3B LLM PlanCandidate generation | SAR-3A direct rule PlanCandidate generation is closed as a local partial candidate | PlanCandidate is the canonical unaccepted plan model; TaskPlanDraft is compatibility-only; rule candidate generation reads canonical TaskSpec obligations directly and no longer uses RuleTaskPlanner or TaskPlanDraftProjector; LLM provider candidates project to canonical PlanCandidate/StepSpec through `LLMTaskPlanner.generate_candidate()`; legacy `plan()` remains a compatibility wrapper for current production call sites; production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, and benchmark adapter remain unchanged | SAR-3C TaskPlanAuthority initial cutover |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -358,11 +358,15 @@ supplied ActionContract hash consistency. SAR-2 unifies the semantic relation,
 criterion evidence policy, and no-op criterion subclass vocabulary by replacing
 duplicate production types with canonical aliases and deleting the remaining
 simplified relation projector. The selected next slice after local closure is
-SAR-3 plan vertical replacement, beginning with SAR-3A direct rule
-PlanCandidate generation. Canonical semantic vocabulary lives in
+SAR-3 plan vertical replacement. SAR-2 relation / criterion / evidence
+vocabulary unification is closed as the prior local completion candidate.
+SAR-3A direct rule PlanCandidate generation is
+closed as a local partial candidate; SAR-3B LLM PlanCandidate generation is
+active and adds `LLMTaskPlanner.generate_candidate()` while preserving the
+legacy `plan()` compatibility wrapper. Canonical semantic vocabulary lives in
 `semantics.py`; simplified step projection no longer maps relation enum values.
-SAR-3A is active; SAR-3B LLM PlanCandidate generation is next. ODG advanced
-attribution remains
+SAR-3C TaskPlanAuthority initial cutover is next. ODG advanced attribution
+remains
 `EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG
