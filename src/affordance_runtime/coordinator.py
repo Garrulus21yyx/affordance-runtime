@@ -23,6 +23,7 @@ from affordance_runtime.approval_contracts import (
 )
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
     ActionContract,
@@ -44,12 +45,7 @@ from affordance_runtime.perception_session import ObservationSource, PerceptionS
 from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
 from affordance_runtime.planning import (
     ContractBuilder,
-    PlannerActionKind,
     PlannerProposalValidator,
-    ProposalRejected,
-    bind_active_subgoal_verifiers,
-    proposal_error_code,
-    proposal_record,
 )
 from affordance_runtime.planning_contracts import PlannerDecision as PlannerDecision  # noqa: F401
 from affordance_runtime.planning_phase import (
@@ -75,9 +71,7 @@ from affordance_runtime.route_calibration import (
 )
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_evidence import (
-    action_progress_signature,
     semantic_progress_fingerprint,
-    semantic_target_descriptor,
     verification_confirms_effect_absent,
     verification_satisfies_effect,
 )
@@ -123,6 +117,7 @@ OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
 PROGRESS_PHASE = ProgressPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
+CONTRACT_BINDING_PHASE = ContractBindingPhase()
 
 
 @dataclass(frozen=True)
@@ -783,344 +778,65 @@ class RunCoordinator:
                     failure.return_error_code,
                     latest_verification,
                 )
-            contract = decision.contract
-            if decision.proposal is not None and not decision.proposal.requires_clarification:
-                if self.contract_builder is None or envelope.task_spec is None:
-                    parent = trace.add(
-                        "PlannerProposalRejected",
-                        {
-                            "state": state.phase,
-                            "proposal_id": decision.proposal.proposal_id,
-                            "error_code": RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                            "reason": "semantic proposal requires TaskSpec and ContractBuilder",
-                        },
-                        parents=[parent.id],
-                    )
-                    if _pending_recovery_kind(state) in {
-                        RecoveryKind.REGROUND,
-                        RecoveryKind.REROUTE,
-                    }:
-                        parent = self.recovery_phase.fail_pending_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED.value,
-                        )
-                    if skill_step_id and self.task_skill_runtime is not None:
-                        reason = "TaskSkill requires the normal semantic ContractBuilder"
-                        self.task_skill_runtime.fallthrough(state, reason)
-                        parent = self._trace_task_skill_fallthrough(
-                            trace,
-                            parent,
-                            state,
-                            reason,
-                            progress=_task_skill_progress(self.task_skill_runtime, state),
-                            step_id=skill_step_id,
-                        )
-                        state.replan_count += 1
-                        state.transition(RuntimeStep.OBSERVING.value)
-                        continue
-                    _recovery_kind, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.GROUNDING_BINDING,
-                        failure_class=FailureClass.GROUNDING,
-                        error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        message="semantic proposal requires TaskSpec and ContractBuilder",
-                        available_commands=frozenset({RecoveryKind.ABORT}),
-                        snapshot=snapshot,
-                        proposal_id=decision.proposal.proposal_id,
-                        expected_effect="; ".join(decision.proposal.expected_effects),
-                        recoverable=False,
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.ABORTED,
-                        parent,
-                        RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
-                        latest_verification,
-                    )
-                try:
-                    contract = self.contract_builder.build(decision.proposal, envelope.task_spec, state, snapshot)
-                except ProposalRejected as exc:
-                    error_code = proposal_error_code(exc.code)
-                    parent = trace.add(
-                        "PlannerProposalRejected",
-                        {
-                            "state": state.phase,
-                            "proposal_id": decision.proposal.proposal_id,
-                            "error_code": error_code.value,
-                            "reason": exc.detail,
-                        },
-                        parents=[parent.id],
-                    )
-                    if _pending_recovery_kind(state) in {
-                        RecoveryKind.REGROUND,
-                        RecoveryKind.REROUTE,
-                    }:
-                        parent = self.recovery_phase.fail_pending_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=error_code.value,
-                        )
-                    if skill_step_id and self.task_skill_runtime is not None:
-                        reason = f"TaskSkill contract binding rejected: {exc.detail}"
-                        self.task_skill_runtime.fallthrough(state, reason)
-                        parent = self._trace_task_skill_fallthrough(
-                            trace,
-                            parent,
-                            state,
-                            reason,
-                            progress=_task_skill_progress(self.task_skill_runtime, state),
-                            step_id=skill_step_id,
-                        )
-                        state.replan_count += 1
-                        state.transition(RuntimeStep.OBSERVING.value)
-                        continue
-                    recovery_kind, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.GROUNDING_BINDING,
-                        failure_class=FailureClass.GROUNDING,
-                        error_code=error_code,
-                        message=exc.detail or exc.code.value,
-                        available_commands=frozenset(
-                            {
-                                RecoveryKind.REGROUND,
-                                RecoveryKind.ABORT,
-                            }
-                        ),
-                        snapshot=snapshot,
-                        proposal_id=decision.proposal.proposal_id,
-                        expected_effect="; ".join(decision.proposal.expected_effects),
-                    )
-                    if recovery_kind == RecoveryKind.REGROUND:
-                        continue
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.ABORTED,
-                        parent,
-                        error_code,
-                        latest_verification,
-                    )
-                if decision.proposal_provenance is None:  # validated above
-                    raise RuntimeError("validated proposal is missing provenance")
-                state.record_planner_proposal(
-                    proposal_record(decision.proposal, decision.proposal_provenance)
-                )
-            assert contract is not None
-            contract = self.contract_execution_loop.bind_contract(
-                contract,
-                envelope,
-                snapshot.observation,
+            contract_binding = CONTRACT_BINDING_PHASE.bind(
+                decision=decision,
+                envelope=envelope,
+                state=state,
+                snapshot=snapshot,
+                trace=trace,
+                parent=parent,
+                contract_builder=self.contract_builder,
+                contract_execution_loop=self.contract_execution_loop,
+                recovery_phase=self.recovery_phase,
+                task_skill_runtime=self.task_skill_runtime,
+                skill_step_id=skill_step_id,
+                approval_required_risks=frozenset(self.gate.approval_required_risks),
+                approval_required_capabilities=frozenset(self.gate.approval_required_capabilities),
             )
-            contract = replace(
-                contract,
-                verifier_plan=list(
-                    bind_active_subgoal_verifiers(tuple(contract.verifier_plan), state)
-                ),
-                contract_hash="",
-            )
-            if skill_step_id and self.task_skill_runtime is not None:
-                requirement_error = self.task_skill_runtime.contract_requirement_error(
-                    state,
-                    contract,
-                    approval_required_risks=frozenset(self.gate.approval_required_risks),
-                    approval_required_capabilities=frozenset(self.gate.approval_required_capabilities),
-                )
-                if requirement_error:
-                    self.task_skill_runtime.fallthrough(state, requirement_error)
-                    parent = self._trace_task_skill_fallthrough(
-                        trace,
-                        parent,
-                        state,
-                        requirement_error,
-                        progress=_task_skill_progress(self.task_skill_runtime, state),
-                        step_id=skill_step_id,
-                    )
-                    state.replan_count += 1
-                    state.transition(RuntimeStep.OBSERVING.value)
-                    continue
-            action_signature = action_progress_signature(decision.proposal, contract)
-            progress_block = state.check_progress_guard(action_signature) if decision.proposal is not None else None
-            if progress_block is not None:
-                state.record_progress_guard(progress_block, action_signature)
-                state.replan_count += 1
-                parent = trace.add(
-                    "PlannerProgressBlocked",
-                    {
-                        "state": state.phase,
-                        "error_code": progress_block.value,
-                        "action_signature": action_signature,
-                        "environment_revision": state.current_revision(),
-                    },
-                    parents=[parent.id],
-                )
-                if skill_step_id and self.task_skill_runtime is not None:
-                    reason = f"TaskSkill progress guard blocked step: {progress_block.value}"
-                    self.task_skill_runtime.fallthrough(state, reason)
-                    parent = self._trace_task_skill_fallthrough(
-                        trace,
-                        parent,
-                        state,
-                        reason,
-                        progress=_task_skill_progress(self.task_skill_runtime, state),
-                        step_id=skill_step_id,
-                    )
-                state.transition(RuntimeStep.OBSERVING.value)
+            parent = contract_binding.parent
+            if contract_binding.continue_observing:
                 continue
-            state.current_contract = contract
-            state.transition(RuntimeStep.PREFLIGHT.value)
-            contract_skill_progress = (
-                _task_skill_progress(self.task_skill_runtime, state)
-                if skill_step_id and self.task_skill_runtime is not None
-                else None
-            )
-            parent = trace.add(
-                "ContractBuilt",
-                {
-                    "state": state.phase,
-                    "contract_id": contract.id,
-                    "contract_hash": contract.contract_hash,
-                    "schema_version": contract.schema_version,
-                    "snapshot_id": contract.snapshot_id,
-                    "page_revision": contract.page_revision,
-                    "target_fingerprint": contract.target_fingerprint,
-                    "backend": contract.backend,
-                    "proposal_id": decision.proposal.proposal_id if decision.proposal else "",
-                    "supersedes_contract_id": contract.supersedes_contract_id,
-                    "source_contract_id": contract.source_contract_id,
-                    "fallback_reason": contract.fallback_reason,
-                    "semantic_action": (
-                        {
-                            "action_kind": decision.proposal.action_kind.value,
-                            "target": semantic_target_descriptor(
-                                snapshot,
-                                decision.proposal.target_affordance_id,
-                            ),
-                            "destination": semantic_target_descriptor(
-                                snapshot,
-                                decision.proposal.destination_affordance_id,
-                            ),
-                            "parameters": dict(decision.proposal.parameters),
-                            "expected_effects": [asdict(item) for item in contract.expected_effects],
-                            "verifier_plan": [asdict(item) for item in contract.verifier_plan],
-                            "required_capabilities": list(contract.required_capabilities),
-                            "risk": contract.risk.value,
-                        }
-                        if decision.proposal is not None
-                        else None
-                    ),
-                    "task_skill": (
-                        {
-                            "skill_id": contract_skill_progress.skill_id,
-                            "version": contract_skill_progress.version,
-                            "step_id": skill_step_id,
-                        }
-                        if contract_skill_progress is not None
-                        else None
-                    ),
-                    "gesture_binding": (
-                        {
-                            "source": {
-                                "semantic_target_id": contract.gesture_binding.source.semantic_target_id,
-                                "candidate_id": contract.gesture_binding.source.candidate_id,
-                                "snapshot_id": contract.gesture_binding.source.snapshot_id,
-                                "target_fingerprint": contract.gesture_binding.source.target_fingerprint,
-                            },
-                            "destination": {
-                                "semantic_target_id": contract.gesture_binding.destination.semantic_target_id,
-                                "candidate_id": contract.gesture_binding.destination.candidate_id,
-                                "snapshot_id": contract.gesture_binding.destination.snapshot_id,
-                                "target_fingerprint": contract.gesture_binding.destination.target_fingerprint,
-                            },
-                            "selected_route": contract.gesture_binding.selected_route,
-                        }
-                        if contract.gesture_binding is not None
-                        else None
-                    ),
-                },
-                parents=[parent.id],
-            )
-            if contract.grounding_candidate is not None:
-                candidate = contract.grounding_candidate
-                route_plan = contract.route_plan
-                parent = trace.add(
-                    "RouteSelected",
-                    {
-                        "state": state.phase,
-                        "semantic_target_id": candidate.semantic_target_id,
-                        "candidate_id": candidate.candidate_id,
-                        "source": candidate.source.value,
-                        "executor": candidate.compatible_executor,
-                        "observation_epoch_id": candidate.observation_epoch_id,
-                        "page_revision": candidate.page_revision,
-                        "fingerprint_key": candidate.fingerprint_key or candidate.candidate_id,
-                        "evidence_refs": list(candidate.evidence_refs),
-                        "decision_reason": route_plan.decision_reason if route_plan is not None else "",
-                        "viable_alternative_ids": (
-                            [item.candidate_id for item in route_plan.viable_alternatives]
-                            if route_plan is not None
-                            else []
-                        ),
-                        "hard_gates": (
-                            [
-                                {
-                                    "candidate_id": item.candidate_id,
-                                    "passed": item.passed,
-                                    "reasons": list(item.reasons),
-                                }
-                                for item in route_plan.hard_gate_results
-                            ]
-                            if route_plan is not None
-                            else []
-                        ),
-                        "scores": (
-                            [
-                                {
-                                    "candidate_id": item.candidate_id,
-                                    "score": item.score,
-                                    "confidence_component": item.confidence_component,
-                                    "latency_component": item.latency_component,
-                                    "cost_component": item.cost_component,
-                                    "verification_component": item.verification_component,
-                                }
-                                for item in route_plan.scores
-                            ]
-                            if route_plan is not None
-                            else []
-                        ),
-                        "contract_id": contract.id,
-                        "contract_hash": contract.contract_hash,
-                    },
-                    parents=[parent.id],
+            if contract_binding.terminal is not None:
+                return self._finish(
+                    envelope,
+                    state,
+                    trace,
+                    contract_binding.terminal.status,
+                    parent,
+                    contract_binding.terminal.error_code,
+                    latest_verification,
                 )
-            parent, binding_recovery_failed = self.recovery_phase.complete_pending_binding(
-                state,
-                trace,
-                parent,
-                contract,
-            )
-            if binding_recovery_failed:
-                state.transition(RuntimeStep.ABORTED.value)
+            if contract_binding.failure is not None:
+                binding_failure = contract_binding.failure
+                recovery_kind, parent = self._recover_phase_failure(
+                    envelope,
+                    state,
+                    trace,
+                    parent,
+                    phase=binding_failure.phase,
+                    failure_class=binding_failure.failure_class,
+                    error_code=binding_failure.error_code,
+                    message=binding_failure.message,
+                    available_commands=binding_failure.available_commands,
+                    snapshot=snapshot,
+                    proposal_id=binding_failure.proposal_id,
+                    expected_effect=binding_failure.expected_effect,
+                    recoverable=binding_failure.recoverable,
+                )
+                if recovery_kind in binding_failure.continue_recovery_kinds:
+                    continue
                 return self._finish(
                     envelope,
                     state,
                     trace,
                     RuntimeStep.ABORTED,
                     parent,
-                    RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
+                    binding_failure.error_code,
                     latest_verification,
                 )
+            assert contract_binding.contract is not None
+            contract = contract_binding.contract
+            action_signature = contract_binding.action_signature
             contract_check = self.contract_execution_loop.initial_check(
                 contract,
                 envelope,
@@ -1177,82 +893,23 @@ class RunCoordinator:
                     require_environment_revision=False,
                 )
                 error = perception_error or revalidation_error
-                if (
-                    error == RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH
-                    and decision.proposal is not None
-                    and decision.proposal.action_kind == PlannerActionKind.POINT_ACTIVATE
-                    and contract.grounding_candidate is not None
-                    and contract.grounding_candidate.source in {GroundingSource.SVG, GroundingSource.VISUAL}
-                    and self.contract_builder is not None
-                    and envelope.task_spec is not None
-                ):
-                    # A moving rendered target can retain semantic identity
-                    # while its current point/bbox changes between planning
-                    # and immediate preflight.  Re-run the trusted resolver
-                    # and binder against the preflight epoch; never mutate the
-                    # old locator or execute coordinates from the old epoch.
-                    rebound_proposal = decision.proposal.model_copy(
-                        update={
-                            "proposal_id": f"{decision.proposal.proposal_id}-preflight-{state.version}",
-                            "based_on_state_version": state.version,
-                            "snapshot_id": preflight_snapshot.observation.snapshot_id,
-                        }
-                    )
-                    try:
-                        rebound_contract = self.contract_builder.build(
-                            rebound_proposal,
-                            envelope.task_spec,
-                            state,
-                            preflight_snapshot,
-                        )
-                    except ProposalRejected:
-                        pass
-                    else:
-                        rebound_contract = self.contract_execution_loop.bind_contract(
-                            rebound_contract,
-                            envelope,
-                            preflight_snapshot.observation,
-                        )
-                        rebound_contract = replace(
-                            rebound_contract,
-                            verifier_plan=list(
-                                bind_active_subgoal_verifiers(
-                                    tuple(rebound_contract.verifier_plan),
-                                    state,
-                                )
-                            ),
-                            contract_hash="",
-                        )
-                        rebound_error = self.contract_execution_loop.revalidate(
-                            rebound_contract,
-                            envelope,
-                            preflight_snapshot.observation,
-                            effective_gate,
-                            capability_gate_enabled=self.features.capability_gate,
-                            include_policy=True,
-                        )
-                        if rebound_error is None:
-                            parent = trace.add(
-                                "ContractReboundAtPreflight",
-                                {
-                                    "state": state.phase,
-                                    "source_contract_id": contract.id,
-                                    "source_contract_hash": contract.contract_hash,
-                                    "contract_id": rebound_contract.id,
-                                    "contract_hash": rebound_contract.contract_hash,
-                                    "proposal_id": rebound_proposal.proposal_id,
-                                    "snapshot_id": rebound_contract.snapshot_id,
-                                    "page_revision": rebound_contract.page_revision,
-                                    "target_fingerprint": rebound_contract.target_fingerprint,
-                                    "candidate_id": rebound_contract.grounding_candidate.candidate_id
-                                    if rebound_contract.grounding_candidate is not None
-                                    else "",
-                                },
-                                parents=[parent.id],
-                            )
-                            contract = rebound_contract
-                            state.current_contract = rebound_contract
-                            error = None
+                rebound = CONTRACT_BINDING_PHASE.rebind_preflight_target(
+                    decision=decision,
+                    envelope=envelope,
+                    state=state,
+                    preflight_snapshot=preflight_snapshot,
+                    trace=trace,
+                    parent=parent,
+                    contract=contract,
+                    error=error,
+                    effective_gate=effective_gate,
+                    contract_builder=self.contract_builder,
+                    contract_execution_loop=self.contract_execution_loop,
+                    capability_gate_enabled=self.features.capability_gate,
+                )
+                parent = rebound.parent
+                contract = rebound.contract
+                error = rebound.error
                 execution_observation = preflight_snapshot.observation
             elif not self.features.preflight:
                 parent = trace.add(

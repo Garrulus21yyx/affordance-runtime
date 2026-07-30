@@ -59,7 +59,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-9D PlanningDecisionPhase extraction | SAR-9A moved TaskPlan prepare / commit / trace-projection detail out of `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`. | `RunCoordinator.run_sync` no longer inlines PlannerContextBuilt / PlanProposed / PlannerProposalValidated / PlannerProposalProduced trace construction, `commit_planner_terminal_decision`, or `legacy_decision_without_proposal`; Coordinator still owns recovery branch response and contract binding remains a later extraction. | next named SAR-9 phase extraction after SAR-9D |
+| Horizontal | SAR-9E ContractBindingPhase extraction | SAR-9A moved TaskPlan prepare / commit / trace-projection detail out of `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`; SAR-9E moves semantic / legacy contract binding, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into `contract_binding_phase.ContractBindingPhase`. | `RunCoordinator.run_sync` no longer inlines contract builder/build-bind details, ContractBuilt / RouteSelected / PlannerProgressBlocked trace construction, TaskSkill `contract_requirement_error`, or pending binding recovery completion; Coordinator still owns recovery branch response and preflight / approval / execution / verification remain later extractions. | next named SAR-9 phase extraction after ContractBindingPhase seam |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -103,7 +103,8 @@ implementation_revision:
   sar_9a_metrics_alignment: 008b48055a401743a3c5291869e3d66f2748c4ef
   sar_9b_progress_phase_extraction: 3e6754801266abce546f747d15aaf179c75146af
   sar_9c_taskskill_phase_extraction: c5f1895315516f96bc6ed0cc6596e31693412c19
-  sar_9d_planning_decision_phase_extraction: local_candidate
+  sar_9d_planning_decision_phase_extraction: 110b884e35c480aaf01e77233cc79062f9d4b6ae
+  sar_9e_contract_binding_phase_extraction: local_candidate
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -165,12 +166,12 @@ sar_7_5:
 coordinator_assessment:
   within_ratchet: true
   actual_reduction: true
-  coordinator_lines: 2694
-  run_sync_lines: 1701
+  coordinator_lines: 2351
+  run_sync_lines: 1363
   methods: 19
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - next SAR-9 named phase extraction after PlanningDecisionPhase seam
+  - next SAR-9 named phase extraction after ContractBindingPhase seam
 blocked_until:
   sar_8: unblocked
 hard_guardrails:
@@ -200,6 +201,7 @@ evidence:
   sar_9b_progress_phase_extraction: docs/change-admission/sar-9b-progress-phase-extraction.yaml
   sar_9c_taskskill_phase_extraction: docs/change-admission/sar-9c-taskskill-phase-extraction.yaml
   sar_9d_planning_decision_phase_extraction: docs/change-admission/sar-9d-planning-decision-phase-extraction.yaml
+  sar_9e_contract_binding_phase_extraction: docs/change-admission/sar-9e-contract-binding-phase-extraction.yaml
   planner_selection_behavioral_gate: targeted_non_qwen_ollama_llama3_1_8b_3_case_run_2_of_3_pass_at_local_7af5ec6_no_promotion
   failure_owner_behavioral_classification: docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md
   independently_reproduced: false
