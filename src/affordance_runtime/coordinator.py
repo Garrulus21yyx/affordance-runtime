@@ -21,7 +21,6 @@ from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contract_failure_phase import ContractFailurePhase
 from affordance_runtime.contracts import (
-    ActionContract,
     ExecutionReceipt,
     RuntimeErrorCode,
 )
@@ -49,12 +48,7 @@ from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import (
     RecoveryKind,
 )
-from affordance_runtime.route_calibration import (
-    RouteCalibrator,
-    RouteOutcome,
-    RouteOutcomeStatus,
-    RouteScope,
-)
+from affordance_runtime.route_calibration import RouteCalibrator
 from affordance_runtime.runtime import Executor, RuntimeStep, TaskEnvelope
 from affordance_runtime.runtime_loop_phase import (
     RuntimeLoopEvent,
@@ -668,7 +662,7 @@ class RunCoordinator:
                 index_paths=self._index_paths,
                 trace_source_arbitration=self._trace_source_arbitration,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
-                record_route_outcome=self._record_route_outcome,
+                route_calibrator=self.route_calibrator,
                 decision_has_proposal=decision.proposal is not None,
             )
             parent = verification_result.parent
@@ -773,65 +767,6 @@ class RunCoordinator:
 
     def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
         return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
-
-    def _record_route_outcome(
-        self,
-        trace: TraceDag,
-        parent: TraceNode,
-        contract: ActionContract,
-        receipt: ExecutionReceipt,
-        report: VerificationReport,
-        snapshot: BrowserSnapshot,
-        state_phase: str,
-    ) -> TraceNode:
-        candidate = contract.grounding_candidate
-        route_plan = contract.route_plan
-        if candidate is None or route_plan is None or not route_plan.verifier_kinds:
-            return parent
-        scope = RouteScope(
-            environment_family=route_plan.environment_scope,
-            action_kind=route_plan.action_kind or contract.action,
-            source=candidate.source,
-            executor=candidate.compatible_executor,
-            verifier_kinds=route_plan.verifier_kinds,
-        )
-        outcome = RouteOutcome.from_verification(
-            outcome_id=f"route-outcome:{contract.id}:{snapshot.observation.snapshot_id}",
-            scope=scope,
-            semantic_target_id=candidate.semantic_target_id,
-            candidate_id=candidate.candidate_id,
-            contract_id=contract.id,
-            report=report,
-            post_snapshot_id=snapshot.observation.snapshot_id,
-            latency_ms=receipt.latency_ms,
-            expected_cost=candidate.expected_cost,
-        )
-        self.route_calibrator.record(outcome)
-        return trace.add(
-            "RouteOutcomeRecorded",
-            {
-                "state": state_phase,
-                "outcome_id": outcome.outcome_id,
-                "status": outcome.status.value,
-                "verification_status": outcome.verification_status.value,
-                "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE,
-                "semantic_target_id": outcome.semantic_target_id,
-                "candidate_id": outcome.candidate_id,
-                "contract_id": outcome.contract_id,
-                "post_snapshot_id": outcome.post_snapshot_id,
-                "evidence_ids": list(outcome.evidence_ids),
-                "scope": {
-                    "environment_family": scope.environment_family,
-                    "action_kind": scope.action_kind,
-                    "source": scope.source.value,
-                    "executor": scope.executor,
-                    "verifier_kinds": list(scope.verifier_kinds),
-                },
-                "latency_ms": outcome.latency_ms,
-                "expected_cost": outcome.expected_cost,
-            },
-            parents=[parent.id],
-        )
 
     @staticmethod
     def _trace_source_arbitration(

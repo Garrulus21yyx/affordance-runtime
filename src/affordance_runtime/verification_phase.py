@@ -13,6 +13,12 @@ from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.perception_session import PerceptionSession
+from affordance_runtime.route_calibration import (
+    RouteCalibrator,
+    RouteOutcome,
+    RouteOutcomeStatus,
+    RouteScope,
+)
 from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.runtime_evidence import verification_satisfies_effect
 from affordance_runtime.state_kernel import StateKernel
@@ -28,12 +34,6 @@ FulfillTargetedPerception = Callable[
     [TaskEnvelope, StateKernel, TraceDag, TraceNode, BrowserSnapshot],
     tuple[BrowserSnapshot, TraceNode],
 ]
-RecordRouteOutcome = Callable[
-    [TraceDag, TraceNode, ActionContract, ExecutionReceipt, VerificationReport, BrowserSnapshot, str],
-    TraceNode,
-]
-
-
 @dataclass(frozen=True)
 class VerificationPhaseResult:
     parent: TraceNode
@@ -66,7 +66,7 @@ class VerificationPhase:
         index_paths: IndexPaths,
         trace_source_arbitration: TraceSourceArbitration,
         fulfill_targeted_perception: FulfillTargetedPerception,
-        record_route_outcome: RecordRouteOutcome,
+        route_calibrator: RouteCalibrator,
         decision_has_proposal: bool,
     ) -> VerificationPhaseResult:
         post_snapshot, parent, post_ref = _capture_post_action_observation(
@@ -189,7 +189,7 @@ class VerificationPhase:
             },
             parents=[parent.id],
         )
-        parent = record_route_outcome(
+        parent = self.record_route_outcome(
             trace,
             parent,
             contract,
@@ -197,12 +197,73 @@ class VerificationPhase:
             latest_verification,
             post_snapshot,
             state.phase,
+            route_calibrator,
         )
         return VerificationPhaseResult(
             parent=parent,
             post_snapshot=post_snapshot,
             verification=latest_verification,
             verification_ref=verification_ref,
+        )
+
+    @staticmethod
+    def record_route_outcome(
+        trace: TraceDag,
+        parent: TraceNode,
+        contract: ActionContract,
+        receipt: ExecutionReceipt,
+        report: VerificationReport,
+        snapshot: BrowserSnapshot,
+        state_phase: str,
+        route_calibrator: RouteCalibrator,
+    ) -> TraceNode:
+        candidate = contract.grounding_candidate
+        route_plan = contract.route_plan
+        if candidate is None or route_plan is None or not route_plan.verifier_kinds:
+            return parent
+        scope = RouteScope(
+            environment_family=route_plan.environment_scope,
+            action_kind=route_plan.action_kind or contract.action,
+            source=candidate.source,
+            executor=candidate.compatible_executor,
+            verifier_kinds=route_plan.verifier_kinds,
+        )
+        outcome = RouteOutcome.from_verification(
+            outcome_id=f"route-outcome:{contract.id}:{snapshot.observation.snapshot_id}",
+            scope=scope,
+            semantic_target_id=candidate.semantic_target_id,
+            candidate_id=candidate.candidate_id,
+            contract_id=contract.id,
+            report=report,
+            post_snapshot_id=snapshot.observation.snapshot_id,
+            latency_ms=receipt.latency_ms,
+            expected_cost=candidate.expected_cost,
+        )
+        route_calibrator.record(outcome)
+        return trace.add(
+            "RouteOutcomeRecorded",
+            {
+                "state": state_phase,
+                "outcome_id": outcome.outcome_id,
+                "status": outcome.status.value,
+                "verification_status": outcome.verification_status.value,
+                "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE,
+                "semantic_target_id": outcome.semantic_target_id,
+                "candidate_id": outcome.candidate_id,
+                "contract_id": outcome.contract_id,
+                "post_snapshot_id": outcome.post_snapshot_id,
+                "evidence_ids": list(outcome.evidence_ids),
+                "scope": {
+                    "environment_family": scope.environment_family,
+                    "action_kind": scope.action_kind,
+                    "source": scope.source.value,
+                    "executor": scope.executor,
+                    "verifier_kinds": list(scope.verifier_kinds),
+                },
+                "latency_ms": outcome.latency_ms,
+                "expected_cost": outcome.expected_cost,
+            },
+            parents=[parent.id],
         )
 
 
