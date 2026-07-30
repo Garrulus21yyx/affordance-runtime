@@ -1138,3 +1138,14 @@ delivery claims.
   changed-file Ruff and core mypy passed. Coordinator is now 1918 lines,
   `run_sync()` is 949 lines, and RunCoordinator remains at 18 methods. SAR-9
   full phase extraction remains incomplete.
+- Started SAR-9I TaskSkillProgressPhase extraction after
+  `c775b9b365bdb127368284b1db11bfad6ccd82ad`. Added
+  `task_skill_progress_phase.TaskSkillProgressPhase`, moved TaskSkill
+  active-step verification, evidence rejection, checkpointing, step completed /
+  failed traces, fallthrough trace, and no-TaskPlan TaskSkill terminal
+  compatibility out of `RunCoordinator.run_sync`, and deleted the unused
+  Coordinator TaskSkill fallthrough trace helper. Focused SAR-9A-I plus
+  Coordinator/Generalist/full-phase/TaskSkill/contract gates passed 166/166;
+  changed-file Ruff and core mypy passed. Coordinator is now 1804 lines,
+  `run_sync()` is 859 lines, and RunCoordinator is down to 17 methods. SAR-9
+  full phase extraction remains incomplete.
