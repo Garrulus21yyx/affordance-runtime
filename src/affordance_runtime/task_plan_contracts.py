@@ -27,6 +27,7 @@ from affordance_runtime.task_planning import (
     SubgoalOutcomeRelation,
     SubgoalSpec,
     TaskPlan,
+    TaskPlanActionFamily,
     TaskPlanSource,
 )
 
@@ -384,8 +385,36 @@ def _subgoal_from_step(step: StepSpec, task_operation: OperationClass) -> Subgoa
             }
             else task_operation
         ),
+        action_family=_legacy_action_family_for_step(criterion, task_operation),
         outcome=outcome,
     )
+
+
+def _legacy_action_family_for_step(
+    criterion: object,
+    task_operation: OperationClass,
+) -> TaskPlanActionFamily | None:
+    """Preserve generic executable family during StepSpec -> legacy projection."""
+
+    if task_operation != OperationClass.REVERSIBLE_WRITE or not isinstance(criterion, StateCriterion):
+        return None
+    relation = criterion.relation.value
+    subject_tokens = _semantic_tokens(criterion.subject)
+    if relation in {"is_visible", "is_absent", "is_available"}:
+        return None
+    if "slider" in subject_tokens:
+        return TaskPlanActionFamily.PRESS_KEY
+    if subject_tokens.intersection({"checkbox", "button", "submit", "dialog", "radio", "toggle", "link"}):
+        return TaskPlanActionFamily.ACTIVATE
+    if subject_tokens.intersection({"field", "input", "textbox", "textarea", "text", "date"}):
+        return TaskPlanActionFamily.TYPE_TEXT
+    if subject_tokens.intersection({"select", "option", "options", "list", "dropdown"}):
+        return TaskPlanActionFamily.SELECT_OPTION
+    return None
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
 def _validate_draft_matches_request(

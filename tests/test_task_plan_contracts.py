@@ -15,6 +15,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
     TaskPlanView,
 )
+from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
     PlanCandidate,
@@ -29,6 +30,7 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
 )
+from affordance_runtime.task_planning import TaskPlanActionFamily
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
@@ -55,6 +57,26 @@ def _criterion(criterion_id: str = "criterion:step:1") -> StateCriterion:
     )
 
 
+def _state_criterion(
+    *,
+    criterion_id: str,
+    subject: str,
+    relation: StateCriterionRelation,
+    expected_value: object = None,
+) -> StateCriterion:
+    return StateCriterion(
+        criterion_id=criterion_id,
+        source_refs=(_source(),),
+        subject=subject,
+        relation=relation,
+        expected_value=expected_value,
+        evidence_policy=CriterionEvidencePolicy(
+            EvidenceStrength.INDEPENDENT,
+            ("dom_state",),
+        ),
+    )
+
+
 def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepSpec:
     return StepSpec(
         step_id=step_id,
@@ -62,6 +84,28 @@ def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepS
         completion_criteria=(_criterion(f"criterion:{step_id}"),),
         source_refs=(_source(),),
         depends_on=depends_on,
+    )
+
+
+def _criterion_step(
+    step_id: str,
+    *,
+    subject: str,
+    relation: StateCriterionRelation,
+    expected_value: object = None,
+) -> StepSpec:
+    return StepSpec(
+        step_id=step_id,
+        objective=f"{subject} {relation.value}",
+        completion_criteria=(
+            _state_criterion(
+                criterion_id=f"criterion:{step_id}",
+                subject=subject,
+                relation=relation,
+                expected_value=expected_value,
+            ),
+        ),
+        source_refs=(_source(),),
     )
 
 
@@ -74,6 +118,74 @@ def _candidate(*steps: StepSpec) -> PlanCandidate:
         steps=steps or (_step(),),
         source_refs=(_source(),),
     )
+
+
+def test_task_plan_authority_binder_preserves_bindable_action_family() -> None:
+    request = InitialTaskPlanRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=3,
+        objective="Complete controls",
+        observation_refs=("snapshot:1",),
+        remaining_budget_steps=5,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+    )
+    candidate = _candidate(
+        _criterion_step(
+            "text",
+            subject="text_field:Myron",
+            relation=StateCriterionRelation.HAS_CHANGED,
+        ),
+        _criterion_step(
+            "slider",
+            subject="slider_value_7",
+            relation=StateCriterionRelation.HAS_CHANGED,
+        ),
+        _criterion_step(
+            "checkbox",
+            subject="checkbox_3_state",
+            relation=StateCriterionRelation.HAS_CHANGED,
+        ),
+        _criterion_step(
+            "submit",
+            subject="submit_button_state",
+            relation=StateCriterionRelation.HAS_CHANGED,
+        ),
+    )
+
+    plan = TaskPlanAuthorityBinder().bind_initial(request, candidate)
+
+    assert tuple(item.action_family for item in plan.subgoals) == (
+        TaskPlanActionFamily.TYPE_TEXT,
+        TaskPlanActionFamily.PRESS_KEY,
+        TaskPlanActionFamily.ACTIVATE,
+        TaskPlanActionFamily.ACTIVATE,
+    )
+
+
+def test_task_plan_authority_binder_does_not_infer_action_family_for_read_only_step() -> None:
+    request = InitialTaskPlanRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=3,
+        objective="Observe controls",
+        observation_refs=("snapshot:1",),
+        remaining_budget_steps=5,
+    )
+
+    plan = TaskPlanAuthorityBinder().bind_initial(
+        request,
+        _candidate(
+            _criterion_step(
+                "visible",
+                subject="submit_button_state",
+                relation=StateCriterionRelation.IS_AVAILABLE,
+            ),
+        ),
+    )
+
+    assert plan.subgoals[0].operation_class == OperationClass.READ_ONLY
+    assert plan.subgoals[0].action_family is None
 
 
 def _plan_view() -> TaskPlanView:
