@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from affordance_runtime.simplified_runtime_contracts import (
@@ -15,6 +17,7 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
+    PlanCandidate,
     PlanIssueKind,
     PlanIssueReport,
     TaskPlanAuthorityBinder,
@@ -27,6 +30,8 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
 )
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
 
 def _source() -> SourceReference:
@@ -96,6 +101,8 @@ def _progress_view() -> StepProgressView:
 def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
     draft = _draft(_step("step:a"), _step("step:b", depends_on=("step:a",)))
 
+    assert isinstance(draft, PlanCandidate)
+    assert TaskPlanDraft is PlanCandidate
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
     assert not hasattr(draft, "supersedes_plan_id")
@@ -118,6 +125,24 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
             assumptions=("use selector #submit",),
             source_refs=(_source(),),
         )
+
+
+def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
+    source = (SOURCE_ROOT / "task_plan_contracts.py").read_text(encoding="utf-8")
+
+    candidate = PlanCandidate(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        generated_by=TaskPlanGeneratorSource.RULE,
+        generator_id="rule-task-planner",
+        steps=(_step(),),
+        source_refs=(_source(),),
+    )
+
+    assert isinstance(candidate, PlanCandidate)
+    assert "class PlanCandidate" in source
+    assert "class TaskPlanDraft" not in source
+    assert "TaskPlanDraft = PlanCandidate" in source
 
 
 def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None:

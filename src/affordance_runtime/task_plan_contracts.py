@@ -1,7 +1,7 @@
 """Neutral TaskPlan authority contracts.
 
-TPA-4 foundation only. This module defines draft, request, decision, issue, and
-generator contracts for a future TaskPlanAuthority owner. It does not connect
+TPA-4/SAR-3 foundation. This module defines candidate, request, decision, issue,
+and generator contracts for a future TaskPlanAuthority owner. It does not connect
 those contracts to runtime plan admission or Coordinator commit paths.
 """
 
@@ -53,7 +53,7 @@ class TaskPlanDecisionStatus(StrEnum):
 
 
 @dataclass(frozen=True)
-class TaskPlanDraft:
+class PlanCandidate:
     task_spec_identity: str
     task_revision: int
     generated_by: TaskPlanGeneratorSource
@@ -249,7 +249,7 @@ class TaskPlanDecision:
 
 @dataclass(frozen=True)
 class TaskPlanAuthorityBinder:
-    def bind_initial(self, request: InitialTaskPlanRequest, draft: TaskPlanDraft) -> TaskPlan:
+    def bind_initial(self, request: InitialTaskPlanRequest, draft: PlanCandidate) -> TaskPlan:
         _validate_draft_matches_request(request, draft)
         digest = _digest(draft)
         return _bind_task_plan(
@@ -267,7 +267,7 @@ class TaskPlanAuthorityBinder:
             supersedes_plan_id="",
         )
 
-    def bind_revision(self, request: TaskPlanRevisionRequest, draft: TaskPlanDraft) -> TaskPlan:
+    def bind_revision(self, request: TaskPlanRevisionRequest, draft: PlanCandidate) -> TaskPlan:
         _validate_draft_matches_request(request, draft)
         digest = _digest(draft)
         return _bind_task_plan(
@@ -290,13 +290,16 @@ class TaskPlanGeneratorPort(Protocol):
     def generate(
         self,
         request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    ) -> TaskPlanDraft | Awaitable[TaskPlanDraft]: ...
+    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+
+
+TaskPlanDraft = PlanCandidate
 
 
 def _bind_task_plan(
     *,
     request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    draft: TaskPlanDraft,
+    draft: PlanCandidate,
     plan_id: str,
     plan_version: int,
     supersedes_plan_id: str,
@@ -327,7 +330,7 @@ def _subgoal_from_step(step: StepSpec) -> SubgoalSpec:
 
 def _validate_draft_matches_request(
     request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
-    draft: TaskPlanDraft,
+    draft: PlanCandidate,
 ) -> None:
     if draft.task_spec_identity != request.task_spec_identity:
         raise ValueError("draft task identity mismatch")

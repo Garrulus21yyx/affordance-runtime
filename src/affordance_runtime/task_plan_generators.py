@@ -1,9 +1,8 @@
-"""TaskPlanDraft generator migration foundation.
+"""Plan-candidate generator migration foundation.
 
-TPA-5 keeps the existing TaskPlannerPort production path intact while exposing
-draft-producing generator interfaces for rule, router, and reference planning
-surfaces. The generated drafts do not contain Runtime-owned plan identity,
-version, supersession, or state binding fields.
+SAR-3 keeps plan generation authority-free: generators return candidate steps
+and do not create accepted plan identity, versions, supersession, or state
+bindings.
 """
 
 from __future__ import annotations
@@ -19,17 +18,17 @@ from affordance_runtime.simplified_runtime_contracts import (
     StateCriterionRelation,
     StepSpec,
 )
-from affordance_runtime.task_intake import SourcedTaskClaim, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import (
+    SourcedTaskClaim,
+    TaskObligationSpec,
+    TaskSpec,
+    TaskStructure,
+)
 from affordance_runtime.task_plan_contracts import (
     TaskPlanDraft,
     TaskPlanGeneratorSource,
 )
-from affordance_runtime.task_planning import (
-    RuleTaskPlanner,
-    TaskPlan,
-    TaskPlannerPort,
-    TaskPlanningContext,
-)
+from affordance_runtime.task_planning import TaskPlanningContext
 
 
 class TaskPlanDraftGeneratorPort(Protocol):
@@ -40,73 +39,26 @@ class TaskPlanDraftGeneratorPort(Protocol):
 
 
 @dataclass(frozen=True)
-class TaskPlanDraftProjector:
-    """Project a legacy TaskPlan candidate into authority-free draft form."""
+class RuleTaskPlanDraftGenerator:
+    """Generate authority-free plan candidates from canonical task obligations."""
 
     default_evidence_source_kind: str = "dom_state"
 
-    def project(self, plan: TaskPlan, *, task_spec: TaskSpec) -> TaskPlanDraft:
+    def generate(self, context: TaskPlanningContext) -> TaskPlanDraft:
+        task_spec = context.task_spec
+        source_refs = _task_source_refs(task_spec)
         return TaskPlanDraft(
             task_spec_identity=task_spec.identity,
             task_revision=task_spec.revision,
-            generated_by=TaskPlanGeneratorSource(plan.generated_by.value),
-            generator_id=plan.generated_by.value,
-            generator_version="legacy-taskplanner-draft-projection",
-            steps=tuple(self._step_from_subgoal(subgoal, task_spec) for subgoal in plan.subgoals),
-            assumptions=plan.assumptions,
-            source_refs=_task_source_refs(task_spec),
-        )
-
-    def _step_from_subgoal(self, subgoal, task_spec: TaskSpec) -> StepSpec:  # noqa: ANN001
-        _reject_forbidden_step_content(subgoal.objective)
-        criterion = self._criterion_from_subgoal(subgoal, task_spec)
-        return StepSpec(
-            step_id=subgoal.subgoal_id,
-            objective=subgoal.objective,
-            depends_on=subgoal.depends_on,
-            completion_criteria=(criterion,),
-            source_refs=_subgoal_source_refs(subgoal.subgoal_id, task_spec),
-        )
-
-    def _criterion_from_subgoal(self, subgoal, task_spec: TaskSpec) -> StateCriterion:  # noqa: ANN001
-        source_refs = _subgoal_source_refs(subgoal.subgoal_id, task_spec)
-        if subgoal.outcome is not None:
-            return StateCriterion(
-                criterion_id=f"criterion:{subgoal.subgoal_id}",
-                source_refs=source_refs,
-                subject=subgoal.outcome.subject,
-                relation=StateCriterionRelation(subgoal.outcome.relation.value),
-                expected_value=subgoal.outcome.value or None,
-                evidence_policy=CriterionEvidencePolicy(
-                    minimum_strength=EvidenceStrength.INDEPENDENT,
-                    allowed_source_kinds=(self.default_evidence_source_kind,),
-                ),
-            )
-        return StateCriterion(
-            criterion_id=f"criterion:{subgoal.subgoal_id}",
-            source_refs=source_refs,
-            subject=subgoal.subgoal_id,
-            relation=StateCriterionRelation.IS_VISIBLE,
-            expected_value=True,
-            evidence_policy=CriterionEvidencePolicy(
-                minimum_strength=EvidenceStrength.INDEPENDENT,
-                allowed_source_kinds=(self.default_evidence_source_kind,),
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="rule-task-plan-generator",
+            generator_version="sar-3-direct-candidate",
+            steps=_steps_from_task_spec(
+                task_spec,
+                default_evidence_source_kind=self.default_evidence_source_kind,
             ),
+            source_refs=source_refs,
         )
-
-
-@dataclass(frozen=True)
-class RuleTaskPlanDraftGenerator:
-    """Draft-producing wrapper for the existing rule task planner."""
-
-    legacy_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
-    projector: TaskPlanDraftProjector = TaskPlanDraftProjector()
-
-    def generate(self, context: TaskPlanningContext) -> TaskPlanDraft:
-        plan = self.legacy_planner.plan(context)
-        if not isinstance(plan, TaskPlan):
-            raise TypeError("rule task plan generator requires synchronous legacy planner output")
-        return self.projector.project(plan, task_spec=context.task_spec)
 
 
 @dataclass(frozen=True)
@@ -187,6 +139,87 @@ class TaskPlanDraftGeneratorRouter:
         if self.complex_generator is None:
             raise ValueError("complex task requires a TaskPlanDraftGeneratorPort")
         return self.complex_generator.generate(context)
+
+
+def _steps_from_task_spec(
+    task_spec: TaskSpec,
+    *,
+    default_evidence_source_kind: str,
+) -> tuple[StepSpec, ...]:
+    if task_spec.obligations:
+        return tuple(
+            _step_from_obligation(
+                obligation,
+                task_spec,
+                default_evidence_source_kind=default_evidence_source_kind,
+            )
+            for obligation in task_spec.obligations
+        )
+    source_refs = _task_source_refs(task_spec)
+    return (
+        StepSpec(
+            step_id="step:implicit",
+            objective=task_spec.objective,
+            completion_criteria=(
+                StateCriterion(
+                    criterion_id="criterion:step:implicit",
+                    source_refs=source_refs,
+                    subject=task_spec.targets[0] if task_spec.targets else task_spec.task_id,
+                    relation=StateCriterionRelation.IS_VISIBLE,
+                    expected_value=True,
+                    evidence_policy=CriterionEvidencePolicy(
+                        minimum_strength=EvidenceStrength.INDEPENDENT,
+                        allowed_source_kinds=(default_evidence_source_kind,),
+                    ),
+                ),
+            ),
+            source_refs=source_refs,
+        ),
+    )
+
+
+def _step_from_obligation(
+    obligation: TaskObligationSpec,
+    task_spec: TaskSpec,
+    *,
+    default_evidence_source_kind: str,
+) -> StepSpec:
+    source_refs = _subgoal_source_refs(obligation.obligation_id, task_spec)
+    objective = _objective_for_obligation(obligation, task_spec)
+    _reject_forbidden_step_content(objective)
+    return StepSpec(
+        step_id=obligation.obligation_id,
+        objective=objective,
+        depends_on=obligation.depends_on,
+        completion_criteria=(
+            StateCriterion(
+                criterion_id=f"criterion:{obligation.obligation_id}",
+                source_refs=source_refs,
+                subject=obligation.subject,
+                relation=StateCriterionRelation(obligation.relation),
+                expected_value=obligation.expected_value,
+                evidence_policy=CriterionEvidencePolicy(
+                    minimum_strength=EvidenceStrength.INDEPENDENT,
+                    allowed_source_kinds=(default_evidence_source_kind,),
+                ),
+            ),
+        ),
+        source_refs=source_refs,
+    )
+
+
+def _objective_for_obligation(
+    obligation: TaskObligationSpec,
+    task_spec: TaskSpec,
+) -> str:
+    claims = {item.claim_id: item for item in task_spec.source_claims}
+    for claim_id in obligation.claim_ids:
+        claim = claims.get(claim_id)
+        if claim is not None and claim.statement.strip():
+            return claim.statement
+    if obligation.expected_value is not None:
+        return f"{obligation.subject} {obligation.relation.value} {obligation.expected_value}"
+    return f"{obligation.subject} {obligation.relation.value}"
 
 
 def _task_source_refs(task_spec: TaskSpec) -> tuple[SourceReference, ...]:

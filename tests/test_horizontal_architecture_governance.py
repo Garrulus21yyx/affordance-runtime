@@ -309,7 +309,7 @@ def test_reviewed_status_alignment_and_immutable_planner_input_axes_are_explicit
     assert "v-prb-5a button-sequence effect semantics" in current_plan
     assert "v-prb-5b entry action-family resolution" in current_plan
     assert "v-prb-6 terminal completion guard classification" in current_plan
-    assert "tpa-5 generator compatibility surfaces" in current_plan
+    assert "sar-3a direct rule plancandidate generation" in current_plan
     assert "p2 semantic fallback owner extraction" in current_plan
     assert "p3 intent semantic normalizer" in current_plan
 
@@ -781,7 +781,7 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-3 plan vertical replacement" in status
+    assert "current_next_change_admission: sar-3a direct rule plancandidate generation" in status
     assert "official_score_claimed=false" in evidence_text
     assert "passed: 2" in evidence_text
     assert "too weak to authorize a production repair" in evidence_text
@@ -1618,7 +1618,7 @@ def test_taskplan_authority_contracts_are_neutral_foundation_only() -> None:
         if isinstance(node, ast.FunctionDef) and node.name == "generate"
     )
     annotation = ast.unparse(generate.returns).casefold()
-    assert "taskplandraft" in annotation
+    assert "plancandidate" in annotation
     assert "taskplan " not in annotation
 
     tpa_4 = " ".join(
@@ -1909,7 +1909,7 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-3 plan vertical replacement" in status
+    assert "current_next_change_admission: sar-3a direct rule plancandidate generation" in status
     assert "canonical semantic vocabulary lives in `semantics.py`" in current_plan
     assert "simplified step projection no longer maps relation enum values" in current_plan
     assert "sar-3 plan vertical replacement" in current_plan

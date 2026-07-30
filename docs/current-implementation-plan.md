@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-2 relation / criterion / evidence vocabulary unification | active-subgoal read/activation split, S2.1 projection hardening, TPA-1 read-set audit, TPA-2 request contracts/builder, TPA-3 request-only public PlannerPort cutover, TPA-4 neutral TaskPlanAuthority contracts, TPA-5 generator compatibility surfaces, and SAR-1.1 hash-reachable hidden-mutability closure are closed as historical foundation | canonical semantic vocabulary lives in `semantics.py`; TaskObligationRelation, SubgoalOutcomeRelation, and StateCriterionRelation are compatibility aliases to one CriterionRelation; CriterionEvidencePolicy is an alias to one EvidencePolicy; attribution and simplified runtime strength/source names use canonical aliases; no-op ValueCriterion, PresenceCriterion, AbsenceCriterion, and NavigationCriterion are aliases to StateCriterion; simplified step projection no longer maps relation enum values; production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, and benchmark adapter remain unchanged | SAR-3 plan vertical replacement |
+| Horizontal | SAR-3A direct rule PlanCandidate generation | SAR-2 relation / criterion / evidence vocabulary unification is closed as a local completion candidate | PlanCandidate is the canonical unaccepted plan model; TaskPlanDraft is compatibility-only; rule candidate generation reads canonical TaskSpec obligations directly and no longer uses RuleTaskPlanner or TaskPlanDraftProjector; production progress authority, finish authority, Coordinator control flow, StateKernel schema, PlannerPort, provider prompt/schema, and benchmark adapter remain unchanged | SAR-3B LLM PlanCandidate generation |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -358,7 +358,11 @@ supplied ActionContract hash consistency. SAR-2 unifies the semantic relation,
 criterion evidence policy, and no-op criterion subclass vocabulary by replacing
 duplicate production types with canonical aliases and deleting the remaining
 simplified relation projector. The selected next slice after local closure is
-SAR-3 plan vertical replacement; ODG advanced attribution remains
+SAR-3 plan vertical replacement, beginning with SAR-3A direct rule
+PlanCandidate generation. Canonical semantic vocabulary lives in
+`semantics.py`; simplified step projection no longer maps relation enum values.
+SAR-3A is active; SAR-3B LLM PlanCandidate generation is next. ODG advanced
+attribution remains
 `EXPERIMENTAL_ONLY`.
 The umbrella task packet remains
 `docs/change-admission/v-pr-breadth-intent-planning-repair.yaml`; the ODG

@@ -977,3 +977,5 @@ delivery claims.
   `StateCriterion`, and removed the simplified step relation projector. The
   active SAR-2 record is
   `docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml`.
+
+- Started SAR-3A after `6efce23`. Added direct rule PlanCandidate generation: `PlanCandidate` is now the canonical unaccepted plan model, `TaskPlanDraft` is compatibility-only, and the rule generator no longer calls `RuleTaskPlanner` or `TaskPlanDraftProjector`. SAR-3B LLM candidate cutover, TaskPlanAuthority production admission, StateKernel plan/progress cutover, SAR-4, SAR-5, and SAR-6 remain open.
