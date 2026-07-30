@@ -180,6 +180,40 @@ def test_action_choice_builder_creates_slider_choice_from_numeric_string_value()
     assert choice.target_id == "semantic:slider"
 
 
+def test_action_choice_builder_creates_slider_direction_without_current_value() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:slider",
+        subject="semantic:slider",
+        expected_value="-3",
+    )
+    step = _step(criterion=criterion, step_id="step:slider")
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:slider",
+                surface="dom",
+                role="slider",
+                label="Volume",
+                supported_actions=("press_key",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.PRESS_KEY
+    assert choice.parameters == {"key": "ArrowLeft"}
+    assert choice.target_id == "semantic:slider"
+
+
 def test_action_choice_builder_returns_typed_failure_for_no_feasible_action() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
     from affordance_runtime.recovery_protocol import FailureKind
@@ -416,6 +450,74 @@ def test_action_choice_builder_creates_select_option_choice() -> None:
     assert choice.action_kind == PlannerActionKind.SELECT_OPTION
     assert choice.target_id == "semantic:select"
     assert choice.parameters == {"option": "Blue"}
+
+
+def test_action_choice_builder_does_not_treat_available_options_as_selected() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:option",
+        subject="list",
+        relation=CriterionRelation.IS_SELECTED,
+        expected_value="Ertha",
+    )
+    step = _step(criterion=criterion, step_id="step:select")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:options",
+                surface="dom",
+                role="combobox",
+                label="options",
+                supported_actions=("select_option",),
+                state={"selected_options": ("Ertha",), "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.SELECT_OPTION
+    assert choice.target_id == "semantic:options"
+    assert choice.parameters == {"option": "Ertha"}
+
+
+def test_action_choice_builder_skips_explicitly_selected_value() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+    from affordance_runtime.recovery_protocol import FailureKind
+
+    criterion = _criterion(
+        criterion_id="criterion:option",
+        subject="semantic:select",
+        relation=CriterionRelation.IS_SELECTED,
+        expected_value="Blue",
+    )
+    step = _step(criterion=criterion, step_id="step:select")
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:select",
+                surface="dom",
+                role="combobox",
+                label="Color",
+                supported_actions=("select_option",),
+                state={"selected_value": "Blue", "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.kind == FailureKind.NO_FEASIBLE_ACTION
 
 
 def test_action_choice_builder_creates_terminal_activation_choice() -> None:

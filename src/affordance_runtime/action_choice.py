@@ -441,9 +441,19 @@ def _choice_for_criterion(
     numeric_expected_value = _numeric_expected_value(criterion.expected_value)
     if numeric_expected_value is not None and _supports(target, PlannerActionKind.PRESS_KEY):
         current_value = _numeric_state_value(target)
-        if current_value is None or current_value == numeric_expected_value:
+        if current_value is None and numeric_expected_value == 0:
             return None
-        key = "ArrowRight" if numeric_expected_value > current_value else "ArrowLeft"
+        if current_value == numeric_expected_value:
+            return None
+        key = (
+            "ArrowRight"
+            if current_value is None and numeric_expected_value > 0
+            else (
+                "ArrowLeft"
+                if current_value is None
+                else ("ArrowRight" if numeric_expected_value > current_value else "ArrowLeft")
+            )
+        )
         return _make_choice(
             task_revision=task_revision,
             state_version=state_version,
@@ -503,12 +513,11 @@ def _selected_choice(
         return None
     if not _supports(target, PlannerActionKind.SELECT_OPTION):
         return None
-    selected = {
-        str(item).strip().casefold()
-        for item in target.state.get("selected_options", ())
-        if isinstance(item, str) and item.strip()
-    }
-    if criterion.expected_value.strip().casefold() in selected:
+    selected_value = _selected_value(target)
+    if (
+        selected_value is not None
+        and criterion.expected_value.strip().casefold() == selected_value.strip().casefold()
+    ):
         return None
     return _make_choice(
         task_revision=task_revision,
@@ -520,6 +529,17 @@ def _selected_choice(
         parameters={"option": criterion.expected_value},
         criterion_ids=(criterion.criterion_id,),
     )
+
+
+def _selected_value(target: UnifiedObservationTarget) -> str | None:
+    for key in ("selected_value", "value", "current_value", "control_value"):
+        value = target.state.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    selected = target.state.get("selected")
+    if isinstance(selected, str) and selected.strip():
+        return selected
+    return None
 
 
 def _activation_choice(
