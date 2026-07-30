@@ -37,8 +37,10 @@ def resolve_empty_clarification_action(
     mutable state, trace writers, or benchmark vocabulary.
     """
 
-    if proposal.action_kind != PlannerActionKind.ASK_USER or proposal.reason.strip():
+    if proposal.action_kind != PlannerActionKind.ASK_USER:
         return None
+    if proposal.reason.strip():
+        return _resolve_slider_press_key_entry(context)
     return (
         _resolve_text_value_entry(context)
         or _resolve_slider_press_key_entry(context)
@@ -101,9 +103,11 @@ def _resolve_slider_press_key_entry(context: PlannerContext) -> SemanticActionRe
 
 
 def _resolve_verified_effect_followup(context: PlannerContext) -> SemanticActionResolution | None:
-    if not context.verified_effects:
-        return None
-    if context.active_subgoal and context.active_subgoal in context.verified_effects:
+    if (
+        context.verified_effects
+        and context.active_subgoal
+        and context.active_subgoal in context.verified_effects
+    ):
         checkbox = _requested_checkbox_activation(context)
         if checkbox is not None:
             return SemanticActionResolution(
@@ -112,7 +116,7 @@ def _resolve_verified_effect_followup(context: PlannerContext) -> SemanticAction
                 expected_effects=(f"{checkbox.label} checked",),
                 evidence_requirements=_evidence_requirements(context),
             )
-    if not _requested_checkbox_satisfied(context):
+    if _requested_checkbox_number(context) is None or not _requested_checkbox_satisfied(context):
         return None
     terminals = _terminal_activation_targets(context)
     if len(terminals) != 1 or not _mentions_terminal_submission(context):

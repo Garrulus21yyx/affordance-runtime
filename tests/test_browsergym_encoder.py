@@ -24,12 +24,14 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import (
     Affordance,
     AffordanceLease,
+    ExecutionReceipt,
     GestureBinding,
     Observation,
     ProgressEvidenceScope,
     Surface,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
+from affordance_runtime.planning import bind_active_subgoal_verifiers
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -41,6 +43,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.verification import VerifierSpec
+from affordance_runtime.verification import VerifierLadder
 
 
 def _affordance(
@@ -381,6 +384,165 @@ def test_browsergym_typed_match_requires_exact_normalized_value(
     assert declared[-1].progress_scope == expected_scope
 
 
+def test_browsergym_slider_handle_progress_declares_active_subgoal_evidence() -> None:
+    state = _active_typed_outcome_state(
+        value="7",
+        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+    )
+    state.task_plan = state.task_plan.model_copy(
+        update={
+            "subgoals": (
+                state.task_plan.subgoals[0].model_copy(
+                    update={
+                        "objective": "slider_value_7 has changed",
+                        "success_criteria": ("slider_value_7 has changed",),
+                        "evidence_requirements": ("current slider value",),
+                        "action_family": TaskPlanActionFamily.PRESS_KEY,
+                        "outcome": SubgoalOutcome(
+                            subject="slider_value_7",
+                            relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                            value="7",
+                        ),
+                    },
+                ),
+            )
+        },
+    )
+    affordance = _affordance(
+        "semantic:ui-slider-handle:123",
+        action="press_key",
+        locator={"backend_handle": "17"},
+        role="slider",
+        label="ui-slider-handle",
+    )
+    proposal = PlannerProposal(
+        proposal_id="press-slider",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id=affordance.id,
+        parameters={"key": "ArrowRight"},
+    )
+    verifiers = [
+        VerifierSpec("evidence", "last_action_error", ""),
+        VerifierSpec(
+            "control_state",
+            "17",
+            {"field": "context_text", "changed_from": "6"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        ),
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("press", {"bid": "17", "key_comb": "ArrowRight"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+    assert declared[-1].expected == {"field": "context_text", "value": "7"}
+    assert declared[-1].strict is False
+
+
+def test_browsergym_slider_progress_uses_goal_value_when_active_step_lost_value() -> None:
+    state = _active_typed_outcome_state(
+        value="",
+        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+    )
+    state.goal = "Select -3 with the slider, click the 1st checkbox, then hit Submit."
+    state.task_plan = state.task_plan.model_copy(
+        update={
+            "subgoals": (
+                state.task_plan.subgoals[0].model_copy(
+                    update={
+                        "objective": "slider_value has changed",
+                        "success_criteria": ("slider_value has changed",),
+                        "evidence_requirements": ("current slider value",),
+                        "action_family": TaskPlanActionFamily.PRESS_KEY,
+                        "outcome": SubgoalOutcome(
+                            subject="slider_value",
+                            relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                            value="",
+                        ),
+                    },
+                ),
+            )
+        },
+    )
+    affordance = _affordance(
+        "semantic:ui-slider-handle:123",
+        action="press_key",
+        locator={"backend_handle": "17"},
+        role="slider",
+        label="ui-slider-handle",
+    )
+    proposal = PlannerProposal(
+        proposal_id="press-slider",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id=affordance.id,
+        parameters={"key": "ArrowRight"},
+    )
+    verifiers = [
+        VerifierSpec("evidence", "last_action_error", ""),
+        VerifierSpec(
+            "control_state",
+            "17",
+            {"field": "context_text", "changed_from": "-9"},
+            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+        ),
+    ]
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        verifiers,
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("press", {"bid": "17", "key_comb": "ArrowRight"}),
+        affordance=affordance,
+    )
+
+    assert declared[-1] == VerifierSpec(
+        "control_state",
+        "17",
+        {"field": "context_text", "value": "-3"},
+        strict=False,
+        evidence_key="slider_target:17",
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+
+
+def test_browsergym_checkbox_click_uses_strong_control_state_progress_evidence() -> None:
+    model = browsergym_dom_adapter().transduce(
+        '<input bid="check-1" type="checkbox"/>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        metadata={"control_states": {"check-1": {"checked": False}}},
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+
+    verifiers = browsergym_action_verifiers(
+        BrowserGymAction("click", {"bid": "check-1"}),
+        BrowserSnapshot(observation, model),
+    )
+
+    assert verifiers[-1] == VerifierSpec(
+        "control_state",
+        "check-1",
+        {"field": "checked", "changed_from": False},
+        progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+    )
+
+
 def test_generalist_builder_wires_exact_typed_value_scope() -> None:
     model = browsergym_dom_adapter().transduce(
         '<input bid="search" type="text" placeholder="Search"/>',
@@ -503,7 +665,67 @@ def test_browsergym_click_completed_outcome_declares_independent_progress_eviden
         "12",
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
+    assert declared[-2].strict is False
     assert declared[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+
+
+def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_failure() -> None:
+    state = _active_completed_click_outcome_state()
+    affordance = _affordance(
+        "semantic:one",
+        action="activate",
+        locator={"backend_handle": "12"},
+        role="button",
+        label="ONE",
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-one",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=affordance.id,
+    )
+    declared = declare_browsergym_active_subgoal_evidence(
+        [
+            VerifierSpec("evidence", "last_action_error", ""),
+            VerifierSpec(
+                "state_delta_or_terminal",
+                "other-control",
+                True,
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+            ),
+        ],
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("click", {"bid": "12"}),
+        affordance=affordance,
+    )
+
+    report = VerifierLadder().verify_report(
+        bind_active_subgoal_verifiers(tuple(declared), state),
+        ExecutionReceipt(
+                "contract",
+                "browsergym",
+                True,
+                "rev-2",
+                "rev-2",
+            1.0,
+            evidence={"last_action_error": ""},
+        ),
+        Observation(
+            "rev-2",
+            snapshot_id="snapshot-post",
+            metadata={"active_control": "12"},
+        ),
+    )
+
+    assert report.passed
+    assert not report.evidence[-2].passed
+    assert report.evidence[-1].passed
+    assert report.evidence[-1].criterion_ids == (
+        "subgoal:button-one-completed:criterion:0",
+    )
 
 
 def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_family() -> None:
@@ -546,13 +768,6 @@ def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_fa
     assert declared[-1].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "V-PRB-6A RED: dependent checkbox HAS_CHANGED follow-up remains "
-        "terminal-only, so TaskPlan progress is not credited before finish"
-    ),
-)
 def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress() -> None:
     state = StateKernel("task-1", "Move slider, then check the requested box")
     state.install_task_plan(

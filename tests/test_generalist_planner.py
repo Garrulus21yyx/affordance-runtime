@@ -3237,6 +3237,90 @@ def test_strict_planner_resolves_empty_clarification_to_slider_press_key() -> No
     assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
 
 
+def test_strict_planner_resolves_slider_even_when_model_asks_explanatory_clarification() -> None:
+    @dataclass
+    class SliderClarificationModel:
+        provider: str = "fixed"
+        model: str = "slider-clarification"
+        endpoint_class: str = "test"
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, config
+            return output_schema.model_validate(
+                {
+                    "action_kind": "ask_user",
+                    "reason": "The slider value is -7 instead of the required -3.",
+                }
+            )
+
+    model = _authored_dom_adapter().transduce(
+        '<span class="ui-slider-handle" role="slider" tabindex="0">-7</span><button>Submit</button>',
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    slider = replace(
+        model.affordances[0],
+        state={"context_text": "-7", "enabled": True, "visible": True},
+    )
+    model = replace(model, affordances=[slider, model.affordances[1]])
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Select -3 with the slider, click the 1st checkbox, then hit Submit.")
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="slider-value:changed",
+                objective="slider_value has changed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.PRESS_KEY,
+                outcome=SubgoalOutcome(
+                    subject="slider_value",
+                    relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Select -3 with the slider, click the 1st checkbox, then hit Submit.",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("slider_value",),
+        success_criteria=("slider_value = -3",),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(SliderClarificationModel()).propose_legacy(
+            TaskEnvelope(task_spec=task_spec),
+            state,
+            snapshot,
+        )
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.PRESS_KEY
+    assert decision.proposal.target_affordance_id == "dom_span_1"
+    assert decision.proposal.parameters == {"key": "ArrowRight"}
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+
+
 def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() -> None:
     model = _authored_dom_adapter().transduce(
         (
@@ -3454,6 +3538,85 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("slider_value_7", "checkbox_3_state", "submit_button_state"),
         success_criteria=("slider_value_7_selected", "checkbox_3_checked", "submit_button_clicked"),
+        source_request_ref="request-1",
+    )
+
+    decision = asyncio.run(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    )
+
+    assert decision.proposal is not None
+    assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
+    assert decision.proposal.target_affordance_id == "dom_button_1"
+    assert decision.proposal.requires_clarification is False
+    assert decision.proposal_provenance is not None
+    assert decision.proposal_provenance.producer_id == "strict-semantic-action-resolver"
+
+
+def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_text() -> None:
+    model = _authored_dom_adapter().transduce(
+        (
+            '<span class="ui-slider-handle" role="slider" tabindex="0">-3</span>'
+            '<input id="one" type="checkbox" checked>'
+            '<input id="two" type="checkbox">'
+            '<input id="three" type="checkbox">'
+            "<button>Submit</button>"
+        ),
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+    )
+    slider = replace(
+        model.affordances[0],
+        state={"context_text": "-3", "enabled": True, "visible": True},
+    )
+    checked = replace(
+        model.affordances[1],
+        state={**model.affordances[1].state, "checked": True},
+    )
+    model = replace(model, affordances=[slider, checked, *model.affordances[2:]])
+    observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
+    snapshot = BrowserSnapshot(observation, model)
+    state = StateKernel("task-1", "Select -3 with the slider, click the 1st checkbox, then hit Submit.")
+    state.remember_observation(observation)
+    state.task_plan = TaskPlan(
+        plan_id="plan-1",
+        task_id="task-1",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=state.version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="submit",
+                objective="submit_button is completed",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.ACTIVATE,
+                outcome=SubgoalOutcome(
+                    subject="submit_button",
+                    relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+            ),
+        ),
+    )
+    state.plan_progress = PlanProgress(active_subgoal_id="submit")
+    state.record_planner_proposal(
+        {
+            "proposal_id": "previous-checkbox",
+            "action_kind": "activate",
+            "target_affordance_id": "dom_input_1",
+            "expected_effects": [],
+        }
+    )
+    from affordance_runtime.verification import VerificationReport, VerificationStatus
+
+    state.latest_verification = VerificationReport(VerificationStatus.PASSED)
+    task_spec = TaskSpec(
+        task_id="task-1",
+        revision=1,
+        objective="Select -3 with the slider, click the 1st checkbox, then hit Submit.",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("slider_value", "checkbox_1_state", "submit_button"),
+        success_criteria=("slider_value = -3", "checkbox_1_state = checked", "submit_button is interactable"),
         source_request_ref="request-1",
     )
 

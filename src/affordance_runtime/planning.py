@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from affordance_runtime.active_step_scope import ActiveStepScope
+from affordance_runtime.active_step_targeting import (
+    ActiveStepTargetView,
+    resolve_active_step_target_ids,
+)
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import (
     resolve_global_ordinal_constraint,
@@ -258,9 +262,11 @@ def _legacy_active_step_scope(
     subject = subgoal.outcome.subject
     if not subject:
         return None
-    current_target_ids = {item.id for item in snapshot.affordance_model.affordances}
-    current_target_ids.update(item.semantic_target_id for item in snapshot.unified_affordances)
-    if subject not in current_target_ids:
+    target_ids = resolve_active_step_target_ids(
+        subject=subject,
+        affordances=_snapshot_active_step_target_views(snapshot),
+    )
+    if not target_ids:
         return None
     return ActiveStepScope(
         task_revision=state.task_plan.task_revision,
@@ -268,8 +274,48 @@ def _legacy_active_step_scope(
         snapshot_id=snapshot.observation.snapshot_id,
         activity_status=StepActivityStatus.ACTIVE,
         active_step_id=active_step_id,
-        permitted_target_ids=(subject,),
+        permitted_target_ids=target_ids,
         permitted_action_kinds=((subgoal.action_family.value,) if subgoal.action_family is not None else ()),
+    )
+
+
+def _snapshot_active_step_target_views(
+    snapshot: BrowserSnapshot,
+) -> tuple[ActiveStepTargetView, ...]:
+    source_by_id = {item.id: item for item in snapshot.affordance_model.affordances}
+    if snapshot.unified_affordances:
+        views: list[ActiveStepTargetView] = []
+        for item in snapshot.unified_affordances:
+            state: Mapping[str, Any] = {}
+            source = next(
+                (
+                    source_by_id[candidate.source_affordance_id]
+                    for candidate in item.grounding_candidates
+                    if candidate.source_affordance_id in source_by_id
+                ),
+                None,
+            )
+            if source is not None:
+                state = source.state
+            views.append(
+                ActiveStepTargetView(
+                    target_id=item.semantic_target_id,
+                    role=item.role,
+                    label=item.label,
+                    actions=tuple(sorted(item.supported_actions)),
+                    state=state,
+                )
+            )
+        return tuple(views)
+    return tuple(
+        ActiveStepTargetView(
+            target_id=item.id,
+            role=item.role,
+            label=item.label,
+            actions=(item.action,),
+            state=item.state,
+        )
+        for item in snapshot.affordance_model.affordances
     )
 
 
@@ -372,6 +418,13 @@ class PlannerProposalValidator:
             ordinal_constraint=ordinal_constraint,
         )
         if decision.authorized:
+            return
+        resolved_target_ids = resolve_active_step_target_ids(
+            subject=task_spec.objective,
+            targets=task_spec.targets,
+            affordances=_snapshot_active_step_target_views(snapshot),
+        )
+        if proposal.target_affordance_id in resolved_target_ids:
             return
         rejection = (
             ProposalRejectionCode.UNREQUESTED_EFFECT

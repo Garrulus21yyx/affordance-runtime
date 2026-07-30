@@ -1054,6 +1054,92 @@ def test_proposal_validator_enforces_active_step_action_family_when_available() 
     assert caught.value.reason_code == "action_outside_active_step"
 
 
+def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> None:
+    model = DomAdapter().transduce(
+        """
+        <input type="checkbox" aria-label="First">
+        <input type="checkbox" aria-label="Second">
+        <input type="checkbox" aria-label="Third">
+        """,
+        environment_revision="rev-1",
+        snapshot_id="snapshot-1",
+        ttl_ms=60_000,
+    )
+    observation = Observation(
+        "rev-1",
+        snapshot_id="snapshot-1",
+        page_revision=model.page_revision,
+        target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+    )
+    state = StateKernel("task-1", "Click the 3rd checkbox")
+    state.remember_observation(observation)
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-checkbox-scope",
+            task_id=state.task_id,
+            task_revision=2,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="checkbox_3_state",
+                    objective="checkbox_3_state has changed",
+                    success_criteria=("checkbox_3_state has changed",),
+                    evidence_requirements=("checkbox_3_state evidence",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject="checkbox_3_state",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+    spec = TaskSpec(
+        task_id="task-1",
+        revision=2,
+        objective="Click the 3rd checkbox",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("checkbox_3_state",),
+        success_criteria=("checkbox_3_state has changed",),
+        source_request_ref="request-1",
+    )
+    snapshot = BrowserSnapshot(observation, model)
+
+    with pytest.raises(ProposalRejected) as caught:
+        PlannerProposalValidator().validate(
+            _proposal(
+                state,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=model.affordances[0].id,
+                parameters={},
+            ),
+            TEST_PROPOSAL_PROVENANCE,
+            spec,
+            state,
+            snapshot,
+        )
+
+    assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
+    assert caught.value.reason_code == "target_outside_active_step"
+
+    PlannerProposalValidator().validate(
+        _proposal(
+            state,
+            action_kind=PlannerActionKind.ACTIVATE,
+            target_affordance_id=model.affordances[2].id,
+            parameters={},
+        ),
+        TEST_PROPOSAL_PROVENANCE,
+        spec,
+        state,
+        snapshot,
+    )
+
+
 def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
     spec, state, snapshot = _fixture()
 

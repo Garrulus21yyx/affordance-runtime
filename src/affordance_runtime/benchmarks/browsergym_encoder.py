@@ -402,9 +402,16 @@ def browsergym_action_verifiers(
                     {"field": "aria_expanded", "value": "false" if expanded == "true" else "true"},
                 )
             )
+        elif isinstance(checked, bool):
+            verifier_plan.append(
+                VerifierSpec(
+                    "control_state",
+                    action_bid,
+                    {"field": "checked", "changed_from": checked},
+                )
+            )
         else:
-            expected = {"field": "checked", "changed_from": checked} if checked is not None else True
-            verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, expected))
+            verifier_plan.append(VerifierSpec("state_delta_or_terminal", action_bid, True))
     elif action.name == "mouse_click":
         verifier_plan.append(VerifierSpec("state_delta_or_terminal", "", True))
     verifier_plan[-1] = replace(
@@ -451,7 +458,19 @@ def declare_browsergym_active_subgoal_evidence(
         relation=active.outcome.relation,
     )
     if completed_click_progress is not None:
-        return [*verifier_plan, completed_click_progress]
+        declared = list(verifier_plan)
+        if declared and declared[-1].kind == "state_delta_or_terminal":
+            declared[-1] = replace(declared[-1], strict=False)
+        return [*declared, completed_click_progress]
+    slider_progress = _browsergym_slider_exact_progress_spec(
+        action,
+        verifier_plan[-1],
+        active=active,
+        proposal=proposal,
+        state=state,
+    )
+    if slider_progress is not None:
+        return [*verifier_plan, slider_progress]
     if not _browsergym_postcondition_proves_outcome(
         action,
         verifier_plan[-1],
@@ -472,9 +491,17 @@ def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> 
     aliases = {
         "box": "input",
         "field": "input",
-        "textbox": "input",
         "text": "input",
+        "textbox": "input",
         "value": "input",
+    }
+    ignored = {
+        "aria",
+        "control",
+        "current",
+        "handle",
+        "state",
+        "ui",
     }
 
     def tokens(value: str) -> tuple[str, ...]:
@@ -482,17 +509,23 @@ def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> 
             aliases.get(token, token)
             for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
             if len(token) >= 3
+            and not token.isdecimal()
+            and token not in ignored
         )
 
+    generic_tokens = {"input"}
     subject_tokens = tokens(subject)
+    subject_specific_tokens = tuple(item for item in subject_tokens if item not in generic_tokens)
     target_tokens = tokens(" ".join((affordance.label, affordance.role)))
-    return bool(subject_tokens and target_tokens) and all(
-        any(
-            target == subject_token
-            or (len(target) >= 4 and subject_token.startswith(target))
-            or (len(subject_token) >= 4 and target.startswith(subject_token))
-            for subject_token in subject_tokens
-        )
+    target_specific_tokens = tuple(item for item in target_tokens if item not in generic_tokens)
+    if subject_specific_tokens and not target_specific_tokens:
+        return bool(set(subject_tokens) & set(target_tokens) & generic_tokens)
+    match_tokens = subject_specific_tokens or subject_tokens
+    return bool(match_tokens and target_tokens) and any(
+        target == subject_token
+        or (len(target) >= 4 and subject_token.startswith(target))
+        or (len(subject_token) >= 4 and target.startswith(subject_token))
+        for subject_token in match_tokens
         for target in target_tokens
     )
 
@@ -515,6 +548,74 @@ def _browsergym_completed_click_progress_spec(
         action_bid,
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
+
+
+def _browsergym_slider_exact_progress_spec(
+    action: BrowserGymAction,
+    verifier: VerifierSpec,
+    *,
+    active: SubgoalSpec,
+    proposal: PlannerProposal,
+    state: StateKernel,
+) -> VerifierSpec | None:
+    if action.name != "press" or verifier.kind != "control_state":
+        return None
+    expected = verifier.expected if isinstance(verifier.expected, Mapping) else {}
+    field_name = str(expected.get("field") or "")
+    if not field_name:
+        return None
+    target = _requested_slider_progress_value(active=active, proposal=proposal, state=state)
+    if target is None:
+        return None
+    return VerifierSpec(
+        "control_state",
+        verifier.target,
+        {"field": field_name, "value": target},
+        strict=False,
+        evidence_key=f"slider_target:{verifier.target}",
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+
+
+def _requested_slider_progress_value(
+    *,
+    active: SubgoalSpec,
+    proposal: PlannerProposal,
+    state: StateKernel,
+) -> str | None:
+    if active.outcome is not None and active.outcome.value.strip():
+        return active.outcome.value.strip()
+    candidates = (
+        active.outcome.subject if active.outcome is not None else "",
+        active.objective,
+        " ".join(active.success_criteria),
+        " ".join(active.evidence_requirements),
+        proposal.subgoal,
+        " ".join(proposal.expected_effects),
+        " ".join(proposal.evidence_requirements),
+        state.goal,
+    )
+    for text in candidates:
+        value = _single_slider_numeric_value(text)
+        if value is not None:
+            return value
+    return None
+
+
+def _single_slider_numeric_value(text: str) -> str | None:
+    if not text or "slider" not in text.casefold():
+        return None
+    patterns = (
+        r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+(?:the\s+)?slider\b",
+        r"\bslider[_\s-]*value[_\s:-]*(-?\d+(?:\.\d+)?)\b",
+        r"\bslider\b[^.;,\n]*\b(?:to|equals?|=|value)\s*(-?\d+(?:\.\d+)?)\b",
+    )
+    values = {
+        match.group(1)
+        for pattern in patterns
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+    }
+    return next(iter(values)) if len(values) == 1 else None
 
 
 def _browsergym_postcondition_proves_outcome(
@@ -562,5 +663,13 @@ def _browsergym_postcondition_proves_outcome(
             relation == SubgoalOutcomeRelation.IS_EXPANDED
             and expected.get("field") == "aria_expanded"
             and expected.get("value") == "true"
+        ) or (
+            relation
+            in {
+                SubgoalOutcomeRelation.HAS_CHANGED,
+                SubgoalOutcomeRelation.IS_CHECKED,
+            }
+            and expected.get("field") == "checked"
+            and "changed_from" in expected
         )
     return False

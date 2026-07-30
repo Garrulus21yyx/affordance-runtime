@@ -175,6 +175,45 @@ def test_builder_does_not_activate_ready_legacy_step() -> None:
     assert state.version == before_version
 
 
+def test_builder_projects_active_legacy_step_action_family() -> None:
+    from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+
+    envelope, state, snapshot = _fixture()
+    task = envelope.task_spec
+    assert task is not None
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-request",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="step:enter-name",
+                    objective="display name input equals Ada",
+                    outcome=SubgoalOutcome(
+                        subject="display name",
+                        relation=SubgoalOutcomeRelation.EQUALS,
+                        value="Ada",
+                    ),
+                    success_criteria=("display name input equals Ada",),
+                    evidence_requirements=("fresh input-value observation",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.TYPE_TEXT,
+                ),
+            ),
+        )
+    )
+    state.activate_next_subgoal()
+
+    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+
+    assert request.step.activity_status == StepActivityStatus.ACTIVE
+    assert request.step.active_step_action_family == "type_text"
+
+
 def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
     from affordance_runtime.planning_request import PlannerStepProjectionStatus
     from affordance_runtime.planning_request_builder import PlanningRequestBuilder

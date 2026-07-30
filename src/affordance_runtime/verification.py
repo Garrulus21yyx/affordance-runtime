@@ -417,7 +417,7 @@ class VerifierLadder:
                     semantic_evidence_key=semantic_evidence_key,
                 )
             )
-            if not passed:
+            if not passed and spec.strict:
                 return VerificationReport(
                     VerificationStatus.FAILED, evidence, f"verifier failed: {spec.kind}:{spec.target}"
                 )

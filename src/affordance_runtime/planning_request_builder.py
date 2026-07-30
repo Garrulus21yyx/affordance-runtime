@@ -206,7 +206,8 @@ def _planner_step_view(
         active_step=active_step,
         activity_status=progress.activity_status,
         projection_status=PlannerStepProjectionStatus.PROJECTED,
-        active_step_action_family=_active_step_action_family(active_step),
+        active_step_action_family=_active_step_action_family(active_step)
+        or _compatibility_active_step_action_family(state),
     )
 
 

@@ -167,3 +167,62 @@ def test_apply_admission_without_admission_preserves_context() -> None:
 
     assert result.context == context
     assert result.summary.excluded_target_ids == ()
+
+
+def test_build_scopes_checkbox_ordinal_active_step_to_current_target() -> None:
+    context = _context(
+        task_spec={"objective": "Click the 3rd checkbox", "targets": ("checkbox_3_state",)},
+        active_subgoal="checkbox_3_state has changed",
+        active_subgoal_action_family="activate",
+        affordances=(
+            AffordanceSummary(
+                id="checkbox-1",
+                surface="dom",
+                role="checkbox",
+                label="One",
+                action="click",
+                confidence=1.0,
+                state={"input_type": "checkbox"},
+            ),
+            AffordanceSummary(
+                id="checkbox-2",
+                surface="dom",
+                role="checkbox",
+                label="Two",
+                action="click",
+                confidence=1.0,
+                state={"input_type": "checkbox"},
+            ),
+            AffordanceSummary(
+                id="checkbox-3",
+                surface="dom",
+                role="checkbox",
+                label="Three",
+                action="click",
+                confidence=1.0,
+                state={"input_type": "checkbox"},
+            ),
+            AffordanceSummary(
+                id="submit-button",
+                surface="dom",
+                role="button",
+                label="Submit",
+                action="click",
+                confidence=1.0,
+                state={},
+            ),
+        ),
+    )
+
+    constraints = StrictDecisionConstraintBuilder().build(
+        context,
+        ["activate", "finish", "ask_user"],
+        {
+            "activate": ["checkbox-1", "checkbox-2", "checkbox-3", "submit-button"],
+            "finish": [],
+            "ask_user": [],
+        },
+    )
+
+    assert constraints.permitted_action_kinds == ("activate",)
+    assert constraints.compatible_target_ids["activate"] == ("checkbox-3",)
