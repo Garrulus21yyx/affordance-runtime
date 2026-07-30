@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`; SAR-9E moves semantic / legacy contract binding, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into `contract_binding_phase.ContractBindingPhase`. Focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. SAR-9A extracts TaskPlan prepare / commit / trace-projection detail from `RunCoordinator.run_sync`; SAR-9B routes post-observation and post-TaskPlan current-state progress through `progress_phase.ProgressPhase`; SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into `task_skill_phase.TaskSkillPhase`; SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into `planning_phase.PlanningDecisionPhase`; SAR-9E moves semantic / legacy contract binding, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into `contract_binding_phase.ContractBindingPhase`; SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into `preflight_phase.PreflightPhase`. Focused and adjacent local gates passed. This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence. Promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -53,12 +53,12 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 coordinator_reduction:
-  interpretation: sar_9e_contract_binding_phase_extraction_local_candidate
+  interpretation: sar_9f_preflight_phase_extraction_local_candidate
   current_size_expected_for_stage: true
   within_ratchet: true
-  current_lines: 2351
-  run_sync_lines: 1363
-  method_count: 19
+  current_lines: 2104
+  run_sync_lines: 1136
+  method_count: 18
   actual_reduction_stage: sar_7_to_sar_9
   sar_9a_before:
     coordinator_lines: 2995
@@ -84,6 +84,10 @@ coordinator_reduction:
     coordinator_lines: 2351
     run_sync_lines: 1363
     runcoordinator_methods: 19
+  sar_9f_after:
+    coordinator_lines: 2104
+    run_sync_lines: 1136
+    runcoordinator_methods: 18
   sar_9b_after:
     coordinator_lines: 2934
     run_sync_lines: 1936
@@ -138,7 +142,7 @@ obligation_driven_progress:
   runtime_ticket_carry_shadow: foundation_only
   next_odg_slice: stopped_for_default_path
   advanced_attribution: experimental_only
-  coordinator_commit: authorized_for_bounded_sar_9e_phase_extraction_only
+  coordinator_commit: authorized_for_bounded_sar_9f_phase_extraction_only
   finish_gate_change: not_authorized
   planner_context_change: not_authorized
   benchmark_rerun: not_required
@@ -388,7 +392,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-9E ContractBindingPhase extraction. SAR-9A moved TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase. SAR-9B routes post-observation and post-TaskPlan current-state progress through progress_phase.ProgressPhase. SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into task_skill_phase.TaskSkillPhase. SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into planning_phase.PlanningDecisionPhase. SAR-9E moves contract build/bind, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into contract_binding_phase.ContractBindingPhase while preserving Coordinator ownership of recovery branch response. Promotion remains held.
+  current_next_change_admission: SAR-9F PreflightPhase extraction. SAR-9A moved TaskPlan prepare / commit / trace-projection detail from RunCoordinator.run_sync into task_plan_phase.commit_task_plan_phase. SAR-9B routes post-observation and post-TaskPlan current-state progress through progress_phase.ProgressPhase. SAR-9C moves TaskSkill exposure / activation / accepted-skill provenance and planner-decision awaitable resolution into task_skill_phase.TaskSkillPhase. SAR-9D moves PlannerDecision trace, semantic proposal validation, planner terminal handling, clarification, and legacy empty-decision classification into planning_phase.PlanningDecisionPhase. SAR-9E moves contract build/bind, ContractBuilt / RouteSelected trace projection, progress guard handling, TaskSkill contract-requirement fallthrough, and preflight visual/SVG rebound binding into contract_binding_phase.ContractBindingPhase. SAR-9F moves preflight, approval, environment-drift recovery, authorization, and pending retry-contract validation into preflight_phase.PreflightPhase while preserving Coordinator ownership of terminal result formatting. Promotion remains held.
   pre_sar_8_planner_failure_classification:
     record: docs/change-admission/sar-8-pre-planner-failure-classification.yaml
     evidence: docs/evidence/runs/sar-7-planner-failure-classification-25ec674/
@@ -553,7 +557,7 @@ pr_breadth_latest:
     - total_core_complexity_must_decrease
 
 active_local_repair:
-  slice: sar-9e-contract-binding-phase-extraction
+  slice: sar-9f-preflight-phase-extraction
   base_revision: 052edaaa84855984a00dc4eb1b1f74de9a3e6e44
   status: local_candidate
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
@@ -589,12 +593,13 @@ active_local_repair:
   sar_9c_record: docs/change-admission/sar-9c-taskskill-phase-extraction.yaml
   sar_9d_record: docs/change-admission/sar-9d-planning-decision-phase-extraction.yaml
   sar_9e_record: docs/change-admission/sar-9e-contract-binding-phase-extraction.yaml
+  sar_9f_record: docs/change-admission/sar-9f-preflight-phase-extraction.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
   behavior_change: planned_for_sar_6_execution_outcome_contract_shape_only_until_cutover
   standard_path_authority: candidate_capable_initial_and_replacement_admission_cutover_only
-  coordinator_commit: authorized_for_bounded_sar_9e_phase_extraction_only
+  coordinator_commit: authorized_for_bounded_sar_9f_phase_extraction_only
   finish_gate_change: not_authorized
   planner_context_change: unchanged
   taskplan_generator_change: unchanged_after_plan_candidate_naming_retirement
@@ -607,7 +612,7 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-9e-contract-binding-phase-extraction
+  current_runtime_slice: sar-9f-preflight-phase-extraction
   next_runtime_slice: next-named-sar-9-phase-extraction
   sar_8_blocked_until: unblocked
   historical_required_before_sar_7:

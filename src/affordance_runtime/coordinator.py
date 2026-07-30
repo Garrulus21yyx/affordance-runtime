@@ -52,6 +52,7 @@ from affordance_runtime.planning_phase import (
     PlanningDecisionPhase,
     apply_taskskill_planning_fallthrough,
 )
+from affordance_runtime.preflight_phase import PreflightPhase
 from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
@@ -118,6 +119,7 @@ PROGRESS_PHASE = ProgressPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
+PREFLIGHT_PHASE = PreflightPhase()
 
 
 @dataclass(frozen=True)
@@ -837,277 +839,50 @@ class RunCoordinator:
             assert contract_binding.contract is not None
             contract = contract_binding.contract
             action_signature = contract_binding.action_signature
-            contract_check = self.contract_execution_loop.initial_check(
-                contract,
-                envelope,
-                snapshot.observation,
-                capability_gate_enabled=self.features.capability_gate,
+            preflight_result = PREFLIGHT_PHASE.run(
+                decision=decision,
+                envelope=envelope,
+                state=state,
+                snapshot=snapshot,
+                trace=trace,
+                parent=parent,
+                contract=contract,
+                contract_execution_loop=self.contract_execution_loop,
+                contract_binding_phase=CONTRACT_BINDING_PHASE,
+                perception_session=self.perception_session,
+                approval_provider=self.approval_provider,
+                runtime_gate=self.gate,
                 preflight_enabled=self.features.preflight,
+                capability_gate_enabled=self.features.capability_gate,
+                max_recoveries=self.budget.max_recoveries,
+                contract_builder=self.contract_builder,
+                recovery_phase=self.recovery_phase,
+                write_observation=self._write_observation,
+                index_artifact=self._index,
+                index_paths=self._index_paths,
+                trace_source_arbitration=self._trace_source_arbitration,
+                fulfill_targeted_perception=self._fulfill_targeted_perception,
+                recover_execution_failure=self._recover_execution_failure,
+                recover_phase_failure=self._recover_phase_failure,
+                terminal_recovery_status=lambda current_state: _terminal_recovery_status(
+                    current_state,
+                    fallback=RuntimeStep.ABORTED,
+                ),
+                trace_recovery_started=_trace_recovery_started,
             )
-            effective_gate = contract_check.gate
-            error = contract_check.error
-            execution_observation = snapshot.observation
-            if error is None and self.features.preflight:
-                preflight_snapshot = self.perception_session.capture(
-                    envelope,
-                    state,
-                    state.observation_count + 1,
-                )
-                state.remember_observation(preflight_snapshot.observation)
-                preflight_ref = self._write_observation(envelope.task_id, state.observation_count, preflight_snapshot)
-                self._index(trace, preflight_ref)
-                self._index_paths(trace, preflight_snapshot.observation.artifact_refs)
-                parent = trace.add(
-                    "PreflightObservationCaptured",
-                    {
-                        "state": state.phase,
-                        "snapshot_id": preflight_snapshot.observation.snapshot_id,
-                        "page_revision": preflight_snapshot.observation.page_revision,
-                        "artifact_refs": ([preflight_ref.path] if preflight_ref else [])
-                        + list(preflight_snapshot.observation.artifact_refs),
-                    },
-                    parents=[parent.id],
-                )
-                parent = self._trace_source_arbitration(trace, parent, preflight_snapshot, state.phase)
-                preflight_snapshot, parent = self._fulfill_targeted_perception(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    preflight_snapshot,
-                )
-                perception_error = None
-                if (
-                    state.perception_resolution is not None
-                    and state.perception_resolution.blocks_effectful_action
-                ):
-                    perception_error = RuntimeErrorCode.PRECONDITION_FAILED
-                revalidation_error = self.contract_execution_loop.revalidate(
-                    contract,
-                    envelope,
-                    preflight_snapshot.observation,
-                    effective_gate,
-                    capability_gate_enabled=False,
-                    include_policy=False,
-                    require_snapshot_identity=False,
-                    require_environment_revision=False,
-                )
-                error = perception_error or revalidation_error
-                rebound = CONTRACT_BINDING_PHASE.rebind_preflight_target(
-                    decision=decision,
-                    envelope=envelope,
-                    state=state,
-                    preflight_snapshot=preflight_snapshot,
-                    trace=trace,
-                    parent=parent,
-                    contract=contract,
-                    error=error,
-                    effective_gate=effective_gate,
-                    contract_builder=self.contract_builder,
-                    contract_execution_loop=self.contract_execution_loop,
-                    capability_gate_enabled=self.features.capability_gate,
-                )
-                parent = rebound.parent
-                contract = rebound.contract
-                error = rebound.error
-                execution_observation = preflight_snapshot.observation
-            elif not self.features.preflight:
-                parent = trace.add(
-                    "AblationApplied",
-                    {"state": state.phase, "disabled_layer": "preflight"},
-                    parents=[parent.id],
-                )
-            if error == RuntimeErrorCode.APPROVAL_REQUIRED:
-                parent = trace.add(
-                    "HumanApprovalRequested",
-                    {"state": RuntimeStep.WAITING_APPROVAL.value, "contract_hash": contract.contract_hash},
-                    parents=[parent.id],
-                )
-                token = self.approval_provider.approve(contract) if self.approval_provider else None
-                if token is None:
-                    state.transition(RuntimeStep.WAITING_APPROVAL.value)
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.WAITING_APPROVAL,
-                        parent,
-                        error,
-                        latest_verification,
-                    )
-                effective_gate.approval_tokens[token.token_id] = token
-                self.gate.approval_tokens[token.token_id] = token
-                parent = trace.add(
-                    "HumanApprovalGranted",
-                    {
-                        "state": state.phase,
-                        "token_id": token.token_id,
-                        "approver": token.approver,
-                        "capability": token.capability,
-                        "expires_at_s": token.expires_at_s,
-                    },
-                    parents=[parent.id],
-                )
-                approval_snapshot = self.perception_session.capture(
-                    envelope,
-                    state,
-                    state.observation_count + 1,
-                )
-                state.remember_observation(approval_snapshot.observation)
-                approval_ref = self._write_observation(envelope.task_id, state.observation_count, approval_snapshot)
-                self._index(trace, approval_ref)
-                self._index_paths(trace, approval_snapshot.observation.artifact_refs)
-                parent = trace.add(
-                    "ApprovalStateRevalidated",
-                    {
-                        "state": state.phase,
-                        "snapshot_id": approval_snapshot.observation.snapshot_id,
-                        "page_revision": approval_snapshot.observation.page_revision,
-                        "artifact_refs": ([approval_ref.path] if approval_ref else [])
-                        + list(approval_snapshot.observation.artifact_refs),
-                    },
-                    parents=[parent.id],
-                )
-                parent = self._trace_source_arbitration(trace, parent, approval_snapshot, state.phase)
-                error = self.contract_execution_loop.revalidate(
-                    contract,
-                    envelope,
-                    approval_snapshot.observation,
-                    effective_gate,
-                    capability_gate_enabled=True,
-                    include_policy=False,
-                    require_snapshot_identity=False,
-                    require_environment_revision=False,
-                )
-                execution_observation = approval_snapshot.observation
-            if error is not None:
-                if (
-                    error
-                    in {
-                        RuntimeErrorCode.STALE_OBSERVATION,
-                        RuntimeErrorCode.STALE_PAGE_REVISION,
-                        RuntimeErrorCode.SNAPSHOT_MISMATCH,
-                        RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
-                        RuntimeErrorCode.LEASE_EXPIRED,
-                    }
-                    and state.recovery_count < self.budget.max_recoveries
-                ):
-                    parent = trace.add(
-                        "EnvironmentDriftDetected",
-                        {"state": state.phase, "error_code": error.value},
-                        parents=[parent.id],
-                    )
-                    recovery_result, parent = self._recover_execution_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        contract,
-                        None,
-                        error,
-                    )
-                    parent = _trace_recovery_started(trace, parent, state, recovery_result)
-                    if recovery_result == RecoveryKind.REOBSERVE:
-                        continue
-                    final_recovery_status = _terminal_recovery_status(
-                        state,
-                        fallback=RuntimeStep.ABORTED,
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        final_recovery_status,
-                        parent,
-                        error,
-                        latest_verification,
-                    )
-                _recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.PREFLIGHT,
-                    failure_class=(
-                        FailureClass.SOURCE_CONFLICT
-                        if perception_error is not None
-                        else FailureClass.AUTHORITY
-                        if error
-                        in {
-                            RuntimeErrorCode.CAPABILITY_DENIED,
-                            RuntimeErrorCode.UNSAFE_ACTION,
-                        }
-                        else FailureClass.VALIDATION
-                    ),
-                    error_code=error,
-                    message=(
-                        state.perception_resolution.reason
-                        if perception_error is not None
-                        and state.perception_resolution is not None
-                        else f"preflight rejected contract: {error.value}"
-                    ),
-                    available_commands=frozenset({RecoveryKind.ABORT}),
-                    snapshot=preflight_snapshot if self.features.preflight else snapshot,
-                    expected_effect=contract.intent,
-                    recoverable=False,
-                )
-                parent = trace.add(
-                    "PreflightBlocked",
-                    {"state": state.phase, "error_code": error.value},
-                    parents=[parent.id],
-                )
-                return self._finish(envelope, state, trace, RuntimeStep.ABORTED, parent, error, latest_verification)
-            authorization_error = effective_gate.authorize(contract) if self.features.capability_gate else None
-            if authorization_error is not None:
-                _recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.PREFLIGHT,
-                    failure_class=FailureClass.AUTHORITY,
-                    error_code=authorization_error,
-                    message=f"contract authorization rejected: {authorization_error.value}",
-                    available_commands=frozenset({RecoveryKind.ABORT}),
-                    snapshot=snapshot,
-                    expected_effect=contract.intent,
-                    recoverable=False,
-                )
+            parent = preflight_result.parent
+            contract = preflight_result.contract
+            execution_observation = preflight_result.execution_observation
+            if preflight_result.continue_observing:
+                continue
+            if preflight_result.terminal is not None:
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.ABORTED,
+                    preflight_result.terminal.status,
                     parent,
-                    authorization_error,
-                    latest_verification,
-                )
-            parent = trace.add("PreflightPassed", {"state": state.phase}, parents=[parent.id])
-
-            retry_error = self._pending_retry_contract_error(state, contract)
-            if retry_error is not None:
-                parent = self.recovery_phase.fail_pending_command(
-                    state,
-                    trace,
-                    parent,
-                    error_code=retry_error.value,
-                )
-                state.transition(RuntimeStep.ABORTED.value)
-                parent = trace.add(
-                    "RecoveryAborted",
-                    {
-                        "state": state.phase,
-                        "reason": "retry contract did not retain validated idempotency and effect scope",
-                    },
-                    parents=[parent.id],
-                )
-                return self._finish(
-                    envelope,
-                    state,
-                    trace,
-                    RuntimeStep.ABORTED,
-                    parent,
-                    retry_error,
+                    preflight_result.terminal.error_code,
                     latest_verification,
                 )
             state.transition(RuntimeStep.ACTING.value)
@@ -1836,28 +1611,6 @@ class RunCoordinator:
             model_calls=max(0, self.budget.max_replans - state.replan_count),
             estimated_cost=10.0,
         )
-
-    @staticmethod
-    def _pending_retry_contract_error(
-        state: StateKernel,
-        contract: ActionContract,
-    ) -> RuntimeErrorCode | None:
-        decision = state.current_recovery_decision
-        if decision is None or decision.kind != RecoveryKind.RETRY_IDEMPOTENT:
-            return None
-        effect_status = (
-            state.current_failure.effect_status
-            if state.current_failure is not None
-            else EffectStatus.NOT_DISPATCHED
-        )
-        if (
-            not contract.idempotency_key
-            or contract.idempotency_key != decision.idempotency_key
-            or effect_status
-            not in {EffectStatus.NOT_DISPATCHED, EffectStatus.CONFIRMED_NOT_OCCURRED}
-        ):
-            return RuntimeErrorCode.UNSAFE_ACTION
-        return None
 
     def _budget_error(self, state: StateKernel) -> RuntimeErrorCode | None:
         if state.step_count >= self.budget.max_steps:
