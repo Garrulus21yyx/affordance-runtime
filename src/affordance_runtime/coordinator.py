@@ -181,6 +181,7 @@ class RunCoordinator:
     recovery_phase: RecoveryPhase = field(init=False, repr=False)
     recovery_failure_phase: RecoveryFailurePhase = field(init=False, repr=False)
     targeted_perception_fulfiller: Any = field(init=False, repr=False)
+    source_arbitration_tracer: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.perception_session = PerceptionSession(self.observer, self.artifacts)
@@ -202,6 +203,7 @@ class RunCoordinator:
             runtime_profile_digest=self.runtime_profile_digest,
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
         )
+        self.source_arbitration_tracer = PERCEPTION_PHASE.trace_source_arbitration
         self.targeted_perception_fulfiller = partial(
             PERCEPTION_PHASE.fulfill_targeted_perception,
             active_perception_flow=self.active_perception_flow,
@@ -209,7 +211,7 @@ class RunCoordinator:
             write_observation=self._write_observation,
             index_artifact=self._index,
             index_paths=self._index_paths,
-            trace_source_arbitration=self._trace_source_arbitration,
+            trace_source_arbitration=self.source_arbitration_tracer,
         )
         if self.task_planner is not None:
             self.task_plan_flow = TaskPlanFlow(
@@ -273,7 +275,7 @@ class RunCoordinator:
                 write_observation=self._write_observation,
                 index_artifact=self._index,
                 index_paths=self._index_paths,
-                trace_source_arbitration=self._trace_source_arbitration,
+                trace_source_arbitration=self.source_arbitration_tracer,
                 recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
             )
             parent = perception.parent
@@ -575,7 +577,7 @@ class RunCoordinator:
                 write_observation=self._write_observation,
                 index_artifact=self._index,
                 index_paths=self._index_paths,
-                trace_source_arbitration=self._trace_source_arbitration,
+                trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
@@ -616,7 +618,7 @@ class RunCoordinator:
                 write_observation=self._write_observation,
                 index_artifact=self._index,
                 index_paths=self._index_paths,
-                trace_source_arbitration=self._trace_source_arbitration,
+                trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
                 terminal_recovery_status=lambda current_state: _terminal_recovery_status(
@@ -660,7 +662,7 @@ class RunCoordinator:
                 write_verification=self._write_verification,
                 index_artifact=self._index,
                 index_paths=self._index_paths,
-                trace_source_arbitration=self._trace_source_arbitration,
+                trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 route_calibrator=self.route_calibrator,
                 decision_has_proposal=decision.proposal is not None,
@@ -767,74 +769,6 @@ class RunCoordinator:
 
     def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
         return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
-
-    @staticmethod
-    def _trace_source_arbitration(
-        trace: TraceDag,
-        parent: TraceNode,
-        snapshot: BrowserSnapshot,
-        state: str,
-    ) -> TraceNode:
-        if snapshot.source_assertions:
-            parent = trace.add(
-                "SourceAssertionsCollected",
-                {
-                    "state": state,
-                    "assertions": [
-                        {
-                            "assertion_id": item.assertion_id,
-                            "entity_key": item.entity_key,
-                            "property_key": item.property_key,
-                            "source": item.source.value,
-                            "observation_epoch_id": item.observation_epoch_id,
-                            "parser_id": item.parser_id,
-                            "schema_version": item.schema_version,
-                            "evidence_refs": list(item.evidence_refs),
-                        }
-                        for item in snapshot.source_assertions
-                    ],
-                },
-                parents=[parent.id],
-            )
-        if snapshot.assertion_decisions:
-            parent = trace.add(
-                "SourceAssertionsArbitrated",
-                {
-                    "state": state,
-                    "decisions": [
-                        {
-                            "entity_key": item.entity_key,
-                            "property_key": item.property_key,
-                            "status": item.status.value,
-                            "accepted_assertion_id": item.accepted_assertion_id,
-                            "assertion_ids": [claim.assertion_id for claim in item.assertions],
-                            "reason": item.reason,
-                            "material": item.material,
-                        }
-                        for item in snapshot.assertion_decisions
-                    ],
-                },
-                parents=[parent.id],
-            )
-        if snapshot.active_perception_requests:
-            parent = trace.add(
-                "TargetedPerceptionRequested",
-                {
-                    "state": state,
-                    "requests": [
-                        {
-                            "entity_key": item.entity_key,
-                            "property_key": item.property_key,
-                            "requested_sources": [source.value for source in item.requested_sources],
-                            "reason": item.reason,
-                            "max_observations": item.max_observations,
-                        }
-                        for item in snapshot.active_perception_requests
-                    ],
-                },
-                parents=[parent.id],
-            )
-        return parent
 
     def _write_receipt(self, run_id: str, sequence: int, receipt: ExecutionReceipt) -> ArtifactRef | None:
         if self.artifacts is None:

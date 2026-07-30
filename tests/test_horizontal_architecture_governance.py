@@ -2809,6 +2809,26 @@ def test_sar_9s_route_outcome_recording_is_behind_verification_phase() -> None:
     assert "RouteOutcomeRecorded" in verification_source
 
 
+def test_sar_9t_source_arbitration_trace_projection_is_not_a_runcoordinator_method() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name for node in run_coordinator.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_trace_source_arbitration" not in method_names
+    perception_source = (SOURCE_ROOT / "perception_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "trace_source_arbitration" in perception_source
+    assert "SourceAssertionsCollected" in perception_source
+    assert "TargetedPerceptionRequested" in perception_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)

@@ -439,6 +439,78 @@ class PerceptionPhase:
             parents=[parent.id],
         )
 
+    @staticmethod
+    def trace_source_arbitration(
+        trace: TraceDag,
+        parent: TraceNode,
+        snapshot: BrowserSnapshot,
+        state: str,
+    ) -> TraceNode:
+        if snapshot.source_assertions:
+            parent = trace.add(
+                "SourceAssertionsCollected",
+                {
+                    "state": state,
+                    "assertions": [
+                        {
+                            "assertion_id": item.assertion_id,
+                            "entity_key": item.entity_key,
+                            "property_key": item.property_key,
+                            "source": item.source.value,
+                            "observation_epoch_id": item.observation_epoch_id,
+                            "parser_id": item.parser_id,
+                            "schema_version": item.schema_version,
+                            "evidence_refs": list(item.evidence_refs),
+                        }
+                        for item in snapshot.source_assertions
+                    ],
+                },
+                parents=[parent.id],
+            )
+        if snapshot.assertion_decisions:
+            parent = trace.add(
+                "SourceAssertionsArbitrated",
+                {
+                    "state": state,
+                    "decisions": [
+                        {
+                            "entity_key": item.entity_key,
+                            "property_key": item.property_key,
+                            "status": item.status.value,
+                            "accepted_assertion_id": item.accepted_assertion_id,
+                            "assertion_ids": [
+                                claim.assertion_id for claim in item.assertions
+                            ],
+                            "reason": item.reason,
+                            "material": item.material,
+                        }
+                        for item in snapshot.assertion_decisions
+                    ],
+                },
+                parents=[parent.id],
+            )
+        if snapshot.active_perception_requests:
+            parent = trace.add(
+                "TargetedPerceptionRequested",
+                {
+                    "state": state,
+                    "requests": [
+                        {
+                            "entity_key": item.entity_key,
+                            "property_key": item.property_key,
+                            "requested_sources": [
+                                source.value for source in item.requested_sources
+                            ],
+                            "reason": item.reason,
+                            "max_observations": item.max_observations,
+                        }
+                        for item in snapshot.active_perception_requests
+                    ],
+                },
+                parents=[parent.id],
+            )
+        return parent
+
     def _handle_observation_failure(
         self,
         *,
