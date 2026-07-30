@@ -53,13 +53,21 @@ status_alignment:
   meaning: not a one-time milestone closure
 
 coordinator_reduction:
-  interpretation: sar_8c_recovery_phase_cutover_and_default_recovery_state_reduction
+  interpretation: sar_9a_taskplan_phase_extraction_local_candidate
   current_size_expected_for_stage: true
   within_ratchet: true
-  current_lines: 2995
-  run_sync_lines: 1993
-  method_count: 18
+  current_lines: 2939
+  run_sync_lines: 1940
+  method_count: 19
   actual_reduction_stage: sar_7_to_sar_9
+  sar_9a_before:
+    coordinator_lines: 2995
+    run_sync_lines: 1993
+    runcoordinator_methods: 19
+  sar_9a_after:
+    coordinator_lines: 2939
+    run_sync_lines: 1940
+    runcoordinator_methods: 19
   current_local_after_sar_7_3:
     coordinator_lines: 3397
     run_sync_lines: 1963
