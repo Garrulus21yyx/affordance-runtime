@@ -29,9 +29,9 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 closure revision is `17ea270ebe6fab0342175b79362227f935492b08` over implementation revision `7053727bcce7ffb68fb701b7e1844cc33ca335bb`. This is SAR-7 authority centralization local completion candidate evidence, not full SAR-7 milestone closure. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass, so promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
-| Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
+| Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
 | Historical ODG experiment | `docs/change-admission/odg-0-obligation-driven-progress-architecture.yaml` records the superseded default-route proposal in which Canonical Obligation Graph was the target progress authority and TaskPlan an optional strategy. ODG-1 through ODG-9 remain immutable foundation/diagnostic history and advanced attribution is `EXPERIMENTAL_ONLY`; SAR-0 governs the current default target. No ODG foundation has Coordinator commit or finish authority. |
 | Current simplified architecture decision | `docs/change-admission/s0-simplified-architecture-freeze.yaml`: the default production path is redirected to Runtime-owned active step progress plus independent task-level completion verification. ODG advanced attribution is retained as `EXPERIMENTAL_ONLY`; ODG-9 hookup, ODG-10 obligation progress commit, and ODG-11 finish-authority migration are stopped for the default path. |
@@ -57,7 +57,7 @@ coordinator_reduction:
   current_size_expected_for_stage: true
   current_lines: 3441
   run_sync_lines: 1990
-  method_count: 25
+  method_count: 26
   actual_reduction_stage: sar_7_to_sar_9
   current_local_after_sar_7_3:
     coordinator_lines: 3397
@@ -359,7 +359,7 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-7.5 TaskSkill progress-state removal after SAR-7.1-7.4 local completion candidates. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator. SAR-7.1 adds a TaskCompletionVerifier foundation, requires a passed TaskCompletionResult before the success writer, and removes TaskSkill progress commit task-completion requests. SAR-7.2 removes legacy pending-obligation and ODG obligation-progress state from the default StateKernel schema. SAR-7.3 replaces unbounded string action progress with bounded typed recent action outcomes. SAR-7.4 makes TaskProgress the default StateKernel progress field while keeping PlanProgress as a compatibility alias/property. SAR-7.5 removes TaskSkill progress from default StateKernel authority and leaves it in AcceptedTaskSkillRuntime compatibility state. Full local SAR-7.1-7.5 code gates pass, but clean PR breadth at b077c68 failed 6/12, so full SAR-7 milestone closure is not achieved.
+  current_next_change_admission: SAR-8 single recovery protocol after SAR-7 behavioral gate at 25ec674. SAR-7 extracted verifier-backed progress commits, planner terminal handling, TaskSkill terminal progress, and final TaskCompleted success commits from RunCoordinator. SAR-7.1 adds a TaskCompletionVerifier foundation, requires a passed TaskCompletionResult before the success writer, and removes TaskSkill progress commit task-completion requests. SAR-7.2 removes legacy pending-obligation and ODG obligation-progress state from the default StateKernel schema. SAR-7.3 replaces unbounded string action progress with bounded typed recent action outcomes. SAR-7.4 makes TaskProgress the default StateKernel progress field while keeping PlanProgress as a compatibility alias/property. SAR-7.5 removes TaskSkill progress from default StateKernel authority and leaves it in AcceptedTaskSkillRuntime compatibility state. Clean SAR-7 PR breadth at 25ec674 passed 12/12; fresh diagnostic completed 60/60 with 15/60 pass and residual capability clusters, so promotion remains held.
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
   sar_5:
     unified_observation_contract: foundation_complete
@@ -379,31 +379,32 @@ pr_breadth_latest:
     default_final_action_event: ActionOutcomeRecorded
     legacy_action_completed_default_event: removed
   sar_7:
-    status: sar_7_authority_centralization_local_completion_candidate
+    status: sar_7_behavioral_gate_local_complete
     record: docs/change-admission/sar-7-single-progress-finish-authority.yaml
     sar_7a_verifier_backed_progress_flow_extraction: complete
     sar_7b_planner_terminal_flow: complete
     sar_7c_terminal_success_flow: complete
-    implementation_revision: "7053727bcce7ffb68fb701b7e1844cc33ca335bb"
+    implementation_revision: "25ec6745ce08f6337c8d040cf1b31bd2a384ff6e"
     coordinator_lines: 3441
     run_sync_lines: 1990
-    runcoordinator_methods: 25
+    runcoordinator_methods: 26
     planner_done_finish_path: runtime_terminal_flow
     taskskill_direct_finish_path: progress_flow_then_terminal_success_flow
     task_completed_success_event_owner: runtime_terminal.commit_task_terminal_success
     coordinator_inline_taskcompleted_sites: 0
     coordinator_inline_decision_done_finish_sites: 0
-    progress_authority_changed: false
+    progress_authority_changed: compatibility_legacy_progress_committed_through_progress_flow
     finish_authority_changed: terminal_success_commit_centralized
   sar_7_full_milestone:
-    canonical_taskprogress_cutover: sar_7_4_partial_default_field_cutover
-    independent_task_completion_verifier: sar_7_1_foundation_local_candidate
-    taskskill_progress_authority_removal: sar_7_5_local_completion_candidate
-    odg_and_pending_obligation_state_removal: sar_7_2_local_completion_candidate
-    action_dedupe_replacement: sar_7_3_local_completion_candidate
-    required_pr_breadth: failed_at_b077c68
-    behavioral_evidence: docs/evidence/runs/sar-7-pr-breadth-b077c68/
-    status: incomplete
+    canonical_taskprogress_cutover: sar_7_4_default_field_cutover
+    independent_task_completion_verifier: sar_7_1_local_complete
+    taskskill_progress_authority_removal: sar_7_5_local_complete
+    odg_and_pending_obligation_state_removal: sar_7_2_local_complete
+    action_dedupe_replacement: sar_7_3_local_complete
+    required_pr_breadth: passed_at_25ec674
+    fresh_diagnostic: complete_with_residuals_at_25ec674
+    behavioral_evidence: docs/evidence/runs/sar-7-behavioral-gate-25ec674/
+    status: local_complete_promotion_held
   sar_7_1:
     status: local_completion_candidate
     record: docs/change-admission/sar-7-1-semantic-closure.yaml
@@ -438,11 +439,8 @@ pr_breadth_latest:
     statekernel_taskskill_mutation_methods: removed
     taskskill_progress_owner: AcceptedTaskSkillRuntime_compatibility_state
     progress_fingerprint_reads_taskskill: false
-    clean_pr_breadth: failed_at_b077c68
-    behavioral_evidence: docs/evidence/runs/sar-7-pr-breadth-b077c68/
-  mandatory_followups_before_sar_7_full_milestone_completion:
-    - sar_7_pr_breadth_residual_classification
-    - clean_behavioral_rerun
+    clean_pr_breadth: passed_at_25ec674
+    behavioral_evidence: docs/evidence/runs/sar-7-behavioral-gate-25ec674/
   sar_4:
     plannerport_response_contract: complete
     standard_generalist_response_contract: complete
@@ -809,7 +807,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-4 standard Generalist/Parent Planner response cutover, SAR-5 exact action/destination scope plus default terminal-readiness admission removal, SAR-6A canonical ActionOutcome recording, and SAR-7 writer centralization plus SAR-7.1-7.5 semantic cleanup are local candidates; clean SAR-7 PR breadth at `b077c68` failed 6/12; remote CI disabled | Coordinator ratchets are checked by executable governance tests; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill default-state removal, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, active-step admission, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, SAR-2 canonical semantic vocabulary gates, SAR-5 exact ActiveStepScope proposal gate, SAR-6A ActionOutcome recording gate, SAR-7 progress-flow extraction gate, SAR-7 planner-terminal gate, SAR-7 terminal-success gate, SAR-7.2 default-progress-state cleanup gate, SAR-7.3 bounded action-dedupe gate, SAR-7.4 TaskProgress default-field gate, and SAR-7.5 TaskSkill progress-state removal gate | none | SAR-7 PR breadth residual classification is next. SAR-8 is blocked until clean SAR-7 behavioral evidence or an explicit rescope decision. TPA-5B foundation expansion, ODG-9 hookup, ODG-10, ODG-11, unauthorized alternate progress authority, PR breadth acceptance, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-4 standard Generalist/Parent Planner response cutover, SAR-5 exact action/destination scope plus default terminal-readiness admission removal, SAR-6A canonical ActionOutcome recording, and SAR-7 writer centralization plus SAR-7.1-7.5 semantic cleanup are local-complete for the SAR-7 behavioral gate at `25ec674`; clean SAR-7 PR breadth passed 12/12; fresh diagnostic completed 60/60 with 15/60 pass and residual broad capability failures; remote CI disabled | Coordinator ratchets are checked by executable governance tests; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill default-state removal, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, active-step admission, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, SAR-2 canonical semantic vocabulary gates, SAR-5 exact ActiveStepScope proposal gate, SAR-6A ActionOutcome recording gate, SAR-7 progress-flow extraction gate, SAR-7 planner-terminal gate, SAR-7 terminal-success gate, SAR-7.2 default-progress-state cleanup gate, SAR-7.3 bounded action-dedupe gate, SAR-7.4 TaskProgress default-field gate, and SAR-7.5 TaskSkill progress-state removal gate | none | SAR-8 single recovery protocol is next. TPA-5B foundation expansion, ODG-9 hookup, ODG-10, ODG-11, unauthorized alternate progress authority, official score claim, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a

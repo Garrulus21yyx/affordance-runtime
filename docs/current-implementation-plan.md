@@ -58,7 +58,7 @@ integrator.
 | Lane | Current slice | Entry condition | Exit condition | Not a prerequisite for |
 | --- | --- | --- | --- | --- |
 | Vertical | SAR-0 authoritative optimized architecture freeze (closed) | SG7 targeted `text-transform` / `enter-date` confirmation passed cleanly at `3d44a9d`; V-PRB-5A, V-PRB-5B, and V-PRB-5C are closed for the current matrix; V-PRB-6B verifier-backed progress accounting is committed at `d17a1f3` and cleanly rerun at `407133d`, closing `enter-text:seed-1` while PR breadth remains failed. ODG-2 through ODG-9 remain foundation/diagnostic only. TPA-0 through TPA-5 remain historical foundation/compatibility work. SAR-0 freezes the single long-term target architecture and switches future work from additive foundations to substitutive replacement. Default production authority remains legacy TaskPlan/PlanProgress until an explicit cutover. | Authoritative architecture and substitutive execution plan are in `docs/superpowers/`; superseded default-target docs and former root architecture/design-freeze content are archived with stable redirects; TPA-5B foundation-only expansion is stopped; active implementation continues through SAR-1 deep immutability and stale contract-hash repair. | unrelated horizontal debt retirement |
-| Horizontal | SAR-7.5 TaskSkill progress-state removal | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; SAR-7.1 added the task-completion verifier foundation, SAR-7.2 removed pending/ODG progress from default StateKernel, SAR-7.3 added bounded typed action outcomes, and SAR-7.4 made `TaskProgress` the default progress field. | Remove TaskSkill progress from default StateKernel authority, then run full local SAR-7 gate before SAR-8. | SAR-8 recovery unification and SAR-9 phase extraction |
+| Horizontal | SAR-8 single recovery protocol | SAR-7 extracted verifier-backed progress, planner terminal handling, TaskSkill terminal progress, and final `TaskCompleted` success commits out of `RunCoordinator`; SAR-7.1 added the task-completion verifier foundation, SAR-7.2 removed pending/ODG progress from default StateKernel, SAR-7.3 added bounded typed action outcomes, SAR-7.4 made `TaskProgress` the default progress field, SAR-7.5 removed TaskSkill progress from default StateKernel authority, and the clean SAR-7 PR breadth gate passed at `25ec674`. | Replace the parallel legacy recovery protocol with a single recovery decision/outcome protocol without reintroducing progress or finish authority. | SAR-9 phase extraction |
 
 Promotion remains held until the relevant vertical evidence is bound to the
 same committed revision and the required validation channel is available. When
@@ -85,10 +85,10 @@ repository_head:
   source: git
   not_self_recorded: true
 reviewed_closure_revision:
-  revision: 17ea270ebe6fab0342175b79362227f935492b08
-  role: sar_7_authority_centralization_local_completion_candidate
+  revision: 25ec6745ce08f6337c8d040cf1b31bd2a384ff6e
+  role: sar_7_behavioral_gate_local_complete_promotion_held
 implementation_revision:
-  sar_7: 7053727bcce7ffb68fb701b7e1844cc33ca335bb
+  sar_7: 25ec6745ce08f6337c8d040cf1b31bd2a384ff6e
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
@@ -111,7 +111,7 @@ sar_5:
   behavioral_exit_evidence: pending
   overall: in_progress
 sar_7:
-  status: sar_7_authority_centralization_local_completion_candidate
+  status: sar_7_behavioral_gate_local_complete
   record: docs/change-admission/sar-7-single-progress-finish-authority.yaml
   verifier_backed_progress_flow_extracted: complete
   coordinator_progress_inline_branch_removed: true
@@ -120,17 +120,18 @@ sar_7:
   task_completed_success_event_owner: runtime_terminal.commit_task_terminal_success
   coordinator_inline_taskcompleted_sites: 0
   coordinator_inline_decision_done_finish_sites: 0
-  progress_authority_changed: false
+  progress_authority_changed: compatibility_legacy_progress_committed_through_progress_flow
   finish_authority_changed: terminal_success_commit_centralized
 sar_7_full_milestone:
-  canonical_taskprogress_cutover: sar_7_4_partial_default_field_cutover
-  independent_task_completion_verifier: sar_7_1_foundation_local_candidate
-  taskskill_progress_authority_removal: sar_7_5_local_completion_candidate
-  odg_and_pending_obligation_state_removal: sar_7_2_local_candidate
-  action_dedupe_replacement: sar_7_3_local_candidate
-  required_pr_breadth: failed_at_b077c68
-  behavioral_evidence: docs/evidence/runs/sar-7-pr-breadth-b077c68/
-  status: incomplete
+  canonical_taskprogress_cutover: sar_7_4_default_field_cutover
+  independent_task_completion_verifier: sar_7_1_local_complete
+  taskskill_progress_authority_removal: sar_7_5_local_complete
+  odg_and_pending_obligation_state_removal: sar_7_2_local_complete
+  action_dedupe_replacement: sar_7_3_local_complete
+  required_pr_breadth: passed_at_25ec674
+  fresh_diagnostic: complete_with_residuals_at_25ec674
+  behavioral_evidence: docs/evidence/runs/sar-7-behavioral-gate-25ec674/
+  status: local_complete_promotion_held
 sar_7_1:
   status: local_completion_candidate
   record: docs/change-admission/sar-7-1-semantic-closure.yaml
@@ -151,14 +152,13 @@ coordinator_assessment:
   actual_reduction: true
   coordinator_lines: 3441
   run_sync_lines: 1990
-  methods: 25
+  methods: 26
   remaining_reduction_stage: sar_7_to_sar_9
 selected_next_sequence:
-  - SAR-7 PR breadth residual classification
   - SAR-8 single recovery
   - SAR-9 phase extraction and Coordinator reduction
 blocked_until:
-  sar_8: clean SAR-7 behavioral gate or explicit re-scope decision
+  sar_8: unblocked_by_clean_sar_7_pr_breadth_at_25ec674
 hard_guardrails:
   - no new foundation-only chain
   - every canonical object requires same-unit legacy deletion
@@ -167,10 +167,12 @@ hard_guardrails:
   - no Coordinator shortening by merely relocating unchanged branches
   - total core complexity must decrease
 evidence:
-  local_full_gate: reported_pass
+  local_full_gate: passed_at_25ec674
+  clean_pr_breadth: passed_12_of_12_at_25ec674
+  fresh_diagnostic: complete_60_of_60_with_15_passed_45_failed_at_25ec674
   independently_reproduced: false
   remote_ci: absent
-  pr_breadth: held
+  pr_breadth: passed_for_sar_7_gate
   promotion: held
 ```
 
