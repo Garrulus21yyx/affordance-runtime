@@ -60,6 +60,9 @@ def resolve_active_step_target_ids(
     )
     if len(exact_label_matches) == 1:
         return exact_label_matches
+    role_label_matches = _resolve_role_label_subject(subject, views)
+    if role_label_matches:
+        return role_label_matches
 
     text = " ".join((subject, *tuple(str(item) for item in targets)))
     checkbox = _resolve_checkbox_ordinal_target_id(text, views)
@@ -73,6 +76,63 @@ def resolve_active_step_target_ids(
     if ("submit" in lowered and "button" in lowered) or "submission" in lowered:
         submits = tuple(item.target_id for item in views if _is_submit(item))
         return submits if len(submits) == 1 else ()
+    return ()
+
+
+def _resolve_role_label_subject(
+    subject: str,
+    affordances: tuple[ActiveStepTargetView, ...],
+) -> tuple[str, ...]:
+    """Resolve narrow article/role subject phrases without fuzzy matching.
+
+    Examples:
+    - ``the no button`` -> label ``no`` with role ``button``;
+    - ``no button`` -> label ``no`` with role ``button``.
+
+    This intentionally does not tokenize task text or perform contains/
+    similarity matching. It only strips a leading article and a recognized
+    terminal role noun, then requires one exact label+role match.
+    """
+
+    normalized = subject.strip().casefold()
+    if normalized.startswith("the "):
+        normalized = normalized[4:].strip()
+    if not normalized:
+        return ()
+    role_aliases = {
+        "button": {"button", "submit"},
+        "checkbox": {"checkbox"},
+        "slider": {"slider", "range"},
+        "textbox": {"textbox", "searchbox", "textarea"},
+        "dropdown": {"combobox", "listbox", "select"},
+        "select": {"combobox", "listbox", "select"},
+    }
+    for suffix, roles in role_aliases.items():
+        marker = f" {suffix}"
+        if not normalized.endswith(marker):
+            continue
+        label = normalized[: -len(marker)].strip()
+        if not label:
+            return ()
+        matches = tuple(
+            item.target_id
+            for item in affordances
+            if item.label.strip().casefold() == label and item.role.strip().casefold() in roles
+        )
+        return matches if len(matches) == 1 else ()
+    for prefix, roles in role_aliases.items():
+        marker = f"{prefix} "
+        if not normalized.startswith(marker):
+            continue
+        label = normalized[len(marker) :].strip()
+        if not label:
+            return ()
+        matches = tuple(
+            item.target_id
+            for item in affordances
+            if item.label.strip().casefold() == label and item.role.strip().casefold() in roles
+        )
+        return matches if len(matches) == 1 else ()
     return ()
 
 
