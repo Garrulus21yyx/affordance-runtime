@@ -52,7 +52,7 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
-from affordance_runtime.planning_contracts import PlannerProposalResponse
+from affordance_runtime.planning_contracts import PlannerProposalResponse, PlannerUnsupportedResponse
 from affordance_runtime.planning_request import (
     PlannerAffordanceView,
     PlannerObservationView,
@@ -282,6 +282,34 @@ def test_strict_planner_auto_selects_unique_slider_actionchoice() -> None:
     assert response.proposal.parameters == {"key": "ArrowRight"}
     assert response.proposal_provenance is not None
     assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert planner.model_call_count == 0
+
+
+def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
+    request = _request_with_active_step(
+        criterion=StateCriterion(
+            criterion_id="criterion:date",
+            source_refs=(_request_source(),),
+            subject="semantic:date",
+            relation=CriterionRelation.EQUALS,
+            expected_value="01/18/2019",
+            evidence_policy=_request_policy(),
+        ),
+        affordance=PlannerAffordanceView(
+            target_id="semantic:date",
+            surface="dom",
+            role="date",
+            label="Date",
+            supported_actions=("open_picker",),
+            state={"value": ""},
+        ),
+    )
+    planner = GeneralistLMPlanner(NoCallModel())
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerUnsupportedResponse)
+    assert response.reason_code == "no_feasible_action_choice"
     assert planner.model_call_count == 0
 
 

@@ -55,6 +55,9 @@ scope:
     - Strict Generalist Runtime ActionChoice path uses ActionChoiceDispatcher
       for zero/one/many dispatch instead of maintaining a second local
       one-choice and multi-choice selection branch.
+    - Strict public PlanningRequest path returns PlannerUnsupportedResponse for
+      Runtime ActionChoiceFailure without calling the model or falling back to
+      free PlannerProposal generation.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -114,6 +117,9 @@ validation:
   generalist_dispatcher_architecture:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_ps_actionchoice_generalist_uses_dispatcher_not_local_selection_branching -q --tb=short
   generalist_dispatcher_architecture_result: 1_passed
+  no_choice_no_model_call:
+    - python -m pytest tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call -q --tb=short
+  no_choice_no_model_call_result: 1_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
     full_pytest_result: 1298_passed
@@ -126,5 +132,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_generalist_actionchoice_dispatcher_cutover_local_candidate
+status: ps_5_no_choice_model_fallback_blocked_local_candidate
 next_slice: ps_6_historical_profile_grammar_quarantine

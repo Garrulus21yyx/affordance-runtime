@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
@@ -774,8 +775,23 @@ async def _runtime_action_choice_decision(
         scope=scope,
         observation=UnifiedObservationView.from_planner_observation(request.observation),
     )
-    if not isinstance(choice_result, ActionChoiceSet):
-        return None
+    if isinstance(choice_result, ActionChoiceFailure):
+        return PlannerDecision(
+            reason=choice_result.reason_code,
+            planner_context={
+                "task_revision": context.task_revision,
+                "state_version": context.state_version,
+                "snapshot_id": context.snapshot_id,
+                "affordance_count": len(context.affordances),
+                "planner_profile": planner_profile.value,
+                "action_choice_failure": {
+                    "kind": choice_result.kind.value,
+                    "reason_code": choice_result.reason_code,
+                    "disposition": choice_result.disposition.value,
+                },
+                **({"planner_admission": planner_admission} if planner_admission else {}),
+            },
+        )
     selection_result = ActionChoiceDispatcher().choose(choice_result, planner=planner)
     selection = (
         await cast(Awaitable[ActionSelection], selection_result)
@@ -939,6 +955,14 @@ def _planner_response(decision: PlannerDecision) -> PlannerResponse:
         )
     if decision.done:
         return PlannerDoneResponse(result=decision.result, reason=decision.reason)
+    action_choice_failure = decision.planner_context.get("action_choice_failure")
+    if isinstance(action_choice_failure, Mapping):
+        reason_code = action_choice_failure.get("reason_code")
+        if isinstance(reason_code, str) and reason_code:
+            return PlannerUnsupportedResponse(
+                reason_code=reason_code,
+                message=decision.reason,
+            )
     return PlannerUnsupportedResponse(
         reason_code="legacy_decision_without_proposal",
         message=decision.reason,
