@@ -277,7 +277,11 @@ def classify_failure(
         )
     if error_code in {"missing_user_input", "clarification_required"}:
         return _classification(FailureKind.MISSING_USER_INPUT, FailureDisposition.USER_INPUT, error_code)
-    if error_code in {"no_feasible_action", "no_action_candidate"}:
+    if error_code in {
+        "no_feasible_action",
+        "no_action_candidate",
+        "no_feasible_action_choice",
+    }:
         return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureDisposition.RECOVERY, error_code)
     if error_code in {"grounding_ambiguous", "ambiguous_target"}:
         return _classification(FailureKind.GROUNDING_AMBIGUOUS, FailureDisposition.RECOVERY, error_code)

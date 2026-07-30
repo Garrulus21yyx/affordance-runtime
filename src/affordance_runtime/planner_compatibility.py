@@ -104,7 +104,11 @@ def planner_response_to_decision(response: PlannerResponse) -> PlannerDecision:
     if isinstance(response, PlannerClarificationResponse):
         return PlannerDecision(done=False, reason=response.question)
     if isinstance(response, PlannerUnsupportedResponse):
-        return PlannerDecision(done=False, reason=response.message or response.reason_code)
+        return PlannerDecision(
+            done=False,
+            reason=response.message or response.reason_code,
+            planner_context={"unsupported_reason_code": response.reason_code},
+        )
     raise TypeError(f"unsupported planner response: {type(response).__name__}")
 
 

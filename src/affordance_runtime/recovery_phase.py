@@ -31,6 +31,7 @@ from affordance_runtime.recovery_decision_compatibility import (
 )
 from affordance_runtime.recovery_protocol import (
     FailureClassification,
+    FailureClassificationFacts,
     RecoveryDecision,
     RecoveryDimension,
     RecoveryOutcome,
@@ -79,6 +80,8 @@ class RecoveryPhase:
         fresh_route_ref: str = "",
         idempotency_key: str = "",
         compensation_contract_id: str = "",
+        available_action_count: int = 0,
+        user_input_required: bool = False,
     ) -> RecoveryApplicationResult:
         available = frozenset(
             kind
@@ -102,8 +105,16 @@ class RecoveryPhase:
             ),
             history=tuple(state.recovery_history),
             abort_reentry_phase=abort_reentry_phase,
+            available_action_count=available_action_count,
+            user_input_required=user_input_required,
         )
-        classification = classify_failure(failure)
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=recovery_context.available_action_count,
+                user_input_required=recovery_context.user_input_required,
+            ),
+        )
         decision = self.coordinator.decide(
             failure,
             classification,

@@ -96,6 +96,12 @@ scope:
     - entry_outcome_already_satisfied is recognized only from typed
       proposal_rejection code/reason_code, maps to current-step progress
       precheck owner, and is not treated as replan/ask_user recovery.
+    - RecoveryPhase now passes its typed action-space facts into
+      classify_failure(), so phase recovery no longer drops
+      available_action_count/user_input_required before strategy selection.
+    - Request-only PlannerUnsupportedResponse reason_code can reach the
+      Coordinator recovery FailureEnvelope through the current PlannerDecision
+      compatibility seam.
   excluded:
     - RecoveryCommand / RecoveryPlan / RecoveryReceipt physical deletion from
       compatibility trace/dispatcher modules.
@@ -201,6 +207,9 @@ validation:
   recovery_observation_helper_focused:
     - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py -q --tb=short --maxfail=15
   recovery_observation_helper_focused_result: 46_passed
+  actionchoice_unsupported_reason_focused:
+    - python -m pytest tests/test_planner_response_contracts.py tests/test_recovery_coordinator.py::test_no_feasible_action_choice_reason_classifies_as_no_feasible_action tests/test_recovery_phase.py::test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral tests/test_coordinator.py::test_request_planner_unsupported_reason_reaches_recovery_failure -q --tb=short --maxfail=10
+  actionchoice_unsupported_reason_focused_result: 10_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298

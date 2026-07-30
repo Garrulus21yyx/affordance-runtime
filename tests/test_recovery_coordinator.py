@@ -256,6 +256,24 @@ def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> N
     ) == (RecoveryCommandKind.ABORT,)
 
 
+def test_no_feasible_action_choice_reason_classifies_as_no_feasible_action() -> None:
+    failure = _failure(
+        FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+    ).model_copy(
+        update={
+            "error_code": "no_feasible_action_choice",
+            "message": "runtime action choice builder found no executable choice",
+        }
+    )
+
+    classification = classify_failure(failure)
+
+    assert classification.kind == FailureKind.NO_FEASIBLE_ACTION
+    assert classification.disposition == FailureDisposition.RECOVERY
+    assert classification.reason_code == "no_feasible_action_choice"
+
+
 def test_user_input_required_clarification_is_not_model_deferral() -> None:
     failure = _failure(
         FailurePhase.STEP_PLANNING,

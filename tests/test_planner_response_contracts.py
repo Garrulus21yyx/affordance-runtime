@@ -125,3 +125,22 @@ def test_planner_response_compatibility_converts_to_legacy_decision() -> None:
     assert proposal_decision.contract is None
     assert done_decision.done is True
     assert done_decision.result["status"] == "done"
+
+
+def test_planner_unsupported_response_preserves_typed_reason_in_compatibility_decision() -> None:
+    from affordance_runtime.planner_compatibility import planner_response_to_decision
+    from affordance_runtime.planning_contracts import PlannerUnsupportedResponse
+
+    decision = planner_response_to_decision(
+        PlannerUnsupportedResponse(
+            reason_code="no_feasible_action_choice",
+            message="Runtime could not construct an active-step action choice.",
+        )
+    )
+
+    assert decision.proposal is None
+    assert decision.done is False
+    assert decision.reason == "Runtime could not construct an active-step action choice."
+    assert decision.planner_context["unsupported_reason_code"] == (
+        "no_feasible_action_choice"
+    )

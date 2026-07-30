@@ -1152,9 +1152,26 @@ class RunCoordinator:
                     proposal_record(decision.proposal, decision.proposal_provenance)
                 )
             if contract is None:
+                unsupported_reason_code = str(
+                    decision.planner_context.get("unsupported_reason_code", "")
+                )
+                failure_error_code: RuntimeErrorCode | str = (
+                    unsupported_reason_code or RuntimeErrorCode.PLANNER_FAILED
+                )
+                failure_message = (
+                    decision.reason or "planner returned neither a contract nor a result"
+                )
                 parent = trace.add(
                     "TaskFailed",
-                    {"state": state.phase, "reason": "planner returned neither a contract nor a result"},
+                    {
+                        "state": state.phase,
+                        "reason": failure_message,
+                        "error_code": (
+                            failure_error_code.value
+                            if isinstance(failure_error_code, RuntimeErrorCode)
+                            else failure_error_code
+                        ),
+                    },
                     parents=[parent.id],
                 )
                 recovery_command, parent = self._recover_phase_failure(
@@ -1164,8 +1181,8 @@ class RunCoordinator:
                     parent,
                     phase=FailurePhase.STEP_PLANNING,
                     failure_class=FailureClass.VALIDATION,
-                    error_code=RuntimeErrorCode.PLANNER_FAILED,
-                    message="planner returned neither a contract nor a result",
+                    error_code=failure_error_code,
+                    message=failure_message,
                     available_commands=frozenset(
                         {
                             RecoveryCommandKind.REPLAN_STEP,

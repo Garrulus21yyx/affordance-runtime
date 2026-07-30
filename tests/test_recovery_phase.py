@@ -8,7 +8,7 @@ from affordance_runtime.recovery_command_dispatcher import RecoveryCommandDispat
 from affordance_runtime.recovery_commands import RecoveryCommandKind
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_phase import RecoveryApplicationResult, RecoveryPhase
-from affordance_runtime.recovery_protocol import RecoveryKind
+from affordance_runtime.recovery_protocol import FailureKind, RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag
@@ -109,3 +109,50 @@ def test_recovery_phase_records_immediate_terminal_outcome_without_pending_plan(
     assert state.current_recovery_decision == result.decision
     assert state.current_recovery_outcome == result.outcome
     assert state.current_recovery_command is None
+
+
+def test_recovery_phase_uses_typed_action_space_facts_for_planner_deferral() -> None:
+    state = StateKernel("task-1", "choose next action")
+    failure = make_failure_envelope(
+        run_id="task-1",
+        phase=FailurePhase.STEP_PLANNING,
+        failure_class=FailureClass.PLANNING,
+        error_code="planner_waiting_clarification",
+        message="planner deferred despite available action choices",
+        state_version=state.version,
+        expected_effect="choose a bounded action",
+        remaining_budgets=RemainingRecoveryBudgets(
+            recoveries=2,
+            replans=2,
+            provider_switches=1,
+            timeout_ms=10_000,
+            model_calls=2,
+            estimated_cost=10.0,
+        ),
+    )
+    trace = TraceDag("task-1")
+    state.transition(RuntimeStep.OBSERVING.value)
+    parent = trace.add("Root", {"state": state.phase})
+
+    result = RecoveryPhase(
+        coordinator=RecoveryCoordinator(),
+        command_dispatcher=RecoveryCommandDispatcher(),
+    ).handle_phase_failure(
+        failure=failure,
+        state=state,
+        trace=trace,
+        parent=parent,
+        available_commands=frozenset(
+            {
+                RecoveryCommandKind.COMPACT_CONTEXT,
+                RecoveryCommandKind.ASK_USER,
+                RecoveryCommandKind.ABORT,
+            }
+        ),
+        runtime_profile_digest="",
+        loaded_profile_artifact_ids=(),
+        available_action_count=2,
+    )
+
+    assert result.classification.kind == FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE
+    assert result.command_kind != RecoveryCommandKind.ASK_USER

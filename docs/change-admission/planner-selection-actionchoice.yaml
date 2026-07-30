@@ -58,6 +58,10 @@ scope:
     - Strict public PlanningRequest path returns PlannerUnsupportedResponse for
       Runtime ActionChoiceFailure without calling the model or falling back to
       free PlannerProposal generation.
+    - PlannerUnsupportedResponse compatibility conversion preserves the typed
+      unsupported reason_code in PlannerDecision.planner_context so the current
+      Coordinator consumer can route ActionChoice failures into recovery
+      without collapsing them to generic planner_failed.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -120,6 +124,9 @@ validation:
   no_choice_no_model_call:
     - python -m pytest tests/test_generalist_planner.py::test_strict_planner_returns_no_choice_failure_without_model_call -q --tb=short
   no_choice_no_model_call_result: 1_passed
+  unsupported_reason_compatibility:
+    - python -m pytest tests/test_planner_response_contracts.py::test_planner_unsupported_response_preserves_typed_reason_in_compatibility_decision -q --tb=short
+  unsupported_reason_compatibility_result: 1_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
     full_pytest_result: 1298_passed

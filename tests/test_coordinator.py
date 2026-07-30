@@ -28,6 +28,8 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_contracts import PlannerUnsupportedResponse
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
@@ -1552,6 +1554,32 @@ class QuotaExhaustedPlanner:
     def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
         del envelope, state, snapshot
         raise ProviderModelError(ProviderFailureKind.QUOTA_EXHAUSTED, retry_after_s=60)
+
+
+class UnsupportedChoicePlanner:
+    def propose(self, request: PlanningRequest) -> PlannerUnsupportedResponse:
+        del request
+        return PlannerUnsupportedResponse(
+            reason_code="no_feasible_action_choice",
+            message="Runtime could not construct an active-step action choice.",
+        )
+
+
+def test_request_planner_unsupported_reason_reaches_recovery_failure() -> None:
+    result = RunCoordinator(
+        observer=StableObserver(),
+        planner=UnsupportedChoicePlanner(),
+        executor=FakeExecutor(),
+    ).run_sync(TaskEnvelope(task_spec=_semantic_task()))
+
+    assert result.state.receipts == []
+    assert result.state.current_failure is not None
+    assert result.state.current_failure.error_code == "no_feasible_action_choice"
+    assert result.state.current_failure.message == (
+        "Runtime could not construct an active-step action choice."
+    )
+    assert result.state.current_recovery_decision is not None
+    assert result.state.current_recovery_decision.reason_code == "no_feasible_action_choice"
 
 
 def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tmp_path) -> None:
