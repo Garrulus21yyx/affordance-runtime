@@ -30,6 +30,7 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     RuntimeErrorCode,
 )
+from affordance_runtime.execution_phase import ExecutionPhase
 from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
@@ -120,6 +121,7 @@ TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
 PREFLIGHT_PHASE = PreflightPhase()
+EXECUTION_PHASE = ExecutionPhase()
 
 
 @dataclass(frozen=True)
@@ -885,141 +887,48 @@ class RunCoordinator:
                     preflight_result.terminal.error_code,
                     latest_verification,
                 )
-            state.transition(RuntimeStep.ACTING.value)
-            parent = trace.add("ActionStarted", {"state": state.phase, "contract_id": contract.id}, parents=[parent.id])
-            receipt = self.contract_execution_loop.execute(contract, execution_observation)
-            state.record_receipt(receipt)
-            state.step_count += 1
-            state.record_subgoal_action()
-            if contract.required_capabilities:
-                state.effectful_action_count += 1
-            receipt_ref = self._write_receipt(envelope.task_id, state.step_count, receipt)
-            self._index(trace, receipt_ref)
-            parent = self.recovery_phase.complete_pending_execution(
-                state,
-                trace,
-                parent,
-                contract,
-                receipt,
-                execution_observation,
-            )
-            if not receipt.success:
-                if not self.features.recovery:
-                    state.transition(RuntimeStep.FAILED.value)
-                    parent = trace.add(
-                        "TaskFailed",
-                        {"state": state.phase, "reason": "recovery layer disabled"},
-                        parents=[parent.id],
-                    )
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep.FAILED,
-                        parent,
-                        receipt.error_code or RuntimeErrorCode.EXECUTION_FAILED,
-                        latest_verification,
-                    )
-                recovery_result, parent = self._recover_execution_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    contract,
-                    receipt,
-                    receipt.error_code,
-                )
-                parent = _trace_recovery_started(trace, parent, state, recovery_result)
-                if recovery_result in {
-                    RecoveryKind.REOBSERVE,
-                    RecoveryKind.RETRY_IDEMPOTENT,
-                    RecoveryKind.REROUTE,
-                }:
-                    continue
-                if recovery_result == RecoveryKind.INSPECT_POST_STATE:
-                    inspection = self.perception_session.capture(
-                        envelope,
-                        state,
-                        state.observation_count + 1,
-                    )
-                    state.remember_observation(inspection.observation)
-                    inspection_ref = self._write_observation(envelope.task_id, state.observation_count, inspection)
-                    self._index(trace, inspection_ref)
-                    self._index_paths(trace, inspection.observation.artifact_refs)
-                    parent = self._trace_source_arbitration(trace, parent, inspection, state.phase)
-                    if inspection.active_perception_requests:
-                        parent = trace.add(
-                            "RecoveryActivePerceptionRequested",
-                            {
-                                "state": state.phase,
-                                "reason": "post-action effect status requires additional current evidence",
-                            },
-                            parents=[parent.id],
-                        )
-                        inspection, parent = self._fulfill_targeted_perception(
-                            envelope,
-                            state,
-                            trace,
-                            parent,
-                            inspection,
-                        )
-                    latest_verification = self.contract_execution_loop.verify(
-                        contract,
-                        receipt,
-                        inspection.observation,
-                        structural_verification_enabled=True,
-                        disabled_reason="",
-                    )
-                    state.latest_verification = latest_verification
-                    parent = trace.add(
-                        "RecoveryStateInspected",
-                        {
-                            "state": state.phase,
-                            "verification": latest_verification.status.value,
-                            "snapshot_id": inspection.observation.snapshot_id,
-                            "artifact_refs": ([inspection_ref.path] if inspection_ref else [])
-                            + list(inspection.observation.artifact_refs),
-                        },
-                        parents=[parent.id],
-                    )
-                    recovery_skill_progress = (
-                        _task_skill_progress(self.task_skill_runtime, state)
-                        if self.task_skill_runtime is not None
-                        else None
-                    )
-                    changed_skill_fallthrough = bool(
-                        verification_confirms_effect_absent(latest_verification)
-                        and recovery_skill_progress is not None
-                        and not recovery_skill_progress.active
-                    )
-                    parent, _recovery_must_stop = (
-                        self.recovery_phase.complete_pending_observation(
-                            state,
-                            trace,
-                            parent,
-                            inspection,
-                            verification=latest_verification,
-                            post_state_inspection_failed=(
-                                not latest_verification.passed
-                                and not changed_skill_fallthrough
-                            ),
-                        )
-                    )
-                    if latest_verification.passed:
-                        continue
-                final_recovery_status = _terminal_recovery_status(
-                    state,
+            execution_result = EXECUTION_PHASE.run(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                contract=contract,
+                execution_observation=execution_observation,
+                contract_execution_loop=self.contract_execution_loop,
+                perception_session=self.perception_session,
+                recovery_phase=self.recovery_phase,
+                task_skill_runtime=self.task_skill_runtime,
+                recovery_enabled=self.features.recovery,
+                write_receipt=self._write_receipt,
+                write_observation=self._write_observation,
+                index_artifact=self._index,
+                index_paths=self._index_paths,
+                trace_source_arbitration=self._trace_source_arbitration,
+                fulfill_targeted_perception=self._fulfill_targeted_perception,
+                recover_execution_failure=self._recover_execution_failure,
+                terminal_recovery_status=lambda current_state: _terminal_recovery_status(
+                    current_state,
                     fallback=RuntimeStep.FAILED,
-                )
+                ),
+                trace_recovery_started=_trace_recovery_started,
+            )
+            parent = execution_result.parent
+            if execution_result.latest_verification is not None:
+                latest_verification = execution_result.latest_verification
+            if execution_result.continue_observing:
+                continue
+            if execution_result.terminal is not None:
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    final_recovery_status,
+                    execution_result.terminal.status,
                     parent,
-                    receipt.error_code or RuntimeErrorCode.EXECUTION_FAILED,
+                    execution_result.terminal.error_code,
                     latest_verification,
                 )
+            assert execution_result.receipt is not None
+            receipt = execution_result.receipt
             state.transition(RuntimeStep.VERIFYING.value)
             post_snapshot = self.perception_session.capture(
                 envelope,

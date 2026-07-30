@@ -2487,6 +2487,35 @@ def test_sar_9f_preflight_handling_is_behind_preflight_phase() -> None:
     assert (SOURCE_ROOT / "preflight_phase.py").is_file()
 
 
+def test_sar_9g_execution_handling_is_behind_execution_phase() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    coordinator_tree = ast.parse(coordinator_source)
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    run_sync_source = ast.unparse(run_sync)
+
+    for forbidden in (
+        "ActionStarted",
+        "contract_execution_loop.execute",
+        "record_receipt",
+        "record_subgoal_action",
+        "complete_pending_execution",
+        "recovery layer disabled",
+    ):
+        assert forbidden not in run_sync_source
+
+    assert "execution_phase" in coordinator_source
+    assert (SOURCE_ROOT / "execution_phase.py").is_file()
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(

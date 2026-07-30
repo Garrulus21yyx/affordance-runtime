@@ -1115,3 +1115,14 @@ delivery claims.
   changed-file Ruff and core mypy passed. Coordinator is now 2104 lines,
   `run_sync()` is 1136 lines, and RunCoordinator is down to 18 methods. SAR-9
   full phase extraction remains incomplete.
+- Started SAR-9G ExecutionPhase extraction after
+  `35afa5a682bfaa30834c1ce4af57541c56933127`. Added
+  `execution_phase.ExecutionPhase`, moved action dispatch, receipt state and
+  artifact recording, pending execution recovery completion, disabled-recovery
+  receipt failure handling, and receipt-failure inspect-post-state recovery
+  out of `RunCoordinator.run_sync`. Coordinator still owns terminal result
+  formatting and post-action verification / progress remain later extractions.
+  Focused SAR-9A-G plus Coordinator/Generalist/full-phase/TaskSkill/contract
+  gates passed 164/164; changed-file Ruff and core mypy passed. Coordinator is
+  now 2013 lines, `run_sync()` is 1043 lines, and RunCoordinator remains at 18
+  methods. SAR-9 full phase extraction remains incomplete.
