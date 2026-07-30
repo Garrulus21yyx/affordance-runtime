@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Awaitable
+from typing import Any
 
 from affordance_runtime.action_outcome_flow import record_contract_action_outcome_trace
 from affordance_runtime.active_perception import (
@@ -23,7 +22,6 @@ from affordance_runtime.approval_contracts import (
     ConfiguredApprovalProvider as ConfiguredApprovalProvider,
 )
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
-from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
@@ -44,12 +42,9 @@ from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSourc
 from affordance_runtime.model_port import ProviderModelError
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
 from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
-from affordance_runtime.planner_compatibility import propose_with_runtime_projection as _propose
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
-    PlannerProposalProvenance,
-    PlannerProposalSource,
     PlannerProposalValidator,
     ProposalRejected,
     ProposalRejectionCode,
@@ -57,7 +52,7 @@ from affordance_runtime.planning import (
     proposal_error_code,
     proposal_record,
 )
-from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.planning_contracts import PlannerDecision as PlannerDecision  # noqa: F401
 from affordance_runtime.progress_phase import ProgressPhase
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator
@@ -105,8 +100,14 @@ from affordance_runtime.task_planning import (
     TaskPlanValidator,
     VerifierBackedSubgoalVerifier,
 )
+from affordance_runtime.task_skill_phase import (
+    TaskSkillPhase,
+)
+from affordance_runtime.task_skill_phase import (
+    resolve_planner_decision as _resolve_planner_decision,  # noqa: F401
+)
 from affordance_runtime.task_skill_progress import TaskSkillRunState
-from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillRuntimeDecision
+from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder
 
@@ -118,6 +119,7 @@ OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
     }
 )
 PROGRESS_PHASE = ProgressPhase()
+TASK_SKILL_PHASE = TaskSkillPhase()
 
 
 @dataclass(frozen=True)
@@ -512,131 +514,64 @@ class RunCoordinator:
             state.transition(RuntimeStep.PLANNING.value)
             if state.task_plan is not None:
                 state.activate_next_subgoal()
-            skill_decision: TaskSkillRuntimeDecision | None = None
             skill_step_id = ""
             try:
-                if self.task_skill_runtime is not None and envelope.task_spec is not None:
-                    try:
-                        skill_decision = self.task_skill_runtime.expose(
-                            envelope.task_spec,
+                task_skill_phase = TASK_SKILL_PHASE.select(
+                    task_skill_runtime=self.task_skill_runtime,
+                    planner=self.planner,
+                    envelope=envelope,
+                    state=state,
+                    snapshot=snapshot,
+                    trace=trace,
+                    parent=parent,
+                    runtime_profile_digest=self.runtime_profile_digest,
+                )
+                parent = task_skill_phase.parent
+                skill_step_id = task_skill_phase.skill_step_id
+                if task_skill_phase.failure is not None:
+                    if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
+                        parent = self.recovery_phase.fail_pending_command(
                             state,
-                            snapshot,
+                            trace,
+                            parent,
+                            error_code=RuntimeErrorCode.PLANNER_FAILED.value,
                         )
-                    except Exception as exc:
-                        reason = f"TaskSkill runtime error: {type(exc).__name__}: {exc}"[:500]
-                        self.task_skill_runtime.fallthrough(state, reason)
-                        skill_decision = TaskSkillRuntimeDecision(
-                            attempted=True,
-                            reason=reason,
-                        )
-                    parent = trace.add(
-                        "TaskSkillSelectionEvaluated",
-                        {
-                            "state": state.phase,
-                            "matched": skill_decision.payload is not None,
-                            "newly_activated": skill_decision.newly_activated,
-                            "attempted": skill_decision.attempted,
-                            "reason": skill_decision.reason,
-                            "profile_digest": self.runtime_profile_digest,
-                        },
-                        parents=[parent.id],
+                    recovery_kind, parent = self._recover_phase_failure(
+                        envelope,
+                        state,
+                        trace,
+                        parent,
+                        phase=FailurePhase.SKILL_ACTIVATION,
+                        failure_class=FailureClass.SKILL,
+                        error_code=RuntimeErrorCode.PLANNER_FAILED,
+                        message=task_skill_phase.failure.reason,
+                        available_commands=frozenset(
+                            {
+                                RecoveryKind.REPLAN_STEP,
+                                *_available_owner_recovery_kinds(
+                                    self.recovery_owner_dispatcher
+                                ),
+                                RecoveryKind.ABORT,
+                            }
+                        ),
+                        snapshot=snapshot,
                     )
-                    skill_progress = _task_skill_progress(self.task_skill_runtime, state)
                     if (
-                        skill_decision.attempted
-                        and skill_decision.reason.startswith("TaskSkill runtime error:")
+                        recovery_kind == RecoveryKind.REPLAN_STEP
+                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
                     ):
-                        if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
-                            parent = self.recovery_phase.fail_pending_command(
-                                state,
-                                trace,
-                                parent,
-                                error_code=RuntimeErrorCode.PLANNER_FAILED.value,
-                            )
-                        recovery_kind, parent = self._recover_phase_failure(
-                            envelope,
-                            state,
-                            trace,
-                            parent,
-                            phase=FailurePhase.SKILL_ACTIVATION,
-                            failure_class=FailureClass.SKILL,
-                            error_code=RuntimeErrorCode.PLANNER_FAILED,
-                            message=skill_decision.reason,
-                            available_commands=frozenset(
-                                {
-                                    RecoveryKind.REPLAN_STEP,
-                                    *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
-                                    RecoveryKind.ABORT,
-                                }
-                            ),
-                            snapshot=snapshot,
+                        continue
+                    return self._finish(
+                        envelope,
+                        state,
+                        trace,
+                        RuntimeStep(state.phase),
+                        parent,
+                        RuntimeErrorCode.PLANNER_FAILED,
+                        latest_verification,
                         )
-                        if (
-                            recovery_kind == RecoveryKind.REPLAN_STEP
-                            or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                        ):
-                            continue
-                        return self._finish(
-                            envelope,
-                            state,
-                            trace,
-                            RuntimeStep(state.phase),
-                            parent,
-                            RuntimeErrorCode.PLANNER_FAILED,
-                            latest_verification,
-                        )
-                    if skill_decision.newly_activated and skill_decision.payload is not None:
-                        parent = trace.add(
-                            "TaskSkillActivated",
-                            {
-                                "state": state.phase,
-                                "skill_id": skill_decision.payload.skill_id,
-                                "version": skill_decision.payload.version,
-                                "trigger": skill_decision.payload.trigger.task_family,
-                            },
-                            parents=[parent.id],
-                        )
-                    exposure = skill_decision.exposure
-                    if exposure is not None and exposure.proposal is not None:
-                        skill_payload = skill_decision.payload
-                        if skill_payload is None:
-                            raise ValueError("TaskSkill exposure is missing its payload")
-                        skill_step_id = exposure.step_id
-                        decision = PlannerDecision(
-                            proposal=exposure.proposal,
-                            proposal_provenance=PlannerProposalProvenance(
-                                source=PlannerProposalSource.ACCEPTED_SKILL,
-                                producer_id=skill_payload.skill_id,
-                                version=skill_payload.version,
-                                evidence_refs=tuple(skill_progress.evidence) if skill_progress else (),
-                            ),
-                            reason="accepted TaskSkill exposed one semantic step",
-                        )
-                        parent = trace.add(
-                            "TaskSkillStepExposed",
-                            {
-                                "state": state.phase,
-                                "skill_id": skill_payload.skill_id,
-                                "version": skill_payload.version,
-                                "step_id": skill_step_id,
-                                "action_kind": exposure.proposal.action_kind.value,
-                                "semantic_target_id": exposure.proposal.target_affordance_id,
-                                "semantic_destination_id": (exposure.proposal.destination_affordance_id),
-                            },
-                            parents=[parent.id],
-                        )
-                    else:
-                        if skill_decision.attempted and skill_decision.reason:
-                            parent = self._trace_task_skill_fallthrough(
-                                trace,
-                                parent,
-                                state,
-                                skill_decision.reason,
-                                progress=skill_progress,
-                            )
-                        decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
-                else:
-                    decision = _resolve_planner_decision(_propose(self.planner, envelope=envelope, state=state, snapshot=snapshot))
+                assert task_skill_phase.decision is not None
+                decision = task_skill_phase.decision
             except ProviderModelError as exc:
                 error_code = RuntimeErrorCode(exc.kind.value)
                 if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
@@ -2877,16 +2812,6 @@ class RunCoordinator:
             verification=verification,
             artifacts=artifact_refs,
         )
-
-
-def _resolve_planner_decision(value: PlannerDecision | Awaitable[PlannerDecision]) -> PlannerDecision:
-    if not inspect.isawaitable(value):
-        return value
-    return resolve_awaitable(_await_planner_decision(value))
-
-
-async def _await_planner_decision(value: Awaitable[PlannerDecision]) -> PlannerDecision:
-    return await value
 
 
 def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:

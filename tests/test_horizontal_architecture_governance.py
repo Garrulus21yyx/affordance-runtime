@@ -2369,6 +2369,34 @@ def test_sar_9b_progress_low_level_commits_are_behind_progress_phase() -> None:
         assert forbidden not in task_plan_phase_source
 
 
+def test_sar_9c_taskskill_selection_is_behind_taskskill_phase() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    coordinator_tree = ast.parse(coordinator_source)
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    run_sync_source = ast.unparse(run_sync)
+
+    for forbidden in (
+        "TaskSkillSelectionEvaluated",
+        "TaskSkillActivated",
+        "TaskSkillStepExposed",
+        "task_skill_runtime.expose",
+        "PlannerProposalSource.ACCEPTED_SKILL",
+    ):
+        assert forbidden not in run_sync_source
+
+    assert "task_skill_phase" in coordinator_source
+    assert (SOURCE_ROOT / "task_skill_phase.py").is_file()
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
