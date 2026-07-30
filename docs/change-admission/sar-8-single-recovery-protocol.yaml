@@ -76,6 +76,9 @@ scope:
     - RecoveryHandler keeps legacy RecoveryEvaluation compatibility by locally
       projecting a RecoveryPlan from RecoveryDecision, with unaccepted profile
       strategy artifacts filtered before canonical decision selection.
+    - RecoveryPhase owns pending recovery plan-change completion; Coordinator
+      no longer constructs recovery receipt/delta/history for replan-step or
+      replan-task success paths inline.
     - planner_waiting_clarification maps to internal model/context/provider
       recovery only when typed action-space facts prove available actions.
     - planner_waiting_clarification without typed action-space facts fails
@@ -164,6 +167,12 @@ validation:
   plan_api_removal_architecture:
     - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_task_pipeline_uses_recovery_decisions_not_plans tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_phase_uses_command_adapter_not_plan_adapter tests/test_horizontal_architecture_governance.py::test_sar_8c_recovery_coordinator_no_longer_exposes_plan_api tests/test_horizontal_architecture_governance.py::test_sar_8c_statekernel_does_not_store_legacy_recovery_plan -q --tb=short --maxfail=1
   plan_api_removal_architecture_result: 4_passed
+  recovery_plan_change_helper_migration_gate:
+    - python -m pytest tests/test_horizontal_architecture_governance.py::test_sar_8c_coordinator_does_not_complete_recovery_plan_changes_inline -q --tb=short
+  recovery_plan_change_helper_migration_gate_result: 1_passed
+  recovery_plan_change_helper_focused:
+    - python -m pytest tests/test_recovery_phase.py tests/test_full_phase_recovery.py tests/test_coordinator.py -q --tb=short --maxfail=10
+  recovery_plan_change_helper_focused_result: 37_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -175,5 +184,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_recovery_coordinator_plan_api_removed_local_candidate
+status: sar_8c_recovery_phase_plan_change_completion_local_candidate
 next_slice: planner-selection-simplification-actionchoice

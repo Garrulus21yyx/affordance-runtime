@@ -256,6 +256,60 @@ class RecoveryPhase:
             ),
         )
 
+    @staticmethod
+    def complete_pending_plan_change(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        *,
+        kind: RecoveryCommandKind,
+        plan_or_route_ref: str,
+    ) -> TraceNode:
+        failure = state.current_failure
+        command = state.current_recovery_command
+        if failure is None or command is None or command.kind != kind:
+            return parent
+        completion = successful_recovery_completion(
+            failure=failure,
+            command=command,
+            state_version=state.version,
+            retired_assumptions=tuple(state.disproved_assumptions[-1:]),
+            fingerprint_ref=plan_or_route_ref,
+            plan_or_route_ref=plan_or_route_ref,
+        )
+        state.recovery_deltas.append(completion.delta)
+        state.recovery_receipts.append(completion.receipt)
+        state.recovery_history.append(completion.history)
+        state.current_recovery_command = None
+        state.current_recovery_outcome = RecoveryOutcome(
+            decision_id=state.current_recovery_decision.decision_id
+            if state.current_recovery_decision is not None
+            else command.command_id,
+            failure_id=failure.failure_id,
+            success=True,
+            changed_dimensions=tuple(
+                RecoveryDimension(item.value) for item in command.changed_dimensions
+            ),
+            next_phase=RuntimePhase(command.reentry_phase.value),
+            artifact_refs=completion.receipt.artifact_refs,
+            observation_refs=completion.receipt.observation_refs,
+        )
+        parent = trace.add(
+            "RecoveryCommandCompleted",
+            {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        parent = trace.add(
+            "RecoveryDeltaValidated",
+            {"state": state.phase, "delta": completion.delta.model_dump(mode="json")},
+            parents=[parent.id],
+        )
+        return trace.add(
+            "RecoveryReenteredPhase",
+            {"state": state.phase, "reentry_phase": command.reentry_phase.value},
+            parents=[parent.id],
+        )
+
 
 def _trace_recovery_protocol(
     trace: TraceDag,

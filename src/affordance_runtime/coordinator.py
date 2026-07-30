@@ -71,7 +71,6 @@ from affordance_runtime.recovery_commands import (
 from affordance_runtime.recovery_commands import (
     RecoveryReceipt as RecoveryCommandReceipt,
 )
-from affordance_runtime.recovery_completion import successful_recovery_completion
 from affordance_runtime.recovery_coordinator import RecoveryCoordinator, RecoveryHistoryItem
 from affordance_runtime.recovery_phase import RecoveryPhase
 from affordance_runtime.recovery_protocol import RecoveryKind
@@ -511,7 +510,7 @@ class RunCoordinator:
                         committed=committed,
                     )
                     parent = trace.add(acceptance.kind, acceptance.payload, parents=[parent.id])
-                    parent = self._complete_pending_recovery_plan_change(
+                    parent = self.recovery_phase.complete_pending_plan_change(
                         state,
                         trace,
                         parent,
@@ -901,7 +900,7 @@ class RunCoordinator:
                     },
                     parents=[parent.id],
                 )
-                parent = self._complete_pending_recovery_plan_change(
+                parent = self.recovery_phase.complete_pending_plan_change(
                     state,
                     trace,
                     parent,
@@ -934,7 +933,7 @@ class RunCoordinator:
                         latest_verification,
                     )
             else:
-                parent = self._complete_pending_recovery_plan_change(
+                parent = self.recovery_phase.complete_pending_plan_change(
                     state,
                     trace,
                     parent,
@@ -2372,47 +2371,6 @@ class RunCoordinator:
             abort_reentry_phase=abort_reentry_phase,
         )
         return recovery_result.command_kind, recovery_result.parent
-
-    @staticmethod
-    def _complete_pending_recovery_plan_change(
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        *,
-        kind: RecoveryCommandKind,
-        plan_or_route_ref: str,
-    ) -> TraceNode:
-        failure = state.current_failure
-        command = state.current_recovery_command
-        if failure is None or command is None or command.kind != kind:
-            return parent
-        completion = successful_recovery_completion(
-            failure=failure,
-            command=command,
-            state_version=state.version,
-            retired_assumptions=tuple(state.disproved_assumptions[-1:]),
-            fingerprint_ref=plan_or_route_ref,
-            plan_or_route_ref=plan_or_route_ref,
-        )
-        state.recovery_deltas.append(completion.delta)
-        state.recovery_receipts.append(completion.receipt)
-        state.recovery_history.append(completion.history)
-        state.current_recovery_command = None
-        parent = trace.add(
-            "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        parent = trace.add(
-            "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": completion.delta.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        return trace.add(
-            "RecoveryReenteredPhase",
-            {"state": state.phase, "reentry_phase": command.reentry_phase.value},
-            parents=[parent.id],
-        )
 
     def _remaining_recovery_budgets(self, state: StateKernel) -> RemainingRecoveryBudgets:
         return RemainingRecoveryBudgets(
