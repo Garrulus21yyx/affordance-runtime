@@ -205,6 +205,30 @@ class RecoveryDecision:
             raise ValueError("compensation recovery decision requires compensation_contract_id")
 
 
+@dataclass(frozen=True)
+class RecoveryOutcome:
+    decision_id: str
+    failure_id: str
+    success: bool
+    changed_dimensions: tuple[RecoveryDimension, ...]
+    next_phase: RuntimePhase
+    artifact_refs: tuple[str, ...] = ()
+    observation_refs: tuple[str, ...] = ()
+    error_code: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.decision_id.strip():
+            raise ValueError("recovery outcome decision_id is required")
+        if not self.failure_id.strip():
+            raise ValueError("recovery outcome failure_id is required")
+        if not self.changed_dimensions:
+            raise ValueError("recovery outcome changed_dimensions are required")
+        if len(self.changed_dimensions) != len(set(self.changed_dimensions)):
+            raise ValueError("recovery outcome changed_dimensions must be unique")
+        object.__setattr__(self, "artifact_refs", tuple(self.artifact_refs))
+        object.__setattr__(self, "observation_refs", tuple(self.observation_refs))
+
+
 def classify_failure(
     failure: FailureEnvelope,
     facts: FailureClassificationFacts | None = None,

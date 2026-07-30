@@ -22,11 +22,31 @@ from affordance_runtime.recovery_coordinator import (
 from affordance_runtime.recovery_decision_compatibility import (
     legacy_plan_from_recovery_decision,
 )
-from affordance_runtime.recovery_protocol import classify_failure
+from affordance_runtime.recovery_protocol import (
+    FailureClassification,
+    RecoveryDecision,
+    RecoveryDimension,
+    RecoveryOutcome,
+    RuntimePhase,
+    classify_failure,
+)
 from affordance_runtime.recovery_trace_projection import recovery_protocol_projections
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
+
+
+@dataclass(frozen=True)
+class RecoveryApplicationResult:
+    classification: FailureClassification
+    decision: RecoveryDecision
+    command_kind: RecoveryCommandKind
+    parent: TraceNode
+    outcome: RecoveryOutcome | None = None
+
+    def __iter__(self):
+        yield self.command_kind
+        yield self.parent
 
 
 @dataclass(frozen=True)
@@ -51,7 +71,7 @@ class RecoveryPhase:
         fresh_route_ref: str = "",
         idempotency_key: str = "",
         compensation_contract_id: str = "",
-    ) -> tuple[RecoveryCommandKind, TraceNode]:
+    ) -> RecoveryApplicationResult:
         available = frozenset(
             kind
             for kind in available_commands
@@ -75,9 +95,10 @@ class RecoveryPhase:
             history=tuple(state.recovery_history),
             abort_reentry_phase=abort_reentry_phase,
         )
+        classification = classify_failure(failure)
         decision = self.coordinator.decide(
             failure,
-            classify_failure(failure),
+            classification,
             recovery_context,
             current_state_version=state.version,
         )
@@ -89,6 +110,8 @@ class RecoveryPhase:
             gap_ids=recovery_context.gap_ids,
         )
         state.current_failure = failure
+        state.current_recovery_decision = decision
+        state.current_recovery_outcome = None
         state.current_recovery_plan = plan
         command = plan.commands[0]
         state.attempted_recovery_strategy_ids.add(command.strategy_id)
@@ -102,7 +125,7 @@ class RecoveryPhase:
             RecoveryCommandKind.RETRY_IDEMPOTENT,
         }:
             state.transition(RuntimeStep.OBSERVING.value)
-            return command.kind, parent
+            return RecoveryApplicationResult(classification, decision, command.kind, parent)
         if command.kind in {
             RecoveryCommandKind.REPLAN_STEP,
             RecoveryCommandKind.REPLAN_TASK,
@@ -112,16 +135,30 @@ class RecoveryPhase:
                 f"{failure.phase.value}:{failure.error_code}:{failure.message}"
             )
             state.transition(RuntimeStep.OBSERVING.value)
-            return command.kind, parent
+            return RecoveryApplicationResult(classification, decision, command.kind, parent)
         if command.kind in OWNER_DISPATCH_COMMANDS:
-            return self._dispatch_owner_command(
+            command_kind, parent = self._dispatch_owner_command(
                 failure,
                 state,
                 trace,
                 parent,
                 abort_reentry_phase=abort_reentry_phase,
             )
-        return _complete_immediate_recovery_command(state, trace, parent)
+            return RecoveryApplicationResult(
+                classification,
+                decision,
+                command_kind,
+                parent,
+                state.current_recovery_outcome,
+            )
+        command_kind, parent = _complete_immediate_recovery_command(state, trace, parent)
+        return RecoveryApplicationResult(
+            classification,
+            decision,
+            command_kind,
+            parent,
+            state.current_recovery_outcome,
+        )
 
     def _dispatch_owner_command(
         self,
@@ -153,6 +190,18 @@ class RecoveryPhase:
         if not dispatched.receipt.success or dispatched.delta is None:
             state.current_recovery_plan = None
             state.transition(abort_reentry_phase.value)
+            state.current_recovery_outcome = RecoveryOutcome(
+                decision_id=state.current_recovery_decision.decision_id
+                if state.current_recovery_decision is not None
+                else command.command_id,
+                failure_id=failure.failure_id,
+                success=False,
+                changed_dimensions=tuple(
+                    RecoveryDimension(item.value) for item in command.changed_dimensions
+                ),
+                next_phase=RuntimePhase(abort_reentry_phase.value),
+                error_code=dispatched.receipt.error_code,
+            )
             return RecoveryCommandKind.ABORT, parent
         state.replan_count += 1
         state.record_disproved_assumption(
@@ -169,6 +218,19 @@ class RecoveryPhase:
         )
         state.current_recovery_plan = None
         state.transition(RuntimeStep.OBSERVING.value)
+        state.current_recovery_outcome = RecoveryOutcome(
+            decision_id=state.current_recovery_decision.decision_id
+            if state.current_recovery_decision is not None
+            else command.command_id,
+            failure_id=failure.failure_id,
+            success=True,
+            changed_dimensions=tuple(
+                RecoveryDimension(item.value) for item in command.changed_dimensions
+            ),
+            next_phase=RuntimePhase.OBSERVING,
+            artifact_refs=dispatched.receipt.artifact_refs,
+            observation_refs=dispatched.receipt.observation_refs,
+        )
         parent = trace.add(
             "RecoveryDeltaValidated",
             {"state": state.phase, "delta": dispatched.delta.model_dump(mode="json")},
@@ -234,6 +296,19 @@ def _complete_immediate_recovery_command(
     state.recovery_receipts.append(completion.receipt)
     state.recovery_history.append(completion.history)
     state.current_recovery_plan = None
+    state.current_recovery_outcome = RecoveryOutcome(
+        decision_id=state.current_recovery_decision.decision_id
+        if state.current_recovery_decision is not None
+        else command.command_id,
+        failure_id=failure.failure_id,
+        success=True,
+        changed_dimensions=tuple(
+            RecoveryDimension(item.value) for item in command.changed_dimensions
+        ),
+        next_phase=RuntimePhase(command.reentry_phase.value),
+        artifact_refs=completion.receipt.artifact_refs,
+        observation_refs=completion.receipt.observation_refs,
+    )
     parent = trace.add(
         "RecoveryCommandCompleted",
         {"state": state.phase, "receipt": completion.receipt.model_dump(mode="json")},

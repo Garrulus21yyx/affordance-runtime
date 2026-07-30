@@ -35,6 +35,13 @@ scope:
     - RunCoordinator contract-backed execution and verification failures route
       through RecoveryPhase instead of the legacy RecoveryHandler.
     - StateKernel no longer stores recovery_incident or recovery_diagnostics.
+    - StateKernel stores canonical current_recovery_decision and
+      current_recovery_outcome alongside the temporary plan/command
+      compatibility payload.
+    - RecoveryPhase returns RecoveryApplicationResult with classification,
+      RecoveryDecision, optional RecoveryOutcome, command_kind, and trace parent.
+    - Immediate terminal recovery records RecoveryOutcome and clears the
+      temporary current_recovery_plan.
     - Default CLI/runtime construction no longer injects BoundedRecoveryPolicy
       into RunCoordinator.
     - Task planning, planner context, local benchmark metrics, adaptive routing
@@ -59,7 +66,7 @@ scope:
       compatibility trace/dispatcher modules.
     - legacy RecoveryAction / RecoveryIncident / RecoveryAttempt module
       deletion from offline compatibility tests.
-    - RecoveryOutcome default-path replacement of RecoveryPlan trace payloads.
+    - Full RecoveryOutcome replacement of RecoveryPlan trace payloads.
     - Planner ActionChoiceBuilder.
     - new task-family regex or deterministic fallback.
     - PR breadth, fresh diagnostic, or promotion claim.
@@ -98,6 +105,7 @@ validation:
   focused:
     - python -m pytest tests/test_recovery_phase.py tests/test_recovery_coordinator.py tests/test_recovery_trace_projection.py tests/test_recovery_handler.py tests/test_recovery_command_dispatcher.py tests/test_model_recovery.py tests/test_full_phase_recovery.py tests/test_coordinator.py tests/test_uncertain_effect_coordinator.py tests/test_task_skill_coordinator.py tests/test_recovery_evolution.py tests/test_horizontal_architecture_governance.py -q --tb=short --maxfail=10
   focused_result: 136_passed
+  canonical_outcome_focused_result: 100_passed
   full_pytest: PYTHONPATH=src python -m pytest -q
   full_pytest_result: 1282_passed
   coordinator_lines: 3298
@@ -109,5 +117,5 @@ validation:
   uv_build: passed
   diff_check: passed
 
-status: sar_8c_legacy_recovery_state_deletion_local_candidate
+status: sar_8c_canonical_decision_outcome_state_local_candidate
 next_slice: planner-selection-simplification-actionchoice

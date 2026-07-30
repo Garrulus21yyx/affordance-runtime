@@ -2382,7 +2382,7 @@ class RunCoordinator:
             recoverable=recoverable,
             progress_fingerprint=semantic_progress_fingerprint(state),
         )
-        return self.recovery_phase.handle_phase_failure(
+        recovery_result = self.recovery_phase.handle_phase_failure(
             failure=failure,
             state=state,
             trace=trace,
@@ -2392,6 +2392,7 @@ class RunCoordinator:
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
             abort_reentry_phase=abort_reentry_phase,
         )
+        return recovery_result.command_kind, recovery_result.parent
 
     @staticmethod
     def _complete_pending_recovery_plan_change(

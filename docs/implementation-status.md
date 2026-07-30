@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. The post-SAR-7 pre-SAR-8 classification records 26 `planner_waiting_clarification` residuals as model/action-choice owner and 9 `entry_outcome_already_satisfied` residuals as progress-precheck owner. SAR-8C now routes default Coordinator recovery through `RecoveryPhase` and removes `recovery_incident` / `recovery_diagnostics` from default `StateKernel`; promotion remains held. |
+| Repository HEAD | Not self-recorded in this file; use `git rev-parse HEAD` as authority. Latest reviewed SAR-7 behavioral gate revision is `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill progress is removed from default `StateKernel` authority; legacy pending/ODG progress state is removed from default `StateKernel`; bounded typed recent action outcomes replace the old string-signature action progress list. Clean SAR-7 PR breadth passed 12/12 at this revision. Fresh diagnostic completed 60/60 with 15/60 Runtime and external pass. The post-SAR-7 pre-SAR-8 classification records 26 `planner_waiting_clarification` residuals as model/action-choice owner and 9 `entry_outcome_already_satisfied` residuals as progress-precheck owner. SAR-8C now routes default Coordinator recovery through `RecoveryPhase`, removes `recovery_incident` / `recovery_diagnostics` from default `StateKernel`, and records canonical `current_recovery_decision` / `current_recovery_outcome`; promotion remains held. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `25ec6745ce08f6337c8d040cf1b31bd2a384ff6e`: SAR-7 clean PR breadth completed 12/12 observed and 12/12 passed, with 0 Runtime failures, 0 external failures, no missing/unrun/invalidated/provider failure, and `official_score_claimed=false`. Evidence: `docs/evidence/runs/sar-7-behavioral-gate-25ec674/`. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -376,11 +376,12 @@ pr_breadth_latest:
     planner_reached_for_already_satisfied_active_step: false
     recovery_protocol_changed: false
   sar_8:
-    status: sar_8c_legacy_recovery_state_deletion_local_candidate
+    status: sar_8c_canonical_decision_outcome_state_local_candidate
     record: docs/change-admission/sar-8-single-recovery-protocol.yaml
     current_slice: sar_8c_legacy_recovery_state_deletion
     recovery_strategy_owner: recovery_protocol.FailureClassification
     recovery_decision_owner: recovery_protocol.RecoveryDecision
+    recovery_outcome_owner: recovery_protocol.RecoveryOutcome
     recovery_application_owner: recovery_phase.RecoveryPhase
     planner_waiting_clarification_default_ask_user: false
     planner_waiting_clarification_default_replan: false
@@ -392,6 +393,8 @@ pr_breadth_latest:
     coordinator_lines_after_legacy_state_deletion: 3298
     run_sync_lines_after_legacy_state_deletion: 1944
     runcoordinator_methods_after_legacy_state_deletion: 24
+    statekernel_current_recovery_decision: canonical
+    statekernel_current_recovery_outcome: canonical
     compatibility_adapter: recovery_decision_compatibility.py
     legacy_recovery_protocol_deletion: default_state_and_handler_removed_plan_command_payloads_pending
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
