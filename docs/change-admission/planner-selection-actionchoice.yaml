@@ -49,6 +49,9 @@ scope:
       Planner; terminal submit actions must now come from Runtime-built
       ActionChoice terminal criteria rather than historical verified-text
       context synthesis.
+    - ActionChoiceDispatcher validates async Step Planner selections after
+      awaiting them; sync and async selector paths now share the same
+      choice_id membership and identity validator.
   excluded:
     - Coordinator call-site integration.
     - Public PlannerPort replacement with select(choice_id).
@@ -99,6 +102,9 @@ validation:
   mypy:
     - /home/yang/miniconda3/bin/python -m mypy --ignore-missing-imports src/affordance_runtime/action_choice.py
   mypy_result: passed
+  dispatcher_async_validation:
+    - python -m pytest tests/test_action_choice.py -q --tb=short --maxfail=10
+  dispatcher_async_validation_result: 13_passed
   cutover_closure:
     full_pytest: PYTHONPATH=src python -m pytest -q
     full_pytest_result: 1298_passed
@@ -111,5 +117,5 @@ validation:
   pr_breadth: not_run
   fresh_diagnostic: not_run
 
-status: ps_5_strict_fallbacks_deleted_local_candidate
+status: ps_5_actionchoice_dispatcher_validation_local_candidate
 next_slice: ps_6_historical_profile_grammar_quarantine

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from affordance_runtime.active_step_scope import ActiveStepScope
@@ -534,3 +536,58 @@ def test_action_choice_dispatcher_calls_planner_for_multiple_choices() -> None:
     assert isinstance(result, ActionSelection)
     assert result.choice_id == "choice:two"
     assert planner.called is True
+
+
+def test_action_choice_dispatcher_validates_async_planner_selection() -> None:
+    from affordance_runtime.action_choice import (
+        ActionChoice,
+        ActionChoiceDispatcher,
+        ActionChoiceSet,
+        ActionSelection,
+    )
+
+    class Planner:
+        async def select(self, request: object) -> ActionSelection:
+            return ActionSelection(
+                choice_id="choice:missing",
+                task_revision=1,
+                state_version=7,
+                snapshot_id="snapshot:1",
+                active_step_id="step:name",
+            )
+
+    choices = ActionChoiceSet(
+        task_revision=1,
+        state_version=7,
+        snapshot_id="snapshot:1",
+        active_step_id="step:name",
+        choices=(
+            ActionChoice(
+                choice_id="choice:one",
+                task_revision=1,
+                state_version=7,
+                snapshot_id="snapshot:1",
+                active_step_id="step:name",
+                action_kind=PlannerActionKind.TYPE_TEXT,
+                target_id="semantic:first",
+                parameters={"text": "Alice"},
+                criterion_ids=("criterion:name",),
+            ),
+            ActionChoice(
+                choice_id="choice:two",
+                task_revision=1,
+                state_version=7,
+                snapshot_id="snapshot:1",
+                active_step_id="step:name",
+                action_kind=PlannerActionKind.TYPE_TEXT,
+                target_id="semantic:second",
+                parameters={"text": "Alice"},
+                criterion_ids=("criterion:name",),
+            ),
+        ),
+    )
+
+    result = ActionChoiceDispatcher().choose(choices, planner=Planner())
+
+    with pytest.raises(ValueError, match="unknown choice_id"):
+        asyncio.run(result)

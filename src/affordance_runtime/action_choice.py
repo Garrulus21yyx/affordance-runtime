@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Awaitable, Protocol, TypeAlias
+from typing import Awaitable, Protocol, TypeAlias, cast
 
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
@@ -257,9 +257,18 @@ class ActionChoiceDispatcher:
         request = ChoicePlanningRequest.from_choice_set(result)
         selection = planner.select(request)
         if hasattr(selection, "__await__"):
-            return selection
+            return _await_validated_selection(cast(Awaitable[ActionSelection], selection), result)
         ActionSelectionValidator().validate(selection, result)
         return selection
+
+
+async def _await_validated_selection(
+    selection: Awaitable[ActionSelection],
+    choices: ActionChoiceSet,
+) -> ActionSelection:
+    resolved = await selection
+    ActionSelectionValidator().validate(resolved, choices)
+    return resolved
 
 
 class ActionChoiceBuilder:
