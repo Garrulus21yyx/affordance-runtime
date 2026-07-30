@@ -151,10 +151,22 @@ EXECUTION_COMMIT_MUTATIONS = {
 }
 
 ALLOWED_STATE_MUTATION_MODULES = {
+    "contract_binding_phase.py",
     "coordinator.py",
+    "execution_phase.py",
+    "failure_owner_flow.py",
+    "perception_phase.py",
+    "planning_failure_phase.py",
+    "planning_phase.py",
+    "preflight_phase.py",
     "recovery_phase.py",
     "runtime_terminal.py",
+    "runtime_loop_phase.py",
     "runtime.py",
+    "task_plan_phase.py",
+    "verification_failure_phase.py",
+    "verification_phase.py",
+    "verified_progress_phase.py",
 }
 
 LEGACY_NON_ADAPTER_BENCHMARK_IMPORTERS = {
@@ -643,8 +655,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
-    assert "default-path decision is now sar-0 authoritative optimized architecture" in governance
-    assert "s0/s1/s2 and tpa-0 through tpa-5 remain historical foundation work" in governance
+    assert "the current default path follows sar-0 authoritative optimized architecture" in governance
+    assert "s0/s1/s2, tpa-0 through tpa-5, and odg-0 through odg-9 are historical" in governance
     assert "substitutive one-in/one-out migration" in governance
     assert "advanced attribution is `experimental_only`" in governance
     assert "must not import coordinator, statekernel, taskplan" in governance
@@ -698,7 +710,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "strict planner module may not add new task-language parser logic" in governance
     assert "typed resolver or constraint owner" in governance
     assert "foundation-only expansion, including tpa-5b" in governance
-    assert "odg-0 and odg-2 through odg-9 remain historical" in governance
+    assert "odg-0 through odg-9 are historical" in governance
     assert "current vertical lane is sg7 targeted protected-family confirmation" not in governance
 
 
@@ -779,8 +791,8 @@ def test_post_407133d_click_button_recheck_prevents_premature_repair_claim() -> 
     assert "revision: 47932a2d84266983c632258afdfacae9b1cdcd94" in status
     assert "json_invalid did not reproduce" in status
     assert "historical_next_change_before_odg_0: v-prb-6a form-sequence" in status
-    assert "current_next_change_admission: sar-8 single recovery protocol" in status
-    assert "clean sar-7 pr breadth at 25ec674 passed 12/12" in status
+    assert "current_next_change_admission: sar-9p recoveryfailurephase extraction" in status
+    assert "sar-7 clean pr breadth completed 12/12 observed and 12/12 passed" in status
     assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_5:" in status
     assert "overall_status: in_progress" in status
@@ -1535,7 +1547,10 @@ def test_run_sync_does_not_inline_planner_done_finish_authority() -> None:
     assert source is not None
     assert "if decision.done:" not in source
     assert "TaskPlanStoppedIncomplete" not in source
-    assert "commit_planner_terminal_decision" in source
+    assert "PLANNING_DECISION_PHASE.handle" in source
+    assert "commit_planner_terminal_decision" in (
+        SOURCE_ROOT / "planning_phase.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_run_sync_does_not_inline_task_completion_authority() -> None:
@@ -1557,7 +1572,10 @@ def test_run_sync_does_not_inline_task_completion_authority() -> None:
     assert source is not None
     assert '"TaskCompleted"' not in source
     assert "state.transition(RuntimeStep.DONE.value)" not in source
-    assert "commit_task_terminal_success" in source
+    assert "VERIFIED_PROGRESS_PHASE.run" in source
+    assert "commit_task_terminal_success" in (
+        SOURCE_ROOT / "verified_progress_phase.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:
@@ -1717,8 +1735,8 @@ def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> Non
                 plan_constructors.add((relative, class_by_node.get(node, "<module>")))
 
     assert plan_commit_callers == {
-        ("coordinator.py", "install_task_plan"),
-        ("coordinator.py", "replace_task_plan"),
+        ("task_plan_phase.py", "install_task_plan"),
+        ("task_plan_phase.py", "replace_task_plan"),
     }
     assert plan_constructors == {
         ("planners.py", "PricingTaskPlanner"),
@@ -1789,8 +1807,9 @@ def test_plannerport_public_contract_is_request_only_with_legacy_seam() -> None:
     assert "def propose_with_planner_compatibility" in compatibility
     assert "standard planners should implement ``propose(request)``" in compatibility_text
 
+    task_skill_phase = (SOURCE_ROOT / "task_skill_phase.py").read_text(encoding="utf-8")
+    assert "propose_with_runtime_projection" in task_skill_phase
     coordinator = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
-    assert "propose_with_runtime_projection" in coordinator
     assert "PlanningRequestBuilder" not in coordinator
     assert "self.planner.propose(envelope, state, snapshot)" not in coordinator
 
@@ -1972,7 +1991,8 @@ def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> No
     assert "[complete architecture blueprint](docs/complete-architecture-blueprint.md)" not in readme
     assert "[design freeze and implementation gates](docs/design-freeze.md)" not in readme
     assert "legacy root architecture redirects" in docs_readme
-    assert "`implementation-status.md` owns the exact current head identity" in docs_readme
+    assert "git owns the exact repository head identity" in docs_readme
+    assert "`implementation-status.md` records the reviewed closure" in docs_readme
     assert "`current-implementation-plan.md` owns the active queue" in docs_readme
     assert "this readme owns navigation and conflict precedence only" in docs_readme
     assert "legacy_root_architecture_docs:" in status
@@ -2114,8 +2134,8 @@ def test_sar2_canonical_semantic_vocabulary_replaces_duplicate_relation_types() 
     assert "record: docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml" in status
     assert "criterion_relation_enums: 1" in status
     assert "internal_relation_mapping_functions: 0" in status
-    assert "current_next_change_admission: sar-8 single recovery protocol" in status
-    assert "clean sar-7 pr breadth at 25ec674 passed 12/12" in status
+    assert "current_next_change_admission: sar-9p recoveryfailurephase extraction" in status
+    assert "sar-7 clean pr breadth completed 12/12 observed and 12/12 passed" in status
     assert "sar-7-5-taskskill-progress-state-removal.yaml" in status
     assert "sar_6:" in status
     assert "same_unit_one_out_deletion" in status
@@ -2767,16 +2787,18 @@ def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> 
 
 
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
-    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
-    run_coordinator = next(
+    tree = ast.parse(
+        (SOURCE_ROOT / "recovery_failure_phase.py").read_text(encoding="utf-8")
+    )
+    recovery_failure_phase = next(
         node
         for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+        if isinstance(node, ast.ClassDef) and node.name == "RecoveryFailurePhase"
     )
     recover_phase_failure = next(
         node
-        for node in run_coordinator.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_recover_phase_failure"
+        for node in recovery_failure_phase.body
+        if isinstance(node, ast.FunctionDef) and node.name == "recover_phase_failure"
     )
     body_source = ast.unparse(recover_phase_failure).casefold()
 
@@ -2974,8 +2996,8 @@ def test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload() -> 
 
 
 def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> None:
-    source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
-    seam = source.split("def _recover_phase_failure(", 1)[1].split(
+    source = (SOURCE_ROOT / "recovery_failure_phase.py").read_text(encoding="utf-8")
+    seam = source.split("def recover_phase_failure(", 1)[1].split(
         "\n    def _remaining_recovery_budgets",
         1,
     )[0]

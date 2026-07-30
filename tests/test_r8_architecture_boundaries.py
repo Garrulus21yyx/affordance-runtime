@@ -76,8 +76,8 @@ def test_extracted_core_collaborators_do_not_create_authoritative_state() -> Non
         if "StateKernel(" in path.read_text(encoding="utf-8")
     }
     # runtime.py is the backwards-compatible one-contract conformance harness;
-    # full task execution is owned only by RunCoordinator.
-    assert constructors == {"coordinator.py", "runtime.py"}
+    # full task execution state construction is owned by RuntimeLoopPhase.
+    assert constructors == {"runtime_loop_phase.py", "runtime.py"}
 
 
 def test_task_plan_flow_has_no_state_or_trace_commit_authority() -> None:

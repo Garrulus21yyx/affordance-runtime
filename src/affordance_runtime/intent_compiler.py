@@ -699,6 +699,9 @@ def _canonicalize_requested_effects_draft(
     requested effects are already available.
     """
 
+    inferred_structure = _infer_task_structure(draft)
+    if inferred_structure != draft.task_structure:
+        draft = draft.model_copy(update={"task_structure": inferred_structure})
     incomplete_provider_graph = not draft.candidate_source_claims or not draft.candidate_obligations
     multi_effect_sequence = len(draft.requested_effects) > 1
     if (
@@ -712,7 +715,7 @@ def _canonicalize_requested_effects_draft(
             source_ledger,
             draft.requested_effects,
             draft.candidate_semantic_value_constraints,
-            preserve_sequence=draft.task_structure != TaskStructure.FLAT,
+            preserve_sequence=inferred_structure != TaskStructure.FLAT,
             success_criteria=draft.candidate_success_criteria,
         )
     except ValueError as exc:
@@ -732,6 +735,18 @@ def _canonicalize_requested_effects_draft(
             ),
         }
     ), (), True
+
+
+def _infer_task_structure(draft: IntentDraft) -> TaskStructure:
+    if len(draft.requested_effects) > 1:
+        return TaskStructure.MULTI_STAGE
+    for obligation in draft.candidate_obligations:
+        if (
+            obligation.value_obligation_id
+            or obligation.value_source == TaskObligationValueSource.OBLIGATION_OUTPUT
+        ):
+            return TaskStructure.MULTI_STAGE
+    return draft.task_structure
 
 
 def _normalize_value_entry_draft(

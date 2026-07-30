@@ -658,8 +658,8 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-9n-contract-failure-phase-extraction
-  next_runtime_slice: sar-9o-final-loop-cleanup-and-closure-gate
+  current_runtime_slice: sar-9p-recovery-failure-phase-extraction
+  next_runtime_slice: sar-9-closure-audit-and-full-validation-gate
   sar_8_blocked_until: unblocked
   historical_required_before_sar_7:
     - sar_4_standard_generalist_parent_response_cutover
