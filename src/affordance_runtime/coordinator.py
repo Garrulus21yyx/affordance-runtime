@@ -29,7 +29,6 @@ from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
-    Observation,
     RuntimeErrorCode,
 )
 from affordance_runtime.failure_envelope import (
@@ -1695,7 +1694,7 @@ class RunCoordinator:
                 state.effectful_action_count += 1
             receipt_ref = self._write_receipt(envelope.task_id, state.step_count, receipt)
             self._index(trace, receipt_ref)
-            parent = self._complete_pending_recovery_execution(
+            parent = self.recovery_phase.complete_pending_execution(
                 state,
                 trace,
                 parent,
@@ -2547,84 +2546,6 @@ class RunCoordinator:
         ):
             return RuntimeErrorCode.UNSAFE_ACTION
         return None
-
-    @staticmethod
-    def _complete_pending_recovery_execution(
-        state: StateKernel,
-        trace: TraceDag,
-        parent: TraceNode,
-        contract: ActionContract,
-        execution_receipt: ExecutionReceipt,
-        observation: Observation,
-    ) -> TraceNode:
-        failure = state.current_failure
-        command = state.current_recovery_command
-        if (
-            failure is None
-            or command is None
-            or command.kind != RecoveryCommandKind.RETRY_IDEMPOTENT
-        ):
-            return parent
-        previous_fingerprint = (
-            failure.progress_fingerprint
-            or f"{failure.semantic_family_key}:state:{failure.state_version}"
-        )
-        next_fingerprint = (
-            f"{failure.semantic_family_key}:{command.strategy_id}:"
-            f"contract:{contract.contract_hash or contract.id}:snapshot:{observation.snapshot_id}"
-        )
-        delta = RecoveryDelta(
-            previous_attempt_fingerprint=previous_fingerprint,
-            next_attempt_fingerprint=next_fingerprint,
-            changed_dimensions=command.changed_dimensions,
-            new_evidence_refs=tuple(
-                item
-                for item in execution_receipt.evidence.values()
-                if isinstance(item, str)
-            ),
-            new_plan_or_route_ref=contract.id,
-            explanation=command.expected_change,
-        )
-        receipt = RecoveryCommandReceipt(
-            command_id=command.command_id,
-            success=execution_receipt.success,
-            state_before=f"state:{failure.state_version}",
-            state_after=f"state:{state.version}",
-            changed_dimensions=command.changed_dimensions,
-            observation_refs=(observation.snapshot_id,) if observation.snapshot_id else (),
-            plan_refs=(contract.id,),
-            error_code=(
-                ""
-                if execution_receipt.success
-                else (
-                    execution_receipt.error_code.value
-                    if execution_receipt.error_code is not None
-                    else RuntimeErrorCode.EXECUTION_FAILED.value
-                )
-            ),
-            delta=delta,
-        )
-        state.recovery_deltas.append(delta)
-        state.recovery_receipts.append(receipt)
-        state.recovery_history.append(
-            RecoveryHistoryItem(
-                failure.semantic_family_key,
-                command.strategy_id,
-                previous_fingerprint,
-                next_fingerprint,
-            )
-        )
-        state.current_recovery_command = None
-        parent = trace.add(
-            "RecoveryCommandCompleted",
-            {"state": state.phase, "receipt": receipt.model_dump(mode="json")},
-            parents=[parent.id],
-        )
-        return trace.add(
-            "RecoveryDeltaValidated",
-            {"state": state.phase, "delta": delta.model_dump(mode="json")},
-            parents=[parent.id],
-        )
 
     def _budget_error(self, state: StateKernel) -> RuntimeErrorCode | None:
         if state.step_count >= self.budget.max_steps:
