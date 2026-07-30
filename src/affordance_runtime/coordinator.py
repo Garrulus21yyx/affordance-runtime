@@ -48,9 +48,9 @@ from affordance_runtime.planning import (
     PlannerProposalValidator,
 )
 from affordance_runtime.planning_contracts import PlannerDecision as PlannerDecision  # noqa: F401
+from affordance_runtime.planning_failure_phase import PlanningFailurePhase
 from affordance_runtime.planning_phase import (
     PlanningDecisionPhase,
-    apply_taskskill_planning_fallthrough,
 )
 from affordance_runtime.preflight_phase import PreflightPhase
 from affordance_runtime.progress_phase import ProgressPhase
@@ -113,6 +113,7 @@ PROGRESS_PHASE = ProgressPhase()
 PERCEPTION_PHASE = PerceptionPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
 PLANNING_DECISION_PHASE = PlanningDecisionPhase()
+PLANNING_FAILURE_PHASE = PlanningFailurePhase()
 CONTRACT_BINDING_PHASE = ContractBindingPhase()
 PREFLIGHT_PHASE = PreflightPhase()
 EXECUTION_PHASE = ExecutionPhase()
@@ -313,45 +314,32 @@ class RunCoordinator:
                     progress_phase=PROGRESS_PHASE,
                 )
                 parent = task_plan_phase.parent
-                flow_failure = task_plan_phase.failure
-                if flow_failure is not None:
-                    if _pending_recovery_kind(state) == RecoveryKind.REPLAN_TASK:
-                        parent = self.recovery_phase.fail_pending_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=flow_failure.error_code.value,
-                        )
-                    recovery_kind, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.TASK_PLANNING,
-                        failure_class=flow_failure.failure_class,
-                        error_code=flow_failure.error_code,
-                        message=flow_failure.message,
-                        available_commands=frozenset(
-                            {
-                                RecoveryKind.REPLAN_TASK,
-                                *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
-                                RecoveryKind.ABORT,
-                            }
-                        ),
-                        snapshot=snapshot,
-                    )
-                    if (
-                        recovery_kind == RecoveryKind.REPLAN_TASK
-                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                    ):
+                planning_failure = PLANNING_FAILURE_PHASE.handle_task_plan_result(
+                    envelope=envelope,
+                    state=state,
+                    trace=trace,
+                    parent=parent,
+                    snapshot=snapshot,
+                    task_plan_phase=task_plan_phase,
+                    recovery_phase=self.recovery_phase,
+                    pending_recovery_kind=_pending_recovery_kind,
+                    recover_phase_failure=self._recover_phase_failure,
+                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                        self.recovery_owner_dispatcher
+                    ),
+                )
+                if planning_failure is not None:
+                    parent = planning_failure.parent
+                    if planning_failure.continue_observing:
                         continue
+                    assert planning_failure.terminal is not None
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep(state.phase),
+                        planning_failure.terminal.status,
                         parent,
-                        flow_failure.error_code,
+                        planning_failure.terminal.error_code,
                         latest_verification,
                     )
                 if task_plan_phase.current_state_completion_committed:
@@ -373,156 +361,93 @@ class RunCoordinator:
                 )
                 parent = task_skill_phase.parent
                 skill_step_id = task_skill_phase.skill_step_id
-                if task_skill_phase.failure is not None:
-                    if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
-                        parent = self.recovery_phase.fail_pending_command(
-                            state,
-                            trace,
-                            parent,
-                            error_code=RuntimeErrorCode.PLANNER_FAILED.value,
-                        )
-                    recovery_kind, parent = self._recover_phase_failure(
-                        envelope,
-                        state,
-                        trace,
-                        parent,
-                        phase=FailurePhase.SKILL_ACTIVATION,
-                        failure_class=FailureClass.SKILL,
-                        error_code=RuntimeErrorCode.PLANNER_FAILED,
-                        message=task_skill_phase.failure.reason,
-                        available_commands=frozenset(
-                            {
-                                RecoveryKind.REPLAN_STEP,
-                                *_available_owner_recovery_kinds(
-                                    self.recovery_owner_dispatcher
-                                ),
-                                RecoveryKind.ABORT,
-                            }
-                        ),
-                        snapshot=snapshot,
-                    )
-                    if (
-                        recovery_kind == RecoveryKind.REPLAN_STEP
-                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                    ):
+                planning_failure = PLANNING_FAILURE_PHASE.handle_task_skill_result(
+                    envelope=envelope,
+                    state=state,
+                    trace=trace,
+                    parent=parent,
+                    snapshot=snapshot,
+                    task_skill_phase=task_skill_phase,
+                    recovery_phase=self.recovery_phase,
+                    pending_recovery_kind=_pending_recovery_kind,
+                    recover_phase_failure=self._recover_phase_failure,
+                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                        self.recovery_owner_dispatcher
+                    ),
+                )
+                if planning_failure is not None:
+                    parent = planning_failure.parent
+                    if planning_failure.continue_observing:
                         continue
+                    assert planning_failure.terminal is not None
                     return self._finish(
                         envelope,
                         state,
                         trace,
-                        RuntimeStep(state.phase),
+                        planning_failure.terminal.status,
                         parent,
-                        RuntimeErrorCode.PLANNER_FAILED,
+                        planning_failure.terminal.error_code,
                         latest_verification,
-                        )
+                    )
                 assert task_skill_phase.decision is not None
                 decision = task_skill_phase.decision
             except ProviderModelError as exc:
-                error_code = RuntimeErrorCode(exc.kind.value)
-                if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
-                    parent = self.recovery_phase.fail_pending_command(
-                        state,
-                        trace,
-                        parent,
-                        error_code=error_code.value,
-                    )
-                state.final_result = {
-                    "deferred": True,
-                    "provider_failure": exc.kind.value,
-                    "retry_after_s": exc.retry_after_s,
-                    "resumable": exc.resumable,
-                }
-                _recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.PROVIDER_CONTEXT,
-                    failure_class=FailureClass.PROVIDER,
-                    error_code=error_code,
-                    message=f"provider failure: {exc.kind.value}",
-                    available_commands=frozenset(
-                        {
-                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
-                            RecoveryKind.ABORT,
-                        }
-                    ),
+                planning_failure = PLANNING_FAILURE_PHASE.handle_provider_failure(
+                    envelope=envelope,
+                    state=state,
+                    trace=trace,
+                    parent=parent,
                     snapshot=snapshot,
-                    abort_reentry_phase=RuntimePhase.DEFERRED,
+                    error=exc,
+                    recovery_phase=self.recovery_phase,
+                    pending_recovery_kind=_pending_recovery_kind,
+                    recover_phase_failure=self._recover_phase_failure,
+                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                        self.recovery_owner_dispatcher
+                    ),
                 )
-                if _recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS:
+                parent = planning_failure.parent
+                if planning_failure.continue_observing:
                     continue
-                parent = trace.add(
-                    "PlannerDeferred",
-                    {
-                        "state": state.phase,
-                        "error_code": error_code.value,
-                        "provider_failure": exc.kind.value,
-                        "retry_after_s": exc.retry_after_s,
-                        "circuit_open": exc.circuit_open,
-                        "resumable": exc.resumable,
-                    },
-                    parents=[parent.id],
-                )
+                assert planning_failure.terminal is not None
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.DEFERRED,
+                    planning_failure.terminal.status,
                     parent,
-                    error_code,
+                    planning_failure.terminal.error_code,
                     latest_verification,
                 )
             except Exception as exc:
-                planner_error = f"{type(exc).__name__}: {exc}"
-                model = getattr(self.planner, "model", None)
-                parent = trace.add(
-                    "PlannerProposalRejected",
-                    {
-                        "state": state.phase,
-                        "error_code": RuntimeErrorCode.PLANNER_FAILED.value,
-                        "reason": planner_error[:500],
-                        "fallback_failures": list(getattr(model, "failure_details", ())),
-                    },
-                    parents=[parent.id],
-                )
-                if _pending_recovery_kind(state) == RecoveryKind.REPLAN_STEP:
-                    parent = self.recovery_phase.fail_pending_command(
-                        state,
-                        trace,
-                        parent,
-                        error_code=RuntimeErrorCode.PLANNER_FAILED.value,
+                planning_failure = (
+                    PLANNING_FAILURE_PHASE.handle_unexpected_planner_failure(
+                        envelope=envelope,
+                        state=state,
+                        trace=trace,
+                        parent=parent,
+                        snapshot=snapshot,
+                        error=exc,
+                        planner=self.planner,
+                        recovery_phase=self.recovery_phase,
+                        pending_recovery_kind=_pending_recovery_kind,
+                        recover_phase_failure=self._recover_phase_failure,
+                        owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                            self.recovery_owner_dispatcher
+                        ),
                     )
-                recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=FailurePhase.STEP_PLANNING,
-                    failure_class=FailureClass.PLANNING,
-                    error_code=RuntimeErrorCode.PLANNER_FAILED,
-                    message=planner_error[:500],
-                    available_commands=frozenset(
-                        {
-                            RecoveryKind.REPLAN_STEP,
-                            *_available_owner_recovery_kinds(self.recovery_owner_dispatcher),
-                            RecoveryKind.ABORT,
-                        }
-                    ),
-                    snapshot=snapshot,
                 )
-                if (
-                    recovery_kind == RecoveryKind.REPLAN_STEP
-                    or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                ):
+                parent = planning_failure.parent
+                if planning_failure.continue_observing:
                     continue
+                assert planning_failure.terminal is not None
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep(state.phase),
+                    planning_failure.terminal.status,
                     parent,
-                    RuntimeErrorCode.PLANNER_FAILED,
+                    planning_failure.terminal.error_code,
                     latest_verification,
                 )
             planning_decision = PLANNING_DECISION_PHASE.handle(
@@ -554,75 +479,34 @@ class RunCoordinator:
                     planning_decision.terminal.error_code,
                     latest_verification,
                 )
-            if planning_decision.failure is not None:
-                failure = planning_decision.failure
-                if _pending_recovery_kind(state) in {
-                    RecoveryKind.REGROUND,
-                    RecoveryKind.REROUTE,
-                    RecoveryKind.REPLAN_STEP,
-                }:
-                    parent = self.recovery_phase.fail_pending_command(
-                        state,
-                        trace,
-                        parent,
-                        error_code=(
-                            failure.error_code.value
-                            if isinstance(failure.error_code, RuntimeErrorCode)
-                            else str(failure.error_code)
-                        ),
-                    )
-                if failure.skill_fallthrough_reason:
-                    parent = apply_taskskill_planning_fallthrough(
-                        task_skill_runtime=self.task_skill_runtime,
-                        state=state,
-                        trace=trace,
-                        parent=parent,
-                        reason=failure.skill_fallthrough_reason,
-                        step_id=skill_step_id,
-                    )
-                    state.replan_count += 1
-                    state.transition(RuntimeStep.OBSERVING.value)
+            planning_failure = PLANNING_FAILURE_PHASE.handle_planning_decision_result(
+                envelope=envelope,
+                state=state,
+                trace=trace,
+                parent=parent,
+                snapshot=snapshot,
+                planning_decision=planning_decision,
+                recovery_phase=self.recovery_phase,
+                task_skill_runtime=self.task_skill_runtime,
+                skill_step_id=skill_step_id,
+                pending_recovery_kind=_pending_recovery_kind,
+                recover_phase_failure=self._recover_phase_failure,
+                owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                    self.recovery_owner_dispatcher
+                ),
+            )
+            if planning_failure is not None:
+                parent = planning_failure.parent
+                if planning_failure.continue_observing:
                     continue
-                recovery_kind, parent = self._recover_phase_failure(
-                    envelope,
-                    state,
-                    trace,
-                    parent,
-                    phase=failure.phase,
-                    failure_class=failure.failure_class,
-                    error_code=failure.error_code,
-                    message=failure.message,
-                    available_commands=failure.available_commands,
-                    snapshot=snapshot,
-                    proposal_id=failure.proposal_id,
-                    proposal_rejection=failure.proposal_rejection,
-                    expected_effect=failure.expected_effect,
-                    recoverable=failure.recoverable,
-                )
-                if planning_decision.contract_missing:
-                    if (
-                        recovery_kind == RecoveryKind.REPLAN_STEP
-                        or recovery_kind in OWNER_DISPATCH_RECOVERY_KINDS
-                    ):
-                        continue
-                    return self._finish(
-                        envelope,
-                        state,
-                        trace,
-                        RuntimeStep(state.phase),
-                        parent,
-                        failure.return_error_code,
-                        latest_verification,
-                    )
-                if recovery_kind != RecoveryKind.ABORT:
-                    continue
+                assert planning_failure.terminal is not None
                 return self._finish(
                     envelope,
                     state,
                     trace,
-                    RuntimeStep.ABORTED,
+                    planning_failure.terminal.status,
                     parent,
-                    failure.return_error_code,
+                    planning_failure.terminal.error_code,
                     latest_verification,
                 )
             contract_binding = CONTRACT_BINDING_PHASE.bind(
