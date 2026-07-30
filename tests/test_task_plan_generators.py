@@ -14,11 +14,11 @@ from affordance_runtime.task_intake import (
     TaskObligationValueSource,
     TaskSpec,
 )
-from affordance_runtime.task_plan_contracts import TaskPlanDraft, TaskPlanGeneratorSource
+from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
 from affordance_runtime.task_plan_generators import (
-    PricingTaskPlanDraftGenerator,
-    RuleTaskPlanDraftGenerator,
-    TaskPlanDraftGeneratorRouter,
+    PlanCandidateGeneratorRouter,
+    PricingPlanCandidateGenerator,
+    RulePlanCandidateGenerator,
 )
 from affordance_runtime.task_planning import (
     TaskPlanningBudgetSummary,
@@ -101,9 +101,9 @@ def _task_with_obligations() -> TaskSpec:
 def test_rule_task_plan_generator_produces_draft_without_authority_fields() -> None:
     context = _context(_task_with_obligations())
 
-    draft = RuleTaskPlanDraftGenerator().generate(context)
+    draft = RulePlanCandidateGenerator().generate(context)
 
-    assert isinstance(draft, TaskPlanDraft)
+    assert isinstance(draft, PlanCandidate)
     assert draft.generated_by == TaskPlanGeneratorSource.RULE
     assert draft.task_spec_identity == context.task_spec.identity
     assert not hasattr(draft, "plan_id")
@@ -123,7 +123,7 @@ def test_rule_task_plan_generator_produces_draft_without_authority_fields() -> N
 def test_rule_task_plan_generator_directly_uses_canonical_obligations() -> None:
     context = _context(_task_with_obligations())
 
-    draft = RuleTaskPlanDraftGenerator().generate(context)
+    draft = RulePlanCandidateGenerator().generate(context)
 
     assert tuple(step.step_id for step in draft.steps) == (
         "obligation:name",
@@ -132,7 +132,7 @@ def test_rule_task_plan_generator_directly_uses_canonical_obligations() -> None:
     assert all(step.objective for step in draft.steps)
     source = (SOURCE_ROOT / "task_plan_generators.py").read_text(encoding="utf-8")
     assert "RuleTaskPlanner" not in source
-    assert "TaskPlanDraftProjector" not in source
+    assert "PlanCandidateProjector" not in source
     assert ".legacy_planner" not in source
     assert ".projector" not in source
 
@@ -149,7 +149,7 @@ def test_synthetic_flat_generator_returns_single_draft_step() -> None:
         source_request_ref="request-1",
     )
 
-    draft = RuleTaskPlanDraftGenerator().generate(_context(task))
+    draft = RulePlanCandidateGenerator().generate(_context(task))
 
     assert tuple(step.step_id for step in draft.steps) == ("step:implicit",)
     assert draft.steps[0].objective == "Read the account status"
@@ -168,9 +168,9 @@ def test_pricing_task_plan_generator_returns_draft_not_accepted_plan() -> None:
         source_request_ref="request-1",
     )
 
-    draft = PricingTaskPlanDraftGenerator().generate(_context(task))
+    draft = PricingPlanCandidateGenerator().generate(_context(task))
 
-    assert isinstance(draft, TaskPlanDraft)
+    assert isinstance(draft, PlanCandidate)
     assert draft.generated_by == TaskPlanGeneratorSource.RULE
     assert tuple(step.step_id for step in draft.steps) == ("reveal-pro", "reveal-enterprise")
     assert draft.steps[1].depends_on == ("reveal-pro",)
@@ -183,12 +183,12 @@ def test_draft_generator_router_preserves_rule_and_complex_selection() -> None:
         def __init__(self, name: str) -> None:
             self.name = name
 
-        def generate(self, context: TaskPlanningContext) -> TaskPlanDraft:
+        def generate(self, context: TaskPlanningContext) -> PlanCandidate:
             calls.append(self.name)
-            return RuleTaskPlanDraftGenerator().generate(context)
+            return RulePlanCandidateGenerator().generate(context)
 
     context = _context(_task_with_obligations())
-    router = TaskPlanDraftGeneratorRouter(
+    router = PlanCandidateGeneratorRouter(
         rule_generator=RecordingGenerator("rule"),
         complex_generator=RecordingGenerator("complex"),
     )
@@ -243,7 +243,7 @@ def test_rule_generator_rejects_forbidden_obligation_content() -> None:
     )
 
     try:
-        RuleTaskPlanDraftGenerator().generate(_context(task))
+        RulePlanCandidateGenerator().generate(_context(task))
     except ValueError as exc:
         assert "forbidden implementation detail" in str(exc)
     else:  # pragma: no cover - defensive assertion

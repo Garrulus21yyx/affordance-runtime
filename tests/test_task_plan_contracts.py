@@ -23,7 +23,6 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanAuthorityBinder,
     TaskPlanDecision,
     TaskPlanDecisionStatus,
-    TaskPlanDraft,
     TaskPlanGeneratorSource,
     TaskPlanIssue,
     TaskPlanRepairDirective,
@@ -66,8 +65,8 @@ def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepS
     )
 
 
-def _draft(*steps: StepSpec) -> TaskPlanDraft:
-    return TaskPlanDraft(
+def _candidate(*steps: StepSpec) -> PlanCandidate:
+    return PlanCandidate(
         task_spec_identity="sha256:task",
         task_revision=1,
         generated_by=TaskPlanGeneratorSource.RULE,
@@ -99,10 +98,9 @@ def _progress_view() -> StepProgressView:
 
 
 def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
-    draft = _draft(_step("step:a"), _step("step:b", depends_on=("step:a",)))
+    draft = _candidate(_step("step:a"), _step("step:b", depends_on=("step:a",)))
 
     assert isinstance(draft, PlanCandidate)
-    assert TaskPlanDraft is PlanCandidate
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
     assert not hasattr(draft, "supersedes_plan_id")
@@ -110,13 +108,13 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
     assert draft.steps[1].depends_on == ("step:a",)
 
     with pytest.raises(ValueError, match="step ids must be unique"):
-        _draft(_step("step:a"), _step("step:a"))
+        _candidate(_step("step:a"), _step("step:a"))
     with pytest.raises(ValueError, match="unknown draft step dependency"):
-        _draft(_step("step:a", depends_on=("missing",)))
+        _candidate(_step("step:a", depends_on=("missing",)))
     with pytest.raises(ValueError, match="cycle"):
-        _draft(_step("step:a", depends_on=("step:b",)), _step("step:b", depends_on=("step:a",)))
+        _candidate(_step("step:a", depends_on=("step:b",)), _step("step:b", depends_on=("step:a",)))
     with pytest.raises(ValueError, match="forbidden implementation detail"):
-        TaskPlanDraft(
+        PlanCandidate(
             task_spec_identity="sha256:task",
             task_revision=1,
             generated_by=TaskPlanGeneratorSource.LLM,
@@ -141,8 +139,7 @@ def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
 
     assert isinstance(candidate, PlanCandidate)
     assert "class PlanCandidate" in source
-    assert "class TaskPlanDraft" not in source
-    assert "TaskPlanDraft = PlanCandidate" in source
+    assert "TaskPlanDraft" not in source
 
 
 def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None:
@@ -212,7 +209,7 @@ def test_task_plan_decision_status_invariants() -> None:
             observation_refs=("snapshot:1",),
             remaining_budget_steps=5,
         ),
-        _draft(),
+        _candidate(),
     )
     accepted = TaskPlanDecision.accepted(plan)
     assert accepted.status == TaskPlanDecisionStatus.ACCEPTED
@@ -247,8 +244,8 @@ def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
         remaining_budget_steps=5,
     )
     binder = TaskPlanAuthorityBinder()
-    first = binder.bind_initial(request, _draft())
-    retry = binder.bind_initial(request, _draft())
+    first = binder.bind_initial(request, _candidate())
+    retry = binder.bind_initial(request, _candidate())
 
     assert first.plan_id == retry.plan_id
     assert first.plan_version == 1
@@ -284,7 +281,7 @@ def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
         ),
-        _draft(_step("step:1"), _step("step:2", depends_on=("step:1",))),
+        _candidate(_step("step:1"), _step("step:2", depends_on=("step:1",))),
     )
 
     assert revision.plan_version == 2

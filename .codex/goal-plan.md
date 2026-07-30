@@ -858,7 +858,7 @@ delivery claims.
   generator migration, progress authority, finish authority, PR breadth, or
   promotion change is authorized. The next slice is TPA-5 TaskPlan generator
   draft migration.
-- Started TPA-5 after `6816df5`. Added TaskPlanDraft generator compatibility
+- Started TPA-5 after `6816df5`. Added PlanCandidate generator compatibility
   surfaces for rule, router, and reference pricing planning while keeping
   legacy TaskPlannerPort production generation, LLM generator migration,
   Coordinator plan commit, StateKernel mutation, progress authority, finish
@@ -978,7 +978,8 @@ delivery claims.
   active SAR-2 record is
   `docs/change-admission/sar-2-relation-criterion-evidence-vocabulary-unification.yaml`.
 
-- Started SAR-3A after `6efce23`. Added direct rule PlanCandidate generation: `PlanCandidate` is now the canonical unaccepted plan model, `TaskPlanDraft` is compatibility-only, and the rule generator no longer calls `RuleTaskPlanner` or `TaskPlanDraftProjector`. SAR-3B LLM candidate cutover, TaskPlanAuthority production admission, StateKernel plan/progress cutover, SAR-4, SAR-5, and SAR-6 remain open.
+- Started SAR-3A after `6efce23`. Added direct rule PlanCandidate generation: `PlanCandidate` is now the canonical unaccepted plan model, `PlanCandidate` is compatibility-only, and the rule generator no longer calls `RuleTaskPlanner` or `PlanCandidateProjector`. SAR-3B LLM candidate cutover, TaskPlanAuthority production admission, StateKernel plan/progress cutover, SAR-4, SAR-5, and SAR-6 remain open.
 - Started SAR-3B after `a59f24c`. Added `LLMTaskPlanner.generate_candidate()` so LLM provider candidates project to canonical `PlanCandidate`/`StepSpec` without exposing `_bind_candidate` or `_bind_subgoal_candidate`. Existing `plan()` remains a compatibility wrapper for current TaskPlannerPort production call sites. SAR-3C TaskPlanAuthority initial cutover, replacement cutover, legacy SubgoalSpec/PlanProgress deletion, SAR-4, SAR-5, and SAR-6 remain open.
 - Started SAR-3C after `4aa872c`. Routed candidate-capable initial TaskPlan planning through `PlanCandidate -> TaskPlanAuthority.admit_initial -> TaskPlan`, producing deterministic Runtime-owned accepted-plan lineage before the existing StateKernel install committer. Legacy/no-canonical-obligation planners without candidate support remain behind an explicit compatibility fallback. SAR-3D replacement admission cutover, legacy SubgoalSpec/PlanProgress deletion, SAR-4 and SAR-5 remain open for the current goal.
 - Started SAR-3D after `bea01f8`. Routed candidate-capable replacement TaskPlan planning through `PlanCandidate -> TaskPlanAuthority.admit_revision -> TaskPlan`, binding previous plan/progress identity and deterministic supersession lineage before the existing StateKernel replace committer. Legacy/no-canonical-obligation replacement planners remain behind an explicit compatibility fallback. Legacy SubgoalSpec/PlanProgress retirement, SAR-4 and SAR-5 remain open for the current goal.
+- Started SAR-3E after `0a53cc4`. Removed `TaskPlanDraft` compatibility naming from production source and generator tests; `PlanCandidate` is now the only unaccepted plan model name. Legacy TaskPlan/SubgoalSpec/PlanProgress model cutover remains open for a larger dedicated slice; SAR-4 and SAR-5 remain open for the current goal.

@@ -25,7 +25,7 @@ from affordance_runtime.task_intake import (
     TaskStructure,
 )
 from affordance_runtime.task_plan_contracts import (
-    TaskPlanDraft,
+    PlanCandidate,
     TaskPlanGeneratorSource,
 )
 from affordance_runtime.task_planning import (
@@ -35,23 +35,23 @@ from affordance_runtime.task_planning import (
 )
 
 
-class TaskPlanDraftGeneratorPort(Protocol):
+class PlanCandidateGeneratorPort(Protocol):
     def generate(
         self,
         context: TaskPlanningContext,
-    ) -> TaskPlanDraft | Awaitable[TaskPlanDraft]: ...
+    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
 
 
 @dataclass(frozen=True)
-class RuleTaskPlanDraftGenerator:
+class RulePlanCandidateGenerator:
     """Generate authority-free plan candidates from canonical task obligations."""
 
     default_evidence_source_kind: str = "dom_state"
 
-    def generate(self, context: TaskPlanningContext) -> TaskPlanDraft:
+    def generate(self, context: TaskPlanningContext) -> PlanCandidate:
         task_spec = context.task_spec
         source_refs = _task_source_refs(task_spec)
-        return TaskPlanDraft(
+        return PlanCandidate(
             task_spec_identity=task_spec.identity,
             task_revision=task_spec.revision,
             generated_by=TaskPlanGeneratorSource.RULE,
@@ -66,10 +66,10 @@ class RuleTaskPlanDraftGenerator:
 
 
 @dataclass(frozen=True)
-class PricingTaskPlanDraftGenerator:
+class PricingPlanCandidateGenerator:
     """Reference pricing plan draft generator, isolated from accepted-plan authority."""
 
-    def generate(self, context: TaskPlanningContext) -> TaskPlanDraft:
+    def generate(self, context: TaskPlanningContext) -> PlanCandidate:
         steps = (
             StepSpec(
                 step_id="reveal-pro",
@@ -109,7 +109,7 @@ class PricingTaskPlanDraftGenerator:
                 depends_on=("reveal-pro",),
             ),
         )
-        return TaskPlanDraft(
+        return PlanCandidate(
             task_spec_identity=context.task_spec.identity,
             task_revision=context.task_spec.revision,
             generated_by=TaskPlanGeneratorSource.RULE,
@@ -122,18 +122,18 @@ class PricingTaskPlanDraftGenerator:
 
 
 @dataclass(frozen=True)
-class TaskPlanDraftGeneratorRouter:
+class PlanCandidateGeneratorRouter:
     """Route planning requests to draft generators without accepting a plan."""
 
-    rule_generator: TaskPlanDraftGeneratorPort = field(default_factory=RuleTaskPlanDraftGenerator)
-    complex_generator: TaskPlanDraftGeneratorPort | None = None
+    rule_generator: PlanCandidateGeneratorPort = field(default_factory=RulePlanCandidateGenerator)
+    complex_generator: PlanCandidateGeneratorPort | None = None
 
     def generate(
         self,
         context: TaskPlanningContext,
         *,
         complex_task: bool | None = None,
-    ) -> TaskPlanDraft | Awaitable[TaskPlanDraft]:
+    ) -> PlanCandidate | Awaitable[PlanCandidate]:
         if context.task_spec.obligations:
             return self.rule_generator.generate(context)
         if complex_task is None:
@@ -141,7 +141,7 @@ class TaskPlanDraftGeneratorRouter:
         if not complex_task:
             return self.rule_generator.generate(context)
         if self.complex_generator is None:
-            raise ValueError("complex task requires a TaskPlanDraftGeneratorPort")
+            raise ValueError("complex task requires a PlanCandidateGeneratorPort")
         return self.complex_generator.generate(context)
 
 
@@ -185,7 +185,7 @@ def _steps_from_task_spec(
 def plan_candidate_from_provider_candidate(
     candidate: TaskPlanCandidate,
     context: TaskPlanningContext,
-) -> TaskPlanDraft:
+) -> PlanCandidate:
     task_spec = context.task_spec
     source_refs = _task_source_refs(task_spec)
     steps = []
@@ -212,7 +212,7 @@ def plan_candidate_from_provider_candidate(
                 source_refs=source_refs,
             )
         )
-    return TaskPlanDraft(
+    return PlanCandidate(
         task_spec_identity=task_spec.identity,
         task_revision=task_spec.revision,
         generated_by=TaskPlanGeneratorSource.LLM,

@@ -331,9 +331,6 @@ class TaskPlanGeneratorPort(Protocol):
     ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
 
 
-TaskPlanDraft = PlanCandidate
-
-
 def _bind_task_plan(
     *,
     request: InitialTaskPlanRequest | TaskPlanRevisionRequest,

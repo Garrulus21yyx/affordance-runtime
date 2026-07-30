@@ -1,0 +1,53 @@
+slice_id: sar-3e-plan-candidate-naming-retirement
+parent_decision: sar-0-authoritative-architecture-freeze
+base_revision: 0a53cc438072e5ad6e3e640ee846fecf93b8811a
+change_type: substitutive_legacy_plan_naming_deletion
+task_execution_semantics_changed: false
+runtime_authority_changed: false
+progress_authority_changed: false
+finish_authority_changed: false
+coordinator_control_flow_changed: false
+statekernel_schema_changed: false
+planner_contract_changed: false
+provider_prompt_or_schema_changed: false
+benchmark_adapter_changed: false
+pr_breadth: not_required
+
+single_primary_owner:
+  Canonical PlanCandidate naming in task-plan generator contracts
+
+included:
+  - remove TaskPlanDraft compatibility alias from production contracts
+  - rename draft generator protocol/router/classes to PlanCandidate naming
+  - update generator and contract tests to assert PlanCandidate is the only unaccepted plan model name in source
+
+excluded:
+  - SubgoalSpec production deletion
+  - legacy TaskPlan model deletion
+  - PlanProgress production deletion
+  - StateKernel TaskPlan/PlanProgress field cutover
+  - Coordinator control-flow changes
+  - TaskProgress authority cutover
+  - finish authority changes
+  - PR breadth or promotion claim
+
+remaining_sar_3_work:
+  - legacy TaskPlan/SubgoalSpec/PlanProgress production model cutover remains open
+  - StateKernel must cut over to canonical TaskPlan/TaskProgress naming
+  - legacy compatibility fallbacks must be retired after all standard call sites consume candidates directly
+
+validation:
+  focused_task_plan_contract_tests: pass
+  focused_generator_tests: pass
+  focused_lifecycle_tests: pass
+  architecture_tests: pass
+  full_pytest: pass
+  ruff: pass
+  mypy: pass
+  uv_build: pass
+  diff_check: pass
+
+closure_status: local_partial_candidate
+remote_ci_evidence: absent
+promotion_status: held
+next_slice_after_closure: sar-4-planner-response-and-serialization

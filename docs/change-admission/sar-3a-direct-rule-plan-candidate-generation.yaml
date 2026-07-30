@@ -18,10 +18,10 @@ single_primary_owner:
 
 included:
   - PlanCandidate becomes the canonical unaccepted plan model
-  - TaskPlanDraft remains only as a compatibility alias
-  - RuleTaskPlanDraftGenerator generates candidate StepSpec entries directly from TaskSpec obligations
+  - PlanCandidate remains only as a compatibility alias
+  - RulePlanCandidateGenerator generates candidate StepSpec entries directly from TaskSpec obligations
   - Rule generator no longer calls RuleTaskPlanner
-  - Rule generator no longer uses TaskPlanDraftProjector
+  - Rule generator no longer uses PlanCandidateProjector
   - Flat no-obligation tasks receive an explicit implicit candidate step
   - Forbidden implementation detail checks remain on generated step objectives
 

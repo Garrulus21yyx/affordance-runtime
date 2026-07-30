@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | SAR-3D TaskPlanAuthority replacement cutover active local change after `bea01f8f14d6996e4e3049c7f55bcbf9037afd45`: SAR-3C candidate-capable initial admission is committed and pushed. SAR-3D lets candidate-capable replacement planners route `PlanCandidate -> TaskPlanAuthority.admit_revision -> TaskPlan`, binding previous plan/progress identity and deterministic supersession lineage while keeping legacy replacement planners behind the explicit compatibility fallback. StateKernel schema, progress authority, finish authority, Coordinator control flow, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
+| Current HEAD | SAR-3E PlanCandidate naming retirement active local change after `0a53cc438072e5ad6e3e640ee846fecf93b8811a`: SAR-3D candidate-capable replacement admission is committed and pushed. SAR-3E removes the `TaskPlanDraft` compatibility alias and draft-generator naming from production source, keeping `PlanCandidate` as the only unaccepted plan model name. Legacy TaskPlan/SubgoalSpec/PlanProgress production model cutover, StateKernel schema, progress authority, finish authority, Coordinator control flow, PlannerPort, provider prompt/schema, PR breadth, and promotion remain unchanged |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -343,12 +343,12 @@ pr_breadth_latest:
     result: 2 observed, 2 official reward passed, 2 Runtime passed
     interpretation: json_invalid did not reproduce in targeted recheck; no production repair admitted yet
   historical_next_change_before_odg_0: V-PRB-6A form-sequence dependent-subgoal progress-scope binding
-  current_next_change_admission: SAR-3D TaskPlanAuthority replacement cutover is active after SAR-3C local closure; legacy TaskPlan/PlanProgress retirement remains next; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
+  current_next_change_admission: SAR-3E PlanCandidate naming retirement is active after SAR-3D local closure; SAR-4 PlannerResponse and serialization remains next after this bounded deletion; Coordinator growth-freeze constraints must be respected and standard progress authority may not change before its authorized cutover slice
   immutable_planner_input: PlannerPort public contract is request-only and uses PlanningRequest with TaskSpec, Step projection, UnifiedObservation, recent ActionOutcome summaries, and budgets where a validated TaskSpec is available; legacy ActionContract-returning planners remain behind planner_compatibility.py, BrowserGymPolicyRequest remains a compatibility-only benchmark policy boundary, and Coordinator no longer directly calls self.planner.propose(envelope, state, snapshot)
 
 active_local_repair:
-  slice: sar-3d-taskplanauthority-replacement-cutover
-  revision: bea01f8f14d6996e4e3049c7f55bcbf9037afd45
+  slice: sar-3e-plan-candidate-naming-retirement
+  revision: 0a53cc438072e5ad6e3e640ee846fecf93b8811a
   status: active_local_change
   freeze_record: docs/change-admission/tpa-0-taskplan-authority-freeze.yaml
   inventory_record: docs/change-admission/tpa-1-authority-read-set-audit.yaml
@@ -373,6 +373,7 @@ active_local_repair:
   sar_3b_record: docs/change-admission/sar-3b-llm-plan-candidate-generation.yaml
   sar_3c_record: docs/change-admission/sar-3c-taskplanauthority-initial-cutover.yaml
   sar_3d_record: docs/change-admission/sar-3d-taskplanauthority-replacement-cutover.yaml
+  sar_3e_record: docs/change-admission/sar-3e-plan-candidate-naming-retirement.yaml
   sar_1_threat_model: docs/security/action-contract-digest-threat-model.md
   sar_authoritative_architecture: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
   sar_execution_plan: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
@@ -381,10 +382,10 @@ active_local_repair:
   coordinator_commit: not_authorized
   finish_gate_change: not_authorized
   planner_context_change: unchanged
-  taskplan_generator_change: candidate_capable_initial_and_replacement_plan_admitted_by_taskplanauthority
+  taskplan_generator_change: plan_candidate_naming_only_after_candidate_capable_admission_cutovers
   taskplan_required: false
   additive_foundation_expansion: stopped
-  next_runtime_slice: sar-3e-legacy-taskplan-progress-retirement-plan
+  next_runtime_slice: sar-4-planner-response-and-serialization
   promotion_status: held
 
 attribution_classification:
@@ -679,7 +680,7 @@ repository until a unified rewrite is complete.
 
 | Track state | Snapshot | Admission baseline | Active waiver | Next remediation |
 | --- | --- | --- | --- | --- |
-| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-2 semantic vocabulary unification is the active local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, TaskPlanDraft generator, execution-commit gates, SAR-1 deep-immutability gates, and SAR-2 canonical semantic vocabulary gates | none | SAR-3 plan vertical replacement is next after SAR-2 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover outside SAR-3, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover outside authorized SAR slices, PR breadth, and promotion remain unauthorized |
+| `active` | SAR-0 authoritative optimized architecture is the current default target; TPA-0 through TPA-5, S0 through S2.1, and ODG-0 through ODG-9 are retained as historical foundation/diagnostic records; SAR-2 semantic vocabulary unification is the active local completion candidate; remote CI disabled | Coordinator 3461 lines / 26 methods; `run_sync` 2034 lines; planning/intake/control ratchets plus TaskPlan commit/constructor, Step Planner signature, TaskSkill mutation, dependency, PlanningRequest contract/builder, PlannerContext request-path, admission-contract, DecisionConstraintSet immutability, legacy terminal admission projection/application, Generalist request-core, ParentAgent adapter request-core, reference contract planner request-core, conformance/recovery fixture request-core, BrowserGym compatibility request projection, PlannerPort request-only public contract, TaskPlanAuthority contract, PlanCandidate generator, execution-commit gates, SAR-1 deep-immutability gates, and SAR-2 canonical semantic vocabulary gates | none | SAR-3 plan vertical replacement is next after SAR-2 local closure; TPA-5B foundation expansion, TaskPlanAuthority production cutover outside SAR-3, ODG-9 hookup, ODG-10, ODG-11, active-step authority cutover outside authorized SAR slices, PR breadth, and promotion remain unauthorized |
 
 The current SG7 repair also has a semantic ownership review state:
 `semantic_ownership_review: pending_review`. Its deterministic fallback behavior is accepted as a
