@@ -91,14 +91,11 @@ from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_flow import (
-    TaskPlanCommitPreparation,
-    TaskPlanCommitStateView,
     TaskPlanFlow,
-    TaskPlanFlowKind,
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
+from affordance_runtime.task_plan_phase import commit_task_plan_phase
 from affordance_runtime.task_plan_progress_flow import (
-    commit_current_state_completion,
     commit_post_observation_progress,
     commit_task_skill_terminal_progress,
     commit_verified_task_progress,
@@ -463,40 +460,19 @@ class RunCoordinator:
             if progress_commit.legacy_completion_committed:
                 continue
             if self.task_plan_flow is not None and envelope.task_spec is not None:
-                flow_result = self.task_plan_flow.prepare(
+                task_plan_phase = commit_task_plan_phase(
                     envelope.task_spec,
                     state,
                     snapshot,
                     self.budget,
+                    trace,
+                    parent,
+                    task_plan_flow=self.task_plan_flow,
+                    recovery_phase=self.recovery_phase,
                 )
-                plan_commit = TaskPlanCommitPreparation(flow_result)
-                transition = plan_commit.transition
-                pre_commit = plan_commit.pre_commit_projection(state_phase=state.phase)
-                if pre_commit is not None:
-                    parent = trace.add(
-                        pre_commit.kind,
-                        pre_commit.payload,
-                        parents=[parent.id],
-                    )
-                flow_failure = plan_commit.failure
-                if plan_commit.accepted:
-                    assert transition is not None
-                    task_plan = transition.plan
-                    try:
-                        if flow_result.kind == TaskPlanFlowKind.REPLACEMENT:
-                            state.replace_task_plan(task_plan)
-                        else:
-                            state.install_task_plan(task_plan)
-                    except Exception as exc:
-                        plan_commit = plan_commit.with_commit_failure(exc)
-                        flow_failure = plan_commit.failure
+                parent = task_plan_phase.parent
+                flow_failure = task_plan_phase.failure
                 if flow_failure is not None:
-                    rejection = plan_commit.failure_projection(state_phase=state.phase)
-                    parent = trace.add(
-                        rejection.kind,
-                        rejection.payload,
-                        parents=[parent.id],
-                    )
                     if _pending_recovery_kind(state) == RecoveryKind.REPLAN_TASK:
                         parent = self.recovery_phase.fail_pending_command(
                             state,
@@ -536,40 +512,8 @@ class RunCoordinator:
                         flow_failure.error_code,
                         latest_verification,
                     )
-                if plan_commit.accepted:
-                    assert transition is not None
-                    task_plan = transition.plan
-                    committed = TaskPlanCommitStateView(
-                        active_subgoal=state.activate_next_subgoal(),
-                        completed_subgoal_ids=(
-                            tuple(state.plan_progress.completed_subgoal_ids)
-                            if state.plan_progress is not None
-                            else ()
-                        ),
-                    )
-                    acceptance = plan_commit.acceptance_projection(
-                        state_phase=state.phase,
-                        committed=committed,
-                    )
-                    parent = trace.add(acceptance.kind, acceptance.payload, parents=[parent.id])
-                    parent = self.recovery_phase.complete_pending_plan_change(
-                        state,
-                        trace,
-                        parent,
-                        kind=RecoveryKind.REPLAN_TASK,
-                        plan_or_route_ref=task_plan.plan_id,
-                    )
-                    current_state_parent = commit_current_state_completion(
-                        envelope.task_spec,
-                        state,
-                        snapshot,
-                        self.budget,
-                        trace,
-                        parent,
-                    )
-                    if current_state_parent is not None:
-                        parent = current_state_parent
-                        continue
+                if task_plan_phase.current_state_completion_committed:
+                    continue
             state.transition(RuntimeStep.PLANNING.value)
             if state.task_plan is not None:
                 state.activate_next_subgoal()

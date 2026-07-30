@@ -1050,3 +1050,13 @@ delivery claims.
   `docs/evidence/runs/for-4-targeted-behavioral-classification-ccb6bf1.md`.
   This is not PR breadth, fresh diagnostic, remote CI, or promotion evidence.
   SAR-9 phase extraction is now the next selected work.
+- Started SAR-9A TaskPlan phase extraction after
+  `052edaaa84855984a00dc4eb1b1f74de9a3e6e44`. Added
+  `task_plan_phase.commit_task_plan_phase()` and moved TaskPlan prepare /
+  commit / trace-projection detail out of `RunCoordinator.run_sync` while
+  keeping TaskPlanFlow, StateKernel, RecoveryPhase, and progress-flow ownership
+  unchanged. Focused SAR-9A architecture gate passed 1/1; adjacent
+  TaskPlan/Coordinator/full-phase recovery tests passed 48/48; changed-file
+  Ruff and core mypy passed. Coordinator is now 2939 lines, `run_sync()` is
+  1940 lines, and RunCoordinator has 19 methods. SAR-9 full phase extraction
+  remains incomplete; next is another named phase extraction slice.

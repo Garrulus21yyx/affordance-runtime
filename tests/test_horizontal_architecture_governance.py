@@ -2322,6 +2322,35 @@ def test_for_4_failure_owner_flow_has_single_owner_mapping() -> None:
     assert annotations["budget_cost"] == "RecoveryBudgetCost"
 
 
+def test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    coordinator_tree = ast.parse(coordinator_source)
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    run_sync_source = ast.unparse(run_sync)
+
+    for forbidden in (
+        "TaskPlanCommitPreparation",
+        "TaskPlanCommitStateView",
+        "TaskPlanFlowKind",
+        "flow_result.kind",
+        "plan_commit.acceptance_projection",
+        "plan_commit.failure_projection",
+    ):
+        assert forbidden not in run_sync_source
+
+    assert "task_plan_phase" in coordinator_source
+    assert (SOURCE_ROOT / "task_plan_phase.py").is_file()
+
+
 def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
