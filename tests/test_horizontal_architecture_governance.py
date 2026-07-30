@@ -1427,6 +1427,28 @@ def test_run_sync_does_not_inline_planner_done_finish_authority() -> None:
     assert "commit_planner_terminal_decision" in source
 
 
+def test_run_sync_does_not_inline_task_completion_authority() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    source = ast.get_source_segment(
+        (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"),
+        run_sync,
+    )
+    assert source is not None
+    assert '"TaskCompleted"' not in source
+    assert "state.transition(RuntimeStep.DONE.value)" not in source
+    assert "commit_task_terminal_success" in source
+
+
 def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:
     tree = ast.parse((SOURCE_ROOT / "planners.py").read_text(encoding="utf-8"))
     for class_name in ("PricingPlanner", "SettingsPlanner", "ExportPlanner"):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,6 +30,11 @@ class PlannerTerminalCommit:
         return self.status == "rejected"
 
 
+@dataclass(frozen=True)
+class TaskTerminalCommit:
+    parent: TraceNode
+
+
 def is_safe_incomplete_terminal(decision: PlannerDecision, state: StateKernel) -> bool:
     """Allow an evidence-explicit non-success stop without claiming completion."""
 
@@ -38,6 +44,25 @@ def is_safe_incomplete_terminal(decision: PlannerDecision, state: StateKernel) -
         and not state.receipts
         and state.effectful_action_count == 0
     )
+
+
+def commit_task_terminal_success(
+    *,
+    state: StateKernel,
+    trace: TraceDag,
+    parent: TraceNode,
+    result: Mapping[str, object],
+) -> TaskTerminalCommit:
+    """Commit the single terminal success transition and TaskCompleted event."""
+
+    state.final_result = dict(result)
+    state.transition("done")
+    parent = trace.add(
+        "TaskCompleted",
+        {"state": state.phase, "result": state.final_result},
+        parents=[parent.id],
+    )
+    return TaskTerminalCommit(parent)
 
 
 def commit_planner_terminal_decision(
@@ -81,11 +106,10 @@ def commit_planner_terminal_decision(
                 parents=[parent.id],
             )
             return PlannerTerminalCommit(parent, "rejected", message)
-    state.final_result = dict(decision.result)
-    state.transition("done")
-    parent = trace.add(
-        "TaskCompleted",
-        {"state": state.phase, "result": decision.result},
-        parents=[parent.id],
+    terminal = commit_task_terminal_success(
+        state=state,
+        trace=trace,
+        parent=parent,
+        result=decision.result,
     )
-    return PlannerTerminalCommit(parent, "completed")
+    return PlannerTerminalCommit(terminal.parent, "completed")

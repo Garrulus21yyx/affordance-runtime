@@ -70,6 +70,22 @@ class VerifiedTaskProgressCommit:
     task_completion_requested: bool
 
 
+@dataclass(frozen=True)
+class TaskSkillTerminalProgressCommit:
+    parent: TraceNode
+    task_completion_requested: bool
+    task_skill_id: str = ""
+    task_skill_version: str = ""
+    completed_step_ids: tuple[str, ...] = ()
+
+    def result_payload(self) -> dict[str, object]:
+        return {
+            "task_skill_id": self.task_skill_id,
+            "task_skill_version": self.task_skill_version,
+            "completed_step_ids": list(self.completed_step_ids),
+        }
+
+
 def prepare_current_state_subgoal_completion(
     task_spec: TaskSpec | None,
     state: StateKernel,
@@ -308,6 +324,37 @@ def commit_verified_task_progress(
             parents=[parent.id],
         )
     return VerifiedTaskProgressCommit(parent, False, False, False)
+
+
+def commit_task_skill_terminal_progress(
+    *,
+    state: StateKernel,
+    trace: TraceDag,
+    parent: TraceNode,
+) -> TaskSkillTerminalProgressCommit:
+    """Record verified TaskSkill completion without committing Runtime done."""
+
+    if state.task_plan is not None or state.task_skill is None:
+        return TaskSkillTerminalProgressCommit(parent, False)
+    progress = state.task_skill
+    completed_step_ids = tuple(progress.completed_step_ids)
+    parent = trace.add(
+        "TaskSkillCompleted",
+        {
+            "state": state.phase,
+            "task_skill_id": progress.skill_id,
+            "task_skill_version": progress.version,
+            "completed_step_ids": list(completed_step_ids),
+        },
+        parents=[parent.id],
+    )
+    return TaskSkillTerminalProgressCommit(
+        parent=parent,
+        task_completion_requested=True,
+        task_skill_id=progress.skill_id,
+        task_skill_version=progress.version,
+        completed_step_ids=completed_step_ids,
+    )
 
 
 def _still_current(

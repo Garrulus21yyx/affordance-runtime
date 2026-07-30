@@ -101,7 +101,10 @@ from affordance_runtime.runtime_evidence import (
     verification_confirms_effect_absent,
     verification_satisfies_effect,
 )
-from affordance_runtime.runtime_terminal import commit_planner_terminal_decision
+from affordance_runtime.runtime_terminal import (
+    commit_planner_terminal_decision,
+    commit_task_terminal_success,
+)
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
@@ -114,6 +117,7 @@ from affordance_runtime.task_plan_flow import (
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
     commit_post_observation_progress,
+    commit_task_skill_terminal_progress,
     commit_verified_task_progress,
 )
 from affordance_runtime.task_planning import (
@@ -1997,9 +2001,6 @@ class RunCoordinator:
                             parents=[parent.id],
                         )
                     if skill_report.passed and skill_complete and state.task_plan is None:
-                        skill_progress = state.task_skill
-                        if skill_progress is None:
-                            raise ValueError("verified TaskSkill progress is missing")
                         if contract.grounding_candidate is not None:
                             state.complete_grounding_recovery(contract.grounding_candidate.semantic_target_id)
                         if state.recovery_incident is not None and state.recovery_incident.terminal_outcome == "open":
@@ -2017,22 +2018,19 @@ class RunCoordinator:
                                 },
                                 parents=[parent.id],
                             )
-                        state.final_result = {
-                            "task_skill_id": skill_progress.skill_id,
-                            "task_skill_version": skill_progress.version,
-                            "completed_step_ids": list(skill_progress.completed_step_ids),
-                        }
-                        parent = trace.add(
-                            "TaskSkillCompleted",
-                            {"state": state.phase, **state.final_result},
-                            parents=[parent.id],
+                        skill_terminal_progress = commit_task_skill_terminal_progress(
+                            state=state,
+                            trace=trace,
+                            parent=parent,
                         )
-                        state.transition(RuntimeStep.DONE.value)
-                        parent = trace.add(
-                            "TaskCompleted",
-                            {"state": state.phase, "result": state.final_result},
-                            parents=[parent.id],
+                        parent = skill_terminal_progress.parent
+                        terminal = commit_task_terminal_success(
+                            state=state,
+                            trace=trace,
+                            parent=parent,
+                            result=skill_terminal_progress.result_payload(),
                         )
+                        parent = terminal.parent
                         return self._finish(
                             envelope,
                             state,
@@ -2068,12 +2066,13 @@ class RunCoordinator:
                 )
                 parent = verified_progress_commit.parent
                 if verified_progress_commit.task_completion_requested:
-                    state.transition(RuntimeStep.DONE.value)
-                    parent = trace.add(
-                        "TaskCompleted",
-                        {"state": state.phase, "result": state.final_result},
-                        parents=[parent.id],
+                    terminal = commit_task_terminal_success(
+                        state=state,
+                        trace=trace,
+                        parent=parent,
+                        result=state.final_result,
                     )
+                    parent = terminal.parent
                     return self._finish(
                         envelope,
                         state,
