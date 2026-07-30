@@ -10,7 +10,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.generalist_planner import PlannerLimits
 from affordance_runtime.planner_context import PlannerContextBuilder
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
-from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.planning_contracts import PlannerDecision, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder, PlanningRequestLimits
 from affordance_runtime.runtime import TaskEnvelope
@@ -52,13 +52,29 @@ class ParentAgentPlannerAdapter:
     planning_request_builder: PlanningRequestBuilderPort | None = None
     context_builder: PlannerContextBuilderPort | None = None
 
-    async def propose(
+    async def propose_legacy(
         self,
         envelope: TaskEnvelope,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerDecision:
         request = self._planning_request_builder().build(envelope, state, snapshot)
+        return await self._propose_decision(request)
+
+    async def propose(
+        self,
+        request: PlanningRequest,
+    ) -> PlannerResponse:
+        decision = await self._propose_decision(request)
+        if decision.proposal is None:  # pragma: no cover - parent adapter always validates a proposal
+            raise RuntimeError("parent adapter did not return a semantic proposal")
+        return PlannerProposalResponse(
+            proposal=decision.proposal,
+            proposal_provenance=decision.proposal_provenance,
+            reason=decision.reason,
+        )
+
+    async def _propose_decision(self, request: PlanningRequest) -> PlannerDecision:
         context = self._context_builder().build(request)
         value = self.source.propose(context.model_dump(mode="json"))
         payload = await value if inspect.isawaitable(value) else value

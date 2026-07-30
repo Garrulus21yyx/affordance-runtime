@@ -75,6 +75,28 @@ def test_generalist_planner_standard_contract_is_request_only() -> None:
     assert "PlannerDecision" not in str(signature.return_annotation)
 
 
+def test_parent_agent_adapter_standard_contract_is_request_only() -> None:
+    import inspect
+
+    from affordance_runtime.planner_adapters import ParentAgentPlannerAdapter
+
+    signature = inspect.signature(ParentAgentPlannerAdapter.propose)
+    positional = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind
+        in {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }
+        and parameter.name != "self"
+    ]
+
+    assert [parameter.name for parameter in positional] == ["request"]
+    assert "PlannerResponse" in str(signature.return_annotation)
+    assert "PlannerDecision" not in str(signature.return_annotation)
+
+
 def test_planner_response_compatibility_converts_to_legacy_decision() -> None:
     from affordance_runtime.planner_compatibility import planner_response_to_decision
     from affordance_runtime.planning import PlannerActionKind, PlannerProposal

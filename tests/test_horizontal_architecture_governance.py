@@ -1359,8 +1359,26 @@ def test_parent_agent_adapter_uses_request_context_core() -> None:
         for node in ast.walk(propose)
         if isinstance(node, ast.Name)
     }
-    assert "build" in calls
+    assert "_propose_decision" in calls
+    assert "build" not in calls
     assert "build_planner_context" not in names
+    request_core = next(
+        node
+        for node in adapter.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_propose_decision"
+    )
+    request_core_calls = {
+        node.func.attr
+        for node in ast.walk(request_core)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    request_core_names = {
+        node.id
+        for node in ast.walk(request_core)
+        if isinstance(node, ast.Name)
+    }
+    assert "build" in request_core_calls
+    assert "build_planner_context" not in request_core_names
 
     tpa_3_4 = " ".join(
         (CHANGE_ADMISSION_DIR / "tpa-3-4-parent-agent-planner-request-migration.yaml")
@@ -1570,7 +1588,6 @@ def test_standard_step_planner_triple_signature_inventory_is_frozen() -> None:
         ("benchmarks/generalization_rollout.py", "_SurfacePlanner"),
         ("benchmarks/task_planning.py", "_StageActionPlanner"),
         ("conformance.py", "ConformancePlanner"),
-        ("planner_adapters.py", "ParentAgentPlannerAdapter"),
         ("planners.py", "ExportPlanner"),
         ("planners.py", "PricingPlanner"),
         ("planners.py", "SettingsPlanner"),

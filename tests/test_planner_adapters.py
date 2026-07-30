@@ -70,7 +70,7 @@ def test_parent_adapter_receives_bounded_context_and_returns_semantic_proposal()
     envelope, state, snapshot = _inputs()
     source = ParentSource()
 
-    decision = asyncio.run(ParentAgentPlannerAdapter(source).propose(envelope, state, snapshot))
+    decision = asyncio.run(ParentAgentPlannerAdapter(source).propose_legacy(envelope, state, snapshot))
 
     assert decision.proposal is not None
     assert decision.proposal.target_affordance_id == "dom_button_1"
@@ -87,7 +87,7 @@ def test_parent_adapter_rejects_primitive_locator_payload() -> None:
     envelope, state, snapshot = _inputs()
 
     with pytest.raises(ValidationError, match="surface or authority"):
-        asyncio.run(ParentAgentPlannerAdapter(ParentSource(invalid=True)).propose(envelope, state, snapshot))
+        asyncio.run(ParentAgentPlannerAdapter(ParentSource(invalid=True)).propose_legacy(envelope, state, snapshot))
 
 
 def test_parent_adapter_uses_immutable_request_context_path() -> None:
@@ -131,7 +131,7 @@ def test_parent_adapter_uses_immutable_request_context_path() -> None:
             source,
             planning_request_builder=request_builder,
             context_builder=context_builder,
-        ).propose(envelope, state, snapshot)
+        ).propose_legacy(envelope, state, snapshot)
     )
 
     assert request_builder.built is not None
