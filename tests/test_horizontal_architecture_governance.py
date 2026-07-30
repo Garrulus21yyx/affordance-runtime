@@ -2941,6 +2941,21 @@ def test_sar_9z_terminal_recovery_status_commit_is_not_in_coordinator() -> None:
     assert "RuntimeStep.WAITING_CLARIFICATION" in commit_source
 
 
+def test_sar_9aa_recovery_state_read_helpers_are_not_in_coordinator() -> None:
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+
+    assert "def _pending_recovery_kind" not in coordinator_source
+    assert "def _available_owner_recovery_kinds" not in coordinator_source
+    assert "OWNER_DISPATCH_RECOVERY_KINDS = frozenset" not in coordinator_source
+    assert "pending_recovery_kind=pending_recovery_kind" in coordinator_source
+    assert "available_owner_recovery_kinds(" in coordinator_source
+    projection_source = (SOURCE_ROOT / "recovery_state_projection.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def pending_recovery_kind" in projection_source
+    assert "def available_owner_recovery_kinds" in projection_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)

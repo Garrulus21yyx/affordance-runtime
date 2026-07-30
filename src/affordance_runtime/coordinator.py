@@ -40,8 +40,9 @@ from affordance_runtime.recovery_coordinator import RecoveryCoordinator
 from affordance_runtime.recovery_failure_phase import RecoveryFailurePhase
 from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryPhase
-from affordance_runtime.recovery_protocol import (
-    RecoveryKind,
+from affordance_runtime.recovery_state_projection import (
+    available_owner_recovery_kinds,
+    pending_recovery_kind,
 )
 from affordance_runtime.recovery_trace_commit import trace_recovery_started
 from affordance_runtime.route_calibration import RouteCalibrator
@@ -80,13 +81,6 @@ from affordance_runtime.verification_failure_phase import VerificationFailurePha
 from affordance_runtime.verification_phase import VerificationPhase
 from affordance_runtime.verified_progress_phase import VerifiedProgressPhase
 
-OWNER_DISPATCH_RECOVERY_KINDS = frozenset(
-    {
-        RecoveryKind.COMPACT_CONTEXT,
-        RecoveryKind.REPAIR_MODEL_SCHEMA,
-        RecoveryKind.SWITCH_PROVIDER,
-    }
-)
 PROGRESS_PHASE = ProgressPhase()
 PERCEPTION_PHASE = PerceptionPhase()
 TASK_SKILL_PHASE = TaskSkillPhase()
@@ -260,7 +254,7 @@ class RunCoordinator:
                 recovery_enabled=self.features.recovery,
                 active_perception_flow=self.active_perception_flow,
                 budget=self.budget,
-                pending_recovery_kind=_pending_recovery_kind,
+                pending_recovery_kind=pending_recovery_kind,
                 task_skill_progress_for=_task_skill_progress,
                 write_observation=self.artifact_phase.write_observation,
                 index_artifact=self.artifact_phase.index_artifact,
@@ -307,9 +301,9 @@ class RunCoordinator:
                     snapshot=snapshot,
                     task_plan_phase=task_plan_phase,
                     recovery_phase=self.recovery_phase,
-                    pending_recovery_kind=_pending_recovery_kind,
+                    pending_recovery_kind=pending_recovery_kind,
                     recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                    owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
                 )
@@ -352,9 +346,9 @@ class RunCoordinator:
                     snapshot=snapshot,
                     task_skill_phase=task_skill_phase,
                     recovery_phase=self.recovery_phase,
-                    pending_recovery_kind=_pending_recovery_kind,
+                    pending_recovery_kind=pending_recovery_kind,
                     recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                    owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
                 )
@@ -383,9 +377,9 @@ class RunCoordinator:
                     snapshot=snapshot,
                     error=exc,
                     recovery_phase=self.recovery_phase,
-                    pending_recovery_kind=_pending_recovery_kind,
+                    pending_recovery_kind=pending_recovery_kind,
                     recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                    owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                    owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                         self.recovery_owner_dispatcher
                     ),
                 )
@@ -413,9 +407,9 @@ class RunCoordinator:
                         error=exc,
                         planner=self.planner,
                         recovery_phase=self.recovery_phase,
-                        pending_recovery_kind=_pending_recovery_kind,
+                        pending_recovery_kind=pending_recovery_kind,
                         recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                        owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                        owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                             self.recovery_owner_dispatcher
                         ),
                     )
@@ -446,7 +440,7 @@ class RunCoordinator:
                 recovery_phase=self.recovery_phase,
                 task_skill_runtime=self.task_skill_runtime,
                 skill_step_id=skill_step_id,
-                owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                     self.recovery_owner_dispatcher
                 ),
             )
@@ -472,9 +466,9 @@ class RunCoordinator:
                 recovery_phase=self.recovery_phase,
                 task_skill_runtime=self.task_skill_runtime,
                 skill_step_id=skill_step_id,
-                pending_recovery_kind=_pending_recovery_kind,
+                pending_recovery_kind=pending_recovery_kind,
                 recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
-                owner_dispatch_recovery_kinds=_available_owner_recovery_kinds(
+                owner_dispatch_recovery_kinds=available_owner_recovery_kinds(
                     self.recovery_owner_dispatcher
                 ),
             )
@@ -743,15 +737,3 @@ class RunCoordinator:
                 verification_failure.terminal.error_code,
                 latest_verification,
             )
-
-def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
-    if state.current_recovery_outcome is not None:
-        return None
-    decision = state.current_recovery_decision
-    return decision.kind if decision is not None else None
-
-
-def _available_owner_recovery_kinds(
-    dispatcher: RecoveryOwnerDispatcher,
-) -> frozenset[RecoveryKind]:
-    return dispatcher.available_kinds
