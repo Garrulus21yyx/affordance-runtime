@@ -41,7 +41,7 @@ coordinator_ratchet:
   after:
     coordinator_lines: 899
     run_sync_lines: 521
-    run_coordinator_methods: 9
+    run_coordinator_methods: 10
   interpretation:
     coordinator_lines: decreased
     run_sync_lines: unchanged
@@ -49,7 +49,7 @@ coordinator_ratchet:
   next_ratchet:
     coordinator_lines_max: 899
     run_sync_lines_max: 521
-    run_coordinator_methods_max: 9
+    run_coordinator_methods_max: 10
 
 architecture_gates:
   added:

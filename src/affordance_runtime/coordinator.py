@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass, field, replace
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 from affordance_runtime.active_perception_flow import ActivePerceptionFlow
@@ -15,13 +14,12 @@ from affordance_runtime.approval_contracts import (
 from affordance_runtime.approval_contracts import (
     ConfiguredApprovalProvider as ConfiguredApprovalProvider,
 )
+from affordance_runtime.artifact_phase import ArtifactPhase
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contract_failure_phase import ContractFailurePhase
 from affordance_runtime.contracts import (
-    ExecutionReceipt,
     RuntimeErrorCode,
 )
 from affordance_runtime.execution_phase import ExecutionPhase
@@ -180,6 +178,7 @@ class RunCoordinator:
     contract_execution_loop: ContractExecutionLoop = field(init=False, repr=False)
     recovery_phase: RecoveryPhase = field(init=False, repr=False)
     recovery_failure_phase: RecoveryFailurePhase = field(init=False, repr=False)
+    artifact_phase: ArtifactPhase = field(init=False, repr=False)
     targeted_perception_fulfiller: Any = field(init=False, repr=False)
     source_arbitration_tracer: Any = field(init=False, repr=False)
 
@@ -203,14 +202,15 @@ class RunCoordinator:
             runtime_profile_digest=self.runtime_profile_digest,
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
         )
+        self.artifact_phase = ArtifactPhase(self.artifacts)
         self.source_arbitration_tracer = PERCEPTION_PHASE.trace_source_arbitration
         self.targeted_perception_fulfiller = partial(
             PERCEPTION_PHASE.fulfill_targeted_perception,
             active_perception_flow=self.active_perception_flow,
             budget=self.budget,
-            write_observation=self._write_observation,
-            index_artifact=self._index,
-            index_paths=self._index_paths,
+            write_observation=self.artifact_phase.write_observation,
+            index_artifact=self.artifact_phase.index_artifact,
+            index_paths=self.artifact_phase.index_paths,
             trace_source_arbitration=self.source_arbitration_tracer,
         )
         if self.task_planner is not None:
@@ -272,9 +272,9 @@ class RunCoordinator:
                 budget=self.budget,
                 pending_recovery_kind=_pending_recovery_kind,
                 task_skill_progress_for=_task_skill_progress,
-                write_observation=self._write_observation,
-                index_artifact=self._index,
-                index_paths=self._index_paths,
+                write_observation=self.artifact_phase.write_observation,
+                index_artifact=self.artifact_phase.index_artifact,
+                index_paths=self.artifact_phase.index_paths,
                 trace_source_arbitration=self.source_arbitration_tracer,
                 recover_phase_failure=self.recovery_failure_phase.recover_phase_failure,
             )
@@ -574,9 +574,9 @@ class RunCoordinator:
                 max_recoveries=self.budget.max_recoveries,
                 contract_builder=self.contract_builder,
                 recovery_phase=self.recovery_phase,
-                write_observation=self._write_observation,
-                index_artifact=self._index,
-                index_paths=self._index_paths,
+                write_observation=self.artifact_phase.write_observation,
+                index_artifact=self.artifact_phase.index_artifact,
+                index_paths=self.artifact_phase.index_paths,
                 trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
@@ -614,10 +614,10 @@ class RunCoordinator:
                 recovery_phase=self.recovery_phase,
                 task_skill_runtime=self.task_skill_runtime,
                 recovery_enabled=self.features.recovery,
-                write_receipt=self._write_receipt,
-                write_observation=self._write_observation,
-                index_artifact=self._index,
-                index_paths=self._index_paths,
+                write_receipt=self.artifact_phase.write_receipt,
+                write_observation=self.artifact_phase.write_observation,
+                index_artifact=self.artifact_phase.index_artifact,
+                index_paths=self.artifact_phase.index_paths,
                 trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 recover_execution_failure=self.recovery_failure_phase.recover_execution_failure,
@@ -658,10 +658,10 @@ class RunCoordinator:
                 contract_execution_loop=self.contract_execution_loop,
                 perception_session=self.perception_session,
                 structural_verification_enabled=self.features.structural_verification,
-                write_observation=self._write_observation,
-                write_verification=self._write_verification,
-                index_artifact=self._index,
-                index_paths=self._index_paths,
+                write_observation=self.artifact_phase.write_observation,
+                write_verification=self.artifact_phase.write_verification,
+                index_artifact=self.artifact_phase.index_artifact,
+                index_paths=self.artifact_phase.index_paths,
                 trace_source_arbitration=self.source_arbitration_tracer,
                 fulfill_targeted_perception=self.targeted_perception_fulfiller,
                 route_calibrator=self.route_calibrator,
@@ -766,31 +766,6 @@ class RunCoordinator:
         if state.effectful_action_count >= self.budget.max_effectful_actions:
             return RuntimeErrorCode.UNSAFE_ACTION
         return None
-
-    def _write_observation(self, run_id: str, sequence: int, snapshot: BrowserSnapshot) -> ArtifactRef | None:
-        return self.artifacts.write_observation(run_id, sequence, snapshot.observation) if self.artifacts else None
-
-    def _write_receipt(self, run_id: str, sequence: int, receipt: ExecutionReceipt) -> ArtifactRef | None:
-        if self.artifacts is None:
-            return None
-        download_path = receipt.evidence.get("path")
-        if isinstance(download_path, str) and download_path:
-            path = self.artifacts.run_dir(run_id) / "downloads" / Path(download_path).name
-            if path.exists():
-                self.artifacts.register_file(run_id, path, "application/octet-stream")
-        return self.artifacts.write_receipt(run_id, sequence, receipt)
-
-    def _write_verification(self, run_id: str, sequence: int, report: VerificationReport) -> ArtifactRef | None:
-        return self.artifacts.write_verification(run_id, sequence, report) if self.artifacts else None
-
-    @staticmethod
-    def _index(trace: TraceDag, artifact: ArtifactRef | None) -> None:
-        if artifact is not None:
-            trace.artifact_index.append(artifact.path)
-
-    @staticmethod
-    def _index_paths(trace: TraceDag, paths: list[str]) -> None:
-        trace.artifact_index.extend(path for path in paths if path)
 
     def _finish(
         self,

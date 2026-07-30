@@ -2829,6 +2829,33 @@ def test_sar_9t_source_arbitration_trace_projection_is_not_a_runcoordinator_meth
     assert "TargetedPerceptionRequested" in perception_source
 
 
+def test_sar_9u_artifact_persistence_helpers_are_not_runcoordinator_methods() -> None:
+    tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
+    run_coordinator = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    method_names = {
+        node.name for node in run_coordinator.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "_write_observation" not in method_names
+    assert "_write_receipt" not in method_names
+    assert "_write_verification" not in method_names
+    assert "_index" not in method_names
+    assert "_index_paths" not in method_names
+    artifact_source = (SOURCE_ROOT / "artifact_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "class ArtifactPhase" in artifact_source
+    assert "def write_observation" in artifact_source
+    assert "def write_receipt" in artifact_source
+    assert "def write_verification" in artifact_source
+    assert "def index_artifact" in artifact_source
+    assert "def index_paths" in artifact_source
+
+
 def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
