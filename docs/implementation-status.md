@@ -29,7 +29,7 @@ milestone status values.
 
 | Field | Current value |
 | --- | --- |
-| Current HEAD | `7053727bcce7ffb68fb701b7e1844cc33ca335bb`: SAR-7 single progress / finish authority local completion candidate. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
+| Current HEAD | `17ea270ebe6fab0342175b79362227f935492b08`: SAR-7 single progress / finish authority closure documentation over implementation revision `7053727bcce7ffb68fb701b7e1844cc33ca335bb`. Verifier-backed active-step progress commits live in `task_plan_progress_flow`; planner terminal requests and final success `TaskCompleted` commits live in `runtime_terminal`; TaskSkill terminal progress no longer writes Runtime DONE inline in `RunCoordinator`. StateKernel schema, provider prompt/schema, PR breadth, remote CI, and promotion remain unchanged. |
 | Latest admitted production repair revision | `d17a1f3` (`feat: integrate verifier-backed progress accounting`), Coordinator-integrated current-state completion; clean `66dae07` remains the latest useful pre-integration V-PRB-6B PR breadth diagnostic baseline |
 | Latest PR breadth evidence revision | `407133d1a1c902436ae2576175f834a7a74b1367`: 12/12 observed, 11/12 official reward passed, 3 Runtime failures, no missing/unrun/invalidated/provider failure, `official_score_claimed=false`. V-PRB-6B closes `enter-text:seed-1`; PR breadth remains failed because `form-sequence` seeds 0 and 1 remain V-PRB-6A finish-guard/progress-scope failures. `click-button:seed-1` reappeared as structured intent-draft `json_invalid` in the breadth matrix but did not reproduce in a targeted post-`407133d` recheck, so it is monitored rather than production-admitted. |
 | Latest V-PRB-6A foundation | Core-only progress target contract foundation in `docs/change-admission/v-prb-6a-progress-target-foundation.yaml`; focused planning/governance/static gates pass, but a dirty-tree form-sequence diagnostic stayed negative. It remains `foundation_only` and is now compatibility-only under ODG-0. |
@@ -457,11 +457,12 @@ active_local_repair:
   terminal_framework_deletion: pending
   taskplan_required: false
   additive_foundation_expansion: stopped
-  current_runtime_slice: sar-6-actioncontract-actionoutcome-canonicalization
-  next_runtime_slice: sar-5-canonical-scope-and-terminal-framework-deletion
-  required_before_sar_7:
-    - sar_4_production_cutover_and_legacy_deletion
-    - sar_5_canonical_scope_and_terminal_framework_deletion
+  current_runtime_slice: sar-7-single-progress-finish-authority
+  next_runtime_slice: sar-8-single-recovery-protocol
+  historical_required_before_sar_7:
+    - sar_4_standard_generalist_parent_response_cutover
+    - sar_5_default_terminal_framework_deletion
+    - sar_6a_action_outcome_recording
   promotion_status: held
 
 attribution_classification:

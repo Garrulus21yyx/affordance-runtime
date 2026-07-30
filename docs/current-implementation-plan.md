@@ -82,8 +82,10 @@ Current implementation-bearing review identity:
 
 ```yaml
 current_head:
-  revision: 7053727bcce7ffb68fb701b7e1844cc33ca335bb
-  role: sar_7_single_progress_finish_authority_local_candidate
+  revision: 17ea270ebe6fab0342175b79362227f935492b08
+  role: sar_7_single_progress_finish_authority_closure_documentation
+implementation_revision:
+  sar_7: 7053727bcce7ffb68fb701b7e1844cc33ca335bb
 sar_4:
   plannerport_response_contract: complete
   standard_generalist_response_contract: complete
