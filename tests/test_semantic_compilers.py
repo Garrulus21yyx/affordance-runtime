@@ -639,12 +639,12 @@ def test_strict_default_disables_compatibility_compilers_without_removing_drag()
         GeneralistLMPlanner(
             enabled_model,
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
-        ).propose(envelope, enabled_state, snapshot)
+        ).propose_legacy(envelope, enabled_state, snapshot)
     )
 
     _, disabled_state, _ = _drag_fixture("Drag Beta down by one position")
     disabled_model = DragProposalModel()
-    disabled = asyncio.run(GeneralistLMPlanner(disabled_model).propose(envelope, disabled_state, snapshot))
+    disabled = asyncio.run(GeneralistLMPlanner(disabled_model).propose_legacy(envelope, disabled_state, snapshot))
 
     assert enabled.proposal is not None and disabled.proposal is not None
     assert enabled.proposal.action_kind == disabled.proposal.action_kind == PlannerActionKind.DRAG
@@ -669,7 +669,7 @@ def test_strict_profile_does_not_execute_task_grammar_before_model_authority(kin
     envelope, state, snapshot = _governance_fixture(kind)
     strict_model = GovernanceClarificationModel()
 
-    strict = asyncio.run(GeneralistLMPlanner(strict_model).propose(envelope, state, snapshot))
+    strict = asyncio.run(GeneralistLMPlanner(strict_model).propose_legacy(envelope, state, snapshot))
 
     assert strict_model.calls == 1
     assert strict.proposal is not None
@@ -682,7 +682,7 @@ def test_strict_profile_does_not_execute_task_grammar_before_model_authority(kin
         GeneralistLMPlanner(
             compatibility_model,
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
-        ).propose(envelope, state, snapshot)
+        ).propose_legacy(envelope, state, snapshot)
     )
 
     assert compatibility_model.calls == 0

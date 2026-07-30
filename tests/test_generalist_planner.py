@@ -1151,7 +1151,7 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
             model_port,
             planning_request_builder=request_builder,  # type: ignore[arg-type]
             context_builder=context_builder,  # type: ignore[arg-type]
-        ).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        ).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert request_builder.built is not None
@@ -1189,7 +1189,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     fixed = ProposalModel()
 
     decision = asyncio.run(
-        GeneralistLMPlanner(fixed).propose(
+        GeneralistLMPlanner(fixed).propose_legacy(
             TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
@@ -1223,7 +1223,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     repaired_planner = GeneralistLMPlanner(repaired_model)
     assert repaired_planner.repair_planner_schema() is not None
     repaired_decision = asyncio.run(
-        repaired_planner.propose(
+        repaired_planner.propose_legacy(
             TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
@@ -1239,7 +1239,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
             compatibility_model,
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
-        ).propose(
+        ).propose_legacy(
             TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
@@ -1432,7 +1432,7 @@ def test_strict_planner_narrows_typed_terminal_by_verified_readiness(
 
     model = ReadinessModel()
     decision = asyncio.run(
-        GeneralistLMPlanner(model).propose(
+        GeneralistLMPlanner(model).propose_legacy(
             TaskEnvelope(task_spec=task_spec),
             state,
             snapshot,
@@ -1499,7 +1499,7 @@ def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(CandidateModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(CandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -1555,7 +1555,7 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
 
     with pytest.raises(StructuredModelError) as exc_info:
         asyncio.run(
-            GeneralistLMPlanner(InvalidCandidateModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+            GeneralistLMPlanner(InvalidCandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
         )
 
     assert str(exc_info.value) == "planner candidate failed semantic validation: proposal_target_required:type_text"
@@ -1604,7 +1604,7 @@ def test_generalist_repairs_one_invalid_candidate_on_the_same_snapshot() -> None
 
     repair_model = RepairingCandidateModel()
     decision = asyncio.run(
-        GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 2
@@ -1941,7 +1941,7 @@ def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_e
             return output_schema.model_validate({"action_kind": "type_text", "parameters": {"text": "Ada"}})
 
     decision = asyncio.run(
-        GeneralistLMPlanner(SingletonCandidateModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(SingletonCandidateModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -1982,7 +1982,7 @@ def test_generalist_normalizes_select_target_id_to_current_visible_option_label(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(SelectModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SelectModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2019,7 +2019,7 @@ def test_generalist_fills_a_missing_select_option_only_from_one_objective_match(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(MissingOptionModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(MissingOptionModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2113,7 +2113,7 @@ def test_generalist_repairs_a_numeric_slider_key_only_toward_the_target() -> Non
 
     repair_model = SliderRepairModel()
     decision = asyncio.run(
-        _compatibility_planner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 0
@@ -2148,7 +2148,7 @@ def test_generalist_exposes_submit_when_slider_context_reaches_target() -> None:
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(ProposalModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(ProposalModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2252,7 +2252,7 @@ def test_generalist_extracts_slider_target_when_objective_contains_checkbox_ordi
 
     repair_model = SliderRepairModel()
     decision = asyncio.run(
-        _compatibility_planner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 0
@@ -2319,7 +2319,7 @@ def test_generalist_binds_copy_paste_to_exact_source_value_and_destination() -> 
             )
 
     planner = _compatibility_planner(CopyModel())
-    decision = asyncio.run(planner.propose(TaskEnvelope(task_spec=task_spec), state, snapshot))
+    decision = asyncio.run(planner.propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot))
 
     assert decision.proposal is not None
     assert decision.proposal.target_affordance_id == "dom_input_1"
@@ -2489,7 +2489,7 @@ def test_generalist_ordinal_copy_takes_priority_over_scroll_progress() -> None:
             raise AssertionError("exact copy transfer must bypass the language model")
 
     decision = asyncio.run(
-        _compatibility_planner(CopyModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(CopyModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2604,7 +2604,7 @@ def test_generalist_binds_one_isolated_visible_value_for_deictic_text_entry() ->
             )
 
     decision = asyncio.run(
-        _compatibility_planner(VisibleTextModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(VisibleTextModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2677,7 +2677,7 @@ def test_generalist_keeps_long_text_suffix_and_writes_only_the_destination() -> 
             )
 
     decision = asyncio.run(
-        _compatibility_planner(RelationalTextModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(RelationalTextModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2767,7 +2767,7 @@ def test_generalist_binds_textarea_scroll_to_exact_boundary_key(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(ScrollModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(ScrollModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2849,7 +2849,7 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(SubmitModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SubmitModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2904,7 +2904,7 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
             return output_schema.model_validate(candidate)
 
     repair_model = AutocompleteRepairModel()
-    strict = asyncio.run(GeneralistLMPlanner(repair_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot))
+    strict = asyncio.run(GeneralistLMPlanner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot))
 
     assert repair_model.calls == 1
     assert strict.proposal is not None
@@ -2916,7 +2916,7 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
             repair_model,
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
-        ).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        ).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 2
@@ -2980,7 +2980,7 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(PrefixSchemaModel()).propose(
+        GeneralistLMPlanner(PrefixSchemaModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
@@ -3054,7 +3054,7 @@ def test_strict_planner_uses_exact_value_fallback_when_model_asks_empty_clarific
             return output_schema.model_validate({"action_kind": "ask_user"})
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec),
             state,
             snapshot,
@@ -3091,7 +3091,7 @@ def test_strict_planner_resolves_empty_clarification_to_unique_requested_button(
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3132,7 +3132,7 @@ def test_strict_planner_resolves_empty_clarification_to_selected_option_submit()
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3185,7 +3185,7 @@ def test_strict_planner_resolves_empty_clarification_to_target_derived_text_valu
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3244,7 +3244,7 @@ def test_strict_planner_resolves_empty_clarification_to_slider_press_key() -> No
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3320,7 +3320,7 @@ def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() ->
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3395,7 +3395,7 @@ def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> Non
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3477,7 +3477,7 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3559,7 +3559,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3631,7 +3631,7 @@ def test_strict_planner_uses_page_text_fallback_when_model_asks_empty_clarificat
             return output_schema.model_validate({"action_kind": "ask_user"})
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose(
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec),
             state,
             snapshot,
@@ -3732,7 +3732,7 @@ def test_strict_planner_submits_after_verified_page_text_entry_when_model_asks()
             return output_schema.model_validate({"action_kind": "ask_user", "reason": "text mismatch"})
 
     decision = asyncio.run(
-        GeneralistLMPlanner(BlockingClarificationModel()).propose(
+        GeneralistLMPlanner(BlockingClarificationModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec),
             state,
             snapshot,
@@ -3801,7 +3801,7 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(SubmitModel()).propose(
+        GeneralistLMPlanner(SubmitModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
@@ -3868,7 +3868,7 @@ def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> 
             )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(PageTransitionModel()).propose(
+        GeneralistLMPlanner(PageTransitionModel()).propose_legacy(
             TaskEnvelope(task_spec=task_spec), state, snapshot
         )
     )
@@ -4069,7 +4069,7 @@ def test_generalist_compiles_unique_terminal_after_requested_text_is_present() -
     planner_model = ProposalModel()
 
     decision = asyncio.run(
-        _compatibility_planner(planner_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(planner_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
@@ -4101,7 +4101,7 @@ def test_generalist_opens_unique_search_when_named_source_is_not_visible() -> No
     planner_model = ProposalModel()
 
     decision = asyncio.run(
-        _compatibility_planner(planner_model).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(planner_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
@@ -4474,7 +4474,7 @@ def test_generalist_rebinds_select_option_from_option_affordance_to_unique_selec
             )
 
     decision = asyncio.run(
-        _compatibility_planner(OptionTargetModel()).propose(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(OptionTargetModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None

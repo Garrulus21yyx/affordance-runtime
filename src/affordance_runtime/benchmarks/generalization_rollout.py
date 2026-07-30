@@ -397,7 +397,7 @@ class _DoneAfterDisclosurePlanner:
     ) -> Any:
         if snapshot.observation.metadata.get("expanded") is True:
             return PlannerDecision(done=True, result={"expanded": True})
-        return self.delegate.propose(envelope, state, snapshot)
+        return self.delegate.propose_legacy(envelope, state, snapshot)
 
 
 class _ProviderFailOncePlanner:

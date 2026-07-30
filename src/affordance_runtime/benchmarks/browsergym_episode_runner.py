@@ -254,7 +254,7 @@ class BrowserGymGeneralistPlanner:
         terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
         if terminal is not None:
             return terminal
-        return self._planner.propose(envelope, state, snapshot)
+        return self._planner.propose_legacy(envelope, state, snapshot)
 
 
 def _browsergym_terminal_decision(

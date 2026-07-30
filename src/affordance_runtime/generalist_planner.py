@@ -40,10 +40,17 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.planning_contracts import (
+    PlannerDecision,
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+    PlannerResponse,
+    PlannerUnsupportedResponse,
+)
 from affordance_runtime.planning_request import (
     PlannerAdmissionSummary,
     PlannerAdmissionView,
+    PlanningRequest,
     TargetAdmissionStatus,
 )
 from affordance_runtime.planning_request_builder import (
@@ -273,7 +280,7 @@ class GeneralistLMPlanner:
             raise ValueError("strict-generalist profile cannot load compatibility semantic compilers")
         self.config = self.config.model_copy(update={"prompt_version": planner_prompt_version(self.planner_profile)})
 
-    async def propose(
+    async def propose_legacy(
         self,
         envelope: TaskEnvelope,
         state: StateKernel,
@@ -282,6 +289,15 @@ class GeneralistLMPlanner:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
         request = self._planning_request_builder().build(envelope, state, snapshot)
+        return await self._propose_decision(request)
+
+    async def propose(
+        self,
+        request: PlanningRequest,
+    ) -> PlannerResponse:
+        return _planner_response(await self._propose_decision(request))
+
+    async def _propose_decision(self, request: PlanningRequest) -> PlannerDecision:
         context = self._context_builder().build(request)
         terminal_readiness: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
@@ -738,6 +754,21 @@ def _planner_decision(
         reason=proposal.reason,
         planner_context=planner_context,
         model_call=model_call,
+    )
+
+
+def _planner_response(decision: PlannerDecision) -> PlannerResponse:
+    if decision.proposal is not None:
+        return PlannerProposalResponse(
+            proposal=decision.proposal,
+            proposal_provenance=decision.proposal_provenance,
+            reason=decision.reason,
+        )
+    if decision.done:
+        return PlannerDoneResponse(result=decision.result, reason=decision.reason)
+    return PlannerUnsupportedResponse(
+        reason_code="legacy_decision_without_proposal",
+        message=decision.reason,
     )
 
 
