@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any
 
@@ -15,7 +15,7 @@ from affordance_runtime.approval_contracts import (
     ConfiguredApprovalProvider as ConfiguredApprovalProvider,
 )
 from affordance_runtime.artifact_phase import ArtifactPhase
-from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
+from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contract_binding_phase import ContractBindingPhase
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contract_failure_phase import ContractFailurePhase
@@ -53,6 +53,7 @@ from affordance_runtime.runtime_loop_phase import (
     RuntimeLoopPhase,
     RuntimeLoopTransition,
 )
+from affordance_runtime.runtime_result_phase import CoordinatorResult, RuntimeResultPhase
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_flow import TaskPlanFlow
@@ -121,18 +122,6 @@ class RuntimeFeatures:
     recovery: bool = True
 
 
-@dataclass
-class CoordinatorResult:
-    run_id: str
-    status: RuntimeStep
-    state: StateKernel
-    trace: TraceDag
-    result: dict[str, Any] = field(default_factory=dict)
-    error_code: RuntimeErrorCode | None = None
-    verification: VerificationReport | None = None
-    artifacts: list[ArtifactRef] = field(default_factory=list)
-
-
 def _task_skill_progress(
     runtime: object | None,
     state: StateKernel,
@@ -179,6 +168,7 @@ class RunCoordinator:
     recovery_phase: RecoveryPhase = field(init=False, repr=False)
     recovery_failure_phase: RecoveryFailurePhase = field(init=False, repr=False)
     artifact_phase: ArtifactPhase = field(init=False, repr=False)
+    result_phase: RuntimeResultPhase = field(init=False, repr=False)
     targeted_perception_fulfiller: Any = field(init=False, repr=False)
     source_arbitration_tracer: Any = field(init=False, repr=False)
 
@@ -203,6 +193,7 @@ class RunCoordinator:
             loaded_profile_artifact_ids=self.loaded_profile_artifact_ids,
         )
         self.artifact_phase = ArtifactPhase(self.artifacts)
+        self.result_phase = RuntimeResultPhase(self.artifacts)
         self.source_arbitration_tracer = PERCEPTION_PHASE.trace_source_arbitration
         self.targeted_perception_fulfiller = partial(
             PERCEPTION_PHASE.fulfill_targeted_perception,
@@ -249,7 +240,7 @@ class RunCoordinator:
             if budget_result is not None:
                 _apply_runtime_loop_transition(state, budget_result.transition)
                 parent = _commit_runtime_loop_event(trace, budget_result.event, parent)
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -284,7 +275,7 @@ class RunCoordinator:
             if perception.continue_observing:
                 continue
             if perception.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -328,7 +319,7 @@ class RunCoordinator:
                     if planning_failure.continue_observing:
                         continue
                     assert planning_failure.terminal is not None
-                    return self._finish(
+                    return self.result_phase.finish(
                         envelope,
                         state,
                         trace,
@@ -373,7 +364,7 @@ class RunCoordinator:
                     if planning_failure.continue_observing:
                         continue
                     assert planning_failure.terminal is not None
-                    return self._finish(
+                    return self.result_phase.finish(
                         envelope,
                         state,
                         trace,
@@ -403,7 +394,7 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -434,7 +425,7 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -463,7 +454,7 @@ class RunCoordinator:
             parent = planning_decision.parent
             decision = planning_decision.decision
             if planning_decision.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -493,7 +484,7 @@ class RunCoordinator:
                 if planning_failure.continue_observing:
                     continue
                 assert planning_failure.terminal is not None
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -521,7 +512,7 @@ class RunCoordinator:
             if contract_binding.continue_observing:
                 continue
             if contract_binding.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -544,7 +535,7 @@ class RunCoordinator:
                 if contract_failure.continue_observing:
                     continue
                 assert contract_failure.terminal is not None
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -593,7 +584,7 @@ class RunCoordinator:
             if preflight_result.continue_observing:
                 continue
             if preflight_result.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -633,7 +624,7 @@ class RunCoordinator:
             if execution_result.continue_observing:
                 continue
             if execution_result.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -685,7 +676,7 @@ class RunCoordinator:
             )
             parent = task_skill_progress_result.parent
             if task_skill_progress_result.terminal is not None:
-                return self._finish(
+                return self.result_phase.finish(
                     envelope,
                     state,
                     trace,
@@ -711,7 +702,7 @@ class RunCoordinator:
                 )
                 parent = verified_progress.parent
                 if verified_progress.terminal is not None:
-                    return self._finish(
+                    return self.result_phase.finish(
                         envelope,
                         state,
                         trace,
@@ -744,7 +735,7 @@ class RunCoordinator:
             if verification_failure.continue_observing:
                 continue
             assert verification_failure.terminal is not None
-            return self._finish(
+            return self.result_phase.finish(
                 envelope,
                 state,
                 trace,
@@ -766,44 +757,6 @@ class RunCoordinator:
         if state.effectful_action_count >= self.budget.max_effectful_actions:
             return RuntimeErrorCode.UNSAFE_ACTION
         return None
-
-    def _finish(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        trace: TraceDag,
-        status: RuntimeStep,
-        parent: TraceNode | None,
-        error_code: RuntimeErrorCode | None,
-        verification: VerificationReport | None,
-    ) -> CoordinatorResult:
-        del parent
-        artifact_refs: list[ArtifactRef] = []
-        if self.artifacts is not None:
-            self.artifacts.finalize(
-                envelope.task_id,
-                trace,
-                {
-                    "run_id": envelope.task_id,
-                    "goal": envelope.goal,
-                    "status": status.value,
-                    "error_code": error_code.value if error_code else None,
-                    "result": state.final_result,
-                    "state": asdict(state),
-                },
-            )
-            artifact_refs = self.artifacts.references(envelope.task_id)
-        return CoordinatorResult(
-            run_id=envelope.task_id,
-            status=status,
-            state=state,
-            trace=trace,
-            result=state.final_result,
-            error_code=error_code,
-            verification=verification,
-            artifacts=artifact_refs,
-        )
-
 
 def _pending_recovery_kind(state: StateKernel) -> RecoveryKind | None:
     if state.current_recovery_outcome is not None:
