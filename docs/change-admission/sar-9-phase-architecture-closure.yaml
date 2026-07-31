@@ -502,6 +502,56 @@ behavioral_closure_evidence_2026_07_31:
         clean_identity_digest: sha256:e58a1cc9d6251adcfbb40559d550e780d60f569f96472f42c91073e5a414ae5a
         clean_report_sha256: 47814faaf443d807747ccc2994f773d4f493801a7b0087060cac0d717933f469
       fresh_30x2: not_rerun_until_remaining_M8_residuals_close
+    collection_value_identity_unit:
+      revision: 679f077ae6b7fc941f3a515acce80580aad5827b
+      status: closed_generic_unit_not_m8_or_promotion_closure
+      root_failure:
+        boundary: intent_to_action_choice
+        symptom: dropdown_option_value_was_used_as_element_identity
+        first_missing_product: exact_collection_value_constraint
+      canonical_replacement:
+        - choose_and_select_are_bounded_literal_selection_verbs
+        - collection_identity_and_selected_literal_values_are_separate_fields
+        - source_separated_later_effects_are_preserved
+        - same_source_same_collection_selection_alias_is_deduplicated
+      fail_closed_guards:
+        - ambiguous_collection_target_is_not_defaulted
+        - multiple_selected_values_remain_typed_members
+        - later_non_selection_effect_is_not_filtered_by_control_name
+        - no_task_id_seed_or_benchmark_branch_in_core
+      failed_gate_and_treatment:
+        full_pytest_first_attempt: 1458_passed_1_failed
+        failure: duplicate_same_source_collection_selection_obligation
+        treatment: semantic_same_source_selection_alias_deduplication
+        final_full_pytest: 1459_passed
+      targeted_form_sequence_3_clean:
+        result: 2/2
+        runtime_verification: 2/2
+        external_evaluator: 2/2
+        typed_actions_per_seed:
+          - select_option
+          - click
+        model_stage: action_choice_build
+        grounded_target_count: 1_each_turn
+        action_choice_count: 1_each_turn
+        selection_source: runtime_unique_choice
+        identity_digest: sha256:b194efa4e8eb848fcdd438a12cc6b41bd000e0482aeeba34cc5c9f03a707c520
+        report_sha256: f3680e3abc7d29b4bbaf069117a66cf491f4a170b3a47d6b66301a4f271b5211
+      verification:
+        full_pytest: 1459_passed
+        ruff: passed
+        core_mypy: passed_153_source_files
+        build: passed
+        diff_check: passed
+        clean_pr_6x2: 12/12
+        clean_runtime_verification: 12/12
+        clean_external_evaluator: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:895f5f82a65bdda2857373876ff0ebd38c9b5d03be9ee23edb6b7fa24cad895a
+        clean_report_sha256: 029a12b3503d31354ab6ba70f3cdc172dcb002ad8c84f6fb0f86362c790ba2b0
+      fresh_30x2: not_rerun_until_remaining_M8_residuals_close
     ordinal_value_binding_unit:
       revision: d6096ec
       generic_invariants:
