@@ -1166,7 +1166,15 @@ def _browsergym_planning_stats(nodes: Sequence[Any]) -> dict[str, Any]:
             "action_choice_count": None,
             "selection_source": "unknown",
         }
-    payload = turns[-1].payload
+    diagnostic_turn = next(
+        (
+            turn
+            for turn in reversed(turns)
+            if str(turn.payload.get("model_stage") or "unknown") != "unknown"
+        ),
+        turns[-1],
+    )
+    payload = diagnostic_turn.payload
     return {
         "planning_turn_count": len(turns),
         "model_stage": str(payload.get("model_stage") or "unknown"),

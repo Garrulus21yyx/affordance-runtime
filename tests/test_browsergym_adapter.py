@@ -2320,6 +2320,41 @@ def test_browsergym_planning_stats_project_canonical_planning_turn() -> None:
     }
 
 
+def test_browsergym_planning_stats_keep_latest_diagnostic_turn_before_terminal_done() -> None:
+    stats = _browsergym_planning_stats(
+        [
+            SimpleNamespace(
+                kind="PlanningTurnEvaluated",
+                payload={
+                    "model_stage": "action_choice_build",
+                    "grounded_target_count": 1,
+                    "action_choice_count": 1,
+                    "selection_source": "runtime_unique_choice",
+                    "response_status": "proposal",
+                },
+            ),
+            SimpleNamespace(
+                kind="PlanningTurnEvaluated",
+                payload={
+                    "model_stage": "unknown",
+                    "grounded_target_count": 0,
+                    "action_choice_count": 0,
+                    "selection_source": "none",
+                    "response_status": "done",
+                },
+            ),
+        ]
+    )
+
+    assert stats == {
+        "planning_turn_count": 2,
+        "model_stage": "action_choice_build",
+        "grounded_target_count": 1,
+        "action_choice_count": 1,
+        "selection_source": "runtime_unique_choice",
+    }
+
+
 def test_browsergym_planning_stats_do_not_fabricate_zero_counts_without_event() -> None:
     stats = _browsergym_planning_stats([])
 
