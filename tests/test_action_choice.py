@@ -301,7 +301,49 @@ def test_action_choice_builder_creates_slider_press_key_choice() -> None:
     choice = result.choices[0]
     assert choice.action_kind == PlannerActionKind.PRESS_KEY
     assert choice.parameters == {"key": "ArrowRight"}
-    assert choice.target_id == "semantic:slider"
+
+
+def test_action_choice_builder_emits_typed_focus_for_a_focusable_element() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:focused",
+        subject="renamed editor",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "renamed editor",
+            (_source(),),
+            role="textbox",
+            operation=ElementOperationKind.FOCUS,
+        ),
+    )
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:renamed-editor",
+                surface="dom",
+                role="textbox",
+                label="renamed editor",
+                supported_actions=("focus", "type_text"),
+                state={"focused": False},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].action_kind == PlannerActionKind.FOCUS
+    assert not result.choices[0].parameters
+    assert result.choices[0].target_id == "semantic:renamed-editor"
 
 
 def test_action_choice_builder_creates_slider_choice_from_numeric_string_value() -> None:

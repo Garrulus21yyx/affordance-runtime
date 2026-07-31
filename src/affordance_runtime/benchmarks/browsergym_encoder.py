@@ -200,6 +200,11 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
                     else "click",
                     {"bid": bid},
                 )
+        elif proposal.action_kind == PlannerActionKind.FOCUS:
+            bid = str(affordance.locator.get("backend_handle") or "")
+            if not bid:
+                raise ValueError("Generalist BrowserGym binding requires an affordance bid")
+            action = BrowserGymAction("focus", {"bid": bid})
         elif proposal.action_kind == PlannerActionKind.POINT_ACTIVATE:
             if contract.route_plan is None:
                 raise ValueError("BrowserGym point target requires a unified grounding candidate")
@@ -380,6 +385,19 @@ def browsergym_action_verifiers(
                     "attribute": "value",
                     "value": str(action.arguments.get("value", action.arguments.get("text", ""))),
                 },
+            )
+        )
+    elif action.name == "focus":
+        previous = snapshot.observation.metadata.get("control_states", {})
+        previous_state = previous.get(action_bid, {}) if isinstance(previous, Mapping) else {}
+        previous_focused = (
+            previous_state.get("focused") if isinstance(previous_state, Mapping) else None
+        )
+        verifier_plan.append(
+            VerifierSpec(
+                "state_delta_or_terminal",
+                action_bid,
+                {"field": "focused", "changed_from": previous_focused},
             )
         )
     elif action.name == "select_option":
@@ -816,6 +834,12 @@ def _browsergym_postcondition_proves_outcome(
         )
     if action.name == "press" and verifier.kind == "control_state":
         return relation == SubgoalOutcomeRelation.HAS_CHANGED and "changed_from" in expected
+    if action.name == "focus" and verifier.kind == "state_delta_or_terminal":
+        return (
+            relation == SubgoalOutcomeRelation.IS_COMPLETED
+            and expected.get("field") == "focused"
+            and "changed_from" in expected
+        )
     if action.name in {"click", "click_no_navigation"} and verifier.kind == "control_state":
         return (
             relation == SubgoalOutcomeRelation.IS_EXPANDED

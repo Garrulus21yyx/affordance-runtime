@@ -101,6 +101,11 @@ class TaskInteractionRelationSpec(StrictModel):
         return self
 
 
+class TaskInteractionOperationKind(StrEnum):
+    AUTO = "auto"
+    FOCUS = "focus"
+
+
 class RequestedEffect(StrictModel):
     operation_class: OperationClass
     target: str = Field(min_length=1)
@@ -108,6 +113,7 @@ class RequestedEffect(StrictModel):
     description: str = ""
     source_ref: str = Field(min_length=1)
     interaction_relation: TaskInteractionRelationSpec | None = None
+    interaction_operation: TaskInteractionOperationKind = TaskInteractionOperationKind.AUTO
 
 
 class IntentAmbiguity(StrictModel):
@@ -220,6 +226,7 @@ class TaskObligationSpec(StrictModel):
     interaction_values: tuple[str, ...] = ()
     interaction_relation: TaskInteractionRelationSpec | None = None
     interaction_capability: str = Field(default="", max_length=120)
+    interaction_operation: TaskInteractionOperationKind = TaskInteractionOperationKind.AUTO
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -577,7 +584,7 @@ class IntentDraftValidator:
 
         operation = max(
             (effect.operation_class for effect in draft.requested_effects),
-            key=_operation_rank,
+            key=operation_class_rank,
         )
         task_spec = TaskSpec(
             task_id=task_id or request.request_id,
@@ -695,7 +702,7 @@ def _validate_task_obligation_graph(
         raise ValueError("blocking task obligation must lead to a terminal obligation")
 
 
-def _operation_rank(operation: OperationClass) -> int:
+def operation_class_rank(operation: OperationClass) -> int:
     return {
         OperationClass.READ_ONLY: 0,
         OperationClass.NAVIGATION: 1,

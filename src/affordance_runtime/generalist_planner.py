@@ -1343,6 +1343,7 @@ def _unique_compatible_target_id(action_kind: PlannerActionKind, affordances: tu
 
     compatible_actions = {
         PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
+        PlannerActionKind.FOCUS: {"focus", "fill", "type"},
         PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
         PlannerActionKind.TYPE_TEXT: {"fill", "type", "type_text"},
         PlannerActionKind.SELECT_OPTION: {"select", "select_option"},

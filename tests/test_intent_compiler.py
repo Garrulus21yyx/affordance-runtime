@@ -314,6 +314,38 @@ def test_intent_draft_repair_attempt_claim_id_map_is_immutable_from_source_mappi
         attempt.proposal_claim_ids["provider-read"] = "claim:polluted"
 
 
+def test_intent_compiler_preserves_explicit_focus_as_runtime_owned_operation() -> None:
+    raw_text = "Focus the renamed editor text field."
+    model = FixedModel(
+        IntentDraft(
+            objective=raw_text,
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="renamed editor",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("The renamed editor is focused.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="focus-request", raw_text=raw_text)
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    effect = result.task_spec.requested_effects[0]
+    obligation = result.task_spec.obligations[0]
+    assert effect.operation_class == OperationClass.NAVIGATION
+    assert effect.interaction_operation.value == "focus"
+    assert obligation.interaction_operation.value == "focus"
+    assert obligation.relation == TaskObligationRelation.IS_COMPLETED
+
+
 def _terminal_authority(
     source_ref: str,
     subject: str,

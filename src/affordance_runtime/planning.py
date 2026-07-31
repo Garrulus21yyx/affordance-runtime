@@ -50,6 +50,7 @@ from affordance_runtime.visual_contracts import VisualContractBinder
 
 class PlannerActionKind(StrEnum):
     ACTIVATE = "activate"
+    FOCUS = "focus"
     POINT_ACTIVATE = "point_activate"
     TYPE_TEXT = "type_text"
     SELECT_OPTION = "select_option"
@@ -88,6 +89,7 @@ class PlannerProposalProvenance(BaseModel):
 
 _TARGET_ACTIONS = {
     PlannerActionKind.ACTIVATE,
+    PlannerActionKind.FOCUS,
     PlannerActionKind.POINT_ACTIVATE,
     PlannerActionKind.TYPE_TEXT,
     PlannerActionKind.SELECT_OPTION,
@@ -112,6 +114,7 @@ _FORBIDDEN_PARAMETER_KEYS = {
 }
 _ACTION_PARAMETERS = {
     PlannerActionKind.ACTIVATE: set(),
+    PlannerActionKind.FOCUS: set(),
     PlannerActionKind.POINT_ACTIVATE: set(),
     PlannerActionKind.TYPE_TEXT: {"text"},
     PlannerActionKind.SELECT_OPTION: {"option"},
@@ -1208,6 +1211,7 @@ def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:
         affordance_action
         in {
             PlannerActionKind.ACTIVATE: {"activate", "click", "download", "invoke", "write_property"},
+            PlannerActionKind.FOCUS: {"focus", "fill", "type"},
             PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
             PlannerActionKind.TYPE_TEXT: {"fill", "type"},
             PlannerActionKind.SELECT_OPTION: {"select", "select_option"},

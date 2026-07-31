@@ -693,6 +693,9 @@ def _element_operation_choice(
     if intent.operation == ElementOperationKind.AUTO:
         action_kind = PlannerActionKind.ACTIVATE
         parameters: dict[str, object] = {}
+    elif intent.operation == ElementOperationKind.FOCUS:
+        action_kind = PlannerActionKind.FOCUS
+        parameters = {}
     else:
         action_kind = PlannerActionKind.PRESS_KEY
         parameters = {
@@ -913,6 +916,7 @@ def _validate_scope_identity(
 def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool:
     compatible = {
         PlannerActionKind.ACTIVATE: {"activate", "click"},
+        PlannerActionKind.FOCUS: {"focus", "fill", "type", "type_text"},
         PlannerActionKind.TYPE_TEXT: {"fill", "type", "type_text"},
         PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
         PlannerActionKind.PRESS_KEY: {"press", "press_key"},

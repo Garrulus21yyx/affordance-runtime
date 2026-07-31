@@ -258,6 +258,7 @@ def _step_from_obligation(
                 if obligation.interaction_relation is not None
                 else None
             ),
+            interaction_operation=obligation.interaction_operation.value,
         ),
         depends_on=obligation.depends_on,
         completion_criteria=(

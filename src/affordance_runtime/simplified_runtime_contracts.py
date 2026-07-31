@@ -60,6 +60,7 @@ class ValueExprKind(StrEnum):
 
 class ElementOperationKind(StrEnum):
     AUTO = "auto"
+    FOCUS = "focus"
     SCROLL_FORWARD = "scroll_forward"
     SCROLL_BACKWARD = "scroll_backward"
 
@@ -192,6 +193,7 @@ def interaction_for_state(
     value_source: tuple[str, tuple[SourceReference, ...]] | None = None,
     interaction_relation: tuple[str, str, int | None, int | None] | None = None,
     interaction_capability: str = "",
+    interaction_operation: str = "auto",
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
@@ -209,6 +211,7 @@ def interaction_for_state(
         ordinal=ordinal,
         match_by_role=is_collection or role_only,
         relative_size=_relative_size_selector(subject),
+        operation=ElementOperationKind(interaction_operation),
     )
     if interaction_relation is not None and not is_collection:
         interaction_kind, destination_subject, destination_offset, destination_ordinal = interaction_relation
@@ -294,6 +297,9 @@ def _element_identity(
     if structured is not None:
         label, role, role_only = structured
         return label, role, role_only, None
+    qualified_role = _qualified_role_identity(subject)
+    if qualified_role is not None:
+        return qualified_role, qualified_role, True, None
     role_ordinal = _compound_role_ordinal_identity(subject)
     if role_ordinal is not None:
         return role_ordinal
@@ -392,6 +398,16 @@ def _structured_element_identity(subject: str) -> tuple[str, str, bool] | None:
     if not label or ":" in label:
         return None
     return label, role, False
+
+
+def _qualified_role_identity(subject: str) -> str | None:
+    """Decode a bounded semantic namespace followed by an element role."""
+
+    match = re.fullmatch(r"[a-z][a-z0-9_.-]*:(?P<role>[a-z_]+)", subject.casefold())
+    if match is None:
+        return None
+    role = match.group("role")
+    return role if role in _ELEMENT_ROLES else None
 
 
 @dataclass(frozen=True)

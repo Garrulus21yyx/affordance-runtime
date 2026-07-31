@@ -14,6 +14,7 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     SourcedTaskClaim,
     TaskClaimKind,
+    TaskInteractionOperationKind,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
@@ -126,6 +127,28 @@ def test_flat_navigation_effect_with_click_success_criterion_is_completed_action
     obligation = graph.obligations[0]
     assert obligation.kind == TaskObligationKind.EFFECT
     assert obligation.relation == TaskObligationRelation.IS_COMPLETED
+
+
+def test_typed_focus_operation_is_a_post_action_effect_without_lexical_target_match() -> None:
+    ledger = _ledger_for("Focus into the renamed editor.")
+
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="application:textbox",
+                source_ref=ledger.raw_text_unit_id,
+                interaction_operation=TaskInteractionOperationKind.FOCUS,
+            ),
+        ),
+        success_criteria=("The renamed editor is focused.",),
+    )
+
+    obligation = graph.obligations[0]
+    assert obligation.kind == TaskObligationKind.EFFECT
+    assert obligation.relation == TaskObligationRelation.IS_COMPLETED
+    assert obligation.interaction_operation == TaskInteractionOperationKind.FOCUS
 
 
 @pytest.mark.parametrize(

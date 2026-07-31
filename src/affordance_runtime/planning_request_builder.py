@@ -233,7 +233,7 @@ def _active_step_admission(
                 target_id=item.id,
                 role=item.role,
                 label=item.label,
-                supported_actions=(item.action,),
+                supported_actions=_affordance_supported_actions(item),
                 state=item.state,
             )
             for item in inventory
@@ -317,7 +317,7 @@ def _affordance_view(item: Affordance) -> PlannerAffordanceView:
         surface=item.surface.value,
         role=item.role,
         label=_bounded_text(item.label, 240),
-        supported_actions=(item.action,),
+        supported_actions=_affordance_supported_actions(item),
         state=_compact_affordance_state(item.state),
         confidence=item.confidence,
         conflict_codes=(),
@@ -346,7 +346,7 @@ def _planner_affordance_inventory(snapshot: BrowserSnapshot) -> list[Affordance]
         if representative is None or representative.state.get("visible") is False:
             continue
         actions = sorted(target.supported_actions)
-        if len(actions) != 1:
+        if not actions:
             continue
         inventory.append(
             replace(
@@ -361,10 +361,20 @@ def _planner_affordance_inventory(snapshot: BrowserSnapshot) -> list[Affordance]
                 state={
                     **representative.state,
                     "grounding_source_count": len(target.grounding_candidates),
+                    "semantic_supported_actions": tuple(actions),
                 },
             )
         )
     return inventory
+
+
+def _affordance_supported_actions(item: Affordance) -> tuple[str, ...]:
+    semantic_actions = item.state.get("semantic_supported_actions")
+    if isinstance(semantic_actions, (tuple, list)) and all(
+        isinstance(action, str) and action for action in semantic_actions
+    ):
+        return tuple(dict.fromkeys(semantic_actions))
+    return (item.action,)
 
 
 def _bounded_affordances(
@@ -473,6 +483,8 @@ def _permitted_action_kinds(
         for item in _planner_affordance_inventory(snapshot)
         if item.action in action_map
     )
+    if any(item.action in {"fill", "type", "type_text"} for item in _planner_affordance_inventory(snapshot)):
+        permitted.add("focus")
     return tuple(sorted(permitted))
 
 

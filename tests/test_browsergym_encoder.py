@@ -159,6 +159,25 @@ def test_press_verifier_binds_the_pre_action_scroll_state() -> None:
     assert verifiers[-1].expected == {"field": "scroll_top", "changed_from": 25}
 
 
+def test_focus_verifier_requires_the_bound_control_to_be_focused() -> None:
+    snapshot = BrowserSnapshot(
+        Observation(
+            "rev-1",
+            metadata={"control_states": {"renamed-editor": {"focused": False}}},
+        ),
+        DomAdapter().transduce("<main></main>", environment_revision="rev-1"),
+    )
+
+    verifiers = browsergym_action_verifiers(
+        BrowserGymAction("focus", {"bid": "renamed-editor"}),
+        snapshot,
+    )
+
+    assert verifiers[-1].kind == "state_delta_or_terminal"
+    assert verifiers[-1].target == "renamed-editor"
+    assert verifiers[-1].expected == {"field": "focused", "changed_from": False}
+
+
 @pytest.mark.parametrize("options", ("Norfolk Island", ["Alpha", "Beta"]))
 def test_select_verifier_uses_the_observed_selected_option_set(options: object) -> None:
     snapshot = BrowserSnapshot(Observation("rev-1"), DomAdapter().transduce("<main></main>", environment_revision="rev-1"))

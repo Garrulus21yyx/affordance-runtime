@@ -513,4 +513,9 @@ def _permitted_action_kinds(
         for item in _planner_affordance_inventory(snapshot)
         if item.action in action_map
     )
+    if any(
+        item.action in {"fill", "type", "type_text"}
+        for item in _planner_affordance_inventory(snapshot)
+    ):
+        permitted.add("focus")
     return tuple(sorted(permitted))

@@ -35,6 +35,7 @@ from affordance_runtime.task_intake import (
     TaskObligationValueSource,
     TaskSpec,
     TaskStructure,
+    operation_class_rank,
 )
 from affordance_runtime.task_source_references import obligation_source_refs, obligation_value_source, task_source_refs
 from affordance_runtime.verification import VerificationReport
@@ -55,7 +56,7 @@ _ACTION_INSTRUCTION_SUBGOAL = re.compile(
     re.IGNORECASE,
 )
 
-TASK_PLAN_SCHEMA_VERSION = "1.2"
+TASK_PLAN_SCHEMA_VERSION = "1.3"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
 TASK_PLAN_CARDINALITY_POLICY_VERSION = "flat-1-multistage-initial-2-replacement-1-to-8-v2"
 TASK_PLAN_CONTEXT_POLICY_VERSION = "bounded-current-state-v1"
@@ -69,6 +70,7 @@ class TaskPlanSource(StrEnum):
 
 class TaskPlanActionFamily(StrEnum):
     ACTIVATE = "activate"
+    FOCUS = "focus"
     POINT_ACTIVATE = "point_activate"
     TYPE_TEXT = "type_text"
     SELECT_OPTION = "select_option"
@@ -102,32 +104,24 @@ class SubgoalSpec(StrictModel):
 SubgoalOutcomeRelation = CriterionRelation
 
 
+_ACTIVATION_OUTCOME_RELATIONS = frozenset(
+    {
+        SubgoalOutcomeRelation.EQUALS,
+        SubgoalOutcomeRelation.CONTAINS,
+        SubgoalOutcomeRelation.MATCHES,
+        SubgoalOutcomeRelation.IS_VISIBLE,
+        SubgoalOutcomeRelation.IS_ABSENT,
+        SubgoalOutcomeRelation.IS_CHECKED,
+        SubgoalOutcomeRelation.IS_EXPANDED,
+        SubgoalOutcomeRelation.IS_COMPLETED,
+        SubgoalOutcomeRelation.HAS_CHANGED,
+    }
+)
 _ACTION_OUTCOME_RELATIONS: dict[TaskPlanActionFamily, frozenset[SubgoalOutcomeRelation]] = {
-    TaskPlanActionFamily.ACTIVATE: frozenset(
-        {
-            SubgoalOutcomeRelation.EQUALS,
-            SubgoalOutcomeRelation.CONTAINS,
-            SubgoalOutcomeRelation.MATCHES,
-            SubgoalOutcomeRelation.IS_VISIBLE,
-            SubgoalOutcomeRelation.IS_ABSENT,
-            SubgoalOutcomeRelation.IS_CHECKED,
-            SubgoalOutcomeRelation.IS_EXPANDED,
-            SubgoalOutcomeRelation.IS_COMPLETED,
-            SubgoalOutcomeRelation.HAS_CHANGED,
-        }
-    ),
-    TaskPlanActionFamily.POINT_ACTIVATE: frozenset(
-        {
-            SubgoalOutcomeRelation.EQUALS,
-            SubgoalOutcomeRelation.CONTAINS,
-            SubgoalOutcomeRelation.MATCHES,
-            SubgoalOutcomeRelation.IS_VISIBLE,
-            SubgoalOutcomeRelation.IS_ABSENT,
-            SubgoalOutcomeRelation.IS_CHECKED,
-            SubgoalOutcomeRelation.IS_EXPANDED,
-            SubgoalOutcomeRelation.IS_COMPLETED,
-            SubgoalOutcomeRelation.HAS_CHANGED,
-        }
+    TaskPlanActionFamily.ACTIVATE: _ACTIVATION_OUTCOME_RELATIONS,
+    TaskPlanActionFamily.POINT_ACTIVATE: _ACTIVATION_OUTCOME_RELATIONS,
+    TaskPlanActionFamily.FOCUS: frozenset(
+        {SubgoalOutcomeRelation.IS_COMPLETED, SubgoalOutcomeRelation.HAS_CHANGED}
     ),
     TaskPlanActionFamily.TYPE_TEXT: frozenset(
         {
@@ -308,6 +302,10 @@ ActivationSubgoalOutcome: TypeAlias = Annotated[
     | ChangedCandidateOutcome,
     Field(discriminator="relation"),
 ]
+FocusSubgoalOutcome: TypeAlias = Annotated[
+    CompletedCandidateOutcome | ChangedCandidateOutcome,
+    Field(discriminator="relation"),
+]
 TextEntrySubgoalOutcome: TypeAlias = Annotated[
     EqualsCandidateOutcome
     | ContainsCandidateOutcome
@@ -385,6 +383,11 @@ class ActivationTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
     ]
 
 
+class FocusTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
+    outcome: FocusSubgoalOutcome
+    action_family: Literal[TaskPlanActionFamily.FOCUS]
+
+
 class TextEntryTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
     outcome: TextEntrySubgoalOutcome
     action_family: Literal[TaskPlanActionFamily.TYPE_TEXT]
@@ -422,6 +425,7 @@ class WaitTaskPlanSubgoalCandidate(_TaskPlanSubgoalCandidateBase):
 
 TaskPlanSubgoalCandidate: TypeAlias = Annotated[
     ActivationTaskPlanSubgoalCandidate
+    | FocusTaskPlanSubgoalCandidate
     | TextEntryTaskPlanSubgoalCandidate
     | SelectionTaskPlanSubgoalCandidate
     | PressKeyTaskPlanSubgoalCandidate
@@ -871,7 +875,7 @@ class TaskPlanValidator:
                 fatal.append(TaskPlanValidationIssue(code="action_budget_out_of_bounds", detail=subgoal.subgoal_id))
             if subgoal.max_recoveries > self.max_recoveries_per_subgoal:
                 fatal.append(TaskPlanValidationIssue(code="recovery_budget_out_of_bounds", detail=subgoal.subgoal_id))
-            if _operation_rank(subgoal.operation_class) > _operation_rank(task_spec.operation_class):
+            if operation_class_rank(subgoal.operation_class) > operation_class_rank(task_spec.operation_class):
                 fatal.append(TaskPlanValidationIssue(code="operation_class_escalation", detail=subgoal.subgoal_id))
             if _contains_executable_plan_content(
                 (
@@ -1218,6 +1222,8 @@ def _infer_obligation_action_family(
 ) -> TaskPlanActionFamily | None:
     if obligation.interaction_relation is not None:
         return TaskPlanActionFamily.DRAG
+    if obligation.interaction_operation.value == "focus":
+        return TaskPlanActionFamily.FOCUS
     value = action_family_resolution.infer_obligation_action_family_value(
         obligation_kind=obligation.kind.value,
         task_operation=task_operation.value,
@@ -1344,6 +1350,7 @@ class TaskObligationOutcomeCompiler:
             obligation_value_source(obligation, context.task_spec if context is not None else None),
             interaction_relation.runtime_tuple if interaction_relation is not None else None,
             obligation.interaction_capability,
+            obligation.interaction_operation.value,
         )
         return SubgoalSpec(
             subgoal_id=obligation.obligation_id,
@@ -1374,10 +1381,10 @@ class RuleTaskPlanner:
         return self.obligation_compiler.compile(context)
 
 
-TASK_PLANNER_PROMPT_VERSION = "task-planner-v12"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v13"
 _TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. Use is_checked only for a checkable state, is_selected only for a selectable state, and is_expanded only for an expandable state; ordinary buttons, links, and textboxes do not gain those states merely because they can be activated. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
-Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
+Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: focus completes or changes focus state; type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
 
 def task_planner_model_config() -> ModelConfig:
@@ -1630,13 +1637,3 @@ def _is_action_instruction_subgoal(objective: str) -> bool:
     """Reject UI procedures where a multi-stage plan requires an outcome."""
 
     return _ACTION_INSTRUCTION_SUBGOAL.search(objective) is not None
-
-
-def _operation_rank(operation: OperationClass) -> int:
-    return {
-        OperationClass.READ_ONLY: 0,
-        OperationClass.NAVIGATION: 1,
-        OperationClass.REVERSIBLE_WRITE: 2,
-        OperationClass.EXTERNAL_SIDE_EFFECT: 3,
-        OperationClass.IRREVERSIBLE: 4,
-    }[operation]

@@ -125,7 +125,7 @@ def candidate_from_affordance(
         page_revision=observation.page_revision,
         target_fingerprint=affordance.target_fingerprint,
         fingerprint_key=candidate_id,
-        supported_actions=frozenset({_semantic_action(affordance.action)}),
+        supported_actions=_semantic_actions(affordance.action),
         evidence_kinds=evidence_kinds,
         source_affordance_id=affordance.id,
         confidence=affordance.confidence,
@@ -420,6 +420,11 @@ def _semantic_action(action: str) -> str:
         "drop": "drag",
         "point_activate": "point_activate",
     }.get(action, action)
+
+
+def _semantic_actions(action: str) -> frozenset[str]:
+    semantic = _semantic_action(action)
+    return frozenset({semantic, "focus"}) if semantic == "type_text" else frozenset({semantic})
 
 
 def _candidate_bbox(candidate: GroundingCandidate) -> tuple[float, float, float, float] | None:

@@ -24,6 +24,7 @@ from affordance_runtime.task_intake import (
     SourcedTaskClaim,
     StrictModel,
     TaskClaimKind,
+    TaskInteractionOperationKind,
     TaskInteractionRelationSpec,
     TaskObligationKind,
     TaskObligationRelation,
@@ -44,6 +45,7 @@ class CanonicalEffectInput(StrictModel):
     value_source_effect_index: int | None = None
     interaction_relation: TaskInteractionRelationSpec | None = None
     interaction_capability: str = ""
+    interaction_operation: TaskInteractionOperationKind = TaskInteractionOperationKind.AUTO
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -114,10 +116,13 @@ class CanonicalObligationCompiler:
             interaction_values = exact_values_by_target.get(effect.target, ())
             literal_value = ", ".join(interaction_values)
             completed_action = (
-                effect.operation_class == OperationClass.NAVIGATION
-                and _success_criteria_marks_action_completed(
-                    target=semantic_target,
-                    success_criteria=success_criteria,
+                effect.interaction_operation == TaskInteractionOperationKind.FOCUS
+                or (
+                    effect.operation_class == OperationClass.NAVIGATION
+                    and _success_criteria_marks_action_completed(
+                        target=semantic_target,
+                        success_criteria=success_criteria,
+                    )
                 )
             )
             read = (
@@ -178,6 +183,7 @@ class CanonicalObligationCompiler:
                     value_source_effect_index=value_source_index,
                     interaction_relation=effect.interaction_relation,
                     interaction_capability=effect.capability,
+                    interaction_operation=effect.interaction_operation,
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -262,6 +268,7 @@ class CanonicalObligationCompiler:
                 ),
                 interaction_relation=effect.interaction_relation,
                 interaction_capability=effect.interaction_capability,
+                interaction_operation=effect.interaction_operation,
                 claim_ids=(claim_id,),
                 depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
                 value_obligation_id=(
@@ -425,6 +432,7 @@ class CanonicalObligationCompiler:
                     interaction_values=obligation.interaction_values,
                     interaction_relation=obligation.interaction_relation,
                     interaction_capability=obligation.interaction_capability,
+                    interaction_operation=obligation.interaction_operation,
                     value_obligation_id=canonical_value_obligation_id,
                     claim_ids=canonical_claim_ids,
                     depends_on=tuple(obligation_id_map[item] for item in obligation.depends_on),
@@ -490,6 +498,8 @@ def _success_criteria_marks_action_completed(
         "clicking",
         "complete",
         "completed",
+        "focus",
+        "focused",
         "press",
         "pressed",
         "select",

@@ -686,7 +686,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
         "interaction",
         "operation_class",
     }
-    assert task_planner_model_config().prompt_version == "task-planner-v12"
+    assert task_planner_model_config().prompt_version == "task-planner-v13"
 
 
 def test_llm_facing_schema_rejects_invalid_action_outcome_pair_before_binding() -> None:

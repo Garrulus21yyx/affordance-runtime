@@ -36,6 +36,7 @@ from affordance_runtime.task_intake import (
     SemanticValueConstraint,
     SemanticValueRelation,
     StrictModel,
+    TaskInteractionOperationKind,
     TaskInteractionRelationKind,
     TaskInteractionRelationSpec,
     TaskObligationKind,
@@ -112,6 +113,7 @@ class LLMTaskObligationSpec(StrictModel):
     interaction_values: tuple[str, ...] = ()
     interaction_relation: TaskInteractionRelationSpec | None = None
     interaction_capability: Literal[""] = ""
+    interaction_operation: Literal["auto"] = "auto"
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -746,6 +748,7 @@ def _canonicalize_requested_effects_draft(
     """
 
     draft = _normalize_explicit_action_draft(draft, request)
+    draft = _normalize_explicit_focus_draft(draft, request)
     draft = _normalize_explicit_relation_draft(draft, request)
     draft = _normalize_explicit_spatial_point_draft(draft, request)
     draft = _normalize_value_entry_draft(draft, request)
@@ -772,7 +775,9 @@ def _canonicalize_requested_effects_draft(
     )
     multi_effect_sequence = len(draft.requested_effects) > 1
     runtime_owned_effect_semantics = any(
-        effect.capability or effect.interaction_relation is not None
+        effect.capability
+        or effect.interaction_relation is not None
+        or effect.interaction_operation != TaskInteractionOperationKind.AUTO
         for effect in draft.requested_effects
     )
     if (
@@ -1055,6 +1060,45 @@ def _normalize_explicit_action_draft(
             )
         }
     )
+
+
+def _normalize_explicit_focus_draft(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Bind an explicit focus imperative without granting provider action authority."""
+
+    reset_effects = tuple(
+        effect.model_copy(
+            update={"interaction_operation": TaskInteractionOperationKind.AUTO}
+        )
+        for effect in draft.requested_effects
+    )
+    draft = draft.model_copy(update={"requested_effects": reset_effects})
+    if not re.search(r"\bfocus(?:ing)?\b", request.raw_text, flags=re.IGNORECASE):
+        return draft
+    candidates = tuple(
+        index
+        for index, effect in enumerate(draft.requested_effects)
+        if _effect_target_role(effect.target) in {"textbox", "searchbox"}
+    )
+    if len(draft.requested_effects) == 1 and not candidates:
+        candidates = (0,)
+    if len(candidates) != 1:
+        return draft
+    selected = candidates[0]
+    effects = tuple(
+        effect.model_copy(
+            update={
+                "operation_class": OperationClass.NAVIGATION,
+                "interaction_operation": TaskInteractionOperationKind.FOCUS,
+            }
+        )
+        if index == selected
+        else effect
+        for index, effect in enumerate(draft.requested_effects)
+    )
+    return draft.model_copy(update={"requested_effects": effects})
 
 
 def _normalize_value_entry_draft(

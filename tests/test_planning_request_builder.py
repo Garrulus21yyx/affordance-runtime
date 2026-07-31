@@ -178,6 +178,47 @@ def test_builder_preserves_bounded_semantic_state_before_incidental_keys() -> No
     assert projected_state["enabled"] is True
 
 
+def test_builder_preserves_multiple_semantic_actions_on_one_unified_target() -> None:
+    from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+
+    envelope, state, snapshot = _fixture()
+    source = snapshot.affordance_model.affordances[0]
+    semantic_target_id = "semantic:renamed-editor"
+    unified = UnifiedAffordance(
+        semantic_target_id=semantic_target_id,
+        role="textbox",
+        label="renamed editor",
+        supported_actions=frozenset({"focus", "type_text"}),
+        grounding_candidates=(
+            GroundingCandidate(
+                candidate_id="candidate:dom:renamed-editor",
+                semantic_target_id=semantic_target_id,
+                source=GroundingSource.DOM,
+                payload=DomGroundingPayload(backend_handle="renamed-editor"),
+                compatible_executor="browsergym",
+                observation_epoch_id=snapshot.observation.snapshot_id,
+                environment_revision=snapshot.observation.environment_revision,
+                page_revision=snapshot.observation.page_revision,
+                target_fingerprint=source.target_fingerprint,
+                supported_actions=frozenset({"focus", "type_text"}),
+                evidence_kinds=frozenset({GroundingEvidenceKind.STRUCTURAL}),
+                source_affordance_id=source.id,
+            ),
+        ),
+    )
+    semantic_snapshot = BrowserSnapshot(
+        snapshot.observation,
+        snapshot.affordance_model,
+        unified_affordances=(unified,),
+    )
+
+    request = PlanningRequestBuilder().build(envelope, state, semantic_snapshot)
+
+    assert len(request.observation.affordances) == 1
+    assert request.observation.affordances[0].target_id == semantic_target_id
+    assert request.observation.affordances[0].supported_actions == ("focus", "type_text")
+
+
 def test_builder_does_not_activate_ready_legacy_step() -> None:
     from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 

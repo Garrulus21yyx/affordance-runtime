@@ -9,6 +9,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     CompositeCriterionOperator,
     CriterionEvidencePolicy,
     ElementIntent,
+    ElementOperationKind,
     EvidenceStrength,
     ExecutionAttempt,
     ObservationIdentity,
@@ -20,6 +21,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     TaskPlanView,
     VerificationResult,
     VerificationStatus,
+    interaction_for_state,
 )
 
 
@@ -73,6 +75,25 @@ def test_criterion_rejects_unknown_relation() -> None:
             evidence_policy=_policy(),
             source_refs=(_source(),),
         )
+
+
+@pytest.mark.parametrize("subject", ("browser:textbox", "application:textbox"))
+def test_qualified_element_role_projects_to_fail_closed_role_grounding(subject: str) -> None:
+    interaction = interaction_for_state(
+        subject,
+        StateCriterionRelation.IS_COMPLETED,
+        None,
+        (_source(),),
+        interaction_operation="focus",
+    )
+
+    assert interaction == ElementIntent(
+        "textbox",
+        (_source(),),
+        role="textbox",
+        match_by_role=True,
+        operation=ElementOperationKind.FOCUS,
+    )
 
 
 def test_composite_criterion_rejects_self_cycle() -> None:
