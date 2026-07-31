@@ -20,6 +20,8 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.coordinator import RunBudget
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
+from affordance_runtime.execution_phase import ActionStageInput
+from affordance_runtime.failure_envelope import RemainingRecoveryBudgets
 from affordance_runtime.grounding import GroundingSource, SourceAssertion
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import (
@@ -45,8 +47,11 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.recovery_protocol import FailureOwner, classify_failure
 from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime_committer import runtime_state_snapshot
 from affordance_runtime.source_assertions import SourceAssertionArbiter
+from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import (
     IntentDraft,
@@ -163,8 +168,10 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert result.verification is not None and result.verification.passed
     assert result.state.observation_count == 5
     event_types = [node.kind for node in result.trace.nodes]
+    assert event_types.count("PlanningTurnEvaluated") == 2
     assert "ActionCompleted" not in event_types
     assert event_types.count("ActionOutcomeRecorded") == 1
+    assert event_types.count("PostActionEvaluated") == 1
     assert event_types.index("PostActionObservationCaptured") < event_types.index("ActionOutcomeRecorded")
     outcome = next(node for node in result.trace.nodes if node.kind == "ActionOutcomeRecorded")
     assert outcome.payload["contract_id"] == "contract_dom_button_1"
@@ -172,6 +179,13 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert outcome.payload["receipt_success"] is True
     assert outcome.payload["verification_status"] == "passed"
     assert outcome.payload["post_snapshot_id"] == "snapshot-2"
+    evaluated = next(
+        node for node in result.trace.nodes if node.kind == "PostActionEvaluated"
+    )
+    assert evaluated.payload["action_effect_status"] == "passed"
+    assert evaluated.payload["active_step_status"] == "completed"
+    assert evaluated.payload["task_completion_status"] == "not_evaluated"
+    assert evaluated.payload["progress_committed"] is True
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
 
@@ -1284,6 +1298,130 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     assert produced.payload["provenance"]["source"] == "deterministic_rule"
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
     assert contract_event.payload["proposal_id"] == "proposal-save"
+
+
+def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target() -> None:
+    snapshot = _snapshot(1)
+    state = StateKernel("generic-progress", "Record the Save control outcome")
+    state.remember_observation(snapshot.observation)
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-generic-progress",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="save-observed",
+                    objective="Save state is recorded",
+                    success_criteria=("Save state is recorded",),
+                    evidence_requirements=("post-action Save state",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=SubgoalOutcome(
+                        subject="Save",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_step()
+    proposal = PlannerProposal(
+        proposal_id="proposal-generic-progress",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id=snapshot.observation.snapshot_id,
+        subgoal="Save state is recorded",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id="dom_button_1",
+    )
+    coordinator = compose_run_coordinator(
+        observer=StableObserver(),
+        planner=SubgoalAwarePlanner(),
+        executor=FakeExecutor(),
+        contract_builder=ContractBuilder(
+            requirements={
+                "dom_button_1": ContractRequirements(
+                    verifier_plan=(
+                        VerifierSpec(
+                            "observation_metadata",
+                            "saved",
+                            True,
+                            progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+                        ),
+                    ),
+                    required_capabilities=("settings.write",),
+                )
+            }
+        ),
+        task_planner=None,
+    )
+
+    bound = coordinator.action_stage._bind(
+        ActionStageInput(
+            envelope=RunRequest(
+                task_spec=_semantic_task().model_copy(update={"task_id": state.task_id}),
+                capabilities=["settings.write"],
+            ),
+            decision=PlannerProposalResponse(
+                proposal=proposal,
+                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
+            ),
+            snapshot=snapshot,
+            state_view=runtime_state_snapshot(state),
+            remaining_budgets=RemainingRecoveryBudgets(),
+        )
+    )
+
+    assert isinstance(bound, tuple)
+    contract = bound[0]
+    assert contract.verifier_plan[0].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
+    assert contract.verifier_plan[0].criterion_ids == (
+        criterion_id("subgoal", "save-observed", 0),
+    )
+    assert contract.verifier_plan[0].requirement_ids == (
+        evidence_requirement_id("subgoal", "save-observed", 0),
+    )
+
+    signature = bound[1]
+    state.record_action_progress(
+        signature,
+        snapshot.observation.environment_revision,
+        verification_passed=True,
+        effect_satisfied=True,
+        post_page_revision=snapshot.observation.page_revision,
+    )
+    repeated_proposal = proposal.model_copy(
+        update={
+            "proposal_id": "proposal-generic-progress-repeat",
+            "based_on_state_version": state.version,
+        }
+    )
+    blocked = coordinator.action_stage._bind(
+        ActionStageInput(
+            envelope=RunRequest(
+                task_spec=_semantic_task().model_copy(update={"task_id": state.task_id}),
+                capabilities=["settings.write"],
+            ),
+            decision=PlannerProposalResponse(
+                proposal=repeated_proposal,
+                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
+            ),
+            snapshot=snapshot,
+            state_view=runtime_state_snapshot(state),
+            remaining_budgets=RemainingRecoveryBudgets(),
+        )
+    )
+
+    assert not isinstance(blocked, tuple)
+    assert blocked.failure is not None
+    assert blocked.failure.error_code == "progress_credit_invariant"
+    assert blocked.failure.phase.value == "progress"
+    assert classify_failure(blocked.failure).owner == FailureOwner.PROGRESS
+    assert blocked.directive == LoopDirective.NEXT_STAGE
 
 
 @dataclass

@@ -181,7 +181,7 @@ def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
 
     assert result.status == RuntimeStep.DONE
     assert result.result == {"surface": "visual"}
-    assert "PostconditionPassed" in [node.kind for node in result.trace.nodes]
+    assert "PostActionEvaluated" in [node.kind for node in result.trace.nodes]
 
 
 def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:

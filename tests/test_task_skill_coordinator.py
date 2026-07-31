@@ -431,7 +431,7 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
     assert progress is not None
     assert progress.completed_step_ids == []
     events = [node.kind for node in result.trace.nodes]
-    assert "PostconditionPassed" in events
+    assert "PostActionEvaluated" in events
     assert "TaskSkillStepEvidenceRejected" in events
     assert "TaskSkillFellThrough" in events
 
@@ -820,6 +820,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
         if category == "original":
+            assert kinds[-1] == "TaskCompleted", kinds[-10:]
             canonical = CanonicalSemanticTraceExtractor().extract(
                 trace_path,
                 TraceMiningContext("profile update", variant),

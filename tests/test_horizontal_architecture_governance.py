@@ -86,7 +86,6 @@ EXTRACTED_AUTHORITY_FREE_COLLABORATORS = (
     "recovery_trace_projection.py",
     "task_action_family_resolution.py",
     "obligation_attribution_flow.py",
-    "obligation_progress_shadow_flow.py",
     "planner_admission_projection.py",
     "task_plan_flow.py",
     "task_plan_lifecycle.py",
@@ -174,7 +173,6 @@ OBLIGATION_PROGRESS_CONTRACT_MODULES = {
     "obligation_attribution.py",
     "obligation_current_state.py",
     "obligation_progress.py",
-    "obligation_progress_shadow.py",
 }
 
 FORBIDDEN_OBLIGATION_PROGRESS_DEPENDENCIES = (
@@ -1223,29 +1221,9 @@ def test_obligation_progress_contracts_do_not_import_taskplan_or_runtime_authori
     assert violations == []
 
 
-def test_obligation_shadow_flow_is_read_only_runtime_projection() -> None:
-    filename = "obligation_progress_shadow_flow.py"
-    tree = ast.parse((SOURCE_ROOT / filename).read_text(encoding="utf-8"))
-    violations: list[tuple[str, int, str]] = []
-    for node in ast.walk(tree):
-        for dependency in _import_dependencies(node):
-            if any(
-                _matches_module(dependency, prefix)
-                for prefix in (
-                    "affordance_runtime.adapters",
-                    "affordance_runtime.benchmarks",
-                    "affordance_runtime.coordinator",
-                    "affordance_runtime.trace",
-                )
-            ):
-                violations.append((filename, getattr(node, "lineno", 0), dependency))
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in STATE_KERNEL_MUTATIONS
-        ):
-            violations.append((filename, node.lineno, node.func.attr))
-    assert violations == []
+def test_experimental_obligation_progress_shadow_is_physically_deleted() -> None:
+    assert not (SOURCE_ROOT / "obligation_progress_shadow.py").exists()
+    assert not (SOURCE_ROOT / "obligation_progress_shadow_flow.py").exists()
 
 
 def test_simplified_step_projection_is_read_only_compatibility_projection() -> None:

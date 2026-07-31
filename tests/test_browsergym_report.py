@@ -293,6 +293,15 @@ def test_complete_report_is_repair_ready_despite_ordinary_failures(tmp_path: Pat
 
     assert report["batch_status"] == "complete"
     assert report["run_complete"] is True
+    envelope = next(
+        item for item in report["failure_envelopes"] if item["task"] == "case-a"
+    )
+    assert envelope["failure_signature"] == (
+        "terminal_execution_failed_without_root_cause"
+    )
+    assert envelope["root_layer"] == "UNKNOWN / DIAGNOSTIC"
+    assert envelope["root_failure_phase"] == "unknown"
+    assert envelope["terminal_status"] == "failed"
     assert report["repair_selection_ready"] is True
     assert report["observed_episode_count"] == 2
     assert report["task_manifest_version"] == matrix.NIGHTLY_TASK_MANIFEST_VERSION
@@ -563,7 +572,7 @@ def test_adapter_batch_stop_rejects_unreviewed_reason() -> None:
             "",
             False,
             "",
-            planner_affordance_count=0,
+            model_stage="unknown",
         ),
         BrowserGymEpisodeResult(
             "planning-budget",

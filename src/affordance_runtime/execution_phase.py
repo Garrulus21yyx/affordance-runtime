@@ -37,6 +37,7 @@ from affordance_runtime.planning import (
     bind_active_subgoal_verifiers,
     proposal_error_code,
     proposal_record,
+    resolve_task_plan_progress_target,
 )
 from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.recovery_protocol import RecoveryKind
@@ -199,11 +200,18 @@ class ActionStage:
         contract = self.contract_execution_loop.bind_contract(
             contract, stage_input.envelope, stage_input.snapshot.observation
         )
+        progress_target = resolve_task_plan_progress_target(
+            proposal,
+            cast(Any, stage_input.state_view),
+            stage_input.snapshot,
+        )
         contract = replace(
             contract,
             verifier_plan=list(
                 bind_active_subgoal_verifiers(
-                    tuple(contract.verifier_plan), cast(Any, stage_input.state_view)
+                    tuple(contract.verifier_plan),
+                    cast(Any, stage_input.state_view),
+                    progress_target=progress_target,
                 )
             ),
             contract_hash="",
@@ -244,6 +252,28 @@ class ActionStage:
         signature = action_progress_signature(proposal, contract)
         progress_block = stage_input.state_view.check_progress_guard(signature)
         if progress_block is not None:
+            if (
+                progress_block == RuntimeErrorCode.EFFECT_ALREADY_SATISFIED.value
+                and progress_target is not None
+            ):
+                return self._failure(
+                    stage_input,
+                    FailurePhase.PROGRESS,
+                    FailureClass.MISSING_EVIDENCE,
+                    RuntimeErrorCode.PROGRESS_CREDIT_INVARIANT,
+                    "verified effect cannot be credited to the unchanged active step",
+                    contract=contract,
+                    events=(
+                        _event(
+                            "PlannerProgressBlocked",
+                            stage_input.state_view.phase,
+                            error_code=RuntimeErrorCode.PROGRESS_CREDIT_INVARIANT.value,
+                            action_signature=signature,
+                            environment_revision=stage_input.state_view.current_revision(),
+                        ),
+                    ),
+                    effect_status=EffectStatus.CONFIRMED_OCCURRED,
+                )
             return StageResult(
                 transition=RuntimeTransition(
                     phase=RuntimeStep.OBSERVING,
@@ -620,11 +650,18 @@ class ActionStage:
         rebound = self.contract_execution_loop.bind_contract(
             rebound, stage_input.envelope, snapshot.observation
         )
+        progress_target = resolve_task_plan_progress_target(
+            rebound_proposal,
+            cast(Any, stage_input.state_view),
+            snapshot,
+        )
         rebound = replace(
             rebound,
             verifier_plan=list(
                 bind_active_subgoal_verifiers(
-                    tuple(rebound.verifier_plan), cast(Any, stage_input.state_view)
+                    tuple(rebound.verifier_plan),
+                    cast(Any, stage_input.state_view),
+                    progress_target=progress_target,
                 )
             ),
             contract_hash="",
@@ -685,6 +722,7 @@ class ActionStage:
         events: tuple[RuntimeEvent, ...] = (),
         transition: RuntimeTransition | None = None,
         recoverable: bool = True,
+        effect_status: EffectStatus | None = None,
     ) -> StageResult[ActionOutput]:
         view = stage_input.state_view
         plan = view.task_plan
@@ -705,7 +743,8 @@ class ActionStage:
             expected_effect="; ".join(stage_input.decision.proposal.expected_effects),
             receipt=receipt,
             receipt_ref=receipt.contract_id if receipt is not None else "",
-            effect_status=(
+            effect_status=effect_status
+            or (
                 EffectStatus.CONFIRMED_OCCURRED
                 if receipt is not None and receipt.success
                 else EffectStatus.MAY_HAVE_OCCURRED

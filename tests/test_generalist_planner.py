@@ -308,6 +308,9 @@ def test_strict_planner_auto_selects_unique_exact_text_actionchoice() -> None:
     assert response.proposal.evidence_requirements == ("dom_state",)
     assert response.proposal_provenance is not None
     assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert response.diagnostics.model_stage == "action_choice_build"
+    assert response.diagnostics.action_choice_count == 1
+    assert response.diagnostics.selection_source == "runtime_unique_choice"
     assert planner.model_call_count == 0
 
 
@@ -368,6 +371,9 @@ def test_strict_planner_returns_no_choice_failure_without_model_call() -> None:
 
     assert isinstance(response, PlannerUnsupportedResponse)
     assert response.reason_code == "no_feasible_action_choice"
+    assert response.diagnostics.model_stage == "action_choice_build"
+    assert response.diagnostics.action_choice_count == 0
+    assert response.diagnostics.selection_source == "none"
     assert planner.model_call_count == 0
 
 

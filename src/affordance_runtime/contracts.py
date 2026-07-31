@@ -78,6 +78,7 @@ class RuntimeErrorCode(StrEnum):
     PLANNER_FAILED = "planner_failed"
     EFFECT_ALREADY_SATISFIED = "effect_already_satisfied"
     NO_PROGRESS_REPEAT = "no_progress_repeat"
+    PROGRESS_CREDIT_INVARIANT = "progress_credit_invariant"
     RATE_LIMIT_TRANSIENT = "rate_limit_transient"
     QUOTA_EXHAUSTED = "quota_exhausted"
     PROVIDER_CAPACITY = "provider_capacity"

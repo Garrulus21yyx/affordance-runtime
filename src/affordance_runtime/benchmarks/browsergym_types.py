@@ -84,10 +84,11 @@ class BrowserGymEpisodeResult:
     rate_limit_retry_count: int = 0
     transient_retry_count: int = 0
     provider_failures: list[str] = field(default_factory=list)
-    planner_context_size: int = 0
-    planner_context_truncation: str = "unknown"
-    planner_affordance_count: int = 0
-    planner_permitted_action_kinds: list[str] = field(default_factory=list)
+    planning_turn_count: int = 0
+    model_stage: str = "unknown"
+    grounded_target_count: int | None = None
+    action_choice_count: int | None = None
+    selection_source: str = "unknown"
     last_verified_step: int = 0
     route_selection_count: int = 0
     route_sources: list[str] = field(default_factory=list)

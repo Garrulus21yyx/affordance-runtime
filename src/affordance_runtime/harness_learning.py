@@ -138,10 +138,10 @@ class CanonicalTraceValidator:
 
         semantic_contract_order: list[str] = []
         semantic_contracts: set[str] = set()
-        postcondition_passes: set[str] = set()
+        post_action_passes: set[str] = set()
         verified_outcomes: set[str] = set()
         contract_events: dict[str, str] = {}
-        postcondition_events: dict[str, str] = {}
+        post_action_events: dict[str, str] = {}
         outcome_events: dict[str, str] = {}
         for row in rows:
             payload = _payload(row)
@@ -152,8 +152,10 @@ class CanonicalTraceValidator:
                 semantic_contract_order.append(contract_id)
                 semantic_contracts.add(contract_id)
                 contract_events[contract_id] = _required_string(row, "event_id")
-            elif row["event_type"] == "PostconditionPassed":
+            elif row["event_type"] == "PostActionEvaluated":
                 contract_id = _required_string(payload, "contract_id")
+                if payload.get("action_effect_status") != "passed":
+                    continue
                 evidence = payload.get("evidence")
                 if not isinstance(evidence, list) or not evidence:
                     raise CanonicalTraceError("passed postcondition requires persisted verifier evidence")
@@ -167,8 +169,8 @@ class CanonicalTraceValidator:
                     for item in evidence
                 ):
                     raise CanonicalTraceError("learning requires strong independent postcondition evidence")
-                postcondition_passes.add(contract_id)
-                postcondition_events[contract_id] = _required_string(row, "event_id")
+                post_action_passes.add(contract_id)
+                post_action_events[contract_id] = _required_string(row, "event_id")
             elif row["event_type"] == "RouteOutcomeRecorded":
                 if (
                     payload.get("status") == "verified_success"
@@ -179,14 +181,14 @@ class CanonicalTraceValidator:
                 ):
                     verified_outcomes.add(_required_string(payload, "contract_id"))
                     outcome_events[_required_string(payload, "contract_id")] = _required_string(row, "event_id")
-        verified = semantic_contracts & postcondition_passes & verified_outcomes
+        verified = semantic_contracts & post_action_passes & verified_outcomes
         if not semantic_contracts or verified != semantic_contracts:
             raise CanonicalTraceError("every semantic contract must have passed, trainable verification evidence")
         for contract_id in semantic_contract_order:
             contract_event = contract_events[contract_id]
-            postcondition_event = postcondition_events[contract_id]
+            post_action_event = post_action_events[contract_id]
             outcome_event = outcome_events[contract_id]
-            if contract_event not in ancestors[postcondition_event] or postcondition_event not in ancestors[outcome_event]:
+            if contract_event not in ancestors[outcome_event] or outcome_event not in ancestors[post_action_event]:
                 raise CanonicalTraceError("verified action lifecycle must preserve contract-to-evidence causality")
 
         report = CanonicalTraceReport(

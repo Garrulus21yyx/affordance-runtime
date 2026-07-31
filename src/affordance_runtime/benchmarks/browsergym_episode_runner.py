@@ -57,7 +57,6 @@ from affordance_runtime.generalist_planner import (
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
 from affordance_runtime.immutable import (
     thaw_json_at_external_boundary,
-    to_json_compatible,
 )
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
@@ -730,7 +729,7 @@ def run_browsergym_generalist_episode(
                 result.trace.nodes,
                 planner.model_call_count + intent_compiler.model_call_count,
             ),
-            **_browsergym_context_stats(result.trace.nodes, planner_limits.max_affordances),
+            **_browsergym_planning_stats(result.trace.nodes),
             **_browsergym_adaptive_runtime_stats(result.trace.nodes),
             **_browsergym_failure_stats(result.trace.nodes),
             "last_verified_step": result.state.step_count,
@@ -1079,7 +1078,8 @@ def _browsergym_failure_stats(nodes: Sequence[Any]) -> dict[str, Any]:
                 (
                     previous
                     for previous in reversed(nodes[:index])
-                    if previous.kind == "PostconditionFailed"
+                    if previous.kind == "PostActionEvaluated"
+                    and previous.payload.get("action_effect_status") != "passed"
                 ),
                 None,
             )
@@ -1154,39 +1154,34 @@ def _browsergym_adaptive_runtime_stats(nodes: Sequence[Any]) -> dict[str, Any]:
     }
 
 
-def _browsergym_context_stats(nodes: Sequence[Any], affordance_limit: int) -> dict[str, Any]:
-    """Recover the final bounded planner context without retaining its content."""
+def _browsergym_planning_stats(nodes: Sequence[Any]) -> dict[str, Any]:
+    """Project canonical planning facts without retaining planner context."""
 
-    contexts = [
-        node.payload.get("context")
-        for node in nodes
-        if node.kind == "PlannerContextBuilt" and isinstance(node.payload.get("context"), Mapping)
-    ]
-    if not contexts:
+    turns = [node for node in nodes if node.kind == "PlanningTurnEvaluated"]
+    if not turns:
         return {
-            "planner_context_size": 0,
-            "planner_context_truncation": "unknown",
-            "planner_affordance_count": 0,
-            "planner_permitted_action_kinds": [],
+            "planning_turn_count": 0,
+            "model_stage": "unknown",
+            "grounded_target_count": None,
+            "action_choice_count": None,
+            "selection_source": "unknown",
         }
-    context = contexts[-1]
-    size = len(json.dumps(to_json_compatible(context), sort_keys=True, separators=(",", ":")))
-    affordances = context.get("affordances")
-    affordance_count = int(context.get("affordance_count") or 0)
-    if not affordance_count and isinstance(affordances, Sequence) and not isinstance(affordances, (str, bytes)):
-        affordance_count = len(affordances)
-    truncation = "affordance_limit_reached" if affordance_count >= affordance_limit else "not_observed"
-    permitted = context.get("permitted_action_kinds")
+    payload = turns[-1].payload
     return {
-        "planner_context_size": size,
-        "planner_context_truncation": truncation,
-        "planner_affordance_count": affordance_count,
-        "planner_permitted_action_kinds": (
-            [str(item) for item in permitted]
-            if isinstance(permitted, Sequence) and not isinstance(permitted, (str, bytes))
-            else []
+        "planning_turn_count": len(turns),
+        "model_stage": str(payload.get("model_stage") or "unknown"),
+        "grounded_target_count": _optional_nonnegative_int(
+            payload.get("grounded_target_count")
         ),
+        "action_choice_count": _optional_nonnegative_int(
+            payload.get("action_choice_count")
+        ),
+        "selection_source": str(payload.get("selection_source") or "unknown"),
     }
+
+
+def _optional_nonnegative_int(value: object) -> int | None:
+    return value if isinstance(value, int) and value >= 0 else None
 
 
 def _action_affordance(action: BrowserGymAction, snapshot: BrowserSnapshot) -> Affordance:

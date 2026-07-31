@@ -59,6 +59,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
     PlannerResponse,
     PlannerUnsupportedResponse,
+    PlanningTurnDiagnostics,
 )
 from affordance_runtime.planning_request import (
     PlannerAdmissionSummary,
@@ -94,6 +95,7 @@ class _GeneralistDecision:
     reason: str = ""
     planner_context: dict[str, Any] = field(default_factory=dict)
     model_call: Any = None
+    diagnostics: PlanningTurnDiagnostics = field(default_factory=PlanningTurnDiagnostics)
 
 
 def _compatibility_algorithms() -> ModuleType:
@@ -814,6 +816,7 @@ async def _runtime_action_choice_decision(
             context=context,
             planner_profile=planner_profile,
             planner_admission=planner_admission,
+            action_choice_count=0,
         )
     selection_result = ActionChoiceDispatcher().choose(choice_result, planner=planner)
     selection = (
@@ -827,6 +830,7 @@ async def _runtime_action_choice_decision(
             context=context,
             planner_profile=planner_profile,
             planner_admission=planner_admission,
+            action_choice_count=_action_choice_count(choice_result),
         )
     selected_choice = ActionSelectionValidator().validate(selection, choice_result)
     producer_id = (
@@ -847,6 +851,7 @@ async def _runtime_action_choice_decision(
         planner_admission=planner_admission,
         producer_id=producer_id,
         reason=reason,
+        diagnostics=_action_choice_diagnostics(choice_result, selection),
     )
 
 
@@ -856,6 +861,7 @@ def _action_choice_failure_decision(
     context: PlannerContext,
     planner_profile: GeneralistPlannerProfile,
     planner_admission: dict[str, object],
+    action_choice_count: int = 0,
 ) -> _GeneralistDecision:
     return _GeneralistDecision(
         reason=failure.reason_code,
@@ -872,6 +878,11 @@ def _action_choice_failure_decision(
             },
             **({"planner_admission": planner_admission} if planner_admission else {}),
         },
+        diagnostics=PlanningTurnDiagnostics(
+            model_stage="action_choice_build",
+            action_choice_count=action_choice_count,
+            selection_source="none",
+        ),
     )
 
 
@@ -884,6 +895,7 @@ def _choice_to_decision(
     planner_admission: dict[str, object],
     producer_id: str,
     reason: str,
+    diagnostics: PlanningTurnDiagnostics,
 ) -> _GeneralistDecision:
     parameters = cast(
         dict[str, str | int | float | bool | list[str]],
@@ -939,6 +951,32 @@ def _choice_to_decision(
             },
             **({"planner_admission": planner_admission} if planner_admission else {}),
         },
+        diagnostics=diagnostics,
+    )
+
+
+def _action_choice_count(choice_set: ActionChoiceSet) -> int:
+    """Return diagnostic cardinality without participating in dispatch."""
+
+    return len(choice_set.choices)
+
+
+def _action_choice_diagnostics(
+    choice_set: ActionChoiceSet,
+    selection: ActionSelection,
+) -> PlanningTurnDiagnostics:
+    selection_source = selection.reason_summary
+    return PlanningTurnDiagnostics(
+        model_stage=(
+            "action_choice_build"
+            if selection_source == "runtime_unique_choice"
+            else "action_choice_selection"
+        ),
+        grounded_target_count=len(
+            {item.target_id for item in choice_set.choices if item.target_id}
+        ),
+        action_choice_count=_action_choice_count(choice_set),
+        selection_source=selection_source,
     )
 
 
@@ -1005,9 +1043,14 @@ def _planner_response(decision: _GeneralistDecision) -> PlannerResponse:
             proposal=decision.proposal,
             proposal_provenance=decision.proposal_provenance,
             reason=decision.reason,
+            diagnostics=decision.diagnostics,
         )
     if decision.done:
-        return PlannerDoneResponse(result=decision.result, reason=decision.reason)
+        return PlannerDoneResponse(
+            result=decision.result,
+            reason=decision.reason,
+            diagnostics=decision.diagnostics,
+        )
     action_choice_failure = decision.planner_context.get("action_choice_failure")
     if isinstance(action_choice_failure, Mapping):
         reason_code = action_choice_failure.get("reason_code")
@@ -1015,10 +1058,12 @@ def _planner_response(decision: _GeneralistDecision) -> PlannerResponse:
             return PlannerUnsupportedResponse(
                 reason_code=reason_code,
                 message=decision.reason,
+                diagnostics=decision.diagnostics,
             )
     return PlannerUnsupportedResponse(
         reason_code="legacy_decision_without_proposal",
         message=decision.reason,
+        diagnostics=decision.diagnostics,
     )
 
 

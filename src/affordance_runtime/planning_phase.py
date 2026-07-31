@@ -233,7 +233,20 @@ class PlanningStage:
         skill_step_id: str,
         prefix_events: tuple[RuntimeEvent, ...],
     ) -> StageResult[PlanningOutput]:
-        events = [*prefix_events, _event("PlanProposed", stage_input.state_view.phase, response=type(response).__name__)]
+        diagnostics = response.diagnostics
+        events = [
+            *prefix_events,
+            _event(
+                "PlanningTurnEvaluated",
+                stage_input.state_view.phase,
+                model_stage=diagnostics.model_stage,
+                grounded_target_count=diagnostics.grounded_target_count,
+                action_choice_count=diagnostics.action_choice_count,
+                selection_source=diagnostics.selection_source,
+                response_status=response.status.value,
+            ),
+            _event("PlanProposed", stage_input.state_view.phase, response=type(response).__name__),
+        ]
         if isinstance(response, PlannerClarificationResponse):
             result = {"clarification": response.question}
             events.append(_event("ClarificationRequested", RuntimeStep.WAITING_CLARIFICATION.value, **result))

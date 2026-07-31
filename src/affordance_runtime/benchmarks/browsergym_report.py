@@ -47,18 +47,28 @@ def browsergym_failure_envelope(
     signature = _failure_signature(episode)
     root_layer = _failure_root_layer(episode, signature)
     runtime_failure = episode.runtime_failure
+    root_failure_phase = (
+        runtime_failure.phase
+        if runtime_failure is not None
+        else "unknown"
+        if root_layer == "UNKNOWN / DIAGNOSTIC"
+        else _failure_phase(root_layer)
+    )
     return {
         "task": episode.task_id,
         "family": _failure_family(episode, task_family_map or {}),
         "seed": episode.seed,
-        "phase": runtime_failure.phase if runtime_failure is not None else _failure_phase(root_layer),
+        "phase": root_failure_phase,
+        "root_failure_phase": root_failure_phase,
+        "terminal_status": episode.runtime_status,
         "failure_signature": signature,
         "root_layer": root_layer,
         "action_kind": episode.action_families[-1] if episode.action_families else "",
-        "context_size": episode.planner_context_size,
-        "context_truncation": episode.planner_context_truncation,
-        "affordance_count": episode.planner_affordance_count,
-        "permitted_action_kinds": list(episode.planner_permitted_action_kinds),
+        "planning_turn_count": episode.planning_turn_count,
+        "model_stage": episode.model_stage,
+        "grounded_target_count": episode.grounded_target_count,
+        "action_choice_count": episode.action_choice_count,
+        "selection_source": episode.selection_source,
         "required_evidence_present": (
             bool(runtime_failure.evidence_refs)
             if runtime_failure is not None
@@ -618,14 +628,17 @@ def _failure_signature(episode: BrowserGymEpisodeResult) -> str:
         and not episode.terminated
     ):
         return "grounding_unverified"
-    if episode.runtime_status == "waiting_clarification" and episode.planner_affordance_count == 0:
+    if episode.runtime_status == "waiting_clarification" and episode.model_stage in {
+        "observation",
+        "perception",
+    }:
         return "observation_no_affordances"
     if episode.runtime_status == "waiting_clarification":
         return "planner_waiting_clarification"
     if episode.runtime_error == "verification_failed":
         return "verification_failed"
     if episode.runtime_error == "execution_failed":
-        return "execution_failed"
+        return "terminal_execution_failed_without_root_cause"
     if episode.unsupported_actions:
         return "unsupported_action"
     if episode.policy_stopped:
@@ -682,6 +695,8 @@ def _failure_root_layer(episode: BrowserGymEpisodeResult, signature: str) -> str
         return "VERIFICATION"
     if signature == "execution_failed":
         return "EXECUTION"
+    if signature == "terminal_execution_failed_without_root_cause":
+        return "UNKNOWN / DIAGNOSTIC"
     if signature == "terminal_evidence_missing":
         return "VERIFICATION"
     if signature == "official_reward_zero":

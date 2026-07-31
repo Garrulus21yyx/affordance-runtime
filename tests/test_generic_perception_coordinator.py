@@ -211,7 +211,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         for snapshot in observer.snapshots
     )
     assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
-    assert "PostconditionPassed" in [node.kind for node in result.trace.nodes]
+    assert "PostActionEvaluated" in [node.kind for node in result.trace.nodes]
     outcomes = [node for node in result.trace.nodes if node.kind == "RouteOutcomeRecorded"]
     assert len(outcomes) == 1
     assert outcomes[0].payload["status"] == RouteOutcomeStatus.VERIFIED_SUCCESS.value

@@ -27,6 +27,7 @@ class FailurePhase(StrEnum):
     EXECUTION_NOT_DISPATCHED = "execution_not_dispatched"
     EXECUTION_UNCERTAIN = "execution_uncertain"
     VERIFICATION = "verification"
+    PROGRESS = "progress"
     PROVIDER_CONTEXT = "provider_context"
     SKILL_ACTIVATION = "skill_activation"
 
@@ -115,6 +116,7 @@ class FailureEnvelope(StrictModel):
             FailurePhase.EXECUTION_NOT_DISPATCHED,
             FailurePhase.EXECUTION_UNCERTAIN,
             FailurePhase.VERIFICATION,
+            FailurePhase.PROGRESS,
         }
         if self.effect_status != EffectStatus.NOT_DISPATCHED and self.phase not in execution_phases:
             raise ValueError("pre-execution failures cannot claim an external effect")

@@ -23,6 +23,7 @@ class FailureKind(StrEnum):
     EXECUTION_FAILED = "execution_failed"
     VERIFICATION_FAILED = "verification_failed"
     CURRENT_STEP_ALREADY_SATISFIED = "current_step_already_satisfied"
+    PROGRESS_CREDIT_INVARIANT = "progress_credit_invariant"
     OBSERVATION_INSUFFICIENT = "observation_insufficient"
     PROVIDER_OR_SCHEMA_FAILURE = "provider_or_schema_failure"
     AUTHORITY_BLOCKED = "authority_blocked"
@@ -268,6 +269,12 @@ def classify_failure(
             kind=FailureKind.CURRENT_STEP_ALREADY_SATISFIED,
             owner=FailureOwner.PROGRESS,
             reason_code="current_step_already_satisfied",
+        )
+    if error_code == "progress_credit_invariant" or failure.phase == FailurePhase.PROGRESS:
+        return _classification(
+            FailureKind.PROGRESS_CREDIT_INVARIANT,
+            FailureOwner.PROGRESS,
+            "progress_credit_invariant",
         )
     if error_code in {"missing_user_input", "clarification_required"}:
         return _classification(FailureKind.MISSING_USER_INPUT, FailureOwner.USER, error_code)

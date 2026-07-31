@@ -27,7 +27,7 @@ from affordance_runtime.task_intake import (
     TaskStructure,
 )
 from affordance_runtime.task_plan_progress_flow import (
-    commit_post_observation_progress,
+    commit_current_state_completion,
     commit_task_skill_terminal_progress,
     commit_verified_task_progress,
 )
@@ -210,7 +210,7 @@ def _state(task_spec: TaskSpec, plan: TaskPlan) -> StateKernel:
     return state
 
 
-def test_post_observation_progress_has_no_default_obligation_shadow() -> None:
+def test_current_state_progress_has_no_default_obligation_shadow() -> None:
     task_spec = _task_spec(
         _obligation("obligation:first"),
         _obligation("obligation:terminal", terminal=True, depends_on=("obligation:first",)),
@@ -229,7 +229,7 @@ def test_post_observation_progress_has_no_default_obligation_shadow() -> None:
     parent = trace.add("ObservationCaptured", {"state": state.phase})
     version_before = state.version
 
-    commit = commit_post_observation_progress(
+    committed_parent = commit_current_state_completion(
         task_spec,
         state,
         _snapshot(),
@@ -238,13 +238,12 @@ def test_post_observation_progress_has_no_default_obligation_shadow() -> None:
         parent,
     )
 
-    assert commit.parent is parent
-    assert commit.legacy_completion_committed is False
+    assert committed_parent is None
     assert state.version == version_before
     assert all("ObligationProgressShadow" not in node.kind for node in trace.nodes)
 
 
-def test_post_observation_progress_commits_current_state_without_default_shadow() -> None:
+def test_current_state_progress_commits_without_default_obligation_shadow() -> None:
     task_spec = _task_spec(
         _obligation("obligation:first"),
         _obligation(
@@ -274,7 +273,7 @@ def test_post_observation_progress_commits_current_state_without_default_shadow(
     trace = TraceDag("run")
     parent = trace.add("ObservationCaptured", {"state": state.phase})
 
-    commit = commit_post_observation_progress(
+    committed_parent = commit_current_state_completion(
         task_spec,
         state,
         _snapshot(submit_available=True),
@@ -283,7 +282,7 @@ def test_post_observation_progress_commits_current_state_without_default_shadow(
         parent,
     )
 
-    assert commit.legacy_completion_committed is True
+    assert committed_parent is not None
     assert state.task_progress.completed_subgoal_ids == [
         "obligation:first",
         "obligation:terminal",
@@ -293,7 +292,7 @@ def test_post_observation_progress_commits_current_state_without_default_shadow(
         "SubgoalCompletedFromCurrentObservation",
         "TaskPlanCompleted",
     ]
-    assert commit.parent.kind == "TaskPlanCompleted"
+    assert committed_parent.kind == "TaskPlanCompleted"
 
 
 def test_verified_task_progress_flow_commits_active_step_and_prepares_task_completion() -> None:

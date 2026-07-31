@@ -21,6 +21,16 @@ class PlannerResponseStatus(StrEnum):
 
 
 @dataclass(frozen=True)
+class PlanningTurnDiagnostics:
+    """Planner-owned facts describing the actual strict planning boundary."""
+
+    model_stage: str = "unknown"
+    grounded_target_count: int = 0
+    action_choice_count: int = 0
+    selection_source: str = "none"
+
+
+@dataclass(frozen=True)
 class PlannerProposalResponse:
     """Standard semantic planner response.
 
@@ -31,6 +41,7 @@ class PlannerProposalResponse:
     proposal: PlannerProposal
     proposal_provenance: PlannerProposalProvenance | None = None
     reason: str = ""
+    diagnostics: PlanningTurnDiagnostics = field(default_factory=PlanningTurnDiagnostics)
     status: PlannerResponseStatus = PlannerResponseStatus.PROPOSAL
 
     def __post_init__(self) -> None:
@@ -43,6 +54,7 @@ class PlannerDoneResponse:
     status: PlannerResponseStatus = PlannerResponseStatus.DONE
     result: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    diagnostics: PlanningTurnDiagnostics = field(default_factory=PlanningTurnDiagnostics)
 
     def __post_init__(self) -> None:
         if self.status != PlannerResponseStatus.DONE:
@@ -54,6 +66,7 @@ class PlannerDoneResponse:
 class PlannerClarificationResponse:
     question: str
     reason: str = ""
+    diagnostics: PlanningTurnDiagnostics = field(default_factory=PlanningTurnDiagnostics)
     status: PlannerResponseStatus = PlannerResponseStatus.CLARIFICATION_REQUIRED
 
     def __post_init__(self) -> None:
@@ -67,6 +80,7 @@ class PlannerClarificationResponse:
 class PlannerUnsupportedResponse:
     reason_code: str
     message: str = ""
+    diagnostics: PlanningTurnDiagnostics = field(default_factory=PlanningTurnDiagnostics)
     status: PlannerResponseStatus = PlannerResponseStatus.UNSUPPORTED
 
     def __post_init__(self) -> None:

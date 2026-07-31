@@ -27,7 +27,7 @@ from affordance_runtime.benchmarks.browsergym import (
     BrowserGymPolicyRequest,
     GeneralistBrowserGymContractBuilder,
     _accessibility_tree_text,
-    _browsergym_context_stats,
+    _browsergym_planning_stats,
     _close_quietly,
     _fuse_visual_candidates,
     _intent_compiler_checkpoint_identity,
@@ -192,9 +192,10 @@ def test_browsergym_preserves_task_replan_validator_detail_code() -> None:
 def test_browsergym_preserves_failed_verifier_kind_as_detail_code() -> None:
     trace = TraceDag("run")
     trace.add(
-        "PostconditionFailed",
+        "PostActionEvaluated",
         {
             "reason": "verifier failed: control_state:slider",
+            "action_effect_status": "failed",
             "evidence": [
                 {
                     "verifier_kind": "evidence",
@@ -574,8 +575,8 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
         "ContractBuilt",
         "ActionStarted",
         "ActionOutcomeRecorded",
-        "PostconditionPassed",
         "TaskPlanCompleted",
+        "PostActionEvaluated",
         "TaskCompleted",
     ]
     assert all(event in events for event in required)
@@ -2295,34 +2296,36 @@ def test_task_local_schema_failure_breaks_provider_failure_consecutiveness() -> 
     assert [item["failure_signature"] for item in consecutive] == ["provider_failure"]
 
 
-def test_browsergym_context_stats_keep_only_size_and_limit_signal() -> None:
-    stats = _browsergym_context_stats(
+def test_browsergym_planning_stats_project_canonical_planning_turn() -> None:
+    stats = _browsergym_planning_stats(
         [
             SimpleNamespace(
-                kind="PlannerContextBuilt",
-                payload={"context": {"affordance_count": 80, "observed_text": "private page content"}},
+                kind="PlanningTurnEvaluated",
+                payload={
+                    "model_stage": "action_choice_selection",
+                    "grounded_target_count": 3,
+                    "action_choice_count": 2,
+                    "selection_source": "model_choice_id",
+                },
             )
-        ],
-        affordance_limit=80,
+        ]
     )
 
-    assert stats["planner_context_size"] > 0
-    assert stats["planner_context_truncation"] == "affordance_limit_reached"
-    assert stats["planner_affordance_count"] == 80
+    assert stats == {
+        "planning_turn_count": 1,
+        "model_stage": "action_choice_selection",
+        "grounded_target_count": 3,
+        "action_choice_count": 2,
+        "selection_source": "model_choice_id",
+    }
 
 
-def test_browsergym_context_stats_counts_serialized_affordance_inventory() -> None:
-    stats = _browsergym_context_stats(
-        [
-            SimpleNamespace(
-                kind="PlannerContextBuilt",
-                payload={"context": {"affordances": [{"id": "a"}, {"id": "b"}]}},
-            )
-        ],
-        affordance_limit=80,
-    )
+def test_browsergym_planning_stats_do_not_fabricate_zero_counts_without_event() -> None:
+    stats = _browsergym_planning_stats([])
 
-    assert stats["planner_affordance_count"] == 2
+    assert stats["grounded_target_count"] is None
+    assert stats["action_choice_count"] is None
+    assert stats["model_stage"] == "unknown"
 
 
 def test_failure_envelope_classifies_planner_waiting_and_verification_separately() -> None:
@@ -2340,7 +2343,8 @@ def test_failure_envelope_classifies_planner_waiting_and_verification_separately
         "",
         False,
         "",
-        planner_affordance_count=1,
+        model_stage="action_choice_selection",
+        action_choice_count=2,
     )
     verification = BrowserGymEpisodeResult(
         "use-slider", 0, "failed", False, 0.0, True, False, 3, ["press"], [], "verification_failed", False, ""
@@ -2368,7 +2372,7 @@ def test_failure_envelope_classifies_planner_waiting_and_verification_separately
         "",
         False,
         "",
-        planner_affordance_count=0,
+        model_stage="observation",
     )
     observation_envelope = browsergym_failure_envelope(observation)
     assert observation_envelope is not None
@@ -2388,7 +2392,8 @@ def test_failure_envelope_classifies_planner_waiting_and_verification_separately
         "",
         False,
         "",
-        planner_affordance_count=1,
+        model_stage="action_choice_selection",
+        action_choice_count=1,
     )
     visual_envelope = browsergym_failure_envelope(visual_grounding)
     assert visual_envelope is not None

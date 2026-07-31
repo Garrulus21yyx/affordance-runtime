@@ -55,12 +55,6 @@ class CurrentStateSubgoalCompletionCommit:
 
 
 @dataclass(frozen=True)
-class PostObservationProgressCommit:
-    parent: TraceNode
-    legacy_completion_committed: bool
-
-
-@dataclass(frozen=True)
 class VerifiedTaskProgressCommit:
     parent: TraceNode
     subgoal_completion_committed: bool
@@ -175,30 +169,6 @@ def commit_current_state_completion(
             parents=[parent.id],
         )
     return parent
-
-
-def commit_post_observation_progress(
-    task_spec: TaskSpec | None,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-    budget: TaskPlanBudgetLimits,
-    trace: TraceDag,
-    parent: TraceNode,
-) -> PostObservationProgressCommit:
-    current_state_parent = commit_current_state_completion(
-        task_spec,
-        state,
-        snapshot,
-        budget,
-        trace,
-        parent,
-    )
-    legacy_completion_committed = current_state_parent is not None
-    parent = current_state_parent or parent
-    return PostObservationProgressCommit(
-        parent=parent,
-        legacy_completion_committed=legacy_completion_committed,
-    )
 
 
 def commit_verified_task_progress(

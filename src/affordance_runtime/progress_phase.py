@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from enum import StrEnum
 from time import time
 from typing import Any, cast
 
@@ -58,6 +59,39 @@ class ProgressActionInput:
     skill_step_id: str = ""
 
 
+class ActionEffectEvaluationStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    INCONCLUSIVE = "inconclusive"
+    ERROR = "error"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class ActiveStepEvaluationStatus(StrEnum):
+    COMPLETED = "completed"
+    INCOMPLETE = "incomplete"
+    NOT_EVALUATED = "not_evaluated"
+
+
+class TaskCompletionEvaluationStatus(StrEnum):
+    COMPLETED = "completed"
+    INCOMPLETE = "incomplete"
+    NOT_EVALUATED = "not_evaluated"
+
+
+@dataclass(frozen=True)
+class PostActionEvaluation:
+    contract_id: str
+    action_effect: ActionEffectEvaluationStatus
+    active_step: ActiveStepEvaluationStatus
+    task_completion: TaskCompletionEvaluationStatus
+    criterion_ids: tuple[str, ...] = ()
+    requirement_ids: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    progress_committed: bool = False
+    liveness_decision: str = ""
+
+
 @dataclass(frozen=True)
 class ProgressStageInput:
     envelope: RunRequest
@@ -75,6 +109,7 @@ class ProgressOutput:
     verification_ref: ArtifactRef | None = None
     action_outcome: ActionOutcome | None = None
     completion_committed: bool = False
+    evaluation: PostActionEvaluation | None = None
 
 
 @dataclass(frozen=True)
@@ -145,17 +180,6 @@ class ProgressStage:
         verification_ref = self._write_verification(stage_input.envelope.task_id, state.step_count, report)
         if verification_ref is not None:
             events.artifact_index.append(verification_ref.path)
-        events.add(
-            "PostconditionPassed" if report.passed else "PostconditionFailed",
-            {
-                "state": state.phase,
-                "contract_id": action.contract.id,
-                "status": report.status.value,
-                "reason": report.reason,
-                "artifact_refs": [verification_ref.path] if verification_ref else [],
-                "evidence": [asdict(item) for item in report.evidence],
-            },
-        )
         self._record_route_outcome(events, action, report, post_snapshot)
         skill_complete, skill_progress, terminal = self._commit_task_skill(
             stage_input, state, events, report, post_snapshot, verification_ref
@@ -182,21 +206,66 @@ class ProgressStage:
                     verification=report,
                     result=state.final_result,
                 )
+                evaluation = self._record_post_action_evaluation(
+                    events,
+                    state,
+                    report,
+                    contract_id=action.contract.id,
+                    active_step_status=(
+                        ActiveStepEvaluationStatus.COMPLETED
+                        if progress.subgoal_completion_committed
+                        else ActiveStepEvaluationStatus.INCOMPLETE
+                    ),
+                    task_completion_status=TaskCompletionEvaluationStatus.COMPLETED,
+                    progress_committed=progress.subgoal_completion_committed,
+                    liveness_decision="terminal",
+                )
                 commit_task_terminal_success(
                     state=state,
                     trace=cast(Any, events),
                     parent=cast(Any, events.root()),
                     completion=completion,
                 )
+                output = replace(output, evaluation=evaluation)
                 return self._result(
                     state,
                     events,
                     output,
                     terminal=TerminalResult("", "task_completed", RuntimeStep.DONE),
                 )
+            evaluation = self._record_post_action_evaluation(
+                events,
+                state,
+                report,
+                contract_id=action.contract.id,
+                active_step_status=(
+                    ActiveStepEvaluationStatus.COMPLETED
+                    if progress.subgoal_completion_committed
+                    else ActiveStepEvaluationStatus.INCOMPLETE
+                ),
+                task_completion_status=TaskCompletionEvaluationStatus.NOT_EVALUATED,
+                progress_committed=progress.subgoal_completion_committed,
+                liveness_decision=(
+                    "advance_step"
+                    if progress.subgoal_completion_committed
+                    else "reconcile_active_step"
+                ),
+            )
+            output = replace(output, evaluation=evaluation)
             state.replan_count += 1
             project_working_phase(state, RuntimeStep.OBSERVING)
             return self._result(state, events, output, directive=LoopDirective.REPEAT_OBSERVATION)
+        evaluation = self._record_post_action_evaluation(
+            events,
+            state,
+            report,
+            contract_id=action.contract.id,
+            active_step_status=ActiveStepEvaluationStatus.NOT_EVALUATED,
+            task_completion_status=TaskCompletionEvaluationStatus.NOT_EVALUATED,
+            progress_committed=False,
+            liveness_decision="verification_failure",
+        )
+        output = replace(output, evaluation=evaluation)
         failure = self._verification_failure(stage_input, state, action, report, verification_ref)
         if not self.recovery_enabled:
             project_working_phase(state, RuntimeStep.FAILED)
@@ -351,6 +420,16 @@ class ProgressStage:
                     state.complete_grounding_recovery(action.contract.grounding_candidate.semantic_target_id)
                 commit = commit_task_skill_terminal_progress(state=state, progress=progress, trace=cast(Any, events), parent=cast(Any, events.root()))
                 completion = TaskCompletionVerifier().verify(task_spec=stage_input.envelope.task_spec, state=state, verification=report, result=commit.result_payload())
+                self._record_post_action_evaluation(
+                    events,
+                    state,
+                    report,
+                    contract_id=action.contract.id,
+                    active_step_status=ActiveStepEvaluationStatus.COMPLETED,
+                    task_completion_status=TaskCompletionEvaluationStatus.COMPLETED,
+                    progress_committed=True,
+                    liveness_decision="terminal",
+                )
                 commit_task_terminal_success(state=state, trace=cast(Any, events), parent=cast(Any, events.root()), completion=completion)
                 return complete, progress, TerminalResult("", "task_completed", RuntimeStep.DONE)
             return complete, progress, None
@@ -410,6 +489,72 @@ class ProgressStage:
             remaining_budgets=stage_input.remaining_budgets,
             progress_fingerprint=semantic_progress_fingerprint(state),
         )
+
+    @staticmethod
+    def _record_post_action_evaluation(
+        events: RuntimeEventBuffer,
+        state: Any,
+        report: VerificationReport,
+        *,
+        contract_id: str,
+        active_step_status: ActiveStepEvaluationStatus,
+        task_completion_status: TaskCompletionEvaluationStatus,
+        progress_committed: bool,
+        liveness_decision: str,
+    ) -> PostActionEvaluation:
+        criterion_ids = tuple(
+            dict.fromkeys(
+                criterion_id
+                for evidence in report.evidence
+                for criterion_id in evidence.criterion_ids
+            )
+        )
+        requirement_ids = tuple(
+            dict.fromkeys(
+                requirement_id
+                for evidence in report.evidence
+                for requirement_id in evidence.requirement_ids
+            )
+        )
+        evidence_refs = tuple(
+            dict.fromkeys(
+                evidence.evidence_id
+                for evidence in report.evidence
+                if evidence.evidence_id
+            )
+        )
+        evaluation = PostActionEvaluation(
+            contract_id=contract_id,
+            action_effect=(
+                ActionEffectEvaluationStatus.PASSED
+                if report.passed
+                else ActionEffectEvaluationStatus(report.status.value)
+            ),
+            active_step=active_step_status,
+            task_completion=task_completion_status,
+            criterion_ids=criterion_ids,
+            requirement_ids=requirement_ids,
+            evidence_refs=evidence_refs,
+            progress_committed=progress_committed,
+            liveness_decision=liveness_decision,
+        )
+        events.add(
+            "PostActionEvaluated",
+            {
+                "state": state.phase,
+                "contract_id": evaluation.contract_id,
+                "action_effect_status": evaluation.action_effect.value,
+                "active_step_status": evaluation.active_step.value,
+                "task_completion_status": evaluation.task_completion.value,
+                "criterion_ids": list(evaluation.criterion_ids),
+                "requirement_ids": list(evaluation.requirement_ids),
+                "evidence_refs": list(evaluation.evidence_refs),
+                "evidence": [asdict(item) for item in report.evidence],
+                "progress_committed": progress_committed,
+                "liveness_decision": liveness_decision,
+            },
+        )
+        return evaluation
 
     @staticmethod
     def _result(state: Any, events: RuntimeEventBuffer, output: ProgressOutput, *, directive: LoopDirective = LoopDirective.NEXT_STAGE, failure: Any = None, terminal: TerminalResult | None = None) -> StageResult[ProgressOutput]:

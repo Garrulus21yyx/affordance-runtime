@@ -317,7 +317,7 @@ def run_cross_surface_conformance(
     for item in results:
         if item.status != RuntimeStep.DONE.value or not item.oracle_enabled:
             errors.append(f"{item.surface} did not reach the shared oracle")
-        if item.verification_status != "passed" or "PostconditionPassed" not in item.event_types:
+        if item.verification_status != "passed" or "PostActionEvaluated" not in item.event_types:
             errors.append(f"{item.surface} lacks independent verifier evidence")
         if item.backend != item.surface:
             errors.append(f"{item.surface} bypassed its declared backend")

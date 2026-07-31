@@ -77,11 +77,23 @@ def _write_trace(
         parents=[parent.id],
     )
     parent = trace.add(
-        "PostconditionPassed",
+        "RouteOutcomeRecorded",
         {
             "state": "verifying",
             "contract_id": f"contract-{run_id}",
-            "status": "passed",
+            "status": "verified_success",
+            "verification_status": "passed",
+            "trainable": True,
+            "evidence_ids": [f"evidence-{run_id}"],
+        },
+        parents=[parent.id],
+    )
+    parent = trace.add(
+        "PostActionEvaluated",
+        {
+            "state": "verifying",
+            "contract_id": f"contract-{run_id}",
+            "action_effect_status": "passed",
             "evidence": [
                 {
                     "verifier_kind": "control_state",
@@ -93,18 +105,6 @@ def _write_trace(
                     "strength": "strong",
                 }
             ],
-        },
-        parents=[parent.id],
-    )
-    parent = trace.add(
-        "RouteOutcomeRecorded",
-        {
-            "state": "verifying",
-            "contract_id": f"contract-{run_id}",
-            "status": "verified_success",
-            "verification_status": "passed",
-            "trainable": True,
-            "evidence_ids": [f"evidence-{run_id}"],
         },
         parents=[parent.id],
     )

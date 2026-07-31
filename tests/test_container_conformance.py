@@ -175,7 +175,7 @@ def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
         verification_status="passed",
         contract_schema=ACTION_CONTRACT_SCHEMA_VERSION,
         contract_capabilities=[CONFORMANCE_CAPABILITY],
-        event_types=["PostconditionPassed"],
+        event_types=["PostActionEvaluated"],
         trace_path="/evidence/events.jsonl",
         screenshot_refs=[],
     )
@@ -188,7 +188,7 @@ def test_conformance_acceptance_uses_current_action_contract_schema() -> None:
 
 def test_conformance_surface_result_sequences_are_immutable_from_source_lists() -> None:
     capabilities = [CONFORMANCE_CAPABILITY]
-    events = ["PostconditionPassed"]
+    events = ["PostActionEvaluated"]
     screenshots = ["screen.png"]
 
     item = ConformanceSurfaceResult(
@@ -209,7 +209,7 @@ def test_conformance_surface_result_sequences_are_immutable_from_source_lists() 
     screenshots.append("other.png")
 
     assert item.contract_capabilities == (CONFORMANCE_CAPABILITY,)
-    assert item.event_types == ("PostconditionPassed",)
+    assert item.event_types == ("PostActionEvaluated",)
     assert item.screenshot_refs == ("screen.png",)
     with pytest.raises(TypeError):
         item.contract_capabilities[0] = "mutated"  # type: ignore[index]

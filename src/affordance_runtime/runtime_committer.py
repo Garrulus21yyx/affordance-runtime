@@ -22,6 +22,7 @@ from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
 from affordance_runtime.stage_protocol import (
     OwnerHandoff,
+    ProgressHandoff,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
@@ -215,6 +216,18 @@ class RuntimeCommitSession:
                 )
         if isinstance(handoff, RecoveryKind):
             return None
+        if (
+            isinstance(handoff, ProgressHandoff)
+            and handoff.reason_code == "progress_credit_invariant"
+        ):
+            return self.finish(
+                TerminalResult(
+                    handoff.failure_id,
+                    handoff.reason_code,
+                    RuntimeStep.FAILED,
+                    RuntimeErrorCode.PROGRESS_CREDIT_INVARIANT,
+                )
+            )
         if not terminate_all_handoffs and not isinstance(
             handoff, (TerminalResult, UserInputRequest)
         ):
