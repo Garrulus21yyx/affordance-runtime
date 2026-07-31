@@ -25,6 +25,7 @@ from affordance_runtime.task_intake import (
     CompilationPolicy,
     CompilationResult,
     CompilationStatus,
+    EvidenceKind,
     GraphConstructionSource,
     IntentAmbiguity,
     IntentDraft,
@@ -207,6 +208,20 @@ def test_intent_compiler_marks_explicit_spatial_point_as_capability_bound(raw_te
 
 def test_intent_compiler_marks_only_the_explicit_center_region_effect() -> None:
     raw_text = "Click the center of the renamed polygon, then press Confirm."
+    polygon_claim = SourcedTaskClaim(
+        claim_id="provider-polygon",
+        kind=TaskClaimKind.EFFECT,
+        statement="activate polygon center",
+        source_ref="region-request:source:request:clause:1",
+        source_unit_ids=("region-request:source:request:clause:1",),
+    )
+    confirm_claim = SourcedTaskClaim(
+        claim_id="provider-confirm",
+        kind=TaskClaimKind.EFFECT,
+        statement="activate confirm",
+        source_ref="region-request:source:request:clause:0",
+        source_unit_ids=("region-request:source:request:clause:0",),
+    )
     model = FixedModel(
         IntentDraft(
             objective=raw_text,
@@ -224,6 +239,27 @@ def test_intent_compiler_marks_only_the_explicit_center_region_effect() -> None:
                 ),
             ),
             candidate_success_criteria=("Polygon center activated.", "Confirm pressed."),
+            candidate_source_claims=(polygon_claim, confirm_claim),
+            candidate_obligations=(
+                TaskObligationSpec(
+                    obligation_id="provider-polygon-obligation",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="renamed polygon",
+                    relation=TaskObligationRelation.IS_COMPLETED,
+                    claim_ids=(polygon_claim.claim_id,),
+                    evidence_requirements=("dom_state:renamed polygon",),
+                ),
+                TaskObligationSpec(
+                    obligation_id="provider-confirm-obligation",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="confirm_button",
+                    relation=TaskObligationRelation.IS_COMPLETED,
+                    claim_ids=(confirm_claim.claim_id,),
+                    depends_on=("provider-polygon-obligation",),
+                    evidence_requirements=("dom_state:confirm_button",),
+                    terminal=True,
+                ),
+            ),
         )
     )
 
@@ -237,6 +273,13 @@ def test_intent_compiler_marks_only_the_explicit_center_region_effect() -> None:
     assert first.subject == "renamed polygon"
     assert first.interaction_capability == "spatial.point.current_geometry"
     assert second.interaction_capability == ""
+    assert result.task_spec.source_claims[0].source_unit_ids == (
+        "region-request:source:request:clause:0",
+    )
+    assert result.task_spec.source_claims[1].source_unit_ids == (
+        "region-request:source:request:clause:1",
+    )
+    assert first.typed_evidence_requirements[0].kind == EvidenceKind.VISUAL_STATE
 
 
 def test_intent_draft_repair_attempt_claim_id_map_is_immutable_from_source_mapping() -> None:
@@ -670,6 +713,51 @@ def test_model_complete_cannot_upgrade_deterministically_uncovered_source_clause
     assert result.task_spec is not None
     assert result.task_spec.obligations[0].construction_source == GraphConstructionSource.CANONICAL_COMPILER
     assert checker.calls == 1
+
+
+def test_llm_compiler_accepts_only_real_then_sequence_source_units() -> None:
+    request = UserRequest(
+        request_id="explicit-sequence",
+        raw_text="Activate Alpha then activate Beta",
+    )
+    model = FixedModel(
+        IntentDraft(
+            objective="Activate Alpha and then Beta",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="Alpha",
+                    source_ref="explicit-sequence:source:request:clause:0",
+                ),
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="Beta",
+                    source_ref="explicit-sequence:source:request:clause:1",
+                ),
+            ),
+            candidate_success_criteria=("Alpha and Beta were activated in order",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+            max_draft_repairs=0,
+        ).compile(request)
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert tuple(
+        claim.source_unit_ids for claim in result.task_spec.source_claims
+    ) == (
+        ("explicit-sequence:source:request:clause:0",),
+        ("explicit-sequence:source:request:clause:1",),
+    )
+    assert result.task_spec.obligations[1].depends_on == (
+        result.task_spec.obligations[0].obligation_id,
+    )
 
 
 def test_llm_compiler_preserves_explicit_prefix_without_inventing_completion() -> None:

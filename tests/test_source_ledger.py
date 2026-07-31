@@ -31,6 +31,7 @@ def test_source_ledger_is_deterministic_and_preserves_exact_request_spans() -> N
 
     assert first == second
     assert first.identity == second.identity
+    assert first.ledger_version == "2"
     assert first.raw_text_unit_id == "request-17:source:request:whole"
     clauses = [unit for unit in first.units if unit.required_candidate]
     assert [request.raw_text[unit.span_start : unit.span_end] for unit in clauses] == [
@@ -62,6 +63,28 @@ def test_source_ledger_keeps_external_references_as_metadata_only() -> None:
     assert "Read the source value" not in str(context)
     assert "conversation:42" in str(context)
     assert context["raw_text_source_unit_id"] == ledger.raw_text_unit_id
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    (
+        "Activate the marked region, then activate Submit",
+        "Activate the marked region then activate Submit",
+    ),
+)
+def test_source_ledger_splits_explicit_then_sequence_into_real_source_units(
+    raw_text: str,
+) -> None:
+    ledger = SourceLedgerBuilder().build(_request(raw_text=raw_text))
+
+    clauses = [unit for unit in ledger.units if unit.required_candidate]
+
+    assert [unit.source_unit_id for unit in clauses] == [
+        "request-17:source:request:clause:0",
+        "request-17:source:request:clause:1",
+    ]
+    assert "marked region" in raw_text[clauses[0].span_start : clauses[0].span_end]
+    assert "Submit" in raw_text[clauses[1].span_start : clauses[1].span_end]
 
 
 def test_source_ledger_fails_closed_when_bounded_clause_limit_is_exceeded() -> None:

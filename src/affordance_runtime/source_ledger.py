@@ -63,7 +63,7 @@ class SourceUnit(_StrictModel):
 class SourceLedger(_StrictModel):
     """Immutable ledger metadata safe to expose in traces and model context."""
 
-    ledger_version: str = "1"
+    ledger_version: str = "2"
     request_id: str = Field(min_length=1, max_length=240)
     units: tuple[SourceUnit, ...] = Field(min_length=1)
 
@@ -109,9 +109,9 @@ class _RequestSources(Protocol):
 class SourceLedgerBuilder:
     """Build bounded source identity without parsing task semantics."""
 
-    ledger_version = "1"
+    ledger_version = "2"
     max_clause_units = 32
-    _CLAUSE_BOUNDARY = re.compile(r"(?:[.!?]+(?=\s|$)|;|\n+)")
+    _CLAUSE_BOUNDARY = re.compile(r"(?:[.!?]+(?=\s|$)|;|\n+|(?=\bthen\b))", re.IGNORECASE)
 
     def build(self, request: _RequestSources) -> SourceLedger:
         raw_text = request.raw_text
@@ -153,7 +153,11 @@ class SourceLedgerBuilder:
                 request.profile_context_refs,
             )
         )
-        return SourceLedger(request_id=request.request_id, units=tuple(units))
+        return SourceLedger(
+            ledger_version=self.ledger_version,
+            request_id=request.request_id,
+            units=tuple(units),
+        )
 
     @staticmethod
     def _request_unit(
