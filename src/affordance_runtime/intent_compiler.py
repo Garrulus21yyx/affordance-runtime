@@ -19,6 +19,7 @@ from affordance_runtime.model_port import (
     ModelPort,
     ProviderModelError,
     StructuredModelError,
+    StructuredOutputError,
 )
 from affordance_runtime.source_ledger import SourceLedger, SourceLedgerBuilder
 from affordance_runtime.task_intake import (
@@ -193,6 +194,7 @@ class LLMIntentCompiler:
     coverage_checker: TaskObligationCoverageChecker | None = None
     max_model_calls: int = 3
     max_draft_repairs: int = 1
+    max_schema_retries: int = 1
     model_call_count: int = field(default=0, init=False)
 
     async def compile(
@@ -231,16 +233,14 @@ class LLMIntentCompiler:
             ),
         )
         try:
-            model_draft = await budgeted_model.generate_structured(
-                [
-                    ModelMessage(role="system", content=_SYSTEM_PROMPT),
-                    ModelMessage(
-                        role="user",
-                        content=json.dumps(_bounded_request(request, source_ledger), sort_keys=True),
-                    ),
-                ],
-                LLMIntentDraft,
-                self.config,
+            model_draft, parent = await _generate_initial_draft(
+                model=budgeted_model,
+                request=request,
+                source_ledger=source_ledger,
+                config=self.config,
+                maximum_schema_retries=self.max_schema_retries,
+                trace=trace,
+                parent=parent,
             )
         except Exception as exc:
             if trace is not None:
@@ -440,6 +440,46 @@ class LLMIntentCompiler:
                         )
         _record_compilation_result(trace, result, parent)
         return result
+
+
+async def _generate_initial_draft(
+    *,
+    model: BudgetedIntakeModelPort,
+    request: UserRequest,
+    source_ledger: SourceLedger,
+    config: ModelConfig,
+    maximum_schema_retries: int,
+    trace: TraceDag | None,
+    parent: TraceNode | None,
+) -> tuple[LLMIntentDraft, TraceNode | None]:
+    messages = [
+        ModelMessage(role="system", content=_SYSTEM_PROMPT),
+        ModelMessage(
+            role="user",
+            content=json.dumps(_bounded_request(request, source_ledger), sort_keys=True),
+        ),
+    ]
+    for attempt in range(maximum_schema_retries + 1):
+        try:
+            return (
+                await model.generate_structured(messages, LLMIntentDraft, config),
+                parent,
+            )
+        except StructuredOutputError as exc:
+            if attempt >= maximum_schema_retries:
+                raise
+            if trace is not None:
+                parent = trace.add(
+                    "IntentDraftSchemaRetry",
+                    {
+                        "attempt": attempt + 1,
+                        "maximum": maximum_schema_retries,
+                        "error_type": type(exc).__name__,
+                        "prompt_version": config.prompt_version,
+                    },
+                    parents=[parent.id] if parent else None,
+                )
+    raise StructuredModelError("initial draft schema retry configuration is invalid")
 
 
 @dataclass(frozen=True)

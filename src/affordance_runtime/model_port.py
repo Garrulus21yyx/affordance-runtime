@@ -65,6 +65,10 @@ class StructuredModelError(RuntimeError):
     """A provider, JSON, or strict-schema failure without secret-bearing payloads."""
 
 
+class StructuredOutputError(StructuredModelError):
+    """A redacted response-content failure eligible for one bounded schema retry."""
+
+
 class ProviderFailureKind(StrEnum):
     RATE_LIMIT_TRANSIENT = "rate_limit_transient"
     QUOTA_EXHAUSTED = "quota_exhausted"
@@ -152,6 +156,7 @@ class FallbackModelPort:
     ) -> T:
         failures: list[str] = []
         failure_details: list[str] = []
+        output_failure_count = 0
         for offset in range(len(self.ports)):
             port_index = (self.active_port_index + offset) % len(self.ports)
             port = self.ports[port_index]
@@ -160,6 +165,7 @@ class FallbackModelPort:
             except StructuredModelError as exc:
                 failures.append(f"{port.provider}:{type(exc).__name__}")
                 failure_details.append(f"{port.provider}:{_safe_failure_detail(exc)}")
+                output_failure_count += isinstance(exc, StructuredOutputError)
                 continue
             self.last_call = port.last_call
             self.failures = tuple(failures)
@@ -169,6 +175,8 @@ class FallbackModelPort:
         self.last_call = None
         self.failures = tuple(failures)
         self.failure_details = tuple(failure_details)
+        if output_failure_count == len(self.ports):
+            raise StructuredOutputError("all configured model profiles returned invalid structured output")
         raise StructuredModelError("all configured model profiles failed")
 
 
@@ -240,7 +248,7 @@ class OpenAICompatibleModelPort:
                 )
             parsed = output_schema.model_validate_json(_structured_json_content(content))
         except (KeyError, IndexError, TypeError, ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredModelError(
+            raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc
         usage = response.get("usage") or {}
@@ -321,7 +329,7 @@ class OllamaModelPort:
         try:
             parsed = output_schema.model_validate_json(str(response["message"]["content"]))
         except (KeyError, TypeError, ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredModelError(
+            raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}"
             ) from exc
         prompt_tokens = int(response.get("prompt_eval_count") or 0)

@@ -14,7 +14,13 @@ from affordance_runtime.intent_compiler import (
     LLMIntentDraft,
     ParentSemanticProposalCompiler,
 )
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
+from affordance_runtime.model_port import (
+    ModelCallRecord,
+    ModelConfig,
+    ModelMessage,
+    StructuredModelError,
+    StructuredOutputError,
+)
 from affordance_runtime.task_intake import (
     CompilationPolicy,
     CompilationResult,
@@ -292,6 +298,23 @@ class UnexpectedModelCall:
         del messages, output_schema, config
         self.calls += 1
         raise AssertionError("source ledger rejection must not call the model")
+
+
+@dataclass
+class SchemaRetryModel(FixedModel):
+    draft_attempts: int = 0
+
+    async def generate_structured(
+        self,
+        messages: Sequence[ModelMessage],
+        output_schema: type[T],
+        config: ModelConfig,
+    ) -> T:
+        if output_schema is LLMIntentDraft:
+            self.draft_attempts += 1
+            if self.draft_attempts == 1:
+                raise StructuredOutputError("redacted invalid structured output")
+        return await super().generate_structured(messages, output_schema, config)
 
 
 def test_provider_schema_requires_deterministic_validator_prerequisites() -> None:
@@ -1432,6 +1455,69 @@ def test_compiler_trace_records_redacted_lineage_and_model_boundary() -> None:
         "request-read:source:request:whole"
     )
     assert trace.nodes[-1].parents == [trace.nodes[-2].id]
+
+
+def test_llm_compiler_retries_one_typed_structured_output_failure() -> None:
+    claims, obligations = _terminal_authority("schema-retry", "pricing read")
+    model = SchemaRetryModel(
+        IntentDraft(
+            objective="Read pricing",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="pricing",
+                    source_ref="schema-retry",
+                ),
+            ),
+            candidate_success_criteria=("pricing returned",),
+            candidate_source_claims=claims,
+            candidate_obligations=obligations,
+        )
+    )
+    trace = TraceDag("schema-retry")
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="schema-retry", raw_text="Read pricing"),
+            trace=trace,
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert model.draft_attempts == 2
+    retry = next(node for node in trace.nodes if node.kind == "IntentDraftSchemaRetry")
+    assert retry.payload == {
+        "attempt": 1,
+        "error_type": "StructuredOutputError",
+        "maximum": 1,
+        "prompt_version": INTENT_COMPILER_PROMPT_VERSION,
+    }
+
+
+def test_llm_compiler_does_not_retry_untyped_model_boundary_failure() -> None:
+    class BudgetFailureModel(FixedModel):
+        calls = 0
+
+        async def generate_structured(
+            self,
+            messages: Sequence[ModelMessage],
+            output_schema: type[T],
+            config: ModelConfig,
+        ) -> T:
+            del messages, output_schema, config
+            self.calls += 1
+            raise StructuredModelError("intake model call budget exhausted")
+
+    model = BudgetFailureModel(IntentDraft())
+
+    with pytest.raises(StructuredModelError, match="budget exhausted"):
+        asyncio.run(
+            LLMIntentCompiler(model).compile(
+                UserRequest(request_id="budget-failure", raw_text="Read pricing")
+            )
+        )
+
+    assert model.calls == 1
 
 
 def test_raw_language_compiler_rejects_missing_obligation_authority() -> None:
