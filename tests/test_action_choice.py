@@ -18,6 +18,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
     ValueExpr,
     ValueExprKind,
+    interaction_for_state,
 )
 from affordance_runtime.unified_observation import (
     UnifiedObservation,
@@ -357,6 +358,48 @@ def test_action_choice_builder_resolves_unique_exact_label_subject() -> None:
     assert isinstance(result, ActionChoiceSet)
     assert len(result.choices) == 1
     assert result.choices[0].target_id == "semantic:target-button"
+
+
+@pytest.mark.parametrize("subject", ("Confirm button", "button Confirm", "confirm_button"))
+def test_action_choice_builder_binds_generic_label_and_role_identity(subject: str) -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:confirm",
+        subject=subject,
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=True,
+    )
+    step = _step(
+        criterion=criterion,
+        step_id="step:confirm",
+        interaction=interaction_for_state(
+            subject,
+            CriterionRelation.IS_COMPLETED,
+            None,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:confirm",
+                surface="dom",
+                role="button",
+                label="Confirm",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.grounding.targets[0].target_id == "semantic:confirm"
+    assert result.choices[0].action_kind == PlannerActionKind.ACTIVATE
 
 
 def test_action_choice_builder_creates_has_changed_activation_choice_for_button() -> None:

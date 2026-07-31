@@ -155,11 +155,13 @@ def interaction_for_state(
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
+    target_name, element_role, role_only = _element_identity(subject)
+    is_collection = relation == StateCriterionRelation.IS_SELECTED
     target = ElementIntent(
-        subject,
+        target_name,
         source_refs,
-        role=("collection" if relation == StateCriterionRelation.IS_SELECTED else ""),
-        match_by_role=relation == StateCriterionRelation.IS_SELECTED,
+        role=("collection" if is_collection else element_role),
+        match_by_role=is_collection or role_only,
     )
     if (
         relation != StateCriterionRelation.IS_SELECTED
@@ -175,6 +177,39 @@ def interaction_for_state(
             source_refs,
         ),
     )
+
+
+_ELEMENT_ROLES = frozenset(
+    {
+        "button",
+        "checkbox",
+        "combobox",
+        "link",
+        "listbox",
+        "menuitem",
+        "radio",
+        "searchbox",
+        "slider",
+        "tab",
+        "textbox",
+    }
+)
+
+
+def _element_identity(subject: str) -> tuple[str, str, bool]:
+    """Separate an explicit leading/trailing role token from a semantic label."""
+
+    tokens = subject.replace("_", " ").split()
+    if not tokens:
+        return subject, "", False
+    first = tokens[0].casefold()
+    last = tokens[-1].casefold()
+    role = first if first in _ELEMENT_ROLES else last if last in _ELEMENT_ROLES else ""
+    if not role:
+        return subject, "", False
+    label_tokens = tokens[1:] if first == role else tokens[:-1]
+    label = " ".join(label_tokens)
+    return (label or role), role, not label
 
 
 @dataclass(frozen=True)
