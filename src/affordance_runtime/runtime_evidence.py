@@ -24,6 +24,8 @@ def action_progress_signature(
             "target": proposal.target_affordance_id,
             "parameters": proposal.parameters,
         }
+        if proposal.subgoal:
+            payload["subgoal"] = proposal.subgoal
         if proposal.destination_affordance_id:
             payload["destination"] = proposal.destination_affordance_id
     else:
@@ -65,8 +67,8 @@ def verification_confirms_effect_absent(report: VerificationReport) -> bool:
 def semantic_progress_fingerprint(state: StateKernel) -> str:
     progress = {
         "completed_subgoals": (
-            list(state.plan_progress.completed_subgoal_ids)
-            if state.plan_progress is not None
+            list(state.task_progress.completed_subgoal_ids)
+            if state.task_progress is not None
             else []
         ),
         "satisfied_effects": [

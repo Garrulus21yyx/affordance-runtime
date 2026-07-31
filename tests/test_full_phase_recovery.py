@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.failure_envelope import FailurePhase
 from affordance_runtime.model_port import ProviderFailureKind, ProviderModelError
 from affordance_runtime.planning import (
@@ -17,12 +17,17 @@ from affordance_runtime.planning import (
     ProposalRejected,
     ProposalRejectionCode,
 )
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_owner_dispatcher import (
     RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
 )
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     CompilationIssue,
@@ -86,14 +91,9 @@ class StableObserver:
 
 
 class DonePlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope, state, snapshot
-        return PlannerDecision(done=True, result={"status": "observed"})
+    def propose(self, request: PlanningRequest) -> PlannerDoneResponse:
+        del request
+        return PlannerDoneResponse(result={"status": "observed"})
 
 
 class FailOncePlanner(DonePlanner):
@@ -102,24 +102,17 @@ class FailOncePlanner(DonePlanner):
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+        request: PlanningRequest,
+    ) -> PlannerDoneResponse:
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("transient structured planning failure")
-        return super().propose(envelope, state, snapshot)
+        return super().propose(request)
 
 
 class AlwaysFailPlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope, state, snapshot
+    def propose(self, request: PlanningRequest) -> PlannerDoneResponse:
+        del request
         raise RuntimeError("stable structured planning failure")
 
 
@@ -129,18 +122,16 @@ class TargetScopeThenClarifyPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse:
         self.calls += 1
         if self.calls > 1:
-            return PlannerDecision(
+            return PlannerProposalResponse(
                 proposal=PlannerProposal(
                     proposal_id="clarify-after-target-rejection",
                     based_on_task_revision=1,
-                    based_on_state_version=state.version,
-                    snapshot_id=snapshot.observation.snapshot_id,
+                    based_on_state_version=request.identity.evaluated_at_state_version,
+                    snapshot_id=request.identity.snapshot_id,
                     action_kind=PlannerActionKind.ASK_USER,
                     subgoal="Which visible target should be used?",
                     requires_clarification=True,
@@ -151,15 +142,15 @@ class TargetScopeThenClarifyPlanner:
                     producer_id="test-planner",
                 ),
             )
-        target = snapshot.affordance_model.affordances[0]
-        return PlannerDecision(
+        target = request.observation.affordances[0]
+        return PlannerProposalResponse(
             proposal=PlannerProposal(
                 proposal_id="wrong-target",
                 based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=target.id,
+                target_affordance_id=target.target_id,
             ),
             proposal_provenance=PlannerProposalProvenance(
                 source=PlannerProposalSource.MODEL,
@@ -189,14 +180,12 @@ class ProviderFailOncePlanner(DonePlanner):
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+        request: PlanningRequest,
+    ) -> PlannerDoneResponse:
         self.calls += 1
         if self.calls == 1:
-            raise ProviderModelError(ProviderFailureKind.QUOTA_EXHAUSTED)
-        return super().propose(envelope, state, snapshot)
+            raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY)
+        return super().propose(request)
 
 
 @dataclass
@@ -222,19 +211,13 @@ class ProviderSwitchOwner:
 
 
 class ClarifyPlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
-        return PlannerDecision(
+    def propose(self, request: PlanningRequest) -> PlannerProposalResponse:
+        return PlannerProposalResponse(
             proposal=PlannerProposal(
                 proposal_id="clarify-after-task-replan",
                 based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 subgoal="Which account should be inspected?",
                 action_kind=PlannerActionKind.ASK_USER,
                 requires_clarification=True,
@@ -248,21 +231,15 @@ class ClarifyPlanner:
 
 
 class ActivateCurrentPlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
-        return PlannerDecision(
+    def propose(self, request: PlanningRequest) -> PlannerProposalResponse:
+        return PlannerProposalResponse(
             proposal=PlannerProposal(
-                proposal_id=f"activate-current-{state.replan_count}",
+                proposal_id=f"activate-current-{request.identity.evaluated_at_state_version}",
                 based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=snapshot.affordance_model.affordances[0].id,
+                target_affordance_id=request.observation.affordances[0].target_id,
                 expected_effects=("continue control is activated",),
                 evidence_requirements=("current continue control",),
             ),
@@ -341,6 +318,20 @@ def _navigation_task_spec() -> TaskSpec:
     )
 
 
+def _simple_envelope(task_id: str, objective: str) -> RunRequest:
+    return RunRequest(
+        task_spec=TaskSpec(
+            task_id=task_id,
+            revision=1,
+            objective=objective,
+            operation_class=OperationClass.READ_ONLY,
+            targets=("current interface",),
+            success_criteria=("planner produced a safe result",),
+            source_request_ref="full-phase-recovery-test",
+        )
+    )
+
+
 class StaticClarificationCompiler:
     async def compile(
         self,
@@ -393,19 +384,23 @@ class NeverExecutor:
 
 
 def test_observation_failure_reenters_through_one_reobserve_command() -> None:
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=FlakyObserver(),
         planner=DonePlanner(),
         executor=NeverExecutor(),
         task_planner=None,
-    ).run_sync(TaskEnvelope("observation-recovery", "observe the current interface"))
+    ).run_sync(_simple_envelope("observation-recovery", "observe the current interface"))
 
     assert result.status == RuntimeStep.DONE
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.OBSERVATION
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryKind.REOBSERVE.value
-    assert result.state.recovery_history[0].strategy_id.startswith("strategy:reobserve:")
+    assert any(
+        node.kind == "RecoveryStrategySelected"
+        and node.payload["decision"]["kind"] == "reobserve"
+        for node in result.trace.nodes
+    )
     recovery_outcome = next(
         node.payload["outcome"]
         for node in result.trace.nodes
@@ -419,37 +414,32 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
 
 def test_step_planning_failure_changes_strategy_then_succeeds() -> None:
     planner = FailOncePlanner()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=planner,
         executor=NeverExecutor(),
         task_planner=None,
-    ).run_sync(TaskEnvelope("step-planning-recovery", "produce a safe answer"))
+    ).run_sync(_simple_envelope("step-planning-recovery", "produce a safe answer"))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 2
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.STEP_PLANNING
-    assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
-    assert result.state.recovery_history[0].strategy_id.startswith("strategy:replan_step:")
-    recovery_outcome = next(
-        node.payload["outcome"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
-    )
-    assert recovery_outcome["changed_dimensions"][0] == "step_plan"
+    assert result.state.current_recovery_decision is None
+    assert result.state.recovery_count == 0
+    handoff = next(node for node in result.trace.nodes if node.kind == "FailureOwnerRouted")
+    assert handoff.payload["handoff_type"] == "StepPlannerHandoff"
 
 
 def test_target_scope_rejection_replans_without_weakening_validation() -> None:
     planner = TargetScopeThenClarifyPlanner()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=planner,
         executor=NeverExecutor(),
         proposal_validator=RejectTargetScopeOnceValidator(),  # type: ignore[arg-type]
         task_planner=None,
-    ).run_sync(TaskEnvelope(task_spec=_navigation_task_spec()))
+    ).run_sync(RunRequest(task_spec=_navigation_task_spec()))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert planner.calls == 2
@@ -458,8 +448,12 @@ def test_target_scope_rejection_replans_without_weakening_validation() -> None:
     assert result.state.current_failure.message == (
         "target_out_of_scope:relational_evidence_not_proven:semantic:wrong-target"
     )
-    assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
+    assert result.state.current_recovery_decision is None
+    assert any(
+        node.kind == "FailureOwnerRouted"
+        and node.payload["handoff_type"] == "StepPlannerHandoff"
+        for node in result.trace.nodes
+    )
     rejected = next(
         node for node in result.trace.nodes if node.kind == "PlannerProposalRejected"
     )
@@ -471,7 +465,7 @@ def test_target_scope_rejection_replans_without_weakening_validation() -> None:
 def test_provider_failure_invokes_real_owner_before_reentering_planning() -> None:
     planner = ProviderFailOncePlanner()
     owner = ProviderSwitchOwner()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=planner,
         executor=NeverExecutor(),
@@ -479,7 +473,7 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
         recovery_owner_dispatcher=RecoveryOwnerDispatcher(
             {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
-    ).run_sync(TaskEnvelope("provider-owner-recovery", "produce a safe answer"))
+    ).run_sync(_simple_envelope("provider-owner-recovery", "produce a safe answer"))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 2
@@ -502,7 +496,7 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
 
 def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
     owner = ProviderSwitchOwner(no_op=True)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=ProviderFailOncePlanner(),
         executor=NeverExecutor(),
@@ -510,10 +504,10 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
         recovery_owner_dispatcher=RecoveryOwnerDispatcher(
             {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
-    ).run_sync(TaskEnvelope("provider-no-op-recovery", "produce a safe answer"))
+    ).run_sync(_simple_envelope("provider-no-op-recovery", "produce a safe answer"))
 
-    assert result.status == RuntimeStep.DEFERRED
-    assert result.state.phase == RuntimeStep.DEFERRED.value
+    assert result.status == RuntimeStep.ABORTED
+    assert result.state.phase == RuntimeStep.ABORTED.value
     assert owner.calls == 1
     assert "RecoveryDeltaValidated" not in [node.kind for node in result.trace.nodes]
     recovery_outcome = next(
@@ -526,59 +520,47 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
 
 
 def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget() -> None:
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=AlwaysFailPlanner(),
         executor=NeverExecutor(),
         task_planner=None,
-    ).run_sync(TaskEnvelope("step-planning-loop", "produce a safe answer"))
+    ).run_sync(_simple_envelope("step-planning-loop", "produce a safe answer"))
 
     assert result.status == RuntimeStep.ABORTED
-    assert result.state.recovery_count == 2
-    assert result.state.recovery_count < 3
-    assert result.state.current_recovery_outcome is not None
-    assert result.state.current_recovery_outcome.next_phase.value == RuntimeStep.ABORTED.value
+    assert result.state.recovery_count == 0
+    assert result.state.replan_count == 1
+    assert result.state.current_recovery_outcome is None
     assert [
-        node.payload["outcome"]["success"]
+        node.payload["handoff_type"]
         for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
-    ] == [False, True]
-    selected = [
-        node.payload["decision"]["kind"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryStrategySelected"
-    ]
-    assert selected == [
-        RecoveryKind.REPLAN_STEP.value,
-        RecoveryKind.ABORT.value,
-    ]
+        if node.kind == "FailureOwnerRouted"
+    ] == ["StepPlannerHandoff", "TerminalResult"]
 
 
 def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
     task_planner = FailOnceTaskPlanner()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=ClarifyPlanner(),
         executor=NeverExecutor(),
         task_planner=task_planner,
-    ).run_sync(TaskEnvelope(task_spec=_task_spec()))
+    ).run_sync(RunRequest(task_spec=_task_spec()))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert task_planner.calls == 2
     assert result.state.task_plan is not None
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.TASK_PLANNING
-    assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_TASK.value
+    assert result.state.current_recovery_decision is None
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("RecoveryDecisionStarted") < events.index("TaskPlanAccepted")
-    assert events.index("RecoveryDecisionStarted") < events.index("RecoveryOutcomeRecorded")
+    assert events.index("FailureOwnerRouted") < events.index("TaskPlanAccepted")
 
 
 def test_intake_clarification_uses_same_recovery_coordinator_without_run_state() -> None:
     pipeline = GeneralistTaskPipeline(
         compiler=StaticClarificationCompiler(),  # type: ignore[arg-type]
-        coordinator=RunCoordinator(
+        coordinator=compose_run_coordinator(
             observer=StableObserver(),
             planner=DonePlanner(),
             executor=NeverExecutor(),
@@ -596,55 +578,59 @@ def test_intake_clarification_uses_same_recovery_coordinator_without_run_state()
     )
 
     assert result.status == CompilationStatus.NEEDS_CLARIFICATION.value
-    selected = next(
-        node for node in result.trace.nodes if node.kind == "RecoveryStrategySelected"
-    )
-    if "decision" in selected.payload:
-        assert selected.payload["decision"]["kind"] == "clarify_intent"
-    else:
-        assert selected.payload["plan"]["commands"][0]["kind"] == "clarify_intent"
-    assert "RecoveryEscalatedToUser" in [node.kind for node in result.trace.nodes]
+    selected = next(node for node in result.trace.nodes if node.kind == "FailureOwnerRouted")
+    assert selected.payload["handoff_type"] == "UserInputRequest"
+    assert "UserInputRequested" in [node.kind for node in result.trace.nodes]
 
 
 def test_skill_activation_failure_falls_through_via_replan_step() -> None:
     skill_runtime = FailOnceSkillRuntime()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=ClarifyPlanner(),
         executor=NeverExecutor(),
         task_planner=None,
         task_skill_runtime=skill_runtime,  # type: ignore[arg-type]
-    ).run_sync(TaskEnvelope(task_spec=_task_spec()))
+    ).run_sync(RunRequest(task_spec=_task_spec()))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert skill_runtime.failed
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.SKILL_ACTIVATION
-    assert result.state.current_recovery_decision is not None
-    assert result.state.current_recovery_decision.kind.value == RecoveryKind.REPLAN_STEP.value
+    assert result.state.current_recovery_decision is None
+    assert any(
+        node.kind == "FailureOwnerRouted"
+        and node.payload["handoff_type"] == "StepPlannerHandoff"
+        for node in result.trace.nodes
+    )
 
 
 def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> None:
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=StableObserver(),
         planner=ActivateCurrentPlanner(),
         executor=NeverExecutor(),
         contract_builder=RejectBindingBuilder(),
         task_planner=None,
-    ).run_sync(TaskEnvelope(task_spec=_navigation_task_spec()))
+    ).run_sync(RunRequest(task_spec=_navigation_task_spec()))
 
     assert result.status == RuntimeStep.ABORTED
-    assert result.state.receipts == []
+    assert result.state.last_receipt is None
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.GROUNDING_BINDING
     assert [
         node.payload["outcome"]["success"]
         for node in result.trace.nodes
         if node.kind == "RecoveryOutcomeRecorded"
-    ] == [False, True]
+    ] == [False]
     selected = [
         node.payload["decision"]["kind"]
         for node in result.trace.nodes
         if node.kind == "RecoveryStrategySelected"
     ]
-    assert selected == [RecoveryKind.REGROUND.value, RecoveryKind.ABORT.value]
+    assert selected == [RecoveryKind.REGROUND.value]
+    assert any(
+        node.kind == "FailureOwnerRouted"
+        and node.payload["handoff_type"] == "TerminalResult"
+        for node in result.trace.nodes
+    )

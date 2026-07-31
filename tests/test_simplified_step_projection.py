@@ -258,8 +258,8 @@ def test_state_projection_is_read_only() -> None:
     plan = _plan(task)
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     state.install_task_plan(plan)
-    state.activate_next_subgoal()
-    state.complete_subgoal("step:type-name", ("evidence:name:1",))
+    state.activate_next_step()
+    state.complete_step("step:type-name", ("evidence:name:1",))
     version = state.version
 
     result = project_state_legacy_task_plan_to_step_view(

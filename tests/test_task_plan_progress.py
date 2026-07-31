@@ -174,6 +174,69 @@ def test_visible_subgoal_can_be_completed_from_current_observation() -> None:
     assert preparation.subgoal_id == "submit-button-available"
 
 
+def test_selected_list_value_can_be_completed_from_current_observation() -> None:
+    plan = TaskPlan(
+        plan_id="plan-selection",
+        task_id="task-selection",
+        task_revision=1,
+        plan_version=1,
+        based_on_state_version=7,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="list-selected",
+                objective="list has selected value",
+                success_criteria=("list has selected value",),
+                evidence_requirements=("current list observation",),
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                action_family=TaskPlanActionFamily.SELECT_OPTION,
+                outcome=SubgoalOutcome(
+                    subject="list",
+                    relation=SubgoalOutcomeRelation.IS_SELECTED,
+                    value="Ertha",
+                ),
+            ),
+        ),
+    )
+    progress = TaskPlanProgressStateView(
+        plan_id=plan.plan_id,
+        plan_version=plan.plan_version,
+        plan_based_on_state_version=plan.based_on_state_version,
+        evaluated_at_state_version=9,
+        active_subgoal_id="list-selected",
+        completed_subgoal_ids=(),
+        failed_subgoal_ids=(),
+    )
+    environment = PlanningEnvironmentSummary(
+        environment_revision="env-1",
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        affordances=(
+            PlanningAffordanceSummary(
+                semantic_target_id="semantic:options:1",
+                role="combobox",
+                label="options",
+                supported_actions=("select_option",),
+                current_state=PlanningAffordanceState(
+                    visible=True,
+                    enabled=True,
+                    selected_options=("Ertha",),
+                ),
+            ),
+        ),
+    )
+
+    preparation = CurrentStateSubgoalCompletionEvaluator().evaluate(
+        plan=plan,
+        progress=progress,
+        environment=environment,
+        evaluated_at_state_version=9,
+    )
+
+    assert preparation is not None
+    assert preparation.evidence[0].observed_value == "Ertha"
+
+
 def test_dependency_must_be_completed_before_current_state_progress() -> None:
     plan = _plan()
 

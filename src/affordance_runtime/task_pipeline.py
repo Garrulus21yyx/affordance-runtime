@@ -6,23 +6,22 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.async_bridge import resolve_awaitable
-from affordance_runtime.coordinator import CoordinatorResult, RunCoordinator
+from affordance_runtime.coordinator import RunCoordinator, RunResult
 from affordance_runtime.failure_envelope import (
     FailureClass,
     FailurePhase,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.failure_owner_flow import non_runtime_failure_owner_decision
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
-from affordance_runtime.recovery_protocol import (
-    RecoveryDimension,
-    RecoveryKind,
-    RecoveryOutcome,
-    classify_failure,
+from affordance_runtime.recovery_protocol import classify_failure
+from affordance_runtime.runtime import RunRequest
+from affordance_runtime.stage_protocol import (
+    TerminalResult,
+    UserInputRequest,
+    build_failure_owner_handoff,
 )
-from affordance_runtime.runtime import TaskEnvelope
 from affordance_runtime.task_intake import CompilationResult, CompilationStatus, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
 from affordance_runtime.trace import TraceDag
@@ -33,7 +32,7 @@ class TaskPipelineResult:
     status: str
     compilation: CompilationResult
     trace: TraceDag
-    coordinator: CoordinatorResult | None = None
+    coordinator: RunResult | None = None
 
 
 @dataclass
@@ -49,15 +48,20 @@ class GeneralistTaskPipeline:
         model = getattr(self.compiler, "model", None)
         if model is None:
             return
-        model_dispatcher = recovery_dispatcher_for_model(model, planner=self.coordinator.planner)
+        model_dispatcher = recovery_dispatcher_for_model(
+            model, planner=self.coordinator.planning_stage.planner
+        )
         if not model_dispatcher.available_kinds:
             return
-        handlers = dict(self.coordinator.recovery_owner_dispatcher.handlers)
+        handlers = dict(self.coordinator.recovery_stage.owner_dispatcher.handlers)
         for kind, handler in model_dispatcher.handlers.items():
             handlers.setdefault(kind, handler)
+        dispatcher = type(self.coordinator.recovery_stage.owner_dispatcher)(handlers)
         self.coordinator = replace(
             self.coordinator,
-            recovery_owner_dispatcher=type(self.coordinator.recovery_owner_dispatcher)(handlers),
+            recovery_stage=replace(
+                self.coordinator.recovery_stage, owner_dispatcher=dispatcher
+            ),
         )
 
     async def run(self, request: UserRequest) -> TaskPipelineResult:
@@ -84,21 +88,32 @@ class GeneralistTaskPipeline:
             )
         task_spec = compilation.task_spec
         coordinator = self.coordinator
-        task_planner = coordinator.task_planner
+        flow = coordinator.planning_stage.task_plan_flow
+        task_planner = flow.lifecycle.planner if flow is not None else None
         if (
             task_spec.task_structure == TaskStructure.MULTI_STAGE
             and isinstance(task_planner, PlanningRouter)
             and task_planner.complex_planner is None
         ):
+            assert flow is not None
             coordinator = replace(
                 coordinator,
-                task_planner=replace(
-                    task_planner,
-                    complex_planner=LLMTaskPlanner(self.compiler.model),
+                planning_stage=replace(
+                    coordinator.planning_stage,
+                    task_plan_flow=replace(
+                        flow,
+                        lifecycle=replace(
+                            flow.lifecycle,
+                            planner=replace(
+                                task_planner,
+                                complex_planner=LLMTaskPlanner(self.compiler.model),
+                            ),
+                        ),
+                    ),
                 ),
             )
         coordinator_result = coordinator.run_sync(
-            TaskEnvelope(
+            RunRequest(
                 task_spec=task_spec,
                 constraints=dict(self.constraints),
                 # Caller grants are independent inputs. ContractBuilder and
@@ -148,11 +163,11 @@ class GeneralistTaskPipeline:
             progress_fingerprint="intake:uncompiled",
         )
         classification = classify_failure(failure)
-        decision = non_runtime_failure_owner_decision(
+        handoff = build_failure_owner_handoff(
             failure,
-            classification,
-            current_state_version=0,
-        ).decision
+            classification.owner,
+            classification.reason_code,
+        )
         parent = trace.nodes[-1] if trace.nodes else None
         parent = trace.add(
             "FailureDetected",
@@ -160,61 +175,33 @@ class GeneralistTaskPipeline:
             parents=[parent.id] if parent is not None else None,
         )
         parent = trace.add(
-            "RecoveryStrategySelected",
+            "FailureOwnerRouted",
             {
                 "state": "intake",
-                "decision": {
-                    "decision_id": decision.decision_id,
-                    "failure_id": decision.failure_id,
-                    "based_on_state_version": decision.based_on_state_version,
-                    "strategy_key": decision.strategy_key,
-                    "kind": decision.kind.value,
-                    "reason_code": decision.reason_code,
-                    "reentry_phase": decision.reentry_phase.value,
-                    "changed_dimensions": [
-                        item.value for item in decision.changed_dimensions
-                    ],
-                },
+                "failure_id": failure.failure_id,
+                "owner": handoff.owner.value,
+                "reason_code": handoff.reason_code,
+                "handoff_type": type(handoff).__name__,
             },
             parents=[parent.id],
         )
-        next_state = (
-            "waiting_clarification"
-            if decision.kind in {RecoveryKind.CLARIFY_INTENT, RecoveryKind.ASK_USER}
-            else "aborted"
-        )
-        outcome = RecoveryOutcome(
-            decision_id=decision.decision_id,
-            failure_id=failure.failure_id,
-            success=True,
-            changed_dimensions=decision.changed_dimensions,
-            next_phase=decision.reentry_phase,
-        )
-        parent = trace.add(
-            "RecoveryOutcomeRecorded",
-            {
-                "state": next_state,
-                "outcome": {
-                    "decision_id": outcome.decision_id,
-                    "failure_id": outcome.failure_id,
-                    "success": outcome.success,
-                    "changed_dimensions": [
-                        item.value for item in outcome.changed_dimensions
-                    ],
-                    "next_phase": outcome.next_phase.value,
-                    "artifact_refs": list(outcome.artifact_refs),
-                    "observation_refs": list(outcome.observation_refs),
-                    "error_code": outcome.error_code,
+        if isinstance(handoff, UserInputRequest):
+            trace.add(
+                "UserInputRequested",
+                {
+                    "state": "waiting_clarification",
+                    "failure_id": handoff.failure_id,
+                    "question": handoff.question,
                 },
-            },
-            parents=[parent.id],
-        )
-        trace.add(
-            (
-                "RecoveryEscalatedToUser"
-                if RecoveryDimension.USER_INFORMATION in decision.changed_dimensions
-                else "RecoveryAborted"
-            ),
-            {"state": next_state, "reentry_phase": decision.reentry_phase.value},
-            parents=[parent.id],
-        )
+                parents=[parent.id],
+            )
+        elif isinstance(handoff, TerminalResult):
+            trace.add(
+                "TerminalResultRecorded",
+                {
+                    "state": handoff.status,
+                    "failure_id": handoff.failure_id,
+                    "reason_code": handoff.reason_code,
+                },
+                parents=[parent.id],
+            )

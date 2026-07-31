@@ -3,6 +3,7 @@ import pytest
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, RiskLevel, RuntimeErrorCode
 from affordance_runtime.evolution import (
     EvolutionFailureSignature,
+    EvolutionRecoveryAction,
     EvolutionRecoveryContext,
     EvolutionRecoveryPolicy,
 )
@@ -69,7 +70,7 @@ def test_recovery_retries_only_idempotent_contract() -> None:
             _failed_receipt(),
             EvolutionRecoveryContext(),
         ).kind
-        == RecoveryKind.ABORT
+        == EvolutionRecoveryAction.ABORT
     )
 
 

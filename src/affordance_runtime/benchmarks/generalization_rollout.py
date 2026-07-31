@@ -30,6 +30,7 @@ from affordance_runtime.benchmarks.generalization_evidence import (
     write_generalization_evidence_report,
 )
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -40,7 +41,7 @@ from affordance_runtime.contracts import (
     Surface,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import CoordinatorResult, PlannerDecision, RunCoordinator
+from affordance_runtime.coordinator import RunResult
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
     GeneralistPlannerProfile,
@@ -69,14 +70,19 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+    PlannerResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_owner_dispatcher import (
     RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
 )
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
-from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -90,7 +96,7 @@ T = TypeVar("T", bound=BaseModel)
 
 @dataclass(frozen=True)
 class _ExecutedCase:
-    result: CoordinatorResult
+    result: RunResult
     planner_calls: int
     model_calls: int
     effect_count: int
@@ -277,28 +283,25 @@ class _SurfacePlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
+        request: PlanningRequest,
+    ) -> PlannerResponse:
         self.calls += 1
-        if snapshot.observation.metadata.get("saved") is True:
-            return PlannerDecision(done=True, result={"saved": True})
-        target = snapshot.unified_affordances[0]
+        if any(item.verification_status == "passed" for item in request.recent_outcomes):
+            return PlannerDoneResponse(result={"saved": True})
+        target = request.observation.affordances[0]
         action = (
             PlannerActionKind.POINT_ACTIVATE
             if "point_activate" in target.supported_actions
             else PlannerActionKind.ACTIVATE
         )
-        return PlannerDecision(
+        return PlannerProposalResponse(
             proposal=PlannerProposal(
-                proposal_id=f"surface-{state.version}",
-                based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"surface-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=action,
-                target_affordance_id=target.semantic_target_id,
+                target_affordance_id=target.target_id,
                 expected_effects=("saved state becomes true",),
                 evidence_requirements=("independent saved metadata",),
             ),
@@ -391,13 +394,11 @@ class _DoneAfterDisclosurePlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
+        request: PlanningRequest,
     ) -> Any:
-        if snapshot.observation.metadata.get("expanded") is True:
-            return PlannerDecision(done=True, result={"expanded": True})
-        return self.delegate.propose_legacy(envelope, state, snapshot)
+        if any(item.verification_status == "passed" for item in request.recent_outcomes):
+            return PlannerDoneResponse(result={"expanded": True})
+        return self.delegate.propose(request)
 
 
 class _ProviderFailOncePlanner:
@@ -406,15 +407,13 @@ class _ProviderFailOncePlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope, state, snapshot
+        request: PlanningRequest,
+    ) -> PlannerResponse:
+        del request
         self.calls += 1
         if self.calls == 1:
-            raise ProviderModelError(ProviderFailureKind.QUOTA_EXHAUSTED)
-        return PlannerDecision(done=True, result={"provider_recovered": True})
+            raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY)
+        return PlannerDoneResponse(result={"provider_recovered": True})
 
 
 @dataclass
@@ -672,7 +671,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
         evidence_requirements=("independent saved metadata",),
         source_request_ref=f"g5-rollout:{revision}",
     )
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=world,
         planner=planner,
         executor=world,
@@ -692,7 +691,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
         ),
         task_planner=None,
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     return _ExecutedCase(
         result,
@@ -727,7 +726,7 @@ def _run_compatibility_pair(
             evidence_requirements=("expanded metadata",),
             source_request_ref=f"g5-rollout:{revision}",
         )
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer=world,
             planner=planner,
             executor=world,
@@ -747,7 +746,7 @@ def _run_compatibility_pair(
             ),
             task_planner=None,
             artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-        ).run_sync(TaskEnvelope(task_spec=task))
+        ).run_sync(RunRequest(task_spec=task))
         _write_case_manifest(output_dir, result, revision)
         task_success = result.status == RuntimeStep.DONE and world.expanded
         outcomes.append(
@@ -777,7 +776,7 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         evidence_requirements=("owning-port recovery receipt",),
         source_request_ref=f"g5-rollout:{revision}",
     )
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=world,
         planner=planner,
         executor=world,
@@ -786,7 +785,7 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
             {RecoveryKind.SWITCH_PROVIDER: owner}
         ),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     recovery_success = any(
         node.kind == "RecoveryOutcomeRecorded"
@@ -878,7 +877,7 @@ def _executed_case(
 
 def _write_case_manifest(
     output_dir: Path,
-    result: CoordinatorResult,
+    result: RunResult,
     revision: str,
 ) -> None:
     path = output_dir / "case-manifests" / f"{result.run_id}.json"
@@ -894,11 +893,19 @@ def _write_case_manifest(
                 if result.state.current_contract is not None
                 else ""
             ),
-            "receipt_ids": [item.contract_id for item in result.state.receipts],
+            "receipt_ids": (
+                [result.state.last_receipt.contract_id]
+                if result.state.last_receipt is not None
+                else []
+            ),
             "verification_status": (
                 result.verification.status.value if result.verification is not None else "none"
             ),
-            "observation_epochs": [item.snapshot_id for item in result.state.observations],
+            "observation_epochs": [
+                str(node.payload.get("snapshot_id") or "")
+                for node in result.trace.nodes
+                if node.kind in {"ObservationCaptured", "PostActionObservationCaptured", "TargetedPerceptionCaptured"}
+            ],
             "trace_events": [item.kind for item in result.trace.nodes],
             "artifacts": [
                 {"path": item.path, "sha256": item.sha256, "media_type": item.media_type}

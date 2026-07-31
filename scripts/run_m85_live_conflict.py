@@ -14,7 +14,7 @@ from typing import Any
 
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator, RuntimeFeatures
+from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
 from affordance_runtime.executors import DomExecutor
 from affordance_runtime.grounding import (
     ActivePerceptionRequest,
@@ -28,7 +28,8 @@ from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposal,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.source_assertions import SourceAssertionOrchestrator
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -140,7 +141,7 @@ class SavePlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerDecision:
@@ -253,7 +254,7 @@ def _run_profile(browser: Any, profile: str, *, adaptive: bool) -> dict[str, Any
                 }
             ),
             features=RuntimeFeatures(recovery=False),
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         events = tuple(node.kind for node in result.trace.nodes)
         action_index = events.index("ActionStarted") if "ActionStarted" in events else len(events)
         arbitration_index = (

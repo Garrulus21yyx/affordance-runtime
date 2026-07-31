@@ -47,7 +47,7 @@ def test_protocol_projection_is_typed_and_does_not_write_runtime_state() -> None
         ),
     )
     context = RecoverySelectionContext(
-        available_commands=frozenset({RecoveryKind.REOBSERVE, RecoveryKind.ABORT}),
+        available_commands=frozenset({RecoveryKind.REOBSERVE}),
         current_attempt_fingerprint="state:3",
     )
     classification = classify_failure(failure)

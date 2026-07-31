@@ -8,7 +8,7 @@ runtime-ablation harness, not a claim about a remote model's capability.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
 
@@ -16,12 +16,20 @@ from pydantic import BaseModel
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning import (
+    ContractBuilder,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import PlannerProposalResponse
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
     LLMTaskPlanner,
@@ -85,26 +93,47 @@ class _StageEnvironment:
 
 
 class _StageActionPlanner:
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope
+    def propose(self, request: PlanningRequest) -> PlannerProposalResponse:
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id=f"stage-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal=request.step.compatibility_active_step_objective,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=request.observation.affordances[0].target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="task-planning-ablation",
+            ),
+        )
+
+
+class _StageContractBuilder(ContractBuilder):
+    def build(self, proposal, task_spec, state, snapshot):
+        contract = super().build(proposal, task_spec, state, snapshot)
         next_stage = int(snapshot.observation.metadata["stage"]) + 1
-        active_objective = state.active_subgoal()
-        active_id = state.plan_progress.active_subgoal_id if state.plan_progress else "subgoal-1"
-        return PlannerDecision(
-            contract=ActionContract.from_affordance(
-                snapshot.affordance_model.affordances[0],
-                intent=active_objective or state.goal,
-                backend="controlled-stage",
-                verifier_plan=[
-                    VerifierSpec(
-                        "observation_metadata",
-                        "stage",
-                        next_stage,
-                        criterion_ids=(criterion_id("subgoal", active_id, 0),),
-                        requirement_ids=(evidence_requirement_id("subgoal", active_id, 0),),
-                    )
-                ],
-            )
+        active_id = (
+            state.task_progress.active_subgoal_id
+            if state.task_progress
+            else "subgoal-1"
+        )
+        return replace(
+            contract,
+            verifier_plan=[
+                VerifierSpec(
+                    "observation_metadata",
+                    "stage",
+                    next_stage,
+                    criterion_ids=(criterion_id("subgoal", active_id, 0),),
+                    requirement_ids=(
+                        evidence_requirement_id("subgoal", active_id, 0),
+                    ),
+                )
+            ],
+            contract_hash="",
         )
 
 
@@ -199,12 +228,13 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
     )
     planner, model = _profile_planner(profile, target_stage)
     counting = _CountingPlanner(planner)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=environment,
         planner=_StageActionPlanner(),
         executor=environment,
+        contract_builder=_StageContractBuilder(),
         task_planner=counting,
-    ).run_sync(TaskEnvelope(task_spec=spec))
+    ).run_sync(RunRequest(task_spec=spec))
     return TaskPlanningAblationRun(
         profile=profile,
         case_id=case_id,
@@ -214,7 +244,7 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         action_count=result.state.step_count,
         task_plan_calls=counting.calls,
         model_calls=model.calls if model is not None else 0,
-        task_replans=result.state.plan_progress.task_replan_count if result.state.plan_progress else 0,
+        task_replans=result.state.task_progress.task_replan_count if result.state.task_progress else 0,
         trace_events=tuple(node.kind for node in result.trace.nodes),
     )
 

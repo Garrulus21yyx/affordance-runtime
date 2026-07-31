@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -16,27 +16,32 @@ from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.visual import detect_magenta_region
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, ActionContract, Observation, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.composition import compose_run_coordinator
+from affordance_runtime.contracts import (
+    ACTION_CONTRACT_SCHEMA_VERSION,
+    ActionContract,
+    Observation,
+    ProgressEvidenceScope,
+    VerifierSpec,
+)
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
 from affordance_runtime.immutable import FrozenSequence
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 CONFORMANCE_GOAL = "Enable one reversible shared state with independent oracle evidence."
 CONFORMANCE_CAPABILITY = "conformance.write.reversible"
-
-
-class ConformancePlanningRequestBuilderPort(Protocol):
-    def build(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlanningRequest: ...
 
 
 @dataclass(frozen=True)
@@ -70,62 +75,65 @@ def _preserves_shared_contract_envelope(item: ConformanceSurfaceResult) -> bool:
 class ConformancePlanner:
     surface: str
     oracle_state_url: str
-    planning_request_builder: ConformancePlanningRequestBuilderPort | None = None
 
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        request = _conformance_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
-        )
-        if request is not None and request.identity.snapshot_id != snapshot.observation.snapshot_id:
-            return PlannerDecision(reason="stale conformance planning request")
-        if state.receipts:
-            return PlannerDecision(done=True, result={"enabled": True, "surface": self.surface})
-        affordance = self._select(snapshot)
-        parameters = {"payload": True} if self.surface == "wot" else {}
-        contract = ActionContract.from_affordance(
-            affordance,
-            intent=CONFORMANCE_GOAL,
-            backend=self.surface,
-            verifier_plan=[
-                VerifierSpec(
-                    "http_json",
-                    self.oracle_state_url,
-                    {"path": "state.enabled", "value": True},
-                )
-            ],
-            required_capabilities=[CONFORMANCE_CAPABILITY],
-            parameters=parameters,
-        )
-        return PlannerDecision(
-            contract=replace(
-                contract,
-                idempotency_key=f"conformance-enable:{self.surface}",
-                compensation="reset shared conformance state",
-                contract_hash="",
-            )
+    def propose(self, request: PlanningRequest) -> PlannerResponse:
+        if any(item.verification_status == "passed" for item in request.recent_outcomes):
+            return PlannerDoneResponse(result={"enabled": True, "surface": self.surface})
+        affordance = self._select(request)
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id=f"conformance-{self.surface}-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal=CONFORMANCE_GOAL,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=affordance.target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="conformance-planner",
+                profile_id=self.surface,
+            ),
         )
 
-    def _select(self, snapshot: BrowserSnapshot) -> Any:
-        candidates = snapshot.affordance_model.affordances
+    def _select(self, request: PlanningRequest) -> Any:
+        candidates = request.observation.affordances
         if self.surface == "dom":
             return next(item for item in candidates if item.label == "Enable shared state")
         if self.surface == "visual":
-            return next(item for item in candidates if item.surface.value == "visual")
+            return next(item for item in candidates if item.surface == "visual")
         return next(item for item in candidates if item.label == "setEnabled")
 
 
-def _conformance_planning_request(
-    builder: ConformancePlanningRequestBuilderPort | None,
-    envelope: TaskEnvelope,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-) -> PlanningRequest | None:
-    if envelope.task_spec is None:
-        return None
-    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
+@dataclass
+class ConformanceContractBuilder(ContractBuilder):
+    surface: str = "dom"
+    oracle_state_url: str = ""
+
+    def build(self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot) -> ActionContract:
+        self.requirements = {
+            **self.requirements,
+            proposal.target_affordance_id: ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "http_json",
+                        self.oracle_state_url,
+                        {"path": "state.enabled", "value": True},
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                    ),
+                ),
+                required_capabilities=(CONFORMANCE_CAPABILITY,),
+                idempotency_key=f"conformance-enable:{self.surface}",
+                compensation="reset shared conformance state",
+            ),
+        }
+        contract = super().build(proposal, task_spec, state, snapshot)
+        return replace(
+            contract,
+            parameters={"payload": True} if self.surface == "wot" else contract.parameters,
+            contract_hash="",
+        )
 
 
 @dataclass
@@ -227,22 +235,35 @@ def run_cross_surface_conformance(
         run_id = f"cross-surface-{surface}"
         artifact_store = ArtifactStore(output_dir / "runs")
         planner = ConformancePlanner(surface, oracle_state_url)
-        envelope = TaskEnvelope(
-            run_id,
-            CONFORMANCE_GOAL,
-            constraints={"read_only": False, "must_return_evidence": True},
+        envelope = RunRequest(
+            task_spec=TaskSpec(
+                task_id=run_id,
+                revision=1,
+                objective=CONFORMANCE_GOAL,
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                targets=("shared state",),
+                success_criteria=("shared state is enabled",),
+                evidence_requirements=("independent oracle evidence",),
+                requested_capabilities=(CONFORMANCE_CAPABILITY,),
+                source_request_ref="conformance",
+            ),
             capabilities=[CONFORMANCE_CAPABILITY],
+        )
+        contract_builder = ConformanceContractBuilder(
+            surface=surface,
+            oracle_state_url=oracle_state_url,
         )
         if surface == "dom":
             with BrowserSession.launch(f"{fixture_url.rstrip('/')}/conformance") as session:
                 browser_versions.add(session.browser_version)
                 router = ExecutorRouter()
                 router.register(DomExecutor(session))
-                result = RunCoordinator(
+                result = compose_run_coordinator(
                     observer=session,
                     planner=planner,
                     executor=router,
                     artifacts=artifact_store,
+                    contract_builder=contract_builder,
                 ).run_sync(envelope)
         elif surface == "visual":
             with BrowserSession.launch(f"{fixture_url.rstrip('/')}/conformance-visual") as session:
@@ -250,20 +271,22 @@ def run_cross_surface_conformance(
                 observer = VisualConformanceObserver(session, output_dir / "screenshots")
                 router = ExecutorRouter()
                 router.register(VisualExecutor(session))
-                result = RunCoordinator(
+                result = compose_run_coordinator(
                     observer=observer,
                     planner=planner,
                     executor=router,
                     artifacts=artifact_store,
+                    contract_builder=contract_builder,
                 ).run_sync(envelope)
         else:
             router = ExecutorRouter()
             router.register(WotExecutor())
-            result = RunCoordinator(
+            result = compose_run_coordinator(
                 observer=WotConformanceObserver(wot_td_url),
                 planner=planner,
                 executor=router,
                 artifacts=artifact_store,
+                contract_builder=contract_builder,
             ).run_sync(envelope)
 
         oracle = _get_json(oracle_state_url)
@@ -282,8 +305,9 @@ def run_cross_surface_conformance(
                 trace_path=next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), ""),
                 screenshot_refs=[
                     ref
-                    for observation in result.state.observations
-                    for ref in observation.artifact_refs
+                    for node in result.trace.nodes
+                    if node.kind in {"ObservationCaptured", "PostActionObservationCaptured", "TargetedPerceptionCaptured"}
+                    for ref in node.payload.get("artifact_refs", [])
                     if ref.endswith(".png")
                 ],
             )

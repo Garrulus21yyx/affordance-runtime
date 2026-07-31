@@ -10,8 +10,8 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.cli import run_scenario
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import Observation
-from affordance_runtime.coordinator import RunCoordinator
 from affordance_runtime.evolution import (
     EvolutionArtifact,
     EvolutionArtifactType,
@@ -29,10 +29,11 @@ from affordance_runtime.planners import (
     PricingTaskPlanner,
     SettingsPlanner,
     extract_pricing,
+    pricing_contract_builder,
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -69,15 +70,24 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     router = ExecutorRouter()
     router.register(DomExecutor(session))
     result = asyncio.run(
-        RunCoordinator(
+        compose_run_coordinator(
             observer=session,
             planner=PricingPlanner(),
             executor=router,
+            contract_builder=pricing_contract_builder(),
+            task_planner=None,
             artifacts=ArtifactStore(tmp_path / "artifacts"),
         ).run(
-            TaskEnvelope(
-                "pricing-test",
-                "extract pricing",
+            RunRequest(
+                task_spec=TaskSpec(
+                    task_id="pricing-test",
+                    revision=1,
+                    objective="extract pricing",
+                    operation_class=OperationClass.READ_ONLY,
+                    targets=("Pro", "Enterprise"),
+                    success_criteria=("pricing is structurally visible",),
+                    source_request_ref="pricing-test",
+                ),
                 constraints={"read_only": True, "must_return_evidence": True},
             )
         )
@@ -86,7 +96,9 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     assert result.status == RuntimeStep.DONE
     assert result.result["plans"] == PRICING_DATA
     assert result.state.step_count == 2
-    assert [receipt.evidence["selector"] for receipt in result.state.receipts] == ["#show-pro", "#show-enterprise"]
+    assert result.state.step_count == 2
+    assert result.state.last_receipt is not None
+    assert result.state.last_receipt.evidence["selector"] == "#show-enterprise"
     assert len(list((tmp_path / "artifacts/pricing-test/observations").glob("*.json"))) == 7
 
 
@@ -105,16 +117,17 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         source_request_ref="reference-test",
     )
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=session,
         planner=PricingPlanner(),
         executor=router,
+        contract_builder=pricing_contract_builder(),
         task_planner=PricingTaskPlanner(),
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
-    assert result.state.plan_progress is not None
-    assert result.state.plan_progress.completed_subgoal_ids == [
+    assert result.state.task_progress is not None
+    assert result.state.task_progress.completed_subgoal_ids == [
         "reveal-pro",
         "reveal-enterprise",
     ]
@@ -161,7 +174,7 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
 
         def build(
             self,
-            envelope: TaskEnvelope,
+            envelope: RunRequest,
             state: StateKernel,
             snapshot: BrowserSnapshot,
         ) -> PlanningRequest:
@@ -169,35 +182,18 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
             return self.built
 
     request_builder = RecordingRequestBuilder()
-
-    decision = PricingPlanner(planning_request_builder=request_builder).propose(
-        TaskEnvelope(task_spec=task),
-        state,
-        BrowserSnapshot(observation, model),
+    request = request_builder.build(
+        RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
     )
+    response = PricingPlanner().propose(request)
 
-    assert request_builder.built is not None
-    assert decision.contract is not None
-    assert decision.contract.affordance_id == "dom_button_1"
+    assert request_builder.built is request
+    assert response.proposal.target_affordance_id == "dom_button_1"
     assert request_builder.built.observation.affordances[0].label == "Show Pro limits"
 
 
-def test_settings_and_export_reference_planners_build_request_before_contract_binding() -> None:
+def test_settings_and_export_reference_planners_consume_canonical_request() -> None:
     revision = "reference-request-v1"
-
-    @dataclass
-    class RecordingRequestBuilder:
-        inner: PlanningRequestBuilder = PlanningRequestBuilder()
-        built_count: int = 0
-
-        def build(
-            self,
-            envelope: TaskEnvelope,
-            state: StateKernel,
-            snapshot: BrowserSnapshot,
-        ) -> PlanningRequest:
-            self.built_count += 1
-            return self.inner.build(envelope, state, snapshot)
 
     cases = (
         (
@@ -240,17 +236,12 @@ def test_settings_and_export_reference_planners_build_request_before_contract_bi
             evidence_requirements=(f"{expected_label} evidence",),
             source_request_ref="reference-request-source",
         )
-        request_builder = RecordingRequestBuilder()
-
-        decision = planner_type(planning_request_builder=request_builder).propose(
-            TaskEnvelope(task_spec=task),
-            state,
-            BrowserSnapshot(observation, model),
+        request = PlanningRequestBuilder().build(
+            RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
         )
+        response = planner_type().propose(request)
 
-        assert request_builder.built_count == 1
-        assert decision.contract is not None
-        assert decision.contract.intent
+        assert response.proposal.target_affordance_id == "dom_button_1"
 
 
 def test_local_fixture_exposes_pricing_oracle() -> None:

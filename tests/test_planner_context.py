@@ -19,7 +19,7 @@ from affordance_runtime.planning_request_builder import (
     PlanningRequestBuilder,
     PlanningRequestLimits,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -30,7 +30,7 @@ from affordance_runtime.task_planning import (
 )
 
 
-def _fixture() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     task = TaskSpec(
         task_id="context-task",
         revision=1,
@@ -58,7 +58,7 @@ def _fixture() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
     )
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     state.remember_observation(observation)
-    return TaskEnvelope(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
+    return RunRequest(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
 def test_builder_bounds_untrusted_context_and_exposes_only_semantic_inventory() -> None:
@@ -248,7 +248,7 @@ def test_builder_exposes_typed_active_subgoal_action_family() -> None:
         )
     )
 
-    state.activate_next_subgoal()
+    state.activate_next_step()
 
     context = PlannerContextBuilder().build(envelope, state, snapshot)
 
@@ -256,7 +256,7 @@ def test_builder_exposes_typed_active_subgoal_action_family() -> None:
     assert context.active_subgoal_action_family == "type_text"
 
 
-def test_builder_does_not_activate_next_subgoal_while_building_read_only_context() -> None:
+def test_builder_does_not_activate_next_step_while_building_read_only_context() -> None:
     envelope, state, snapshot = _fixture()
     task = envelope.task_spec
     assert task is not None
@@ -280,15 +280,15 @@ def test_builder_does_not_activate_next_subgoal_while_building_read_only_context
             ),
         )
     )
-    assert state.plan_progress is not None
-    assert state.plan_progress.active_subgoal_id == ""
+    assert state.task_progress is not None
+    assert state.task_progress.active_subgoal_id == ""
     before_version = state.version
 
     context = PlannerContextBuilder().build(envelope, state, snapshot)
 
     assert context.active_subgoal == task.objective
     assert context.active_subgoal_action_family == ""
-    assert state.plan_progress.active_subgoal_id == ""
+    assert state.task_progress.active_subgoal_id == ""
     assert state.version == before_version
 
 
@@ -330,7 +330,7 @@ def test_builder_rejects_unvalidated_legacy_envelope() -> None:
 
     with pytest.raises(ValueError, match="validated TaskSpec"):
         PlannerContextBuilder().build(
-            TaskEnvelope("legacy", "Save the display name"),
+            RunRequest("legacy", "Save the display name"),
             state,
             snapshot,
         )

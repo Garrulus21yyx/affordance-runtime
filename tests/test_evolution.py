@@ -10,6 +10,7 @@ from affordance_runtime.evolution import (
     EvolutionArtifactType,
     EvolutionFailureSignature,
     EvolutionProposal,
+    EvolutionRecoveryAction,
     EvolutionRecoveryContext,
     EvolutionRegistry,
     EvolutionRegistryStore,
@@ -303,14 +304,14 @@ def test_recovery_policy_patch_loads_matches_and_rolls_back() -> None:
         None,
         EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
     )
-    assert decision.kind == RecoveryKind.ABORT
+    assert decision.kind == EvolutionRecoveryAction.ABORT
     profile.rollback(artifact.id)
     fallback = profile.recovery_policy().decide(
         _recovery_contract(),
         None,
         EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings"),
     )
-    assert fallback.kind == RecoveryKind.ABORT  # non-idempotent built-in default, no artifact reason
+    assert fallback.kind == EvolutionRecoveryAction.ABORT  # non-idempotent built-in default, no artifact reason
     assert "declarative" not in fallback.reason_code
 
 
@@ -341,7 +342,7 @@ def test_recovery_skill_is_bounded_and_preserves_uncertain_effect_inspection() -
     policy = profile.recovery_policy()
     context = EvolutionRecoveryContext(failure_signature=_failure_signature(), task_id="settings")
     assert policy.decide(_recovery_contract(), None, context).kind == RecoveryKind.REOBSERVE
-    assert policy.decide(_recovery_contract(), None, context).kind == RecoveryKind.ABORT
+    assert policy.decide(_recovery_contract(), None, context).kind == EvolutionRecoveryAction.ABORT
     uncertain = EvolutionRecoveryContext(
         failure_signature=_failure_signature(),
         task_id="settings",

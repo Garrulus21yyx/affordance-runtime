@@ -1,9 +1,4 @@
-"""Runtime state kernel.
-
-The state kernel preserves task constraints and obligations across long GUI
-trajectories. It is deliberately separate from planner state so Codex, Claude,
-LangGraph, OpenHands, or a local planner can all use the same execution memory.
-"""
+"""Current-state kernel; complete history belongs to Trace and ArtifactStore."""
 
 from __future__ import annotations
 
@@ -11,44 +6,24 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
-from affordance_runtime.active_perception import (
-    EvidenceGap,
-    PerceptionResolution,
-    ProbePlan,
-    ProbeReceipt,
-)
+from affordance_runtime.active_perception import EvidenceGap, PerceptionResolution, ProbePlan, ProbeReceipt
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.recovery_coordinator import RecoveryHistoryItem
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
 from affordance_runtime.task_planning import TaskPlan, TaskProgress
 from affordance_runtime.verification import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "created": {"observing", "aborted"},
-    "observing": {"planning", "recovering", "failed", "aborted"},
+    "created": {"observing", "aborted"}, "observing": {"planning", "recovering", "failed", "aborted"},
     "planning": {"observing", "preflight", "recovering", "waiting_clarification", "deferred", "done", "failed", "aborted"},
-    "waiting_clarification": {"observing", "aborted"},
-    "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
-    "waiting_approval": {"preflight", "aborted"},
-    "acting": {"verifying", "recovering", "failed"},
+    "waiting_clarification": {"observing", "aborted"}, "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
+    "waiting_approval": {"preflight", "aborted"}, "acting": {"verifying", "recovering", "failed"},
     "verifying": {"planning", "observing", "recovering", "done", "failed"},
-    "recovering": {
-        "observing",
-        "planning",
-        "waiting_approval",
-        "waiting_clarification",
-        "deferred",
-        "aborted",
-        "failed",
-    },
-    "done": set(),
-    "failed": set(),
-    "aborted": set(),
-    "deferred": set(),
+    "recovering": {"observing", "planning", "waiting_approval", "waiting_clarification", "deferred", "aborted", "failed"},
+    "done": set(), "failed": set(), "aborted": set(), "deferred": set(),
 }
 
 
@@ -59,19 +34,13 @@ class ProgressGuardReason(StrEnum):
 
 @dataclass(frozen=True)
 class ActionKey:
-    """Typed semantic identity for bounded action dedupe."""
-
     action_kind: str
     target_id: str
     parameter_digest: str
 
     def __post_init__(self) -> None:
-        if not self.action_kind:
-            raise ValueError("action key requires an action kind")
-        if not self.target_id:
-            raise ValueError("action key requires a target id")
-        if not self.parameter_digest:
-            raise ValueError("action key requires a parameter digest")
+        if not all((self.action_kind, self.target_id, self.parameter_digest)):
+            raise ValueError("action key fields are required")
 
     @classmethod
     def from_signature(cls, signature: str) -> ActionKey:
@@ -81,44 +50,30 @@ class ActionKey:
             raise ValueError("action progress signature must be canonical JSON") from exc
         if not isinstance(payload, dict):
             raise ValueError("action progress signature must be a JSON object")
-        action_kind = str(payload.get("action_kind") or "")
-        target_id = str(payload.get("target") or "")
+        action_kind, target_id = str(payload.get("action_kind") or ""), str(payload.get("target") or "")
         parameters = payload.get("parameters", {})
         if not action_kind or not target_id or not isinstance(parameters, dict):
             raise ValueError("action progress signature must include action_kind, target, and parameters")
         digest_payload: dict[str, object] = {"parameters": parameters}
         if payload.get("destination"):
             digest_payload["destination"] = str(payload["destination"])
-        parameter_digest = hashlib.sha256(
-            json.dumps(
-                to_json_compatible(freeze_json(digest_payload)),
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode()
-        ).hexdigest()
-        return cls(
-            action_kind=action_kind,
-            target_id=target_id,
-            parameter_digest=f"sha256:{parameter_digest}",
-        )
+        if payload.get("subgoal"):
+            digest_payload["subgoal"] = str(payload["subgoal"])
+        canonical = json.dumps(to_json_compatible(freeze_json(digest_payload)), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        parameter_digest = hashlib.sha256(canonical.encode()).hexdigest()
+        return cls(action_kind, target_id, f"sha256:{parameter_digest}")
 
 
-@dataclass(frozen=True)
-class RecentActionOutcomeRecord:
-    """Minimal verified outcome used to block duplicate semantic actions."""
-
+class RecentActionOutcomeRecord(NamedTuple):
     key: ActionKey
     post_environment_revision: str
     verification_passed: bool
     effect_satisfied: bool
-    post_page_revision: str = ""
+    post_page_revision: str
 
 
 @dataclass
 class RecentActionOutcomeIndex:
-    """Bounded action outcome memory for progress guards."""
-
     capacity: int = 40
     records: list[RecentActionOutcomeRecord] = field(default_factory=list)
 
@@ -128,24 +83,8 @@ class RecentActionOutcomeIndex:
         if len(self.records) > self.capacity:
             self.records = self.records[-self.capacity :]
 
-    def record(
-        self,
-        key: ActionKey,
-        post_environment_revision: str,
-        *,
-        verification_passed: bool,
-        effect_satisfied: bool,
-        post_page_revision: str = "",
-    ) -> None:
-        self.records.append(
-            RecentActionOutcomeRecord(
-                key=key,
-                post_environment_revision=post_environment_revision,
-                verification_passed=verification_passed,
-                effect_satisfied=effect_satisfied,
-                post_page_revision=post_page_revision,
-            )
-        )
+    def record(self, key: ActionKey, post_environment_revision: str, *, verification_passed: bool, effect_satisfied: bool, post_page_revision: str = "") -> None:
+        self.records.append(RecentActionOutcomeRecord(key, post_environment_revision, verification_passed, effect_satisfied, post_page_revision))
         if len(self.records) > self.capacity:
             del self.records[: len(self.records) - self.capacity]
 
@@ -158,14 +97,11 @@ class StateKernel:
     task_id: str
     goal: str
     constraints: dict[str, Any] = field(default_factory=dict)
-    subgoals: list[str] = field(default_factory=list)
     task_plan: TaskPlan | None = None
     task_progress: TaskProgress | None = None
-    evidence: list[str] = field(default_factory=list)
-    hidden_state_hypotheses: list[str] = field(default_factory=list)
-    disproved_assumptions: list[str] = field(default_factory=list)
-    observations: list[Observation] = field(default_factory=list)
-    receipts: list[ExecutionReceipt] = field(default_factory=list)
+    latest_observation: Observation | None = None
+    last_receipt: ExecutionReceipt | None = None
+    current_disproved_assumption: str = ""
     phase: str = "created"
     current_snapshot_id: str = ""
     current_contract: ActionContract | None = None
@@ -177,84 +113,51 @@ class StateKernel:
     active_perception_count: int = 0
     evidence_gaps: tuple[EvidenceGap, ...] = ()
     active_probe_plan: ProbePlan | None = None
-    probe_receipts: list[ProbeReceipt] = field(default_factory=list)
+    latest_probe_receipt: ProbeReceipt | None = None
     perception_resolution: PerceptionResolution | None = None
     attempted_probe_fingerprints: set[str] = field(default_factory=set)
     current_failure: FailureEnvelope | None = None
     current_recovery_decision: RecoveryDecision | None = None
     current_recovery_outcome: RecoveryOutcome | None = None
-    recovery_history: list[RecoveryHistoryItem] = field(default_factory=list)
     attempted_recovery_strategy_ids: set[str] = field(default_factory=set)
     effectful_action_count: int = 0
-    transitions: list[tuple[str, str]] = field(default_factory=list)
     final_result: dict[str, Any] = field(default_factory=dict)
-    planner_history: list[dict[str, Any]] = field(default_factory=list)
+    latest_planner_proposal: dict[str, Any] = field(default_factory=dict)
     recent_action_outcomes: RecentActionOutcomeIndex = field(default_factory=RecentActionOutcomeIndex)
-    progress_guard_events: list[dict[str, str]] = field(default_factory=list)
-    excluded_grounding_candidates: dict[str, list[str]] = field(default_factory=dict)
-    grounding_fallback_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
+    latest_progress_guard: dict[str, str] | None = None
+    current_excluded_candidates: dict[str, set[str]] = field(default_factory=dict)
+    current_grounding_fallback: dict[str, dict[str, str]] = field(default_factory=dict)
     version: int = 0
 
-    @property
-    def plan_progress(self) -> TaskProgress | None:
-        """Compatibility alias for callers not yet migrated to task_progress."""
-
-        return self.task_progress
-
-    @plan_progress.setter
-    def plan_progress(self, value: TaskProgress | None) -> None:
-        self.task_progress = value
-
     def remember_observation(self, observation: Observation) -> None:
-        self.observations.append(observation)
+        self.latest_observation = observation
         self.observation_count += 1
         self.current_snapshot_id = observation.snapshot_id
         self.version += 1
 
     def record_receipt(self, receipt: ExecutionReceipt) -> None:
-        self.receipts.append(receipt)
-        for value in receipt.evidence.values():
-            if isinstance(value, str) and value not in self.evidence:
-                self.evidence.append(value)
+        self.last_receipt = receipt
         self.version += 1
 
     def record_disproved_assumption(self, assumption: str) -> None:
         value = assumption.strip()
-        if value and value not in self.disproved_assumptions:
-            self.disproved_assumptions.append(value)
+        if value and value != self.current_disproved_assumption:
+            self.current_disproved_assumption = value
             self.version += 1
 
     def record_planner_proposal(self, proposal: dict[str, Any]) -> None:
-        self.planner_history.append(proposal)
+        self.latest_planner_proposal = proposal
         self.version += 1
 
-    def record_action_progress(
-        self,
-        signature: str,
-        post_environment_revision: str,
-        *,
-        verification_passed: bool,
-        effect_satisfied: bool | None = None,
-        post_page_revision: str = "",
-    ) -> None:
-        self.recent_action_outcomes.record(
-            ActionKey.from_signature(signature),
-            post_environment_revision,
-            verification_passed=verification_passed,
-            effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
-            post_page_revision=post_page_revision,
-        )
+    def record_action_progress(self, signature: str, post_environment_revision: str, *, verification_passed: bool, effect_satisfied: bool | None = None, post_page_revision: str = "") -> None:
+        self.recent_action_outcomes.record(ActionKey.from_signature(signature), post_environment_revision, verification_passed=verification_passed, effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied), post_page_revision=post_page_revision)
         self.version += 1
 
     def check_progress_guard(self, signature: str) -> ProgressGuardReason | None:
         previous = self.recent_action_outcomes.latest(ActionKey.from_signature(signature))
         if previous is None:
             return None
-        same_page = (
-            previous.post_page_revision == self.current_page_revision()
-            if previous.post_page_revision and self.current_page_revision()
-            else previous.post_environment_revision == self.current_revision()
-        )
+        same_page = previous.post_page_revision == self.current_page_revision() if previous.post_page_revision and self.current_page_revision() else previous.post_environment_revision == self.current_revision()
         if previous.effect_satisfied and same_page:
             return ProgressGuardReason.EFFECT_ALREADY_SATISFIED
         if not previous.verification_passed and previous.post_environment_revision == self.current_revision():
@@ -262,104 +165,73 @@ class StateKernel:
         return None
 
     def record_progress_guard(self, reason: ProgressGuardReason, signature: str) -> None:
-        self.progress_guard_events.append(
-            {
-                "reason": reason.value,
-                "signature": signature,
-                "environment_revision": self.current_revision(),
-            }
-        )
+        self.latest_progress_guard = {"reason": reason.value, "signature": signature, "environment_revision": self.current_revision()}
         self.version += 1
 
-    def record_grounding_reroute(
-        self,
-        contract: ActionContract,
-        reason: str,
-        *,
-        exclude_candidate: bool = True,
-    ) -> None:
-        """Retain immutable recovery lineage and optionally exclude a failed route."""
-
+    def record_grounding_reroute(self, contract: ActionContract, reason: str, *, exclude_candidate: bool = True) -> None:
         candidate = contract.grounding_candidate
         if candidate is None:
             return
         if exclude_candidate:
-            excluded = self.excluded_grounding_candidates.setdefault(candidate.semantic_target_id, [])
+            excluded = self.current_excluded_candidates.setdefault(candidate.semantic_target_id, set())
             if candidate.candidate_id not in excluded:
-                excluded.append(candidate.candidate_id)
-        self.grounding_fallback_lineage[candidate.semantic_target_id] = {
-            "supersedes_contract_id": contract.id,
-            "source_contract_id": contract.source_contract_id or contract.id,
-            "fallback_reason": reason,
-            "failed_source": candidate.source.value,
-        }
+                excluded.add(candidate.candidate_id)
+        self.current_grounding_fallback[candidate.semantic_target_id] = {"supersedes_contract_id": contract.id, "source_contract_id": contract.source_contract_id or contract.id, "fallback_reason": reason, "failed_source": candidate.source.value}
         self.version += 1
 
     def complete_grounding_recovery(self, semantic_target_id: str) -> None:
-        """Release incident-local exclusions after a replacement contract verifies."""
-
         changed = False
-        if self.excluded_grounding_candidates.pop(semantic_target_id, None) is not None:
-            changed = True
-        if self.grounding_fallback_lineage.pop(semantic_target_id, None) is not None:
-            changed = True
+        changed |= self.current_excluded_candidates.pop(semantic_target_id, None) is not None
+        changed |= self.current_grounding_fallback.pop(semantic_target_id, None) is not None
         if changed:
             self.version += 1
 
     def excluded_candidates_for(self, semantic_target_id: str) -> frozenset[str]:
-        return frozenset(self.excluded_grounding_candidates.get(semantic_target_id, ()))
+        return frozenset(self.current_excluded_candidates.get(semantic_target_id, ()))
 
     def fallback_lineage_for(self, semantic_target_id: str) -> dict[str, str]:
-        return dict(self.grounding_fallback_lineage.get(semantic_target_id, {}))
+        return dict(self.current_grounding_fallback.get(semantic_target_id, {}))
 
     def install_task_plan(self, plan: TaskPlan) -> None:
-        """Attach a validated immutable plan without advancing any subgoal."""
-
         if plan.task_id != self.task_id:
             raise ValueError("TaskPlan task_id does not match run state")
         self.task_plan = plan
         self.task_progress = TaskProgress()
-        self.subgoals = [item.objective for item in plan.subgoals]
         self.version += 1
 
     def active_subgoal(self) -> str:
-        if self.task_plan is None or self.plan_progress is None:
-            return self.subgoals[-1] if self.subgoals else ""
-        identifier = self.plan_progress.active_subgoal_id
+        if self.task_plan is None or self.task_progress is None:
+            return ""
+        identifier = self.task_progress.active_subgoal_id
         return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
 
-    def activate_next_subgoal(self) -> str:
-        if self.task_plan is None or self.plan_progress is None:
-            return self.subgoals[-1] if self.subgoals else ""
-        previous = self.plan_progress.active_subgoal_id
-        identifier = self.plan_progress.activate_next(self.task_plan)
+    def activate_next_step(self) -> str:
+        if self.task_plan is None or self.task_progress is None:
+            return ""
+        previous = self.task_progress.active_subgoal_id
+        identifier = self.task_progress.activate_next(self.task_plan)
         if identifier != previous:
             self.version += 1
         return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
 
-    def complete_subgoal(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
-        if self.task_plan is None or self.plan_progress is None:
+    def complete_step(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
+        if self.task_plan is None or self.task_progress is None:
             raise ValueError("cannot complete a subgoal without a TaskPlan")
         if subgoal_id not in {item.subgoal_id for item in self.task_plan.subgoals}:
             raise ValueError("unknown TaskPlan subgoal")
-        self.plan_progress.complete(subgoal_id, evidence)
-        for item in evidence:
-            if item not in self.evidence:
-                self.evidence.append(item)
+        self.task_progress.complete(subgoal_id, evidence)
         self.version += 1
 
     def record_subgoal_action(self) -> None:
-        if self.task_plan is None or self.plan_progress is None:
+        if self.task_plan is None or self.task_progress is None:
             return
-        subgoal_id = self.plan_progress.active_subgoal_id
+        subgoal_id = self.task_progress.active_subgoal_id
         if subgoal_id:
-            self.plan_progress.record_action(subgoal_id)
+            self.task_progress.record_action(subgoal_id)
             self.version += 1
 
     def replace_task_plan(self, plan: TaskPlan) -> None:
-        """Replace only unfinished structure while preserving verified outcomes."""
-
-        if self.task_plan is None or self.plan_progress is None:
+        if self.task_plan is None or self.task_progress is None:
             raise ValueError("cannot replace a missing TaskPlan")
         if plan.task_id != self.task_id:
             raise ValueError("TaskPlan task_id does not match run state")
@@ -370,27 +242,22 @@ class StateKernel:
         if plan.plan_id == self.task_plan.plan_id:
             raise ValueError("replanned TaskPlan requires a new plan_id")
         new_ids = {item.subgoal_id for item in plan.subgoals}
-        completed = set(self.plan_progress.completed_subgoal_ids)
+        completed = set(self.task_progress.completed_subgoal_ids)
         if not completed.issubset(new_ids):
             raise ValueError("replanned TaskPlan must preserve verified subgoals")
         previous_by_id = {item.subgoal_id: item for item in self.task_plan.subgoals}
         replacement_by_id = {item.subgoal_id: item for item in plan.subgoals}
-        if any(replacement_by_id[subgoal_id] != previous_by_id[subgoal_id] for subgoal_id in completed):
+        if any(replacement_by_id[item] != previous_by_id[item] for item in completed):
             raise ValueError("replanned TaskPlan cannot redefine a verified subgoal")
         self.task_plan = plan
-        self.task_progress = TaskProgress(
-            completed_subgoal_ids=list(self.plan_progress.completed_subgoal_ids),
-            evidence_by_subgoal={key: list(value) for key, value in self.plan_progress.evidence_by_subgoal.items()},
-            task_replan_count=self.plan_progress.task_replan_count + 1,
-        )
-        self.subgoals = [item.objective for item in plan.subgoals]
+        self.task_progress = TaskProgress(completed_subgoal_ids=list(self.task_progress.completed_subgoal_ids), evidence_by_subgoal={key: list(value) for key, value in self.task_progress.evidence_by_subgoal.items()}, task_replan_count=self.task_progress.task_replan_count + 1)
         self.version += 1
 
     def current_revision(self) -> str:
-        return self.observations[-1].environment_revision if self.observations else ""
+        return self.latest_observation.environment_revision if self.latest_observation else ""
 
     def current_page_revision(self) -> str:
-        return self.observations[-1].page_revision if self.observations else ""
+        return self.latest_observation.page_revision if self.latest_observation else ""
 
     def constraint_summary(self) -> str:
         return "; ".join(f"{key}={value}" for key, value in sorted(self.constraints.items()))
@@ -398,6 +265,5 @@ class StateKernel:
     def transition(self, next_phase: str) -> None:
         if next_phase not in _ALLOWED_TRANSITIONS.get(self.phase, set()):
             raise ValueError(f"invalid runtime transition: {self.phase} -> {next_phase}")
-        self.transitions.append((self.phase, next_phase))
         self.phase = next_phase
         self.version += 1

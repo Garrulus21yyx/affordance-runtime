@@ -116,9 +116,9 @@ FORBIDDEN_STRICT_COLLABORATOR_DEPENDENCIES = (
 )
 
 STATE_KERNEL_MUTATIONS = {
-    "activate_next_subgoal",
+    "activate_next_step",
     "complete_grounding_recovery",
-    "complete_subgoal",
+    "complete_step",
     "install_task_plan",
     "remember_observation",
     "record_action_progress",
@@ -140,7 +140,6 @@ STATE_KERNEL_READS = {
     "current_revision",
     "excluded_candidates_for",
     "fallback_lineage_for",
-    "plan_progress",
 }
 
 EXECUTION_COMMIT_MUTATIONS = {
@@ -151,20 +150,14 @@ EXECUTION_COMMIT_MUTATIONS = {
 }
 
 ALLOWED_STATE_MUTATION_MODULES = {
-    "contract_binding_phase.py",
     "coordinator.py",
-    "execution_phase.py",
     "failure_owner_flow.py",
-    "perception_phase.py",
-    "planning_failure_phase.py",
+    "runtime_committer.py",
     "planning_phase.py",
-    "preflight_phase.py",
     "recovery_phase.py",
     "runtime_terminal.py",
     "runtime_loop_phase.py",
-    "runtime_transition_commit.py",
     "runtime.py",
-    "task_plan_phase.py",
     "verification_failure_phase.py",
     "verification_phase.py",
     "verified_progress_phase.py",
@@ -1151,7 +1144,7 @@ def test_statekernel_default_progress_field_is_taskprogress_not_planprogress() -
 
     assert "task_progress" in annotated_fields
     assert "plan_progress" not in annotated_fields
-    assert "plan_progress" in method_names
+    assert "plan_progress" not in method_names
     assert "TaskProgress" in imports
     assert "PlanProgress" not in imports
 
@@ -1484,13 +1477,13 @@ def test_parent_agent_adapter_uses_request_context_core() -> None:
         for node in ast.walk(propose)
         if isinstance(node, ast.Name)
     }
-    assert "_propose_decision" in calls
+    assert "_propose_result" in calls
     assert "build" not in calls
     assert "build_planner_context" not in names
     request_core = next(
         node
         for node in adapter.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_propose_decision"
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_propose_result"
     )
     request_core_calls = {
         node.func.attr
@@ -1548,8 +1541,8 @@ def test_run_sync_does_not_inline_planner_done_finish_authority() -> None:
     assert source is not None
     assert "if decision.done:" not in source
     assert "TaskPlanStoppedIncomplete" not in source
-    assert "PLANNING_DECISION_PHASE.handle" in source
-    assert "commit_planner_terminal_decision" in (
+    assert "self.planning_stage.run" in source
+    assert "TaskCompletionVerifier" in (
         SOURCE_ROOT / "planning_phase.py"
     ).read_text(encoding="utf-8")
 
@@ -1573,13 +1566,13 @@ def test_run_sync_does_not_inline_task_completion_authority() -> None:
     assert source is not None
     assert '"TaskCompleted"' not in source
     assert "state.transition(RuntimeStep.DONE.value)" not in source
-    assert "VERIFIED_PROGRESS_PHASE.run" in source
+    assert "self.progress_stage.run" in source
     assert "commit_task_terminal_success" in (
-        SOURCE_ROOT / "verified_progress_phase.py"
+        SOURCE_ROOT / "progress_phase.py"
     ).read_text(encoding="utf-8")
 
 
-def test_reference_contract_planners_build_request_before_legacy_contract_binding() -> None:
+def test_reference_contract_planners_are_request_only() -> None:
     tree = ast.parse((SOURCE_ROOT / "planners.py").read_text(encoding="utf-8"))
     for class_name in ("PricingPlanner", "SettingsPlanner", "ExportPlanner"):
         planner = next(
@@ -1592,28 +1585,10 @@ def test_reference_contract_planners_build_request_before_legacy_contract_bindin
             for node in planner.body
             if isinstance(node, ast.FunctionDef) and node.name == "propose"
         )
-        calls = {
-            node.func.id
-            for node in ast.walk(propose)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
-        assert "_reference_planning_request" in calls
-
-    tpa_3_5 = " ".join(
-        (CHANGE_ADMISSION_DIR / "tpa-3-5-reference-scripted-planners-request-migration.yaml")
-        .read_text(encoding="utf-8")
-        .split()
-    ).casefold()
-    assert "pricingplanner" in tpa_3_5
-    assert "settingsplanner" in tpa_3_5
-    assert "exportplanner" in tpa_3_5
-    assert "planningrequest" in tpa_3_5
-    assert "production_behavior_change: false" in tpa_3_5
-    assert "plannerport public signature cutover" in tpa_3_5
-    assert "closure_status: reference_contract_planner_request_foundation" in tpa_3_5
+        assert tuple(item.arg for item in propose.args.args) == ("self", "request")
 
 
-def test_conformance_recovery_planners_build_request_before_legacy_contract_binding() -> None:
+def test_conformance_recovery_planners_are_request_only() -> None:
     for module_name, class_name in (
         ("conformance.py", "ConformancePlanner"),
         ("recovery_evolution.py", "RecoveryFixturePlanner"),
@@ -1629,28 +1604,10 @@ def test_conformance_recovery_planners_build_request_before_legacy_contract_bind
             for node in planner.body
             if isinstance(node, ast.FunctionDef) and node.name == "propose"
         )
-        calls = {
-            node.func.id
-            for node in ast.walk(propose)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
-        assert any(item.endswith("_planning_request") for item in calls)
-
-    tpa_3_6 = " ".join(
-        (CHANGE_ADMISSION_DIR / "tpa-3-6-conformance-benchmark-planners-request-migration.yaml")
-        .read_text(encoding="utf-8")
-        .split()
-    ).casefold()
-    assert "conformanceplanner" in tpa_3_6
-    assert "recoveryfixtureplanner" in tpa_3_6
-    assert "planningrequest" in tpa_3_6
-    assert "production_behavior_change: false" in tpa_3_6
-    assert "browsergymplanner migration" in tpa_3_6
-    assert "plannerport public signature cutover" in tpa_3_6
-    assert "closure_status: conformance_recovery_planner_request_foundation" in tpa_3_6
+        assert tuple(item.arg for item in propose.args.args) == ("self", "request")
 
 
-def test_browsergym_policy_planner_keeps_policy_request_as_compatibility_boundary() -> None:
+def test_browsergym_policy_planner_consumes_canonical_request() -> None:
     tree = ast.parse(
         (SOURCE_ROOT / "benchmarks/browsergym_episode_runner.py").read_text(encoding="utf-8")
     )
@@ -1669,21 +1626,8 @@ def test_browsergym_policy_planner_keeps_policy_request_as_compatibility_boundar
         for node in ast.walk(propose)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
-    assert "_browsergym_planning_request" in calls
     assert "BrowserGymPolicyRequest" in calls
-
-    tpa_3_7 = " ".join(
-        (CHANGE_ADMISSION_DIR / "tpa-3-7-browsergym-and-benchmark-planners-compatibility.yaml")
-        .read_text(encoding="utf-8")
-        .split()
-    ).casefold()
-    assert "browsergymplanner" in tpa_3_7
-    assert "browsergympolicyrequest" in tpa_3_7
-    assert "planningrequest" in tpa_3_7
-    assert "production_behavior_change: false" in tpa_3_7
-    assert "official reward" in tpa_3_7
-    assert "plannerport public signature cutover" in tpa_3_7
-    assert "closure_status: browsergym_policy_planner_compatibility_foundation" in tpa_3_7
+    assert tuple(item.arg for item in propose.args.args) == ("self", "request")
 
 
 def test_decisionconstraint_apply_admission_is_request_only() -> None:
@@ -1736,8 +1680,8 @@ def test_taskplan_commit_and_constructor_call_site_baselines_are_frozen() -> Non
                 plan_constructors.add((relative, class_by_node.get(node, "<module>")))
 
     assert plan_commit_callers == {
-        ("task_plan_phase.py", "install_task_plan"),
-        ("task_plan_phase.py", "replace_task_plan"),
+        ("runtime_committer.py", "install_task_plan"),
+        ("runtime_committer.py", "replace_task_plan"),
     }
     assert plan_constructors == {
         ("planners.py", "PricingTaskPlanner"),
@@ -1766,27 +1710,14 @@ def test_standard_step_planner_triple_signature_inventory_is_frozen() -> None:
                 if names[:4] == ("self", "envelope", "state", "snapshot"):
                     implementations.add((relative, owner.name))
 
-    assert implementations == {
-        ("benchmarks/adaptive_routing.py", "_CountingSystem2Planner"),
-        ("benchmarks/browsergym_episode_runner.py", "BrowserGymGeneralistPlanner"),
-        ("benchmarks/browsergym_episode_runner.py", "BrowserGymPlanner"),
-        ("benchmarks/generalization_rollout.py", "_DoneAfterDisclosurePlanner"),
-        ("benchmarks/generalization_rollout.py", "_ProviderFailOncePlanner"),
-        ("benchmarks/generalization_rollout.py", "_SurfacePlanner"),
-        ("benchmarks/task_planning.py", "_StageActionPlanner"),
-        ("conformance.py", "ConformancePlanner"),
-        ("planners.py", "ExportPlanner"),
-        ("planners.py", "PricingPlanner"),
-        ("planners.py", "SettingsPlanner"),
-        ("recovery_evolution.py", "RecoveryFixturePlanner"),
-    }
+    assert implementations == set()
 
 
 def test_plannerport_public_contract_is_request_only_with_legacy_seam() -> None:
     contracts = (SOURCE_ROOT / "planning_contracts.py").read_text(encoding="utf-8")
     assert "from affordance_runtime.planning_request import PlanningRequest" in contracts
     assert "from affordance_runtime.state_kernel import StateKernel" not in contracts
-    assert "from affordance_runtime.runtime import TaskEnvelope" not in contracts
+    assert "from affordance_runtime.runtime import RunRequest" not in contracts
     assert "from affordance_runtime.browser_session import BrowserSnapshot" not in contracts
 
     tree = ast.parse(contracts)
@@ -1808,8 +1739,9 @@ def test_plannerport_public_contract_is_request_only_with_legacy_seam() -> None:
     assert "def propose_with_planner_compatibility" in compatibility
     assert "standard planners should implement ``propose(request)``" in compatibility_text
 
-    task_skill_phase = (SOURCE_ROOT / "task_skill_phase.py").read_text(encoding="utf-8")
-    assert "propose_with_runtime_projection" in task_skill_phase
+    planning_stage = (SOURCE_ROOT / "planning_phase.py").read_text(encoding="utf-8")
+    assert "self.planner.propose(request)" in planning_stage
+    assert "PlannerDecision" not in planning_stage
     coordinator = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     assert "PlanningRequestBuilder" not in coordinator
     assert "self.planner.propose(envelope, state, snapshot)" not in coordinator
@@ -2178,7 +2110,7 @@ def test_taskskill_progress_is_not_statekernel_authority() -> None:
 def test_sar_8b_phase_recovery_uses_decision_before_legacy_adapter() -> None:
     tree = ast.parse((SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8"))
     recovery_phase = next(
-        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RecoveryPhase"
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RecoveryStage"
     )
     calls: list[str] = []
     for node in ast.walk(recovery_phase):
@@ -2267,39 +2199,38 @@ def test_for_2b_recovery_coordinator_runtime_policy_excludes_semantic_owner_kind
     ):
         assert semantic_owner_kind not in runtime_policy_source
 
-    assert "RecoveryKind.REPLAN_TASK" in module_source
-    assert "RecoveryKind.ASK_USER" in module_source
+    assert "RecoveryKind.REPLAN_TASK" not in module_source
+    assert "RecoveryKind.ASK_USER" not in module_source
+    protocol_source = (SOURCE_ROOT / "recovery_protocol.py").read_text(encoding="utf-8")
+    for forbidden_member in (
+        "CLARIFY_INTENT",
+        "REPLAN_TASK",
+        "REPLAN_STEP",
+        "REQUEST_APPROVAL",
+        "ASK_USER",
+        "ABORT",
+    ):
+        assert f"    {forbidden_member} =" not in protocol_source
 
 
 def test_for_3_failure_owner_flow_uses_structured_handoff_contracts() -> None:
-    source = (SOURCE_ROOT / "failure_owner_flow.py").read_text(encoding="utf-8")
+    assert not (SOURCE_ROOT / "failure_owner_flow.py").exists()
+    source = (SOURCE_ROOT / "stage_protocol.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     class_names = {
         node.name for node in tree.body if isinstance(node, ast.ClassDef)
     }
 
-    assert "FailureOwnerHandoff" in class_names
-    assert "FailureOwnerHandoffDecision" in class_names
+    assert {
+        "ProgressHandoff",
+        "StepPlannerHandoff",
+        "TaskPlannerHandoff",
+        "UserInputRequest",
+    } <= class_names
     assert "build_failure_owner_handoff" in {
         node.name for node in tree.body if isinstance(node, ast.FunctionDef)
     }
 
-    handoff = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoff"
-    )
-    annotations = {
-        item.target.id: ast.unparse(item.annotation)
-        for item in handoff.body
-        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
-    }
-
-    assert annotations["owner"] == "FailureOwner"
-    assert annotations["target_phase"] == "RuntimePhase"
-    assert annotations["changed_dimensions"] == "tuple[RecoveryDimension, ...]"
-    assert annotations["replan_scope"] == "str"
-    assert annotations["user_question"] == "str"
     imported_names = {
         alias.name.rsplit(".", maxsplit=1)[-1]
         for node in tree.body
@@ -2311,7 +2242,8 @@ def test_for_3_failure_owner_flow_uses_structured_handoff_contracts() -> None:
 
 
 def test_for_4_failure_owner_flow_has_single_owner_mapping() -> None:
-    source = (SOURCE_ROOT / "failure_owner_flow.py").read_text(encoding="utf-8")
+    assert not (SOURCE_ROOT / "failure_owner_flow.py").exists()
+    source = (SOURCE_ROOT / "stage_protocol.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     function_names = {
         node.name for node in tree.body if isinstance(node, ast.FunctionDef)
@@ -2320,27 +2252,97 @@ def test_for_4_failure_owner_flow_has_single_owner_mapping() -> None:
     assert "_recovery_kind_for_handoff" not in function_names
     assert "_budget_cost_for_handoff" not in function_names
 
-    handoff_decision = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoffDecision"
-    )
-    assert "__getattr__" not in {
-        node.name for node in handoff_decision.body if isinstance(node, ast.FunctionDef)
-    }
+    module_source = ast.unparse(tree)
+    assert "non_runtime_failure_owner_decision" not in function_names
+    assert "compatibility_recovery_kind" not in module_source
+    assert "RecoveryDecision(" not in module_source
+    assert "state.recovery_count" not in module_source
 
-    handoff = next(
+
+def test_sar_9_c2_perception_stage_uses_shared_pure_stage_contract() -> None:
+    stage_path = SOURCE_ROOT / "perception_phase.py"
+    protocol_path = SOURCE_ROOT / "stage_protocol.py"
+    committer_path = SOURCE_ROOT / "runtime_committer.py"
+    assert protocol_path.is_file()
+    assert committer_path.is_file()
+
+    source = stage_path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    class_names = {
+        node.name for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    assert "PerceptionStage" in class_names
+    assert "PerceptionPhase" not in class_names
+    assert "PerceptionPhaseResult" not in class_names
+    assert "PerceptionTerminal" not in class_names
+
+    imported_modules = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    assert "affordance_runtime.state_kernel" not in imported_modules
+    assert "affordance_runtime.trace" not in imported_modules
+    assert "affordance_runtime.recovery_phase" not in imported_modules
+
+    stage = next(
         node
         for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "FailureOwnerHandoff"
+        if isinstance(node, ast.ClassDef) and node.name == "PerceptionStage"
     )
-    annotations = {
-        item.target.id: ast.unparse(item.annotation)
-        for item in handoff.body
-        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+    run = next(
+        node
+        for node in stage.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run"
+    )
+    assert [argument.arg for argument in run.args.args] == ["self", "stage_input"]
+    assert "StageResult[ObservationOutput]" in ast.unparse(run.returns)
+
+    module_source = ast.unparse(tree)
+    for forbidden in (
+        "state.transition",
+        "state.remember_observation",
+        "trace.add",
+        "RecoveryPhase",
+        "recover_phase_failure",
+    ):
+        assert forbidden not in module_source
+
+
+def test_sar_9_c3_planning_stage_replaces_default_planning_compatibility() -> None:
+    coordinator = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    planning = (SOURCE_ROOT / "planning_phase.py").read_text(encoding="utf-8")
+    tree = ast.parse(planning)
+    classes = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
     }
-    assert annotations["compatibility_recovery_kind"] == "RecoveryKind"
-    assert annotations["budget_cost"] == "RecoveryBudgetCost"
+    assert "PlanningStage" in classes
+    run = next(
+        node
+        for node in classes["PlanningStage"].body
+        if isinstance(node, ast.FunctionDef) and node.name == "run"
+    )
+    assert [argument.arg for argument in run.args.args] == ["self", "stage_input"]
+    assert "StageResult[PlanningOutput]" in ast.unparse(run.returns)
+    assert "StateKernel" not in planning
+    assert "TraceDag" not in planning
+    assert "trace.add(" not in planning
+    assert "PlannerDecision" not in planning
+    for forbidden in (
+        "PlannerCompatibilityPort",
+        "PlannerDecision",
+        "planner_compatibility",
+        "task_plan_phase",
+        "task_skill_phase",
+        "planning_failure_phase",
+    ):
+        assert forbidden not in coordinator
+    for deleted in (
+        "task_plan_phase.py",
+        "task_skill_phase.py",
+        "planning_failure_phase.py",
+    ):
+        assert not (SOURCE_ROOT / deleted).exists()
 
 
 def test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection() -> None:
@@ -2368,15 +2370,13 @@ def test_sar_9a_coordinator_does_not_inline_taskplan_commit_projection() -> None
     ):
         assert forbidden not in run_sync_source
 
-    assert "task_plan_phase" in coordinator_source
-    assert (SOURCE_ROOT / "task_plan_phase.py").is_file()
+    assert "planning_phase" in coordinator_source
+    assert not (SOURCE_ROOT / "task_plan_phase.py").exists()
 
 
 def test_sar_9b_progress_low_level_commits_are_behind_progress_phase() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
-    task_plan_phase_source = (SOURCE_ROOT / "task_plan_phase.py").read_text(
-        encoding="utf-8"
-    )
+    planning_source = (SOURCE_ROOT / "planning_phase.py").read_text(encoding="utf-8")
     progress_phase_path = SOURCE_ROOT / "progress_phase.py"
 
     assert progress_phase_path.is_file()
@@ -2387,7 +2387,7 @@ def test_sar_9b_progress_low_level_commits_are_behind_progress_phase() -> None:
         "commit_current_state_completion",
     ):
         assert forbidden not in coordinator_source
-        assert forbidden not in task_plan_phase_source
+        assert forbidden not in planning_source
 
 
 def test_sar_9c_taskskill_selection_is_behind_taskskill_phase() -> None:
@@ -2414,8 +2414,8 @@ def test_sar_9c_taskskill_selection_is_behind_taskskill_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "task_skill_phase" in coordinator_source
-    assert (SOURCE_ROOT / "task_skill_phase.py").is_file()
+    assert "planning_phase" in coordinator_source
+    assert not (SOURCE_ROOT / "task_skill_phase.py").exists()
 
 
 def test_sar_9d_planning_decision_handling_is_behind_planning_phase() -> None:
@@ -2447,7 +2447,7 @@ def test_sar_9d_planning_decision_handling_is_behind_planning_phase() -> None:
     assert (SOURCE_ROOT / "planning_phase.py").is_file()
 
 
-def test_sar_9e_contract_binding_is_behind_contract_binding_phase() -> None:
+def test_sar_9e_contract_binding_is_absorbed_by_action_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2473,11 +2473,12 @@ def test_sar_9e_contract_binding_is_behind_contract_binding_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "contract_binding_phase" in coordinator_source
-    assert (SOURCE_ROOT / "contract_binding_phase.py").is_file()
+    assert "ActionStageInput" in run_sync_source
+    assert "contract_binding_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "contract_binding_phase.py").exists()
 
 
-def test_sar_9f_preflight_handling_is_behind_preflight_phase() -> None:
+def test_sar_9f_preflight_is_absorbed_by_action_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2504,8 +2505,9 @@ def test_sar_9f_preflight_handling_is_behind_preflight_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "preflight_phase" in coordinator_source
-    assert (SOURCE_ROOT / "preflight_phase.py").is_file()
+    assert "ActionStageInput" in run_sync_source
+    assert "preflight_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "preflight_phase.py").exists()
 
 
 def test_sar_9g_execution_handling_is_behind_execution_phase() -> None:
@@ -2528,16 +2530,31 @@ def test_sar_9g_execution_handling_is_behind_execution_phase() -> None:
         "contract_execution_loop.execute",
         "record_receipt",
         "record_subgoal_action",
-        "complete_pending_execution",
         "recovery layer disabled",
     ):
         assert forbidden not in run_sync_source
 
     assert "execution_phase" in coordinator_source
     assert (SOURCE_ROOT / "execution_phase.py").is_file()
+    execution_source = (SOURCE_ROOT / "execution_phase.py").read_text(encoding="utf-8")
+    execution_tree = ast.parse(execution_source)
+    action_stage = next(
+        node
+        for node in execution_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ActionStage"
+    )
+    run = next(
+        node
+        for node in action_stage.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run"
+    )
+    assert [item.arg for item in run.args.args] == ["self", "stage_input"]
+    assert "StateKernel" not in execution_source
+    assert "TraceDag" not in execution_source
+    assert "RecoveryPhase" not in execution_source
 
 
-def test_sar_9h_verification_handling_is_behind_verification_phase() -> None:
+def test_sar_9h_verification_handling_is_absorbed_by_progress_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2563,11 +2580,15 @@ def test_sar_9h_verification_handling_is_behind_verification_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "verification_phase" in coordinator_source
-    assert (SOURCE_ROOT / "verification_phase.py").is_file()
+    progress_source = (SOURCE_ROOT / "progress_phase.py").read_text(encoding="utf-8")
+    assert "ProgressStageInput" in run_sync_source
+    assert "verification_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "verification_phase.py").exists()
+    assert "StateKernel" not in progress_source
+    assert "TraceDag" not in progress_source
 
 
-def test_sar_9i_taskskill_verification_is_behind_taskskill_progress_phase() -> None:
+def test_sar_9i_taskskill_verification_is_absorbed_by_progress_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2592,11 +2613,12 @@ def test_sar_9i_taskskill_verification_is_behind_taskskill_progress_phase() -> N
     ):
         assert forbidden not in run_sync_source
 
-    assert "task_skill_progress_phase" in coordinator_source
-    assert (SOURCE_ROOT / "task_skill_progress_phase.py").is_file()
+    assert "ProgressStageInput" in run_sync_source
+    assert "task_skill_progress_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "task_skill_progress_phase.py").exists()
 
 
-def test_sar_9j_verified_progress_is_behind_verified_progress_phase() -> None:
+def test_sar_9j_verified_progress_is_absorbed_by_progress_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2620,11 +2642,12 @@ def test_sar_9j_verified_progress_is_behind_verified_progress_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "verified_progress_phase" in coordinator_source
-    assert (SOURCE_ROOT / "verified_progress_phase.py").is_file()
+    assert "ProgressStageInput" in run_sync_source
+    assert "verified_progress_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "verified_progress_phase.py").exists()
 
 
-def test_sar_9k_verification_failure_is_behind_verification_failure_phase() -> None:
+def test_sar_9k_verification_failure_is_absorbed_by_progress_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2646,8 +2669,9 @@ def test_sar_9k_verification_failure_is_behind_verification_failure_phase() -> N
     ):
         assert forbidden not in run_sync_source
 
-    assert "verification_failure_phase" in coordinator_source
-    assert (SOURCE_ROOT / "verification_failure_phase.py").is_file()
+    assert "ProgressStageInput" in run_sync_source
+    assert "verification_failure_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "verification_failure_phase.py").exists()
 
 
 def test_sar_9l_perception_capture_is_behind_perception_phase() -> None:
@@ -2704,11 +2728,11 @@ def test_sar_9m_planning_failure_handoff_is_behind_planning_failure_phase() -> N
     ):
         assert forbidden not in run_sync_source
 
-    assert "planning_failure_phase" in coordinator_source
-    assert (SOURCE_ROOT / "planning_failure_phase.py").is_file()
+    assert "planning_phase" in coordinator_source
+    assert not (SOURCE_ROOT / "planning_failure_phase.py").exists()
 
 
-def test_sar_9n_contract_failure_is_behind_contract_failure_phase() -> None:
+def test_sar_9n_contract_failure_is_returned_by_action_stage() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
     coordinator_tree = ast.parse(coordinator_source)
     run_coordinator = next(
@@ -2730,8 +2754,9 @@ def test_sar_9n_contract_failure_is_behind_contract_failure_phase() -> None:
     ):
         assert forbidden not in run_sync_source
 
-    assert "contract_failure_phase" in coordinator_source
-    assert (SOURCE_ROOT / "contract_failure_phase.py").is_file()
+    assert "action.failure" in run_sync_source
+    assert "contract_failure_phase" not in coordinator_source
+    assert not (SOURCE_ROOT / "contract_failure_phase.py").exists()
 
 
 def test_sar_9o_loop_lifecycle_is_behind_runtime_loop_phase() -> None:
@@ -2755,11 +2780,14 @@ def test_sar_9o_loop_lifecycle_is_behind_runtime_loop_phase() -> None:
         "runtime budget exhausted",
         "RuntimeStep.PLANNING.value",
         "RuntimeStep.VERIFYING.value",
-        "activate_next_subgoal",
+        "activate_next_step",
     ):
         assert forbidden not in run_sync_source
 
-    assert "runtime_loop_phase" in coordinator_source
+    committer_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
+        encoding="utf-8"
+    )
+    assert "runtime_loop_phase" in committer_source
     assert (SOURCE_ROOT / "runtime_loop_phase.py").is_file()
 
 
@@ -2768,7 +2796,7 @@ def test_sar_9q_runtime_loop_phase_returns_events_without_committing_state_or_tr
 
     assert "trace.add(" not in source
     assert ".transition(" not in source
-    assert ".activate_next_subgoal(" not in source
+    assert ".activate_next_step(" not in source
     assert "RuntimeLoopEvent" in source
     assert "RuntimeLoopTransition" in source
 
@@ -2791,7 +2819,7 @@ def test_sar_9r_targeted_perception_is_not_a_runcoordinator_method() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_sar_9s_route_outcome_recording_is_behind_verification_phase() -> None:
+def test_sar_9s_route_outcome_recording_is_behind_progress_stage() -> None:
     tree = ast.parse((SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8"))
     run_coordinator = next(
         node
@@ -2803,7 +2831,7 @@ def test_sar_9s_route_outcome_recording_is_behind_verification_phase() -> None:
     }
 
     assert "_record_route_outcome" not in method_names
-    verification_source = (SOURCE_ROOT / "verification_phase.py").read_text(
+    verification_source = (SOURCE_ROOT / "progress_phase.py").read_text(
         encoding="utf-8"
     )
     assert "record_route_outcome" in verification_source
@@ -2825,7 +2853,8 @@ def test_sar_9t_source_arbitration_trace_projection_is_not_a_runcoordinator_meth
     perception_source = (SOURCE_ROOT / "perception_phase.py").read_text(
         encoding="utf-8"
     )
-    assert "trace_source_arbitration" in perception_source
+    assert "_source_arbitration_events" in perception_source
+    assert "trace.add(" not in perception_source
     assert "SourceAssertionsCollected" in perception_source
     assert "TargetedPerceptionRequested" in perception_source
 
@@ -2869,15 +2898,165 @@ def test_sar_9v_runtime_result_finalization_is_not_a_runcoordinator_method() -> 
     }
 
     assert "_finish" not in method_names
-    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
-    assert "self.result_phase.finish" in coordinator_source
+    committer_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
+        encoding="utf-8"
+    )
+    assert "self.result_builder.finish" in committer_source
     result_source = (SOURCE_ROOT / "runtime_result_phase.py").read_text(
         encoding="utf-8"
     )
     assert "class RuntimeResultPhase" in result_source
-    assert "class CoordinatorResult" in result_source
+    assert "class RunResult" in result_source
     assert "def finish" in result_source
     assert ".finalize(" in result_source
+
+
+def test_sar_9_c8_composition_and_public_api_are_canonical() -> None:
+    coordinator_tree = ast.parse(
+        (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    )
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    fields = {
+        node.target.id
+        for node in run_coordinator.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    assert fields == {
+        "perception_stage",
+        "planning_stage",
+        "action_stage",
+        "progress_stage",
+        "recovery_stage",
+        "committer",
+        "result_builder",
+    }
+    assert all(
+        not isinstance(node, ast.FunctionDef) or node.name != "__post_init__"
+        for node in run_coordinator.body
+    )
+
+    import affordance_runtime
+
+    stable = {
+        "RuntimeClient",
+        "RunRequest",
+        "RunResult",
+        "PlannerPort",
+        "PlanningRequest",
+        "PlannerResponse",
+        "UnifiedObservation",
+        "UnifiedAffordance",
+        "ActionContract",
+        "ActionOutcome",
+    }
+    legacy = {
+        "StateKernel",
+        "PlannerDecision",
+        "TaskEnvelope",
+        "RouteCalibrator",
+        "RoutingDecision",
+        "BrowserSnapshot",
+    }
+    assert stable <= set(affordance_runtime.__all__)
+    assert legacy.isdisjoint(affordance_runtime.__all__)
+
+
+def test_sar_9_c9_final_architecture_gates() -> None:
+    stages = {
+        "perception_phase.py": "PerceptionStage",
+        "planning_phase.py": "PlanningStage",
+        "execution_phase.py": "ActionStage",
+        "progress_phase.py": "ProgressStage",
+        "recovery_phase.py": "RecoveryStage",
+    }
+    stage_modules = {
+        f"affordance_runtime.{filename.removesuffix('.py')}"
+        for filename in stages
+    }
+    coordinator_path = SOURCE_ROOT / "coordinator.py"
+    coordinator_source = coordinator_path.read_text(encoding="utf-8")
+    coordinator_tree = ast.parse(coordinator_source)
+    imported_stages = {
+        node.module
+        for node in ast.walk(coordinator_tree)
+        if isinstance(node, ast.ImportFrom) and node.module in stage_modules
+    }
+    assert imported_stages == stage_modules
+    assert len(coordinator_source.splitlines()) <= 350
+    run_coordinator = next(
+        node
+        for node in coordinator_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    run_sync = next(
+        node
+        for node in run_coordinator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_sync"
+    )
+    assert run_sync.end_lineno - run_sync.lineno + 1 <= 180
+
+    for filename, class_name in stages.items():
+        source = (SOURCE_ROOT / filename).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        stage = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == class_name
+        )
+        run = next(
+            node
+            for node in stage.body
+            if isinstance(node, ast.FunctionDef) and node.name == "run"
+        )
+        assert [arg.arg for arg in run.args.args] == ["self", "stage_input"]
+        dependencies = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        assert dependencies.isdisjoint(stage_modules)
+        assert "StateKernel" not in source
+        assert "TraceDag" not in source
+        assert "trace.add(" not in source
+        assert "working_copy(" not in source
+        assert "state_updates=dict(vars(" not in source
+
+    default_modules = [
+        "coordinator.py",
+        "composition.py",
+        *stages,
+        "runtime_committer.py",
+    ]
+    default_source = "\n".join(
+        (SOURCE_ROOT / filename).read_text(encoding="utf-8")
+        for filename in default_modules
+    )
+    assert "PlannerDecision" not in default_source
+    assert "inspect.signature" not in default_source
+    progress_source = (SOURCE_ROOT / "progress_phase.py").read_text(
+        encoding="utf-8"
+    )
+    assert "prepare_obligation_progress_shadow_trace" not in progress_source
+    assert "ObligationProgressShadowCompared" not in progress_source
+    assert "ObligationProgressShadowFailed" not in progress_source
+
+    orchestration_files = [
+        "coordinator.py",
+        *stages,
+        "runtime_committer.py",
+        "runtime_result_phase.py",
+        "composition.py",
+    ]
+    orchestration_loc = sum(
+        len((SOURCE_ROOT / filename).read_text(encoding="utf-8").splitlines())
+        for filename in orchestration_files
+    )
+    assert orchestration_loc <= 4287
+    assert not (SOURCE_ROOT / "runtime_transition_commit.py").exists()
 
 
 def test_sar_9w_runtime_budget_check_is_not_a_runcoordinator_method() -> None:
@@ -2909,11 +3088,11 @@ def test_sar_9x_runtime_loop_transition_commit_helpers_are_not_in_coordinator() 
     assert "def _commit_runtime_loop_event" not in coordinator_source
     assert "RuntimeLoopEvent" not in coordinator_source
     assert "RuntimeLoopTransition" not in coordinator_source
-    commit_source = (SOURCE_ROOT / "runtime_transition_commit.py").read_text(
+    commit_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
         encoding="utf-8"
     )
-    assert "def apply_runtime_loop_transition" in commit_source
-    assert "def commit_runtime_loop_event" in commit_source
+    assert "def commit_loop_transition" in commit_source
+    assert "def commit_loop_event" in commit_source
 
 
 def test_sar_9y_recovery_started_trace_commit_is_not_in_coordinator() -> None:
@@ -2921,7 +3100,7 @@ def test_sar_9y_recovery_started_trace_commit_is_not_in_coordinator() -> None:
 
     assert "def _trace_recovery_started" not in coordinator_source
     assert "RecoveryStarted" not in coordinator_source
-    assert "trace_recovery_started=trace_recovery_started" in coordinator_source
+    assert "trace_recovery_started" not in coordinator_source
     commit_source = (SOURCE_ROOT / "recovery_trace_commit.py").read_text(
         encoding="utf-8"
     )
@@ -2933,12 +3112,12 @@ def test_sar_9z_terminal_recovery_status_commit_is_not_in_coordinator() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
 
     assert "def _terminal_recovery_status" not in coordinator_source
-    assert "terminal_recovery_status=terminal_recovery_status" in coordinator_source
-    commit_source = (SOURCE_ROOT / "runtime_transition_commit.py").read_text(
+    assert "terminal_recovery_status" not in coordinator_source
+    commit_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
         encoding="utf-8"
     )
-    assert "def terminal_recovery_status" in commit_source
-    assert "RuntimeStep.WAITING_CLARIFICATION" in commit_source
+    assert "def terminal_recovery_status" not in commit_source
+    assert not (SOURCE_ROOT / "runtime_transition_commit.py").exists()
 
 
 def test_sar_9aa_recovery_state_read_helpers_are_not_in_coordinator() -> None:
@@ -2947,7 +3126,6 @@ def test_sar_9aa_recovery_state_read_helpers_are_not_in_coordinator() -> None:
     assert "def _pending_recovery_kind" not in coordinator_source
     assert "def _available_owner_recovery_kinds" not in coordinator_source
     assert "OWNER_DISPATCH_RECOVERY_KINDS = frozenset" not in coordinator_source
-    assert "pending_recovery_kind=pending_recovery_kind" in coordinator_source
     assert "available_owner_recovery_kinds(" in coordinator_source
     projection_source = (SOURCE_ROOT / "recovery_state_projection.py").read_text(
         encoding="utf-8"
@@ -2961,18 +3139,20 @@ def test_sar_9ab_taskskill_progress_accessor_is_not_in_coordinator() -> None:
 
     assert "def _task_skill_progress" not in coordinator_source
     assert "TaskSkillRunState" not in coordinator_source
-    assert "task_skill_progress_for=task_skill_progress" in coordinator_source
-    task_skill_source = (SOURCE_ROOT / "task_skill_phase.py").read_text(
-        encoding="utf-8"
-    )
-    assert "def task_skill_progress" in task_skill_source
+    assert "task_skill_progress(" in coordinator_source
+    planning_source = (SOURCE_ROOT / "planning_phase.py").read_text(encoding="utf-8")
+    assert "def task_skill_progress" in planning_source
+    assert not (SOURCE_ROOT / "task_skill_phase.py").exists()
 
 
 def test_sar_9ac_phase_terminal_finalization_is_not_expanded_in_coordinator() -> None:
     coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
 
     assert coordinator_source.count("self.result_phase.finish(") <= 1
-    assert "finish_phase_terminal(" in coordinator_source
+    committer_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
+        encoding="utf-8"
+    )
+    assert "finish_phase_terminal(" in committer_source
     result_phase_source = (SOURCE_ROOT / "runtime_result_phase.py").read_text(
         encoding="utf-8"
     )
@@ -2998,31 +3178,21 @@ def test_sar_9p_generic_recovery_helpers_are_behind_recovery_failure_phase() -> 
     assert "_remaining_recovery_budgets" not in method_names
     assert "make_failure_envelope" not in coordinator_source
     assert "commit_non_runtime_failure_owner_handoff" not in coordinator_source
-    assert "self.recovery_failure_phase.recover_phase_failure" in coordinator_source
-    assert "self.recovery_failure_phase.recover_execution_failure" in coordinator_source
-    assert (SOURCE_ROOT / "recovery_failure_phase.py").is_file()
+    committer_source = (SOURCE_ROOT / "runtime_committer.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def recover(" in committer_source
+    assert "self.recovery_failure_phase.recover_execution_failure" not in coordinator_source
+    assert not (SOURCE_ROOT / "recovery_failure_phase.py").exists()
 
 
-def test_sar_8c_recover_phase_failure_delegates_to_recovery_phase() -> None:
-    tree = ast.parse(
-        (SOURCE_ROOT / "recovery_failure_phase.py").read_text(encoding="utf-8")
-    )
-    recovery_failure_phase = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "RecoveryFailurePhase"
-    )
-    recover_phase_failure = next(
-        node
-        for node in recovery_failure_phase.body
-        if isinstance(node, ast.FunctionDef) and node.name == "recover_phase_failure"
-    )
-    body_source = ast.unparse(recover_phase_failure).casefold()
-
-    assert "self.recovery_phase.handle_phase_failure" in body_source
-    assert "recoveryselectioncontext" not in body_source
-    assert "legacy_plan_from_recovery_decision" not in body_source
-    assert "state.current_recovery_plan = plan" not in body_source
+def test_sar_8c_recovery_failure_phase_is_deleted_after_stage_cutover() -> None:
+    assert not (SOURCE_ROOT / "recovery_failure_phase.py").exists()
+    source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
+    assert "class RecoveryStage:" in source
+    assert "self.coordinator.decide" in source
+    assert "StateKernel" not in source
+    assert "TraceDag" not in source
 
 
 def test_sar_8c_run_sync_does_not_read_legacy_recovery_plan_state() -> None:
@@ -3213,26 +3383,21 @@ def test_sar_8c_coordinator_does_not_read_pending_recovery_command_payload() -> 
 
 
 def test_sar_8c_coordinator_recovery_seam_returns_canonical_recovery_kind() -> None:
-    source = (SOURCE_ROOT / "recovery_failure_phase.py").read_text(encoding="utf-8")
-    seam = source.split("def recover_phase_failure(", 1)[1].split(
-        "\n    def _remaining_recovery_budgets",
-        1,
-    )[0]
-
-    assert "tuple[RecoveryCommandKind, TraceNode]" not in seam
-    assert "return recovery_result.command_kind" not in seam
+    source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
+    assert "def recovery_kind(self) -> RecoveryKind" in source
+    assert "RecoveryCommandKind" not in source
 
 
 def test_sar_8c_recovery_phase_result_exposes_canonical_recovery_kind() -> None:
     source = (SOURCE_ROOT / "recovery_phase.py").read_text(encoding="utf-8")
-    result_section = source.split("class RecoveryApplicationResult:", 1)[1].split(
+    result_section = source.split("class RecoveryOutput:", 1)[1].split(
         "\n\n",
         1,
     )[0]
 
     assert "command_kind" not in result_section
     assert "RecoveryCommandKind" not in result_section
-    assert "recovery_kind: RecoveryKind" in result_section
+    assert "def recovery_kind(self) -> RecoveryKind" in source
 
 
 def test_sar_8c_coordinator_uses_canonical_recovery_kind_inputs() -> None:

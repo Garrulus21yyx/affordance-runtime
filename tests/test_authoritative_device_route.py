@@ -3,8 +3,8 @@ from dataclasses import dataclass, replace
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import Observation, ProgressEvidenceScope, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import ExecutorRouter, WotExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
@@ -15,8 +15,12 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -137,22 +141,20 @@ class DeviceObserver:
 class DevicePlanner:
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        if snapshot.observation.metadata["power"] is True:
-            return PlannerDecision(done=True, result={"power": True})
-        return PlannerDecision(
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        if request.recent_outcomes:
+            return PlannerDoneResponse(result={"power": True})
+        return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
-                proposal_id=f"device-{state.version}",
-                based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"device-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 subgoal="Turn on the authoritative device property",
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                target_affordance_id=request.observation.affordances[0].target_id,
             ),
         )
 
@@ -175,7 +177,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
         requested_capabilities=("device.write",),
         source_request_ref="test",
     )
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         DevicePlanner(),
         executors,
@@ -194,7 +196,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
                 )
             }
         ),
-    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["device.write"]))
+    ).run_sync(RunRequest(task_spec=task, capabilities=["device.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert world.power is True

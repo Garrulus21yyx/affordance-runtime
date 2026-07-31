@@ -19,7 +19,7 @@ from affordance_runtime.contracts import (
     Surface,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.coordinator import RunCoordinator
 from affordance_runtime.executors import VisualExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
@@ -28,7 +28,8 @@ from affordance_runtime.planning import (
     PlannerActionKind,
     PlannerProposal,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.planning_contracts import PlannerDecision
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import (
@@ -129,7 +130,7 @@ class PixelDragPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerDecision:
@@ -204,7 +205,7 @@ def run_live_visual_drag(chromium_executable: str | None = None) -> dict[str, An
                         )
                     }
                 ),
-            ).run_sync(TaskEnvelope(task_spec=task, capabilities=["canvas.write"]))
+            ).run_sync(RunRequest(task_spec=task, capabilities=["canvas.write"]))
             events = tuple(node.kind for node in result.trace.nodes)
             proposals_are_semantic = all(
                 not set(proposal.get("parameters", {})).intersection({"x", "y", "bbox", "bid"})

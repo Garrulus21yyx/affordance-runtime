@@ -10,10 +10,10 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.generalist_planner import PlannerLimits
 from affordance_runtime.planner_context import PlannerContextBuilder
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
-from affordance_runtime.planning_contracts import PlannerDecision, PlannerProposalResponse, PlannerResponse
+from affordance_runtime.planning_contracts import PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder, PlanningRequestLimits
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 
 
@@ -27,7 +27,7 @@ class ParentProposalSource(Protocol):
 class PlanningRequestBuilderPort(Protocol):
     def build(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlanningRequest: ...
@@ -42,6 +42,14 @@ class PlannerContextBuilderPort(Protocol):
     ) -> Any: ...
 
 
+@dataclass(frozen=True)
+class _ParentProposalResult:
+    proposal: PlannerProposal
+    proposal_provenance: PlannerProposalProvenance
+    reason: str
+    planner_context: dict[str, Any]
+
+
 @dataclass
 class ParentAgentPlannerAdapter:
     """Give a parent only semantic context/proposals, never primitive execution."""
@@ -54,32 +62,30 @@ class ParentAgentPlannerAdapter:
 
     async def propose_legacy(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+    ) -> _ParentProposalResult:
         request = self._planning_request_builder().build(envelope, state, snapshot)
-        return await self._propose_decision(request)
+        return await self._propose_result(request)
 
     async def propose(
         self,
         request: PlanningRequest,
     ) -> PlannerResponse:
-        decision = await self._propose_decision(request)
-        if decision.proposal is None:  # pragma: no cover - parent adapter always validates a proposal
-            raise RuntimeError("parent adapter did not return a semantic proposal")
+        decision = await self._propose_result(request)
         return PlannerProposalResponse(
             proposal=decision.proposal,
             proposal_provenance=decision.proposal_provenance,
             reason=decision.reason,
         )
 
-    async def _propose_decision(self, request: PlanningRequest) -> PlannerDecision:
+    async def _propose_result(self, request: PlanningRequest) -> _ParentProposalResult:
         context = self._context_builder().build(request)
         value = self.source.propose(context.model_dump(mode="json"))
         payload = await value if inspect.isawaitable(value) else value
         proposal = PlannerProposal.model_validate(payload)
-        return PlannerDecision(
+        return _ParentProposalResult(
             proposal=proposal,
             proposal_provenance=PlannerProposalProvenance(
                 source=PlannerProposalSource.PARENT_AGENT,

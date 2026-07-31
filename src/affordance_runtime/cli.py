@@ -11,19 +11,23 @@ from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
+from affordance_runtime.composition import compose_run_coordinator
+from affordance_runtime.coordinator import RuntimeFeatures
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
-from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
 from affordance_runtime.planners import (
     ExportPlanner,
     PricingPlanner,
     PricingTaskPlanner,
     SettingsPlanner,
+    export_contract_builder,
     extract_pricing,
+    pricing_contract_builder,
+    settings_contract_builder,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.planning_contracts import PlannerPort
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import PlanningRouter
 
@@ -382,7 +386,7 @@ def run_scenario(
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
-    planners: dict[str, PlannerCompatibilityPort] = {
+    planners: dict[str, PlannerPort] = {
         "pricing": PricingPlanner(),
         "settings": SettingsPlanner(),
         "export": ExportPlanner(),
@@ -446,6 +450,34 @@ def run_scenario(
             ),
             source_request_ref="reference-cli-accepted-profile",
         )
+    if task_spec is None:
+        task_spec = TaskSpec(
+            task_id=selected_run_id,
+            revision=1,
+            objective={
+                "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
+                "settings": "Enable the reversible notifications setting and verify persisted state.",
+                "export": "Export a report only after explicit approval and return the file receipt.",
+            }[scenario],
+            operation_class={
+                "pricing": OperationClass.READ_ONLY,
+                "settings": OperationClass.REVERSIBLE_WRITE,
+                "export": OperationClass.EXTERNAL_SIDE_EFFECT,
+            }[scenario],
+            targets={
+                "pricing": ("Pro", "Enterprise"),
+                "settings": ("notifications",),
+                "export": ("report",),
+            }[scenario],
+            success_criteria=("requested scenario result is independently verified",),
+            evidence_requirements=("independent post-action evidence",),
+            requested_capabilities=tuple(
+                capabilities_override
+                if capabilities_override is not None
+                else capabilities[scenario]
+            ),
+            source_request_ref="reference-cli",
+        )
     runtime_features = (
         loaded_profile.profile.features_for(selected_run_id)
         if loaded_profile is not None
@@ -454,10 +486,17 @@ def run_scenario(
     with BrowserSession.launch(target, headless=headless) as session:
         router = ExecutorRouter()
         router.register(DomExecutor(session))
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer=session,
             planner=planners[scenario],
             executor=router,
+            contract_builder={
+                "pricing": pricing_contract_builder(),
+                "settings": settings_contract_builder(
+                    target.rsplit("/", 1)[0] + "/api/state"
+                ),
+                "export": export_contract_builder(),
+            }[scenario],
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,
             task_planner=(
@@ -472,7 +511,7 @@ def run_scenario(
             runtime_profile_digest=(loaded_profile.profile_digest if loaded_profile is not None else ""),
             loaded_profile_artifact_ids=(loaded_profile.artifact_ids if loaded_profile is not None else ()),
         ).run_sync(
-            TaskEnvelope(
+            RunRequest(
                 task_id=selected_run_id,
                 goal=(
                     task_spec.objective

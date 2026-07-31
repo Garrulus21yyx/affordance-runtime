@@ -1,6 +1,5 @@
 import json
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -14,15 +13,15 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.conformance import (
     CONFORMANCE_CAPABILITY,
     CONFORMANCE_GOAL,
+    ConformanceContractBuilder,
     ConformancePlanner,
     ConformanceSurfaceResult,
     _preserves_shared_contract_envelope,
 )
 from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, Observation
 from affordance_runtime.fixtures import LOCAL_SAAS_FIXTURE_VERSION, create_fixture_server
-from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -90,18 +89,34 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
         snapshot_id=snapshot_id,
     )
     wot = dom.__class__("wot", "", revision, snapshot_id, revision, thing.affordances, 1, 1)
-    envelope = TaskEnvelope("run", "goal", capabilities=[CONFORMANCE_CAPABILITY])
-
     contracts = []
     for surface, model in (("dom", dom), ("visual", visual), ("wot", wot)):
         observation = Observation(revision, snapshot_id=snapshot_id)
-        decision = ConformancePlanner(surface, "http://oracle/state").propose(
-            envelope,
-            StateKernel("run", "goal"),
-            BrowserSnapshot(observation, model),
+        task = TaskSpec(
+            task_id=f"conformance-{surface}",
+            revision=1,
+            objective=CONFORMANCE_GOAL,
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            targets=("shared state",),
+            success_criteria=("shared state enabled",),
+            evidence_requirements=("oracle evidence",),
+            requested_capabilities=(CONFORMANCE_CAPABILITY,),
+            source_request_ref="conformance-test",
         )
-        assert decision.contract is not None
-        contracts.append(decision.contract)
+        state = StateKernel(task.task_id, task.objective)
+        state.transition("observing")
+        state.remember_observation(observation)
+        state.transition("planning")
+        snapshot = BrowserSnapshot(observation, model)
+        request = PlanningRequestBuilder().build(
+            RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]), state, snapshot
+        )
+        response = ConformancePlanner(surface, "http://oracle/state").propose(request)
+        contract = ConformanceContractBuilder(
+            surface=surface,
+            oracle_state_url="http://oracle/state",
+        ).build(response.proposal, task, state, snapshot)
+        contracts.append(contract)
 
     assert [contract.backend for contract in contracts] == ["dom", "visual", "wot"]
     assert all(contract.required_capabilities == [CONFORMANCE_CAPABILITY] for contract in contracts)
@@ -110,7 +125,7 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
     assert all(contract.verifier_plan[0].target == "http://oracle/state" for contract in contracts)
 
 
-def test_conformance_planner_builds_request_when_task_spec_is_available() -> None:
+def test_conformance_planner_consumes_canonical_request() -> None:
     revision = "revision-1"
     snapshot_id = "snapshot-request-1"
     model = DomAdapter().transduce(
@@ -135,35 +150,19 @@ def test_conformance_planner_builds_request_when_task_spec_is_available() -> Non
         source_request_ref="conformance-request-source",
     )
 
-    @dataclass
-    class RecordingRequestBuilder:
-        inner: PlanningRequestBuilder = PlanningRequestBuilder()
-        built: PlanningRequest | None = None
-
-        def build(
-            self,
-            envelope: TaskEnvelope,
-            state: StateKernel,
-            snapshot: BrowserSnapshot,
-        ) -> PlanningRequest:
-            self.built = self.inner.build(envelope, state, snapshot)
-            return self.built
-
-    request_builder = RecordingRequestBuilder()
-
-    decision = ConformancePlanner(
-        "dom",
-        "http://oracle/state",
-        planning_request_builder=request_builder,
-    ).propose(
-        TaskEnvelope(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
+    snapshot = BrowserSnapshot(observation, model)
+    request = PlanningRequestBuilder().build(
+        RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
         state,
-        BrowserSnapshot(observation, model),
+        snapshot,
     )
+    response = ConformancePlanner("dom", "http://oracle/state").propose(request)
+    contract = ConformanceContractBuilder(
+        surface="dom", oracle_state_url="http://oracle/state"
+    ).build(response.proposal, task, state, snapshot)
 
-    assert request_builder.built is not None
-    assert decision.contract is not None
-    assert decision.contract.required_capabilities == [CONFORMANCE_CAPABILITY]
+    assert request.identity.snapshot_id == snapshot_id
+    assert contract.required_capabilities == [CONFORMANCE_CAPABILITY]
 
 
 def test_conformance_acceptance_uses_current_action_contract_schema() -> None:

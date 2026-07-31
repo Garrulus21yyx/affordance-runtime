@@ -146,7 +146,7 @@ def _snapshot() -> BrowserSnapshot:
 def _state_with_plan(task_spec: TaskSpec, plan: TaskPlan) -> StateKernel:
     state = StateKernel(task_id=task_spec.task_id, goal=task_spec.objective)
     state.install_task_plan(plan)
-    state.activate_next_subgoal()
+    state.activate_next_step()
     state.remember_observation(_snapshot().observation)
     return state
 
@@ -169,9 +169,9 @@ def test_legacy_projection_uses_exact_id_mapping_and_requires_evidence() -> None
         task_spec,
         _plan(task_spec, "obligation:first", "legacy-only"),
     )
-    assert state.plan_progress is not None
-    state.plan_progress.complete("obligation:first", ("evidence:first",))
-    state.plan_progress.complete("legacy-only", ("evidence:legacy",))
+    assert state.task_progress is not None
+    state.task_progress.complete("obligation:first", ("evidence:first",))
+    state.task_progress.complete("legacy-only", ("evidence:legacy",))
 
     progress = project_verified_legacy_progress(task_spec, state)
 
@@ -185,8 +185,8 @@ def test_legacy_projection_uses_exact_id_mapping_and_requires_evidence() -> None
 def test_completed_subgoal_without_evidence_is_not_satisfied_obligation() -> None:
     task_spec = _task_spec(_obligation("obligation:first", terminal=True))
     state = _state_with_plan(task_spec, _plan(task_spec, "obligation:first"))
-    assert state.plan_progress is not None
-    state.plan_progress.complete("obligation:first", ())
+    assert state.task_progress is not None
+    state.task_progress.complete("obligation:first", ())
 
     progress = project_verified_legacy_progress(task_spec, state)
 
@@ -202,8 +202,8 @@ def test_shadow_trace_projection_is_read_only_and_uses_legacy_source() -> None:
         task_spec,
         _plan(task_spec, "obligation:first", "obligation:terminal"),
     )
-    assert state.plan_progress is not None
-    state.plan_progress.complete("obligation:first", ("evidence:first",))
+    assert state.task_progress is not None
+    state.task_progress.complete("obligation:first", ("evidence:first",))
     version_before = state.version
 
     projection = prepare_obligation_progress_shadow_trace(task_spec, state, _snapshot())

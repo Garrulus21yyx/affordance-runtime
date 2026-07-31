@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_intake import (
     AmbiguityRisk,
     CompilationPolicy,
@@ -428,11 +428,11 @@ def test_taskspec_envelope_compatibility_and_revision_identity() -> None:
     second = IntentDraftValidator().compile(_request(), _draft(), revision=2).task_spec
     assert first is not None and second is not None
 
-    envelope = TaskEnvelope(task_spec=second)
+    envelope = RunRequest(task_spec=second)
 
     assert envelope.task_id == "request-1"
     assert envelope.goal == "Set the theme to dark"
     assert envelope.target == "theme"
     assert first.identity != second.identity
     with pytest.raises(ValueError, match="does not match"):
-        TaskEnvelope(task_id="other", task_spec=second)
+        RunRequest(task_id="other", task_spec=second)

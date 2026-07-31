@@ -1,19 +1,33 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
-from affordance_runtime.criteria import criterion_id, evidence_requirement_id
+from affordance_runtime.composition import compose_run_coordinator
+from affordance_runtime.contracts import (
+    ActionContract,
+    ExecutionReceipt,
+    Observation,
+    ProgressEvidenceScope,
+    VerifierSpec,
+)
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import FallbackModelPort, ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import PlannerProposalResponse
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
-from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 
@@ -80,35 +94,33 @@ class MultiStageExecutor:
 class MultiStageActionPlanner:
     def propose(
         self,
-        envelope: Any,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
-        active = state.plan_progress.active_subgoal_id if state.plan_progress is not None else ""
-        active_description = state.active_subgoal()
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse:
+        active_step = request.step.active_step
+        assert active_step is not None
+        active_description = active_step.objective
         label, evidence_key = {
             "current state is available": ("Discover", "discovered"),
             "discovered state is completed": ("Confirm", "confirmed"),
         }[active_description]
-        affordance = next(item for item in snapshot.affordance_model.affordances if item.label == label)
-        return PlannerDecision(
-            contract=ActionContract.from_affordance(
-                affordance,
-                intent=state.active_subgoal(),
-                backend="dom",
-                verifier_plan=[
-                    VerifierSpec(
-                        "observation_metadata",
-                        evidence_key,
-                        True,
-                        criterion_ids=(criterion_id("subgoal", active, 0),),
-                        requirement_ids=(
-                            evidence_requirement_id("subgoal", active, 0),
-                        ),
-                    )
-                ],
-            )
+        affordance = next(item for item in request.observation.affordances if item.label == label)
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id=f"multi-stage-{active_step.step_id}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal=active_description,
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=affordance.target_id,
+                expected_effects=(f"{evidence_key} becomes true",),
+                evidence_requirements=(f"independent {evidence_key} metadata",),
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="multi-stage-test-planner",
+                profile_id="canonical-request",
+            ),
         )
 
 
@@ -222,10 +234,34 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     model = MultiStageIntentAndPlanModel()
     pipeline = GeneralistTaskPipeline(
         compiler=LLMIntentCompiler(model),
-        coordinator=RunCoordinator(
+        coordinator=compose_run_coordinator(
             observer=MultiStageObserver(world),
             planner=MultiStageActionPlanner(),
             executor=MultiStageExecutor(world),
+            contract_builder=ContractBuilder(
+                requirements={
+                    "dom_button_1": ContractRequirements(
+                        verifier_plan=(
+                            VerifierSpec(
+                                "observation_metadata",
+                                "discovered",
+                                True,
+                                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                            ),
+                        )
+                    ),
+                    "dom_button_2": ContractRequirements(
+                        verifier_plan=(
+                            VerifierSpec(
+                                "observation_metadata",
+                                "confirmed",
+                                True,
+                                progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                            ),
+                        )
+                    ),
+                }
+            ),
         ),
     )
 
@@ -247,7 +283,7 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     assert len(completed) == 2
     assert all(identifier.startswith("obligation:") for identifier in completed)
     assert result.coordinator is not None
-    progress = result.coordinator.state.plan_progress
+    progress = result.coordinator.state.task_progress
     assert progress is not None
     assert progress.completed_subgoal_ids == completed
     assert all(progress.evidence_by_subgoal[identifier] for identifier in completed)
@@ -259,14 +295,14 @@ def test_task_pipeline_wires_only_a_real_configured_provider_fallback() -> None:
     fallback = MultiStageIntentAndPlanModel(provider="fallback", model="fallback-model")
     pipeline = GeneralistTaskPipeline(
         compiler=LLMIntentCompiler(FallbackModelPort((primary, fallback))),
-        coordinator=RunCoordinator(
+        coordinator=compose_run_coordinator(
             observer=MultiStageObserver(MultiStageWorld()),
             planner=MultiStageActionPlanner(),
             executor=MultiStageExecutor(MultiStageWorld()),
         ),
     )
 
-    dispatcher = pipeline.coordinator.recovery_owner_dispatcher
+    dispatcher = pipeline.coordinator.recovery_stage.owner_dispatcher
 
     assert dispatcher.available_kinds == frozenset({RecoveryKind.SWITCH_PROVIDER})
     assert dispatcher.target_ref(RecoveryKind.SWITCH_PROVIDER) == "fallback:fallback-model"

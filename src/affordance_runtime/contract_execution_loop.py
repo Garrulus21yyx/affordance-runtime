@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
-from affordance_runtime.runtime import Executor, TaskEnvelope
+from affordance_runtime.runtime import Executor, RunRequest
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.simplified_runtime_contracts import (
     ActionOutcome,
@@ -44,7 +44,7 @@ class ContractExecutionLoop:
     def bind_contract(
         self,
         contract: ActionContract,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         observation: Observation,
     ) -> ActionContract:
         parameters = dict(contract.parameters)
@@ -66,7 +66,7 @@ class ContractExecutionLoop:
     def initial_check(
         self,
         contract: ActionContract,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         observation: Observation,
         *,
         capability_gate_enabled: bool,
@@ -83,7 +83,7 @@ class ContractExecutionLoop:
     def revalidate(
         self,
         contract: ActionContract,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         observation: Observation,
         gate: CapabilityGate,
         *,
@@ -189,7 +189,7 @@ class ContractExecutionLoop:
             receipt_evidence_refs=_receipt_evidence_refs(receipt),
         )
 
-    def effective_gate(self, envelope: TaskEnvelope) -> CapabilityGate:
+    def effective_gate(self, envelope: RunRequest) -> CapabilityGate:
         return CapabilityGate(
             granted_capabilities=self.gate.granted_capabilities | set(envelope.capabilities),
             approval_required_risks=set(self.gate.approval_required_risks),

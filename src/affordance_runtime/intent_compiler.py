@@ -699,6 +699,9 @@ def _canonicalize_requested_effects_draft(
     requested effects are already available.
     """
 
+    draft = _normalize_explicit_action_draft(draft, request)
+    draft = _normalize_value_entry_draft(draft, request)
+    draft = _restore_explicit_submit_effect(draft, request)
     inferred_structure = _infer_task_structure(draft)
     if inferred_structure != draft.task_structure:
         draft = draft.model_copy(update={"task_structure": inferred_structure})
@@ -709,7 +712,6 @@ def _canonicalize_requested_effects_draft(
         and (not incomplete_provider_graph or not multi_effect_sequence)
     ):
         return draft, (), False
-    draft = _normalize_value_entry_draft(draft, request)
     try:
         graph = CanonicalObligationCompiler().compile_requested_effects(
             source_ledger,
@@ -749,6 +751,34 @@ def _infer_task_structure(draft: IntentDraft) -> TaskStructure:
     return draft.task_structure
 
 
+def _normalize_explicit_action_draft(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Reject a read-only classification for one explicit activation imperative."""
+
+    if len(draft.requested_effects) != 1 or not re.search(
+        r"\b(?:activate|click|clicking|hit|press|pressing)\b",
+        request.raw_text,
+        flags=re.IGNORECASE,
+    ):
+        return draft
+    if _looks_like_value_entry_request(request.raw_text) or _extract_literal_selection_value(
+        request.raw_text
+    )[0]:
+        return draft
+    effect = draft.requested_effects[0]
+    if effect.operation_class != OperationClass.READ_ONLY:
+        return draft
+    return draft.model_copy(
+        update={
+            "requested_effects": (
+                effect.model_copy(update={"operation_class": OperationClass.NAVIGATION}),
+            )
+        }
+    )
+
+
 def _normalize_value_entry_draft(
     draft: IntentDraft,
     request: UserRequest,
@@ -771,7 +801,12 @@ def _normalize_value_entry_draft(
                 **({"target": select_target} if select_target and index == 0 else {}),
             }
         )
-        if item.operation_class in {OperationClass.READ_ONLY, OperationClass.EXTERNAL_SIDE_EFFECT}
+        if item.operation_class
+        in {
+            OperationClass.READ_ONLY,
+            OperationClass.EXTERNAL_SIDE_EFFECT,
+            *({OperationClass.NAVIGATION} if select_value else set()),
+        }
         else item
         for index, item in enumerate(draft.requested_effects)
     )
@@ -804,6 +839,41 @@ def _normalize_value_entry_draft(
         update={
             "requested_effects": updated_effects,
             "candidate_semantic_value_constraints": constraints,
+        }
+    )
+
+
+def _restore_explicit_submit_effect(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Restore an explicit submit action omitted from an otherwise usable draft."""
+
+    explicitly_submits = re.search(
+        r"\b(?:click|hit|press|submit)(?:ing)?\s+(?:the\s+)?submit\b",
+        request.raw_text,
+        flags=re.IGNORECASE,
+    )
+    already_present = any(
+        "submit" in effect.target.casefold() for effect in draft.requested_effects
+    )
+    if not explicitly_submits or already_present or not draft.requested_effects:
+        return draft
+    source_ref = draft.requested_effects[-1].source_ref
+    return draft.model_copy(
+        update={
+            "requested_effects": (
+                *draft.requested_effects,
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="submit_button",
+                    source_ref=source_ref,
+                ),
+            ),
+            "candidate_success_criteria": (
+                *draft.candidate_success_criteria,
+                "Submit button is pressed.",
+            ),
         }
     )
 
@@ -853,14 +923,20 @@ def _extract_literal_entry_value(
 
 
 def _extract_literal_selection_value(raw_text: str) -> tuple[str, str]:
-    for pattern, target in (
-        (r"\bselect\s+(['\"]?)([A-Za-z0-9_.@:/+-]+)\1\s+from\s+(?:the\s+)?(?:list|dropdown|select)\b", "list"),
-        (r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+(?:the\s+)?slider\b", "slider"),
-    ):
-        match = re.search(pattern, raw_text, flags=re.IGNORECASE)
-        if match:
-            value = match.group(2) if len(match.groups()) > 1 else match.group(1)
-            return value.strip(" .,'\""), target
+    list_match = re.search(
+        r"\bselect\s+(.+?)\s+from\s+(?:the\s+)?(?:list|dropdown|select)\b",
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+    if list_match:
+        return list_match.group(1).strip(" .,'\""), "list"
+    slider_match = re.search(
+        r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+(?:the\s+)?slider\b",
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+    if slider_match:
+        return slider_match.group(1).strip(" .,'\""), "slider"
     return "", ""
 
 

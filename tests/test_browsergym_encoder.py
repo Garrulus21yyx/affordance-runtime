@@ -212,7 +212,7 @@ def _active_typed_outcome_state(
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     return state
 
 
@@ -245,7 +245,7 @@ def _active_completed_click_outcome_state(
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     return state
 
 
@@ -661,6 +661,7 @@ def test_browsergym_click_completed_outcome_declares_independent_progress_eviden
         "observation_metadata",
         "active_control",
         "12",
+        strict=False,
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
     assert declared[-2].strict is False
@@ -724,6 +725,56 @@ def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_fai
     assert report.evidence[-1].criterion_ids == (
         "subgoal:button-one-completed:criterion:0",
     )
+
+
+def test_browsergym_terminal_completed_click_does_not_require_active_control() -> None:
+    state = _active_completed_click_outcome_state()
+    affordance = _affordance(
+        "semantic:close",
+        action="activate",
+        locator={"backend_handle": "12"},
+        role="button",
+        label="Close",
+    )
+    proposal = PlannerProposal(
+        proposal_id="click-close",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_affordance_id=affordance.id,
+    )
+    declared = declare_browsergym_active_subgoal_evidence(
+        [
+            VerifierSpec("evidence", "last_action_error", ""),
+            VerifierSpec(
+                "state_delta_or_terminal",
+                "12",
+                True,
+                progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
+            ),
+        ],
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("click", {"bid": "12"}),
+        affordance=affordance,
+    )
+
+    report = VerifierLadder().verify_report(
+        bind_active_subgoal_verifiers(tuple(declared), state),
+        ExecutionReceipt(
+            "contract",
+            "browsergym",
+            True,
+            "rev-1",
+            "rev-2",
+            1.0,
+            evidence={"last_action_error": "", "terminal_success": True},
+        ),
+        Observation("rev-2", snapshot_id="snapshot-post", metadata={}),
+    )
+
+    assert report.passed
 
 
 def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_family() -> None:
@@ -805,9 +856,9 @@ def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress(
             ),
         )
     )
-    state.activate_next_subgoal()
-    state.complete_subgoal("slider-changed", ("evidence:slider",))
-    state.activate_next_subgoal()
+    state.activate_next_step()
+    state.complete_step("slider-changed", ("evidence:slider",))
+    state.activate_next_step()
     affordance = _affordance(
         "checkbox",
         action="activate",

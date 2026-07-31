@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from affordance_runtime.contracts import RuntimeErrorCode
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag
 
@@ -25,7 +25,7 @@ class RuntimeLoopEvent:
 @dataclass(frozen=True)
 class RuntimeLoopTransition:
     phase: RuntimeStep
-    activate_next_subgoal: bool = False
+    activate_next_step: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class RuntimeLoopPhase:
     def start(
         self,
         *,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         upstream_trace: TraceDag | None,
         runtime_profile_digest: str,
         loaded_profile_artifact_ids: tuple[str, ...],
@@ -122,7 +122,7 @@ class RuntimeLoopPhase:
     def enter_planning(self, *, has_task_plan: bool) -> RuntimeLoopTransition:
         return RuntimeLoopTransition(
             RuntimeStep.PLANNING,
-            activate_next_subgoal=has_task_plan,
+            activate_next_step=has_task_plan,
         )
 
     def enter_verifying(self) -> RuntimeLoopTransition:

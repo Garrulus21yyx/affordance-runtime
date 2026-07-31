@@ -13,12 +13,12 @@ from affordance_runtime.planner_context import PlannerContext, PlannerContextBui
 from affordance_runtime.planning import PlannerProposalSource
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
-def _inputs() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+def _inputs() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     model = DomAdapter().transduce(
         '<button id="save" bid="private-bid">Save</button>',
         environment_revision="rev-1",
@@ -39,7 +39,7 @@ def _inputs() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
         requested_capabilities=("settings.write",),
         source_request_ref="request-1",
     )
-    return TaskEnvelope(task_spec=spec, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
+    return RunRequest(task_spec=spec, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
 @dataclass
@@ -100,7 +100,7 @@ def test_parent_adapter_uses_immutable_request_context_path() -> None:
 
         def build(
             self,
-            envelope: TaskEnvelope,
+            envelope: RunRequest,
             state: StateKernel,
             snapshot: BrowserSnapshot,
         ) -> PlanningRequest:

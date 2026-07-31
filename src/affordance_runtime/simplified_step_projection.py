@@ -91,7 +91,7 @@ def project_state_legacy_task_plan_to_step_view(
 ) -> LegacyStepProjectionResult:
     """Project the currently installed legacy plan without changing state."""
 
-    if state.task_plan is None or state.plan_progress is None:
+    if state.task_plan is None or state.task_progress is None:
         return LegacyStepProjectionResult(
             status=LegacyStepProjectionStatus.NO_PLAN,
             evaluated_at_state_version=state.version,
@@ -100,7 +100,7 @@ def project_state_legacy_task_plan_to_step_view(
     return project_legacy_task_plan_to_step_view(
         task_spec=task_spec,
         plan=state.task_plan,
-        progress=state.plan_progress,
+        progress=state.task_progress,
         evaluated_at_state_version=state.version,
     )
 

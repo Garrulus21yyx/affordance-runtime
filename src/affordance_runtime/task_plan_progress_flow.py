@@ -6,9 +6,6 @@ from dataclasses import asdict, dataclass
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
-from affordance_runtime.obligation_progress_shadow_flow import (
-    prepare_obligation_progress_shadow_trace,
-)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits, TaskPlanLifecycle
@@ -95,11 +92,11 @@ def prepare_current_state_subgoal_completion(
     *,
     evaluator: CurrentStateSubgoalCompletionEvaluator | None = None,
 ) -> CurrentStateSubgoalCompletionCommit | None:
-    if task_spec is None or state.task_plan is None or state.plan_progress is None:
+    if task_spec is None or state.task_plan is None or state.task_progress is None:
         return None
-    active_subgoal_id = state.plan_progress.active_subgoal_id
+    active_subgoal_id = state.task_progress.active_subgoal_id
     if not active_subgoal_id:
-        ready = state.plan_progress.ready_subgoal_ids(state.task_plan)
+        ready = state.task_progress.ready_subgoal_ids(state.task_plan)
         active_subgoal_id = ready[0] if ready else ""
     if not active_subgoal_id:
         return None
@@ -116,8 +113,8 @@ def prepare_current_state_subgoal_completion(
         plan_based_on_state_version=state.task_plan.based_on_state_version,
         evaluated_at_state_version=state.version,
         active_subgoal_id=active_subgoal_id,
-        completed_subgoal_ids=tuple(state.plan_progress.completed_subgoal_ids),
-        failed_subgoal_ids=tuple(state.plan_progress.failed_subgoal_ids),
+        completed_subgoal_ids=tuple(state.task_progress.completed_subgoal_ids),
+        failed_subgoal_ids=tuple(state.task_progress.failed_subgoal_ids),
     )
     preparation = (evaluator or CurrentStateSubgoalCompletionEvaluator()).evaluate(
         plan=state.task_plan,
@@ -133,7 +130,7 @@ def prepare_current_state_subgoal_completion(
     completed_ids = tuple(
         dict.fromkeys(
             (
-                *state.plan_progress.completed_subgoal_ids,
+                *state.task_progress.completed_subgoal_ids,
                 preparation.subgoal_id,
             )
         )
@@ -165,7 +162,7 @@ def commit_current_state_completion(
     )
     if completion is None:
         return None
-    state.complete_subgoal(completion.subgoal_id, completion.evidence_refs)
+    state.complete_step(completion.subgoal_id, completion.evidence_refs)
     parent = trace.add(
         "SubgoalCompletedFromCurrentObservation",
         completion.completion_payload(state.phase),
@@ -198,42 +195,6 @@ def commit_post_observation_progress(
     )
     legacy_completion_committed = current_state_parent is not None
     parent = current_state_parent or parent
-    try:
-        projection = prepare_obligation_progress_shadow_trace(
-            task_spec,
-            state,
-            snapshot,
-        )
-    except Exception as exc:
-        parent = trace.add(
-            "ObligationProgressShadowFailed",
-            {
-                "state": state.phase,
-                "error_type": type(exc).__name__,
-                "reason": str(exc)[:500],
-                "task_id": state.task_id,
-                "state_version": state.version,
-                "snapshot_id": snapshot.observation.snapshot_id,
-                "page_revision": snapshot.observation.page_revision,
-                "environment_revision": snapshot.observation.environment_revision,
-            },
-            parents=[parent.id],
-        )
-        return PostObservationProgressCommit(
-            parent=parent,
-            legacy_completion_committed=legacy_completion_committed,
-        )
-    if projection is None:
-        return PostObservationProgressCommit(
-            parent=parent,
-            legacy_completion_committed=legacy_completion_committed,
-        )
-    payload = {"state": state.phase, **projection.to_trace_payload()}
-    parent = trace.add(
-        "ObligationProgressShadowCompared",
-        payload,
-        parents=[parent.id],
-    )
     return PostObservationProgressCommit(
         parent=parent,
         legacy_completion_committed=legacy_completion_committed,
@@ -252,7 +213,7 @@ def commit_verified_task_progress(
     skill_complete: bool,
     skill_progress: TaskSkillRunState | None = None,
 ) -> VerifiedTaskProgressCommit:
-    if state.task_plan is None or state.plan_progress is None:
+    if state.task_plan is None or state.task_progress is None:
         return VerifiedTaskProgressCommit(parent, False, False, False)
     subgoal = TaskPlanLifecycle.active_subgoal_spec(state)
     progress_report = (
@@ -265,7 +226,7 @@ def commit_verified_task_progress(
         else None
     )
     if progress_report is not None and progress_report.passed and subgoal is not None:
-        state.complete_subgoal(
+        state.complete_step(
             subgoal.subgoal_id,
             progress_report.match.evidence_ids,
         )
@@ -287,7 +248,7 @@ def commit_verified_task_progress(
             {
                 "state": state.phase,
                 "task_plan_id": state.task_plan.plan_id,
-                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                "completed_subgoal_ids": list(state.task_progress.completed_subgoal_ids),
             },
             parents=[parent.id],
         )
@@ -311,7 +272,7 @@ def commit_verified_task_progress(
         else:
             state.final_result = {
                 "task_plan_id": state.task_plan.plan_id,
-                "completed_subgoal_ids": list(state.plan_progress.completed_subgoal_ids),
+                "completed_subgoal_ids": list(state.task_progress.completed_subgoal_ids),
             }
         return VerifiedTaskProgressCommit(parent, True, True, True)
     if progress_report is not None and subgoal is not None:

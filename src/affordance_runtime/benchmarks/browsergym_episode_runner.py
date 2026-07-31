@@ -12,7 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Empty
 from time import perf_counter
-from typing import Any, Callable, Protocol, Sequence, cast
+from typing import Any, Callable, Sequence, cast
 
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
@@ -36,6 +36,7 @@ from affordance_runtime.benchmarks.browsergym_types import (
     BrowserGymRuntimeFailure,
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -46,7 +47,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     Surface,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.coordinator import RunBudget
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
     GeneralistPlannerProfile,
@@ -54,7 +55,10 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.grounding import EvidenceKind, GroundingSource
-from affordance_runtime.immutable import thaw_json_at_external_boundary, to_json_compatible
+from affordance_runtime.immutable import (
+    thaw_json_at_external_boundary,
+    to_json_compatible,
+)
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
@@ -69,10 +73,13 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+    PlannerResponse,
+)
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
 from affordance_runtime.trace import TraceDag
@@ -89,15 +96,6 @@ BROWSERGYM_TERMINAL_COMPLETION_POLICY = "official-terminal-v1"
 BROWSERGYM_PAGE_ACTION_TIMEOUT_MS = 1_500
 # Planner proposals are compact semantic candidates, not long-form answers.
 BROWSERGYM_PLANNER_MAX_TOKENS = 384
-
-
-class BrowserGymPlanningRequestBuilderPort(Protocol):
-    def build(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlanningRequest: ...
 
 
 def browsergym_planner_model_config(
@@ -121,90 +119,55 @@ class BrowserGymPlanner:
     policy: BrowserGymPolicy
     episode: BrowserGymEpisodeState
     bindings: dict[str, BrowserGymAction]
-    planning_request_builder: BrowserGymPlanningRequestBuilderPort | None = None
 
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        planning_request = _browsergym_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
-        )
-        if planning_request is not None and planning_request.identity.snapshot_id != snapshot.observation.snapshot_id:
-            return PlannerDecision(reason="stale BrowserGym planning request")
-        terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
+    def propose(self, request: PlanningRequest) -> PlannerResponse:
+        terminal = _browsergym_terminal_response(self.episode)
         if terminal is not None:
             return terminal
         policy_request = BrowserGymPolicyRequest(
             task_id=self.episode.task_id,
             seed=self.episode.seed,
             goal=self.episode.goal,
-            step=state.step_count,
+            step=len(self.episode.actions),
             affordances=[
                 {
-                    "id": item.id,
+                    "id": item.target_id,
                     "role": item.role,
                     "label": item.label,
-                    "action": item.action,
-                    "locator": _browsergym_policy_locator(item.locator),
+                    "action": item.supported_actions[0] if item.supported_actions else "",
+                    "locator": _browsergym_request_locator(item.label, self.episode.observation),
                     "confidence": item.confidence,
                 }
-                for item in snapshot.affordance_model.affordances
+                for item in request.observation.affordances
             ],
             previous_actions=[asdict(action) for action in self.episode.actions],
             accessibility_tree=_accessibility_tree_text(self.episode.observation),
         )
         action = self.policy.propose(policy_request)
         if action is None:
-            return PlannerDecision(
-                proposal=PlannerProposal(
-                    proposal_id=f"browsergym-{self.episode.task_id}-{self.episode.seed}-stopped",
-                    based_on_task_revision=1,
-                    based_on_state_version=state.version,
-                    snapshot_id=snapshot.observation.snapshot_id,
-                    action_kind=PlannerActionKind.FINISH,
-                    done=True,
-                    result={
-                        "status": "incomplete",
-                        "official_success": False,
-                        "official_reward": self.episode.reward,
-                        "terminated": False,
-                        "truncated": False,
-                        "policy_stopped": True,
-                    },
-                ),
-                proposal_provenance=PlannerProposalProvenance(
-                    source=PlannerProposalSource.EXTERNAL_POLICY,
-                    producer_id=type(self.policy).__name__,
-                    profile_id="browsergym-policy-compatibility",
-                ),
+            return PlannerDoneResponse(
+                result={
+                    "status": "incomplete",
+                    "official_success": False,
+                    "official_reward": self.episode.reward,
+                    "terminated": False,
+                    "truncated": False,
+                    "policy_stopped": True,
+                },
                 reason="policy stopped before official termination",
             )
         action.render()  # validate before constructing a contract
-        proposal = _browsergym_proposal(action, self.episode, state, snapshot)
+        proposal = _browsergym_proposal(action, self.episode, request)
         self.bindings[proposal.proposal_id] = action
-        return PlannerDecision(
+        return PlannerProposalResponse(
             proposal=proposal,
             proposal_provenance=PlannerProposalProvenance(
                 source=PlannerProposalSource.EXTERNAL_POLICY,
                 producer_id=type(self.policy).__name__,
-                profile_id="browsergym-policy-compatibility",
+                profile_id="browsergym-policy",
             ),
             reason="benchmark action translated to semantic proposal",
         )
-
-
-def _browsergym_planning_request(
-    builder: BrowserGymPlanningRequestBuilderPort | None,
-    envelope: TaskEnvelope,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-) -> PlanningRequest | None:
-    """Project benchmark planner identity without changing policy-specific input."""
-
-    if envelope.task_spec is None:
-        return None
-    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
 
 
 @dataclass
@@ -247,44 +210,28 @@ class BrowserGymGeneralistPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision | Any:
-        terminal = _browsergym_terminal_decision(self.episode, state, snapshot)
+        request: PlanningRequest,
+    ) -> PlannerResponse | Any:
+        terminal = _browsergym_terminal_response(self.episode)
         if terminal is not None:
             return terminal
-        return self._planner.propose_legacy(envelope, state, snapshot)
+        return self._planner.propose(request)
 
 
-def _browsergym_terminal_decision(
+def _browsergym_terminal_response(
     episode: BrowserGymEpisodeState,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-) -> PlannerDecision | None:
+) -> PlannerDoneResponse | None:
     if not episode.terminated and not episode.truncated:
         return None
-    return PlannerDecision(
-        proposal=PlannerProposal(
-            proposal_id=f"browsergym-{episode.task_id}-{episode.seed}-official-terminal",
-            based_on_task_revision=1,
-            based_on_state_version=state.version,
-            snapshot_id=snapshot.observation.snapshot_id,
-            action_kind=PlannerActionKind.FINISH,
-            done=True,
-            result={
-                "official_success": episode.terminated and episode.reward > 0,
-                "official_reward": episode.reward,
-                "terminated": episode.terminated,
-                "truncated": episode.truncated,
-                "completion_policy": BROWSERGYM_TERMINAL_COMPLETION_POLICY,
-            },
-        ),
-        proposal_provenance=PlannerProposalProvenance(
-            source=PlannerProposalSource.RUNTIME_TERMINAL,
-            producer_id="browsergym-episode-terminal",
-            profile_id="external-evaluator",
-        ),
+    return PlannerDoneResponse(
+        result={
+            "official_success": episode.terminated and episode.reward > 0,
+            "official_reward": episode.reward,
+            "terminated": episode.terminated,
+            "truncated": episode.truncated,
+            "completion_policy": BROWSERGYM_TERMINAL_COMPLETION_POLICY,
+        },
+        reason="official BrowserGym episode terminal state",
     )
 
 
@@ -587,7 +534,7 @@ def run_browsergym_episode(
         source_request_ref=f"browsergym:{task_id}:seed:{seed}",
     )
     try:
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
             planner=BrowserGymPlanner(policy, episode, bindings),
             executor=BrowserGymExecutor(environment, episode),
@@ -600,7 +547,7 @@ def run_browsergym_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
-        ).run_sync(TaskEnvelope(task_spec=task_spec))
+        ).run_sync(RunRequest(task_spec=task_spec))
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -614,9 +561,9 @@ def run_browsergym_episode(
             or "unsupported BrowserGym semantic action:" in planner_error
         ):
             unsupported.append(planner_error.rsplit(":", 1)[-1].strip())
-        for receipt in result.state.receipts:
-            if "unsupported BrowserGym action" in receipt.message:
-                unsupported.append(receipt.message.rsplit(":", 1)[-1].strip())
+        receipt = result.state.last_receipt
+        if receipt is not None and "unsupported BrowserGym action" in receipt.message:
+            unsupported.append(receipt.message.rsplit(":", 1)[-1].strip())
         trace_path = next((item.path for item in result.artifacts if item.path.endswith("events.jsonl")), "")
         return BrowserGymEpisodeResult(
             task_id,
@@ -747,7 +694,7 @@ def run_browsergym_generalist_episode(
             ),
             planner_profile=planner_profile,
         )
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer=BrowserGymObserver(
                 session,
                 episode,
@@ -768,7 +715,7 @@ def run_browsergym_generalist_episode(
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
-        ).run_sync(TaskEnvelope(task_spec=task_spec), intake_trace)
+        ).run_sync(RunRequest(task_spec=task_spec), intake_trace)
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -1292,10 +1239,8 @@ def _browsergym_policy_locator(locator: dict[str, Any]) -> dict[str, Any]:
 def _browsergym_proposal(
     action: BrowserGymAction,
     episode: BrowserGymEpisodeState,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
+    request: PlanningRequest,
 ) -> PlannerProposal:
-    affordance = _action_affordance(action, snapshot)
     semantic_kind = {
         "click": PlannerActionKind.ACTIVATE,
         "dblclick": PlannerActionKind.ACTIVATE,
@@ -1305,6 +1250,19 @@ def _browsergym_proposal(
     }.get(action.name)
     if semantic_kind is None:
         raise ValueError(f"unsupported BrowserGym semantic action: {action.name}")
+    bid = str(action.arguments.get("bid") or action.arguments.get("from_bid") or "")
+    affordance = next(
+        (
+            item
+            for item in request.observation.affordances
+            if item.target_id == bid
+            or item.label.casefold() == bid.casefold()
+            or item.target_id.casefold().endswith(f"_{bid.casefold()}")
+        ),
+        None,
+    )
+    if affordance is None:
+        raise ValueError(f"BrowserGym action target is absent from PlanningRequest: {bid}")
     parameters: dict[str, Any] = {}
     if semantic_kind == PlannerActionKind.TYPE_TEXT:
         parameters["text"] = str(action.arguments["value"])
@@ -1317,15 +1275,31 @@ def _browsergym_proposal(
     return PlannerProposal(
         proposal_id=f"browsergym-{episode.task_id}-{episode.seed}-step-{index}",
         based_on_task_revision=1,
-        based_on_state_version=state.version,
-        snapshot_id=snapshot.observation.snapshot_id,
+        based_on_state_version=request.identity.evaluated_at_state_version,
+        snapshot_id=request.identity.snapshot_id,
         subgoal=episode.goal,
         action_kind=semantic_kind,
-        target_affordance_id=affordance.id,
+        target_affordance_id=affordance.target_id,
         parameters=parameters,
         expected_effects=("BrowserGym action has no action error",),
         evidence_requirements=("last_action_error receipt field is empty",),
     )
+
+
+def _browsergym_request_locator(label: str, observation: dict[str, Any]) -> dict[str, str]:
+    """Reconstruct the benchmark policy locator outside the canonical planner view."""
+
+    tree = observation.get("axtree_object")
+    nodes = tree.get("nodes", ()) if isinstance(tree, dict) else ()
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("ignored"):
+            continue
+        name = str((node.get("name") or {}).get("value") or "")
+        bid = str(node.get("browsergym_id") or "")
+        if bid and name.casefold() == label.casefold():
+            return {"selector": f"[bid='{bid}']", "bid": bid}
+    fallback = label.strip().casefold().replace(" ", "-")
+    return {"selector": f"[bid='{fallback}']", "bid": fallback} if fallback else {}
 
 
 def _goal_text(goal: Any) -> str:

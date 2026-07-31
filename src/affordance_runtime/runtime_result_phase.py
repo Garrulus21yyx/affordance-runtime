@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.contracts import RuntimeErrorCode
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.verification import VerificationReport
@@ -19,7 +19,7 @@ class PhaseTerminalView(Protocol):
 
 
 @dataclass
-class CoordinatorResult:
+class RunResult:
     run_id: str
     status: RuntimeStep
     state: StateKernel
@@ -38,14 +38,14 @@ class RuntimeResultPhase:
 
     def finish(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         trace: TraceDag,
         status: RuntimeStep,
         parent: TraceNode | None,
         error_code: RuntimeErrorCode | None,
         verification: VerificationReport | None,
-    ) -> CoordinatorResult:
+    ) -> RunResult:
         del parent
         artifact_refs: list[ArtifactRef] = []
         if self.artifacts is not None:
@@ -62,7 +62,7 @@ class RuntimeResultPhase:
                 },
             )
             artifact_refs = self.artifacts.references(envelope.task_id)
-        return CoordinatorResult(
+        return RunResult(
             run_id=envelope.task_id,
             status=status,
             state=state,
@@ -76,13 +76,13 @@ class RuntimeResultPhase:
 
 def finish_phase_terminal(
     result_phase: RuntimeResultPhase,
-    envelope: TaskEnvelope,
+    envelope: RunRequest,
     state: StateKernel,
     trace: TraceDag,
     terminal: PhaseTerminalView,
     parent: TraceNode | None,
     verification: VerificationReport | None,
-) -> CoordinatorResult:
+) -> RunResult:
     error_code = getattr(terminal, "error_code", None)
     return result_phase.finish(
         envelope,

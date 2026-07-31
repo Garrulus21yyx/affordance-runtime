@@ -279,7 +279,7 @@ def _state_requiring_replacement() -> StateKernel:
             subgoals=(first, unsupported),
         )
     )
-    state.complete_subgoal("first", ("evidence:first",))
+    state.complete_step("first", ("evidence:first",))
     return state
 
 
@@ -376,8 +376,8 @@ def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replann
             subgoals=(first, visible),
         )
     )
-    state.complete_subgoal("first", ("evidence:first",))
-    state.activate_next_subgoal()
+    state.complete_step("first", ("evidence:first",))
+    state.activate_next_step()
 
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.HAS_CHANGED))
@@ -389,8 +389,8 @@ def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replann
     assert result.transition.previous_plan is state.task_plan
     assert [item.subgoal_id for item in result.transition.plan.subgoals] == ["first"]
     assert result.failure is None
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["first"]
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["first"]
 
 
 def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_active_projection_empty() -> None:
@@ -431,9 +431,9 @@ def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_acti
             subgoals=(first, submit_available),
         )
     )
-    state.complete_subgoal("first", ("evidence:first",))
-    assert state.plan_progress is not None
-    assert state.plan_progress.active_subgoal_id == ""
+    state.complete_step("first", ("evidence:first",))
+    assert state.task_progress is not None
+    assert state.task_progress.active_subgoal_id == ""
 
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.IS_AVAILABLE))
@@ -445,7 +445,7 @@ def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_acti
     assert result.transition.previous_plan is state.task_plan
     assert [item.subgoal_id for item in result.transition.plan.subgoals] == ["first"]
     assert result.failure is None
-    assert state.plan_progress.completed_subgoal_ids == ["first"]
+    assert state.task_progress.completed_subgoal_ids == ["first"]
 
 
 def test_flow_prepares_valid_replacement_without_committing_it() -> None:

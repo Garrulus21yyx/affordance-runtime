@@ -4,8 +4,8 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
-from affordance_runtime.perception_session import PerceptionSession
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.perception_session import PerceptionCaptureRequest, PerceptionSession
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 
 
@@ -42,7 +42,9 @@ def test_plain_capture_returns_observation_without_mutating_authoritative_state(
     state = StateKernel(task_id="perception-task", goal="Inspect the current state")
     initial_version = state.version
 
-    snapshot = session.capture(TaskEnvelope("perception-task", state.goal), state, 1)
+    snapshot = session.capture(
+        PerceptionCaptureRequest(RunRequest("perception-task", state.goal), 1)
+    )
 
     assert snapshot.observation.snapshot_id == "snapshot-1"
     assert observer.calls == 1
@@ -80,12 +82,12 @@ def test_targeted_capture_resolves_async_port_but_does_not_record_progress() -> 
 def test_missing_targeted_port_fails_closed_and_invalid_lineage_is_ignored() -> None:
     session = PerceptionSession(PlainObserver())
     state = StateKernel(task_id="perception-task", goal="Inspect the current state")
-    state.grounding_fallback_lineage = {
+    state.current_grounding_fallback = {
         "valid": {"failed_source": GroundingSource.DOM.value},
         "invalid": {"failed_source": "untrusted-source"},
     }
 
-    escalation = session.perception_escalation(state)
+    escalation = session.perception_escalation(frozenset({GroundingSource.DOM}))
 
     assert not session.supports_targeted_capture
     assert escalation is not None

@@ -108,6 +108,26 @@ def test_canonical_compiler_constructs_flat_graph_from_requested_effect_without_
     assert graph.obligations[0].evidence_requirements == ("dom_state:requested report",)
 
 
+def test_flat_navigation_effect_with_click_success_criterion_is_completed_action() -> None:
+    ledger = _ledger_for("Click the No button.")
+
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button:label:no",
+                source_ref=ledger.raw_text_unit_id,
+            ),
+        ),
+        success_criteria=("The No button was clicked.",),
+    )
+
+    obligation = graph.obligations[0]
+    assert obligation.kind == TaskObligationKind.EFFECT
+    assert obligation.relation == TaskObligationRelation.IS_COMPLETED
+
+
 def test_requested_effect_sequence_preserves_dependency_and_terminal_boundary() -> None:
     ledger = _ledger_for("Activate Alpha. Then activate Beta.")
     alpha_source, beta_source = _required_clause_units(ledger)

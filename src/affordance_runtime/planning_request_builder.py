@@ -24,7 +24,7 @@ from affordance_runtime.planning_request import (
     TargetAdmissionStatus,
     freeze_request_mapping,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.simplified_step_projection import (
     LegacyStepProjectionResult,
@@ -66,7 +66,7 @@ class PlanningRequestBuilder:
 
     def build(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlanningRequest:
@@ -148,7 +148,7 @@ class PlanningRequestBuilder:
             latest_outcome=freeze_request_mapping(_latest_outcome(state)),
             recent_proposals=tuple(
                 freeze_request_mapping(item)
-                for item in state.planner_history[-1:]
+                for item in ((state.latest_planner_proposal,) if state.latest_planner_proposal else ())
             ),
             verified_effects=_verified_effects(state),
             pending_evidence_obligations=(),
@@ -264,7 +264,7 @@ def _compatibility_active_step_objective(state: StateKernel) -> str:
     """Carry legacy active-step text as immutable context, not step authority."""
 
     plan = state.task_plan
-    progress = state.plan_progress
+    progress = state.task_progress
     if plan is None or progress is None or not progress.active_subgoal_id:
         return ""
     return next(
@@ -279,7 +279,7 @@ def _compatibility_active_step_objective(state: StateKernel) -> str:
 
 def _compatibility_active_step_action_family(state: StateKernel) -> str:
     plan = state.task_plan
-    progress = state.plan_progress
+    progress = state.task_progress
     if plan is None or progress is None or not progress.active_subgoal_id:
         return ""
     return next(
@@ -438,7 +438,7 @@ def _permitted_action_kinds(
 
 
 def _recent_outcomes(state: StateKernel) -> tuple[PlannerOutcomeSummary, ...]:
-    receipt = state.receipts[-1] if state.receipts else None
+    receipt = state.last_receipt
     verification = state.latest_verification
     if receipt is None and verification is None:
         return ()
@@ -459,7 +459,7 @@ def _recent_outcomes(state: StateKernel) -> tuple[PlannerOutcomeSummary, ...]:
 
 
 def _latest_outcome(state: StateKernel) -> dict[str, object]:
-    receipt = state.receipts[-1] if state.receipts else None
+    receipt = state.last_receipt
     verification = state.latest_verification
     return {
         "receipt_success": receipt.success if receipt else None,
@@ -482,7 +482,7 @@ def _latest_outcome(state: StateKernel) -> dict[str, object]:
 
 def _verified_effects(state: StateKernel) -> tuple[str, ...]:
     verification = state.latest_verification
-    latest_proposal = state.planner_history[-1] if state.planner_history else {}
+    latest_proposal = state.latest_planner_proposal
     return (
         tuple(str(item) for item in latest_proposal.get("expected_effects", []))
         if verification and verification.passed
@@ -491,8 +491,8 @@ def _verified_effects(state: StateKernel) -> tuple[str, ...]:
 
 
 def _recovery_summary(state: StateKernel) -> PlannerRecoverySummary | None:
-    if state.progress_guard_events:
-        event = state.progress_guard_events[-1]
+    if state.latest_progress_guard:
+        event = state.latest_progress_guard
         return PlannerRecoverySummary(
             kind="progress_guard",
             reason_code=str(event.get("reason") or ""),
@@ -554,6 +554,7 @@ def _task_summary(task_spec: dict[str, object]) -> dict[str, object]:
         "operation_class",
         "task_structure",
         "targets",
+        "entities",
         "success_criteria",
         "constraints",
         "semantic_value_constraints",

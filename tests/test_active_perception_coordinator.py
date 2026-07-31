@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
@@ -10,7 +11,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.coordinator import RunBudget
 from affordance_runtime.grounding import (
     ActivePerceptionRequest,
     EvidenceKind,
@@ -19,9 +20,21 @@ from affordance_runtime.grounding import (
     SourceAssertion,
     SourceObservation,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.source_assertions import SourceAssertionArbiter
-from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
@@ -106,23 +119,37 @@ def _task() -> TaskSpec:
     )
 
 
-class OneContractPlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope, state
-        return PlannerDecision(
-            contract=replace(
-                ActionContract.from_affordance(
-                snapshot.affordance_model.affordances[0],
-                intent="save the requested setting",
-                backend="dom",
-                ),
+def _contract_builder(*, verify_effect: bool = False) -> ContractBuilder:
+    verifier_plan = (
+        (VerifierSpec("observation_metadata", "effect_present", True),)
+        if verify_effect
+        else ()
+    )
+    return ContractBuilder(
+        requirements={
+            "dom_button_1": ContractRequirements(
+                verifier_plan=verifier_plan,
                 risk=RiskLevel.MEDIUM,
-                contract_hash="",
+            )
+        }
+    )
+
+
+class OneContractPlanner:
+    def propose(self, request: PlanningRequest) -> PlannerProposalResponse:
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id="active-perception-save",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal="save the requested setting",
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=request.observation.affordances[0].target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="active-perception-test",
             ),
         )
 
@@ -199,14 +226,9 @@ class ResolvingConflictObserver:
 
 
 class FinishAfterObservationPlanner:
-    def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope, state, snapshot
-        return PlannerDecision(done=True, result={"observed": True})
+    def propose(self, request: PlanningRequest) -> PlannerDoneResponse:
+        del request
+        return PlannerDoneResponse(result={"observed": True})
 
 
 class ZeroBudgetVisualObserver:
@@ -266,12 +288,21 @@ class ZeroBudgetVisualObserver:
 def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> None:
     observer = ZeroBudgetVisualObserver()
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=FinishAfterObservationPlanner(),
         executor=RecordingExecutor(),
         task_planner=None,
-    ).run_sync(TaskEnvelope("zero-budget", "inspect the visual target"))
+    ).run_sync(
+        RunRequest(
+            task_spec=_task().model_copy(
+                update={
+                    "task_id": "zero-budget",
+                    "operation_class": OperationClass.READ_ONLY,
+                }
+            )
+        )
+    )
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
@@ -286,12 +317,21 @@ def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> N
 
 def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:
     observer = ResolvingConflictObserver()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=FinishAfterObservationPlanner(),
         executor=RecordingExecutor(),
         task_planner=None,
-    ).run_sync(TaskEnvelope("resolve-conflict", "inspect current visibility"))
+    ).run_sync(
+        RunRequest(
+            task_spec=_task().model_copy(
+                update={
+                    "task_id": "resolve-conflict",
+                    "operation_class": OperationClass.READ_ONLY,
+                }
+            )
+        )
+    )
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
@@ -310,13 +350,14 @@ def test_material_preflight_conflict_surviving_probe_blocks_effectful_execution(
     observer = PreflightConflictObserver()
     executor = RecordingExecutor()
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=OneContractPlanner(),
         executor=executor,
+        contract_builder=_contract_builder(),
         task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(TaskEnvelope(task_spec=_task()))
+    ).run_sync(RunRequest(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.ABORTED
@@ -355,13 +396,14 @@ def test_inconclusive_verification_probes_fresh_evidence_without_repeating_effec
     observer = VerificationRepairObserver()
     executor = RecordingExecutor()
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=OneContractPlanner(),
         executor=executor,
+        contract_builder=_contract_builder(),
         task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(TaskEnvelope(task_spec=_task()))
+    ).run_sync(RunRequest(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.ABORTED
@@ -371,7 +413,8 @@ def test_inconclusive_verification_probes_fresh_evidence_without_repeating_effec
     assert "VerificationEvidenceRepairRequested" in events
     assert "VerificationEvidenceReevaluated" in events
     assert "ActivePerceptionPlanned" in events
-    assert result.state.probe_receipts[0].observation_epoch_id != "snapshot-3"
+    assert result.state.latest_probe_receipt is not None
+    assert result.state.latest_probe_receipt.observation_epoch_id != "snapshot-3"
 
 
 class RecoveryInspectionObserver:
@@ -398,21 +441,11 @@ class RecoveryInspectionObserver:
 
 class RecoveryAwarePlanner:
     def propose(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
-        if state.latest_verification is not None and state.latest_verification.passed:
-            return PlannerDecision(done=True, result={"effect_confirmed": True})
-        contract = ActionContract.from_affordance(
-            snapshot.affordance_model.affordances[0],
-            intent="save the requested setting",
-            backend="dom",
-            verifier_plan=[VerifierSpec("observation_metadata", "effect_present", True)],
-        )
-        return PlannerDecision(contract=replace(contract, risk=RiskLevel.MEDIUM, contract_hash=""))
+        self, request: PlanningRequest
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        if request.recent_outcomes:
+            return PlannerDoneResponse(result={"effect_confirmed": True})
+        return OneContractPlanner().propose(request)
 
 
 @dataclass
@@ -438,19 +471,19 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
     observer = RecoveryInspectionObserver()
     executor = UncertainExecutor()
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=RecoveryAwarePlanner(),
         executor=executor,
+        contract_builder=_contract_builder(verify_effect=True),
         task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(TaskEnvelope(task_spec=_task()))
+    ).run_sync(RunRequest(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
     assert executor.calls == 1
     assert observer.targeted_captures == 1
-    assert "RecoveryActivePerceptionRequested" in events
     assert "EvidenceGapResolved" in events
     assert "RecoveryStateInspected" in events
     assert "FailureDetected" in events

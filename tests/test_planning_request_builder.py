@@ -14,7 +14,7 @@ from affordance_runtime.grounding import (
 from affordance_runtime.grounding import (
     EvidenceKind as GroundingEvidenceKind,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
 from affordance_runtime.simplified_step_projection import LegacyStepProjectionStatus
 from affordance_runtime.state_kernel import StateKernel
@@ -41,7 +41,7 @@ from affordance_runtime.task_planning import (
 )
 
 
-def _fixture() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     task = TaskSpec(
         task_id="request-task",
         revision=1,
@@ -101,7 +101,7 @@ def _fixture() -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
     )
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     state.remember_observation(observation)
-    return TaskEnvelope(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
+    return RunRequest(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
 def test_builder_projects_identity_observation_and_budget_without_mutation() -> None:
@@ -170,8 +170,8 @@ def test_builder_does_not_activate_ready_legacy_step() -> None:
     assert request.step.active_step is None
     assert request.step.progress is not None
     assert request.step.progress.ready_step_ids == ("step:enter-name",)
-    assert state.plan_progress is not None
-    assert state.plan_progress.active_subgoal_id == ""
+    assert state.task_progress is not None
+    assert state.task_progress.active_subgoal_id == ""
     assert state.version == before_version
 
 
@@ -206,7 +206,7 @@ def test_builder_projects_active_legacy_step_action_family() -> None:
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
 
     request = PlanningRequestBuilder().build(envelope, state, snapshot)
 
@@ -285,7 +285,7 @@ def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> 
         ),
         terminal=True,
     )
-    envelope = TaskEnvelope(
+    envelope = RunRequest(
         task_spec=task.model_copy(
             update={"obligations": (*task.obligations, terminal)}
         ),
@@ -329,7 +329,7 @@ def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> 
             ),
         )
     )
-    state.plan_progress = PlanProgress(
+    state.task_progress = PlanProgress(
         active_subgoal_id="step:submit",
         completed_subgoal_ids=["step:enter-name"],
         evidence_by_subgoal={"step:enter-name": ["artifact:verification"]},

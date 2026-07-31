@@ -108,3 +108,92 @@ def test_resolves_canonical_list_subject_to_unique_combobox() -> None:
     )
 
     assert target_ids == ("semantic:options:1",)
+
+
+def test_resolves_canonical_button_label_descriptor() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="button:label:no",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:no:1",
+                role="button",
+                label="No",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+            ActiveStepTargetView(
+                target_id="semantic:yes:1",
+                role="button",
+                label="Yes",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:no:1",)
+
+
+def test_resolves_quoted_canonical_button_label_descriptor() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="button:label='cancel'",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:cancel:1",
+                role="button",
+                label="cancel",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+            ActiveStepTargetView(
+                target_id="semantic:ok:1",
+                role="button",
+                label="ok",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:cancel:1",)
+
+
+def test_resolves_canonical_text_field_value_descriptor_to_unique_textbox() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="text_field:Myron",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:tt:1",
+                role="textbox",
+                label="tt",
+                actions=("type_text",),
+                state={"visible": True, "enabled": True, "control_value": ""},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:tt:1",)
+
+
+def test_resolves_canonical_composite_button_descriptor_to_exact_label() -> None:
+    target_ids = resolve_active_step_target_ids(
+        subject="dialog_box_close_button",
+        affordances=(
+            ActiveStepTargetView(
+                target_id="semantic:close:1",
+                role="button",
+                label="Close",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+            ActiveStepTargetView(
+                target_id="semantic:cancel:1",
+                role="button",
+                label="Cancel",
+                actions=("activate",),
+                state={"visible": True, "enabled": True},
+            ),
+        ),
+    )
+
+    assert target_ids == ("semantic:close:1",)

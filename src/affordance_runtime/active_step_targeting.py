@@ -60,6 +60,9 @@ def resolve_active_step_target_ids(
     )
     if len(exact_label_matches) == 1:
         return exact_label_matches
+    descriptor_matches = _resolve_canonical_descriptor(subject, views)
+    if descriptor_matches:
+        return descriptor_matches
     role_label_matches = _resolve_role_label_subject(subject, views)
     if role_label_matches:
         return role_label_matches
@@ -82,6 +85,43 @@ def resolve_active_step_target_ids(
     if lowered in {"list", "dropdown", "select", "combobox"}:
         selection_controls = tuple(item.target_id for item in views if _is_selection_control(item))
         return selection_controls if len(selection_controls) == 1 else ()
+    return ()
+
+
+def _resolve_canonical_descriptor(
+    subject: str,
+    affordances: tuple[ActiveStepTargetView, ...],
+) -> tuple[str, ...]:
+    button = re.fullmatch(r"button:label[:=](.+)", subject.strip(), flags=re.IGNORECASE)
+    if button:
+        label = button.group(1).strip()
+        if len(label) >= 2 and label[0] == label[-1] and label[0] in {"'", '"'}:
+            label = label[1:-1].strip()
+        label = label.casefold()
+        matches = tuple(
+            item.target_id
+            for item in affordances
+            if item.role.strip().casefold() in {"button", "submit"}
+            and item.label.strip().casefold() == label
+        )
+        return matches if len(matches) == 1 else ()
+    if re.fullmatch(r"text_field:.+", subject.strip(), flags=re.IGNORECASE):
+        textboxes = tuple(item.target_id for item in affordances if _is_textbox(item))
+        return textboxes if len(textboxes) == 1 else ()
+    composite_button = re.fullmatch(
+        r"(?:.*_)?([^_]+)_button",
+        subject.strip(),
+        flags=re.IGNORECASE,
+    )
+    if composite_button:
+        label = composite_button.group(1).casefold()
+        matches = tuple(
+            item.target_id
+            for item in affordances
+            if item.role.strip().casefold() in {"button", "submit"}
+            and item.label.strip().casefold() == label
+        )
+        return matches if len(matches) == 1 else ()
     return ()
 
 

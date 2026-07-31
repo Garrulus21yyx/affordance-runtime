@@ -16,9 +16,7 @@ from affordance_runtime.coordinator import RuntimeFeatures
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.recovery_protocol import (
     RecoveryBudgetCost,
-    RecoveryDecision,
     RecoveryDimension,
-    RecoveryKind,
     RuntimePhase,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime, TaskSkillPayload
@@ -30,6 +28,27 @@ class EvolutionStatus(StrEnum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     ROLLED_BACK = "rolled_back"
+
+
+class EvolutionRecoveryAction(StrEnum):
+    """Quarantined harness response vocabulary, not Runtime recovery policy."""
+
+    REOBSERVE = "reobserve"
+    ACTIVE_PERCEPTION = "active_perception"
+    COMPACT_CONTEXT = "compact_context"
+    SWITCH_PROVIDER = "switch_provider"
+    REPAIR_MODEL_SCHEMA = "repair_model_schema"
+    CLARIFY_INTENT = "clarify_intent"
+    REPLAN_TASK = "replan_task"
+    REPLAN_STEP = "replan_step"
+    REGROUND = "reground"
+    REROUTE = "reroute"
+    INSPECT_POST_STATE = "inspect_post_state"
+    RETRY_IDEMPOTENT = "retry_idempotent"
+    COMPENSATE = "compensate"
+    REQUEST_APPROVAL = "request_approval"
+    ASK_USER = "ask_user"
+    ABORT = "abort"
 
 
 class MetricDirection(StrEnum):
@@ -209,12 +228,12 @@ _SIGNATURE_FIELDS = {
     "verifier_kind",
 }
 _SAFE_RECOVERY_RESPONSES = {
-    RecoveryKind.REOBSERVE,
-    RecoveryKind.INSPECT_POST_STATE,
-    RecoveryKind.REROUTE,
-    RecoveryKind.REQUEST_APPROVAL,
-    RecoveryKind.COMPENSATE,
-    RecoveryKind.ABORT,
+    EvolutionRecoveryAction.REOBSERVE,
+    EvolutionRecoveryAction.INSPECT_POST_STATE,
+    EvolutionRecoveryAction.REROUTE,
+    EvolutionRecoveryAction.REQUEST_APPROVAL,
+    EvolutionRecoveryAction.COMPENSATE,
+    EvolutionRecoveryAction.ABORT,
 }
 _RISK_ORDER = {
     RiskLevel.LOW: 0,
@@ -290,6 +309,23 @@ class EvolutionRecoveryContext:
         object.__setattr__(self, "tried_backends", FrozenSequence(self.tried_backends))
 
 
+@dataclass(frozen=True)
+class EvolutionRecoveryDecision:
+    decision_id: str
+    failure_id: str
+    based_on_state_version: int
+    strategy_key: str
+    kind: EvolutionRecoveryAction
+    reason_code: str
+    reentry_phase: RuntimePhase
+    changed_dimensions: tuple[RecoveryDimension, ...]
+    preconditions: tuple[str, ...]
+    budget_cost: RecoveryBudgetCost
+    route_ref: str = ""
+    idempotency_key: str = ""
+    compensation_contract_id: str = ""
+
+
 @dataclass
 class EvolutionRecoveryPolicy:
     max_recoveries: int = 3
@@ -297,7 +333,7 @@ class EvolutionRecoveryPolicy:
     max_backend_fallbacks: int = 1
     decision_override: Callable[
         [ActionContract, ExecutionReceipt | None, EvolutionRecoveryContext, RuntimeErrorCode | None],
-        RecoveryDecision | None,
+        EvolutionRecoveryDecision | None,
     ] | None = None
 
     def decide(
@@ -307,9 +343,9 @@ class EvolutionRecoveryPolicy:
         context: EvolutionRecoveryContext,
         *,
         error_code: RuntimeErrorCode | None = None,
-    ) -> RecoveryDecision:
+    ) -> EvolutionRecoveryDecision:
         if context.recovery_count >= self.max_recoveries:
-            return _evolution_recovery_decision(RecoveryKind.ABORT, context, "recovery budget exhausted")
+            return _evolution_recovery_decision(EvolutionRecoveryAction.ABORT, context, "recovery budget exhausted")
 
         if self.decision_override is not None:
             override = self.decision_override(contract, receipt, context, error_code)
@@ -324,26 +360,26 @@ class EvolutionRecoveryPolicy:
             RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
             RuntimeErrorCode.LEASE_EXPIRED,
         }:
-            return _evolution_recovery_decision(RecoveryKind.REOBSERVE, context, "contract state is stale")
+            return _evolution_recovery_decision(EvolutionRecoveryAction.REOBSERVE, context, "contract state is stale")
         if code in {RuntimeErrorCode.CAPABILITY_DENIED, RuntimeErrorCode.UNSAFE_ACTION}:
             if context.approval_available:
                 return _evolution_recovery_decision(
-                    RecoveryKind.REQUEST_APPROVAL,
+                    EvolutionRecoveryAction.REQUEST_APPROVAL,
                     context,
                     "capability or approval is required",
                 )
-            return _evolution_recovery_decision(RecoveryKind.ABORT, context, "action is not authorized")
+            return _evolution_recovery_decision(EvolutionRecoveryAction.ABORT, context, "action is not authorized")
 
         if context.effect_may_have_occurred:
             return _evolution_recovery_decision(
-                RecoveryKind.INSPECT_POST_STATE,
+                EvolutionRecoveryAction.INSPECT_POST_STATE,
                 context,
                 "execution outcome is uncertain; inspect post-state before retry",
             )
 
         if receipt is not None and receipt.success:
             return _evolution_recovery_decision(
-                RecoveryKind.INSPECT_POST_STATE,
+                EvolutionRecoveryAction.INSPECT_POST_STATE,
                 context,
                 "execution succeeded; verify expected effects",
             )
@@ -355,7 +391,7 @@ class EvolutionRecoveryPolicy:
             and code == RuntimeErrorCode.EXECUTION_FAILED
         ):
             return _evolution_recovery_decision(
-                RecoveryKind.REROUTE,
+                EvolutionRecoveryAction.REROUTE,
                 context,
                 "selected grounding route failed before dispatch",
                 route_ref=contract.backend,
@@ -365,7 +401,7 @@ class EvolutionRecoveryPolicy:
         if route_alternatives:
             alternative = route_alternatives[0]
             return _evolution_recovery_decision(
-                RecoveryKind.REROUTE,
+                EvolutionRecoveryAction.REROUTE,
                 context,
                 "exclude failed grounding candidate and bind a fresh route",
                 route_ref=alternative.compatible_executor,
@@ -378,7 +414,7 @@ class EvolutionRecoveryPolicy:
         )
         if can_retry:
             return _evolution_recovery_decision(
-                RecoveryKind.RETRY_IDEMPOTENT,
+                EvolutionRecoveryAction.RETRY_IDEMPOTENT,
                 context,
                 "idempotent action may be retried once",
                 idempotency_key=contract.idempotency_key,
@@ -388,7 +424,7 @@ class EvolutionRecoveryPolicy:
         fallbacks = [backend for backend in contract.fallback_backends if backend not in tried]
         if fallbacks and context.backend_fallback_count < self.max_backend_fallbacks:
             return _evolution_recovery_decision(
-                RecoveryKind.REROUTE,
+                EvolutionRecoveryAction.REROUTE,
                 context,
                 "use next untried contract fallback",
                 route_ref=fallbacks[0],
@@ -396,17 +432,17 @@ class EvolutionRecoveryPolicy:
 
         if contract.compensation:
             return _evolution_recovery_decision(
-                RecoveryKind.COMPENSATE,
+                EvolutionRecoveryAction.COMPENSATE,
                 context,
                 "contract declares a compensation action",
                 compensation_contract_id=contract.compensation,
             )
 
-        return _evolution_recovery_decision(RecoveryKind.ABORT, context, "no safe recovery remains")
+        return _evolution_recovery_decision(EvolutionRecoveryAction.ABORT, context, "no safe recovery remains")
 
 
 def _evolution_recovery_decision(
-    kind: RecoveryKind,
+    kind: EvolutionRecoveryAction,
     context: EvolutionRecoveryContext,
     reason: str,
     *,
@@ -414,8 +450,8 @@ def _evolution_recovery_decision(
     idempotency_key: str = "",
     compensation_contract_id: str = "",
     profile_artifact_id: str = "",
-) -> RecoveryDecision:
-    return RecoveryDecision(
+) -> EvolutionRecoveryDecision:
+    return EvolutionRecoveryDecision(
         decision_id=f"evolution-recovery:{kind.value}:{context.current_state_version}",
         failure_id=context.failure_id,
         based_on_state_version=context.current_state_version,
@@ -430,33 +466,33 @@ def _evolution_recovery_decision(
         changed_dimensions=(_evolution_dimension(kind),),
         preconditions=(f"evolution policy selected {kind.value}",),
         budget_cost=RecoveryBudgetCost(
-            recoveries=0 if kind == RecoveryKind.ABORT else 1,
+            recoveries=0 if kind == EvolutionRecoveryAction.ABORT else 1,
             observations=1
             if kind
             in {
-                RecoveryKind.REOBSERVE,
-                RecoveryKind.INSPECT_POST_STATE,
-                RecoveryKind.REROUTE,
-                RecoveryKind.RETRY_IDEMPOTENT,
-                RecoveryKind.COMPENSATE,
+                EvolutionRecoveryAction.REOBSERVE,
+                EvolutionRecoveryAction.INSPECT_POST_STATE,
+                EvolutionRecoveryAction.REROUTE,
+                EvolutionRecoveryAction.RETRY_IDEMPOTENT,
+                EvolutionRecoveryAction.COMPENSATE,
             }
             else 0,
             replans=1
             if kind
             in {
-                RecoveryKind.COMPACT_CONTEXT,
-                RecoveryKind.REPAIR_MODEL_SCHEMA,
-                RecoveryKind.SWITCH_PROVIDER,
-                RecoveryKind.REPLAN_TASK,
-                RecoveryKind.REPLAN_STEP,
+                EvolutionRecoveryAction.COMPACT_CONTEXT,
+                EvolutionRecoveryAction.REPAIR_MODEL_SCHEMA,
+                EvolutionRecoveryAction.SWITCH_PROVIDER,
+                EvolutionRecoveryAction.REPLAN_TASK,
+                EvolutionRecoveryAction.REPLAN_STEP,
             }
             else 0,
             user_escalations=1
             if kind
             in {
-                RecoveryKind.ASK_USER,
-                RecoveryKind.CLARIFY_INTENT,
-                RecoveryKind.REQUEST_APPROVAL,
+                EvolutionRecoveryAction.ASK_USER,
+                EvolutionRecoveryAction.CLARIFY_INTENT,
+                EvolutionRecoveryAction.REQUEST_APPROVAL,
             }
             else 0,
         ),
@@ -466,38 +502,38 @@ def _evolution_recovery_decision(
     )
 
 
-def _evolution_dimension(kind: RecoveryKind) -> RecoveryDimension:
+def _evolution_dimension(kind: EvolutionRecoveryAction) -> RecoveryDimension:
     return {
-        RecoveryKind.REOBSERVE: RecoveryDimension.OBSERVATION,
-        RecoveryKind.INSPECT_POST_STATE: RecoveryDimension.EFFECT_STATUS,
-        RecoveryKind.REROUTE: RecoveryDimension.ROUTE,
-        RecoveryKind.REQUEST_APPROVAL: RecoveryDimension.APPROVAL,
-        RecoveryKind.COMPENSATE: RecoveryDimension.EFFECT_STATUS,
-        RecoveryKind.ABORT: RecoveryDimension.TERMINAL,
-        RecoveryKind.RETRY_IDEMPOTENT: RecoveryDimension.OBSERVATION,
+        EvolutionRecoveryAction.REOBSERVE: RecoveryDimension.OBSERVATION,
+        EvolutionRecoveryAction.INSPECT_POST_STATE: RecoveryDimension.EFFECT_STATUS,
+        EvolutionRecoveryAction.REROUTE: RecoveryDimension.ROUTE,
+        EvolutionRecoveryAction.REQUEST_APPROVAL: RecoveryDimension.APPROVAL,
+        EvolutionRecoveryAction.COMPENSATE: RecoveryDimension.EFFECT_STATUS,
+        EvolutionRecoveryAction.ABORT: RecoveryDimension.TERMINAL,
+        EvolutionRecoveryAction.RETRY_IDEMPOTENT: RecoveryDimension.OBSERVATION,
     }.get(kind, RecoveryDimension.CONTEXT)
 
 
-def _evolution_reentry_phase(kind: RecoveryKind) -> RuntimePhase:
+def _evolution_reentry_phase(kind: EvolutionRecoveryAction) -> RuntimePhase:
     return {
-        RecoveryKind.REOBSERVE: RuntimePhase.OBSERVING,
-        RecoveryKind.INSPECT_POST_STATE: RuntimePhase.VERIFYING,
-        RecoveryKind.REROUTE: RuntimePhase.PREFLIGHT,
-        RecoveryKind.REQUEST_APPROVAL: RuntimePhase.WAITING_APPROVAL,
-        RecoveryKind.COMPENSATE: RuntimePhase.PREFLIGHT,
-        RecoveryKind.ABORT: RuntimePhase.ABORTED,
-        RecoveryKind.RETRY_IDEMPOTENT: RuntimePhase.PREFLIGHT,
+        EvolutionRecoveryAction.REOBSERVE: RuntimePhase.OBSERVING,
+        EvolutionRecoveryAction.INSPECT_POST_STATE: RuntimePhase.VERIFYING,
+        EvolutionRecoveryAction.REROUTE: RuntimePhase.PREFLIGHT,
+        EvolutionRecoveryAction.REQUEST_APPROVAL: RuntimePhase.WAITING_APPROVAL,
+        EvolutionRecoveryAction.COMPENSATE: RuntimePhase.PREFLIGHT,
+        EvolutionRecoveryAction.ABORT: RuntimePhase.ABORTED,
+        EvolutionRecoveryAction.RETRY_IDEMPOTENT: RuntimePhase.PREFLIGHT,
     }.get(kind, RuntimePhase.PLANNING)
 
 
-def _recovery_kind(value: str) -> RecoveryKind:
+def _recovery_kind(value: str) -> EvolutionRecoveryAction:
     legacy_aliases = {
-        "verify_state": RecoveryKind.INSPECT_POST_STATE,
-        "retry": RecoveryKind.RETRY_IDEMPOTENT,
+        "verify_state": EvolutionRecoveryAction.INSPECT_POST_STATE,
+        "retry": EvolutionRecoveryAction.RETRY_IDEMPOTENT,
     }
     if value in legacy_aliases:
         return legacy_aliases[value]
-    return RecoveryKind(value)
+    return EvolutionRecoveryAction(value)
 
 
 def _normalize_error(message: str) -> str:
@@ -705,7 +741,7 @@ class CandidateRuntimeProfile:
         receipt: ExecutionReceipt | None,
         context: EvolutionRecoveryContext,
         error_code: RuntimeErrorCode | None,
-    ) -> RecoveryDecision | None:
+    ) -> EvolutionRecoveryDecision | None:
         del receipt, error_code
         signature = context.failure_signature
         if signature is None:
@@ -713,7 +749,7 @@ class CandidateRuntimeProfile:
         # Uncertain effects are always inspected before any learned response.
         if context.effect_may_have_occurred:
             return _evolution_recovery_decision(
-                RecoveryKind.INSPECT_POST_STATE,
+                EvolutionRecoveryAction.INSPECT_POST_STATE,
                 context,
                 "candidate preserves inspect-before-recovery",
             )

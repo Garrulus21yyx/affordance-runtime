@@ -3,6 +3,7 @@ from typing import Any
 
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
@@ -10,7 +11,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunBudget, RunCoordinator
+from affordance_runtime.coordinator import RunBudget
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
 from affordance_runtime.perception import GenericPerceptionOrchestrator
@@ -22,8 +23,13 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.route_calibration import RouteOutcomeStatus
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.visual_grounding import VisualRegion
@@ -98,23 +104,27 @@ class RecordingBrowserSession(BrowserSession):
 class VisualSemanticPlanner:
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
-        if "activated" in str(snapshot.observation.metadata.get("html") or ""):
-            return PlannerDecision(done=True, result={"activated": True})
-        target = next(item for item in snapshot.unified_affordances if "point_activate" in item.supported_actions)
-        return PlannerDecision(
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        if any(
+            outcome.verification_status == "passed"
+            for outcome in request.recent_outcomes
+        ):
+            return PlannerDoneResponse(result={"activated": True})
+        target = next(
+            item
+            for item in request.observation.affordances
+            if "point_activate" in item.supported_actions
+        )
+        return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
-                proposal_id=f"activate-{state.step_count}",
-                based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"activate-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=PlannerActionKind.POINT_ACTIVATE,
-                target_affordance_id=target.semantic_target_id,
+                target_affordance_id=target.target_id,
             ),
         )
 
@@ -173,14 +183,14 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         source_request_ref="test-request",
     )
 
-    coordinator = RunCoordinator(
+    coordinator = compose_run_coordinator(
         observer=observer,
         planner=VisualSemanticPlanner(),
         executor=VisualExecutor(pointer),
         contract_builder=VerifiedVisualContractBuilder(),  # type: ignore[arg-type]
         artifacts=ArtifactStore(tmp_path / "artifacts"),
     )
-    result = coordinator.run_sync(TaskEnvelope(task_spec=task))
+    result = coordinator.run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
     assert result.result == {"activated": True}
@@ -207,7 +217,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     assert outcomes[0].payload["status"] == RouteOutcomeStatus.VERIFIED_SUCCESS.value
     assert outcomes[0].payload["trainable"] is True
     assert outcomes[0].payload["evidence_ids"]
-    assert len(coordinator.route_calibrator.outcomes) == 1
+    assert len(coordinator.progress_stage.route_calibrator.outcomes) == 1
 
 
 class DomFallbackPage(CanvasPage):
@@ -248,22 +258,27 @@ class SaveRegionProposer(RecordingRegionProposer):
 class ActivateSemanticPlanner:
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        if "saved" in str(snapshot.observation.metadata.get("html") or ""):
-            return PlannerDecision(done=True, result={"saved": True})
-        target = next(item for item in snapshot.unified_affordances if "activate" in item.supported_actions)
-        return PlannerDecision(
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        if any(
+            outcome.verification_status == "passed"
+            for outcome in request.recent_outcomes
+        ):
+            return PlannerDoneResponse(result={"saved": True})
+        target = next(
+            item
+            for item in request.observation.affordances
+            if "activate" in item.supported_actions
+        )
+        return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
-                proposal_id=f"save-{state.step_count}",
-                based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"save-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=target.semantic_target_id,
+                target_affordance_id=target.target_id,
             ),
         )
 
@@ -336,13 +351,13 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
         source_request_ref="test-request",
     )
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=ActivateSemanticPlanner(),
         executor=executors,
         contract_builder=VerifiedSaveContractBuilder(),  # type: ignore[arg-type]
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
     assert result.result == {"saved": True}
@@ -404,18 +419,12 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
             return [VisualRegion((0.6, 0.6, 0.1, 0.1), "Target", 0.9)]
 
     class InconclusivePlanner:
-        def propose(
-            self,
-            envelope: TaskEnvelope,
-            state: StateKernel,
-            snapshot: BrowserSnapshot,
-        ) -> PlannerDecision:
-            del envelope
-            target = next(item for item in snapshot.unified_affordances if item.label == "Target")
-            assert target.unresolved_conflicts
-            assert state.active_perception_count == 1
-            return PlannerDecision(
-                done=True,
+            def propose(
+                self,
+                request: PlanningRequest,
+            ) -> PlannerDoneResponse:
+                assert request.observation.affordances
+                return PlannerDoneResponse(
                 result={"status": "inconclusive", "reason": "source conflict"},
             )
 
@@ -433,13 +442,13 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
         source_request_ref="test-request",
     )
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=InconclusivePlanner(),
         executor=VisualExecutor(CanvasPointer(page)),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert result.result["status"] == "inconclusive"

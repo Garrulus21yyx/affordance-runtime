@@ -1893,20 +1893,22 @@ def test_state_kernel_keeps_plan_immutable_and_tracks_progress_separately() -> N
     state.install_task_plan(plan)
     assert state.task_plan == plan
     assert state.active_subgoal() == ""
-    assert state.activate_next_subgoal() == task.objective
-    state.complete_subgoal("subgoal-1", ("settings-api-receipt",))
+    assert state.activate_next_step() == task.objective
+    state.complete_step("subgoal-1", ("settings-api-receipt",))
 
     assert state.task_plan == plan
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["subgoal-1"]
-    assert state.evidence == ["settings-api-receipt"]
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["subgoal-1"]
+    assert state.task_progress.evidence_by_subgoal == {
+        "subgoal-1": ["settings-api-receipt"]
+    }
 
 
 def test_replan_cannot_redefine_a_verified_subgoal() -> None:
     plan = synthetic_task_plan(_context(state_version=0))
     state = StateKernel(_task().task_id, _task().objective)
     state.install_task_plan(plan)
-    state.complete_subgoal("subgoal-1", ("settings-state",))
+    state.complete_step("subgoal-1", ("settings-state",))
     changed = plan.subgoals[0].model_copy(update={"success_criteria": ("different outcome",)})
     replacement = plan.model_copy(
         update={

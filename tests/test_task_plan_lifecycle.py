@@ -173,11 +173,11 @@ def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> N
     assert transition.context.environment.affordances[0].label == "Save setting"
     assert transition.context.remaining_budget.steps_remaining == 20
     assert state.task_plan is None
-    assert state.plan_progress is None
+    assert state.task_progress is None
 
     state.install_task_plan(transition.plan)
     assert state.active_subgoal() == ""
-    assert state.activate_next_subgoal() == task.objective
+    assert state.activate_next_step() == task.objective
     assert lifecycle.active_subgoal_spec(state) == transition.plan.subgoals[0]
     assert not lifecycle.completed(state)
 
@@ -300,7 +300,7 @@ def test_lifecycle_resolves_async_planner_and_rejects_invalid_plan_without_insta
     assert transition.validation.status == TaskPlanValidationStatus.REJECT
     assert {item.code for item in transition.validation.issues} == {"task_id_mismatch"}
     assert state.task_plan is None
-    assert state.plan_progress is None
+    assert state.task_progress is None
 
 
 def test_lifecycle_applies_contextual_entry_validation_to_non_llm_planner() -> None:
@@ -347,8 +347,8 @@ def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[Task
         action_family=second_family,
     )
     state.install_task_plan(base.model_copy(update={"subgoals": (first, second)}))
-    assert state.activate_next_subgoal() == first.objective
-    state.complete_subgoal("first", ("evidence:first",))
+    assert state.activate_next_step() == first.objective
+    state.complete_step("first", ("evidence:first",))
     return task, state
 
 
@@ -366,8 +366,8 @@ def test_lifecycle_requests_replacement_for_newly_ready_unavailable_family() -> 
     assert decision.reason == TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE
     assert decision.subgoal_id == "second"
     assert decision.unavailable_action_family == "select_option"
-    assert state.plan_progress is not None
-    assert state.plan_progress.active_subgoal_id == ""
+    assert state.task_progress is not None
+    assert state.task_progress.active_subgoal_id == ""
 
 
 def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> None:
@@ -403,7 +403,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     state.install_task_plan(
         base.model_copy(update={"subgoals": (first, already_visible)})
     )
-    state.complete_subgoal("first", ("evidence:first",))
+    state.complete_step("first", ("evidence:first",))
 
     decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
         task,
@@ -420,8 +420,8 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     assert decision.subgoal_id == "already-visible"
     assert state.task_plan is not None
     assert state.task_plan.plan_id == base.plan_id
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["first"]
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["first"]
 
 
 def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> None:
@@ -452,7 +452,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
         action_family=TaskPlanActionFamily.ACTIVATE,
     )
     state.install_task_plan(base.model_copy(update={"subgoals": (first, unsupported)}))
-    state.complete_subgoal("first", ("evidence:first",))
+    state.complete_step("first", ("evidence:first",))
 
     decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
         task,
@@ -468,8 +468,8 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
     )
     assert decision.subgoal_id == "unsupported"
     assert state.task_plan is not None
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["first"]
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["first"]
 
 
 def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replanning() -> None:
@@ -486,8 +486,8 @@ def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replannin
         ),
     )
     unknown = lifecycle.evaluate_replacement(task, state, empty_snapshot, Limits())
-    assert state.activate_next_subgoal() == "setting control is selected"
-    state.complete_subgoal("second", ("evidence:second",))
+    assert state.activate_next_step() == "setting control is selected"
+    state.complete_step("second", ("evidence:second",))
     completed = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
 
     assert not compatible.required
@@ -565,10 +565,10 @@ def test_replacement_carries_forward_exact_completed_spec_without_mutating_state
     assert state.version == previous_version
 
     state.replace_task_plan(transition.plan)
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["first"]
-    assert state.plan_progress.evidence_by_subgoal == {"first": ["evidence:first"]}
-    assert state.activate_next_subgoal() == "setting control is saved"
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["first"]
+    assert state.task_progress.evidence_by_subgoal == {"first": ["evidence:first"]}
+    assert state.activate_next_step() == "setting control is saved"
 
 
 def test_lifecycle_replacement_uses_taskplan_authority_revision_admission() -> None:
@@ -579,7 +579,7 @@ def test_lifecycle_replacement_uses_taskplan_authority_revision_admission() -> N
     context = TaskPlanLifecycle.build_context(task, state, snapshot, Limits(), reason="initial")
     previous = PlanningRouter().plan(context)
     state.install_task_plan(previous)
-    state.activate_next_subgoal()
+    state.activate_next_step()
     previous_version = state.version
 
     transition = TaskPlanLifecycle(CandidateInitialPlanner()).propose_replacement(

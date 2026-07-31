@@ -16,13 +16,14 @@ from affordance_runtime.benchmarks.runner import BenchmarkReport, BenchmarkRepor
 from affordance_runtime.benchmarks.spec import BenchmarkRun, BenchmarkTask
 from affordance_runtime.benchmarks.suites import mvp_benchmark_tasks
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
+from affordance_runtime.composition import compose_run_coordinator
+from affordance_runtime.coordinator import RuntimeFeatures
 from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import EXPORT_SHA256, LOCAL_SAAS_FIXTURE_VERSION, PRICING_DATA, create_fixture_server
-from affordance_runtime.planner_compatibility import PlannerCompatibilityPort
 from affordance_runtime.planners import ExportPlanner, PricingPlanner, SettingsPlanner, extract_pricing
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.planning_contracts import PlannerPort
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 
 
 def _json_request(url: str, *, payload: dict[str, Any] | None = None) -> Any:
@@ -106,11 +107,10 @@ class LocalSaasRunCase:
         false_accept = int(status_success and not oracle_success)
         unsafe = int(scenario == "export" and not features.capability_gate and oracle_success)
         recovery_attempts = event_types.count("RecoveryStarted")
-        recovery_history = result.state.recovery_history
         recovery_actions = [
-            item.strategy_id.split(":")[1]
-            for item in recovery_history
-            if len(item.strategy_id.split(":")) > 2
+            str(node.payload.get("decision", {}).get("kind") or "")
+            for node in result.trace.nodes
+            if node.kind == "RecoveryStrategySelected"
         ]
         recovery_loop_aborts = int(result.status == RuntimeStep.ABORTED and bool(result.state.current_failure))
         return BenchmarkRun(
@@ -125,8 +125,8 @@ class LocalSaasRunCase:
             recovery_attempts=recovery_attempts,
             recovery_successes=recovery_attempts if recovery_attempts > 0 and status_success and oracle_success else 0,
             recovery_incidents=int(bool(result.state.current_failure)),
-            recovery_cascade_depth=len(recovery_history),
-            repeated_recovery_failures=max(0, len(recovery_history) - len(set(recovery_actions))),
+            recovery_cascade_depth=len(recovery_actions),
+            repeated_recovery_failures=max(0, len(recovery_actions) - len(set(recovery_actions))),
             recovery_loop_aborts=recovery_loop_aborts,
             effective_recovery_actions=sum(
                 1
@@ -217,7 +217,7 @@ class LocalSaasRunCase:
         features: RuntimeFeatures,
     ) -> tuple[Any, bool]:
         target = f"{self.base_url}/{ {'pricing': 'pricing', 'settings': 'settings', 'export': 'reports'}[scenario] }"
-        planners: dict[str, PlannerCompatibilityPort] = {
+        planners: dict[str, PlannerPort] = {
             "pricing": PricingPlanner(),
             "settings": SettingsPlanner(),
             "export": ExportPlanner(),
@@ -229,7 +229,7 @@ class LocalSaasRunCase:
             router.register(DomExecutor(session))
             observer: Any = DriftOnceObserver(session) if scenario == "settings" else session
             run_id = f"{scenario}-{variant}-seed-{seed}"
-            result = RunCoordinator(
+            result = compose_run_coordinator(
                 observer=observer,
                 planner=planner,
                 executor=router,
@@ -241,7 +241,7 @@ class LocalSaasRunCase:
                 artifacts=ArtifactStore(self.artifact_root / "runs"),
                 features=features,
             ).run_sync(
-                TaskEnvelope(
+                RunRequest(
                     run_id,
                     {"pricing": "extract pricing", "settings": "enable notifications", "export": "export report"}[scenario],
                     target=target,

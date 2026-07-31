@@ -190,5 +190,5 @@ def test_state_kernel_ledger_does_not_affect_taskplan_lifecycle_or_runtime_surfa
     ledger.record_attempt("obligation:first")
     assert TaskPlanLifecycle.completed(state) is False
     assert state.task_plan is None
-    assert state.plan_progress is None
+    assert state.task_progress is None
     assert state.current_failure is None

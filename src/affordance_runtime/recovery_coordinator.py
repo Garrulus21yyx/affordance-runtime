@@ -126,17 +126,16 @@ def _strategy_order(
 ) -> tuple[RecoveryKind, ...]:
     base: tuple[RecoveryKind, ...]
     if not failure.recoverable:
-        base = (RecoveryKind.ABORT,)
+        base = ()
     elif failure.effect_status in {
         EffectStatus.MAY_HAVE_OCCURRED,
         EffectStatus.IRREVERSIBLE_OR_UNKNOWN,
     }:
         base = (
             RecoveryKind.INSPECT_POST_STATE,
-            RecoveryKind.ABORT,
         )
     elif failure.failure_class == FailureClass.AUTHORITY:
-        base = (RecoveryKind.ABORT,)
+        base = ()
     else:
         base = _strategy_order_for_kind(classification.kind, failure.phase)
     profile = tuple(
@@ -145,7 +144,7 @@ def _strategy_order(
         if item in base and item not in {RecoveryKind.RETRY_IDEMPOTENT, RecoveryKind.COMPENSATE}
     )
     if classification.owner == FailureOwner.PROGRESS:
-        base = (RecoveryKind.ABORT,)
+        base = ()
         profile = ()
     return tuple(dict.fromkeys((*profile, *base)))
 
@@ -159,18 +158,16 @@ def _strategy_order_for_kind(
             RecoveryKind.COMPACT_CONTEXT,
             RecoveryKind.REPAIR_MODEL_SCHEMA,
             RecoveryKind.SWITCH_PROVIDER,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.CURRENT_STEP_ALREADY_SATISFIED:
-        return (RecoveryKind.ABORT,)
+        return ()
     if kind == FailureKind.MISSING_USER_INPUT:
-        return (RecoveryKind.ABORT,)
+        return ()
     if kind == FailureKind.GROUNDING_AMBIGUOUS:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.REGROUND,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.NO_FEASIBLE_ACTION:
         return (
@@ -178,42 +175,37 @@ def _strategy_order_for_kind(
             RecoveryKind.REGROUND,
             RecoveryKind.REROUTE,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.PLAN_OUTPUT_REJECTED:
         return _planning_strategy_order(phase)
     if kind == FailureKind.INTENT_COMPILATION_REJECTED:
-        return (RecoveryKind.ABORT,)
+        return ()
     if kind == FailureKind.EXECUTION_FAILED:
         return (
             RecoveryKind.REROUTE,
             RecoveryKind.REGROUND,
             RecoveryKind.RETRY_IDEMPOTENT,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.VERIFICATION_FAILED:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.OBSERVATION_INSUFFICIENT:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.REOBSERVE,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.PROVIDER_OR_SCHEMA_FAILURE:
         return (
             RecoveryKind.COMPACT_CONTEXT,
             RecoveryKind.REPAIR_MODEL_SCHEMA,
             RecoveryKind.SWITCH_PROVIDER,
-            RecoveryKind.ABORT,
         )
     if kind == FailureKind.AUTHORITY_BLOCKED:
-        return (RecoveryKind.ABORT,)
+        return ()
     if kind == FailureKind.UNKNOWN:
-        return (RecoveryKind.ABORT,)
+        return ()
     return _planning_strategy_order(phase)
 
 
@@ -223,22 +215,19 @@ def _planning_strategy_order(phase: FailurePhase) -> tuple[RecoveryKind, ...]:
             RecoveryKind.COMPACT_CONTEXT,
             RecoveryKind.REPAIR_MODEL_SCHEMA,
             RecoveryKind.SWITCH_PROVIDER,
-            RecoveryKind.ABORT,
         )
     if phase == FailurePhase.STEP_PLANNING:
         return (
             RecoveryKind.ACTIVE_PERCEPTION,
             RecoveryKind.COMPACT_CONTEXT,
-            RecoveryKind.ABORT,
         )
     if phase == FailurePhase.PROPOSAL_VALIDATION:
         return (
             RecoveryKind.REPAIR_MODEL_SCHEMA,
-            RecoveryKind.ABORT,
         )
     if phase == FailurePhase.SKILL_ACTIVATION:
-        return (RecoveryKind.ABORT,)
-    return (RecoveryKind.ABORT,)
+        return ()
+    return ()
 
 
 def _decision_for(
@@ -253,11 +242,6 @@ def _decision_for(
     if kind not in context.available_commands:
         return None
     shape = _command_shape(kind)
-    reentry_phase = (
-        context.abort_reentry_phase
-        if kind == RecoveryKind.ABORT
-        else shape.reentry_phase
-    )
     if kind == RecoveryKind.ACTIVE_PERCEPTION:
         if not context.gap_ids:
             return None
@@ -283,15 +267,10 @@ def _decision_for(
         changed_dimensions=shape.changed_dimensions,
         preconditions=shape.preconditions,
         budget_cost=shape.budget_cost,
-        reentry_phase=reentry_phase,
+        reentry_phase=shape.reentry_phase,
         candidate_id=context.fresh_candidate_id if kind == RecoveryKind.REROUTE else "",
         route_ref=context.fresh_route_ref if kind == RecoveryKind.REROUTE else "",
         provider_id=context.configured_provider_id if kind == RecoveryKind.SWITCH_PROVIDER else "",
-        question=(
-            context.user_question
-            if kind in {RecoveryKind.ASK_USER, RecoveryKind.CLARIFY_INTENT}
-            else ""
-        ),
         idempotency_key=(
             context.idempotency_key
             if kind == RecoveryKind.RETRY_IDEMPOTENT
@@ -322,17 +301,11 @@ def _command_shape(kind: RecoveryKind) -> _CommandShape:
         RecoveryKind.COMPACT_CONTEXT: (RecoveryDimension.CONTEXT, RuntimePhase.PLANNING, 0, 1, 0, 0),
         RecoveryKind.SWITCH_PROVIDER: (RecoveryDimension.PROVIDER, RuntimePhase.PLANNING, 0, 1, 1, 0),
         RecoveryKind.REPAIR_MODEL_SCHEMA: (RecoveryDimension.CONTEXT, RuntimePhase.PLANNING, 0, 1, 0, 0),
-        RecoveryKind.CLARIFY_INTENT: (RecoveryDimension.USER_INFORMATION, RuntimePhase.WAITING_USER, 0, 0, 0, 1),
-        RecoveryKind.REPLAN_TASK: (RecoveryDimension.TASK_PLAN, RuntimePhase.PLANNING, 0, 1, 0, 0),
-        RecoveryKind.REPLAN_STEP: (RecoveryDimension.STEP_PLAN, RuntimePhase.PLANNING, 0, 1, 0, 0),
         RecoveryKind.REGROUND: (RecoveryDimension.CANDIDATE, RuntimePhase.OBSERVING, 1, 0, 0, 0),
         RecoveryKind.REROUTE: (RecoveryDimension.ROUTE, RuntimePhase.PREFLIGHT, 1, 0, 0, 0),
         RecoveryKind.INSPECT_POST_STATE: (RecoveryDimension.EFFECT_STATUS, RuntimePhase.VERIFYING, 1, 0, 0, 0),
         RecoveryKind.RETRY_IDEMPOTENT: (RecoveryDimension.OBSERVATION, RuntimePhase.PREFLIGHT, 1, 0, 0, 0),
         RecoveryKind.COMPENSATE: (RecoveryDimension.EFFECT_STATUS, RuntimePhase.PREFLIGHT, 1, 0, 0, 0),
-        RecoveryKind.REQUEST_APPROVAL: (RecoveryDimension.APPROVAL, RuntimePhase.WAITING_APPROVAL, 0, 0, 0, 1),
-        RecoveryKind.ASK_USER: (RecoveryDimension.USER_INFORMATION, RuntimePhase.WAITING_USER, 0, 0, 0, 1),
-        RecoveryKind.ABORT: (RecoveryDimension.TERMINAL, RuntimePhase.ABORTED, 0, 0, 0, 0),
     }[kind]
     timeout_ms = 5_000 if observations or replans else 0
     return _CommandShape(
@@ -340,7 +313,7 @@ def _command_shape(kind: RecoveryKind) -> _CommandShape:
         changed_dimensions=(dimension,),
         preconditions=(f"owning port for {kind.value} is available",),
         budget_cost=RecoveryBudgetCost(
-            recoveries=0 if kind == RecoveryKind.ABORT else 1,
+            recoveries=1,
             observations=observations,
             replans=replans,
             provider_switches=provider_switches,

@@ -17,6 +17,7 @@ from typing import Any
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -28,7 +29,6 @@ from affordance_runtime.contracts import (
     Surface,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import (
     criterion_id,
     evidence_requirement_id,
@@ -50,8 +50,12 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_skills import (
     AcceptedTaskSkillRuntime,
@@ -292,26 +296,24 @@ class _CountingSystem2Planner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
         self.calls += 1
-        if snapshot.observation.metadata.get("saved") is True:
-            return PlannerDecision(done=True, result={"saved": True})
-        return PlannerDecision(
+        if request.recent_outcomes:
+            return PlannerDoneResponse(result={"saved": True})
+        return PlannerProposalResponse(
             proposal=PlannerProposal(
-                proposal_id=f"system2-{self.calls}-{state.version}",
-                based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"system2-{self.calls}-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 subgoal=(
                     "Activate the blue visual Save icon"
-                    if envelope.task_spec and "visual" in envelope.task_spec.objective.lower()
+                    if "visual" in request.task.objective.lower()
                     else "Activate Save"
                 ),
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                target_affordance_id=request.observation.affordances[0].target_id,
             ),
             proposal_provenance=PlannerProposalProvenance(
                 source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -417,7 +419,7 @@ def run_adaptive_routing_case(
         }
     )
     started = perf_counter()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         executors,
@@ -428,14 +430,14 @@ def run_adaptive_routing_case(
             accepted_skill.artifact_ids if accepted_skill is not None else ()
         ),
         artifacts=artifacts,
-    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
     route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]
     selected_sources = tuple(str(node.payload.get("source") or "") for node in route_nodes)
     expected_safe_block = case_id in {"material_conflict", "stale_candidates"}
     success = (
-        world.effects == 0 and not result.state.receipts
+        world.effects == 0 and result.state.last_receipt is None
         if expected_safe_block
         else result.status == RuntimeStep.DONE and world.saved and world.effects == 1
     )
@@ -462,8 +464,9 @@ def run_adaptive_routing_case(
         0 if world.effects <= 1 else world.effects - 1,
         int(
             sum(
-                ":retry_idempotent:" in item.strategy_id
-                for item in result.state.recovery_history
+                node.payload.get("decision", {}).get("kind") == "retry_idempotent"
+                for node in result.trace.nodes
+                if node.kind == "RecoveryStrategySelected"
             )
             > 1
         ),

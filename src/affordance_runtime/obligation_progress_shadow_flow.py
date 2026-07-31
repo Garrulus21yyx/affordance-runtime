@@ -37,7 +37,7 @@ def prepare_obligation_progress_shadow_trace(
 ) -> ObligationProgressShadowTraceProjection | None:
     """Prepare an ODG shadow trace payload from read-only runtime state."""
 
-    if task_spec is None or state.task_plan is None or state.plan_progress is None:
+    if task_spec is None or state.task_plan is None or state.task_progress is None:
         return None
     progress = project_verified_legacy_progress(task_spec, state)
     ready_projection = project_ready_obligations(
@@ -73,7 +73,7 @@ def project_verified_legacy_progress(
     known_obligation_ids = tuple(
         obligation.obligation_id for obligation in task_spec.obligations
     )
-    if state.plan_progress is None:
+    if state.task_progress is None:
         return ObligationProgressStateView(
             task_spec_identity=task_spec.identity,
             task_revision=task_spec.revision,
@@ -84,18 +84,18 @@ def project_verified_legacy_progress(
     evidence_by_obligation = tuple(
         ObligationEvidenceLedgerEntry(
             obligation_id=subgoal_id,
-            evidence_refs=tuple(state.plan_progress.evidence_by_subgoal[subgoal_id]),
+            evidence_refs=tuple(state.task_progress.evidence_by_subgoal[subgoal_id]),
         )
         for subgoal_id in known_obligation_ids
-        if subgoal_id in state.plan_progress.completed_subgoal_ids
+        if subgoal_id in state.task_progress.completed_subgoal_ids
         and subgoal_id in known
-        and state.plan_progress.evidence_by_subgoal.get(subgoal_id)
+        and state.task_progress.evidence_by_subgoal.get(subgoal_id)
     )
     satisfied_ids = tuple(item.obligation_id for item in evidence_by_obligation)
     failed_ids = tuple(
         subgoal_id
         for subgoal_id in known_obligation_ids
-        if subgoal_id in state.plan_progress.failed_subgoal_ids and subgoal_id in known
+        if subgoal_id in state.task_progress.failed_subgoal_ids and subgoal_id in known
     )
     return ObligationProgressStateView(
         task_spec_identity=task_spec.identity,
@@ -110,15 +110,15 @@ def project_verified_legacy_progress(
 
 def _project_legacy_task_plan(state: StateKernel) -> TaskPlanShadowProjection:
     assert state.task_plan is not None
-    assert state.plan_progress is not None
-    active_subgoal_id = state.plan_progress.active_subgoal_id
+    assert state.task_progress is not None
+    active_subgoal_id = state.task_progress.active_subgoal_id
     if not active_subgoal_id:
-        ready = state.plan_progress.ready_subgoal_ids(state.task_plan)
+        ready = state.task_progress.ready_subgoal_ids(state.task_plan)
         active_subgoal_id = ready[0] if ready else ""
     return TaskPlanShadowProjection(
         active_subgoal_id=active_subgoal_id,
-        ready_subgoal_ids=state.plan_progress.ready_subgoal_ids(state.task_plan),
-        completed_subgoal_ids=tuple(state.plan_progress.completed_subgoal_ids),
+        ready_subgoal_ids=state.task_progress.ready_subgoal_ids(state.task_plan),
+        completed_subgoal_ids=tuple(state.task_progress.completed_subgoal_ids),
         subgoal_obligation_ids=tuple(
             (subgoal.subgoal_id, subgoal.subgoal_id)
             for subgoal in state.task_plan.subgoals

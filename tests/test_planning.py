@@ -76,7 +76,7 @@ def _active_plan_state() -> StateKernel:
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     return state
 
 
@@ -206,9 +206,9 @@ def test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target() -> Non
             ),
         )
     )
-    state.activate_next_subgoal()
-    state.complete_subgoal("slider-changed", ("evidence:slider",))
-    state.activate_next_subgoal()
+    state.activate_next_step()
+    state.complete_step("slider-changed", ("evidence:slider",))
+    state.activate_next_step()
     verifier = VerifierSpec(
         "control_state",
         "checkbox-3",
@@ -289,7 +289,7 @@ def test_subgoal_evidence_binder_rejects_progress_target_until_dependencies_comp
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     verifier = VerifierSpec(
         "control_state",
         "checkbox-3",
@@ -352,8 +352,8 @@ def test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposa
             ),
         )
     )
-    state.activate_next_subgoal()
-    state.complete_subgoal("slider-changed", ("evidence:slider",))
+    state.activate_next_step()
+    state.complete_step("slider-changed", ("evidence:slider",))
     checkbox = Affordance(
         "semantic:checkbox-3",
         Surface.DOM,
@@ -426,7 +426,7 @@ def test_resolve_task_plan_progress_target_uses_current_target_state_for_value_s
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     slider = Affordance(
         "semantic:ui-slider-handle",
         Surface.DOM,
@@ -954,7 +954,7 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     spec = TaskSpec(
         task_id="task-1",
         revision=2,
@@ -1024,7 +1024,7 @@ def test_proposal_validator_enforces_active_step_action_family_when_available() 
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     spec = TaskSpec(
         task_id="task-1",
         revision=2,
@@ -1097,7 +1097,7 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
             ),
         )
     )
-    state.activate_next_subgoal()
+    state.activate_next_step()
     spec = TaskSpec(
         task_id="task-1",
         revision=2,

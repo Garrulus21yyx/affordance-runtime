@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Sequence, TypeVar
 
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     Affordance,
@@ -17,13 +18,23 @@ from affordance_runtime.contracts import (
     RiskLevel,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import VisualExecutor, WotExecutor
 from affordance_runtime.generalist_planner import GeneralistLMPlanner, GeneralistPlannerProfile
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
-from affordance_runtime.planning import ContractBuilder, ContractRequirements, PlannerActionKind
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 T = TypeVar("T", bound=BaseModel)
@@ -51,21 +62,31 @@ class StaticObserver:
 class OneActionPlanner:
     verifier: VerifierSpec
 
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        del envelope
-        if state.receipts:
-            return PlannerDecision(done=True, result={"surface": snapshot.affordance_model.affordances[0].surface.value})
-        affordance = snapshot.affordance_model.affordances[0]
-        contract = ActionContract.from_affordance(
-                affordance,
-                intent="exercise shared contract path",
-                backend=affordance.backend_candidates[0],
-                verifier_plan=[self.verifier],
-            )
-        if affordance.surface.value == "wot":
-            contract = replace(contract, idempotency_key="fixture-wot-action", contract_hash="")
-        return PlannerDecision(
-            contract=contract
+    def propose(
+        self, request: PlanningRequest
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        affordance = request.observation.affordances[0]
+        if request.recent_outcomes:
+            return PlannerDoneResponse(result={"surface": affordance.surface})
+        action = (
+            PlannerActionKind.POINT_ACTIVATE
+            if "point_activate" in affordance.supported_actions
+            else PlannerActionKind.ACTIVATE
+        )
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id="cross-surface-action",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal="exercise shared contract path",
+                action_kind=action,
+                target_affordance_id=affordance.target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="cross-surface-test",
+            ),
         )
 
 
@@ -118,6 +139,22 @@ class EvidenceExecutor:
         )
 
 
+def _surface_task(
+    task_id: str, objective: str, *, target: str | None = None
+) -> RunRequest:
+    return RunRequest(
+        task_spec=TaskSpec(
+            task_id=task_id,
+            revision=1,
+            objective=objective,
+            operation_class=OperationClass.READ_ONLY,
+            targets=(target or objective,),
+            success_criteria=("action verified",),
+            source_request_ref="cross-surface-test",
+        )
+    )
+
+
 def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
     affordance = SomAdapter().parse(
         [{"bbox": [10, 10, 20, 20], "label": "Target"}],
@@ -125,11 +162,21 @@ def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
         snapshot_id="snap-1",
     )[0]
     result = asyncio.run(
-        RunCoordinator(
+        compose_run_coordinator(
             StaticObserver(affordance),
             OneActionPlanner(VerifierSpec("evidence", "action", "visual_click")),
             VisualExecutor(Pointer()),
-        ).run(TaskEnvelope("visual-run", "click visual target"))
+            contract_builder=ContractBuilder(
+                requirements={
+                    affordance.id: ContractRequirements(
+                        verifier_plan=(
+                            VerifierSpec("evidence", "action", "visual_click"),
+                        )
+                    )
+                }
+            ),
+            task_planner=None,
+        ).run(_surface_task("visual-run", "click visual target"))
     )
 
     assert result.status == RuntimeStep.DONE
@@ -150,11 +197,26 @@ def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:
         return 200, {"power": "on"}
 
     result = asyncio.run(
-        RunCoordinator(
+        compose_run_coordinator(
             StaticObserver(affordance),
             OneActionPlanner(VerifierSpec("evidence", "status", 200)),
             WotExecutor(send=send),
-        ).run(TaskEnvelope("wot-run", "turn on local fixture device"))
+            contract_builder=ContractBuilder(
+                requirements={
+                    affordance.id: ContractRequirements(
+                        verifier_plan=(VerifierSpec("evidence", "status", 200),),
+                        idempotency_key="fixture-wot-action",
+                    )
+                }
+            ),
+            task_planner=None,
+        ).run(
+            _surface_task(
+                "wot-run",
+                "turn on local fixture device",
+                target="turn_on",
+            )
+        )
     )
 
     assert result.status == RuntimeStep.DONE
@@ -198,7 +260,7 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
             compensation="disable shared state",
         )
         result = asyncio.run(
-            RunCoordinator(
+            compose_run_coordinator(
                 StaticObserver(affordance),
                 GeneralistLMPlanner(
                     model,
@@ -207,7 +269,7 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
                     executor,
                     contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
                     task_planner=None,
-                ).run(TaskEnvelope(task_spec=task, capabilities=["shared.write"]))
+                ).run(RunRequest(task_spec=task, capabilities=["shared.write"]))
         )
         events = [node.kind for node in result.trace.nodes]
         assert "PlannerProposalValidated" in events

@@ -11,9 +11,6 @@ from affordance_runtime.criteria import (
     CriterionEvidenceLink,
     SubgoalVerificationReport,
 )
-from affordance_runtime.obligation_progress_shadow import (
-    ObligationProgressShadowClassification,
-)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     EvidenceKind,
@@ -208,12 +205,12 @@ def _snapshot(*, submit_available: bool = False) -> BrowserSnapshot:
 def _state(task_spec: TaskSpec, plan: TaskPlan) -> StateKernel:
     state = StateKernel(task_id=task_spec.task_id, goal=task_spec.objective)
     state.install_task_plan(plan)
-    state.activate_next_subgoal()
+    state.activate_next_step()
     state.remember_observation(_snapshot().observation)
     return state
 
 
-def test_post_observation_progress_traces_shadow_without_behavior_change() -> None:
+def test_post_observation_progress_has_no_default_obligation_shadow() -> None:
     task_spec = _task_spec(
         _obligation("obligation:first"),
         _obligation("obligation:terminal", terminal=True, depends_on=("obligation:first",)),
@@ -226,8 +223,8 @@ def test_post_observation_progress_traces_shadow_without_behavior_change() -> No
             _subgoal("obligation:terminal", depends_on=("obligation:first",)),
         ),
     )
-    assert state.plan_progress is not None
-    state.complete_subgoal("obligation:first", ("evidence:first",))
+    assert state.task_progress is not None
+    state.complete_step("obligation:first", ("evidence:first",))
     trace = TraceDag("run")
     parent = trace.add("ObservationCaptured", {"state": state.phase})
     version_before = state.version
@@ -241,16 +238,13 @@ def test_post_observation_progress_traces_shadow_without_behavior_change() -> No
         parent,
     )
 
-    assert commit.parent.kind == "ObligationProgressShadowCompared"
+    assert commit.parent is parent
     assert commit.legacy_completion_committed is False
     assert state.version == version_before
-    payload = commit.parent.payload
-    assert payload["comparison"]["classification"] == "aligned"
-    assert payload["obligation_progress_source"] == "legacy_verified_projection"
-    assert payload["task_spec_identity"] == task_spec.identity
+    assert all("ObligationProgressShadow" not in node.kind for node in trace.nodes)
 
 
-def test_post_observation_progress_commits_current_state_then_traces_shadow() -> None:
+def test_post_observation_progress_commits_current_state_without_default_shadow() -> None:
     task_spec = _task_spec(
         _obligation("obligation:first"),
         _obligation(
@@ -275,8 +269,8 @@ def test_post_observation_progress_commits_current_state_then_traces_shadow() ->
             ),
         ),
     )
-    assert state.plan_progress is not None
-    state.complete_subgoal("obligation:first", ("evidence:first",))
+    assert state.task_progress is not None
+    state.complete_step("obligation:first", ("evidence:first",))
     trace = TraceDag("run")
     parent = trace.add("ObservationCaptured", {"state": state.phase})
 
@@ -290,7 +284,7 @@ def test_post_observation_progress_commits_current_state_then_traces_shadow() ->
     )
 
     assert commit.legacy_completion_committed is True
-    assert state.plan_progress.completed_subgoal_ids == [
+    assert state.task_progress.completed_subgoal_ids == [
         "obligation:first",
         "obligation:terminal",
     ]
@@ -298,13 +292,8 @@ def test_post_observation_progress_commits_current_state_then_traces_shadow() ->
         "ObservationCaptured",
         "SubgoalCompletedFromCurrentObservation",
         "TaskPlanCompleted",
-        "ObligationProgressShadowCompared",
     ]
-    assert commit.parent.kind == "ObligationProgressShadowCompared"
-    assert (
-        commit.parent.payload["comparison"]["classification"]
-        == ObligationProgressShadowClassification.ROLE_PENDING.value
-    )
+    assert commit.parent.kind == "TaskPlanCompleted"
 
 
 def test_verified_task_progress_flow_commits_active_step_and_prepares_task_completion() -> None:
@@ -326,8 +315,8 @@ def test_verified_task_progress_flow_commits_active_step_and_prepares_task_compl
 
     assert commit.subgoal_completion_committed is True
     assert commit.task_completion_requested is True
-    assert state.plan_progress is not None
-    assert state.plan_progress.completed_subgoal_ids == ["obligation:terminal"]
+    assert state.task_progress is not None
+    assert state.task_progress.completed_subgoal_ids == ["obligation:terminal"]
     assert state.final_result == {
         "task_plan_id": "plan-post-observation",
         "completed_subgoal_ids": ["obligation:terminal"],

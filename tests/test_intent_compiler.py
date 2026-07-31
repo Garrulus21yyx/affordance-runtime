@@ -901,6 +901,130 @@ def test_llm_compiler_normalizes_select_from_list_value_in_multistage_graph() ->
     assert obligation.typed_evidence_requirements[0].value_ref == "Ertha"
 
 
+def test_llm_compiler_normalizes_navigation_misclassification_for_explicit_selection() -> None:
+    draft = IntentDraft(
+        objective="Select Ertha from the list.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="Select Ertha from the list.",
+                source_ref="choose-list-navigation",
+            ),
+        ),
+        candidate_success_criteria=("Ertha is selected from the list.",),
+        task_structure=TaskStructure.FLAT,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="choose-list-navigation",
+                raw_text="Select Ertha from the list.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == "list"
+    assert obligation.relation == TaskObligationRelation.IS_SELECTED
+    assert obligation.expected_value == "Ertha"
+
+
+def test_llm_compiler_preserves_multiword_explicit_selection_value() -> None:
+    draft = IntentDraft(
+        objective="Select Norfolk Island from the list.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="Norfolk Island",
+                source_ref="choose-list-multiword",
+            ),
+        ),
+        candidate_success_criteria=("Norfolk Island is selected in the list.",),
+        task_structure=TaskStructure.FLAT,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="choose-list-multiword",
+                raw_text="Select Norfolk Island from the list.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == "list"
+    assert obligation.relation == TaskObligationRelation.IS_SELECTED
+    assert obligation.expected_value == "Norfolk Island"
+
+
+def test_llm_compiler_normalizes_explicit_click_misclassified_as_read_only() -> None:
+    draft = IntentDraft(
+        objective="Close the dialog box by clicking the 'x'.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.READ_ONLY,
+                target="dialog_box_close_button",
+                source_ref="click-dialog-read-only",
+            ),
+        ),
+        candidate_success_criteria=("The dialog box is closed by clicking the 'x'.",),
+        task_structure=TaskStructure.FLAT,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="click-dialog-read-only",
+                raw_text="Close the dialog box by clicking the 'x'.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.kind == TaskObligationKind.EFFECT
+    assert obligation.relation == TaskObligationRelation.IS_COMPLETED
+
+
+def test_llm_compiler_restores_explicit_submit_effect_omitted_from_draft() -> None:
+    draft = IntentDraft(
+        objective="Select Ertha from the list and click Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="Ertha",
+                source_ref="choose-list-submit",
+            ),
+        ),
+        candidate_success_criteria=("Ertha is selected from the list.",),
+        task_structure=TaskStructure.FLAT,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="choose-list-submit",
+                raw_text="Select Ertha from the list and click Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    selection, submit = result.task_spec.obligations
+    assert selection.relation == TaskObligationRelation.IS_SELECTED
+    assert submit.subject == "submit_button"
+    assert submit.relation == TaskObligationRelation.IS_COMPLETED
+    assert submit.depends_on == (selection.obligation_id,)
+
+
 def test_llm_compiler_preserves_slider_numeric_value_in_multistage_graph() -> None:
     draft = IntentDraft(
         objective="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",

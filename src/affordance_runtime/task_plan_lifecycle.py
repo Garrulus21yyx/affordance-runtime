@@ -156,7 +156,7 @@ class TaskPlanLifecycle:
         reason: str,
     ) -> TaskPlanTransition:
         previous_plan = state.task_plan
-        if previous_plan is None or state.plan_progress is None:
+        if previous_plan is None or state.task_progress is None:
             raise ValueError("cannot replan without an active TaskPlan")
         context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
         candidate_value = _initial_plan_candidate(self.planner, context)
@@ -184,7 +184,7 @@ class TaskPlanLifecycle:
                     trigger=TaskPlanRevisionTrigger(
                         kind=_revision_trigger_kind(reason),
                         reason_code=reason,
-                        affected_step_id=state.plan_progress.active_subgoal_id,
+                        affected_step_id=state.task_progress.active_subgoal_id,
                     ),
                     operation_class=task_spec.operation_class,
                     observation_refs=(snapshot.observation.snapshot_id,),
@@ -199,7 +199,7 @@ class TaskPlanLifecycle:
         plan = _carry_forward_completed_subgoals(
             plan,
             previous_plan,
-            tuple(state.plan_progress.completed_subgoal_ids),
+            tuple(state.task_progress.completed_subgoal_ids),
         )
         validation = self.validator.validate(
             plan,
@@ -219,8 +219,8 @@ class TaskPlanLifecycle:
     def should_replan(state: StateKernel) -> bool:
         return (
             state.task_plan is not None
-            and state.plan_progress is not None
-            and state.plan_progress.action_budget_exhausted(state.task_plan)
+            and state.task_progress is not None
+            and state.task_progress.action_budget_exhausted(state.task_plan)
         )
 
     def evaluate_replacement(
@@ -232,12 +232,12 @@ class TaskPlanLifecycle:
     ) -> TaskPlanReplacementDecision:
         """Decide whether the current plan needs replacement without mutation."""
 
-        if state.task_plan is None or state.plan_progress is None:
+        if state.task_plan is None or state.task_progress is None:
             return TaskPlanReplacementDecision()
         if self.should_replan(state):
             return TaskPlanReplacementDecision(
                 reason=TaskPlanReplacementReason.SUBGOAL_ACTION_BUDGET_EXHAUSTED,
-                subgoal_id=state.plan_progress.active_subgoal_id,
+                subgoal_id=state.task_progress.active_subgoal_id,
             )
         context = self.build_context(
             task_spec,
@@ -269,22 +269,22 @@ class TaskPlanLifecycle:
 
     @staticmethod
     def completed(state: StateKernel) -> bool:
-        if state.task_plan is None or state.plan_progress is None:
+        if state.task_plan is None or state.task_progress is None:
             return False
-        completed = set(state.plan_progress.completed_subgoal_ids)
+        completed = set(state.task_progress.completed_subgoal_ids)
         return all(item.subgoal_id in completed for item in state.task_plan.subgoals)
 
     @staticmethod
     def active_subgoal_spec(state: StateKernel) -> SubgoalSpec | None:
-        if state.task_plan is None or state.plan_progress is None:
+        if state.task_plan is None or state.task_progress is None:
             return None
-        active_id = state.plan_progress.active_subgoal_id
+        active_id = state.task_progress.active_subgoal_id
         return next((item for item in state.task_plan.subgoals if item.subgoal_id == active_id), None)
 
     @classmethod
     def active_subgoal_for_perception(cls, state: StateKernel) -> SubgoalSpec | str | None:
-        if state.task_plan is None or state.plan_progress is None:
-            return state.subgoals[-1] if state.subgoals else None
+        if state.task_plan is None or state.task_progress is None:
+            return None
         return cls.active_subgoal_spec(state)
 
     @staticmethod
@@ -297,7 +297,7 @@ class TaskPlanLifecycle:
         reason: str,
     ) -> TaskPlanningContext:
         plan = state.task_plan
-        progress = state.plan_progress
+        progress = state.task_progress
         source_affordances = {
             item.id: item for item in snapshot.affordance_model.affordances
         }
@@ -404,7 +404,7 @@ class TaskPlanLifecycle:
             ),
             failures=failures,
             recovery_summary=recovery_summary,
-            disproved_assumptions=tuple(state.disproved_assumptions[-16:]),
+            disproved_assumptions=((state.current_disproved_assumption,) if state.current_disproved_assumption else ()),
             remaining_budget=TaskPlanningBudgetSummary(
                 steps_remaining=max(0, budget.max_steps - state.step_count),
                 observations_remaining=max(0, budget.max_observations - state.observation_count),

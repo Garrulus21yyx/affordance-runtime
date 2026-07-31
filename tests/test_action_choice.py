@@ -14,8 +14,8 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
 )
 from affordance_runtime.unified_observation import (
+    UnifiedObservation,
     UnifiedObservationTarget,
-    UnifiedObservationView,
 )
 
 
@@ -56,8 +56,8 @@ def _step(*, criterion: StateCriterion, step_id: str = "step:1") -> StepSpec:
     )
 
 
-def _observation(*targets: UnifiedObservationTarget) -> UnifiedObservationView:
-    return UnifiedObservationView(
+def _observation(*targets: UnifiedObservationTarget) -> UnifiedObservation:
+    return UnifiedObservation(
         snapshot_id="snapshot:1",
         page_revision="page:1",
         environment_revision="env:1",
@@ -168,6 +168,40 @@ def test_action_choice_builder_creates_slider_choice_from_numeric_string_value()
                 label="Volume",
                 supported_actions=("press_key",),
                 state={"value": "5"},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.PRESS_KEY
+    assert choice.parameters == {"key": "ArrowRight"}
+    assert choice.target_id == "semantic:slider"
+
+
+def test_action_choice_builder_uses_slider_context_text_for_direction() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:slider",
+        subject="semantic:slider",
+        expected_value="-3",
+    )
+    step = _step(criterion=criterion, step_id="step:slider")
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:slider",
+                surface="dom",
+                role="slider",
+                label="Value",
+                supported_actions=("press_key",),
+                state={"context_text": "-9", "enabled": True, "visible": True},
             )
         ),
     )

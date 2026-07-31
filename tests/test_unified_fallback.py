@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     Affordance,
     AffordanceLease,
@@ -12,7 +13,6 @@ from affordance_runtime.contracts import (
     Surface,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource, SourceObservation
 from affordance_runtime.planning import (
@@ -23,8 +23,12 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
@@ -181,21 +185,22 @@ class CrossSurfaceObserver:
 class FallbackPlanner:
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        if any(receipt.success for receipt in state.receipts):
-            return PlannerDecision(done=True, result={"saved": True})
-        return PlannerDecision(
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        if any(
+            outcome.verification_status == "passed"
+            for outcome in request.recent_outcomes
+        ):
+            return PlannerDoneResponse(result={"saved": True})
+        return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
-                proposal_id=f"proposal-{state.version}",
-                based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"proposal-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 action_kind=PlannerActionKind.ACTIVATE,
-                target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                target_affordance_id=request.observation.affordances[0].target_id,
                 subgoal="Activate the visual save control at the current position",
             ),
         )
@@ -234,12 +239,12 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
         }
     )
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=FallbackPlanner(),
         executor=executors,
         contract_builder=builder,
-    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert result.result == {"saved": True}
@@ -261,10 +266,10 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     contract_nodes = [node for node in result.trace.nodes if node.kind == "ContractBuilt"]
     assert len(contract_nodes) == 1
     assert not any(node.kind == "RecoveryStarted" for node in result.trace.nodes)
-    assert not result.state.excluded_grounding_candidates
+    assert not result.state.current_excluded_candidates
     assert result.state.current_failure is None
     assert result.state.effectful_action_count == 1
-    assert [receipt.success for receipt in result.state.receipts] == [True]
+    assert result.state.last_receipt is not None and result.state.last_receipt.success
 
 
 def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
@@ -353,21 +358,29 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
     class MovingPointPlanner:
         def propose(
             self,
-            envelope: TaskEnvelope,
-            state: StateKernel,
-            snapshot: BrowserSnapshot,
-        ) -> PlannerDecision:
-            if world.saved:
-                return PlannerDecision(done=True, result={"saved": True})
-            return PlannerDecision(
+            request: PlanningRequest,
+        ) -> PlannerProposalResponse | PlannerDoneResponse:
+            if any(
+                outcome.verification_status == "passed"
+                for outcome in request.recent_outcomes
+            ):
+                return PlannerDoneResponse(result={"saved": True})
+            return PlannerProposalResponse(
                 proposal_provenance=TEST_PROPOSAL_PROVENANCE,
                 proposal=PlannerProposal(
-                    proposal_id=f"moving-proposal-{state.version}",
-                    based_on_task_revision=envelope.task_spec.revision if envelope.task_spec else 1,
-                    based_on_state_version=state.version,
-                    snapshot_id=snapshot.observation.snapshot_id,
+                    proposal_id=(
+                        "moving-proposal-"
+                        f"{request.identity.evaluated_at_state_version}"
+                    ),
+                    based_on_task_revision=request.identity.task_revision,
+                    based_on_state_version=(
+                        request.identity.evaluated_at_state_version
+                    ),
+                    snapshot_id=request.identity.snapshot_id,
                     action_kind=PlannerActionKind.POINT_ACTIVATE,
-                    target_affordance_id=snapshot.unified_affordances[0].semantic_target_id,
+                    target_affordance_id=(
+                        request.observation.affordances[0].target_id
+                    ),
                 ),
             )
 
@@ -398,12 +411,12 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
     executors = ExecutorRouter()
     executors.register(VisualExecutor(MovingPointer()))
 
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer=observer,
         planner=MovingPointPlanner(),
         executor=executors,
         contract_builder=builder,
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert world.visual_clicks == 1

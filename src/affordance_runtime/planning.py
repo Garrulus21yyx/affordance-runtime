@@ -248,9 +248,9 @@ def _legacy_active_step_scope(
     state: StateKernel,
     snapshot: BrowserSnapshot,
 ) -> ActiveStepScope | None:
-    if state.task_plan is None or state.plan_progress is None:
+    if state.task_plan is None or state.task_progress is None:
         return None
-    active_step_id = state.plan_progress.active_subgoal_id
+    active_step_id = state.task_progress.active_subgoal_id
     if not active_step_id:
         return None
     subgoal = next(
@@ -522,7 +522,7 @@ class SubgoalEvidenceBinder:
         *,
         progress_target: TaskPlanProgressTarget | None = None,
     ) -> tuple[VerifierSpec, ...]:
-        if state.task_plan is None or state.plan_progress is None:
+        if state.task_plan is None or state.task_progress is None:
             return verifier_plan
         if progress_target is not None and not _progress_target_current(
             progress_target,
@@ -532,7 +532,7 @@ class SubgoalEvidenceBinder:
         active_id = (
             progress_target.subgoal_id
             if progress_target is not None
-            else state.plan_progress.active_subgoal_id
+            else state.task_progress.active_subgoal_id
         )
         subgoal = next(
             (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
@@ -541,7 +541,7 @@ class SubgoalEvidenceBinder:
         if subgoal is None:
             return verifier_plan
         if progress_target is not None and not set(subgoal.depends_on).issubset(
-            state.plan_progress.completed_subgoal_ids
+            state.task_progress.completed_subgoal_ids
         ):
             return verifier_plan
         criterion_prefix = f"subgoal:{subgoal.subgoal_id}:criterion:"
@@ -631,7 +631,7 @@ def _progress_target_current(
     if (
         progress_target is None
         or state.task_plan is None
-        or state.plan_progress is None
+        or state.task_progress is None
     ):
         return False
     return (
@@ -639,8 +639,8 @@ def _progress_target_current(
         and progress_target.plan_version == state.task_plan.plan_version
         and progress_target.based_on_state_version == state.version
         and progress_target.subgoal_id
-        not in set(state.plan_progress.completed_subgoal_ids)
-        | set(state.plan_progress.failed_subgoal_ids)
+        not in set(state.task_progress.completed_subgoal_ids)
+        | set(state.task_progress.failed_subgoal_ids)
     )
 
 
@@ -669,7 +669,7 @@ def resolve_task_plan_progress_target(
     if (
         proposal.action_kind not in _TARGET_ACTIONS
         or state.task_plan is None
-        or state.plan_progress is None
+        or state.task_progress is None
         or proposal.based_on_state_version != state.version
         or proposal.snapshot_id != snapshot.observation.snapshot_id
     ):
@@ -679,8 +679,8 @@ def resolve_task_plan_progress_target(
     )
     if not target_tokens:
         return None
-    completed = set(state.plan_progress.completed_subgoal_ids)
-    unavailable = completed | set(state.plan_progress.failed_subgoal_ids)
+    completed = set(state.task_progress.completed_subgoal_ids)
+    unavailable = completed | set(state.task_progress.failed_subgoal_ids)
     candidates = tuple(
         item
         for item in state.task_plan.subgoals
@@ -863,7 +863,10 @@ class ContractBuilder:
                 snapshot=snapshot,
                 available_executors=(frozenset({selected_executor}) if selected_executor else None),
                 excluded_candidate_ids=state.excluded_candidates_for(proposal.destination_affordance_id),
-                verifier_kinds=self._route_verifier_kinds(proposal.target_affordance_id),
+                verifier_kinds=self._route_verifier_kinds(
+                    proposal.target_affordance_id,
+                    snapshot,
+                ),
             )
             destination = (
                 destination_resolution.source_affordance
@@ -1097,7 +1100,9 @@ class ContractBuilder:
                     available_executors if available_executors is not None else self._available_executors(snapshot)
                 ),
                 verifier_kinds=(
-                    verifier_kinds if verifier_kinds is not None else self._route_verifier_kinds(semantic_target_id)
+                    verifier_kinds
+                    if verifier_kinds is not None
+                    else self._route_verifier_kinds(semantic_target_id, snapshot)
                 ),
                 excluded_candidate_ids=excluded_candidate_ids,
             )
@@ -1111,8 +1116,33 @@ class ContractBuilder:
             for candidate in target.grounding_candidates
         )
 
-    def _route_verifier_kinds(self, semantic_target_id: str) -> tuple[str, ...]:
-        requirements = self.requirements.get(semantic_target_id, ContractRequirements())
+    def _route_verifier_kinds(
+        self,
+        semantic_target_id: str,
+        snapshot: BrowserSnapshot,
+    ) -> tuple[str, ...]:
+        requirements = self.requirements.get(semantic_target_id)
+        if requirements is None:
+            target = next(
+                (
+                    item
+                    for item in snapshot.unified_affordances
+                    if item.semantic_target_id == semantic_target_id
+                ),
+                None,
+            )
+            source_ids = (
+                tuple(
+                    candidate.source_affordance_id
+                    for candidate in target.grounding_candidates
+                )
+                if target is not None
+                else ()
+            )
+            requirements = next(
+                (self.requirements[item] for item in source_ids if item in self.requirements),
+                ContractRequirements(),
+            )
         return tuple(spec.kind for spec in requirements.verifier_plan)
 
     @staticmethod

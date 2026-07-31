@@ -33,6 +33,20 @@ class BrowserGymContractBuilder(ContractBuilder):
 
     bindings: dict[str, BrowserGymAction] = field(default_factory=dict)
 
+    def _route_verifier_kinds(
+        self,
+        semantic_target_id: str,
+        snapshot: BrowserSnapshot,
+    ) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                [
+                    *super()._route_verifier_kinds(semantic_target_id, snapshot),
+                    "state_delta_or_terminal",
+                ]
+            )
+        )
+
     def build(
         self,
         proposal: PlannerProposal,
@@ -261,10 +275,17 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
         del snapshot
         return frozenset({BROWSERGYM_BACKEND})
 
-    def _route_verifier_kinds(self, semantic_target_id: str) -> tuple[str, ...]:
+    def _route_verifier_kinds(
+        self,
+        semantic_target_id: str,
+        snapshot: BrowserSnapshot,
+    ) -> tuple[str, ...]:
         return tuple(
             dict.fromkeys(
-                [*super()._route_verifier_kinds(semantic_target_id), "state_delta_or_terminal"]
+                [
+                    *super()._route_verifier_kinds(semantic_target_id, snapshot),
+                    "state_delta_or_terminal",
+                ]
             )
         )
 
@@ -436,9 +457,9 @@ def declare_browsergym_active_subgoal_evidence(
     prove the current typed outcome; ambiguous deltas remain terminal-only.
     """
 
-    if not verifier_plan or state.task_plan is None or state.plan_progress is None:
+    if not verifier_plan or state.task_plan is None or state.task_progress is None:
         return verifier_plan
-    active_id = state.plan_progress.active_subgoal_id
+    active_id = state.task_progress.active_subgoal_id
     active = next(
         (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
         None,
@@ -546,6 +567,7 @@ def _browsergym_completed_click_progress_spec(
         "observation_metadata",
         "active_control",
         action_bid,
+        strict=False,
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
 

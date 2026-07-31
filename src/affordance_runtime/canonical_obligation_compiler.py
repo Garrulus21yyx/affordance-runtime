@@ -94,9 +94,9 @@ class CanonicalObligationCompiler:
         for effect in effects:
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
-            completed_navigation_action = (
-                preserve_sequence
-                and effect.operation_class == OperationClass.NAVIGATION
+            literal_value = exact_values_by_target.get(effect.target, "")
+            completed_action = (
+                effect.operation_class == OperationClass.NAVIGATION
                 and _success_criteria_marks_action_completed(
                     target=effect.target,
                     success_criteria=success_criteria,
@@ -105,15 +105,14 @@ class CanonicalObligationCompiler:
             read = (
                 effect.operation_class
                 in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-                and not completed_navigation_action
+                and not completed_action
             )
-            literal_value = exact_values_by_target.get(effect.target, "")
             relation = (
                 TaskObligationRelation.IS_AVAILABLE
                 if read
                 else (
                     TaskObligationRelation.IS_COMPLETED
-                    if completed_navigation_action
+                    if completed_action
                     else _effect_relation_for_literal(effect.target, literal_value)
                 )
             )
@@ -389,7 +388,12 @@ def _success_criteria_marks_action_completed(
     target: str,
     success_criteria: tuple[str, ...],
 ) -> bool:
-    normalized_target = _semantic_tokens(target)
+    normalized_target = _completion_target_tokens(target)
+    descriptor = re.fullmatch(r"([^:]+):label:(.+)", target.strip(), flags=re.IGNORECASE)
+    if descriptor:
+        normalized_target = _completion_target_tokens(
+            f"{descriptor.group(1)} {descriptor.group(2)}"
+        )
     if not normalized_target:
         return False
     completion_words = {
@@ -397,6 +401,7 @@ def _success_criteria_marks_action_completed(
         "activated",
         "click",
         "clicked",
+        "clicking",
         "complete",
         "completed",
         "press",
@@ -407,9 +412,12 @@ def _success_criteria_marks_action_completed(
         "submitted",
     }
     return any(
-        normalized_target.issubset(tokens)
-        and completion_words.intersection(tokens)
-        for tokens in (_semantic_tokens(criterion) for criterion in success_criteria)
+        normalized_target.issubset(normalized_tokens)
+        and completion_words.intersection(original_tokens)
+        for original_tokens, normalized_tokens in (
+            (_semantic_tokens(criterion), _completion_target_tokens(criterion))
+            for criterion in success_criteria
+        )
     )
 
 
@@ -426,6 +434,15 @@ def _effect_relation_for_literal(
 
 def _semantic_tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _completion_target_tokens(value: str) -> set[str]:
+    replacements = {"closed": "close"}
+    return {
+        replacements.get(token, token)
+        for token in _semantic_tokens(value)
+        if token not in {"button", "control", "label"}
+    }
 
 
 def _proposal_identity(kind: str, payload: dict[str, object]) -> str:

@@ -6,8 +6,8 @@ import pytest
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ExecutionReceipt, Observation, RuntimeErrorCode
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.planning import (
     ContractBuilder,
     PlannerActionKind,
@@ -17,7 +17,13 @@ from affordance_runtime.planning import (
     PlannerProposalValidator,
     ProposalRejectionCode,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
+from affordance_runtime.planning_contracts import (
+    PlannerClarificationResponse,
+    PlannerProposalResponse,
+    PlannerResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 
@@ -71,38 +77,32 @@ class AdversarialSemanticPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
+        request: PlanningRequest,
+    ) -> PlannerResponse:
         if self.ask_user:
-            proposal = PlannerProposal(
-                proposal_id="matrix-clarification",
-                based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
-                action_kind=PlannerActionKind.ASK_USER,
+            return PlannerClarificationResponse(
+                question="Which scoped target should be used?",
                 reason="current task scope is ambiguous",
             )
-        else:
-            target = next(item for item in snapshot.affordance_model.affordances if item.label == self.target_label)
-            action_kind = (
-                PlannerActionKind.TYPE_TEXT
-                if target.action in {"fill", "type", "type_text"}
-                else PlannerActionKind.ACTIVATE
-            )
-            proposal = PlannerProposal(
-                proposal_id=f"matrix-{target.id}",
-                based_on_task_revision=1,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
-                subgoal=f"act on {self.target_label}",
-                action_kind=action_kind,
-                target_affordance_id=target.id,
-                parameters={"text": "unrequested"} if action_kind == PlannerActionKind.TYPE_TEXT else {},
-            )
-        return PlannerDecision(
+        target = next(
+            item for item in request.observation.affordances if item.label == self.target_label
+        )
+        action_kind = (
+            PlannerActionKind.TYPE_TEXT
+            if set(target.supported_actions) & {"fill", "type", "type_text"}
+            else PlannerActionKind.ACTIVATE
+        )
+        proposal = PlannerProposal(
+            proposal_id=f"matrix-{target.target_id}",
+            based_on_task_revision=request.identity.task_revision,
+            based_on_state_version=request.identity.evaluated_at_state_version,
+            snapshot_id=request.identity.snapshot_id,
+            subgoal=f"act on {self.target_label}",
+            action_kind=action_kind,
+            target_affordance_id=target.target_id,
+            parameters={"text": "unrequested"} if action_kind == PlannerActionKind.TYPE_TEXT else {},
+        )
+        return PlannerProposalResponse(
             proposal=proposal,
             proposal_provenance=MODEL_PROVENANCE,
         )
@@ -194,35 +194,35 @@ def test_negative_behavior_matrix_stops_before_contract_or_effect(
 ) -> None:
     del case
     executor = CountingExecutor()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         GovernanceObserver(),
         AdversarialSemanticPlanner(target_label),
         executor,
         contract_builder=ContractBuilder(),
-    ).run_sync(TaskEnvelope(task_spec=_task(objective, targets)))
+    ).run_sync(RunRequest(task_spec=_task(objective, targets)))
 
     assert result.status == RuntimeStep.ABORTED
     assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
     rejected = next(node for node in result.trace.nodes if node.kind == "PlannerProposalRejected")
     assert rejected.payload["rejection_code"] == rejection.value
     assert executor.calls == 0
-    assert result.state.receipts == []
+    assert result.state.last_receipt is None
     assert "ContractBuilt" not in [node.kind for node in result.trace.nodes]
 
 
 def test_ambiguity_control_requests_clarification_without_effect() -> None:
     executor = CountingExecutor()
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         GovernanceObserver(),
         AdversarialSemanticPlanner(ask_user=True),
         executor,
         contract_builder=ContractBuilder(),
-    ).run_sync(TaskEnvelope(task_spec=_task("Update the profile", ("profile",))))
+    ).run_sync(RunRequest(task_spec=_task("Update the profile", ("profile",))))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert executor.calls == 0
-    validated = next(node for node in result.trace.nodes if node.kind == "PlannerProposalValidated")
-    assert validated.payload["source"] == "model"
+    clarification = next(node for node in result.trace.nodes if node.kind == "ClarificationRequested")
+    assert clarification.payload["clarification"] == "Which scoped target should be used?"
 
 
 def test_paraphrase_control_authorizes_the_same_semantic_target() -> None:

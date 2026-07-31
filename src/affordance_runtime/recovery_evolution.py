@@ -4,20 +4,28 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Protocol
+from typing import Any
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode, VerifierSpec
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
+from affordance_runtime.composition import compose_run_coordinator
+from affordance_runtime.contracts import (
+    ActionContract,
+    ExecutionReceipt,
+    Observation,
+    ProgressEvidenceScope,
+    RuntimeErrorCode,
+    VerifierSpec,
+)
 from affordance_runtime.evolution import (
     CandidateRuntimeProfile,
     EvolutionArtifact,
     EvolutionArtifactType,
+    EvolutionRecoveryAction,
     EvolutionRecoveryContext,
     EvolutionRegistry,
     EvolutionRegistryStore,
@@ -27,25 +35,24 @@ from affordance_runtime.evolution import (
     RegressionRule,
 )
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.recovery_protocol import RecoveryKind
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
 
 
-class RecoveryPlanningRequestBuilderPort(Protocol):
-    def build(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlanningRequest: ...
-
-
-def _snapshot() -> BrowserSnapshot:
+def _snapshot(*, effect_verified: bool = False) -> BrowserSnapshot:
     revision = "recovery-state-v1"
     model = DomAdapter().transduce(
         '<button id="save">Save</button>',
@@ -59,65 +66,60 @@ def _snapshot() -> BrowserSnapshot:
             snapshot_id="recovery-snapshot-v1",
             page_revision=revision,
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
+            metadata={"effect_verified": effect_verified},
         ),
         model,
     )
 
 
+@dataclass
+class RecoveryFixtureWorld:
+    effect_verified: bool = False
+
+
+@dataclass
 class StableRecoveryObserver:
+    world: RecoveryFixtureWorld = field(default_factory=RecoveryFixtureWorld)
+
     def capture(self) -> BrowserSnapshot:
-        return _snapshot()
+        return _snapshot(effect_verified=self.world.effect_verified)
 
 
 @dataclass
 class RecoveryFixturePlanner:
     idempotent: bool
-    planning_request_builder: RecoveryPlanningRequestBuilderPort | None = None
 
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        request = _recovery_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
+    def propose(self, request: PlanningRequest) -> PlannerResponse:
+        if any(item.receipt_status == "success" for item in request.recent_outcomes):
+            return PlannerDoneResponse(result={"effect": "verified"})
+        target = request.observation.affordances[0]
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id=f"recovery-fixture-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal="exercise bounded recovery",
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=target.target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="recovery-fixture-planner",
+                profile_id="recovery-evolution",
+            ),
         )
-        if request is not None and request.identity.snapshot_id != snapshot.observation.snapshot_id:
-            return PlannerDecision(reason="stale recovery planning request")
-        if state.receipts and state.receipts[-1].success:
-            return PlannerDecision(done=True, result={"effect": "verified"})
-        contract = ActionContract.from_affordance(
-            snapshot.affordance_model.affordances[0],
-            intent="exercise bounded recovery",
-            backend="recovery-fixture",
-            verifier_plan=[VerifierSpec("evidence", "effect_verified", True)],
-        )
-        return PlannerDecision(
-            contract=replace(
-                contract,
-                idempotency_key="recovery-fixture:save" if self.idempotent else "",
-                contract_hash="",
-            )
-        )
-
-
-def _recovery_planning_request(
-    builder: RecoveryPlanningRequestBuilderPort | None,
-    envelope: TaskEnvelope,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-) -> PlanningRequest | None:
-    if envelope.task_spec is None:
-        return None
-    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
 
 
 @dataclass
 class RecoveryFixtureExecutor:
     mode: str
-    backend: str = "recovery-fixture"
+    world: RecoveryFixtureWorld = field(default_factory=RecoveryFixtureWorld)
+    backend: str = "dom"
 
     def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
         if self.mode == "success":
+            self.world.effect_verified = True
             return ExecutionReceipt(
                 contract.id,
                 self.backend,
@@ -208,7 +210,7 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
             "phase": failure.phase.value,
             "normalized_error": failure.message,
         },
-        response=RecoveryKind.ABORT.value,
+        response=EvolutionRecoveryAction.ABORT.value,
         max_applications=1,
         required_evidence=["failure_signature", "state_revision", "events.jsonl"],
         postconditions=["no_second_effect_attempt", "cascade_depth_lte_1"],
@@ -241,7 +243,9 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         "global_smoke": _run_candidate_fixture(artifact, "recovery-global", "success", False, output_dir / "candidate"),
         "safety_smoke": _run_candidate_fixture(artifact, "recovery-safety", "uncertain", False, output_dir / "candidate"),
     }
-    baseline_depth = len(baseline.state.recovery_history)
+    baseline_depth = sum(
+        node.kind == "RecoveryStrategySelected" for node in baseline.trace.nodes
+    )
     replays = [
         _replay_evidence(category, result, baseline_depth=baseline_depth)
         for category, result in replay_results.items()
@@ -256,7 +260,12 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         "mandatory_replay_coverage": len(passed_categories & MANDATORY_RECOVERY_REPLAYS)
         / len(MANDATORY_RECOVERY_REPLAYS),
     }
-    if quarantined_before and MANDATORY_RECOVERY_REPLAYS <= passed_categories:
+    runtime_recovery_response = payload.response in {kind.value for kind in RecoveryKind}
+    if (
+        quarantined_before
+        and runtime_recovery_response
+        and MANDATORY_RECOVERY_REPLAYS <= passed_categories
+    ):
         decision = registry.accept_if_regression_passes(
             artifact.id,
             rules=[
@@ -268,7 +277,11 @@ def run_recovery_cascade_evolution(output_dir: Path) -> RecoveryEvolutionReport:
         )
     else:
         artifact.status = EvolutionStatus.QUARANTINED
-        artifact.decision_reason = "mandatory recovery replay did not pass"
+        artifact.decision_reason = (
+            "response belongs to a non-runtime failure owner"
+            if not runtime_recovery_response
+            else "mandatory recovery replay did not pass"
+        )
         decision = artifact.status
 
     payload_path = output_dir / "artifacts" / artifact.id / artifact.version / "payload.json"
@@ -326,27 +339,60 @@ def _run_fixture(
     runtime_profile_digest: str = "",
     loaded_profile_artifact_ids: tuple[str, ...] = (),
 ):
-    return RunCoordinator(
-        observer=StableRecoveryObserver(),
+    world = RecoveryFixtureWorld()
+    return compose_run_coordinator(
+        observer=StableRecoveryObserver(world),
         planner=RecoveryFixturePlanner(idempotent),
-        executor=RecoveryFixtureExecutor(mode),
+        executor=RecoveryFixtureExecutor(mode, world),
+        contract_builder=ContractBuilder(
+            requirements={
+                "dom_button_1": ContractRequirements(
+                    verifier_plan=(
+                        VerifierSpec(
+                            "observation_metadata",
+                            "effect_verified",
+                            True,
+                            progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                        ),
+                    ),
+                    idempotency_key="recovery-fixture:save" if idempotent else "",
+                )
+            }
+        ),
         artifacts=ArtifactStore(artifact_root),
         runtime_profile_digest=runtime_profile_digest,
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
-    ).run_sync(TaskEnvelope(task_id, "exercise recovery cascade"))
+    ).run_sync(
+        RunRequest(
+            task_spec=TaskSpec(
+                task_id=task_id,
+                revision=1,
+                objective="exercise recovery cascade",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                targets=("Save",),
+                success_criteria=("effect verified",),
+                evidence_requirements=("receipt evidence",),
+                source_request_ref="recovery-evolution",
+            )
+        )
+    )
 
 
 def _replay_evidence(category: str, result: Any, *, baseline_depth: int) -> RecoveryReplayEvidence:
     actions = [
-        item.strategy_id.split(":")[1]
-        for item in result.state.recovery_history
-        if len(item.strategy_id.split(":")) > 2
+        str(node.payload.get("decision", {}).get("kind") or "")
+        for node in result.trace.nodes
+        if node.kind == "RecoveryStrategySelected"
     ]
-    depth = len(result.state.recovery_history)
+    depth = len(actions)
     duplicate = int(sum(item == "retry_idempotent" for item in actions) > 1)
     unsafe = int("retry" in actions and category == "safety_smoke")
     if category in {"original", "task_family"}:
-        passed = depth <= baseline_depth and actions[-1:] == [RecoveryKind.ABORT.value]
+        passed = (
+            depth <= baseline_depth
+            and result.status == RuntimeStep.ABORTED
+            and duplicate == 0
+        )
     elif category == "global_smoke":
         passed = result.status == RuntimeStep.DONE and not actions
     else:
@@ -391,7 +437,7 @@ def _prove_recovery_rollback(
         idempotency_key="recovery-fixture:save",
     )
     context = EvolutionRecoveryContext(failure_signature=signature, task_id="recovery-original")
-    patched = profile.recovery_policy().decide(contract, None, context).kind == RecoveryKind.ABORT
+    patched = profile.recovery_policy().decide(contract, None, context).kind == EvolutionRecoveryAction.ABORT
     profile.rollback(artifact_id)
     restored = (
         profile.recovery_policy().decide(contract, None, context).kind

@@ -75,9 +75,7 @@ def test_extracted_core_collaborators_do_not_create_authoritative_state() -> Non
         for path in SOURCE_ROOT.rglob("*.py")
         if "StateKernel(" in path.read_text(encoding="utf-8")
     }
-    # runtime.py is the backwards-compatible one-contract conformance harness;
-    # full task execution state construction is owned by RuntimeLoopPhase.
-    assert constructors == {"runtime_loop_phase.py", "runtime.py"}
+    assert constructors == {"runtime_loop_phase.py"}
 
 
 def test_task_plan_flow_has_no_state_or_trace_commit_authority() -> None:
@@ -101,10 +99,10 @@ def test_planner_implementations_depend_on_neutral_contract_not_coordinator() ->
             violations.append(filename)
     assert violations == []
 
-    from affordance_runtime.coordinator import PlannerDecision as compatibility_decision
-    from affordance_runtime.planning_contracts import PlannerDecision as neutral_decision
+    from affordance_runtime.planning_contracts import PlannerPort, PlannerResponse
 
-    assert compatibility_decision is neutral_decision
+    assert PlannerPort is not None
+    assert PlannerResponse is not None
 
 
 def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
@@ -150,13 +148,9 @@ def test_approval_sources_depend_on_neutral_contract_not_coordinator() -> None:
             violations.append(filename)
     assert violations == []
 
-    from affordance_runtime.approval_contracts import ApprovalProvider as neutral_protocol
-    from affordance_runtime.approval_contracts import ConfiguredApprovalProvider as neutral_provider
-    from affordance_runtime.coordinator import ApprovalProvider as compatibility_protocol
-    from affordance_runtime.coordinator import ConfiguredApprovalProvider as compatibility_provider
-
-    assert compatibility_protocol is neutral_protocol
-    assert compatibility_provider is neutral_provider
+    coordinator_source = (SOURCE_ROOT / "coordinator.py").read_text(encoding="utf-8")
+    assert "ApprovalProvider" not in coordinator_source
+    assert "ConfiguredApprovalProvider" not in coordinator_source
 
 
 def test_strict_planner_does_not_define_compatibility_task_grammar() -> None:

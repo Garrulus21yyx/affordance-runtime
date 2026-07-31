@@ -68,7 +68,7 @@ class UnifiedObservationTarget:
 
 
 @dataclass(frozen=True)
-class UnifiedObservationView:
+class UnifiedObservation:
     snapshot_id: str
     page_revision: str
     environment_revision: str
@@ -80,7 +80,7 @@ class UnifiedObservationView:
     def from_planner_observation(
         cls,
         observation: PlannerObservationView,
-    ) -> "UnifiedObservationView":
+    ) -> "UnifiedObservation":
         return cls(
             snapshot_id=observation.snapshot_id,
             page_revision=observation.page_revision,

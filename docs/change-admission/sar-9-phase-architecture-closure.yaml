@@ -1,0 +1,913 @@
+program_id: sar-9-phase-architecture-closure
+title: SAR-9 phase architecture consolidation and purification
+document_role: sole_active_sar_9_closure_record
+base_revision: 4d5d5aa4824361afd8f3f423ed07d0aba83b7d51
+base_revision_subject: "refactor: centralize phase terminal result finalization"
+review_date: 2026-07-30
+promotion_status: held
+closure_status: decomposition_complete_but_purification_incomplete
+sar_9_full_closure: not_approved
+
+authority:
+  migration_style: replace_delete_only
+  next_program: consolidation_purification_and_deletion
+  new_phase_expansion: prohibited
+  structural_relocation: prohibited
+  stopped_slices:
+    - SAR-9AD
+    - SAR-9AE
+  stopped_activity:
+    - moving_another_run_sync_block_into_a_new_file
+  allowed_change_kinds:
+    - merge
+    - replace
+    - purify
+    - delete
+  historical_records:
+    range: SAR-9A_through_SAR-9AC
+    status: archive_and_evidence_only
+    active_governance_effect: none_when_conflicting_with_this_record
+  micro_slice_admission_files: prohibited
+
+review_conclusion:
+  current_architecture:
+    control_flow_decomposition: substantially_improved
+    top_level_readability: substantially_improved
+    authority_boundaries: substantially_improved
+    genuine_simplification:
+      recovery_protocol: true
+      planner_action_authority: true
+      progress_finish_authority: true
+      execution_provenance: true
+    mostly_structural_relocation:
+      phase_control_flow: true
+      state_mutation: true
+      trace_writing: true
+      phase_specific_failure_handling: true
+      dependency_wiring: true
+    not_yet_slim:
+      total_orchestration_code: true
+      top_level_phase_count: true
+      statekernel_history: true
+      compatibility_boundaries: true
+      public_api: true
+      governance_surface: true
+  interpretation:
+    - The giant Coordinator has been decomposed and several parallel authorities have been physically removed.
+    - Most extracted phases remain mutable control-flow blocks rather than immutable-input typed-result stages.
+    - Topology is clearer, but default orchestration LOC and dependency complexity have not yet fallen.
+
+approved_simplifications:
+  recovery_protocol:
+    deleted_types:
+      - RecoveryPlan
+      - RecoveryCommand
+      - RecoveryIncident
+      - RecoveryAttempt
+      - RecoveryCascade
+      - RecoveryHandler
+      - RecoveryCommandDispatcher
+      - RecoveryReceipt
+      - RecoveryDelta
+    canonical_chain:
+      - FailureEnvelope
+      - FailureClassification
+      - RecoveryDecision
+      - RecoveryOutcome
+  strict_planner_authority:
+    canonical_choice_owner: Runtime
+    zero_choices: typed_failure_without_model_call
+    one_choice: runtime_auto_selection_without_model_call
+    many_choices: model_selects_choice_id_only
+    action_choice_forbidden_authorities:
+      - invoke_executor
+      - construct_action_contract
+      - mutate_statekernel
+      - write_trace
+    compatibility_profile_only:
+      - free_action_generation
+      - expected_effect_generation
+      - evidence_requirement_generation
+      - finish_authority
+      - ask_user_authority
+  failure_owner_direction:
+    owners:
+      - PROGRESS
+      - RUNTIME_RECOVERY
+      - STEP_PLANNER
+      - TASK_PLANNER
+      - USER
+      - TERMINAL
+  coordinator_topology:
+    readable_sequence:
+      - loop_and_budget
+      - perception
+      - current_state_progress
+      - task_plan
+      - planner
+      - contract
+      - preflight
+      - execution
+      - verification
+      - progress_or_recovery
+
+remaining_structural_relocation:
+  mutable_phase_authority:
+    examples:
+      - state.transition
+      - state.remember_observation
+      - state.record_receipt
+      - state.complete_subgoal
+      - state.record_planner_proposal
+      - trace.add
+    diagnosis: extracted_mutable_control_flow_blocks
+    required_replacement: immutable_input_to_typed_result_to_single_committer
+  horizontal_stage_calls:
+    observed_edges:
+      - PerceptionPhase_to_RecoveryPhase
+      - PreflightPhase_to_ContractBindingPhase
+      - PreflightPhase_to_RecoveryPhase
+      - ContractBindingPhase_to_PlanningPhase_helper
+      - ContractBindingPhase_to_RecoveryPhase
+  private_result_protocols_known_by_coordinator:
+    - completion_committed
+    - current_state_completion_committed
+    - continue_observing
+    - terminal
+    - failure
+    - contract_missing
+    - skill_step_id
+    - latest_verification
+    - verification_ref
+    - skill_complete
+  repeated_coordinator_protocol:
+    - assign_parent_from_phase_result
+    - continue_when_continue_observing
+    - finish_when_terminal_present
+  current_top_level_phase_surface:
+    - TaskPlanPhase
+    - TaskSkillPhase
+    - PlanningDecisionPhase
+    - PlanningFailurePhase
+    - ContractBindingPhase
+    - ContractFailurePhase
+    - PreflightPhase
+    - ExecutionPhase
+    - VerificationPhase
+    - VerificationFailurePhase
+    - TaskSkillProgressPhase
+    - VerifiedProgressPhase
+    - ProgressPhase
+    - PerceptionPhase
+    - RecoveryFailurePhase
+    - RecoveryPhase
+    - RuntimeLoopPhase
+    - ArtifactPhase
+    - RuntimeResultPhase
+
+canonicalization_gaps:
+  failure_owner_encoded_as_recovery:
+    non_runtime_recovery_kinds_to_delete:
+      - CLARIFY_INTENT
+      - REPLAN_TASK
+      - REPLAN_STEP
+      - REQUEST_APPROVAL
+      - ASK_USER
+      - ABORT
+    incorrect_default_side_effects:
+      - current_recovery_decision
+      - recovery_count
+      - RecoveryStrategySelected
+      - RecoveryOutcomeRecorded
+    target_boundary:
+      FailureOwner: selects_the_next_authority
+      RuntimeRecoveryKind: describes_runtime_mechanical_repair_only
+  planner_compatibility_in_default_path:
+    current_types:
+      - PlannerCompatibilityPort
+      - PlannerDecision
+    reflective_dispatch: inspect.signature_planner_propose
+    current_conversion: PlanningRequest_to_PlannerResponse_to_PlannerDecision
+    target: PlanningRequest_to_PlannerResponse_to_PlanningStage
+  experimental_odg_in_default_progress:
+    current_call: prepare_obligation_progress_shadow_trace
+    current_events:
+      - ObligationProgressShadowCompared
+      - ObligationProgressShadowFailed
+    target: explicit_experimental_runner_only
+  statekernel_history_duplication:
+    target_history_source_of_truth:
+      - Trace
+      - ArtifactStore
+  legacy_public_api:
+    default_exports_to_remove:
+      - StateKernel
+      - PlannerDecision
+      - TaskEnvelope
+      - RouteCalibrator
+      - RoutingDecision
+      - BrowserSnapshot
+    stable_exports:
+      - Runtime
+      - RuntimeClient
+      - RunRequest
+      - RunResult
+      - PlannerPort
+      - PlanningRequest
+      - PlannerResponse
+      - UnifiedObservation
+      - UnifiedAffordance
+      - ActionContract
+      - ActionOutcome
+
+target_architecture:
+  coordinator: AgentLoop_or_RunCoordinator
+  top_level_stages:
+    - PerceptionStage
+    - PlanningStage
+    - ActionStage
+    - ProgressStage
+    - RecoveryStage
+  infrastructure:
+    - RuntimeCommitter
+    - RuntimeResultBuilder
+    - ArtifactStore
+    - TraceSink
+  internal_services_visibility: hidden_from_coordinator
+  stages:
+    PerceptionStage:
+      owns:
+        - observe
+        - multi_source_fusion
+        - target_alignment
+        - active_perception
+      forbids:
+        - recovery_decision
+        - state_mutation
+        - trace_commit
+        - progress
+    PlanningStage:
+      owns:
+        - task_plan_prepare_and_admit
+        - active_step_scope
+        - ActionChoiceBuilder
+        - zero_one_many_dispatch
+        - PlannerResponse
+        - proposal_and_selection_validation
+      forbids:
+        - ActionContract
+        - preflight
+        - execution
+        - state_commit
+        - trace_commit
+    ActionStage:
+      owns:
+        - ActionContract_binding
+        - preflight
+        - approval
+        - backend_route
+        - execution
+        - ActionReceipt
+      forbids:
+        - post_action_completion
+        - progress
+        - recovery_policy
+        - state_commit
+        - trace_commit
+    ProgressStage:
+      owns:
+        - post_action_observation
+        - effect_verification
+        - active_step_progress
+        - task_completion_verification
+        - ActionOutcome
+      forbids:
+        - task_plan_revision
+        - runtime_recovery
+        - state_commit
+        - trace_commit
+    RecoveryStage:
+      accepted_owner: FailureOwner.RUNTIME_RECOVERY
+      owns:
+        - reobserve
+        - active_perception
+        - reground
+        - rebind
+        - verify_before_retry
+        - idempotent_retry
+        - switch_backend_or_provider
+        - schema_repair
+        - checkpoint_or_session_recovery
+      forbids:
+        - step_planner_handoff
+        - task_planner_handoff
+        - user_request
+        - progress_commit
+        - terminal_commit
+
+unified_stage_protocol:
+  generic_result: StageResult[T]
+  immutable: true
+  fields:
+    output: T_or_none
+    transition: RuntimeTransition_or_none
+    events: tuple_of_RuntimeEvent
+    failure: FailureEnvelope_or_none
+    terminal: TerminalResult_or_none
+    directive: LoopDirective
+  directives:
+    - CONTINUE
+    - REPEAT_OBSERVATION
+    - NEXT_STAGE
+    - WAIT_USER
+    - TERMINAL
+  invocation: stage.run(StageInput)
+  maximum_run_parameters: one_input_object
+  coordinator_private_control_fields_forbidden:
+    - parent
+    - continue_observing
+    - contract_missing
+    - completion_committed
+    - current_state_completion_committed
+    - skill_complete
+    - recovery_kind
+
+single_writer:
+  owner: RuntimeCommitter
+  exclusive_authorities:
+    - mutate_StateKernel
+    - advance_state_version
+    - append_Runtime_transition
+    - commit_Trace_event
+  stage_allowed_ports:
+    - Observer
+    - Executor
+    - Verifier
+    - ArtifactStore
+    - ModelPort
+  stage_forbidden_calls:
+    - state.transition
+    - state.remember_observation
+    - state.record_receipt
+    - state.complete_subgoal
+    - state.record_planner_proposal
+    - trace.add
+
+baseline_metrics:
+  measurement_revision: 4d5d5aa4824361afd8f3f423ed07d0aba83b7d51
+  measurement_scope:
+    orchestration_cluster: coordinator.py_plus_the_19_listed_top_level_phase_modules
+    import_edges: direct_static_from_imports_between_listed_phase_modules
+    mutable_writer_files: files_with_direct_state_mutator_or_trace_add_calls
+  coordinator:
+    loc: 647
+    run_sync_loc: 437
+    RunCoordinator_methods: 2
+    affordance_runtime_import_modules: 43
+    direct_phase_import_modules: 19
+  stages:
+    top_level_phase_modules: 19
+    phase_to_phase_import_edges: 19
+    phase_modules_importing_StateKernel: 18
+    phase_modules_importing_Trace_types: 19
+    direct_mutable_writer_phase_modules: 14
+  orchestration_cluster_loc: 5716
+  default_planner_compatibility_adapters:
+    count: 1
+    included:
+      - PlannerCompatibilityPort
+  statekernel_targeted_history_collections:
+    count: 12
+    included:
+      - observations
+      - receipts
+      - evidence
+      - hidden_state_hypotheses
+      - disproved_assumptions
+      - probe_receipts
+      - recovery_history
+      - transitions
+      - planner_history
+      - progress_guard_events
+      - grounding_fallback_lineage
+      - excluded_grounding_candidates
+  baseline_note: Metrics use the definitions above and must be updated in this file as each closure unit lands.
+
+admission_rules:
+  replacement_rule:
+    new_canonical_owner: required
+    old_default_owner_deleted_same_unit: required
+  loc_rule:
+    affected_orchestration_cluster_net_loc: must_decrease
+  dependency_rule:
+    default_dependency_edges: must_decrease
+  writer_rule:
+    mutable_writer_count: must_not_increase
+  compatibility_rule:
+    new_compatibility_adapter: prohibited
+  module_rule:
+    new_stage_module:
+      allowed_only_if:
+        - at_least_two_old_stage_modules_deleted
+        - net_loc_negative
+        - coordinator_direct_dependency_count_decreases
+  facade_rule:
+    new_facade_delegating_to_old_phases: prohibited
+  result_rule:
+    new_result_contract:
+      allowed_only_if: old_phase_result_contracts_are_deleted_same_unit
+  governance_rule:
+    new_micro_slice_yaml_per_code_move: prohibited
+  rejected_patterns:
+    - coordinator_minus_100_loc_new_phase_plus_150_loc_old_phase_retained
+    - planning_stage_wrapper_over_existing_planning_phases
+    - moving_old_code_to_compatibility_while_default_path_still_imports_it
+    - governance_tests_instead_of_physical_deletion
+
+closure_units:
+  C0:
+    name: freeze_phase_expansion_and_record_closure_baseline
+    status: documented
+    changes:
+      - Maintain only this SAR-9 closure record.
+      - Do not create SAR-9AD, SAR-9AE, or later micro-admission files.
+      - Track Coordinator LOC, run_sync LOC, top-level phase count, orchestration-cluster LOC, imports, writer count, adapters, and StateKernel history fields here.
+    acceptance:
+      new_top_level_phase_files: 0
+      new_micro_admission_files: 0
+      baseline_metrics_recorded: true
+  C1:
+    name: purify_failure_owner_and_recovery
+    status: completed
+    completion_evidence:
+      full_pytest: 1385_passed
+      ruff: passed
+      core_mypy: passed_14_source_files
+      forbidden_default_recovery_members: 0
+      non_runtime_recovery_count_increments: 0
+      completion_revision: working_tree_candidate
+    delete:
+      - RecoveryKind.CLARIFY_INTENT
+      - RecoveryKind.REPLAN_TASK
+      - RecoveryKind.REPLAN_STEP
+      - RecoveryKind.REQUEST_APPROVAL
+      - RecoveryKind.ASK_USER
+      - RecoveryKind.ABORT
+      - FailureOwnerHandoff.compatibility_recovery_kind
+      - non_runtime_failure_owner_decision
+      - non_runtime_owner_to_RecoveryDecision_conversion
+      - non_runtime_owner_recovery_count_increment
+      - failure_owner_flow_RecoveryDecision_compatibility_path
+      - RecoveryPhase_non_runtime_owner_branches
+    replacement:
+      OwnerHandoff:
+        - ProgressHandoff
+        - StepPlannerHandoff
+        - TaskPlannerHandoff
+        - UserInputRequest
+        - TerminalResult
+      RecoveryDecision_source: FailureOwner.RUNTIME_RECOVERY_only
+    acceptance:
+      non_runtime_recovery_decisions: 0
+      recovery_count_increment_for_non_runtime_owner: 0
+      RecoveryPhase_accepts_runtime_owner_only: true
+      FailureOwner_router_count: 1
+  C2:
+    name: shared_stage_result_and_first_vertical_perception_cutover
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_11_source_files
+      orchestration_cluster_loc: 5711
+      orchestration_cluster_delta_from_baseline: -5
+      perception_stage_run_parameters: 1
+      perception_old_result_types: 0
+      perception_stage_statekernel_imports: 0
+      perception_stage_tracedag_imports: 0
+      perception_stage_recovery_stage_calls: 0
+      completion_revision: working_tree_candidate
+    hard_gate: do_not_continue_to_other_stage_merges_if_this_cutover_fails
+    replace:
+      input: immutable_PerceptionStageInput
+      output: StageResult[ObservationOutput]
+    delete_same_unit:
+      - PerceptionPhaseResult
+      - PerceptionTerminal
+      - PerceptionPhase_TraceDag_and_TraceNode_parameters
+      - PerceptionPhase_StateKernel_mutation
+      - per_call_artifact_and_recovery_callbacks
+    retain_as_constructor_dependencies:
+      - PerceptionSession
+      - ActivePerceptionFlow
+      - ArtifactStore
+      - Observer_ports
+    acceptance:
+      perception_stage_imports_statekernel: false
+      perception_stage_imports_tracedag: false
+      perception_stage_calls_recovery_stage: false
+      perception_stage_run_parameters: 1
+      perception_old_result_types: 0
+      affected_cluster_net_loc: negative
+  C3:
+    name: consolidate_planning_and_delete_compatibility
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_161_source_files
+      coordinator_loc: 605
+      orchestration_cluster_loc: 5123
+      orchestration_cluster_delta_from_baseline: -593
+      planning_cluster_baseline_loc: 1136
+      planning_cluster_exit_loc: 539
+      planning_cluster_loc_reduction_percent: 52.55
+      coordinator_planning_dependencies: 1
+      default_PlannerDecision_imports: 0
+      default_reflective_planner_dispatch: 0
+      three_parameter_default_planners: 0
+      deleted_top_level_phase_modules: 3
+      planning_stage_run_parameters: 1
+      planning_stage_statekernel_imports: 0
+      planning_stage_tracedag_imports: 0
+      completion_revision: working_tree_candidate
+    canonical_module: planning_phase.py
+    new_facade: prohibited
+    absorb:
+      - TaskPlan_prepare_and_admit
+      - TaskSkill_selection_compatibility
+      - ActionChoiceBuilder
+      - PlannerResponse
+      - proposal_and_selection_validation
+      - planning_failure_production
+    delete_modules:
+      - task_plan_phase.py
+      - task_skill_phase.py
+      - planning_failure_phase.py
+    retain_as_services:
+      - TaskPlanFlow
+      - TaskPlanAuthority
+      - ActionChoiceBuilder
+      - TaskSkillRuntime_if_still_in_compatibility_window
+    delete_default_planner_compatibility:
+      - PlannerDecision
+      - PlannerCompatibilityPort
+      - inspect.signature_dispatch
+      - three_parameter_Planner
+      - PlannerResponse_to_PlannerDecision_conversion
+    historical_replay_location: tests_or_explicit_compatibility_profile_only
+    acceptance:
+      coordinator_planning_dependencies: 1
+      default_PlannerDecision_imports: 0
+      default_planner_compatibility_reflection: 0
+      deleted_top_level_phase_modules: 3
+      planning_stage_imports_statekernel: false
+      planning_stage_imports_tracedag: false
+      planning_cluster_net_loc_reduction: at_least_25_percent
+  C4:
+    name: consolidate_action
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_158_source_files
+      git_diff_check: passed
+      coordinator_loc: 640
+      run_sync_loc: 379
+      orchestration_cluster_loc: 4817
+      orchestration_cluster_delta_from_baseline: -899
+      action_cluster_baseline_loc: 1266
+      action_cluster_exit_loc: 919
+      action_cluster_loc_reduction_percent: 27.41
+      coordinator_action_dependencies: 1
+      deleted_top_level_phase_modules: 3
+      action_stage_run_parameters: 1
+      action_stage_other_stage_imports: 0
+      action_stage_statekernel_imports: 0
+      action_stage_tracedag_imports: 0
+      completion_revision: working_tree_candidate
+    canonical_module: execution_phase.py
+    absorb:
+      - contract_binding
+      - preflight
+      - approval
+      - route_selection
+      - execution
+      - receipt
+    delete_modules:
+      - contract_binding_phase.py
+      - contract_failure_phase.py
+      - preflight_phase.py
+    retain_as_services_or_ports:
+      - ContractBuilder
+      - ContractExecutionLoop
+      - CapabilityGate
+      - ApprovalProvider
+      - BackendRouter
+      - Executor
+    failure_output: FailureEnvelope_only
+    acceptance:
+      coordinator_action_dependencies: 1
+      deleted_top_level_phase_modules: 3
+      action_stage_run_parameters: 1
+      action_stage_imports_other_stage: false
+      action_stage_imports_statekernel: false
+      action_stage_imports_tracedag: false
+      action_cluster_net_loc_reduction: at_least_25_percent
+  C5:
+    name: consolidate_progress_and_remove_default_odg_shadow
+    status: completed
+    completion_evidence:
+      full_pytest: 1387_passed
+      ruff: passed
+      core_mypy: passed_154_source_files
+      git_diff_check: passed
+      coordinator_loc: 610
+      orchestration_cluster_loc: 4416
+      orchestration_cluster_delta_from_baseline: -1300
+      progress_cluster_baseline_loc: 818
+      progress_cluster_exit_loc: 446
+      progress_cluster_loc_reduction_percent: 45.48
+      coordinator_progress_dependencies: 1
+      deleted_top_level_phase_modules: 4
+      progress_stage_run_parameters: 1
+      progress_stage_statekernel_imports: 0
+      progress_stage_tracedag_imports: 0
+      default_odg_shadow_imports: 0
+      default_odg_shadow_events: 0
+      completion_revision: working_tree_candidate
+    canonical_module: progress_phase.py
+    absorb:
+      - current_step_precheck
+      - post_action_observation
+      - effect_verification
+      - ActionOutcome_construction
+      - active_step_progress
+      - TaskCompletionVerifier
+      - verification_failure_production
+    delete_modules:
+      - verification_phase.py
+      - verification_failure_phase.py
+      - task_skill_progress_phase.py
+      - verified_progress_phase.py
+    delete_from_default_path:
+      - prepare_obligation_progress_shadow_trace
+      - ObligationProgressShadowCompared
+      - ObligationProgressShadowFailed
+    experimental_retention: explicit_experimental_runner_only
+    acceptance:
+      coordinator_progress_dependencies: 1
+      deleted_top_level_phase_modules: 4
+      default_odg_shadow_imports: 0
+      taskskill_parallel_progress: 0
+      progress_stage_imports_statekernel: false
+      progress_stage_imports_tracedag: false
+      progress_cluster_net_loc_reduction: at_least_25_percent
+  C6:
+    name: narrow_recovery_to_runtime_mechanical_repair
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_152_source_files
+      git_diff_check: passed
+      coordinator_loc: 665
+      run_sync_loc: 373
+      orchestration_cluster_loc: 3686
+      orchestration_cluster_delta_from_baseline: -2030
+      recovery_cluster_baseline_loc: 1195
+      recovery_cluster_exit_loc: 312
+      recovery_cluster_loc_reduction_percent: 73.89
+      coordinator_recovery_dependencies: 1
+      deleted_top_level_phase_modules: 2
+      recovery_stage_run_parameters: 1
+      recovery_stage_statekernel_imports: 0
+      recovery_stage_tracedag_imports: 0
+      non_runtime_recovery_decisions: 0
+      completion_revision: working_tree_candidate
+    canonical_module: recovery_phase.py
+    delete_modules:
+      - recovery_failure_phase.py
+      - failure_owner_flow.py
+    retain_as_internal_collaborators:
+      - FailureOwnershipRouter
+      - RuntimeRecoveryDispatcher
+      - RecoveryCoordinator_or_Policy_if_strategy_ordering_remains
+    input_fields:
+      - failure
+      - classification
+      - state_view
+      - capabilities
+    output: StageResult[RecoveryOutcome]
+    acceptance:
+      coordinator_recovery_dependencies: 1
+      failure_owner_flow_module: deleted
+      recovery_failure_phase_module: deleted
+      RecoveryDecision_for_non_runtime_owner: 0
+      recovery_stage_imports_statekernel: false
+      recovery_stage_imports_tracedag: false
+      recovery_cluster_net_loc_reduction: at_least_30_percent
+  C7:
+    name: slim_statekernel
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      ruff: passed
+      core_mypy: passed_152_source_files
+      git_diff_check: passed
+      statekernel_baseline_loc: 403
+      statekernel_exit_loc: 269
+      statekernel_loc_reduction_percent: 33.25
+      targeted_history_fields_remaining: 0
+      plan_progress_alias: false
+      subgoal_compatibility_methods: 0
+      benchmark_history_reads_from_trace: true
+      completion_revision: working_tree_candidate
+    delete_history_fields:
+      - observations
+      - receipts
+      - planner_history
+      - recovery_history
+      - transitions
+      - progress_guard_events
+      - probe_receipts_history
+      - grounding_fallback_lineage
+      - excluded_grounding_candidates_history
+      - generic_evidence_list
+    retain_current_state:
+      - latest_observation_ref
+      - last_action_outcome
+      - current_contract
+      - current_failure
+      - current_recovery_decision
+      - current_recovery_outcome
+      - bounded_recent_action_index
+      - bounded_attempted_strategy_keys
+      - task_plan
+      - task_progress
+      - budget_counters
+      - phase
+      - final_result
+      - version
+    delete_compatibility:
+      - plan_progress_alias
+      - complete_subgoal
+      - activate_next_subgoal
+    replacement_api:
+      - complete_step
+      - activate_next_step
+    history_source_of_truth:
+      - Trace
+      - ArtifactStore
+    acceptance:
+      StateKernel_full_history_collections: 0
+      plan_progress_alias: false
+      subgoal_mutation_api: false
+      statekernel_loc_reduction: at_least_30_percent
+  C8:
+    name: close_composition_root_and_public_api
+    status: completed
+    completion_evidence:
+      full_pytest: 1386_passed
+      architecture_tests: 128_passed
+      ruff: passed
+      core_mypy: passed_155_source_files
+      coordinator_constructor_fields: 7
+      coordinator_direct_stage_dependencies: 5
+      coordinator_post_init: absent
+      composition_root: src/affordance_runtime/composition.py
+      canonical_request_type: RunRequest
+      canonical_result_type: RunResult
+      legacy_public_exports: 0
+      completion_revision: working_tree_candidate
+    target_constructor_dependencies:
+      - perception_stage
+      - planning_stage
+      - action_stage
+      - progress_stage
+      - recovery_stage
+      - committer
+      - result_builder
+    construction_owner: cli_or_service_composition_root
+    coordinator_post_init_service_wiring: prohibited
+    acceptance:
+      coordinator_direct_stage_dependencies: 5
+      coordinator_total_direct_collaborators: at_most_7
+      coordinator_builds_internal_services: false
+      legacy_public_exports: 0
+      default_compatibility_imports: 0
+  C9:
+    name: contract_governance_and_run_final_closure
+    status: pending
+    active_governance_files:
+      - docs/change-admission/sar-9-phase-architecture-closure.yaml
+    blocking_architecture_gates:
+      - Coordinator_imports_exactly_five_stages
+      - RuntimeCommitter_is_the_only_State_and_Trace_writer
+      - stages_do_not_import_each_other
+      - stages_do_not_import_mutable_StateKernel_or_TraceDag
+      - default_path_has_no_PlannerDecision
+      - default_progress_has_no_ODG_shadow
+      - core_does_not_import_benchmark
+      - strict_Planner_only_selects_ActionChoice
+    non_blocking_reports:
+      - markdown_exact_phrases
+      - historical_slice_names
+      - helper_location_in_old_files
+      - historical_line_count_thresholds
+
+final_exit_gates:
+  coordinator:
+    coordinator_loc_max: 350
+    run_sync_loc_max: 180
+    RunCoordinator_methods_max: 2
+  stage:
+    top_level_stage_count: 5
+    stage_to_stage_import_edges: 0
+    stage_run_call_parameters_max: one_input_object
+    stage_direct_state_mutations: 0
+    stage_direct_trace_writes: 0
+    mutable_runtime_writers: 1
+  complexity:
+    orchestration_cluster_loc_reduction_from_baseline: at_least_25_percent
+    orchestration_cluster_loc_max_from_5716_baseline: 4287
+    coordinator_direct_dependency_count_max: 7
+    new_stage_modules_after_freeze: 0
+    compatibility_adapter_count_default_path: 0
+  canonical_model:
+    default_planner_output: PlannerResponse
+    PlannerDecision_default_imports: 0
+    reflective_planner_dispatch: 0
+    default_progress_shadow: 0
+    non_runtime_RecoveryDecision: 0
+  state:
+    StateKernel_full_history_collections: 0
+    StateKernel_compatibility_aliases: 0
+    history_source_of_truth:
+      - Trace
+      - ArtifactStore
+  behavioral_gate: required
+
+validation_strategy:
+  development_commit:
+    - focused_tests
+    - relevant_architecture_gates
+    - ruff_changed_files
+    - git_diff_check
+  completed_replacement_unit_C1_through_C8:
+    - subsystem_tests
+    - adjacent_integration_tests
+    - core_mypy
+    - ruff
+    - deletion_gates
+    - full_pytest_after_real_production_cutover_and_physical_old_module_deletion
+  documentation_only_commit:
+    full_suite_repeat: not_required
+  C9_final_closure:
+    - full_pytest
+    - full_ruff
+    - core_mypy
+    - uv_build
+    - dependency_and_import_graph_gate
+    - orchestration_loc_gate
+    - clean_6_by_2_pr_breadth
+    - fresh_diagnostic
+  promotion_rule: promotion_remains_held_until_every_final_exit_gate_passes
+
+prohibitions:
+  - add_more_top_level_phases
+  - add_stage_facade_while_retaining_old_phases
+  - add_a_second_StageResult
+  - add_compatibility_adapter
+  - allow_phase_to_write_State_or_Trace
+  - reduce_Coordinator_LOC_without_reducing_orchestration_cluster_LOC
+  - move_old_code_to_compatibility_while_default_path_calls_it
+  - substitute_yaml_or_forbidden_token_tests_for_physical_deletion
+
+final_decision:
+  approved:
+    - recovery_protocol_simplification
+    - ActionChoice_planner_authority_reduction
+    - FailureOwner_direction
+    - ActionOutcome_boundary
+    - Coordinator_topology_decomposition
+  not_yet_approved_as_complete:
+    - SAR_9_full_architecture_closure
+    - phase_purity
+    - StateKernel_slimming
+    - compatibility_retirement
+    - public_API_stabilization
+    - total_core_slimming
+  final_exit:
+    top_level_stages: 5
+    mutable_writers: 1
+    default_compatibility_adapters: 0
+    statekernel_history_collections: 0
+    orchestration_cluster_loc_reduction: at_least_25_percent
+    behavioral_gate: required
+  one_sentence_closure: >-
+    The giant Coordinator is decomposed and several parallel authorities are gone,
+    but SAR-9 closes only after five stable stages share one result protocol, a
+    single RuntimeCommitter owns State and Trace writes, old phases and default
+    compatibility are physically deleted in the same replacement units, and both
+    StateKernel and total orchestration code materially shrink.

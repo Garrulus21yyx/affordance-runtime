@@ -3,21 +3,19 @@ import pytest
 from affordance_runtime.failure_envelope import (
     FailureClass,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.failure_owner_flow import (
-    FailureOwnerHandoff,
-    FailureOwnerHandoffDecision,
+from affordance_runtime.recovery_protocol import FailureOwner, RecoveryKind, classify_failure
+from affordance_runtime.runtime import RuntimeStep
+from affordance_runtime.stage_protocol import (
+    ProgressHandoff,
+    StepPlannerHandoff,
+    TaskPlannerHandoff,
+    TerminalResult,
+    UserInputRequest,
     build_failure_owner_handoff,
-    non_runtime_failure_owner_decision,
-)
-from affordance_runtime.recovery_protocol import (
-    FailureOwner,
-    RecoveryDimension,
-    RecoveryKind,
-    RuntimePhase,
-    classify_failure,
 )
 
 
@@ -37,13 +35,15 @@ def _budgets() -> RemainingRecoveryBudgets:
 def _failure(
     phase: FailurePhase,
     *,
-    error_code: str = "planner_waiting_clarification",
+    error_code: str,
+    failure_class: FailureClass = FailureClass.PLANNING,
     recoverable: bool = True,
+    proposal_rejection: ProposalRejectionContext | None = None,
 ) -> object:
     return make_failure_envelope(
         run_id="run-1",
         phase=phase,
-        failure_class=FailureClass.PLANNING,
+        failure_class=failure_class,
         error_code=error_code,
         message="failure owner handoff test",
         state_version=5,
@@ -51,6 +51,7 @@ def _failure(
         plan_version=1,
         active_subgoal_id="step-1",
         expected_effect="complete current step",
+        proposal_rejection=proposal_rejection,
         attempted_strategy_ids=(),
         remaining_budgets=_budgets(),
         recoverable=recoverable,
@@ -58,66 +59,130 @@ def _failure(
     )
 
 
-def test_step_planner_handoff_is_structured_not_runtime_recovery() -> None:
-    failure = _failure(FailurePhase.PROPOSAL_VALIDATION, error_code="planner_proposal_rejected")
+@pytest.mark.parametrize(
+    ("phase", "error_code", "failure_class", "expected_type", "expected_owner"),
+    [
+        (
+            FailurePhase.PROPOSAL_VALIDATION,
+            "planner_proposal_rejected",
+            FailureClass.VERIFICATION,
+            ProgressHandoff,
+            FailureOwner.PROGRESS,
+        ),
+        (
+            FailurePhase.PROPOSAL_VALIDATION,
+            "planner_proposal_rejected",
+            FailureClass.PLANNING,
+            StepPlannerHandoff,
+            FailureOwner.STEP_PLANNER,
+        ),
+        (
+            FailurePhase.TASK_PLANNING,
+            "task_plan_rejected",
+            FailureClass.PLANNING,
+            TaskPlannerHandoff,
+            FailureOwner.TASK_PLANNER,
+        ),
+        (
+            FailurePhase.INTAKE,
+            "clarification_required",
+            FailureClass.INVALID_INPUT,
+            UserInputRequest,
+            FailureOwner.USER,
+        ),
+    ],
+)
+def test_non_runtime_failure_owner_routes_to_typed_handoff(
+    phase: FailurePhase,
+    error_code: str,
+    failure_class: FailureClass,
+    expected_type: type[object],
+    expected_owner: FailureOwner,
+) -> None:
+    rejection = (
+        ProposalRejectionContext(
+            code="already_satisfied",
+            reason_code="entry_outcome_already_satisfied",
+        )
+        if expected_owner == FailureOwner.PROGRESS
+        else None
+    )
+    failure = _failure(
+        phase,
+        error_code=error_code,
+        failure_class=failure_class,
+        proposal_rejection=rejection,
+    )
     classification = classify_failure(failure)
 
-    handoff = build_failure_owner_handoff(failure, classification)
+    handoff = build_failure_owner_handoff(
+        failure, classification.owner, classification.reason_code
+    )
 
-    assert isinstance(handoff, FailureOwnerHandoff)
-    assert handoff.owner == FailureOwner.STEP_PLANNER
-    assert handoff.target_phase == RuntimePhase.PLANNING
-    assert handoff.changed_dimensions == (RecoveryDimension.STEP_PLAN,)
-    assert handoff.compatibility_recovery_kind == RecoveryKind.REPLAN_STEP
-    assert handoff.budget_cost.replans == 1
+    assert classification.owner == expected_owner
+    assert isinstance(handoff, expected_type)
+    assert handoff.failure_id == failure.failure_id
     assert handoff.reason_code == classification.reason_code
-    assert handoff.replan_scope == "step"
-    assert handoff.user_question == ""
+    assert not hasattr(handoff, "compatibility_recovery_kind")
+    assert not hasattr(handoff, "decision")
 
 
-def test_user_handoff_preserves_question_without_runtime_policy() -> None:
-    failure = _failure(FailurePhase.INTAKE, error_code="clarification_required")
+def test_user_input_request_contains_question_without_recovery_policy() -> None:
+    failure = _failure(
+        FailurePhase.INTAKE,
+        error_code="clarification_required",
+        failure_class=FailureClass.INVALID_INPUT,
+    )
+
     classification = classify_failure(failure)
+    handoff = build_failure_owner_handoff(
+        failure, classification.owner, classification.reason_code
+    )
 
-    handoff = build_failure_owner_handoff(failure, classification)
-
-    assert handoff.owner == FailureOwner.USER
-    assert handoff.target_phase == RuntimePhase.WAITING_USER
-    assert handoff.changed_dimensions == (RecoveryDimension.USER_INFORMATION,)
-    assert handoff.compatibility_recovery_kind == RecoveryKind.CLARIFY_INTENT
-    assert handoff.budget_cost.user_escalations == 1
-    assert handoff.user_question
-    assert handoff.replan_scope == ""
+    assert isinstance(handoff, UserInputRequest)
+    assert handoff.question
 
 
-def test_unrecoverable_owner_handoff_is_terminal_abort() -> None:
+def test_unrecoverable_failure_routes_directly_to_terminal_result() -> None:
     failure = _failure(
         FailurePhase.PROPOSAL_VALIDATION,
         error_code="planner_proposal_rejected",
         recoverable=False,
     )
-    classification = classify_failure(failure)
 
-    handoff = build_failure_owner_handoff(failure, classification)
-    decision = non_runtime_failure_owner_decision(
-        failure,
-        classification,
-        current_state_version=7,
+    classification = classify_failure(failure)
+    handoff = build_failure_owner_handoff(
+        failure, classification.owner, classification.reason_code
     )
 
-    assert isinstance(handoff, FailureOwnerHandoff)
-    assert isinstance(decision, FailureOwnerHandoffDecision)
+    assert isinstance(handoff, TerminalResult)
     assert handoff.owner == FailureOwner.TERMINAL
-    assert handoff.target_phase == RuntimePhase.ABORTED
-    assert decision.decision.kind == RecoveryKind.ABORT
-    assert decision.decision.changed_dimensions == (RecoveryDimension.TERMINAL,)
-    assert decision.handoff.owner == FailureOwner.TERMINAL
+    assert handoff.status == RuntimeStep.ABORTED
 
 
-def test_runtime_owner_handoff_is_rejected() -> None:
-    failure = _failure(FailurePhase.OBSERVATION, error_code="no_feasible_action")
+def test_runtime_owner_is_rejected_by_non_runtime_router() -> None:
+    failure = _failure(
+        FailurePhase.OBSERVATION,
+        error_code="no_feasible_action",
+        failure_class=FailureClass.GROUNDING,
+    )
     classification = classify_failure(failure)
 
     assert classification.owner == FailureOwner.RUNTIME_RECOVERY
     with pytest.raises(ValueError, match="non-runtime failure owner"):
-        build_failure_owner_handoff(failure, classification)
+        build_failure_owner_handoff(
+            failure, classification.owner, classification.reason_code
+        )
+
+
+def test_recovery_kind_contains_runtime_mechanical_repair_only() -> None:
+    forbidden = {
+        "CLARIFY_INTENT",
+        "REPLAN_TASK",
+        "REPLAN_STEP",
+        "REQUEST_APPROVAL",
+        "ASK_USER",
+        "ABORT",
+    }
+
+    assert forbidden.isdisjoint(RecoveryKind.__members__)

@@ -2,7 +2,7 @@
 
 TPA-2 foundation only: these contracts project the runtime into a bounded,
 deeply immutable request. They intentionally do not import StateKernel,
-TaskEnvelope, BrowserSnapshot, planners, Coordinator, trace, adapters, or
+RunRequest, BrowserSnapshot, planners, Coordinator, trace, adapters, or
 benchmarks.
 """
 

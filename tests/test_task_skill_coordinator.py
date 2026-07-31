@@ -5,13 +5,13 @@ from typing import Any
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     ProgressEvidenceScope,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
 from affordance_runtime.criteria import (
     criterion_id,
     evidence_requirement_id,
@@ -40,8 +40,13 @@ from affordance_runtime.planning import (
     PlannerProposalProvenance,
     PlannerProposalSource,
 )
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning_contracts import (
+    PlannerClarificationResponse,
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest, thaw_request_mapping
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import IntentEntity, OperationClass, TaskSpec
 from affordance_runtime.task_skills import (
     AcceptedTaskSkillRuntime,
@@ -196,27 +201,15 @@ class CountingSystem2Planner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
+        request: PlanningRequest,
+    ) -> PlannerClarificationResponse | PlannerDoneResponse:
         self.calls += 1
         if self.ask_on_call:
-            return PlannerDecision(
-                proposal_provenance=TEST_PROPOSAL_PROVENANCE,
-                proposal=PlannerProposal(
-                    proposal_id=f"system2-ask-{self.calls}",
-                    based_on_task_revision=1,
-                    based_on_state_version=state.version,
-                    snapshot_id=snapshot.observation.snapshot_id,
-                    subgoal="TaskSkill failed; request safe user guidance",
-                    action_kind=PlannerActionKind.ASK_USER,
-                    requires_clarification=True,
-                    reason="TaskSkill postcondition failed after verified prior progress",
-                ),
+            return PlannerClarificationResponse(
+                question="TaskSkill failed; request safe user guidance",
+                reason="TaskSkill postcondition failed after verified prior progress",
             )
-        return PlannerDecision(done=True, result={"system2": True})
+        return PlannerDoneResponse(result={"system2": True})
 
 
 class ProfileTrainingPlanner:
@@ -224,26 +217,33 @@ class ProfileTrainingPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        task = envelope.task_spec
-        assert task is not None
-        value = next(item.value for item in task.entities if item.name == "text")
-        if snapshot.observation.metadata.get("profile_name") == value:
-            return PlannerDecision(done=True, result={"profile_name": value})
-        target = next(item for item in snapshot.unified_affordances if item.label == "Name")
-        return PlannerDecision(
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
+        summary = thaw_request_mapping(request.task.task_summary)
+        entities = summary.get("entities", [])
+        value = next(
+            str(item["value"])
+            for item in entities
+            if isinstance(item, dict) and item.get("name") == "text"
+        )
+        if any(
+            outcome.verification_status == "passed"
+            for outcome in request.recent_outcomes
+        ):
+            return PlannerDoneResponse(result={"profile_name": value})
+        target = next(
+            item for item in request.observation.affordances if item.label == "Name"
+        )
+        return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
-                proposal_id=f"system2-profile-{state.version}",
-                based_on_task_revision=task.revision,
-                based_on_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
+                proposal_id=f"system2-profile-{request.identity.evaluated_at_state_version}",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
                 subgoal="update the requested profile field",
                 action_kind=PlannerActionKind.TYPE_TEXT,
-                target_affordance_id=target.semantic_target_id,
+                target_affordance_id=target.target_id,
                 parameters={"text": value},
                 expected_effects=("profile name changed",),
                 evidence_requirements=("independent profile state",),
@@ -362,13 +362,13 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
     )
 
     runtime = _accepted_runtime(payload)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert world.name == "Margaret"
@@ -411,14 +411,14 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
     )
 
     runtime = _accepted_runtime(payload)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
     ).run_sync(
-        TaskEnvelope(
+        RunRequest(
             task_spec=_task(with_entity=True),
             capabilities=["settings.write"],
         )
@@ -442,18 +442,18 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
     planner = CountingSystem2Planner()
 
     runtime = _accepted_runtime(_payload())
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=runtime,
         task_planner=None,
-    ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
-    assert result.state.receipts == []
+    assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
     assert "matched 0" in progress.fallthrough_reason
@@ -467,18 +467,18 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
     task = _task(with_entity=True).model_copy(update={"requested_capabilities": ()})
 
     runtime = _accepted_runtime(_payload())
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=runtime,
         task_planner=None,
-    ).run_sync(TaskEnvelope(task_spec=task))
+    ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
-    assert result.state.receipts == []
+    assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
     assert "cannot extend task capability authority" in progress.fallthrough_reason
@@ -495,7 +495,7 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
     )
 
     runtime = _accepted_runtime(payload)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
@@ -509,11 +509,11 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
         ),
         task_skill_runtime=runtime,
         task_planner=None,
-    ).run_sync(TaskEnvelope(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 1
-    assert result.state.receipts == []
+    assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
     assert "requires approval" in progress.fallthrough_reason
@@ -545,13 +545,13 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
     )
 
     runtime = _accepted_runtime(payload)
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world, fail_email_effect=True),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(TaskEnvelope(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
     assert world.name == "Ada"
@@ -593,7 +593,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 "entities": (IntentEntity(name="text", value=value, source_ref=f"training:{index}"),),
             }
         )
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer,
             ProfileTrainingPlanner(),
             ProfileExecutor(world),
@@ -612,7 +612,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     )
                 }
             ),
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         assert result.status == RuntimeStep.DONE
         trace_path = JsonlTraceWriter(tmp_path / f"training-{index}.jsonl").write(result.trace)
         sources.append((trace_path, TraceMiningContext("profile update", variant)))
@@ -645,7 +645,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 "entities": (IntentEntity(name="text", value=value, source_ref=f"replay:{category}"),),
             }
         )
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer,
             planner,
             ProfileExecutor(world),
@@ -660,7 +660,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 }
             ),
             task_skill_runtime=_accepted_runtime(proposal.payload),
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
         replay_evidence.append(
@@ -699,14 +699,14 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             requested_capabilities=((capability,) if capability else ()),
             source_request_ref=f"replay:{category}",
         )
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer,
             planner,
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(proposal.payload),
             task_planner=None,
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
+        ).run_sync(RunRequest(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
         replay_evidence.append(
@@ -715,8 +715,8 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     category,
                     result.run_id,
                     "non-profile",
-                    result.status == RuntimeStep.DONE and not result.state.receipts,
-                    not result.state.receipts,
+                    result.status == RuntimeStep.DONE and result.state.last_receipt is None,
+                    result.state.last_receipt is None,
                     "TaskSkillActivated" in kinds,
                     False,
                     planner.calls,
@@ -751,7 +751,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             "entities": (IntentEntity(name="text", value="Ken", source_ref="heldout:fresh"),),
         }
     )
-    result = RunCoordinator(
+    result = compose_run_coordinator(
         observer,
         planner,
         ProfileExecutor(world),
@@ -768,7 +768,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
         task_skill_runtime=loaded.task_skill_runtime,
         runtime_profile_digest=loaded.profile_digest,
         loaded_profile_artifact_ids=loaded.artifact_ids,
-    ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
     kinds = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
     assert world.name == "Ken"
@@ -796,7 +796,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             }
         )
         started = perf_counter()
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer,
             planner,
             ProfileExecutor(world),
@@ -816,7 +816,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 }
             ),
             task_skill_runtime=_accepted_runtime(payload),
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
         if category == "original":
@@ -861,16 +861,16 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             source_request_ref=f"replay:{category}",
         )
         started = perf_counter()
-        result = RunCoordinator(
+        result = compose_run_coordinator(
             observer,
             planner,
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(payload),
             task_planner=None,
-        ).run_sync(TaskEnvelope(task_spec=task, capabilities=([capability] if capability else [])))
+        ).run_sync(RunRequest(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
-        no_effect = world == ProfileWorld() and not result.state.receipts
+        no_effect = world == ProfileWorld() and result.state.last_receipt is None
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
         evidence.append(
             _bind_replay_report(TaskSkillReplayEvidence(

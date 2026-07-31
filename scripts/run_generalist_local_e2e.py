@@ -10,10 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.contracts import RiskLevel, VerifierSpec
-from affordance_runtime.coordinator import ConfiguredApprovalProvider, RunCoordinator
+from affordance_runtime.coordinator import RunCoordinator
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import EXPORT_SHA256, create_fixture_server
 from affordance_runtime.generalist_planner import GeneralistLMPlanner

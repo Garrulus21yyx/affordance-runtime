@@ -15,7 +15,7 @@ from affordance_runtime.planning_request import (
     thaw_request_mapping,
     thaw_request_value,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 
 
@@ -75,7 +75,7 @@ class PlannerContextBuilder:
 
     def build(
         self,
-        envelope: TaskEnvelope | PlanningRequest,
+        envelope: RunRequest | PlanningRequest,
         state: StateKernel | None = None,
         snapshot: BrowserSnapshot | None = None,
     ) -> PlannerContext:
@@ -88,7 +88,7 @@ class PlannerContextBuilder:
         task_spec = envelope.task_spec
         if task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
-        receipt = state.receipts[-1] if state.receipts else None
+        receipt = state.last_receipt
         verification = state.latest_verification
         latest_outcome = {
             "receipt_success": receipt.success if receipt else None,
@@ -107,7 +107,7 @@ class PlannerContextBuilder:
                 for item in (verification.evidence[-1:] if verification else [])
             ],
         }
-        latest_proposal = state.planner_history[-1] if state.planner_history else {}
+        latest_proposal = state.latest_planner_proposal
         verified_effects = (
             tuple(str(item) for item in latest_proposal.get("expected_effects", []))
             if verification and verification.passed
@@ -158,7 +158,7 @@ class PlannerContextBuilder:
             },
             pending_evidence_obligations=(),
             latest_outcome=latest_outcome,
-            recent_proposals=tuple(state.planner_history[-1:]),
+            recent_proposals=((state.latest_planner_proposal,) if state.latest_planner_proposal else ()),
             verified_effects=verified_effects,
             satisfied_action_targets=_satisfied_action_targets(state),
             recovery_summary=_one_relevant_failure(state),
@@ -233,7 +233,7 @@ class PlannerContextBuilder:
 
 
 def build_planner_context(
-    envelope: TaskEnvelope,
+    envelope: RunRequest,
     state: StateKernel,
     snapshot: BrowserSnapshot,
     *,
@@ -260,6 +260,7 @@ def _task_summary(task_spec: dict[str, Any]) -> dict[str, Any]:
         "operation_class",
         "task_structure",
         "targets",
+        "entities",
         "success_criteria",
         "constraints",
         "semantic_value_constraints",
@@ -411,9 +412,9 @@ def _bounded_affordances(
 
 
 def _one_relevant_failure(state: StateKernel) -> dict[str, Any]:
-    if state.progress_guard_events:
-        return {"kind": "progress_guard", **state.progress_guard_events[-1]}
-    receipt = state.receipts[-1] if state.receipts else None
+    if state.latest_progress_guard:
+        return {"kind": "progress_guard", **state.latest_progress_guard}
+    receipt = state.last_receipt
     if receipt is not None and not receipt.success:
         return {
             "kind": "execution",
@@ -468,9 +469,9 @@ def _satisfied_action_targets(state: StateKernel) -> dict[str, tuple[str, ...]]:
 
 
 def _active_subgoal_action_family(state: StateKernel) -> str:
-    if state.task_plan is None or state.plan_progress is None:
+    if state.task_plan is None or state.task_progress is None:
         return ""
-    active_id = state.plan_progress.active_subgoal_id
+    active_id = state.task_progress.active_subgoal_id
     subgoal = next(
         (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
         None,

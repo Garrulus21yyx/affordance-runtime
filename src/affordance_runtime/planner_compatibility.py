@@ -16,14 +16,14 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 
 
 class LegacyPlannerPort(Protocol):
     def propose(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerDecision | Awaitable[PlannerDecision]: ...
@@ -43,7 +43,7 @@ def propose_with_planner_compatibility(
     planner: PlannerCompatibilityPort,
     *,
     request: PlanningRequest | None,
-    envelope: TaskEnvelope,
+    envelope: RunRequest,
     state: StateKernel,
     snapshot: BrowserSnapshot,
 ) -> PlannerDecision | Awaitable[PlannerDecision]:
@@ -62,7 +62,7 @@ def propose_with_planner_compatibility(
 def propose_with_runtime_projection(
     planner: PlannerCompatibilityPort,
     *,
-    envelope: TaskEnvelope,
+    envelope: RunRequest,
     state: StateKernel,
     snapshot: BrowserSnapshot,
 ) -> PlannerDecision | Awaitable[PlannerDecision]:

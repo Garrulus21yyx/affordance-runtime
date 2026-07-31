@@ -66,6 +66,7 @@ class CurrentStateSubgoalCompletionEvaluator:
 
     _SUPPORTED_RELATIONS = {
         SubgoalOutcomeRelation.IS_AVAILABLE,
+        SubgoalOutcomeRelation.IS_SELECTED,
         SubgoalOutcomeRelation.IS_VISIBLE,
     }
 
@@ -115,7 +116,11 @@ class CurrentStateSubgoalCompletionEvaluator:
         match = _unique_target(subgoal.outcome.subject, environment.affordances)
         if match is None:
             return None
-        if not _relation_satisfied(subgoal.outcome.relation, match):
+        if not _relation_satisfied(
+            subgoal.outcome.relation,
+            match,
+            expected_value=subgoal.outcome.value,
+        ):
             return None
         evidence = CurrentStateEvidence(
             snapshot_id=environment.snapshot_id,
@@ -172,6 +177,13 @@ def _unique_target(
     subject: str,
     affordances: tuple[PlanningAffordanceSummary, ...],
 ) -> PlanningAffordanceSummary | None:
+    if subject.strip().casefold() in {"combobox", "dropdown", "list", "select"}:
+        matches = tuple(
+            item
+            for item in affordances
+            if item.role.casefold() in {"combobox", "listbox", "select"}
+        )
+        return matches[0] if len(matches) == 1 else None
     subject_tokens = _label_tokens(subject)
     if not subject_tokens:
         return None
@@ -192,6 +204,8 @@ def _unique_target(
 def _relation_satisfied(
     relation: SubgoalOutcomeRelation,
     affordance: PlanningAffordanceSummary,
+    *,
+    expected_value: str = "",
 ) -> bool:
     if relation == SubgoalOutcomeRelation.IS_VISIBLE:
         return affordance.current_state.visible is True
@@ -200,13 +214,20 @@ def _relation_satisfied(
             affordance.current_state.visible is True
             and affordance.current_state.enabled is True
         )
+    if relation == SubgoalOutcomeRelation.IS_SELECTED:
+        if expected_value:
+            return expected_value in affordance.current_state.selected_options
+        return (
+            affordance.current_state.selected is True
+            or bool(affordance.current_state.selected_options)
+        )
     return False
 
 
 def _observed_value(
     relation: SubgoalOutcomeRelation,
     affordance: PlanningAffordanceSummary,
-) -> bool | None:
+) -> str | bool | None:
     if relation == SubgoalOutcomeRelation.IS_VISIBLE:
         return affordance.current_state.visible
     if relation == SubgoalOutcomeRelation.IS_AVAILABLE:
@@ -214,6 +235,9 @@ def _observed_value(
             affordance.current_state.visible is True
             and affordance.current_state.enabled is True
         )
+    if relation == SubgoalOutcomeRelation.IS_SELECTED:
+        selected = affordance.current_state.selected_options
+        return selected[0] if len(selected) == 1 else affordance.current_state.selected
     return None
 
 

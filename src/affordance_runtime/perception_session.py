@@ -15,14 +15,24 @@ from affordance_runtime.perception import (
     derive_perception_requirements,
     perception_task_terms,
 )
-from affordance_runtime.runtime import TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_planning import SubgoalSpec
 
 
 class ObservationSource(Protocol):
     def capture(self) -> BrowserSnapshot: ...
+
+
+@dataclass(frozen=True)
+class PerceptionCaptureRequest:
+    envelope: RunRequest
+    sequence: int
+    active_subgoal: SubgoalSpec | str = ""
+    failed_sources: frozenset[GroundingSource] = frozenset()
+
+    def __post_init__(self) -> None:
+        if self.sequence < 1:
+            raise ValueError("perception capture sequence must be positive")
 
 
 @dataclass(frozen=True)
@@ -34,15 +44,14 @@ class PerceptionSession:
 
     def capture(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        sequence: int,
+        request: PerceptionCaptureRequest,
     ) -> BrowserSnapshot:
+        envelope = request.envelope
         if not isinstance(self.observer, BrowserSession):
             return self.observer.capture()
 
-        active_subgoal = TaskPlanLifecycle.active_subgoal_for_perception(state)
-        escalation = self.perception_escalation(state)
+        active_subgoal = request.active_subgoal
+        escalation = self.perception_escalation(request.failed_sources)
         requirements = (
             derive_perception_requirements(
                 envelope.task_spec,
@@ -57,7 +66,7 @@ class PerceptionSession:
             screenshot_path = (
                 self.artifacts.run_dir(envelope.task_id)
                 / "screenshots"
-                / f"screenshot_{sequence:04d}.png"
+                / f"screenshot_{request.sequence:04d}.png"
             )
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         snapshot = self.observer.capture(
@@ -122,14 +131,9 @@ class PerceptionSession:
         return snapshot
 
     @staticmethod
-    def perception_escalation(state: StateKernel) -> PerceptionEscalation | None:
-        failed_sources: set[GroundingSource] = set()
-        for lineage in state.grounding_fallback_lineage.values():
-            raw_source = lineage.get("failed_source", "")
-            try:
-                failed_sources.add(GroundingSource(raw_source))
-            except ValueError:
-                continue
+    def perception_escalation(
+        failed_sources: frozenset[GroundingSource],
+    ) -> PerceptionEscalation | None:
         if not failed_sources:
             return None
         return PerceptionEscalation(

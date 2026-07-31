@@ -1,7 +1,8 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
@@ -10,9 +11,21 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.coordinator import PlannerDecision, RunCoordinator
-from affordance_runtime.runtime import RuntimeStep, TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 
 
 @dataclass
@@ -80,28 +93,28 @@ class TimeoutPlanner:
 
     def propose(
         self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
-        del envelope
+        request: PlanningRequest,
+    ) -> PlannerProposalResponse | PlannerDoneResponse:
         self.calls += 1
-        if snapshot.observation.metadata["saved"] is True:
-            return PlannerDecision(done=True, result={"saved": True})
-        contract = ActionContract.from_affordance(
-            snapshot.affordance_model.affordances[0],
-            intent="Save exactly once",
-            backend="dom",
-            verifier_plan=[VerifierSpec("observation_metadata", "saved", True)],
-            required_capabilities=["settings.write"],
-        )
-        return PlannerDecision(
-            contract=replace(
-                contract,
-                risk=RiskLevel.MEDIUM,
-                idempotency_key="save:exactly-once:v1",
-                contract_hash="",
-            )
+        if any(
+            outcome.verification_status == "passed"
+            for outcome in request.recent_outcomes
+        ):
+            return PlannerDoneResponse(result={"saved": True})
+        return PlannerProposalResponse(
+            proposal=PlannerProposal(
+                proposal_id="save-exactly-once",
+                based_on_task_revision=request.identity.task_revision,
+                based_on_state_version=request.identity.evaluated_at_state_version,
+                snapshot_id=request.identity.snapshot_id,
+                subgoal="Save exactly once",
+                action_kind=PlannerActionKind.ACTIVATE,
+                target_affordance_id=request.observation.affordances[0].target_id,
+            ),
+            proposal_provenance=PlannerProposalProvenance(
+                source=PlannerProposalSource.DETERMINISTIC_RULE,
+                producer_id="uncertain-effect-test",
+            ),
         )
 
 
@@ -111,10 +124,35 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     executor = ApplyThenTimeoutExecutor(world)
     planner = TimeoutPlanner()
 
-    result = RunCoordinator(observer, planner, executor).run_sync(
-        TaskEnvelope(
-            "uncertain-effect",
-            "Save exactly once",
+    result = compose_run_coordinator(
+        observer,
+        planner,
+        executor,
+        contract_builder=ContractBuilder(
+            requirements={
+                "dom_button_1": ContractRequirements(
+                    verifier_plan=(
+                        VerifierSpec("observation_metadata", "saved", True),
+                    ),
+                    required_capabilities=("settings.write",),
+                    risk=RiskLevel.MEDIUM,
+                    idempotency_key="save:exactly-once:v1",
+                )
+            }
+        ),
+        task_planner=None,
+    ).run_sync(
+        RunRequest(
+            task_spec=TaskSpec(
+                task_id="uncertain-effect",
+                revision=1,
+                objective="Save exactly once",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                targets=("Save",),
+                success_criteria=("saved state is true",),
+                requested_capabilities=("settings.write",),
+                source_request_ref="uncertain-effect-test",
+            ),
             capabilities=["settings.write"],
         )
     )
@@ -123,7 +161,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     assert world.saved is True
     assert executor.calls == 1
     assert planner.calls == 2
-    assert len(result.state.receipts) == 1
+    assert result.state.step_count == 1
     assert result.verification is not None and result.verification.passed
     assert result.state.current_failure is not None
     assert result.state.current_recovery_decision is not None
@@ -135,8 +173,11 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     ]
     assert recovery_outcomes
     assert recovery_outcomes[-1]["success"]
-    assert result.state.recovery_history
-    assert ":inspect_post_state:" in result.state.recovery_history[-1].strategy_id
+    assert any(
+        node.kind == "RecoveryStrategySelected"
+        and node.payload["decision"]["kind"] == "inspect_post_state"
+        for node in result.trace.nodes
+    )
     events = [node.kind for node in result.trace.nodes]
     assert "RecoveryStateInspected" in events
     assert events.index("RecoveryStateInspected") < events.index("TaskCompleted")

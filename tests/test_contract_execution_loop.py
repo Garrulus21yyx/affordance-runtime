@@ -10,7 +10,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.verification import VerifierLadder
 
@@ -71,7 +71,7 @@ def _loop(tmp_path: Path | None = None) -> ContractExecutionLoop:
 
 def test_contract_stages_bind_execute_and_verify_without_owning_run_state(tmp_path: Path) -> None:
     loop = _loop(tmp_path)
-    envelope = TaskEnvelope("run-contract", "save settings")
+    envelope = RunRequest("run-contract", "save settings")
     bound = loop.bind_contract(_contract(), envelope, _observation())
 
     check = loop.initial_check(
@@ -157,21 +157,21 @@ def test_policy_capability_and_freshness_fail_closed_before_execution() -> None:
 
     denied_policy = loop.initial_check(
         protected,
-        TaskEnvelope("run-contract", "save settings", constraints={"read_only": True}),
+        RunRequest("run-contract", "save settings", constraints={"read_only": True}),
         _observation(),
         capability_gate_enabled=True,
         preflight_enabled=True,
     )
     denied_capability = loop.initial_check(
         protected,
-        TaskEnvelope("run-contract", "save settings"),
+        RunRequest("run-contract", "save settings"),
         _observation(),
         capability_gate_enabled=True,
         preflight_enabled=True,
     )
     stale = loop.revalidate(
         _contract(),
-        TaskEnvelope("run-contract", "save settings"),
+        RunRequest("run-contract", "save settings"),
         replace(_observation(), page_revision="page-2"),
         CapabilityGate(),
         capability_gate_enabled=False,
@@ -187,7 +187,7 @@ def test_policy_capability_and_freshness_fail_closed_before_execution() -> None:
 
 def test_download_binding_is_artifact_scoped_and_disabled_verification_is_explicit(tmp_path: Path) -> None:
     loop = _loop(tmp_path)
-    envelope = TaskEnvelope("download-run", "download report")
+    envelope = RunRequest("download-run", "download report")
     bound = loop.bind_contract(_contract(action="download"), envelope, _observation())
     receipt = loop.execute(bound, _observation())
     report = loop.verify(

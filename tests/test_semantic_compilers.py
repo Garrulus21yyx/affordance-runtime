@@ -22,7 +22,7 @@ from affordance_runtime.generalist_planner import (
 )
 from affordance_runtime.model_port import ModelCallRecord
 from affordance_runtime.planning import PlannerActionKind
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry, SemanticConstraints
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -101,7 +101,7 @@ class GovernanceClarificationModel:
         )
 
 
-def _drag_fixture(objective: str) -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+def _drag_fixture(objective: str) -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     model = DomAdapter().transduce(
         '<li class="ui-sortable-handle">Alpha</li>'
         '<li class="ui-sortable-handle">Beta</li>'
@@ -126,10 +126,10 @@ def _drag_fixture(objective: str) -> tuple[TaskEnvelope, StateKernel, BrowserSna
     )
     state = StateKernel(task.task_id, objective)
     state.remember_observation(observation)
-    return TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model)
+    return RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
 
 
-def _governance_fixture(kind: str) -> tuple[TaskEnvelope, StateKernel, BrowserSnapshot]:
+def _governance_fixture(kind: str) -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     if kind == "form":
         objective = 'Enter "Q1" into both text fields and press Submit.'
         markup = '<label>First</label><input id="first"><label>Second</label><input id="second"><button>Submit</button>'
@@ -170,7 +170,7 @@ def _governance_fixture(kind: str) -> tuple[TaskEnvelope, StateKernel, BrowserSn
     )
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
-    return TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model)
+    return RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
 
 
 def test_compatibility_compilers_declare_applicability_evidence_and_negative_examples() -> None:
@@ -239,7 +239,7 @@ def test_typed_incremental_control_compiles_one_verified_direction_without_backe
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -275,7 +275,7 @@ def test_typed_incremental_control_uses_bounded_page_step_for_large_distance() -
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -307,7 +307,7 @@ def _form_context(objective: str):
     )
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
-    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+    return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
 def _suggestion_context(
@@ -353,7 +353,7 @@ def _suggestion_context(
     )
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
-    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+    return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
 def _disclosure_context(
@@ -385,7 +385,7 @@ def _disclosure_context(
     )
     state = StateKernel(task.task_id, task.objective)
     state.remember_observation(observation)
-    return build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+    return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
 def test_explicit_form_compiler_binds_each_labelled_value_before_terminal() -> None:

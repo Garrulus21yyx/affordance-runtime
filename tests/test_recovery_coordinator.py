@@ -151,20 +151,14 @@ def test_uncertain_effect_is_inspected_before_any_retry_or_reroute() -> None:
     assert decision.changed_dimensions == (RecoveryDimension.EFFECT_STATUS,)
 
 
-def test_irreducible_runtime_missing_evidence_aborts_when_no_probe_or_reobserve_exists() -> None:
+def test_irreducible_runtime_missing_evidence_returns_no_runtime_recovery() -> None:
     failure = _failure(FailurePhase.OBSERVATION)
-    decision = _decision(
-        failure,
-        _context(
-            available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
-            gap_ids=(),
-            user_question="Which visible control is the intended target?",
-        ),
-        current_state_version=3,
-    )
-
-    assert decision.kind == RecoveryKind.ABORT
-    assert decision.reentry_phase == RuntimePhase.ABORTED
+    with pytest.raises(ValueError, match="no safe changed recovery strategy"):
+        _decision(
+            failure,
+            _context(available_commands=frozenset(), gap_ids=()),
+            current_state_version=3,
+        )
 
 
 def test_planner_deferral_with_action_space_uses_internal_recovery_not_user_or_replan() -> None:
@@ -226,7 +220,7 @@ def test_planner_deferral_does_not_default_to_ask_user_when_action_space_is_unkn
         _decision(
             failure,
             _context(
-                available_commands=frozenset({RecoveryKind.ASK_USER, RecoveryKind.ABORT}),
+                available_commands=frozenset(),
                 available_action_count=0,
             ),
             current_state_version=3,
@@ -251,7 +245,7 @@ def test_planner_deferral_without_typed_action_space_fails_closed_unknown() -> N
     assert RecoveryCoordinator().strategy_order_for_test(
         failure,
         _context(available_action_count=0),
-    ) == (RecoveryKind.ABORT,)
+    ) == ()
 
 
 def test_no_feasible_action_choice_reason_classifies_as_no_feasible_action() -> None:
@@ -291,7 +285,7 @@ def test_legacy_decision_without_proposal_fails_closed_unknown() -> None:
     assert RecoveryCoordinator().strategy_order_for_test(
         failure,
         _context(available_action_count=0),
-    ) == (RecoveryKind.ABORT,)
+    ) == ()
 
 
 def test_user_input_required_clarification_is_not_model_deferral() -> None:
@@ -362,9 +356,7 @@ def test_already_satisfied_entry_requires_typed_rejection_reason_not_message_sub
     assert classification.owner == FailureOwner.PROGRESS
     order = RecoveryCoordinator().strategy_order_for_test(typed_failure, _context())
 
-    assert RecoveryKind.REPLAN_TASK not in order
-    assert RecoveryKind.REPLAN_STEP not in order
-    assert RecoveryKind.ASK_USER not in order
+    assert order == ()
 
 
 def test_recovery_coordinator_decide_returns_canonical_decision() -> None:
@@ -404,18 +396,18 @@ def test_retry_and_compensation_decisions_reject_unsafe_shortcuts() -> None:
 def test_coordinator_skips_stale_unavailable_overbudget_and_unaccepted_profile() -> None:
     failure = _failure(FailurePhase.OBSERVATION)
 
-    unavailable = _decision(
-        failure,
-        _context(available_commands=frozenset({RecoveryKind.ABORT})),
-        current_state_version=3,
-    )
-    assert unavailable.kind == RecoveryKind.ABORT
+    with pytest.raises(ValueError, match="no safe changed recovery strategy"):
+        _decision(
+            failure,
+            _context(available_commands=frozenset()),
+            current_state_version=3,
+        )
 
     no_budget = failure.model_copy(
         update={"remaining_budgets": RemainingRecoveryBudgets()}
     )
-    overbudget = _decision(no_budget, _context(), current_state_version=3)
-    assert overbudget.kind == RecoveryKind.ABORT
+    with pytest.raises(ValueError, match="no safe changed recovery strategy"):
+        _decision(no_budget, _context(), current_state_version=3)
 
     decision = _decision(failure, _context(), current_state_version=7)
     assert decision.based_on_state_version == 7
@@ -439,12 +431,12 @@ def test_repeated_strategy_changes_or_stops_and_a_b_oscillation_is_not_reentered
     oscillating = repeated_failure.model_copy(
         update={"attempted_strategy_ids": (second.strategy_key,)}
     )
-    third = _decision(
-        oscillating,
-        _context(history=history),
-        current_state_version=3,
-    )
-    assert third.strategy_key not in {first_id, second.strategy_key}
+    with pytest.raises(ValueError, match="no safe changed recovery strategy"):
+        _decision(
+            oscillating,
+            _context(history=history),
+            current_state_version=3,
+        )
 
 
 def test_recovery_outcome_requires_non_empty_changed_dimensions() -> None:

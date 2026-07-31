@@ -1,9 +1,8 @@
 from affordance_runtime.planning import ProposalRejectionCode
 from affordance_runtime.proposal_recovery_policy import ProposalRejectionRecoveryPolicy
-from affordance_runtime.recovery_protocol import RecoveryKind
 
 
-def test_target_scope_rejection_allows_only_bounded_step_replan() -> None:
+def test_target_scope_rejection_defers_to_step_planner_owner() -> None:
     decision = ProposalRejectionRecoveryPolicy().decide(
         ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
         "semantic:wrong-target",
@@ -12,9 +11,7 @@ def test_target_scope_rejection_allows_only_bounded_step_replan() -> None:
     )
 
     assert decision.recoverable
-    assert decision.available_commands == frozenset(
-        {RecoveryKind.REPLAN_STEP, RecoveryKind.ABORT}
-    )
+    assert not hasattr(decision, "available_commands")
     assert decision.planner_feedback == (
         "target_out_of_scope:relational_evidence_not_proven:semantic:wrong-target"
     )
@@ -30,4 +27,4 @@ def test_authority_and_structural_rejections_remain_terminal() -> None:
             continue
         decision = policy.decide(code)
         assert not decision.recoverable, code
-        assert decision.available_commands == frozenset({RecoveryKind.ABORT}), code
+        assert not hasattr(decision, "available_commands"), code

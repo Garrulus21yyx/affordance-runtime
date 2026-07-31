@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
-from typing import Any, Protocol
-from urllib.parse import urlsplit
+from dataclasses import dataclass
+from typing import Any
 
-from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import ActionContract, RiskLevel, VerifierSpec
-from affordance_runtime.criteria import criterion_id, evidence_requirement_id
-from affordance_runtime.fixtures import EXPORT_SHA256
-from affordance_runtime.planning_contracts import PlannerDecision
-from affordance_runtime.planning_request import PlanningRequest, thaw_request_mapping
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import TaskEnvelope
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.contracts import (
+    ProgressEvidenceScope,
+    RiskLevel,
+    VerifierSpec,
+)
+from affordance_runtime.fixtures import EXPORT_SHA256, PRICING_DATA
+from affordance_runtime.planning import (
+    ContractBuilder,
+    ContractRequirements,
+    PlannerActionKind,
+    PlannerProposal,
+    PlannerProposalProvenance,
+    PlannerProposalSource,
+)
+from affordance_runtime.planning_contracts import (
+    PlannerDoneResponse,
+    PlannerProposalResponse,
+    PlannerUnsupportedResponse,
+)
+from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_planning import (
     SubgoalSpec,
@@ -26,15 +36,6 @@ from affordance_runtime.task_planning import (
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
-
-
-class ReferencePlanningRequestBuilderPort(Protocol):
-    def build(
-        self,
-        envelope: TaskEnvelope,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> PlanningRequest: ...
 
 
 def extract_pricing(html: str) -> dict[str, dict[str, Any]]:
@@ -57,52 +58,39 @@ def _number_or_text(value: str) -> int | str:
     return int(value) if value.isdigit() else value
 
 
-@dataclass
+@dataclass(frozen=True)
 class PricingPlanner:
     """Reveal both pricing cards, then return structured limits with evidence."""
 
-    planning_request_builder: ReferencePlanningRequestBuilderPort | None = None
-
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        request = _reference_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
-        )
-        html = str(snapshot.observation.metadata.get("html") or "")
-        plans = extract_pricing(html)
-        for plan_name in ("pro", "enterprise"):
-            if plan_name in plans and not plans[plan_name]["visible"]:
-                label = f"Show {plan_name.title()} limits"
-                affordance = _affordance_by_label(request, snapshot, label)
-                if affordance is None:
-                    return PlannerDecision(done=False, reason=f"missing affordance: {label}")
-                contract = ActionContract.from_affordance(
-                    affordance,
-                    intent=f"reveal {plan_name} limits",
-                    backend="dom",
-                    verifier_plan=[
-                        VerifierSpec(
-                            kind="dom_contains",
-                            target="html",
-                            expected=f'data-plan="{plan_name}" data-visible="true"',
-                            criterion_ids=_active_step_criterion_ids(request, state),
-                            requirement_ids=_active_step_requirement_ids(request, state),
-                        )
-                    ],
-                )
-                return PlannerDecision(contract=contract, reason=f"reveal hidden {plan_name} evidence")
-        if plans and all(plan.get("visible") for plan in plans.values()):
-            result = {
-                name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in plans.items()
-            }
-            return PlannerDecision(
-                done=True,
-                result={"plans": result, "source_url": snapshot.observation.url},
-                reason="all pricing limits are structurally visible",
+    def propose(
+        self, request: PlanningRequest
+    ) -> PlannerProposalResponse | PlannerDoneResponse | PlannerUnsupportedResponse:
+        satisfied = dict(request.satisfied_action_targets).get("activate", ())
+        pro = _request_affordance_by_label(request, "Show Pro limits")
+        enterprise = _request_affordance_by_label(request, "Show Enterprise limits")
+        if (
+            pro is not None
+            and enterprise is not None
+            and pro.target_id in satisfied
+            and enterprise.target_id in satisfied
+        ):
+            return PlannerDoneResponse(
+                result={"plans": PRICING_DATA},
+                reason="both pricing disclosures were independently verified",
             )
-        return PlannerDecision(done=False, reason="pricing data is not available")
+        target = pro if pro is not None and pro.target_id not in satisfied else enterprise
+        if target is None:
+            return PlannerUnsupportedResponse(
+                "pricing_affordance_missing", "pricing disclosure control"
+            )
+        plan_name = "pro" if target is pro else "enterprise"
+        return _proposal_response(
+            request,
+            proposal_id=f"reveal-{plan_name}",
+            target_id=target.target_id,
+            subgoal=f"reveal {plan_name} limits",
+            producer_id="pricing-reference-planner",
+        )
 
 
 @dataclass(frozen=True)
@@ -139,195 +127,151 @@ class PricingTaskPlanner:
         )
 
 
-def _origin(url: str) -> str:
-    parsed = urlsplit(url)
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-@dataclass
+@dataclass(frozen=True)
 class SettingsPlanner:
-    planning_request_builder: ReferencePlanningRequestBuilderPort | None = None
-
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        request = _reference_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
-        )
-        latest_outcome = thaw_request_mapping(request.latest_outcome) if request is not None else {}
-        verification_passed = (
-            latest_outcome.get("verification_status") == "passed"
-            if request is not None
-            else bool(state.latest_verification and state.latest_verification.passed)
-        )
-        last_selector = state.receipts[-1].evidence.get("selector") if state.receipts else None
-        if verification_passed and last_selector != "#dismiss-modal":
-            return PlannerDecision(
-                done=True,
-                result={"notifications": "enabled", "verified_by": "fixture_api"},
-                reason="persisted settings oracle passed",
+    def propose(
+        self, request: PlanningRequest
+    ) -> PlannerProposalResponse | PlannerDoneResponse | PlannerUnsupportedResponse:
+        if request.recent_outcomes:
+            return PlannerDoneResponse(
+                result={"notifications": "enabled", "verified_by": "fixture_api"}
             )
-        modal_affordance = next(
-            (
-                item
-                for item in snapshot.affordance_model.affordances
-                if item.locator.get("selector") == "#dismiss-modal"
-            ),
-            None,
-        )
-        if modal_affordance is not None:
-            return PlannerDecision(
-                contract=ActionContract.from_affordance(
-                    modal_affordance,
-                    intent="dismiss registered low-risk blocking modal",
-                    backend="dom",
-                    verifier_plan=[VerifierSpec("dom_absent", "html", 'id="blocking-modal"')],
-                ),
-                reason="registered blocking modal policy",
+        modal = _request_affordance_by_label(request, "Dismiss")
+        if modal is not None:
+            return _proposal_response(
+                request,
+                proposal_id="dismiss-modal",
+                target_id=modal.target_id,
+                subgoal="dismiss registered low-risk blocking modal",
+                producer_id="settings-reference-planner",
             )
-        affordance = _affordance_by_label(request, snapshot, "Enable notifications")
-        if affordance is None:
-            return PlannerDecision(reason="settings control is unavailable")
-        contract = ActionContract.from_affordance(
-            affordance,
-            intent="enable reversible notifications setting",
-            backend="dom",
-            required_capabilities=["settings.write.reversible"],
-            verifier_plan=[
-                VerifierSpec(
-                    "http_json",
-                    f"{_origin(snapshot.observation.url)}/api/state",
-                    {"path": "settings.notifications", "value": "enabled"},
-                )
-            ],
-        )
-        return PlannerDecision(
-            contract=replace(
-                contract,
-                risk=RiskLevel.MEDIUM,
-                idempotency_key=f"{snapshot.observation.url}:notifications:enabled",
-                compensation="restore notifications=disabled",
-                contract_hash="",
-            ),
-            reason="apply reversible setting",
+        target = _request_affordance_by_label(request, "Enable notifications")
+        if target is None:
+            return PlannerUnsupportedResponse(
+                "settings_affordance_missing", "settings control is unavailable"
+            )
+        return _proposal_response(
+            request,
+            proposal_id="enable-notifications",
+            target_id=target.target_id,
+            subgoal="enable reversible notifications setting",
+            producer_id="settings-reference-planner",
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExportPlanner:
-    planning_request_builder: ReferencePlanningRequestBuilderPort | None = None
-
-    def propose(self, envelope: TaskEnvelope, state: StateKernel, snapshot: BrowserSnapshot) -> PlannerDecision:
-        request = _reference_planning_request(
-            self.planning_request_builder,
-            envelope,
-            state,
-            snapshot,
-        )
-        latest_outcome = thaw_request_mapping(request.latest_outcome) if request is not None else {}
-        verification_passed = (
-            latest_outcome.get("verification_status") == "passed"
-            if request is not None
-            else bool(state.latest_verification and state.latest_verification.passed)
-        )
-        if verification_passed and state.receipts:
-            receipt = state.receipts[-1]
-            return PlannerDecision(
-                done=True,
-                result={
-                    "download": receipt.evidence.get("path"),
-                    "sha256": receipt.evidence.get("sha256"),
-                    "verified_by": "file_hash",
-                },
-                reason="approved download receipt matches fixture hash",
+    def propose(
+        self, request: PlanningRequest
+    ) -> PlannerProposalResponse | PlannerDoneResponse | PlannerUnsupportedResponse:
+        if request.recent_outcomes:
+            return PlannerDoneResponse(
+                result={"sha256": EXPORT_SHA256, "verified_by": "file_hash"}
             )
-        affordance = _affordance_by_label(request, snapshot, "Export report")
-        if affordance is None:
-            return PlannerDecision(reason="export control is unavailable")
-        contract = ActionContract.from_affordance(
-            affordance,
-            intent="export the report after explicit approval",
-            backend="dom",
-            required_capabilities=["report.export"],
-            verifier_plan=[VerifierSpec("evidence", "sha256", EXPORT_SHA256)],
+        target = _request_affordance_by_label(request, "Export report")
+        if target is None:
+            return PlannerUnsupportedResponse(
+                "export_affordance_missing", "export control is unavailable"
+            )
+        return _proposal_response(
+            request,
+            proposal_id="export-report",
+            target_id=target.target_id,
+            subgoal="export the report after explicit approval",
+            producer_id="export-reference-planner",
         )
-        return PlannerDecision(
-            contract=replace(
-                contract,
-                action="download",
-                risk=RiskLevel.HIGH,
-                idempotency_key=f"{snapshot.observation.url}:report-export",
-                contract_hash="",
+
+
+def pricing_contract_builder() -> ContractBuilder:
+    return ContractBuilder(
+        requirements={
+            "dom_button_1": ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "dom_contains",
+                        "html",
+                        'data-plan="pro" data-visible="true"',
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                    ),
+                )
             ),
-            reason="download requires a bound approval token",
-        )
+            "dom_button_2": ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "dom_contains",
+                        "html",
+                        'data-plan="enterprise" data-visible="true"',
+                        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+                    ),
+                )
+            ),
+        }
+    )
 
 
-def _reference_planning_request(
-    builder: ReferencePlanningRequestBuilderPort | None,
-    envelope: TaskEnvelope,
-    state: StateKernel,
-    snapshot: BrowserSnapshot,
-) -> PlanningRequest | None:
-    """Project standard reference-planner inputs when a validated TaskSpec exists."""
-
-    if envelope.task_spec is None:
-        return None
-    return (builder or PlanningRequestBuilder()).build(envelope, state, snapshot)
-
-
-def _affordance_by_label(
-    request: PlanningRequest | None,
-    snapshot: BrowserSnapshot,
-    label: str,
-) -> Any | None:
-    if request is not None:
-        target_ids = tuple(
-            item.target_id
-            for item in request.observation.affordances
-            if item.label == label
-        )
-        if target_ids:
-            matched = next(
-                (
-                    item
-                    for item in snapshot.affordance_model.affordances
-                    if item.id == target_ids[0]
+def settings_contract_builder(api_url: str) -> ContractBuilder:
+    return ContractBuilder(
+        requirements={
+            "dom_button_1": ContractRequirements(
+                verifier_plan=(VerifierSpec("dom_absent", "html", 'id="blocking-modal"'),)
+            ),
+            "dom_button_2": ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "http_json",
+                        api_url,
+                        {"path": "settings.notifications", "value": "enabled"},
+                    ),
                 ),
-                None,
+                required_capabilities=("settings.write.reversible",),
+                risk=RiskLevel.MEDIUM,
+                idempotency_key="notifications:enabled",
+                compensation="restore notifications=disabled",
+            ),
+        }
+    )
+
+
+def export_contract_builder() -> ContractBuilder:
+    return ContractBuilder(
+        requirements={
+            "dom_button_1": ContractRequirements(
+                verifier_plan=(VerifierSpec("evidence", "sha256", EXPORT_SHA256),),
+                required_capabilities=("report.export",),
+                risk=RiskLevel.HIGH,
+                idempotency_key="report-export",
             )
-            if matched is not None:
-                return matched
+        }
+    )
+
+
+def _request_affordance_by_label(request: PlanningRequest, label: str) -> Any | None:
     return next(
-        (item for item in snapshot.affordance_model.affordances if item.label == label),
+        (item for item in request.observation.affordances if item.label == label),
         None,
     )
 
 
-def _active_step_id(request: PlanningRequest | None, state: StateKernel) -> str:
-    if request is not None and request.step.progress is not None:
-        return request.step.progress.active_step_id or ""
-    if state.plan_progress is None:
-        return ""
-    return state.plan_progress.active_subgoal_id
-
-
-def _active_step_criterion_ids(
-    request: PlanningRequest | None,
-    state: StateKernel,
-) -> tuple[str, ...]:
-    active_step_id = _active_step_id(request, state)
-    if not active_step_id:
-        return ()
-    return (criterion_id("subgoal", active_step_id, 0),)
-
-
-def _active_step_requirement_ids(
-    request: PlanningRequest | None,
-    state: StateKernel,
-) -> tuple[str, ...]:
-    active_step_id = _active_step_id(request, state)
-    if not active_step_id:
-        return ()
-    return (evidence_requirement_id("subgoal", active_step_id, 0),)
+def _proposal_response(
+    request: PlanningRequest,
+    *,
+    proposal_id: str,
+    target_id: str,
+    subgoal: str,
+    producer_id: str,
+) -> PlannerProposalResponse:
+    return PlannerProposalResponse(
+        proposal=PlannerProposal(
+            proposal_id=proposal_id,
+            based_on_task_revision=request.identity.task_revision,
+            based_on_state_version=request.identity.evaluated_at_state_version,
+            snapshot_id=request.identity.snapshot_id,
+            subgoal=subgoal,
+            action_kind=PlannerActionKind.ACTIVATE,
+            target_affordance_id=target_id,
+        ),
+        proposal_provenance=PlannerProposalProvenance(
+            source=PlannerProposalSource.DETERMINISTIC_RULE,
+            producer_id=producer_id,
+        ),
+    )

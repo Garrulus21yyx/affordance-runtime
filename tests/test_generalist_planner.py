@@ -64,7 +64,7 @@ from affordance_runtime.planning_request import (
     RuntimeBudgetView,
 )
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
@@ -1444,7 +1444,7 @@ def test_only_compatibility_binding_rewrites_explicit_lowercase_task_grammar() -
         success_criteria=("submitted",),
         source_request_ref="test",
     )
-    context = build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+    context = build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
     candidate = PlannerProposalCandidate(
         action_kind=PlannerActionKind.TYPE_TEXT,
@@ -1476,7 +1476,7 @@ def test_generalist_opens_tightest_visible_ancestor_of_hidden_quoted_target() ->
         success_criteria=("target opened",),
         source_request_ref="test",
     )
-    context = build_planner_context(TaskEnvelope(task_spec=task), state, BrowserSnapshot(observation, model))
+    context = build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
     proposal = PlannerProposalCandidate(
         action_kind=PlannerActionKind.ACTIVATE,
@@ -1616,7 +1616,7 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
         ),
     )
     state.task_plan = plan
-    state.plan_progress = PlanProgress(
+    state.task_progress = PlanProgress(
         active_subgoal_id="settings:submitted",
         completed_subgoal_ids=["field:value"],
         evidence_by_subgoal={},
@@ -1696,7 +1696,7 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
 
         def build(
             self,
-            envelope: TaskEnvelope,
+            envelope: RunRequest,
             state: StateKernel,
             snapshot: BrowserSnapshot,
         ) -> PlanningRequest:
@@ -1740,7 +1740,7 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
             model_port,
             planning_request_builder=request_builder,  # type: ignore[arg-type]
             context_builder=context_builder,  # type: ignore[arg-type]
-        ).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        ).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert request_builder.built is not None
@@ -1778,7 +1778,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
 
     decision = asyncio.run(
         GeneralistLMPlanner(fixed).propose_legacy(
-            TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
+            RunRequest(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
         )
@@ -1794,7 +1794,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
     assert repaired_planner.repair_planner_schema() is not None
     repaired_decision = asyncio.run(
         repaired_planner.propose_legacy(
-            TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
+            RunRequest(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
         )
@@ -1811,7 +1811,7 @@ def test_generalist_context_is_bounded_semantic_and_authority_separated() -> Non
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
         ).propose_legacy(
-            TaskEnvelope(task_spec=task_spec, capabilities=["settings.write"]),
+            RunRequest(task_spec=task_spec, capabilities=["settings.write"]),
             state,
             snapshot,
         )
@@ -1910,7 +1910,7 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
     )
     state = StateKernel("task-1", "submit settings")
     state.task_plan = plan
-    state.plan_progress = PlanProgress(
+    state.task_progress = PlanProgress(
         active_subgoal_id="settings:submitted",
         completed_subgoal_ids=["field:value"],
         evidence_by_subgoal=(
@@ -2009,7 +2009,7 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
     model = ReadinessModel()
     decision = asyncio.run(
         GeneralistLMPlanner(model).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -2072,7 +2072,7 @@ def test_generalist_rebinds_runtime_identity_and_accepts_singular_effect_aliases
 
     decision = asyncio.run(
         _compatibility_planner(CandidateModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -2129,7 +2129,7 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
     with pytest.raises(StructuredModelError) as exc_info:
         asyncio.run(
             _compatibility_planner(InvalidCandidateModel()).propose_legacy(
-                TaskEnvelope(task_spec=task_spec),
+                RunRequest(task_spec=task_spec),
                 state,
                 snapshot,
             )
@@ -2182,7 +2182,7 @@ def test_generalist_repairs_one_invalid_candidate_on_the_same_snapshot() -> None
     repair_model = RepairingCandidateModel()
     decision = asyncio.run(
         _compatibility_planner(repair_model).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -2246,7 +2246,7 @@ def test_generalist_compiles_explicit_one_position_drag_to_adjacent_semantic_tar
         source_request_ref="test",
     )
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2303,7 +2303,7 @@ def test_generalist_compiles_an_already_sorted_numeric_list_to_submit() -> None:
         source_request_ref="test",
     )
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2338,7 +2338,7 @@ def test_generalist_compiles_smaller_inside_larger_to_distinct_semantic_endpoint
         source_request_ref="test",
     )
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2382,7 +2382,7 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
         source_request_ref="test",
     )
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2403,7 +2403,7 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
         post_page_revision=model.page_revision,
     )
     completed_context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2430,7 +2430,7 @@ def test_generalist_compiles_size_relation_from_observed_geometry_semantics() ->
     fresh_state = StateKernel("task-box-contained", "Drag box")
     fresh_state.remember_observation(observation)
     contained_context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         fresh_state,
         BrowserSnapshot(observation, already_contained),
     )
@@ -2466,7 +2466,7 @@ def test_generalist_derives_terminal_flags_from_action_kind_at_binding() -> None
         source_request_ref="test",
     )
     context = build_planner_context(
-        TaskEnvelope(task_spec=task),
+        RunRequest(task_spec=task),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -2523,7 +2523,7 @@ def test_generalist_binds_a_missing_target_only_when_one_compatible_affordance_e
 
     decision = asyncio.run(
         _compatibility_planner(SingletonCandidateModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -2567,7 +2567,7 @@ def test_generalist_normalizes_select_target_id_to_current_visible_option_label(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(SelectModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SelectModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2604,7 +2604,7 @@ def test_generalist_fills_a_missing_select_option_only_from_one_objective_match(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(MissingOptionModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(MissingOptionModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2698,7 +2698,7 @@ def test_generalist_repairs_a_numeric_slider_key_only_toward_the_target() -> Non
 
     repair_model = SliderRepairModel()
     decision = asyncio.run(
-        _compatibility_planner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(repair_model).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 0
@@ -2733,7 +2733,7 @@ def test_generalist_exposes_submit_when_slider_context_reaches_target() -> None:
     )
 
     decision = asyncio.run(
-        _compatibility_planner(ProposalModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(ProposalModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2776,7 +2776,7 @@ def test_generalist_uses_page_key_for_large_slider_distance(
         success_criteria=("slider target reached",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     permitted, targets, key = _slider_progress_constraints(
         context,
@@ -2837,7 +2837,7 @@ def test_generalist_extracts_slider_target_when_objective_contains_checkbox_ordi
 
     repair_model = SliderRepairModel()
     decision = asyncio.run(
-        _compatibility_planner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(repair_model).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 0
@@ -2904,13 +2904,13 @@ def test_generalist_binds_copy_paste_to_exact_source_value_and_destination() -> 
             )
 
     planner = _compatibility_planner(CopyModel())
-    decision = asyncio.run(planner.propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot))
+    decision = asyncio.run(planner.propose_legacy(RunRequest(task_spec=task_spec), state, snapshot))
 
     assert decision.proposal is not None
     assert decision.proposal.target_affordance_id == "dom_input_1"
     assert decision.proposal.parameters == {"text": "Trim-sensitive text "}
 
-    context = planner.build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = planner.build_context(RunRequest(task_spec=task_spec), state, snapshot)
     satisfied_context = context.model_copy(update={"satisfied_action_targets": {"type_text": ("dom_input_1",)}})
     permitted, targets, value = _copy_text_constraints(
         satisfied_context,
@@ -2982,7 +2982,7 @@ def test_generalist_binds_ordinal_copy_source_and_exposes_only_submit_after_dest
         success_criteria=("submitted",),
         source_request_ref="test",
     )
-    context = build_planner_context(TaskEnvelope(task_spec=task_spec), state, BrowserSnapshot(observation, model))
+    context = build_planner_context(RunRequest(task_spec=task_spec), state, BrowserSnapshot(observation, model))
     permitted, targets, value = _copy_text_constraints(
         context,
         ["activate", "press_key", "type_text"],
@@ -3074,7 +3074,7 @@ def test_generalist_ordinal_copy_takes_priority_over_scroll_progress() -> None:
             raise AssertionError("exact copy transfer must bypass the language model")
 
     decision = asyncio.run(
-        _compatibility_planner(CopyModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(CopyModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3105,7 +3105,7 @@ def test_generalist_binds_table_field_to_adjacent_value_and_then_submit() -> Non
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
     compatible = {
         "activate": ["dom_td_1", "dom_td_2", "dom_button_1"],
         "type_text": ["dom_input_1"],
@@ -3189,7 +3189,7 @@ def test_generalist_binds_one_isolated_visible_value_for_deictic_text_entry() ->
             )
 
     decision = asyncio.run(
-        _compatibility_planner(VisibleTextModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(VisibleTextModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3262,7 +3262,7 @@ def test_generalist_keeps_long_text_suffix_and_writes_only_the_destination() -> 
             )
 
     decision = asyncio.run(
-        _compatibility_planner(RelationalTextModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(RelationalTextModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3352,7 +3352,7 @@ def test_generalist_binds_textarea_scroll_to_exact_boundary_key(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(ScrollModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(ScrollModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3434,7 +3434,7 @@ def test_generalist_exposes_submit_after_textarea_reaches_scroll_boundary(
             )
 
     decision = asyncio.run(
-        _compatibility_planner(SubmitModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(SubmitModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -3489,7 +3489,7 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
             return output_schema.model_validate(candidate)
 
     repair_model = AutocompleteRepairModel()
-    strict = asyncio.run(GeneralistLMPlanner(repair_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot))
+    strict = asyncio.run(GeneralistLMPlanner(repair_model).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot))
 
     assert repair_model.calls == 0
     assert strict.proposal is None
@@ -3501,7 +3501,7 @@ def test_only_compatibility_repair_forces_autocomplete_prefix_task_grammar() -> 
             repair_model,
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
-        ).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        ).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert repair_model.calls == 2
@@ -3558,7 +3558,7 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
 
     decision = asyncio.run(
         _compatibility_planner(PrefixSchemaModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec), state, snapshot
+            RunRequest(task_spec=task_spec), state, snapshot
         )
     )
 
@@ -3597,7 +3597,7 @@ def test_strict_planner_does_not_guess_exact_value_when_no_actionchoice_exists()
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="date-field:value")
+    state.task_progress = PlanProgress(active_subgoal_id="date-field:value")
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -3631,7 +3631,7 @@ def test_strict_planner_does_not_guess_exact_value_when_no_actionchoice_exists()
 
     decision = asyncio.run(
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -3661,7 +3661,7 @@ def test_strict_planner_does_not_guess_unique_requested_button_without_actioncho
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -3697,7 +3697,7 @@ def test_strict_planner_does_not_guess_selected_option_submit_without_actionchoi
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -3733,7 +3733,7 @@ def test_strict_planner_does_not_guess_target_derived_text_value_without_actionc
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="text-field:changed")
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -3745,7 +3745,7 @@ def test_strict_planner_does_not_guess_target_derived_text_value_without_actionc
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -3786,7 +3786,7 @@ def test_strict_planner_does_not_guess_slider_press_key_without_actionchoice() -
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="slider-value:changed")
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -3798,7 +3798,7 @@ def test_strict_planner_does_not_guess_slider_press_key_without_actionchoice() -
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -3860,7 +3860,7 @@ def test_strict_planner_does_not_override_explanatory_slider_clarification_witho
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="slider-value:changed")
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -3873,7 +3873,7 @@ def test_strict_planner_does_not_override_explanatory_slider_clarification_witho
 
     decision = asyncio.run(
         GeneralistLMPlanner(SliderClarificationModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -3923,7 +3923,7 @@ def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() ->
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="slider-value:changed")
     state.record_planner_proposal(
         {
             "proposal_id": "previous",
@@ -3946,7 +3946,7 @@ def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() ->
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -3993,7 +3993,7 @@ def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> Non
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="slider-value:changed")
     state.record_planner_proposal(
         {
             "proposal_id": "previous",
@@ -4016,7 +4016,7 @@ def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> Non
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -4070,7 +4070,7 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="checkbox:checked")
+    state.task_progress = PlanProgress(active_subgoal_id="checkbox:checked")
     state.record_planner_proposal(
         {
             "proposal_id": "previous",
@@ -4093,7 +4093,7 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -4144,7 +4144,7 @@ def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_t
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="submit")
+    state.task_progress = PlanProgress(active_subgoal_id="submit")
     state.record_planner_proposal(
         {
             "proposal_id": "previous-checkbox",
@@ -4167,7 +4167,7 @@ def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_t
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -4221,7 +4221,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="slider-value:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="slider-value:changed")
     state.record_planner_proposal(
         {
             "proposal_id": "previous",
@@ -4244,7 +4244,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
     )
 
     decision = asyncio.run(
-        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     _assert_strict_semantic_resolver_retired(decision)
@@ -4286,7 +4286,7 @@ def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists(
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="text-field:changed")
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -4312,7 +4312,7 @@ def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists(
 
     decision = asyncio.run(
         GeneralistLMPlanner(EmptyClarificationModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -4366,7 +4366,7 @@ def test_strict_planner_does_not_submit_after_verified_page_text_without_actionc
             ),
         ),
     )
-    state.plan_progress = PlanProgress(active_subgoal_id="text-field:changed")
+    state.task_progress = PlanProgress(active_subgoal_id="text-field:changed")
     state.record_planner_proposal(
         {
             "proposal_id": "previous",
@@ -4409,7 +4409,7 @@ def test_strict_planner_does_not_submit_after_verified_page_text_without_actionc
 
     decision = asyncio.run(
         GeneralistLMPlanner(BlockingClarificationModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec),
+            RunRequest(task_spec=task_spec),
             state,
             snapshot,
         )
@@ -4471,7 +4471,7 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
         ).propose_legacy(
-            TaskEnvelope(task_spec=task_spec), state, snapshot
+            RunRequest(task_spec=task_spec), state, snapshot
         )
     )
 
@@ -4533,7 +4533,7 @@ def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> 
 
     decision = asyncio.run(
         _compatibility_planner(PageTransitionModel()).propose_legacy(
-            TaskEnvelope(task_spec=task_spec), state, snapshot
+            RunRequest(task_spec=task_spec), state, snapshot
         )
     )
 
@@ -4559,13 +4559,11 @@ def test_generalist_repair_excludes_siblings_after_one_ordinal_control_is_satisf
     snapshot = BrowserSnapshot(observation, model)
     state = StateKernel("task-1", "Click the 3rd checkbox, then Submit")
     state.remember_observation(observation)
-    state.progress_guard_events.append(
-        {
-            "reason": "effect_already_satisfied",
-            "signature": '{"action_kind":"activate","parameters":{},"target":"dom_input_3"}',
-            "environment_revision": "rev-1",
-        }
-    )
+    state.latest_progress_guard = {
+        "reason": "effect_already_satisfied",
+        "signature": '{"action_kind":"activate","parameters":{},"target":"dom_input_3"}',
+        "environment_revision": "rev-1",
+    }
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -4575,7 +4573,7 @@ def test_generalist_repair_excludes_siblings_after_one_ordinal_control_is_satisf
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
     candidate = PlannerProposalCandidate(
         action_kind=PlannerActionKind.ACTIVATE,
         target_affordance_id="dom_input_3",
@@ -4613,7 +4611,7 @@ def test_generalist_target_scope_keeps_only_named_checkbox_labels_and_submit() -
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     targets = _restrict_targets_to_objective(
         context,
@@ -4642,7 +4640,7 @@ def test_generalist_selection_only_goal_excludes_incidental_text_inputs() -> Non
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     assert _hierarchical_target_operation(context) is None
 
@@ -4682,7 +4680,7 @@ def test_generalist_excludes_autocomplete_refill_after_current_value_matches() -
         success_criteria=("matching item entered",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     permitted, targets = _restrict_action_kinds_to_objective(
         context,
@@ -4725,7 +4723,7 @@ def test_generalist_compiles_unique_terminal_after_requested_text_is_present() -
     planner_model = ProposalModel()
 
     decision = asyncio.run(
-        _compatibility_planner(planner_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(planner_model).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
@@ -4757,7 +4755,7 @@ def test_generalist_opens_unique_search_when_named_source_is_not_visible() -> No
     planner_model = ProposalModel()
 
     decision = asyncio.run(
-        _compatibility_planner(planner_model).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(planner_model).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal.action_kind == PlannerActionKind.ACTIVATE
@@ -4773,7 +4771,7 @@ def test_generalist_enters_absent_source_into_unique_search_and_forward_recipien
     )
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
     source_context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(
+        RunRequest(
             task_spec=TaskSpec(
                 task_id="task-1",
                 revision=1,
@@ -4800,7 +4798,7 @@ def test_generalist_enters_absent_source_into_unique_search_and_forward_recipien
     )
     forward_observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=forward_model.page_revision)
     forward_context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(
+        RunRequest(
             task_spec=TaskSpec(
                 task_id="task-2",
                 revision=1,
@@ -4848,7 +4846,7 @@ def test_generalist_prefers_terminal_control_after_requested_text_is_present() -
         success_criteria=("reply sent",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     permitted, targets = _restrict_action_kinds_to_objective(
         context,
@@ -4893,7 +4891,7 @@ def test_generalist_recognizes_hyphenated_terminal_control_after_text_is_present
         success_criteria=("reply sent",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     permitted, targets = _restrict_action_kinds_to_objective(
         context,
@@ -4930,7 +4928,7 @@ def test_generalist_resolves_ordinal_collection_across_pagination() -> None:
         source_request_ref="request-1",
     )
     context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(task_spec=task_spec),
+        RunRequest(task_spec=task_spec),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -4950,7 +4948,7 @@ def test_generalist_resolves_ordinal_collection_across_pagination() -> None:
     page_two_state = StateKernel("task-1", "Click the 4th search result")
     page_two_state.remember_observation(page_two_observation)
     page_two_context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(task_spec=task_spec),
+        RunRequest(task_spec=task_spec),
         page_two_state,
         BrowserSnapshot(page_two_observation, page_two),
     )
@@ -4984,7 +4982,7 @@ def test_generalist_binds_only_remaining_requested_multi_select_value() -> None:
         source_request_ref="request-1",
     )
     context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(task_spec=task_spec),
+        RunRequest(task_spec=task_spec),
         state,
         BrowserSnapshot(observation, model),
     )
@@ -5022,7 +5020,7 @@ def test_generalist_keeps_only_autocomplete_option_matching_prefix_and_suffix() 
         success_criteria=("matching item entered",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     targets = _restrict_targets_to_objective(
         context,
@@ -5052,7 +5050,7 @@ def test_generalist_target_scope_binds_each_ordinal_to_its_control_role() -> Non
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     targets = _restrict_targets_to_objective(
         context,
@@ -5087,7 +5085,7 @@ def test_generalist_rejects_an_action_target_mismatch_before_binding() -> None:
         success_criteria=("submitted",),
         source_request_ref="request-1",
     )
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
     candidate = PlannerProposalCandidate(
         action_kind=PlannerActionKind.ACTIVATE,
         target_affordance_id="dom_select_1",
@@ -5130,7 +5128,7 @@ def test_generalist_rebinds_select_option_from_option_affordance_to_unique_selec
             )
 
     decision = asyncio.run(
-        _compatibility_planner(OptionTargetModel()).propose_legacy(TaskEnvelope(task_spec=task_spec), state, snapshot)
+        _compatibility_planner(OptionTargetModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -5171,7 +5169,7 @@ def test_generalist_context_exposes_passed_effect_without_surface_payload() -> N
     )
 
     context = GeneralistLMPlanner(ProposalModel()).build_context(
-        TaskEnvelope(task_spec=task_spec),
+        RunRequest(task_spec=task_spec),
         state,
         snapshot,
     )
@@ -5212,9 +5210,11 @@ def test_generalist_context_bounds_inventory_history_and_failure_detail() -> Non
         ],
         reason="semantic state did not change",
     )
-    state.progress_guard_events.append(
-        {"reason": "no_progress_repeat", "signature": "activate:button", "environment_revision": "rev-1"}
-    )
+    state.latest_progress_guard = {
+        "reason": "no_progress_repeat",
+        "signature": "activate:button",
+        "environment_revision": "rev-1",
+    }
     task_spec = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -5225,7 +5225,7 @@ def test_generalist_context_bounds_inventory_history_and_failure_detail() -> Non
         source_request_ref="request-1",
     )
 
-    context = GeneralistLMPlanner(ProposalModel()).build_context(TaskEnvelope(task_spec=task_spec), state, snapshot)
+    context = GeneralistLMPlanner(ProposalModel()).build_context(RunRequest(task_spec=task_spec), state, snapshot)
 
     assert len(context.affordances) == 80
     assert len(context.recent_proposals) == 1

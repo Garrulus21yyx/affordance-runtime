@@ -26,8 +26,8 @@ from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import StateCriterion, StepSpec
 from affordance_runtime.unified_observation import (
+    UnifiedObservation,
     UnifiedObservationTarget,
-    UnifiedObservationView,
 )
 
 
@@ -302,7 +302,7 @@ class ActionChoiceBuilder:
         state_version: int,
         step: StepSpec,
         scope: ActiveStepScope,
-        observation: UnifiedObservationView,
+        observation: UnifiedObservation,
     ) -> ActionChoiceBuildResult:
         stale_reason = _validate_scope_identity(
             task_revision=task_revision,
@@ -631,7 +631,7 @@ def _validate_scope_identity(
     state_version: int,
     step: StepSpec,
     scope: ActiveStepScope,
-    observation: UnifiedObservationView,
+    observation: UnifiedObservation,
 ) -> str:
     if task_revision != scope.task_revision:
         return "stale_scope_task_revision"
@@ -666,6 +666,12 @@ def _numeric_state_value(target: UnifiedObservationTarget) -> int | float | None
                 return float(value)
             except ValueError:
                 continue
+    context_values = re.findall(
+        r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])",
+        str(target.state.get("context_text") or ""),
+    )
+    if len(context_values) == 1:
+        return float(context_values[0])
     return None
 
 

@@ -51,17 +51,11 @@ class RecoveryKind(StrEnum):
     COMPACT_CONTEXT = "compact_context"
     SWITCH_PROVIDER = "switch_provider"
     REPAIR_MODEL_SCHEMA = "repair_model_schema"
-    CLARIFY_INTENT = "clarify_intent"
-    REPLAN_TASK = "replan_task"
-    REPLAN_STEP = "replan_step"
     REGROUND = "reground"
     REROUTE = "reroute"
     INSPECT_POST_STATE = "inspect_post_state"
     RETRY_IDEMPOTENT = "retry_idempotent"
     COMPENSATE = "compensate"
-    REQUEST_APPROVAL = "request_approval"
-    ASK_USER = "ask_user"
-    ABORT = "abort"
 
 
 class RecoveryDimension(StrEnum):
@@ -195,8 +189,6 @@ class RecoveryDecision:
             raise ValueError("recovery decision changed_dimensions must be unique")
         if not self.preconditions:
             raise ValueError("recovery decision preconditions are required")
-        if self.kind in {RecoveryKind.ASK_USER, RecoveryKind.CLARIFY_INTENT} and not self.question:
-            raise ValueError("user-information recovery decision requires a question")
         if self.kind == RecoveryKind.REROUTE and not (self.candidate_id or self.route_ref):
             raise ValueError("reroute recovery decision requires a candidate or route ref")
         if self.kind == RecoveryKind.SWITCH_PROVIDER and not self.provider_id:
@@ -287,6 +279,12 @@ def classify_failure(
         return _classification(FailureKind.NO_FEASIBLE_ACTION, FailureOwner.RUNTIME_RECOVERY, error_code)
     if error_code == "legacy_decision_without_proposal":
         return _classification(FailureKind.UNKNOWN, FailureOwner.TERMINAL, error_code)
+    if error_code == "quota_exhausted":
+        return _classification(
+            FailureKind.PROVIDER_OR_SCHEMA_FAILURE,
+            FailureOwner.TERMINAL,
+            "provider_quota_exhausted",
+        )
     if error_code in {"grounding_ambiguous", "ambiguous_target"}:
         return _classification(FailureKind.GROUNDING_AMBIGUOUS, FailureOwner.RUNTIME_RECOVERY, error_code)
     if failure.failure_class == FailureClass.AUTHORITY:

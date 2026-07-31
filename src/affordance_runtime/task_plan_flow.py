@@ -378,13 +378,13 @@ def _ready_replacement_subgoal(
 ) -> SubgoalSpec | None:
     if (
         state.task_plan is None
-        or state.plan_progress is None
-        or state.plan_progress.active_subgoal_id
+        or state.task_progress is None
+        or state.task_progress.active_subgoal_id
         or not replacement.subgoal_id
     ):
         return None
-    completed = set(state.plan_progress.completed_subgoal_ids)
-    failed = set(state.plan_progress.failed_subgoal_ids)
+    completed = set(state.task_progress.completed_subgoal_ids)
+    failed = set(state.task_progress.failed_subgoal_ids)
     return next(
         (
             item

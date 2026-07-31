@@ -55,7 +55,6 @@ from affordance_runtime.planning import (
     PlannerProposalSource,
 )
 from affordance_runtime.planning_contracts import (
-    PlannerDecision,
     PlannerDoneResponse,
     PlannerProposalResponse,
     PlannerResponse,
@@ -72,16 +71,29 @@ from affordance_runtime.planning_request_builder import (
     PlanningRequestLimits,
 )
 from affordance_runtime.recovery_protocol import FailureKind
-from affordance_runtime.runtime import TaskEnvelope
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.unified_observation import UnifiedObservationView
+from affordance_runtime.unified_observation import UnifiedObservation
 
 GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
 COMPATIBILITY_PLANNER_PROMPT_VERSION = "generalist-planner-v59"
 # Bumped whenever the bounded observation/history construction changes. It is
 # part of a frozen evaluation identity, not a free-form prompt label.
 GENERALIST_PLANNER_CONTEXT_POLICY_VERSION = "bounded-current-v2"
+
+
+@dataclass(frozen=True)
+class _GeneralistDecision:
+    """Private assembly record; the public/default boundary is PlannerResponse."""
+
+    proposal: PlannerProposal | None = None
+    proposal_provenance: PlannerProposalProvenance | None = None
+    done: bool = False
+    result: dict[str, Any] = field(default_factory=dict)
+    reason: str = ""
+    planner_context: dict[str, Any] = field(default_factory=dict)
+    model_call: Any = None
 
 
 def _compatibility_algorithms() -> ModuleType:
@@ -303,10 +315,10 @@ class GeneralistLMPlanner:
 
     async def propose_legacy(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
-    ) -> PlannerDecision:
+    ) -> _GeneralistDecision:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
         request = self._planning_request_builder().build(envelope, state, snapshot)
@@ -380,7 +392,7 @@ class GeneralistLMPlanner:
         )
         return selection
 
-    async def _propose_decision(self, request: PlanningRequest) -> PlannerDecision:
+    async def _propose_decision(self, request: PlanningRequest) -> _GeneralistDecision:
         context = self._context_builder().build(request)
         planner_admission: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
@@ -414,7 +426,7 @@ class GeneralistLMPlanner:
                 destination_affordance_id=compiled.destination_affordance_id,
                 parameters=compiled.parameters,
             ).bind(context, compilation=compiled)
-            return PlannerDecision(
+            return _GeneralistDecision(
                 proposal=compiled_proposal,
                 proposal_provenance=PlannerProposalProvenance(
                     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -633,7 +645,7 @@ class GeneralistLMPlanner:
 
     def build_context(
         self,
-        envelope: TaskEnvelope,
+        envelope: RunRequest,
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> PlannerContext:
@@ -770,7 +782,7 @@ async def _runtime_action_choice_decision(
     planner_profile: GeneralistPlannerProfile,
     planner_admission: dict[str, object],
     planner: GeneralistLMPlanner,
-) -> PlannerDecision | None:
+) -> _GeneralistDecision | None:
     active_step = request.step.active_step
     if active_step is None:
         return _action_choice_failure_decision(
@@ -794,7 +806,7 @@ async def _runtime_action_choice_decision(
         state_version=request.identity.evaluated_at_state_version,
         step=active_step,
         scope=scope,
-        observation=UnifiedObservationView.from_planner_observation(request.observation),
+        observation=UnifiedObservation.from_planner_observation(request.observation),
     )
     if isinstance(choice_result, ActionChoiceFailure):
         return _action_choice_failure_decision(
@@ -844,8 +856,8 @@ def _action_choice_failure_decision(
     context: PlannerContext,
     planner_profile: GeneralistPlannerProfile,
     planner_admission: dict[str, object],
-) -> PlannerDecision:
-    return PlannerDecision(
+) -> _GeneralistDecision:
+    return _GeneralistDecision(
         reason=failure.reason_code,
         planner_context={
             "task_revision": context.task_revision,
@@ -872,7 +884,7 @@ def _choice_to_decision(
     planner_admission: dict[str, object],
     producer_id: str,
     reason: str,
-) -> PlannerDecision:
+) -> _GeneralistDecision:
     parameters = cast(
         dict[str, str | int | float | bool | list[str]],
         thaw_json_at_external_boundary(choice.parameters),
@@ -904,7 +916,7 @@ def _choice_to_decision(
         evidence_requirements=allowed_source_kinds,
         reason=reason,
     )
-    return PlannerDecision(
+    return _GeneralistDecision(
         proposal=proposal,
         proposal_provenance=PlannerProposalProvenance(
             source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -941,7 +953,7 @@ def _planner_decision(
     typed_text_constraint: Any,
     ordinal_constraint: Any,
     model_call: Any,
-) -> PlannerDecision:
+) -> _GeneralistDecision:
     planner_context: dict[str, Any] = {
         "task_revision": context.task_revision,
         "state_version": context.state_version,
@@ -978,7 +990,7 @@ def _planner_decision(
         }
     if provenance.source == PlannerProposalSource.DETERMINISTIC_RULE:
         planner_context["deterministic_fallback"] = provenance.producer_id
-    return PlannerDecision(
+    return _GeneralistDecision(
         proposal=proposal,
         proposal_provenance=provenance,
         reason=proposal.reason,
@@ -987,7 +999,7 @@ def _planner_decision(
     )
 
 
-def _planner_response(decision: PlannerDecision) -> PlannerResponse:
+def _planner_response(decision: _GeneralistDecision) -> PlannerResponse:
     if decision.proposal is not None:
         return PlannerProposalResponse(
             proposal=decision.proposal,

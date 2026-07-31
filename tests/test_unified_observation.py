@@ -8,7 +8,7 @@ def test_unified_observation_view_projects_planner_observation_without_mutable_s
         PlannerAffordanceView,
         PlannerObservationView,
     )
-    from affordance_runtime.unified_observation import UnifiedObservationView
+    from affordance_runtime.unified_observation import UnifiedObservation
 
     planner_observation = PlannerObservationView(
         snapshot_id="snapshot-1",
@@ -31,7 +31,7 @@ def test_unified_observation_view_projects_planner_observation_without_mutable_s
         artifact_refs=("artifact:sha256:abc",),
     )
 
-    unified = UnifiedObservationView.from_planner_observation(planner_observation)
+    unified = UnifiedObservation.from_planner_observation(planner_observation)
 
     assert unified.snapshot_id == "snapshot-1"
     assert unified.targets[0].target_id == "semantic:name"
@@ -44,7 +44,7 @@ def test_unified_observation_view_is_deeply_immutable() -> None:
         PlannerAffordanceView,
         PlannerObservationView,
     )
-    from affordance_runtime.unified_observation import UnifiedObservationView
+    from affordance_runtime.unified_observation import UnifiedObservation
 
     mutable_state = {"items": ["a"]}
     planner_observation = PlannerObservationView(
@@ -64,7 +64,7 @@ def test_unified_observation_view_is_deeply_immutable() -> None:
         ),
         artifact_refs=(),
     )
-    unified = UnifiedObservationView.from_planner_observation(planner_observation)
+    unified = UnifiedObservation.from_planner_observation(planner_observation)
 
     mutable_state["items"].append("b")
 
@@ -74,7 +74,7 @@ def test_unified_observation_view_is_deeply_immutable() -> None:
 
 
 def test_unified_observation_rejects_duplicate_target_ids() -> None:
-    from affordance_runtime.unified_observation import UnifiedObservationTarget, UnifiedObservationView
+    from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
 
     target = UnifiedObservationTarget(
         target_id="semantic:name",
@@ -86,7 +86,7 @@ def test_unified_observation_rejects_duplicate_target_ids() -> None:
     )
 
     with pytest.raises(ValueError, match="unique"):
-        UnifiedObservationView(
+        UnifiedObservation(
             snapshot_id="snapshot-1",
             page_revision="page-1",
             environment_revision="env-1",
