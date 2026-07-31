@@ -375,6 +375,73 @@ behavioral_closure_evidence_2026_07_31:
       clean_report_sha256: e040f5591afd41a6af027e3f49a37494ed1a25ebc7c814b741e91738929a6769
   m8_taskplan_intent_admission:
     status: partial_not_promotable
+    sequenced_source_and_runtime_semantics_unit:
+      revision: 29ca32ac52a85b3a66e7309525414763ccb40b31
+      status: partial_m8_checkpoint_not_promotion
+      canonical_replacement:
+        - SourceLedger_v2_splits_explicit_then_sequences_into_real_source_units
+        - sequence_effects_narrow_only_to_a_unique_real_clause_target_match
+        - Runtime_owned_capability_or_relation_forces_canonical_graph_reconstruction
+        - provider_complete_graph_cannot_erase_runtime_capability_or_visual_evidence
+        - explicit_control_identity_and_literal_value_are_separate_typed_fields
+        - prompt_and_ledger_versions_changed_with_their_protocols
+      fail_closed_guards:
+        - unknown_source_unit_is_still_rejected
+        - ambiguous_clause_target_match_is_not_rebound
+        - unresolved_slider_effect_does_not_default_value_to_first_effect
+        - provider_cannot_grant_nonempty_interaction_capability
+      external_diagnostics:
+        first_circle_replay:
+          result: 1/2
+          repaired_boundary: unknown_source_clause_removed
+          remaining_failure: provider_graph_erased_runtime_spatial_capability
+        second_circle_replay:
+          result: 2/2
+          runtime_and_external_verification: 2/2
+          identity_digest: sha256:d8656dff01d43e32bb720509a8c393100a5d7136bcbd520d132df89a4b681dc8
+        first_clean_attempt:
+          status: stopped_not_evidence
+          completed_before_failure: 5
+          failing_episode: form-sequence:seed-0
+          failure: fused_slider_colon_value_used_as_element_identity
+          treatment: generic_control_identity_literal_value_separation
+        targeted_form_sequence_seed_0_after_repair:
+          result: passed
+          action_dispatch_and_verification: complete
+      verification:
+        full_pytest: 1451_passed
+        ruff: passed
+        core_mypy: passed_122_source_files
+        build: passed
+        diff_check: passed
+        clean_pr_6x2: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:94f8d63519dea92078176f81f2338f12b6e38f7e6ca7b9479183d8772e517970
+        clean_report_sha256: cd985ee6b17ef9b6251210897db83285fac22b7bce4af71229804a5c72ee7a08
+      fresh_30x2:
+        observed: 60/60
+        external_passed: 28/60
+        prior_external_passed: 16/60
+        runtime_failures: 29
+        provider_failures: 0
+        missing_or_unrun: 0
+        unclustered_failures: 0
+        identity_digest: sha256:400b9b6b4d0164087913153063abdc5d74e83fc45dbe73fa096c54ab4db6bbd2
+        report_sha256: fb0b3d193cb769e74434015cf084714123cbb99911753274d077d191cf6920d5
+        remaining_clusters:
+          - focus_outcome_compiled_as_availability_or_absent_element
+          - option_value_fused_into_element_identity
+          - autocomplete_raw_text_used_as_interaction_target
+          - transformation_or_read_outcome_has_no_typed_information_action
+          - scroll_outcome_or_enabler_missing
+          - relation_collection_target_missing
+          - submit_terminal_verification_or_source_authority_mismatch
+          - navigate_tree_source_coverage_or_target_admission
+        interpretation: >-
+          This is a materially improved but incomplete M8 breadth checkpoint.
+          Clean protection is closed; fresh behavioral promotion remains held.
     ordinal_value_binding_unit:
       revision: d6096ec
       generic_invariants:
