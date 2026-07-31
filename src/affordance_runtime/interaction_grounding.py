@@ -300,7 +300,7 @@ def _match_relative_destination(
     offset: int | None,
     targets: tuple[GroundingTarget, ...],
 ) -> GroundingResult:
-    if source.status != GroundingStatus.RESOLVED or offset in {None, 0}:
+    if source.status != GroundingStatus.RESOLVED or offset is None or offset == 0:
         return GroundingResult(
             source.status,
             reason_code="relation_source_unresolved",
