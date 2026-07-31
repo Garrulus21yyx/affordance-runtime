@@ -143,8 +143,9 @@ Update this table with exact revision and evidence after every completed unit. â
 | default compatibility adapters | measure M0 | 0 | pending |
 | core benchmark/task specializations | measure M0 | 0 | pending |
 | M3 element semantics | fresh typed element cluster | generic identity/role/value/focus coverage | direct identity/role/value cutover complete at `97d92b9`; M8 still owns miscompiled focus intent |
+| M4 collection/dynamic/enabling semantics | fresh typed collection and enabling clusters | scoped collection plus non-repeating typed enabling choices | partial at `e9200a5`: compound role ordinal and explicit enabler invariants complete; form-sequence-2 reaches its second step in 2/2, where M8 admission still owns missing target/value; no M4 fresh run yet |
 | progress-credit liveness cycles | 3 known | 0 | targeted click-dialog terminal-evidence cycle closed; breadth audit pending |
-| clean 6x2 | 12/12 at prior clean candidate | 12/12 same revision | 12/12 at clean `e9d7414` |
+| clean 6x2 | 12/12 at prior clean candidate | 12/12 same revision | 12/12 at clean `e9200a5`; identity `sha256:18c9c8e...`; zero runtime/provider/missing/unrun failures |
 | fresh 30x2 | 12/60, 48 failures at prior clean candidate | DoD in review archive | 16/60 at clean `e9d7414`; 44 typed clusters remain; promotion held |
 
 ## 7. Stop conditions
