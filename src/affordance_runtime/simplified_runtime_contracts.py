@@ -155,12 +155,16 @@ def interaction_for_state(
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
-    target_name, element_role, role_only = _element_identity(subject)
+    target_name, element_role, role_only, ordinal = _element_identity(
+        subject,
+        expected_value,
+    )
     is_collection = relation == StateCriterionRelation.IS_SELECTED
     target = ElementIntent(
         target_name,
         source_refs,
         role=("collection" if is_collection else element_role),
+        ordinal=ordinal,
         match_by_role=is_collection or role_only,
     )
     if (
@@ -196,23 +200,58 @@ _ELEMENT_ROLES = frozenset(
 )
 
 
-def _element_identity(subject: str) -> tuple[str, str, bool]:
+def _element_identity(
+    subject: str,
+    expected_value: FrozenScalar,
+) -> tuple[str, str, bool, int | None]:
     """Separate an explicit leading/trailing role token from a semantic label."""
 
     structured = _structured_element_identity(subject)
     if structured is not None:
-        return structured
+        label, role, role_only = structured
+        return label, role, role_only, None
+    semantic_identifier = _semantic_state_identifier(subject, expected_value)
+    if semantic_identifier is not None:
+        return semantic_identifier
     tokens = subject.replace("_", " ").split()
     if not tokens:
-        return subject, "", False
+        return subject, "", False, None
     first = tokens[0].casefold()
     last = tokens[-1].casefold()
     role = first if first in _ELEMENT_ROLES else last if last in _ELEMENT_ROLES else ""
     if not role:
-        return subject, "", False
+        return subject, "", False, None
     label_tokens = tokens[1:] if first == role else tokens[:-1]
     label = " ".join(label_tokens)
-    return (label or role), role, not label
+    return (label or role), role, not label, None
+
+
+def _semantic_state_identifier(
+    subject: str,
+    expected_value: FrozenScalar,
+) -> tuple[str, str, bool, int | None] | None:
+    if "_" not in subject:
+        return None
+    tokens = tuple(item for item in subject.split("_") if item)
+    roles = tuple(item.casefold() for item in tokens if item.casefold() in _ELEMENT_ROLES)
+    if len(roles) != 1:
+        return None
+    role = roles[0]
+    remaining = [item for item in tokens if item.casefold() != role]
+    remaining = [item for item in remaining if item.casefold() != "state"]
+    if role == "slider":
+        remaining = [item for item in remaining if item.casefold() != "value"]
+    expected = "" if expected_value is None else str(expected_value).casefold()
+    if expected:
+        remaining = [item for item in remaining if item.casefold() != expected]
+    ordinal = None
+    if role in {"checkbox", "radio"}:
+        ordinal_token = next((item for item in remaining if item.isdigit()), "")
+        if ordinal_token and int(ordinal_token) > 0:
+            ordinal = int(ordinal_token)
+            remaining.remove(ordinal_token)
+    label = " ".join(remaining)
+    return (label or role), role, not label, ordinal
 
 
 def _structured_element_identity(subject: str) -> tuple[str, str, bool] | None:

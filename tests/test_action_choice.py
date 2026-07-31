@@ -411,6 +411,131 @@ def test_action_choice_builder_binds_generic_label_and_role_identity(subject: st
     assert result.choices[0].action_kind == PlannerActionKind.ACTIVATE
 
 
+def test_action_choice_builder_binds_role_only_state_identifier() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:level",
+        subject="slider_value_7",
+        expected_value=7,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:level",
+                surface="dom",
+                role="slider",
+                label="Level",
+                supported_actions=("press_key",),
+                state={"value": 5},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:level"
+    assert result.choices[0].parameters == {"key": "ArrowRight"}
+
+
+def test_action_choice_builder_binds_typed_role_ordinal_after_reordering() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:second",
+        subject="checkbox_2_state",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:first",
+                surface="dom",
+                role="checkbox",
+                label="Renamed A",
+                supported_actions=("activate",),
+                state={"checked": False},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:second",
+                surface="dom",
+                role="checkbox",
+                label="Renamed B",
+                supported_actions=("activate",),
+                state={"checked": False},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:second"
+
+
+def test_action_choice_builder_binds_label_role_state_identifier() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:archive",
+        subject="archive_button_state",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:archive",
+                surface="dom",
+                role="button",
+                label="Archive",
+                supported_actions=("activate",),
+                state={"enabled": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:archive"
+
+
 def test_action_choice_builder_creates_has_changed_activation_choice_for_button() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 
