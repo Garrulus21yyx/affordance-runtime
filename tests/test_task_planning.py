@@ -939,6 +939,33 @@ def test_validator_accepts_observable_multistage_outcome() -> None:
     assert report.status == TaskPlanValidationStatus.ACCEPT
 
 
+def test_validator_trusts_canonical_typed_outcome_when_subject_starts_with_action_homonym() -> None:
+    task = _task().model_copy(update={"task_structure": TaskStructure.MULTI_STAGE})
+    plan = synthetic_task_plan(_context().model_copy(update={"task_spec": task}))
+    typed_outcome = SubgoalOutcome(
+        subject="scroll region",
+        relation=SubgoalOutcomeRelation.IS_COMPLETED,
+    )
+    canonical = plan.model_copy(
+        update={
+            "subgoals": (
+                plan.subgoals[0].model_copy(
+                    update={
+                        "objective": typed_outcome.description(),
+                        "success_criteria": (typed_outcome.description(),),
+                        "action_family": TaskPlanActionFamily.ACTIVATE,
+                        "outcome": typed_outcome,
+                    }
+                ),
+            )
+        }
+    )
+
+    report = TaskPlanValidator().validate(canonical, task, state_version=4)
+
+    assert report.status == TaskPlanValidationStatus.ACCEPT
+
+
 @pytest.mark.parametrize(
     "action_family",
     (

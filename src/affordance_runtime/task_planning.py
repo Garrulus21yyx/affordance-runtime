@@ -813,6 +813,12 @@ class TaskPlanValidator:
         for subgoal in plan.subgoals:
             if (
                 task_spec.task_structure == TaskStructure.MULTI_STAGE
+                and (
+                    plan.generated_by != TaskPlanSource.RULE
+                    or
+                    subgoal.outcome is None
+                    or subgoal.objective != subgoal.outcome.description()
+                )
                 and _is_action_instruction_subgoal(subgoal.objective)
             ):
                 repairable.append(
