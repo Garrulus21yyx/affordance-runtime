@@ -1383,6 +1383,48 @@ def test_llm_compiler_preserves_multiword_explicit_selection_value() -> None:
     assert obligation.expected_value == "Norfolk Island"
 
 
+def test_llm_compiler_separates_choose_value_and_preserves_later_button_effect() -> None:
+    draft = IntentDraft(
+        objective="Choose Tall from the renamed dropdown, then click Decline.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="dropdown:option:value:Tall",
+                source_ref="choose-sequence:source:request:clause:0",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="button:label:Decline",
+                source_ref="choose-sequence:source:request:clause:1",
+            ),
+        ),
+        candidate_success_criteria=(
+            "Tall is selected from the renamed dropdown.",
+            "Decline is clicked.",
+        ),
+        task_structure=TaskStructure.MULTI_STAGE,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="choose-sequence",
+                raw_text="Choose Tall from the renamed dropdown, then click Decline.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    selection, decline = result.task_spec.obligations
+    assert selection.subject == "renamed dropdown"
+    assert selection.relation == TaskObligationRelation.IS_SELECTED
+    assert selection.expected_value == "Tall"
+    assert selection.interaction_values == ("Tall",)
+    assert decline.subject == "button:label:Decline"
+    assert decline.depends_on == (selection.obligation_id,)
+
+
 def test_llm_compiler_normalizes_explicit_click_misclassified_as_read_only() -> None:
     draft = IntentDraft(
         objective="Close the dialog box by clicking the 'x'.",

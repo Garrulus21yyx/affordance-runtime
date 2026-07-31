@@ -1152,7 +1152,10 @@ def _normalize_value_entry_draft(
         trailing_effects = tuple(
             item
             for item in requested_effects[1:]
-            if "submit" in item.target.casefold()
+            if not (
+                item.source_ref == selection_effect.source_ref
+                and _is_selection_alias_target(item.target, select_target)
+            )
         )
         updated_effects = (selection_effect, *trailing_effects)
     else:
@@ -1382,9 +1385,19 @@ def _extract_literal_selection_value(raw_text: str) -> tuple[str, str]:
     return ", ".join(values), target
 
 
+def _is_selection_alias_target(candidate: str, collection: str) -> bool:
+    candidate_tokens = set(re.findall(r"[a-z0-9]+", candidate.casefold()))
+    collection_tokens = set(re.findall(r"[a-z0-9]+", collection.casefold()))
+    if not collection_tokens.issubset(candidate_tokens):
+        return False
+    return candidate_tokens == collection_tokens or bool(
+        candidate_tokens.intersection({"option", "select", "selected", "selection", "value"})
+    )
+
+
 def _extract_literal_selection_values(raw_text: str) -> tuple[tuple[str, ...], str]:
     list_match = re.search(
-        r"\bselect\s+(.+?)\s+from\s+(?:the\s+)?((?:[\w-]+\s+){0,3}(?:list|dropdown|select))\b",
+        r"\b(?:select|choose)\s+(.+?)\s+from\s+(?:the\s+)?((?:[\w-]+\s+){0,3}(?:list|dropdown|select))\b",
         raw_text,
         flags=re.IGNORECASE,
     )
