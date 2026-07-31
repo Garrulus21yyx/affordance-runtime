@@ -504,6 +504,7 @@ def test_browsergym_slider_progress_uses_goal_value_when_active_step_lost_value(
         affordance=affordance,
     )
 
+    assert declared[-2].progress_scope == ProgressEvidenceScope.NONE
     assert declared[-1] == VerifierSpec(
         "control_state",
         "17",
@@ -512,6 +513,11 @@ def test_browsergym_slider_progress_uses_goal_value_when_active_step_lost_value(
         evidence_key="slider_target:17",
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
+    bound = bind_active_subgoal_verifiers(tuple(declared), state)
+    assert bound[-2].criterion_ids == ()
+    assert bound[-2].requirement_ids == ()
+    assert bound[-1].criterion_ids
+    assert bound[-1].requirement_ids
 
 
 def test_browsergym_checkbox_click_uses_strong_control_state_progress_evidence() -> None:
@@ -665,7 +671,7 @@ def test_browsergym_click_completed_outcome_declares_independent_progress_eviden
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
     assert declared[-2].strict is False
-    assert declared[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+    assert declared[-2].progress_scope == ProgressEvidenceScope.NONE
 
 
 def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_failure() -> None:

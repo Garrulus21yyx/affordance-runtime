@@ -482,7 +482,7 @@ def declare_browsergym_active_subgoal_evidence(
         declared = list(verifier_plan)
         if declared and declared[-1].kind == "state_delta_or_terminal":
             declared[-1] = replace(declared[-1], strict=False)
-        return [*declared, completed_click_progress]
+        return _append_authoritative_progress_spec(declared, completed_click_progress)
     slider_progress = _browsergym_slider_exact_progress_spec(
         action,
         verifier_plan[-1],
@@ -491,7 +491,7 @@ def declare_browsergym_active_subgoal_evidence(
         state=state,
     )
     if slider_progress is not None:
-        return [*verifier_plan, slider_progress]
+        return _append_authoritative_progress_spec(verifier_plan, slider_progress)
     if not _browsergym_postcondition_proves_outcome(
         action,
         verifier_plan[-1],
@@ -506,6 +506,21 @@ def declare_browsergym_active_subgoal_evidence(
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
     return declared
+
+
+def _append_authoritative_progress_spec(
+    verifier_plan: list[VerifierSpec],
+    progress_spec: VerifierSpec,
+) -> list[VerifierSpec]:
+    """Keep action-effect checks from competing with an exact progress witness."""
+
+    effect_only = [
+        replace(item, progress_scope=ProgressEvidenceScope.NONE)
+        if item.progress_scope != ProgressEvidenceScope.NONE
+        else item
+        for item in verifier_plan
+    ]
+    return [*effect_only, progress_spec]
 
 
 def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> bool:
