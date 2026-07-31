@@ -166,6 +166,38 @@ behavioral_closure_evidence_2026_07_31:
       clean_provider_failures: 0
       clean_identity_digest: sha256:947c93545d2db1933a6d636ce9a767cbf0919089193e45208ca09fecb9cd6394
       clean_report_sha256: e040f5591afd41a6af027e3f49a37494ed1a25ebc7c814b741e91738929a6769
+  m8_taskplan_intent_admission:
+    status: partial_not_promotable
+    ordinal_value_binding_unit:
+      revision: d6096ec
+      generic_invariants:
+        - source_ordinal_role_overrides_incoherent_provider_index
+        - literal_entry_value_binds_only_to_unique_compatible_effect
+        - multi_effect_value_never_defaults_to_first_effect
+        - ambiguous_compatible_effects_are_not_repaired
+        - source_dependency_order_is_preserved
+      targeted_form_sequence_2:
+        typed_actions_completed: 2/2_per_seed
+        action_outcomes_verified: 2/2_per_seed
+        runtime_failures: 0
+        external_reward: 0/2
+        remaining_failure: terminal_evidence_missing
+        authority_reason: >-
+          The source request authorizes checking and text entry but does not
+          authorize or require the page Submit control. The runtime therefore
+          may not synthesize a hidden third action from a benchmark convention.
+      verification:
+        full_pytest: 1412_passed
+        ruff: passed
+        core_mypy: passed_122_source_files
+        clean_pr_6x2: 12/12
+        clean_identity_digest: sha256:88b1d1d082db4b1bb052ace49dd133bf5385429776495e7344cf02f7eb857319
+        clean_report_sha256: d961e8af7691ee9aa30732c1a98ee830b01bf03e9529a7dd61a622b423caf06c
+    incomplete_requirements:
+      - every_source_unit_has_typed_criterion_interaction_or_failure
+      - action_instruction_repair_or_rejection
+      - collection_tree_scroll_enabler_production
+      - deterministic_admission_breadth
 promotion_status: held
 closure_status: decomposition_complete_but_purification_incomplete
 sar_9_full_closure: not_approved
