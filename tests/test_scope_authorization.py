@@ -30,6 +30,7 @@ from affordance_runtime.scope_authorization import (
     ProposalScopeEvaluator,
     ScopeRejectionKind,
     ScopeRejectionReason,
+    authorize_observed_value_transfer,
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -181,6 +182,44 @@ def test_ordinal_relation_requires_the_requested_collection_position() -> None:
     assert accepted.authorization is not None
     assert accepted.authorization.relation == ScopeRelationKind.ORDINAL_COLLECTION_ITEM
     assert wrong_position.rejection == ScopeRejectionKind.TARGET_OUT_OF_SCOPE
+
+
+def test_observed_value_transfer_binds_both_current_endpoints_and_exact_value() -> None:
+    source, observation = _candidate(
+        candidate_id="candidate:source",
+        target_id="semantic:source",
+    )
+    destination, _ = _candidate(
+        candidate_id="candidate:destination",
+        target_id="semantic:destination",
+    )
+    observation = replace(
+        observation,
+        target_fingerprints={
+            source.candidate_id: source.target_fingerprint,
+            destination.candidate_id: destination.target_fingerprint,
+        },
+    )
+
+    accepted = authorize_observed_value_transfer(
+        source_candidate=source,
+        destination_candidate=destination,
+        observation=observation,
+        observed_value="exact dynamic value",
+        parameter_value="exact dynamic value",
+    )
+    mismatched = authorize_observed_value_transfer(
+        source_candidate=source,
+        destination_candidate=destination,
+        observation=observation,
+        observed_value="exact dynamic value",
+        parameter_value="different value",
+    )
+
+    assert accepted.authorization is not None
+    assert accepted.authorization.relation == ScopeRelationKind.OBSERVED_VALUE_TRANSFER
+    assert accepted.authorization.candidate_id == destination.candidate_id
+    assert mismatched.reason == ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED
 
 
 def test_pagination_transition_requires_independently_resolved_global_ordinal_route() -> None:

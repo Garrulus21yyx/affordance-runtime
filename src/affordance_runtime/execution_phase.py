@@ -25,6 +25,7 @@ from affordance_runtime.failure_envelope import (
     EffectStatus,
     FailureClass,
     FailurePhase,
+    ProposalRejectionContext,
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
@@ -195,7 +196,7 @@ class ActionStage:
                 stage_input.snapshot,
             )
         except ProposalRejected as exc:
-            return self._contract_rejected(stage_input, proposal_error_code(exc.code), exc.detail or exc.code.value)
+            return self._contract_rejected(stage_input, exc)
 
         contract = self.contract_execution_loop.bind_contract(
             contract, stage_input.envelope, stage_input.snapshot.observation
@@ -679,9 +680,10 @@ class ActionStage:
     def _contract_rejected(
         self,
         stage_input: ActionStageInput,
-        error_code: RuntimeErrorCode,
-        message: str,
+        rejection: ProposalRejected,
     ) -> StageResult[ActionOutput]:
+        error_code = proposal_error_code(rejection.code)
+        message = rejection.detail or rejection.code.value
         if stage_input.skill_step_id and self.task_skill_runtime is not None:
             reason = f"TaskSkill contract binding rejected: {message}"
             self.task_skill_runtime.fallthrough(cast(Any, stage_input.state_view), reason)
@@ -707,6 +709,11 @@ class ActionStage:
             error_code,
             message,
             recoverable=True,
+            proposal_rejection=ProposalRejectionContext(
+                code=rejection.code.value,
+                reason_code=rejection.reason_code,
+                semantic_target_id=stage_input.decision.proposal.target_affordance_id,
+            ),
         )
 
     def _failure(
@@ -723,6 +730,7 @@ class ActionStage:
         transition: RuntimeTransition | None = None,
         recoverable: bool = True,
         effect_status: EffectStatus | None = None,
+        proposal_rejection: ProposalRejectionContext | None = None,
     ) -> StageResult[ActionOutput]:
         view = stage_input.state_view
         plan = view.task_plan
@@ -739,6 +747,7 @@ class ActionStage:
             observation_epoch_id=stage_input.snapshot.observation.snapshot_id,
             snapshot_id=stage_input.snapshot.observation.snapshot_id,
             proposal_id=stage_input.decision.proposal.proposal_id,
+            proposal_rejection=proposal_rejection,
             contract=contract,
             expected_effect="; ".join(stage_input.decision.proposal.expected_effects),
             receipt=receipt,
@@ -765,6 +774,14 @@ class ActionStage:
                     else "FailureDetected",
                     view.phase,
                     error_code=error_code.value,
+                    rejection_code=(
+                        proposal_rejection.code if proposal_rejection is not None else ""
+                    ),
+                    rejection_reason_code=(
+                        proposal_rejection.reason_code
+                        if proposal_rejection is not None
+                        else ""
+                    ),
                     reason=message,
                 ),
             ),

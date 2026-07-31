@@ -38,6 +38,8 @@ class CanonicalEffectInput(StrictModel):
     depends_on_effect_indexes: tuple[int, ...] = ()
     terminal: bool = True
     interaction_values: tuple[str, ...] = ()
+    captures_observation_value: bool = False
+    value_source_effect_index: int | None = None
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -72,6 +74,7 @@ class CanonicalObligationCompiler:
         *,
         preserve_sequence: bool = False,
         success_criteria: tuple[str, ...] = (),
+        value_transfer_pairs: tuple[tuple[int, int], ...] = (),
     ) -> CanonicalObligationGraph:
         """Compile source-bound effects without provider graph authority.
 
@@ -85,6 +88,10 @@ class CanonicalObligationCompiler:
         """
 
         known_units = {unit.source_unit_id for unit in source_ledger.units}
+        transfer_source_by_destination = {
+            destination: source for source, destination in value_transfer_pairs
+        }
+        transfer_sources = set(transfer_source_by_destination.values())
         inputs: list[CanonicalEffectInput] = []
         exact_values_by_target: dict[str, tuple[str, ...]] = {}
         for constraint in semantic_value_constraints:
@@ -96,6 +103,7 @@ class CanonicalObligationCompiler:
                 )
             )
         for effect in effects:
+            effect_index = len(inputs)
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
             semantic_target = _canonical_effect_target(effect.target)
@@ -122,6 +130,9 @@ class CanonicalObligationCompiler:
                     else _effect_relation_for_literal(semantic_target, literal_value)
                 )
             )
+            value_source_index = transfer_source_by_destination.get(effect_index)
+            if value_source_index is not None:
+                relation = TaskObligationRelation.EQUALS
             evidence_kind = (
                 EvidenceKind.DOM_STATE
                 if effect.operation_class
@@ -147,9 +158,18 @@ class CanonicalObligationCompiler:
                             source_constraints=(effect.source_ref,),
                         ),
                     ),
-                    depends_on_effect_indexes=((len(inputs) - 1,) if preserve_sequence and inputs else ()),
+                    depends_on_effect_indexes=tuple(
+                        dict.fromkeys(
+                            (
+                                *((len(inputs) - 1,) if preserve_sequence and inputs else ()),
+                                *((value_source_index,) if value_source_index is not None else ()),
+                            )
+                        )
+                    ),
                     terminal=(not preserve_sequence or len(inputs) == len(effects) - 1),
                     interaction_values=interaction_values,
+                    captures_observation_value=effect_index in transfer_sources,
+                    value_source_effect_index=value_source_index,
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -172,6 +192,11 @@ class CanonicalObligationCompiler:
                 raise ValueError("canonical evidence references unknown source unit")
             if any(item < 0 or item >= index for item in effect.depends_on_effect_indexes):
                 raise ValueError("canonical effect dependency must reference an earlier effect")
+            if (
+                effect.value_source_effect_index is not None
+                and effect.value_source_effect_index not in effect.depends_on_effect_indexes
+            ):
+                raise ValueError("canonical value source must be a declared earlier dependency")
             identity = _identity(effect)
             claim_id = f"claim:{identity}"
             obligation_id = obligation_ids[index]
@@ -209,9 +234,17 @@ class CanonicalObligationCompiler:
                 subject=effect.target,
                 relation=relation,
                 value_source=(
-                    TaskObligationValueSource.LITERAL
-                    if literal_value
-                    else TaskObligationValueSource.NONE
+                    TaskObligationValueSource.OBLIGATION_OUTPUT
+                    if effect.value_source_effect_index is not None
+                    else (
+                        TaskObligationValueSource.OBSERVATION
+                        if effect.captures_observation_value
+                        else (
+                            TaskObligationValueSource.LITERAL
+                            if literal_value
+                            else TaskObligationValueSource.NONE
+                        )
+                    )
                 ),
                 expected_value=literal_value,
                 interaction_values=(
@@ -221,6 +254,11 @@ class CanonicalObligationCompiler:
                 ),
                 claim_ids=(claim_id,),
                 depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
+                value_obligation_id=(
+                    obligation_ids[effect.value_source_effect_index]
+                    if effect.value_source_effect_index is not None
+                    else ""
+                ),
                 evidence_requirements=tuple(f"{item.kind.value}:{item.subject}" for item in effect.evidence),
                 typed_evidence_requirements=effect.evidence,
                 terminal=effect.terminal,

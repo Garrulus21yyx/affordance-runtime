@@ -6,6 +6,7 @@ from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
+    RelationIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
@@ -83,6 +84,32 @@ def test_active_step_scope_allows_current_step_target() -> None:
 
     assert decision.allowed is True
     assert decision.reason_code == "within_active_step_scope"
+
+
+def test_value_transfer_scope_authorizes_typed_destination_not_source() -> None:
+    from affordance_runtime.active_step_scope import ActiveStepScope
+
+    step = StepSpec(
+        step_id="step:transfer",
+        objective="Transfer a sourced value",
+        interaction=RelationIntent(
+            source=ElementIntent("semantic:source", (_source(),)),
+            destination=ElementIntent("semantic:destination", (_source(),)),
+            relation="value_transfer",
+        ),
+        completion_criteria=(_criterion("semantic:destination"),),
+        source_refs=(_source(),),
+    )
+    scope = ActiveStepScope.from_active_step(
+        task_revision=1,
+        evaluated_at_state_version=1,
+        snapshot_id="snapshot-1",
+        step=step,
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    assert scope.evaluate(_proposal("semantic:destination")).allowed is True
+    assert scope.evaluate(_proposal("semantic:source")).reason_code == "target_outside_active_step"
 
 
 def test_active_step_scope_blocks_wrong_action_kind_for_current_step_target() -> None:

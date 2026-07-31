@@ -614,6 +614,49 @@ def test_llm_compiler_binds_ordinal_entry_value_to_matching_effect() -> None:
     assert second.depends_on == (first.obligation_id,)
 
 
+def test_llm_compiler_builds_sourced_value_transfer_dependency() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Copy the value from Source field into Destination field.",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="Source field",
+                    source_ref="raw_text",
+                ),
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="Destination field",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("Destination field equals the source value.",),
+            task_structure=TaskStructure.MULTI_STAGE,
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+        ).compile(
+            UserRequest(
+                request_id="value-transfer",
+                raw_text="Copy the value from Source field into Destination field.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    source, destination = result.task_spec.obligations
+    assert source.value_source == TaskObligationValueSource.OBSERVATION
+    assert destination.relation == TaskObligationRelation.EQUALS
+    assert destination.value_source == TaskObligationValueSource.OBLIGATION_OUTPUT
+    assert destination.value_obligation_id == source.obligation_id
+    assert source.obligation_id in destination.depends_on
+
+
 def test_llm_compiler_does_not_literalize_page_sourced_text_below() -> None:
     model = FixedModel(
         IntentDraft(

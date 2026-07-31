@@ -13,6 +13,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     ElementOperationKind,
     InteractionIntent,
+    RelationIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
@@ -934,6 +935,184 @@ def test_action_choice_builder_liveness_blocks_scroll_enabler_at_boundary() -> N
 
     assert isinstance(result, ActionChoiceFailure)
     assert result.reason_code == "interaction_enabler_already_satisfied"
+
+
+def test_action_choice_builder_transfers_exact_grounded_control_value() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:destination-value",
+        subject="Destination",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=ElementIntent("Source", (_source(),), role="textbox"),
+            destination=ElementIntent("Destination", (_source(),), role="textbox"),
+            relation="value_transfer",
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=UnifiedObservation(
+            snapshot_id="snapshot:1",
+            page_revision="page:1",
+            environment_revision="env:1",
+            observed_text="Unrelated page text must never be transferred",
+            targets=(
+                UnifiedObservationTarget(
+                    target_id="semantic:renamed-source",
+                    surface="dom",
+                    role="textbox",
+                    label="Source",
+                    supported_actions=("type_text",),
+                    state={"control_value": "Exact source value"},
+                ),
+                UnifiedObservationTarget(
+                    target_id="semantic:renamed-destination",
+                    surface="dom",
+                    role="textbox",
+                    label="Destination",
+                    supported_actions=("type_text",),
+                    state={"control_value": ""},
+                ),
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    choice = result.choices[0]
+    assert choice.action_kind == PlannerActionKind.TYPE_TEXT
+    assert choice.target_id == "semantic:renamed-destination"
+    assert choice.destination_id == ""
+    assert choice.parameters == {"text": "Exact source value"}
+    assert choice.criterion_ids == ("criterion:destination-value",)
+
+
+def test_action_choice_builder_distinguishes_transfer_endpoints_by_element_kind() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    source_interaction = interaction_for_state(
+        "textarea",
+        CriterionRelation.IS_AVAILABLE,
+        None,
+        (_source(),),
+    )
+    destination_interaction = interaction_for_state(
+        "textbox",
+        CriterionRelation.EQUALS,
+        None,
+        (_source(),),
+    )
+    assert isinstance(source_interaction, ElementIntent)
+    assert source_interaction.target == "textarea"
+    assert source_interaction.role == "textbox"
+    assert isinstance(destination_interaction, ElementIntent)
+    criterion = _criterion(
+        criterion_id="criterion:destination-value",
+        subject="textbox",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=source_interaction,
+            destination=destination_interaction,
+            relation="value_transfer",
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:source-with-unrelated-label",
+                surface="dom",
+                role="textbox",
+                label="Alpha",
+                supported_actions=("type_text",),
+                state={"element_tag": "textarea", "control_value": "Exact source value"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:destination-with-unrelated-label",
+                surface="dom",
+                role="textbox",
+                label="Beta",
+                supported_actions=("type_text",),
+                state={"element_tag": "input", "control_value": ""},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].target_id == "semantic:destination-with-unrelated-label"
+    assert result.choices[0].parameters == {"text": "Exact source value"}
+
+
+@pytest.mark.parametrize(
+    "source_state",
+    (
+        {},
+        {"control_value": "partial", "control_value_suffix": "secret suffix"},
+        {"control_value": "secret", "input_type": "password"},
+    ),
+)
+def test_action_choice_builder_rejects_unavailable_or_unsafe_transfer_value(
+    source_state: dict[str, object],
+) -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:destination-value",
+        subject="Destination",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=ElementIntent("Source", (_source(),), role="textbox"),
+            destination=ElementIntent("Destination", (_source(),), role="textbox"),
+            relation="value_transfer",
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:source",
+                surface="dom",
+                role="textbox",
+                label="Source",
+                supported_actions=("type_text",),
+                state=source_state,
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:destination",
+                surface="dom",
+                role="textbox",
+                label="Destination",
+                supported_actions=("type_text",),
+                state={"control_value": ""},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "no_feasible_action_choice"
 
 
 def test_action_choice_builder_binds_label_role_state_identifier() -> None:

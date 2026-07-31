@@ -36,7 +36,7 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     TaskStructure,
 )
-from affordance_runtime.task_source_references import obligation_source_refs, task_source_refs
+from affordance_runtime.task_source_references import obligation_source_refs, obligation_value_source, task_source_refs
 from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
@@ -540,6 +540,7 @@ class PlanningAffordanceState(StrictModel):
     selected: bool | None = None
     selected_options: tuple[str, ...] = Field(default=(), max_length=20)
     expanded: bool | None = None
+    element_tag: str = Field(default="", max_length=40)
 
 
 class PlanningAffordanceSummary(StrictModel):
@@ -1335,6 +1336,14 @@ class TaskObligationOutcomeCompiler:
             obligation,
             context.task_spec if context is not None else None,
         )
+        interaction = interaction_for_state(
+            outcome.subject,
+            StateCriterionRelation(outcome.relation),
+            outcome.value,
+            source_refs,
+            obligation.interaction_values,
+            obligation_value_source(obligation, context.task_spec if context is not None else None),
+        )
         return SubgoalSpec(
             subgoal_id=obligation.obligation_id,
             objective=outcome.description(),
@@ -1348,13 +1357,7 @@ class TaskObligationOutcomeCompiler:
             ),
             action_family=_infer_obligation_action_family(obligation, task_operation, relation, context),
             outcome=outcome,
-            interaction=interaction_for_state(
-                outcome.subject,
-                StateCriterionRelation(outcome.relation),
-                outcome.value,
-                source_refs,
-                obligation.interaction_values,
-            ),
+            interaction=interaction,
         )
 
 

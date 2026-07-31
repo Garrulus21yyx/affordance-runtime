@@ -26,7 +26,7 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
+from affordance_runtime.grounding import GroundingCandidate, RoutePlan, UnifiedAffordance
 from affordance_runtime.interaction_grounding import (
     GroundingStatus,
     GroundingTarget,
@@ -34,8 +34,14 @@ from affordance_runtime.interaction_grounding import (
 )
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
-from affordance_runtime.scope_authorization import ProposalScopeEvaluator, ScopeRejectionKind
-from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
+from affordance_runtime.scope_authorization import (
+    ProposalScopeDecision,
+    ProposalScopeEvaluator,
+    ScopeRejectionKind,
+    ScopeRejectionReason,
+    authorize_observed_value_transfer,
+)
+from affordance_runtime.simplified_runtime_contracts import RelationIntent, StepActivityStatus
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
@@ -265,13 +271,19 @@ def _active_step_scope(
     )
     if grounding.status != GroundingStatus.RESOLVED:
         return None
+    permitted_targets = grounding.targets
+    if (
+        isinstance(subgoal.interaction, RelationIntent)
+        and subgoal.interaction.relation == "value_transfer"
+    ):
+        permitted_targets = grounding.destinations
     return ActiveStepScope(
         task_revision=state.task_plan.task_revision,
         evaluated_at_state_version=state.version,
         snapshot_id=snapshot.observation.snapshot_id,
         activity_status=StepActivityStatus.ACTIVE,
         active_step_id=active_step_id,
-        permitted_target_ids=tuple(item.target_id for item in grounding.targets),
+        permitted_target_ids=tuple(item.target_id for item in permitted_targets),
         permitted_destination_ids=tuple(
             item.target_id for item in grounding.destinations
         ),
@@ -317,6 +329,52 @@ def _snapshot_grounding_targets(
         )
         for item in snapshot.affordance_model.affordances
     )
+
+
+def _active_value_transfer_source_target(
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+    destination_target_id: str,
+) -> str | None:
+    if state.task_plan is None or state.task_progress is None:
+        return None
+    active = next(
+        (
+            item
+            for item in state.task_plan.subgoals
+            if item.subgoal_id == state.task_progress.active_subgoal_id
+        ),
+        None,
+    )
+    if (
+        active is None
+        or not isinstance(active.interaction, RelationIntent)
+        or active.interaction.relation != "value_transfer"
+    ):
+        return None
+    grounding = InteractionGrounder().ground(
+        active.interaction,
+        _snapshot_grounding_targets(snapshot),
+    )
+    if (
+        grounding.status != GroundingStatus.RESOLVED
+        or len(grounding.targets) != 1
+        or tuple(item.target_id for item in grounding.destinations)
+        != (destination_target_id,)
+    ):
+        return None
+    return grounding.targets[0].target_id
+
+
+def _exact_transfer_source_value(state: Mapping[str, Any]) -> str | None:
+    if str(state.get("input_type") or "").casefold() == "password":
+        return None
+    if "control_value_prefix" in state or "control_value_suffix" in state:
+        return None
+    value = state.get("control_value")
+    if not isinstance(value, str) or not value or len(value) > 240:
+        return None
+    return value
 
 
 @dataclass(frozen=True)
@@ -974,19 +1032,26 @@ class ContractBuilder:
                 targets=task_spec.targets,
                 affordances=snapshot_collection_affordances(snapshot),
             )
-            scope_decision = ProposalScopeEvaluator().evaluate(
-                action_kind=proposal.action_kind.value,
-                target_id=proposal.target_affordance_id,
-                target_label=source_resolution.target.label,
-                target_role=source_resolution.target.role,
-                parameters=proposal.parameters,
-                objective=task_spec.objective,
-                targets=task_spec.targets,
-                unified_affordances=snapshot.unified_affordances,
-                observation=snapshot.observation,
-                selected_candidate=contract.grounding_candidate,
-                ordinal_constraint=ordinal_constraint,
+            scope_decision = self._value_transfer_scope_decision(
+                proposal,
+                state,
+                snapshot,
+                contract.grounding_candidate,
             )
+            if scope_decision is None:
+                scope_decision = ProposalScopeEvaluator().evaluate(
+                    action_kind=proposal.action_kind.value,
+                    target_id=proposal.target_affordance_id,
+                    target_label=source_resolution.target.label,
+                    target_role=source_resolution.target.role,
+                    parameters=proposal.parameters,
+                    objective=task_spec.objective,
+                    targets=task_spec.targets,
+                    unified_affordances=snapshot.unified_affordances,
+                    observation=snapshot.observation,
+                    selected_candidate=contract.grounding_candidate,
+                    ordinal_constraint=ordinal_constraint,
+                )
             if not scope_decision.authorized:
                 rejection = (
                     ProposalRejectionCode.UNREQUESTED_EFFECT
@@ -1011,6 +1076,59 @@ class ContractBuilder:
             compensation=contract_requirements.compensation,
             timeout_ms=contract_requirements.timeout_ms,
             contract_hash="",
+        )
+
+    @staticmethod
+    def _value_transfer_scope_decision(
+        proposal: PlannerProposal,
+        state: StateKernel,
+        snapshot: BrowserSnapshot,
+        destination_candidate: GroundingCandidate,
+    ) -> ProposalScopeDecision | None:
+        source_target_id = _active_value_transfer_source_target(
+            state,
+            snapshot,
+            proposal.target_affordance_id,
+        )
+        if source_target_id is None:
+            return None
+        source_target = next(
+            (
+                item
+                for item in snapshot.unified_affordances
+                if item.semantic_target_id == source_target_id
+            ),
+            None,
+        )
+        source_by_id = {
+            item.id: item for item in snapshot.affordance_model.affordances
+        }
+        safe_sources: list[tuple[GroundingCandidate, str]] = []
+        if source_target is not None:
+            for candidate in source_target.grounding_candidates:
+                affordance = source_by_id.get(candidate.source_affordance_id)
+                value = _exact_transfer_source_value(
+                    affordance.state if affordance is not None else {}
+                )
+                if candidate.is_current(snapshot.observation) and value is not None:
+                    safe_sources.append((candidate, value))
+        if not safe_sources:
+            return ProposalScopeDecision(
+                False,
+                ScopeRejectionKind.TARGET_OUT_OF_SCOPE,
+                proposal.target_affordance_id,
+                ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED,
+            )
+        source_candidate, observed_value = min(
+            safe_sources,
+            key=lambda item: item[0].candidate_id,
+        )
+        return authorize_observed_value_transfer(
+            source_candidate=source_candidate,
+            destination_candidate=destination_candidate,
+            observation=snapshot.observation,
+            observed_value=observed_value,
+            parameter_value=proposal.parameters.get("text"),
         )
 
     def _resolve_unified_target(

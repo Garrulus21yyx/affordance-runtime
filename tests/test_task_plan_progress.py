@@ -164,6 +164,59 @@ def test_symbolic_submit_button_subject_matches_unique_submit_button() -> None:
     assert preparation.evidence[0].semantic_target_id == "submit-button"
 
 
+def test_textarea_subject_uses_element_kind_instead_of_shared_textbox_role() -> None:
+    plan = _plan(subject="textarea")
+    environment = PlanningEnvironmentSummary(
+        environment_revision="env-1",
+        snapshot_id="snapshot-1",
+        page_revision="page-1",
+        affordances=(
+            PlanningAffordanceSummary(
+                semantic_target_id="semantic:source",
+                role="textbox",
+                label="Alpha",
+                supported_actions=("type_text",),
+                current_state=PlanningAffordanceState(
+                    visible=True,
+                    enabled=True,
+                    element_tag="textarea",
+                ),
+            ),
+            PlanningAffordanceSummary(
+                semantic_target_id="semantic:destination",
+                role="textbox",
+                label="Beta",
+                supported_actions=("type_text",),
+                current_state=PlanningAffordanceState(
+                    visible=True,
+                    enabled=True,
+                    element_tag="input",
+                ),
+            ),
+            PlanningAffordanceSummary(
+                semantic_target_id="semantic:source-scroll-region",
+                role="scroll_region",
+                label="Alpha scroll region",
+                supported_actions=("press_key",),
+                current_state=PlanningAffordanceState(
+                    visible=True,
+                    enabled=True,
+                    element_tag="textarea",
+                ),
+            ),
+        ),
+    )
+
+    preparation = CurrentStateSubgoalCompletionEvaluator().evaluate(
+        plan=plan,
+        progress=_progress(plan),
+        environment=environment,
+    )
+
+    assert preparation is not None
+    assert preparation.evidence[0].semantic_target_id == "semantic:source"
+
+
 def test_visible_subgoal_can_be_completed_from_current_observation() -> None:
     plan = _plan(relation=SubgoalOutcomeRelation.IS_VISIBLE)
 

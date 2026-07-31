@@ -174,6 +174,7 @@ def interaction_for_state(
     expected_value: FrozenScalar,
     source_refs: tuple[SourceReference, ...],
     interaction_values: tuple[str, ...] = (),
+    value_source: tuple[str, tuple[SourceReference, ...]] | None = None,
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
@@ -189,6 +190,16 @@ def interaction_for_state(
         ordinal=ordinal,
         match_by_role=is_collection or role_only,
     )
+    if value_source is not None and not is_collection:
+        source_subject, value_source_refs = value_source
+        source = interaction_for_state(
+            source_subject,
+            StateCriterionRelation.IS_AVAILABLE,
+            None,
+            value_source_refs,
+        )
+        if isinstance(source, ElementIntent):
+            return RelationIntent(source, target, "value_transfer")
     if (
         relation != StateCriterionRelation.IS_SELECTED
         or expected_value is None
@@ -267,6 +278,8 @@ def _semantic_state_identifier(
     subject: str,
     expected_value: FrozenScalar,
 ) -> tuple[str, str, bool, int | None] | None:
+    if subject.casefold() == "textarea":
+        return "textarea", "textbox", True, None
     role_alias = _ROLE_PHRASE_ALIASES.get(subject.casefold())
     if role_alias:
         return role_alias, role_alias, True, None

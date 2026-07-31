@@ -775,6 +775,10 @@ def _canonicalize_requested_effects_draft(
             draft.candidate_semantic_value_constraints,
             preserve_sequence=inferred_structure != TaskStructure.FLAT,
             success_criteria=draft.candidate_success_criteria,
+            value_transfer_pairs=_explicit_value_transfer_pairs(
+                request.raw_text,
+                draft.requested_effects,
+            ),
         )
     except ValueError as exc:
         return draft, (
@@ -805,6 +809,29 @@ def _infer_task_structure(draft: IntentDraft) -> TaskStructure:
         ):
             return TaskStructure.MULTI_STAGE
     return draft.task_structure
+
+
+def _explicit_value_transfer_pairs(
+    raw_text: str,
+    effects: tuple[RequestedEffect, ...],
+) -> tuple[tuple[int, int], ...]:
+    if not re.search(r"\b(?:copy|transfer)\b", raw_text, flags=re.IGNORECASE):
+        return ()
+    if not re.search(r"\b(?:into|paste|to)\b", raw_text, flags=re.IGNORECASE):
+        return ()
+    sources = tuple(
+        index
+        for index, effect in enumerate(effects)
+        if effect.operation_class == OperationClass.READ_ONLY
+    )
+    destinations = tuple(
+        index
+        for index, effect in enumerate(effects)
+        if effect.operation_class == OperationClass.REVERSIBLE_WRITE
+    )
+    if len(sources) != 1 or len(destinations) != 1 or sources[0] >= destinations[0]:
+        return ()
+    return ((sources[0], destinations[0]),)
 
 
 def _normalize_explicit_action_draft(

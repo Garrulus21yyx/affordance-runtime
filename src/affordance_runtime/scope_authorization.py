@@ -270,6 +270,57 @@ class ProposalScopeEvaluator:
         )
 
 
+def authorize_observed_value_transfer(
+    *,
+    source_candidate: GroundingCandidate,
+    destination_candidate: GroundingCandidate,
+    observation: Observation,
+    observed_value: str,
+    parameter_value: object,
+) -> ProposalScopeDecision:
+    """Bind a dynamic write to two current typed endpoints and one exact value."""
+
+    if (
+        source_candidate.semantic_target_id == destination_candidate.semantic_target_id
+        or not source_candidate.is_current(observation)
+        or not destination_candidate.is_current(observation)
+        or not observed_value
+        or parameter_value != observed_value
+    ):
+        return ProposalScopeDecision(
+            False,
+            ScopeRejectionKind.TARGET_OUT_OF_SCOPE,
+            destination_candidate.semantic_target_id,
+            ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED,
+        )
+    evidence_payload = {
+        "relation": ScopeRelationKind.OBSERVED_VALUE_TRANSFER.value,
+        "source_candidate_id": source_candidate.candidate_id,
+        "source_snapshot_id": source_candidate.observation_epoch_id,
+        "source_target_fingerprint": source_candidate.target_fingerprint,
+        "destination_candidate_id": destination_candidate.candidate_id,
+        "destination_snapshot_id": destination_candidate.observation_epoch_id,
+        "destination_target_fingerprint": destination_candidate.target_fingerprint,
+        "value_digest": f"sha256:{hashlib.sha256(observed_value.encode()).hexdigest()}",
+    }
+    encoded = json.dumps(evidence_payload, sort_keys=True, separators=(",", ":")).encode()
+    return ProposalScopeDecision(
+        True,
+        authorization=ScopeAuthorization(
+            relation=ScopeRelationKind.OBSERVED_VALUE_TRANSFER,
+            candidate_id=destination_candidate.candidate_id,
+            snapshot_id=destination_candidate.observation_epoch_id,
+            target_fingerprint=destination_candidate.target_fingerprint,
+            evidence_digest=f"sha256:{hashlib.sha256(encoded).hexdigest()}",
+            evidence_refs=tuple(
+                dict.fromkeys(
+                    (*source_candidate.evidence_refs, *destination_candidate.evidence_refs)
+                )
+            ),
+        ),
+    )
+
+
 def _scope_authorization(
     relation: ScopeRelationKind,
     candidate: GroundingCandidate,

@@ -401,7 +401,30 @@ def _compact_affordance_state(value: dict[str, object]) -> dict[str, object]:
     """Mirror legacy PlannerContext state bounds before freezing request input."""
 
     compact: dict[str, object] = {}
-    for key in sorted(value)[:12]:
+    semantic_priority = (
+        "element_tag",
+        "input_type",
+        "control_value_prefix",
+        "control_value_suffix",
+        "control_value",
+        "visible",
+        "enabled",
+        "checked",
+        "selected",
+        "selected_options",
+        "expanded",
+        "scroll_top",
+        "scroll_height",
+        "client_height",
+        "value",
+        "min",
+        "max",
+        "step",
+    )
+    ordered_keys = tuple(key for key in semantic_priority if key in value) + tuple(
+        key for key in sorted(value) if key not in semantic_priority
+    )
+    for key in ordered_keys[:12]:
         item = value[key]
         if isinstance(item, str):
             compact[key] = _bounded_text(item, 240)

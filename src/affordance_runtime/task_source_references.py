@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from affordance_runtime.simplified_runtime_contracts import SourceReference
-from affordance_runtime.task_intake import SourcedTaskClaim, TaskObligationSpec, TaskSpec
+from affordance_runtime.task_intake import (
+    SourcedTaskClaim,
+    TaskObligationSpec,
+    TaskObligationValueSource,
+    TaskSpec,
+)
 
 
 def task_source_refs(task: TaskSpec) -> tuple[SourceReference, ...]:
@@ -45,6 +50,25 @@ def subgoal_source_refs(subgoal_id: str, task: TaskSpec) -> tuple[SourceReferenc
         None,
     )
     return obligation_source_refs(obligation, task) if obligation else task_source_refs(task)
+
+
+def obligation_value_source(
+    obligation: TaskObligationSpec,
+    task: TaskSpec | None,
+) -> tuple[str, tuple[SourceReference, ...]] | None:
+    if task is None or obligation.value_source != TaskObligationValueSource.OBLIGATION_OUTPUT:
+        return None
+    source = next(
+        (
+            item
+            for item in task.obligations
+            if item.obligation_id == obligation.value_obligation_id
+        ),
+        None,
+    )
+    if source is None:
+        return None
+    return source.subject, obligation_source_refs(source, task)
 
 
 def _claim_refs(claim: SourcedTaskClaim) -> tuple[SourceReference, ...]:

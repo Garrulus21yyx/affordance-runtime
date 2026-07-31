@@ -71,6 +71,7 @@ class InteractionGrounder:
         if isinstance(interaction, RelationIntent):
             source = _match_element(interaction.source, targets)
             destination = _match_element(interaction.destination, targets)
+            source, destination = _exclude_resolved_relation_endpoint(source, destination)
             status = _combined_status(source, destination)
             return GroundingResult(
                 status,
@@ -153,6 +154,12 @@ def _match_element(
         if not intent.collection_scope
         or _collection_scope_matches(intent.collection_scope, item)
     )
+    if identity == "textarea":
+        scoped_targets = tuple(
+            item
+            for item in scoped_targets
+            if str(item.state.get("element_tag") or "").casefold() == "textarea"
+        )
     if intent.collection_scope and not scoped_targets:
         return GroundingResult(
             GroundingStatus.ABSENT,
@@ -221,6 +228,23 @@ def _match_element(
         GroundingStatus.ABSENT,
         reason_code="interaction_target_absent",
     )
+
+
+def _exclude_resolved_relation_endpoint(
+    source: GroundingResult,
+    destination: GroundingResult,
+) -> tuple[GroundingResult, GroundingResult]:
+    if source.status == GroundingStatus.RESOLVED and destination.status == GroundingStatus.AMBIGUOUS:
+        source_ids = {item.target_id for item in source.targets}
+        remaining = tuple(item for item in destination.targets if item.target_id not in source_ids)
+        if len(remaining) == 1:
+            destination = GroundingResult(GroundingStatus.RESOLVED, targets=remaining)
+    if destination.status == GroundingStatus.RESOLVED and source.status == GroundingStatus.AMBIGUOUS:
+        destination_ids = {item.target_id for item in destination.targets}
+        remaining = tuple(item for item in source.targets if item.target_id not in destination_ids)
+        if len(remaining) == 1:
+            source = GroundingResult(GroundingStatus.RESOLVED, targets=remaining)
+    return source, destination
 
 
 def _collection_scope_matches(scope: str, target: GroundingTarget) -> bool:

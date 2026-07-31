@@ -5,7 +5,11 @@ import pytest
 
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
-from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    RelationIntent,
+    SourceReference,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -406,6 +410,10 @@ def test_obligation_outcome_compiler_preserves_dependency_and_dynamic_value_iden
     assert write.outcome is not None
     assert write.outcome.value == ""
     assert write.outcome.value_obligation_id == "obligation-read"
+    assert isinstance(write.interaction, RelationIntent)
+    assert write.interaction.relation == "value_transfer"
+    assert write.interaction.source.target == "current code"
+    assert write.interaction.destination.target == "destination code"
     assert TaskPlanValidator().validate(plan, task, state_version=4).status == TaskPlanValidationStatus.ACCEPT
 
     corrupted_write = write.model_copy(

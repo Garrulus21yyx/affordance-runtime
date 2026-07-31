@@ -168,7 +168,7 @@ def test_proposal_rejection_context_is_typed_and_phase_bound() -> None:
     )
 
     assert failure.proposal_rejection == rejection
-    with pytest.raises(ValidationError, match="proposal validation phase"):
+    with pytest.raises(ValidationError, match="proposal validation or grounding binding phase"):
         FailureEnvelope.model_validate(
             {
                 **failure.model_dump(),

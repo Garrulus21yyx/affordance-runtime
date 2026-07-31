@@ -523,4 +523,5 @@ def _planning_affordance_state(
         selected=selected,
         selected_options=selected_options,
         expanded=boolean("expanded"),
+        element_tag=str(state.get("element_tag") or "")[:40],
     )

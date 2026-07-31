@@ -160,6 +160,8 @@ class ActiveStepScope:
 def _interaction_target_ids(step: StepSpec) -> tuple[str, ...]:
     interaction = step.interaction
     if isinstance(interaction, RelationIntent):
+        if interaction.relation == "value_transfer":
+            return (interaction.destination.target,)
         return (interaction.source.target,)
     if isinstance(interaction, CollectionIntent):
         return (interaction.collection.target,)

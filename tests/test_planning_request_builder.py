@@ -148,6 +148,36 @@ def test_builder_projects_identity_observation_and_budget_without_mutation() -> 
     assert state.version == before_version
 
 
+def test_builder_preserves_bounded_semantic_state_before_incidental_keys() -> None:
+    from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+
+    envelope, state, snapshot = _fixture()
+    first = snapshot.affordance_model.affordances[0]
+    noisy_state = {
+        **{f"aria_noise_{index:02d}": f"noise-{index}" for index in range(20)},
+        "element_tag": "input",
+        "input_type": "text",
+        "control_value": "exact value",
+        "visible": True,
+        "enabled": True,
+    }
+    affordance_model = replace(
+        snapshot.affordance_model,
+        affordances=[replace(first, state=noisy_state)],
+    )
+    bounded_snapshot = BrowserSnapshot(snapshot.observation, affordance_model)
+
+    request = PlanningRequestBuilder().build(envelope, state, bounded_snapshot)
+    projected_state = dict(request.observation.affordances[0].state)
+
+    assert len(projected_state) <= 12
+    assert projected_state["element_tag"] == "input"
+    assert projected_state["input_type"] == "text"
+    assert projected_state["control_value"] == "exact value"
+    assert projected_state["visible"] is True
+    assert projected_state["enabled"] is True
+
+
 def test_builder_does_not_activate_ready_legacy_step() -> None:
     from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 

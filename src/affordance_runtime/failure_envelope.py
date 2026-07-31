@@ -136,9 +136,15 @@ class FailureEnvelope(StrictModel):
             raise ValueError("attempted recovery strategy ids must be unique")
         if (
             self.proposal_rejection is not None
-            and self.phase != FailurePhase.PROPOSAL_VALIDATION
+            and self.phase
+            not in {
+                FailurePhase.PROPOSAL_VALIDATION,
+                FailurePhase.GROUNDING_BINDING,
+            }
         ):
-            raise ValueError("proposal rejection context requires proposal validation phase")
+            raise ValueError(
+                "proposal rejection context requires proposal validation or grounding binding phase"
+            )
         return self
 
 

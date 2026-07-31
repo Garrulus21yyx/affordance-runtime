@@ -177,6 +177,23 @@ def _unique_target(
     subject: str,
     affordances: tuple[PlanningAffordanceSummary, ...],
 ) -> PlanningAffordanceSummary | None:
+    normalized_subject = subject.strip().casefold().replace("_", " ")
+    if normalized_subject == "textarea":
+        matches = tuple(
+            item
+            for item in affordances
+            if item.role.casefold() in {"textbox", "searchbox"}
+            and item.current_state.element_tag.casefold() == "textarea"
+        )
+        return matches[0] if len(matches) == 1 else None
+    if normalized_subject in {"text box", "textbox"}:
+        matches = tuple(
+            item
+            for item in affordances
+            if item.role.casefold() in {"textbox", "searchbox"}
+            and item.current_state.element_tag.casefold() != "textarea"
+        )
+        return matches[0] if len(matches) == 1 else None
     if subject.strip().casefold() in {"combobox", "dropdown", "list", "select"}:
         matches = tuple(
             item

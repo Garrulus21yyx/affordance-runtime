@@ -403,7 +403,28 @@ class ActionChoiceBuilder:
             source = targets.get(grounding.targets[0].target_id)
             destination = targets.get(grounding.destinations[0].target_id)
             if (
-                source is not None
+                step.interaction.relation == "value_transfer"
+                and source is not None
+                and destination is not None
+                and source.target_id != destination.target_id
+                and _supports(destination, PlannerActionKind.TYPE_TEXT)
+                and (transfer_value := _exact_transfer_value(source)) is not None
+            ):
+                choices.append(
+                    _make_choice(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        action_kind=PlannerActionKind.TYPE_TEXT,
+                        target_id=destination.target_id,
+                        parameters={"text": transfer_value},
+                        criterion_ids=criterion_ids,
+                    )
+                )
+            elif (
+                step.interaction.relation != "value_transfer"
+                and source is not None
                 and destination is not None
                 and _supports(source, PlannerActionKind.DRAG)
             ):
@@ -624,6 +645,17 @@ def _grounding_target(target: UnifiedObservationTarget) -> GroundingTarget:
         supported_actions=target.supported_actions,
         state=target.state,
     )
+
+
+def _exact_transfer_value(target: UnifiedObservationTarget) -> str | None:
+    if target.state.get("input_type") == "password":
+        return None
+    if "control_value_prefix" in target.state or "control_value_suffix" in target.state:
+        return None
+    value = target.state.get("control_value")
+    if not isinstance(value, str) or not value or len(value) > 240:
+        return None
+    return value
 
 
 def _element_operation_choice(
