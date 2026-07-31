@@ -11,6 +11,7 @@ from affordance_runtime.immutable import FrozenDict
 from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
     ElementIntent,
+    ElementOperationKind,
     InteractionIntent,
     RegionIntent,
     RelationIntent,
@@ -99,12 +100,13 @@ class InteractionGrounder:
                 reason_code="interaction_enabler_unresolved",
             )
         enabling_target = enabler.targets[0]
-        if enabling_target.state.get("expanded") is True:
+        enabling_ready = _enabling_ready(interaction.enabler, enabling_target)
+        if enabling_ready is False:
             return GroundingResult(
                 GroundingStatus.ABSENT,
                 reason_code="interaction_enabler_already_satisfied",
             )
-        if enabling_target.state.get("expanded") is not False:
+        if enabling_ready is None:
             return GroundingResult(
                 GroundingStatus.CAPABILITY_MISSING,
                 reason_code="interaction_enabler_state_missing",
@@ -116,15 +118,49 @@ class InteractionGrounder:
         )
 
 
+def _enabling_ready(
+    intent: ElementIntent,
+    target: GroundingTarget,
+) -> bool | None:
+    if intent.operation == ElementOperationKind.AUTO:
+        expanded = target.state.get("expanded")
+        return not expanded if isinstance(expanded, bool) else None
+    scroll_top = target.state.get("scroll_top")
+    scroll_height = target.state.get("scroll_height")
+    client_height = target.state.get("client_height")
+    if not isinstance(scroll_top, (int, float)):
+        return None
+    if not isinstance(scroll_height, (int, float)):
+        return None
+    if not isinstance(client_height, (int, float)):
+        return None
+    current = float(scroll_top)
+    maximum = max(0.0, float(scroll_height) - float(client_height))
+    if intent.operation == ElementOperationKind.SCROLL_FORWARD:
+        return current < maximum
+    return current > 0.0
+
+
 def _match_element(
     intent: ElementIntent,
     targets: tuple[GroundingTarget, ...],
 ) -> GroundingResult:
     identity = intent.target.strip().casefold()
     role = intent.role.strip().casefold()
-    matches = tuple(
+    scoped_targets = tuple(
         item
         for item in targets
+        if not intent.collection_scope
+        or _collection_scope_matches(intent.collection_scope, item)
+    )
+    if intent.collection_scope and not scoped_targets:
+        return GroundingResult(
+            GroundingStatus.ABSENT,
+            reason_code="interaction_collection_scope_absent",
+        )
+    matches = tuple(
+        item
+        for item in scoped_targets
         if (
             (intent.match_by_role and (not role or _role_matches(role, item.role)))
             or (
@@ -142,17 +178,27 @@ def _match_element(
             )
         )
     )
-    if intent.ordinal is not None:
-        role_matches = tuple(
-            item for item in targets if not role or _role_matches(role, item.role)
+    role_matches = tuple(
+        item for item in scoped_targets if not role or _role_matches(role, item.role)
+    )
+    if (
+        intent.collection_cardinality is not None
+        and len(role_matches) != intent.collection_cardinality
+    ):
+        return GroundingResult(
+            GroundingStatus.AMBIGUOUS,
+            targets=role_matches,
+            reason_code="interaction_collection_cardinality_mismatch",
         )
+    if intent.ordinal is not None:
+        role_matches = _ordered_collection_members(role_matches)
         matches = (
             (role_matches[intent.ordinal - 1],)
             if len(role_matches) >= intent.ordinal
             else ()
         )
     role_matches = tuple(
-        item for item in targets if role and _role_matches(role, item.role)
+        item for item in scoped_targets if role and _role_matches(role, item.role)
     )
     if not matches and role and intent.ordinal is None:
         if len(role_matches) == 1:
@@ -175,6 +221,32 @@ def _match_element(
         GroundingStatus.ABSENT,
         reason_code="interaction_target_absent",
     )
+
+
+def _collection_scope_matches(scope: str, target: GroundingTarget) -> bool:
+    expected = " ".join(scope.split()).casefold()
+    return any(
+        isinstance(value, str) and " ".join(value.split()).casefold() == expected
+        for key in (
+            "collection_owner",
+            "container_context",
+            "group_context",
+            "pagination_owner",
+        )
+        if (value := target.state.get(key)) is not None
+    )
+
+
+def _ordered_collection_members(
+    targets: tuple[GroundingTarget, ...],
+) -> tuple[GroundingTarget, ...]:
+    positioned: list[tuple[int, GroundingTarget]] = []
+    for target in targets:
+        position = target.state.get("collection_position")
+        if not isinstance(position, int) or position < 1:
+            return targets
+        positioned.append((position, target))
+    return tuple(target for _, target in sorted(positioned, key=lambda item: item[0]))
 
 
 def _role_matches(requested: str, observed: str) -> bool:

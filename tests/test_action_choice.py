@@ -11,6 +11,7 @@ from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, Evid
 from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
     ElementIntent,
+    ElementOperationKind,
     InteractionIntent,
     SourceReference,
     StateCriterion,
@@ -679,6 +680,260 @@ def test_action_choice_builder_prefers_direct_target_over_explicit_enabler() -> 
     assert result.choices[0].target_id == "semantic:quarterly-report"
     assert result.choices[0].role == ChoiceRole.DIRECT
     assert result.choices[0].criterion_ids == ("criterion:report",)
+
+
+def test_action_choice_builder_scopes_ordinal_to_typed_collection_after_reordering() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:second-result",
+        subject="result",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "result",
+            (_source(),),
+            role="link",
+            ordinal=2,
+            match_by_role=True,
+            collection_scope="primary-results",
+            collection_cardinality=2,
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:secondary-first",
+                surface="dom",
+                role="link",
+                label="Renamed alpha",
+                supported_actions=("activate",),
+                state={"collection_owner": "secondary-results"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:primary-first",
+                surface="dom",
+                role="link",
+                label="Renamed beta",
+                supported_actions=("activate",),
+                state={"collection_owner": "primary-results", "collection_position": 1},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:secondary-second",
+                surface="dom",
+                role="link",
+                label="Renamed gamma",
+                supported_actions=("activate",),
+                state={"collection_owner": "secondary-results"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:primary-second",
+                surface="dom",
+                role="link",
+                label="Renamed delta",
+                supported_actions=("activate",),
+                state={"collection_owner": "primary-results", "collection_position": 2},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:primary-second"
+
+
+def test_action_choice_builder_fails_closed_on_collection_cardinality_mismatch() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+    from affordance_runtime.recovery_protocol import FailureKind
+
+    criterion = _criterion(
+        criterion_id="criterion:second-result",
+        subject="result",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "result",
+            (_source(),),
+            role="link",
+            ordinal=2,
+            match_by_role=True,
+            collection_scope="primary-results",
+            collection_cardinality=3,
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:primary-first",
+                surface="dom",
+                role="link",
+                label="One",
+                supported_actions=("activate",),
+                state={"collection_owner": "primary-results"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:primary-second",
+                surface="dom",
+                role="link",
+                label="Two",
+                supported_actions=("activate",),
+                state={"collection_owner": "primary-results"},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.kind == FailureKind.GROUNDING_AMBIGUOUS
+    assert result.reason_code == "interaction_collection_cardinality_mismatch"
+
+
+def test_action_choice_builder_creates_typed_tree_expansion_choice() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:section-expanded",
+        subject="Reports",
+        relation=CriterionRelation.IS_EXPANDED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent("Reports", (_source(),), role="treeitem"),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:reports",
+                surface="dom",
+                role="treeitem",
+                label="Reports",
+                supported_actions=("activate",),
+                state={"expanded": False, "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].action_kind == PlannerActionKind.ACTIVATE
+    assert result.choices[0].target_id == "semantic:reports"
+
+
+def test_action_choice_builder_emits_typed_scroll_enabler_until_boundary() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet, ChoiceRole
+
+    criterion = _criterion(
+        criterion_id="criterion:final-paragraph",
+        subject="Final paragraph",
+        relation=CriterionRelation.IS_VISIBLE,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "Final paragraph",
+            (_source(),),
+            enabler=ElementIntent(
+                "Document",
+                (_source(),),
+                role="scroll_region",
+                operation=ElementOperationKind.SCROLL_FORWARD,
+            ),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:document-scroll",
+                surface="dom",
+                role="scroll_region",
+                label="Document",
+                supported_actions=("press_key",),
+                state={
+                    "scroll_top": 100,
+                    "scroll_height": 500,
+                    "client_height": 100,
+                    "enabled": True,
+                    "visible": True,
+                },
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].action_kind == PlannerActionKind.PRESS_KEY
+    assert result.choices[0].parameters == {"key": "PageDown"}
+    assert result.choices[0].role == ChoiceRole.ENABLING
+    assert result.choices[0].criterion_ids == ()
+
+
+def test_action_choice_builder_liveness_blocks_scroll_enabler_at_boundary() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:final-paragraph",
+        subject="Final paragraph",
+        relation=CriterionRelation.IS_VISIBLE,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "Final paragraph",
+            (_source(),),
+            enabler=ElementIntent(
+                "Document",
+                (_source(),),
+                role="scroll_region",
+                operation=ElementOperationKind.SCROLL_FORWARD,
+            ),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:document-scroll",
+                surface="dom",
+                role="scroll_region",
+                label="Document",
+                supported_actions=("press_key",),
+                state={
+                    "scroll_top": 400,
+                    "scroll_height": 500,
+                    "client_height": 100,
+                    "enabled": True,
+                    "visible": True,
+                },
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "interaction_enabler_already_satisfied"
 
 
 def test_action_choice_builder_binds_label_role_state_identifier() -> None:

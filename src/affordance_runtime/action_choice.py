@@ -29,6 +29,8 @@ from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
+    ElementIntent,
+    ElementOperationKind,
     RelationIntent,
     StateCriterion,
     StepSpec,
@@ -369,20 +371,19 @@ class ActionChoiceBuilder:
         criterion_ids = tuple(item.criterion_id for item in criteria)
         if grounding.role == GroundingRole.ENABLING:
             target = targets.get(grounding.targets[0].target_id)
-            if target is not None and _supports(target, PlannerActionKind.ACTIVATE):
-                choices.append(
-                    _make_choice(
-                        task_revision=task_revision,
-                        state_version=state_version,
-                        snapshot_id=observation.snapshot_id,
-                        step_id=step.step_id,
-                        action_kind=PlannerActionKind.ACTIVATE,
-                        target_id=target.target_id,
-                        parameters={},
-                        criterion_ids=(),
-                        role=ChoiceRole.ENABLING,
-                    )
+            enabler = step.interaction.enabler if isinstance(step.interaction, ElementIntent) else None
+            if target is not None and enabler is not None:
+                choice = _element_operation_choice(
+                    task_revision=task_revision,
+                    state_version=state_version,
+                    snapshot_id=observation.snapshot_id,
+                    step_id=step.step_id,
+                    intent=enabler,
+                    target=target,
+                    role=ChoiceRole.ENABLING,
                 )
+                if choice is not None:
+                    choices.append(choice)
         elif isinstance(step.interaction, CollectionIntent):
             target = targets.get(grounding.targets[0].target_id)
             if target is not None and _supports(target, PlannerActionKind.SELECT_OPTION):
@@ -419,6 +420,24 @@ class ActionChoiceBuilder:
                         criterion_ids=criterion_ids,
                     )
                 )
+        elif (
+            isinstance(step.interaction, ElementIntent)
+            and step.interaction.operation != ElementOperationKind.AUTO
+        ):
+            target = targets.get(grounding.targets[0].target_id)
+            if target is not None:
+                choice = _element_operation_choice(
+                    task_revision=task_revision,
+                    state_version=state_version,
+                    snapshot_id=observation.snapshot_id,
+                    step_id=step.step_id,
+                    intent=step.interaction,
+                    target=target,
+                    role=ChoiceRole.DIRECT,
+                    criterion_ids=criterion_ids,
+                )
+                if choice is not None:
+                    choices.append(choice)
         else:
             grounded_targets = tuple(
                 targets[item.target_id]
@@ -517,6 +536,15 @@ def _choice_for_criterion(
                 criterion=criterion,
                 target=target,
             )
+        if criterion.relation == CriterionRelation.IS_EXPANDED:
+            return _expanded_choice(
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=snapshot_id,
+                step_id=step_id,
+                criterion=criterion,
+                target=target,
+            )
         if criterion.relation == CriterionRelation.IS_SELECTED:
             return _selected_choice(
                 task_revision=task_revision,
@@ -595,6 +623,65 @@ def _grounding_target(target: UnifiedObservationTarget) -> GroundingTarget:
         label=target.label,
         supported_actions=target.supported_actions,
         state=target.state,
+    )
+
+
+def _element_operation_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    intent: ElementIntent,
+    target: UnifiedObservationTarget,
+    role: ChoiceRole,
+    criterion_ids: tuple[str, ...] = (),
+) -> ActionChoice | None:
+    if intent.operation == ElementOperationKind.AUTO:
+        action_kind = PlannerActionKind.ACTIVATE
+        parameters: dict[str, object] = {}
+    else:
+        action_kind = PlannerActionKind.PRESS_KEY
+        parameters = {
+            "key": (
+                "PageDown"
+                if intent.operation == ElementOperationKind.SCROLL_FORWARD
+                else "PageUp"
+            )
+        }
+    if not _supports(target, action_kind):
+        return None
+    return _make_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        action_kind=action_kind,
+        target_id=target.target_id,
+        parameters=parameters,
+        criterion_ids=criterion_ids,
+        role=role,
+    )
+
+
+def _expanded_choice(
+    *,
+    task_revision: int,
+    state_version: int,
+    snapshot_id: str,
+    step_id: str,
+    criterion: StateCriterion,
+    target: UnifiedObservationTarget,
+) -> ActionChoice | None:
+    if target.state.get("expanded") is not False:
+        return None
+    return _activation_choice(
+        task_revision=task_revision,
+        state_version=state_version,
+        snapshot_id=snapshot_id,
+        step_id=step_id,
+        criterion=criterion,
+        target=target,
     )
 
 

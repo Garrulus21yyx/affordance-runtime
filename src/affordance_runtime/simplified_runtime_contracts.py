@@ -58,6 +58,12 @@ class ValueExprKind(StrEnum):
     SOURCE_VALUE = "source_value"
 
 
+class ElementOperationKind(StrEnum):
+    AUTO = "auto"
+    SCROLL_FORWARD = "scroll_forward"
+    SCROLL_BACKWARD = "scroll_backward"
+
+
 @dataclass(frozen=True)
 class ValueExpr:
     kind: ValueExprKind
@@ -85,6 +91,9 @@ class ElementIntent:
     ordinal: int | None = None
     match_by_role: bool = False
     enabler: ElementIntent | None = None
+    collection_scope: str = ""
+    collection_cardinality: int | None = None
+    operation: ElementOperationKind = ElementOperationKind.AUTO
 
     def __post_init__(self) -> None:
         _require_nonblank("element intent target", self.target)
@@ -99,6 +108,15 @@ class ElementIntent:
             raise ValueError("role-only element intent requires a role")
         if self.enabler is not None and self.enabler.enabler is not None:
             raise ValueError("element intent enablers cannot be nested")
+        if self.collection_scope:
+            _require_nonblank("element intent collection scope", self.collection_scope)
+        if self.collection_cardinality is not None:
+            if self.collection_cardinality < 1:
+                raise ValueError("element intent collection cardinality must be positive")
+            if not self.collection_scope:
+                raise ValueError("element intent collection cardinality requires a scope")
+        if not isinstance(self.operation, ElementOperationKind):
+            raise ValueError("unsupported element operation")
 
 
 @dataclass(frozen=True)
@@ -200,6 +218,8 @@ _ELEMENT_ROLES = frozenset(
         "slider",
         "tab",
         "textbox",
+        "treeitem",
+        "scroll_region",
     }
 )
 _ROLE_PHRASE_ALIASES = {
