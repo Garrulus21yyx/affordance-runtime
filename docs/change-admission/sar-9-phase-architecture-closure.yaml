@@ -67,6 +67,22 @@ behavioral_closure_evidence_2026_07_31:
     - Fresh breadth improved from 12/60 to 16/60 but remains far below semantic closure.
     - Forty-one of forty-four failures are still at or before typed planning/choice production, including schema and intent admission.
     - Promotion remains held; task-specific repairs and fallback masking remain prohibited.
+  m3_element_semantics:
+    revision: 97d92b931a7c6a6786b9f97542de57e6888a52af
+    status: complete
+    generic_invariants:
+      - composite_editable_roles_normalize_to_typed_textbox
+      - exact_identity_plus_compatible_command_capability_resolves_role_taxonomy_variance
+      - capability_without_identity_match_remains_absent
+    targeted_replay:
+      enter_date: 2/2
+      click_link: 2/2
+    full_pytest: 1399_passed
+    ruff: passed
+    core_mypy: passed_122_source_files
+    build: passed
+    clean_pr_6x2: 12/12
+    clean_identity_digest: sha256:9239b1ba308e0e62b1f05ef49ebb2bdbe281553e7265cd53452df4d1e0e88d45
 promotion_status: held
 closure_status: decomposition_complete_but_purification_incomplete
 sar_9_full_closure: not_approved

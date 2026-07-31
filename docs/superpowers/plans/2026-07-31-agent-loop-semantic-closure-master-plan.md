@@ -142,6 +142,7 @@ Update this table with exact revision and evidence after every completed unit. â
 | mutable State/Trace writers | measure M0 | 1 | pending |
 | default compatibility adapters | measure M0 | 0 | pending |
 | core benchmark/task specializations | measure M0 | 0 | pending |
+| M3 element semantics | fresh typed element cluster | generic identity/role/value/focus coverage | direct identity/role/value cutover complete at `97d92b9`; M8 still owns miscompiled focus intent |
 | progress-credit liveness cycles | 3 known | 0 | targeted click-dialog terminal-evidence cycle closed; breadth audit pending |
 | clean 6x2 | 12/12 at prior clean candidate | 12/12 same revision | 12/12 at clean `e9d7414` |
 | fresh 30x2 | 12/60, 48 failures at prior clean candidate | DoD in review archive | 16/60 at clean `e9d7414`; 44 typed clusters remain; promotion held |
