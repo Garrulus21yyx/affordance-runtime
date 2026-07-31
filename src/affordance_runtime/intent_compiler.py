@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Sequence, TypeVar
+from typing import Callable, Literal, Sequence, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -21,6 +21,7 @@ from affordance_runtime.model_port import (
     StructuredModelError,
     StructuredOutputError,
 )
+from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_ledger import SourceLedger, SourceLedgerBuilder
 from affordance_runtime.task_intake import (
     CompilationIssue,
@@ -110,6 +111,7 @@ class LLMTaskObligationSpec(StrictModel):
     expected_value: str = Field(default="", max_length=480)
     interaction_values: tuple[str, ...] = ()
     interaction_relation: TaskInteractionRelationSpec | None = None
+    interaction_capability: Literal[""] = ""
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -745,6 +747,7 @@ def _canonicalize_requested_effects_draft(
 
     draft = _normalize_explicit_action_draft(draft, request)
     draft = _normalize_explicit_relation_draft(draft, request)
+    draft = _normalize_explicit_spatial_point_draft(draft, request)
     draft = _normalize_value_entry_draft(draft, request)
     draft = _restore_explicit_submit_effect(draft, request)
     inferred_structure = _infer_task_structure(draft)
@@ -899,6 +902,65 @@ def _normalize_explicit_relation_draft(
         }
     )
     return draft.model_copy(update={"requested_effects": (effect,)})
+
+
+_EXPLICIT_SPATIAL_COORDINATE = re.compile(
+    r"\bcoordinate\s*\(\s*(?P<x>-?\d+(?:\.\d+)?)\s*,\s*(?P<y>-?\d+(?:\.\d+)?)\s*\)",
+    re.IGNORECASE,
+)
+_EXPLICIT_CENTER_REGION = re.compile(
+    r"\b(?:center|centre)\s+of\s+(?:the\s+)?(?P<region>[a-z][a-z0-9 _-]{0,120}?)"
+    r"(?=\s*(?:,|\bthen\b|[.!?]|$))",
+    re.IGNORECASE,
+)
+
+
+def _normalize_explicit_spatial_point_draft(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Bind an explicit semantic point to the spatial-capability path.
+
+    The coordinate remains a user-authored semantic region identity. Runtime
+    still obtains executable geometry only from a current calibrated target.
+    """
+
+    coordinate_match = _EXPLICIT_SPATIAL_COORDINATE.search(request.raw_text)
+    center_match = _EXPLICIT_CENTER_REGION.search(request.raw_text)
+    if (coordinate_match is None and center_match is None) or not re.search(
+        r"\b(?:activate|click|hit|press|point)\b",
+        request.raw_text,
+        flags=re.IGNORECASE,
+    ):
+        return draft
+    if coordinate_match is not None:
+        target = f"coordinate ({coordinate_match.group('x')},{coordinate_match.group('y')})"
+    else:
+        assert center_match is not None
+        target = center_match.group("region").strip()
+    target_tokens = set(re.findall(r"[a-z0-9]+", target.casefold()))
+    matching_indexes = tuple(
+        index
+        for index, effect in enumerate(draft.requested_effects)
+        if target_tokens.intersection(re.findall(r"[a-z0-9]+", effect.target.casefold()))
+    )
+    if len(draft.requested_effects) == 1:
+        matching_indexes = (0,)
+    if len(matching_indexes) != 1:
+        return draft
+    selected_index = matching_indexes[0]
+    effects = tuple(
+        effect.model_copy(
+            update={
+                "target": target,
+                "capability": SPATIAL_POINT_CAPABILITY,
+            }
+        )
+        if index == selected_index
+        else effect
+        for index, effect in enumerate(draft.requested_effects)
+    )
+    return draft.model_copy(update={"requested_effects": effects})
 
 
 def _normalize_explicit_action_draft(

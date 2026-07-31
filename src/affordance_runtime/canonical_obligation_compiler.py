@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pydantic import Field
 
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_ledger import SourceLedger
 from affordance_runtime.task_intake import (
     CompilationIssue,
@@ -42,6 +43,7 @@ class CanonicalEffectInput(StrictModel):
     captures_observation_value: bool = False
     value_source_effect_index: int | None = None
     interaction_relation: TaskInteractionRelationSpec | None = None
+    interaction_capability: str = ""
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -136,7 +138,9 @@ class CanonicalObligationCompiler:
             if value_source_index is not None:
                 relation = TaskObligationRelation.EQUALS
             evidence_kind = (
-                EvidenceKind.DOM_STATE
+                EvidenceKind.VISUAL_STATE
+                if effect.capability == SPATIAL_POINT_CAPABILITY
+                else EvidenceKind.DOM_STATE
                 if effect.operation_class
                 in {
                     OperationClass.READ_ONLY,
@@ -173,6 +177,7 @@ class CanonicalObligationCompiler:
                     captures_observation_value=effect_index in transfer_sources,
                     value_source_effect_index=value_source_index,
                     interaction_relation=effect.interaction_relation,
+                    interaction_capability=effect.capability,
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -256,6 +261,7 @@ class CanonicalObligationCompiler:
                     else ()
                 ),
                 interaction_relation=effect.interaction_relation,
+                interaction_capability=effect.interaction_capability,
                 claim_ids=(claim_id,),
                 depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
                 value_obligation_id=(
@@ -418,6 +424,7 @@ class CanonicalObligationCompiler:
                     expected_value=obligation.expected_value,
                     interaction_values=obligation.interaction_values,
                     interaction_relation=obligation.interaction_relation,
+                    interaction_capability=obligation.interaction_capability,
                     value_obligation_id=canonical_value_obligation_id,
                     claim_ids=canonical_claim_ids,
                     depends_on=tuple(obligation_id_map[item] for item in obligation.depends_on),

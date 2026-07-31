@@ -20,7 +20,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
-from affordance_runtime.simplified_runtime_contracts import CollectionIntent, RelationIntent
+from affordance_runtime.simplified_runtime_contracts import CollectionIntent, RegionIntent, RelationIntent
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
@@ -266,6 +266,7 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
             state=state,
             action=action,
             affordance=affordance,
+            snapshot=snapshot,
         )
         return replace(
             contract,
@@ -458,6 +459,7 @@ def declare_browsergym_active_subgoal_evidence(
     state: StateKernel,
     action: BrowserGymAction,
     affordance: Affordance,
+    snapshot: BrowserSnapshot | None = None,
 ) -> list[VerifierSpec]:
     """Declare exact adapter postconditions as active-subgoal evidence.
 
@@ -486,6 +488,13 @@ def declare_browsergym_active_subgoal_evidence(
         )
     ):
         return verifier_plan
+    spatial_progress = _browsergym_spatial_point_progress_spec(
+        action,
+        active=active,
+        snapshot=snapshot,
+    )
+    if spatial_progress is not None:
+        return _append_authoritative_progress_spec(verifier_plan, spatial_progress)
     completed_click_progress = _browsergym_completed_click_progress_spec(
         action,
         relation=active.outcome.relation,
@@ -603,6 +612,46 @@ def _browsergym_completed_click_progress_spec(
         "active_control",
         action_bid,
         strict=False,
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+
+
+def _browsergym_spatial_point_progress_spec(
+    action: BrowserGymAction,
+    *,
+    active: SubgoalSpec,
+    snapshot: BrowserSnapshot | None,
+) -> VerifierSpec | None:
+    if (
+        action.name != "mouse_click"
+        or not isinstance(active.interaction, RegionIntent)
+        or active.outcome is None
+        or active.outcome.relation != SubgoalOutcomeRelation.IS_COMPLETED
+        or snapshot is None
+    ):
+        return None
+    x = action.arguments.get("x")
+    y = action.arguments.get("y")
+    if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        return None
+    geometries = snapshot.observation.metadata.get("spatial_geometry")
+    if not isinstance(geometries, (list, tuple)):
+        return None
+    excluded_target_ids = [
+        str(item.get("target_id") or "")
+        for item in geometries
+        if isinstance(item, Mapping) and item.get("target_id")
+    ]
+    return VerifierSpec(
+        "spatial_marker_delta",
+        "",
+        {
+            "point": [float(x), float(y)],
+            "excluded_target_ids": excluded_target_ids,
+            "tolerance": 8.0,
+        },
+        strict=False,
+        evidence_key=f"spatial_marker_delta:{float(x):.3f}:{float(y):.3f}",
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
 

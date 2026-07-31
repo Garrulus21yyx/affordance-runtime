@@ -1334,6 +1334,7 @@ class TaskObligationOutcomeCompiler:
             ),
         )
         source_refs = obligation_source_refs(obligation, context.task_spec if context is not None else None)
+        interaction_relation = obligation.interaction_relation
         interaction = interaction_for_state(
             outcome.subject,
             StateCriterionRelation(outcome.relation),
@@ -1341,9 +1342,8 @@ class TaskObligationOutcomeCompiler:
             source_refs,
             obligation.interaction_values,
             obligation_value_source(obligation, context.task_spec if context is not None else None),
-            obligation.interaction_relation.runtime_tuple
-            if obligation.interaction_relation is not None
-            else None,
+            interaction_relation.runtime_tuple if interaction_relation is not None else None,
+            obligation.interaction_capability,
         )
         return SubgoalSpec(
             subgoal_id=obligation.obligation_id,

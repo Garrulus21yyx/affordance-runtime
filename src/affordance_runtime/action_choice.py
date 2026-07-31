@@ -31,6 +31,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
     ElementIntent,
     ElementOperationKind,
+    RegionIntent,
     RelationIntent,
     StateCriterion,
     StepSpec,
@@ -329,6 +330,7 @@ class ActionChoiceBuilder:
         step: StepSpec,
         scope: ActiveStepScope,
         observation: UnifiedObservation,
+        capabilities: frozenset[str] = frozenset(),
     ) -> ActionChoiceBuildResult:
         stale_reason = _validate_scope_identity(
             task_revision=task_revision,
@@ -353,6 +355,7 @@ class ActionChoiceBuilder:
         grounding = InteractionGrounder().ground(
             step.interaction,
             tuple(_grounding_target(item) for item in observation.targets),
+            capabilities=capabilities,
         )
         if grounding.status != GroundingStatus.RESOLVED:
             return ActionChoiceFailure(
@@ -437,6 +440,21 @@ class ActionChoiceBuilder:
                         action_kind=PlannerActionKind.DRAG,
                         target_id=source.target_id,
                         destination_id=destination.target_id,
+                        parameters={},
+                        criterion_ids=criterion_ids,
+                    )
+                )
+        elif isinstance(step.interaction, RegionIntent):
+            target = targets.get(grounding.targets[0].target_id)
+            if target is not None and _supports(target, PlannerActionKind.POINT_ACTIVATE):
+                choices.append(
+                    _make_choice(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        action_kind=PlannerActionKind.POINT_ACTIVATE,
+                        target_id=target.target_id,
                         parameters={},
                         criterion_ids=criterion_ids,
                     )
@@ -644,6 +662,9 @@ def _grounding_target(target: UnifiedObservationTarget) -> GroundingTarget:
         label=target.label,
         supported_actions=target.supported_actions,
         state=target.state,
+        surface=target.surface,
+        confidence=target.confidence,
+        source_refs=target.source_refs,
     )
 
 
@@ -896,6 +917,7 @@ def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool
         PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
         PlannerActionKind.PRESS_KEY: {"press", "press_key"},
         PlannerActionKind.DRAG: {"drag"},
+        PlannerActionKind.POINT_ACTIVATE: {"point_activate"},
     }.get(kind, set())
     return bool(compatible.intersection(target.supported_actions))
 

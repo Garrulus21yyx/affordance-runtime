@@ -392,6 +392,7 @@ def test_browser_session_captures_svg_and_screenshot_in_one_epoch(tmp_path) -> N
     point = next(item for item in snapshot.affordance_model.affordances if item.action == "point_activate")
     assert point.label == "Blue point"
     assert point.locator["bbox"] == [120.0, 240.0, 8.0, 8.0]
+    assert point.state["spatial_evidence"] == "calibrated_current_geometry"
     assert point.id in snapshot.observation.target_fingerprints
     assert snapshot.grounding_candidates[0].source_affordance_id == point.id
     assert snapshot.grounding_candidates[0].semantic_target_id.startswith("semantic:blue-point:")

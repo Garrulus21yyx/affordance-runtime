@@ -679,6 +679,7 @@ class BrowserSession:
                             "element_tag": element.tag,
                             "svg_element_id": element.element_id,
                             "coordinate_space": "viewport_pixels",
+                            "spatial_evidence": "calibrated_current_geometry",
                             "accepts_drop": element.action == "drop",
                             **({"observed_color": element.observed_color} if element.observed_color else {}),
                             **({"relative_size": element.relative_size} if element.relative_size else {}),
@@ -749,7 +750,11 @@ class BrowserSession:
                         ),
                         backend_candidates=[self._visual_executor],
                         confidence=region.confidence,
-                        state={"visible": True, "visual_region": True},
+                        state={
+                            "visible": True,
+                            "visual_region": True,
+                            "spatial_evidence": "calibrated_current_geometry",
+                        },
                         risk=RiskLevel.LOW,
                         evidence=[screenshot_ref],
                     )
@@ -759,6 +764,16 @@ class BrowserSession:
             affordances=enriched_affordances,
             kept_node_count=len(enriched_affordances),
         )
+        spatial_geometry = [
+            {
+                "target_id": item.id,
+                "bbox": list(item.locator["bbox"]),
+            }
+            for item in enriched_affordances
+            if item.surface in {Surface.SVG, Surface.VISUAL}
+            and isinstance(item.locator.get("bbox"), (list, tuple))
+            and len(item.locator["bbox"]) == 4
+        ]
         observation = Observation(
             environment_revision=environment_revision,
             url=url,
@@ -772,6 +787,7 @@ class BrowserSession:
                 "environment_family": _environment_family(url),
                 "observation_epoch_id": snapshot_id,
                 "svg_geometry_count": len(svg_geometry.elements) if svg_geometry is not None else 0,
+                "spatial_geometry": spatial_geometry,
                 "viewport_size": list(image_size) if image_size is not None else None,
                 "accessibility_tree": accessibility_tree,
                 "perception_requirements": (

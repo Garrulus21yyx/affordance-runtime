@@ -171,6 +171,74 @@ def test_intent_compiler_canonicalizes_absolute_position_as_an_ordinal() -> None
     assert obligation.interaction_relation.destination_ordinal == 4
 
 
+@pytest.mark.parametrize(
+    "raw_text",
+    (
+        "Click the point at coordinate (2,-2).",
+        "Activate the mark at coordinate (-4,3).",
+    ),
+)
+def test_intent_compiler_marks_explicit_spatial_point_as_capability_bound(raw_text: str) -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective=raw_text,
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="provider spatial target",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("The requested point is activated.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(UserRequest(request_id="spatial-request", raw_text=raw_text))
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    assert result.task_spec.requested_capabilities == ("spatial.point.current_geometry",)
+    obligation = result.task_spec.obligations[0]
+    assert obligation.interaction_capability == "spatial.point.current_geometry"
+    assert "coordinate" in obligation.subject.casefold()
+
+
+def test_intent_compiler_marks_only_the_explicit_center_region_effect() -> None:
+    raw_text = "Click the center of the renamed polygon, then press Confirm."
+    model = FixedModel(
+        IntentDraft(
+            objective=raw_text,
+            task_structure=TaskStructure.MULTI_STAGE,
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="polygon_center",
+                    source_ref="raw_text",
+                ),
+                RequestedEffect(
+                    operation_class=OperationClass.NAVIGATION,
+                    target="confirm_button",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("Polygon center activated.", "Confirm pressed."),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(UserRequest(request_id="region-request", raw_text=raw_text))
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    first, second = result.task_spec.obligations
+    assert first.subject == "renamed polygon"
+    assert first.interaction_capability == "spatial.point.current_geometry"
+    assert second.interaction_capability == ""
+
+
 def test_intent_draft_repair_attempt_claim_id_map_is_immutable_from_source_mapping() -> None:
     draft = IntentDraft(
         objective="Inspect report",

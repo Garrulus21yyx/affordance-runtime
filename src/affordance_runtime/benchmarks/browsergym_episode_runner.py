@@ -79,6 +79,7 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
 from affordance_runtime.trace import TraceDag
@@ -547,7 +548,9 @@ def run_browsergym_episode(
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
             task_planner=None,
-        ).run_sync(RunRequest(task_spec=task_spec))
+        ).run_sync(
+            RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY])
+        )
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -715,7 +718,10 @@ def run_browsergym_generalist_episode(
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
-        ).run_sync(RunRequest(task_spec=task_spec), intake_trace)
+        ).run_sync(
+            RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]),
+            intake_trace,
+        )
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")

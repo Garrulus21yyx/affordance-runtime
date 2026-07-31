@@ -287,6 +287,62 @@ class StateDeltaOrTerminalVerifier:
 
 
 @dataclass
+class SpatialMarkerDeltaVerifier:
+    """Verify new current spatial geometry at a bound semantic point."""
+
+    kind: str = "spatial_marker_delta"
+
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
+        del receipt
+        if not isinstance(spec.expected, Mapping):
+            return VerifierEvaluation(False)
+        point = spec.expected.get("point")
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            return VerifierEvaluation(False)
+        try:
+            point_x, point_y = float(point[0]), float(point[1])
+            tolerance = float(spec.expected.get("tolerance", 8.0))
+        except (TypeError, ValueError):
+            return VerifierEvaluation(False)
+        if tolerance <= 0:
+            return VerifierEvaluation(False)
+        excluded = {
+            str(item)
+            for item in spec.expected.get("excluded_target_ids", ())
+            if str(item)
+        }
+        geometries = observation.metadata.get("spatial_geometry")
+        if not isinstance(geometries, (list, tuple)):
+            return VerifierEvaluation(False)
+        for item in geometries:
+            if not isinstance(item, Mapping):
+                continue
+            target_id = str(item.get("target_id") or "")
+            bbox = item.get("bbox")
+            if target_id in excluded or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            try:
+                left, top, width, height = (float(value) for value in bbox)
+            except (TypeError, ValueError):
+                continue
+            if width <= 0 or height <= 0:
+                continue
+            center_x = left + width / 2
+            center_y = top + height / 2
+            if abs(center_x - point_x) <= tolerance and abs(center_y - point_y) <= tolerance:
+                return VerifierEvaluation(True, target_id)
+        return VerifierEvaluation(False)
+
+    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
+        return self.evaluate(spec, receipt, observation).passed
+
+
+@dataclass
 class HttpJsonVerifier:
     """Strong fixture/API verifier for persisted business effects."""
 
@@ -331,6 +387,7 @@ class VerifierLadder:
             DomAbsentVerifier(),
             DomAttributeVerifier(),
             ControlStateVerifier(),
+            SpatialMarkerDeltaVerifier(),
             StateDeltaOrTerminalVerifier(),
         ]
     )

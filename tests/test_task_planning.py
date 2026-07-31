@@ -518,6 +518,41 @@ def test_canonical_obligation_projects_relative_destination_as_typed_offset() ->
     assert interaction.destination_offset == 1
 
 
+def test_canonical_obligation_projects_spatial_capability_as_region_intent() -> None:
+    from affordance_runtime.simplified_runtime_contracts import RegionIntent
+
+    claim = SourcedTaskClaim(
+        claim_id="spatial-claim",
+        kind=TaskClaimKind.EFFECT,
+        statement="Activate coordinate (2,-2)",
+        source_ref="request-1",
+    )
+    task = _task().model_copy(
+        update={
+            "source_claims": (claim,),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-spatial-point",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="coordinate (2,-2)",
+                    relation=TaskObligationRelation.IS_COMPLETED,
+                    interaction_capability="spatial.point.current_geometry",
+                    claim_ids=(claim.claim_id,),
+                    evidence_requirements=("fresh calibrated spatial evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+
+    plan = PlanningRouter().plan(_context().model_copy(update={"task_spec": task}))
+
+    interaction = plan.subgoals[0].interaction
+    assert isinstance(interaction, RegionIntent)
+    assert interaction.region == "coordinate (2,-2)"
+    assert interaction.capability == "spatial.point.current_geometry"
+
+
 def test_task_planning_context_versions_bounded_current_state_policy() -> None:
     context = _context()
 

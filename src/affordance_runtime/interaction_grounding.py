@@ -37,6 +37,9 @@ class GroundingTarget:
     label: str
     supported_actions: tuple[str, ...]
     state: Mapping[str, Any]
+    surface: str = ""
+    confidence: float | None = None
+    source_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,10 +67,7 @@ class InteractionGrounder:
                     GroundingStatus.CAPABILITY_MISSING,
                     reason_code="interaction_capability_missing",
                 )
-            return GroundingResult(
-                GroundingStatus.ABSENT,
-                reason_code="region_grounding_unavailable",
-            )
+            return _match_region(interaction, targets)
         if isinstance(interaction, RelationIntent):
             source = _match_element(interaction.source, targets)
             destination = (
@@ -173,6 +173,64 @@ def _enabling_ready(
     if intent.operation == ElementOperationKind.SCROLL_FORWARD:
         return current < maximum
     return current > 0.0
+
+
+def _match_region(
+    intent: RegionIntent,
+    targets: tuple[GroundingTarget, ...],
+) -> GroundingResult:
+    semantic_matches = tuple(
+        item
+        for item in targets
+        if item.surface.casefold() in {"svg", "visual"}
+        and _region_label_matches(intent.region, item.label)
+    )
+    if not semantic_matches:
+        return GroundingResult(GroundingStatus.ABSENT, reason_code="region_target_absent")
+    calibrated = tuple(
+        item
+        for item in semantic_matches
+        if "point_activate" in item.supported_actions
+        and item.state.get("spatial_evidence") == "calibrated_current_geometry"
+        and item.confidence is not None
+        and item.confidence > 0
+        and bool(item.source_refs)
+    )
+    if not calibrated:
+        return GroundingResult(
+            GroundingStatus.CAPABILITY_MISSING,
+            targets=semantic_matches,
+            reason_code="region_calibrated_geometry_missing",
+        )
+    if len(calibrated) > 1:
+        return GroundingResult(
+            GroundingStatus.AMBIGUOUS,
+            targets=calibrated,
+            reason_code="region_target_ambiguous",
+        )
+    return GroundingResult(GroundingStatus.RESOLVED, targets=calibrated)
+
+
+_COORDINATE_REGION = re.compile(
+    r"(?:\bcoordinate\s*)?\(\s*(?P<x>-?\d+(?:\.\d+)?)\s*,\s*(?P<y>-?\d+(?:\.\d+)?)\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _region_label_matches(requested: str, observed: str) -> bool:
+    requested_coordinate = _COORDINATE_REGION.fullmatch(requested.strip())
+    observed_coordinate = _COORDINATE_REGION.fullmatch(observed.strip())
+    if requested_coordinate is not None or observed_coordinate is not None:
+        if requested_coordinate is None or observed_coordinate is None:
+            return False
+        return (
+            requested_coordinate.group("x"),
+            requested_coordinate.group("y"),
+        ) == (
+            observed_coordinate.group("x"),
+            observed_coordinate.group("y"),
+        )
+    return _semantic_label_matches(requested, observed)
 
 
 def _match_element(

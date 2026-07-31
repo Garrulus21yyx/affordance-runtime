@@ -164,6 +164,8 @@ class RegionIntent:
 
 InteractionIntent: TypeAlias = ElementIntent | CollectionIntent | RelationIntent | RegionIntent
 
+SPATIAL_POINT_CAPABILITY = "spatial.point.current_geometry"
+
 
 @dataclass(frozen=True)
 class SourceReference:
@@ -189,9 +191,12 @@ def interaction_for_state(
     interaction_values: tuple[str, ...] = (),
     value_source: tuple[str, tuple[SourceReference, ...]] | None = None,
     interaction_relation: tuple[str, str, int | None, int | None] | None = None,
+    interaction_capability: str = "",
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
+    if interaction_capability == SPATIAL_POINT_CAPABILITY:
+        return RegionIntent(subject, interaction_capability, source_refs)
     target_name, element_role, role_only, ordinal = _element_identity(
         subject,
         expected_value,

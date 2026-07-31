@@ -13,6 +13,7 @@ from typing import Any
 from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
     ElementIntent,
+    RegionIntent,
     RelationIntent,
     StepActivityStatus,
     StepSpec,
@@ -171,6 +172,8 @@ def _interaction_target_ids(step: StepSpec) -> tuple[str, ...]:
         return (interaction.collection.target,)
     if isinstance(interaction, ElementIntent):
         return (interaction.target,)
+    if isinstance(interaction, RegionIntent):
+        return (interaction.region,)
     return ()
 
 

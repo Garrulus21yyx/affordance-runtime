@@ -9,6 +9,7 @@ from affordance_runtime.verification import (
     EvidenceVerifier,
     HttpJsonVerifier,
     ObservationMetadataVerifier,
+    SpatialMarkerDeltaVerifier,
     StateDeltaOrTerminalVerifier,
     VerificationEvidence,
     VerificationReport,
@@ -101,6 +102,44 @@ def test_http_json_verifier_reports_actual_projected_value(monkeypatch) -> None:
     assert evaluation.passed
     assert evaluation.observed == "submitted"
     assert evaluation.passed == HttpJsonVerifier().verify(spec, _receipt(), Observation("rev-2"))
+
+
+def test_spatial_marker_delta_requires_new_current_geometry_near_bound_point() -> None:
+    spec = VerifierSpec(
+        "spatial_marker_delta",
+        "",
+        {
+            "point": [48.0, 78.0],
+            "excluded_target_ids": ["semantic:original-region"],
+            "tolerance": 8.0,
+        },
+    )
+    observation = Observation(
+        "rev-2",
+        metadata={
+            "spatial_geometry": [
+                {
+                    "target_id": "semantic:original-region",
+                    "bbox": [10.0, 40.0, 76.0, 76.0],
+                },
+                {
+                    "target_id": "semantic:fresh-marker",
+                    "bbox": [44.5, 74.5, 7.0, 7.0],
+                },
+            ]
+        },
+    )
+
+    evaluation = SpatialMarkerDeltaVerifier().evaluate(spec, _receipt(), observation)
+
+    assert evaluation.passed
+    assert evaluation.observed == "semantic:fresh-marker"
+
+    stale_only = Observation(
+        "rev-2",
+        metadata={"spatial_geometry": [observation.metadata["spatial_geometry"][0]]},
+    )
+    assert not SpatialMarkerDeltaVerifier().verify(spec, _receipt(), stale_only)
 
 
 def test_verifier_ladder_report_uses_real_observed_values_and_semantic_key() -> None:

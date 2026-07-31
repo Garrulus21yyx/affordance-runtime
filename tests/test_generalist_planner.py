@@ -70,6 +70,8 @@ from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
+    InteractionIntent,
+    RegionIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
@@ -140,13 +142,16 @@ def _request_with_active_step(
         PlannerActionKind.TYPE_TEXT.value,
         PlannerActionKind.PRESS_KEY.value,
     ),
+    interaction: InteractionIntent | None = None,
+    capabilities: tuple[str, ...] = (),
 ) -> PlanningRequest:
     criteria = criterion if isinstance(criterion, tuple) else (criterion,)
     affordances = affordance if isinstance(affordance, tuple) else (affordance,)
     step = StepSpec(
         step_id="step:current",
         objective="Complete the current step",
-        interaction=ElementIntent(
+        interaction=interaction
+        or ElementIntent(
             getattr(criteria[0], "subject", "semantic:current"),
             (_request_source(),),
         ),
@@ -181,7 +186,7 @@ def _request_with_active_step(
             task_revision=1,
             objective="Complete the current step",
             constraints=(),
-            capabilities=(),
+            capabilities=capabilities,
             task_completion_criterion=None,
             task_completion_projection_status="pending",
         ),
@@ -350,6 +355,45 @@ def test_strict_planner_auto_selects_unique_slider_actionchoice() -> None:
     assert response.proposal.parameters == {"key": "ArrowRight"}
     assert response.proposal_provenance is not None
     assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert planner.model_call_count == 0
+
+
+def test_strict_planner_auto_selects_capability_bound_calibrated_region() -> None:
+    request = _request_with_active_step(
+        criterion=StateCriterion(
+            criterion_id="criterion:spatial",
+            source_refs=(_request_source(),),
+            subject="coordinate (7,-3)",
+            relation=CriterionRelation.IS_COMPLETED,
+            expected_value=None,
+            evidence_policy=_request_policy(),
+        ),
+        interaction=RegionIntent(
+            "coordinate (7,-3)",
+            "spatial.point.current_geometry",
+            (_request_source(),),
+        ),
+        capabilities=("spatial.point.current_geometry",),
+        permitted_action_kinds=(PlannerActionKind.POINT_ACTIVATE.value,),
+        affordance=PlannerAffordanceView(
+            target_id="semantic:renamed-point",
+            surface="svg",
+            role="point",
+            label="(7,-3)",
+            supported_actions=("point_activate",),
+            state={"spatial_evidence": "calibrated_current_geometry"},
+            confidence=1.0,
+            source_refs=("artifact:current-svg-geometry",),
+        ),
+    )
+    planner = GeneralistLMPlanner(NoCallModel())
+
+    response = asyncio.run(planner.propose(request))
+
+    assert isinstance(response, PlannerProposalResponse)
+    assert response.proposal.action_kind == PlannerActionKind.POINT_ACTIVATE
+    assert response.proposal.target_affordance_id == "semantic:renamed-point"
+    assert response.diagnostics.selection_source == "runtime_unique_choice"
     assert planner.model_call_count == 0
 
 

@@ -13,6 +13,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     ElementOperationKind,
     InteractionIntent,
+    RegionIntent,
     RelationIntent,
     SourceReference,
     StateCriterion,
@@ -89,6 +90,148 @@ def _scope(step: StepSpec) -> ActiveStepScope:
         step=step,
         activity_status=StepActivityStatus.ACTIVE,
     )
+
+
+def test_action_choice_builder_requires_calibrated_non_dom_region_evidence() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:spatial-point",
+        subject="coordinate (2,-2)",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RegionIntent(
+            "coordinate (2,-2)",
+            "spatial.point.current_geometry",
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:dom-lookalike",
+                surface="dom",
+                role="point",
+                label="coordinate (2,-2)",
+                supported_actions=("point_activate",),
+                state={"spatial_evidence": "calibrated_current_geometry"},
+                confidence=1.0,
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:visual-point",
+                surface="visual",
+                role="point",
+                label="coordinate (2,-2)",
+                supported_actions=("point_activate",),
+                state={"spatial_evidence": "calibrated_current_geometry"},
+                confidence=0.95,
+                source_refs=("artifact:screenshot-current",),
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:wrong-sign-point",
+                surface="svg",
+                role="point",
+                label="coordinate (-2,-2)",
+                supported_actions=("point_activate",),
+                state={"spatial_evidence": "calibrated_current_geometry"},
+                confidence=1.0,
+                source_refs=("artifact:svg-current",),
+            ),
+        ),
+        capabilities=frozenset({"spatial.point.current_geometry"}),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].action_kind == PlannerActionKind.POINT_ACTIVATE
+    assert result.choices[0].target_id == "semantic:visual-point"
+
+
+def test_action_choice_builder_does_not_fabricate_region_without_capability() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:spatial-point",
+        subject="renamed spatial mark",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RegionIntent(
+            "renamed spatial mark",
+            "spatial.point.current_geometry",
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:visual-point",
+                surface="svg",
+                role="point",
+                label="renamed spatial mark",
+                supported_actions=("point_activate",),
+                state={"spatial_evidence": "calibrated_current_geometry"},
+                confidence=1.0,
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "interaction_capability_missing"
+
+
+def test_action_choice_builder_rejects_uncalibrated_region_geometry() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:spatial-point",
+        subject="renamed spatial mark",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RegionIntent(
+            "renamed spatial mark",
+            "spatial.point.current_geometry",
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:visual-point",
+                surface="visual",
+                role="point",
+                label="renamed spatial mark",
+                supported_actions=("point_activate",),
+                state={},
+                confidence=0.95,
+                source_refs=("artifact:screenshot-current",),
+            )
+        ),
+        capabilities=frozenset({"spatial.point.current_geometry"}),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "region_calibrated_geometry_missing"
 
 
 def test_action_choice_builder_creates_exact_type_text_choice() -> None:

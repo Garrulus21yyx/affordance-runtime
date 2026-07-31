@@ -891,16 +891,7 @@ class ContractBuilder:
             dict.fromkeys(
                 [
                     *contract_requirements.required_capabilities,
-                    *(
-                        task_spec.requested_capabilities
-                        if task_spec.operation_class
-                        in {
-                            OperationClass.REVERSIBLE_WRITE,
-                            OperationClass.EXTERNAL_SIDE_EFFECT,
-                            OperationClass.IRREVERSIBLE,
-                        }
-                        else ()
-                    ),
+                    *task_spec.requested_capabilities,
                 ]
             )
         )

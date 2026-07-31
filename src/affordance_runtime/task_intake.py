@@ -219,6 +219,7 @@ class TaskObligationSpec(StrictModel):
     expected_value: str = Field(default="", max_length=480)
     interaction_values: tuple[str, ...] = ()
     interaction_relation: TaskInteractionRelationSpec | None = None
+    interaction_capability: str = Field(default="", max_length=120)
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -257,6 +258,8 @@ class TaskObligationSpec(StrictModel):
             or self.value_source != TaskObligationValueSource.NONE
         ):
             raise ValueError("interaction relation requires a value-free changed effect")
+        if self.interaction_capability and not self.interaction_capability.strip():
+            raise ValueError("interaction capability cannot be blank")
         if self.construction_source == GraphConstructionSource.CANONICAL_COMPILER and not self.typed_evidence_requirements:
             raise ValueError("canonical task obligation requires typed evidence")
         if self.blocking and not self.evidence_requirements:

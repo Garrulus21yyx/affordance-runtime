@@ -810,6 +810,7 @@ async def _runtime_action_choice_decision(
         step=active_step,
         scope=scope,
         observation=UnifiedObservation.from_planner_observation(request.observation),
+        capabilities=frozenset(request.task.capabilities),
     )
     if isinstance(choice_result, ActionChoiceFailure):
         return _action_choice_failure_decision(
