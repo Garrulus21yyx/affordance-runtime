@@ -895,6 +895,7 @@ def _supports(target: UnifiedObservationTarget, kind: PlannerActionKind) -> bool
         PlannerActionKind.TYPE_TEXT: {"fill", "type", "type_text"},
         PlannerActionKind.SELECT_OPTION: {"select", "select_option"},
         PlannerActionKind.PRESS_KEY: {"press", "press_key"},
+        PlannerActionKind.DRAG: {"drag"},
     }.get(kind, set())
     return bool(compatible.intersection(target.supported_actions))
 

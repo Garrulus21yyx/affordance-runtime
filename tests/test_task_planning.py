@@ -18,6 +18,8 @@ from affordance_runtime.task_intake import (
     SemanticValueRelation,
     SourcedTaskClaim,
     TaskClaimKind,
+    TaskInteractionRelationKind,
+    TaskInteractionRelationSpec,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
@@ -439,6 +441,81 @@ def test_subgoal_outcome_rejects_literal_and_dynamic_value_together() -> None:
             value="1234",
             value_obligation_id="obligation-read",
         )
+
+
+def test_canonical_obligation_projects_typed_drag_relation_without_endpoint_guessing() -> None:
+    claim = SourcedTaskClaim(
+        claim_id="drag-claim",
+        kind=TaskClaimKind.EFFECT,
+        statement="Move source into destination",
+        source_ref="request-1",
+    )
+    task = _task().model_copy(
+        update={
+            "source_claims": (claim,),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-drag",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="renamed source",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    interaction_relation=TaskInteractionRelationSpec(
+                        kind=TaskInteractionRelationKind.DRAG_TO,
+                        destination="renamed destination",
+                    ),
+                    claim_ids=(claim.claim_id,),
+                    evidence_requirements=("fresh relation evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+
+    plan = PlanningRouter().plan(_context().model_copy(update={"task_spec": task}))
+
+    interaction = plan.subgoals[0].interaction
+    assert isinstance(interaction, RelationIntent)
+    assert interaction.relation == "drag_to"
+    assert interaction.source.target == "renamed source"
+    assert interaction.destination is not None
+    assert interaction.destination.target == "renamed destination"
+    assert interaction.destination_offset is None
+
+
+def test_canonical_obligation_projects_relative_destination_as_typed_offset() -> None:
+    claim = SourcedTaskClaim(
+        claim_id="relative-drag-claim",
+        kind=TaskClaimKind.EFFECT,
+        statement="Move source down one position",
+        source_ref="request-1",
+    )
+    task = _task().model_copy(
+        update={
+            "source_claims": (claim,),
+            "obligations": (
+                TaskObligationSpec(
+                    obligation_id="obligation-relative-drag",
+                    kind=TaskObligationKind.EFFECT,
+                    subject="Delta",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    interaction_relation=TaskInteractionRelationSpec(
+                        kind=TaskInteractionRelationKind.RELATIVE_POSITION,
+                        relative_offset=1,
+                    ),
+                    claim_ids=(claim.claim_id,),
+                    evidence_requirements=("fresh ordering evidence",),
+                    terminal=True,
+                ),
+            ),
+        }
+    )
+
+    plan = PlanningRouter().plan(_context().model_copy(update={"task_spec": task}))
+
+    interaction = plan.subgoals[0].interaction
+    assert isinstance(interaction, RelationIntent)
+    assert interaction.destination is None
+    assert interaction.destination_offset == 1
 
 
 def test_task_planning_context_versions_bounded_current_state_policy() -> None:

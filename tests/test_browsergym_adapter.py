@@ -953,6 +953,45 @@ def test_browsergym_sortable_list_drag_uses_insertion_geometry() -> None:
     assert action.arguments == {"from_x": 70.0, "from_y": 112.0, "to_x": 70.0, "to_y": 148.0}
 
 
+def test_browsergym_size_relation_drag_uses_observed_geometry_over_dom_shortcut() -> None:
+    lease = AffordanceLease.issue(environment_revision="rev-1")
+    source = Affordance(
+        "source",
+        Surface.DOM,
+        "generic",
+        "source",
+        "drag",
+        {
+            "backend_handle": "source",
+            "bbox": [10, 20, 20, 20],
+            "relation_geometry": "relative_size",
+        },
+        lease,
+        state={"relative_size": "smallest"},
+    )
+    destination = Affordance(
+        "destination",
+        Surface.DOM,
+        "generic",
+        "destination",
+        "drag",
+        {
+            "backend_handle": "destination",
+            "bbox": [100, 80, 80, 60],
+            "relation_geometry": "relative_size",
+        },
+        lease,
+        state={"relative_size": "largest"},
+    )
+
+    action = BrowserGymGestureEncoder().encode(GestureBinding(source=source, destination=destination))
+
+    assert action == BrowserGymAction(
+        "mouse_drag_and_drop",
+        {"from_x": 20.0, "from_y": 30.0, "to_x": 140.0, "to_y": 110.0},
+    )
+
+
 def test_browsergym_visual_drag_falls_back_to_viewport_geometry() -> None:
     lease = AffordanceLease.issue(environment_revision="rev-1")
     source = Affordance(
@@ -1281,7 +1320,8 @@ def test_browsergym_observer_retries_one_transient_coherent_epoch_drift(tmp_path
 
 def test_browsergym_drag_geometry_refreshes_dom_grounding_candidate(tmp_path: Path) -> None:
     model = browsergym_dom_adapter().transduce(
-        '<li bid="source" class="ui-sortable-handle">Source</li>',
+        '<li bid="source" class="ui-sortable-handle">Source</li>'
+        '<li bid="renamed" class="ui-sortable-handle">Renamed</li>',
         environment_revision="rev-1",
         snapshot_id="snap-1",
     )
@@ -1296,14 +1336,22 @@ def test_browsergym_drag_geometry_refreshes_dom_grounding_candidate(tmp_path: Pa
         def bounding_boxes_for_selectors(
             self, bindings: dict[str, str]
         ) -> dict[str, tuple[float, float, float, float]]:
-            assert bindings == {"source": "[bid='source']"}
-            return {"source": (10.0, 20.0, 100.0, 24.0)}
+            assert bindings == {
+                "source": "[bid='source']",
+                "renamed": "[bid='renamed']",
+            }
+            return {
+                "source": (10.0, 20.0, 100.0, 24.0),
+                "renamed": (10.0, 50.0, 100.0, 24.0),
+            }
 
     observer = BrowserGymObserver(GeometrySession(), BrowserGymEpisodeState("drag", 0, "Drag source", {}, {}), tmp_path)
     enriched = observer._attach_drag_geometry(BrowserSnapshot(observation, model))
 
     affordance = enriched.affordance_model.affordances[0]
     assert affordance.locator["bbox"] == [10.0, 20.0, 100.0, 24.0]
+    assert [item.state["collection_position"] for item in enriched.affordance_model.affordances] == [1, 2]
+    assert [item.state["collection_cardinality"] for item in enriched.affordance_model.affordances] == [2, 2]
     assert enriched.grounding_candidates[0].target_fingerprint == affordance.target_fingerprint
     assert enriched.grounding_candidates[0].is_current(enriched.observation)
     assert (

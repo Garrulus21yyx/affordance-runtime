@@ -76,8 +76,23 @@ class BrowserGymObserver:
         capture_attempt: int,
         capture_mode: str = "full",
     ) -> BrowserSnapshot:
+        snapshot = self._attach_drag_geometry(snapshot)
+        existing_states = snapshot.observation.metadata.get("control_states", {})
+        control_states = dict(existing_states) if isinstance(existing_states, dict) else {}
+        for affordance in snapshot.affordance_model.affordances:
+            backend_handle = str(affordance.locator.get("backend_handle") or "")
+            if backend_handle:
+                control_states[backend_handle] = {
+                    **affordance.state,
+                    **(
+                        control_states.get(backend_handle, {})
+                        if isinstance(control_states.get(backend_handle), dict)
+                        else {}
+                    ),
+                }
         metadata = {
             **snapshot.observation.metadata,
+            "control_states": control_states,
             "browsergym": {
                 "goal": self.episode.goal,
                 "reward": self.episode.reward,
@@ -89,7 +104,7 @@ class BrowserGymObserver:
             },
         }
         observation = replace(snapshot.observation, metadata=metadata)
-        return self._attach_drag_geometry(replace(snapshot, observation=observation))
+        return replace(snapshot, observation=observation)
 
     def _attach_drag_geometry(self, snapshot: BrowserSnapshot) -> BrowserSnapshot:
         drag_affordances = [item for item in snapshot.affordance_model.affordances if item.action == "drag"]
@@ -157,6 +172,11 @@ class BrowserGymObserver:
                         "bbox": list(box),
                         "coordinate_space": "viewport_pixels",
                         **(
+                            {"relation_geometry": "relative_size"}
+                            if relative_sizes.get(item.id)
+                            else {}
+                        ),
+                        **(
                             {
                                 "sortable_index": sortable_position[item.id][0],
                                 "sortable_count": sortable_position[item.id][1],
@@ -167,6 +187,14 @@ class BrowserGymObserver:
                     },
                     state={
                         **item.state,
+                        **(
+                            {
+                                "collection_position": sortable_position[item.id][0],
+                                "collection_cardinality": sortable_position[item.id][1],
+                            }
+                            if item.id in sortable_position
+                            else {}
+                        ),
                         **(
                             {"relative_size": relative_sizes[item.id]}
                             if relative_sizes.get(item.id)

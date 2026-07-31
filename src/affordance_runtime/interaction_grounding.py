@@ -70,9 +70,42 @@ class InteractionGrounder:
             )
         if isinstance(interaction, RelationIntent):
             source = _match_element(interaction.source, targets)
-            destination = _match_element(interaction.destination, targets)
+            destination = (
+                _match_element(interaction.destination, targets)
+                if interaction.destination is not None
+                else (
+                    _match_relative_destination(source, interaction.destination_offset, targets)
+                    if interaction.destination_offset is not None
+                    else _match_absolute_destination(
+                        source,
+                        interaction.destination_ordinal,
+                        targets,
+                    )
+                )
+            )
             source, destination = _exclude_resolved_relation_endpoint(source, destination)
             status = _combined_status(source, destination)
+            if (
+                status == GroundingStatus.RESOLVED
+                and source.targets[0].target_id == destination.targets[0].target_id
+            ):
+                return GroundingResult(
+                    GroundingStatus.AMBIGUOUS,
+                    targets=source.targets,
+                    destinations=destination.targets,
+                    reason_code="relation_endpoints_not_distinct",
+                )
+            if (
+                status == GroundingStatus.RESOLVED
+                and interaction.relation != "value_transfer"
+                and "drag" not in source.targets[0].supported_actions
+            ):
+                return GroundingResult(
+                    GroundingStatus.CAPABILITY_MISSING,
+                    targets=source.targets,
+                    destinations=destination.targets,
+                    reason_code="relation_source_drag_capability_missing",
+                )
             return GroundingResult(
                 status,
                 targets=source.targets,
@@ -154,6 +187,13 @@ def _match_element(
         if not intent.collection_scope
         or _collection_scope_matches(intent.collection_scope, item)
     )
+    if intent.relative_size:
+        scoped_targets = tuple(
+            item
+            for item in scoped_targets
+            if str(item.state.get("relative_size") or "").casefold()
+            == intent.relative_size
+        )
     if identity == "textarea":
         scoped_targets = tuple(
             item
@@ -169,7 +209,15 @@ def _match_element(
         item
         for item in scoped_targets
         if (
-            (intent.match_by_role and (not role or _role_matches(role, item.role)))
+            (
+                bool(intent.relative_size)
+                and (
+                    not role
+                    or _role_matches(role, item.role)
+                    or _role_capability_compatible(role, item)
+                )
+            )
+            or (intent.match_by_role and (not role or _role_matches(role, item.role)))
             or (
                 not intent.match_by_role
                 and (
@@ -245,6 +293,74 @@ def _exclude_resolved_relation_endpoint(
         if len(remaining) == 1:
             source = GroundingResult(GroundingStatus.RESOLVED, targets=remaining)
     return source, destination
+
+
+def _match_relative_destination(
+    source: GroundingResult,
+    offset: int | None,
+    targets: tuple[GroundingTarget, ...],
+) -> GroundingResult:
+    if source.status != GroundingStatus.RESOLVED or offset in {None, 0}:
+        return GroundingResult(
+            source.status,
+            reason_code="relation_source_unresolved",
+        )
+    source_target = source.targets[0]
+    position = source_target.state.get("collection_position")
+    if not isinstance(position, int) or position < 1:
+        return GroundingResult(
+            GroundingStatus.CAPABILITY_MISSING,
+            reason_code="relation_collection_position_missing",
+        )
+    desired = position + offset
+    return _match_collection_position(source_target, desired, targets)
+
+
+def _match_absolute_destination(
+    source: GroundingResult,
+    ordinal: int | None,
+    targets: tuple[GroundingTarget, ...],
+) -> GroundingResult:
+    if source.status != GroundingStatus.RESOLVED or ordinal is None or ordinal < 1:
+        return GroundingResult(source.status, reason_code="relation_source_unresolved")
+    return _match_collection_position(source.targets[0], ordinal, targets)
+
+
+def _match_collection_position(
+    source_target: GroundingTarget,
+    desired: int,
+    targets: tuple[GroundingTarget, ...],
+) -> GroundingResult:
+    source_context = _collection_context(source_target)
+    matches = tuple(
+        item
+        for item in targets
+        if item.target_id != source_target.target_id
+        and item.state.get("collection_position") == desired
+        and (
+            source_context is None
+            or _collection_context(item) == source_context
+        )
+    )
+    if len(matches) == 1:
+        return GroundingResult(GroundingStatus.RESOLVED, targets=matches)
+    return GroundingResult(
+        GroundingStatus.AMBIGUOUS if matches else GroundingStatus.ABSENT,
+        targets=matches,
+        reason_code=(
+            "relation_destination_ambiguous"
+            if matches
+            else "relation_relative_destination_absent"
+        ),
+    )
+
+
+def _collection_context(target: GroundingTarget) -> tuple[str, str] | None:
+    for key in ("collection_owner", "container_context", "group_context"):
+        value = target.state.get(key)
+        if isinstance(value, str) and value.strip():
+            return key, value.strip().casefold()
+    return None
 
 
 def _collection_scope_matches(scope: str, target: GroundingTarget) -> bool:

@@ -35,6 +35,7 @@ from affordance_runtime.task_intake import (
     SemanticValueRelation,
     SourcedTaskClaim,
     TaskClaimKind,
+    TaskInteractionRelationKind,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
@@ -50,6 +51,124 @@ from affordance_runtime.task_obligation_coverage import (
 from affordance_runtime.trace import TraceDag
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "source", "destination"),
+    (
+        (
+            "Drag the cobalt tile into the amber tray.",
+            "cobalt tile",
+            "amber tray",
+        ),
+        (
+            "Move the renamed source completely inside the renamed destination.",
+            "renamed source",
+            "renamed destination",
+        ),
+    ),
+)
+def test_intent_compiler_canonicalizes_explicit_two_endpoint_drag_relation(
+    raw_text: str,
+    source: str,
+    destination: str,
+) -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective=raw_text,
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="provider generic drag target",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("The requested relation holds.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(request_id="relation-request", raw_text=raw_text)
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == source
+    assert obligation.interaction_relation is not None
+    assert obligation.interaction_relation.kind == TaskInteractionRelationKind.DRAG_TO
+    assert obligation.interaction_relation.destination == destination
+    assert obligation.interaction_relation.relative_offset is None
+
+
+def test_intent_compiler_canonicalizes_relative_position_without_guessing_endpoint() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Move Delta down by one position.",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="sortable list",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("Delta moved down one position.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="relative-relation-request",
+                raw_text="Move Delta down by one position.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == "Delta"
+    assert obligation.interaction_relation is not None
+    assert obligation.interaction_relation.kind == TaskInteractionRelationKind.RELATIVE_POSITION
+    assert obligation.interaction_relation.destination == ""
+    assert obligation.interaction_relation.relative_offset == 1
+
+
+def test_intent_compiler_canonicalizes_absolute_position_as_an_ordinal() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective="Move Vanya to the 4th position.",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="provider position string",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=("Vanya is fourth.",),
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(model).compile(
+            UserRequest(
+                request_id="absolute-relation-request",
+                raw_text="Move Vanya to the 4th position.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    obligation = result.task_spec.obligations[0]
+    assert obligation.subject == "Vanya"
+    assert obligation.interaction_relation is not None
+    assert obligation.interaction_relation.kind == TaskInteractionRelationKind.ABSOLUTE_POSITION
+    assert obligation.interaction_relation.destination == ""
+    assert obligation.interaction_relation.destination_ordinal == 4
 
 
 def test_intent_draft_repair_attempt_claim_id_map_is_immutable_from_source_mapping() -> None:

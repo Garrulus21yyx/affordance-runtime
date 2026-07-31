@@ -995,6 +995,199 @@ def test_action_choice_builder_transfers_exact_grounded_control_value() -> None:
     assert choice.criterion_ids == ("criterion:destination-value",)
 
 
+def test_action_choice_builder_resolves_relative_drag_from_observed_collection_order() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:order",
+        subject="Delta",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=ElementIntent("Delta", (_source(),)),
+            destination=None,
+            relation="relative_position",
+            destination_offset=1,
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:third",
+                surface="dom",
+                role="listitem",
+                label="Echo",
+                supported_actions=("drag",),
+                state={"collection_position": 3, "container_context": "queue"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:source",
+                surface="dom",
+                role="listitem",
+                label="Delta",
+                supported_actions=("drag",),
+                state={"collection_position": 2, "container_context": "queue"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:unrelated-third",
+                surface="dom",
+                role="listitem",
+                label="Other",
+                supported_actions=("drag",),
+                state={"collection_position": 3, "container_context": "other"},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].action_kind == PlannerActionKind.DRAG
+    assert result.choices[0].target_id == "semantic:source"
+    assert result.choices[0].destination_id == "semantic:third"
+
+
+def test_action_choice_builder_resolves_absolute_position_from_observed_collection() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:absolute-order",
+        subject="Vanya",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=ElementIntent("Vanya", (_source(),)),
+            destination=None,
+            relation="absolute_position",
+            destination_ordinal=4,
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:fourth",
+                surface="dom",
+                role="listitem",
+                label="Fourth renamed item",
+                supported_actions=("drag",),
+                state={"collection_position": 4, "container_context": "queue"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:vanya",
+                surface="dom",
+                role="listitem",
+                label="Vanya",
+                supported_actions=("drag",),
+                state={"collection_position": 2, "container_context": "queue"},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:vanya"
+    assert result.choices[0].destination_id == "semantic:fourth"
+
+
+def test_action_choice_builder_resolves_size_relation_from_typed_observed_state() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:inside",
+        subject="smaller box",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            "smaller box",
+            CriterionRelation.HAS_CHANGED,
+            None,
+            (_source(),),
+            interaction_relation=("drag_to", "larger box", None, None),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:large-renamed",
+                surface="dom",
+                role="generic",
+                label="L",
+                supported_actions=("drag",),
+                state={"relative_size": "largest"},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:small-renamed",
+                surface="dom",
+                role="generic",
+                label="s",
+                supported_actions=("drag",),
+                state={"relative_size": "smallest"},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:small-renamed"
+    assert result.choices[0].destination_id == "semantic:large-renamed"
+
+
+def test_action_choice_builder_fails_closed_for_same_or_ambiguous_relation_endpoints() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:relation",
+        subject="tile",
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=RelationIntent(
+            source=ElementIntent("tile", (_source(),)),
+            destination=ElementIntent("tile", (_source(),)),
+            relation="drag_to",
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:tile",
+                surface="dom",
+                role="generic",
+                label="tile",
+                supported_actions=("drag",),
+                state={},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "relation_endpoints_not_distinct"
+
+
 def test_action_choice_builder_distinguishes_transfer_endpoints_by_element_kind() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

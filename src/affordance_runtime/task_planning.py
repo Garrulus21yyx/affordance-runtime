@@ -1207,7 +1207,6 @@ def _action_outcome_relation_compatible(
     action_family: TaskPlanActionFamily,
     relation: SubgoalOutcomeRelation,
 ) -> bool:
-    """Enforce the provider-neutral semantic action/outcome relation matrix."""
     return relation in task_plan_allowed_outcome_relations(action_family)
 
 
@@ -1217,6 +1216,8 @@ def _infer_obligation_action_family(
     relation: SubgoalOutcomeRelation,
     context: TaskPlanningContext | None,
 ) -> TaskPlanActionFamily | None:
+    if obligation.interaction_relation is not None:
+        return TaskPlanActionFamily.DRAG
     value = action_family_resolution.infer_obligation_action_family_value(
         obligation_kind=obligation.kind.value,
         task_operation=task_operation.value,
@@ -1332,10 +1333,7 @@ class TaskObligationOutcomeCompiler:
                 else ""
             ),
         )
-        source_refs = obligation_source_refs(
-            obligation,
-            context.task_spec if context is not None else None,
-        )
+        source_refs = obligation_source_refs(obligation, context.task_spec if context is not None else None)
         interaction = interaction_for_state(
             outcome.subject,
             StateCriterionRelation(outcome.relation),
@@ -1343,6 +1341,9 @@ class TaskObligationOutcomeCompiler:
             source_refs,
             obligation.interaction_values,
             obligation_value_source(obligation, context.task_spec if context is not None else None),
+            obligation.interaction_relation.runtime_tuple
+            if obligation.interaction_relation is not None
+            else None,
         )
         return SubgoalSpec(
             subgoal_id=obligation.obligation_id,

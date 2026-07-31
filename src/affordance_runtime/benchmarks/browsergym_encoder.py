@@ -20,7 +20,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
-from affordance_runtime.simplified_runtime_contracts import CollectionIntent
+from affordance_runtime.simplified_runtime_contracts import CollectionIntent, RelationIntent
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
@@ -79,12 +79,16 @@ class BrowserGymGestureEncoder:
         source_bid = str(source_locator.get("backend_handle") or "")
         destination_bid = str(destination_locator.get("backend_handle") or "")
         sortable = is_sortable_list_binding(binding)
+        spatial_relation = bool(
+            source_locator.get("relation_geometry") == "relative_size"
+            and destination_locator.get("relation_geometry") == "relative_size"
+        )
         calendar_range = (
             source_locator.get("calendar_endpoint") == "start"
             and destination_locator.get("calendar_endpoint") == "end"
         )
         same_calendar_slot = bool(calendar_range and source_bid and source_bid == destination_bid)
-        if source_bid and destination_bid and not sortable and not calendar_range:
+        if source_bid and destination_bid and not sortable and not calendar_range and not spatial_relation:
             return BrowserGymAction(
                 "drag_and_drop",
                 {"from_bid": source_bid, "to_bid": destination_bid},
@@ -472,7 +476,10 @@ def declare_browsergym_active_subgoal_evidence(
             active.action_family is not None
             and active.action_family.value != proposal.action_kind.value
         )
-        or not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
+        or (
+            not isinstance(active.interaction, RelationIntent)
+            and not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
+        )
     ):
         return verifier_plan
     completed_click_progress = _browsergym_completed_click_progress_spec(
@@ -484,6 +491,9 @@ def declare_browsergym_active_subgoal_evidence(
         if declared and declared[-1].kind == "state_delta_or_terminal":
             declared[-1] = replace(declared[-1], strict=False)
         return [*declared, completed_click_progress]
+    drag_progress = _browsergym_drag_progress_spec(action, active=active, affordance=affordance)
+    if drag_progress is not None:
+        return _append_authoritative_progress_spec(verifier_plan, drag_progress)
     slider_progress = _browsergym_slider_exact_progress_spec(
         action,
         verifier_plan[-1],
@@ -589,6 +599,46 @@ def _browsergym_completed_click_progress_spec(
         "active_control",
         action_bid,
         strict=False,
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+
+
+def _browsergym_drag_progress_spec(
+    action: BrowserGymAction,
+    *,
+    active: SubgoalSpec,
+    affordance: Affordance,
+) -> VerifierSpec | None:
+    if action.name not in {"drag_and_drop", "mouse_drag_and_drop"}:
+        return None
+    if not isinstance(active.interaction, RelationIntent):
+        return None
+    backend_handle = str(affordance.locator.get("backend_handle") or "")
+    if not backend_handle:
+        return None
+    expected: dict[str, object] | None = None
+    if active.interaction.destination_ordinal is not None:
+        expected = {
+            "field": "collection_position",
+            "value": active.interaction.destination_ordinal,
+        }
+    elif active.interaction.destination_offset is not None:
+        position = affordance.state.get("collection_position")
+        if isinstance(position, int):
+            expected = {
+                "field": "collection_position",
+                "value": position + active.interaction.destination_offset,
+            }
+    elif active.interaction.source.relative_size == "smallest":
+        expected = {"field": "inside_largest", "value": True}
+    if expected is None:
+        return None
+    return VerifierSpec(
+        "control_state",
+        backend_handle,
+        expected,
+        strict=False,
+        evidence_key=f"relation_state:{backend_handle}:{expected['field']}",
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
 

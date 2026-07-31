@@ -253,6 +253,11 @@ def _step_from_obligation(
             obligation.expected_value or None,
             source_refs,
             obligation.interaction_values,
+            interaction_relation=(
+                obligation.interaction_relation.runtime_tuple
+                if obligation.interaction_relation is not None
+                else None
+            ),
         ),
         depends_on=obligation.depends_on,
         completion_criteria=(

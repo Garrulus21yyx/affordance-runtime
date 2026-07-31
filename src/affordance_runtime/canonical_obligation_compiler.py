@@ -23,6 +23,7 @@ from affordance_runtime.task_intake import (
     SourcedTaskClaim,
     StrictModel,
     TaskClaimKind,
+    TaskInteractionRelationSpec,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
@@ -40,6 +41,7 @@ class CanonicalEffectInput(StrictModel):
     interaction_values: tuple[str, ...] = ()
     captures_observation_value: bool = False
     value_source_effect_index: int | None = None
+    interaction_relation: TaskInteractionRelationSpec | None = None
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -170,6 +172,7 @@ class CanonicalObligationCompiler:
                     interaction_values=interaction_values,
                     captures_observation_value=effect_index in transfer_sources,
                     value_source_effect_index=value_source_index,
+                    interaction_relation=effect.interaction_relation,
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -252,6 +255,7 @@ class CanonicalObligationCompiler:
                     if relation == TaskObligationRelation.IS_SELECTED
                     else ()
                 ),
+                interaction_relation=effect.interaction_relation,
                 claim_ids=(claim_id,),
                 depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
                 value_obligation_id=(
@@ -351,6 +355,11 @@ class CanonicalObligationCompiler:
                     "relation": obligation.relation.value,
                     "value_source": obligation.value_source.value,
                     "expected_value": obligation.expected_value,
+                    "interaction_relation": (
+                        obligation.interaction_relation.model_dump(mode="json")
+                        if obligation.interaction_relation is not None
+                        else None
+                    ),
                     "terminal": obligation.terminal,
                 },
             )
@@ -408,6 +417,7 @@ class CanonicalObligationCompiler:
                     value_source=obligation.value_source,
                     expected_value=obligation.expected_value,
                     interaction_values=obligation.interaction_values,
+                    interaction_relation=obligation.interaction_relation,
                     value_obligation_id=canonical_value_obligation_id,
                     claim_ids=canonical_claim_ids,
                     depends_on=tuple(obligation_id_map[item] for item in obligation.depends_on),

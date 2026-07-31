@@ -31,6 +31,7 @@ from affordance_runtime.contracts import (
     Surface,
 )
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal, bind_active_subgoal_verifiers
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, RelationIntent, SourceReference
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -250,6 +251,148 @@ def _active_completed_click_outcome_state(
     )
     state.activate_next_step()
     return state
+
+
+def _active_drag_relation_state(interaction: RelationIntent) -> StateKernel:
+    state = StateKernel("task-drag", "Move one observed relation endpoint")
+    state.install_task_plan(
+        TaskPlan(
+            plan_id="plan-drag",
+            task_id=state.task_id,
+            task_revision=1,
+            plan_version=1,
+            based_on_state_version=state.version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="drag-relation",
+                    objective="source has changed",
+                    interaction=interaction,
+                    success_criteria=("source has changed",),
+                    evidence_requirements=("fresh source relation state",),
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    action_family=TaskPlanActionFamily.DRAG,
+                    outcome=SubgoalOutcome(
+                        subject="Source",
+                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    ),
+                ),
+            ),
+        )
+    )
+    state.activate_next_step()
+    return state
+
+
+@pytest.mark.parametrize(
+    ("interaction", "source_state", "expected_value"),
+    (
+        (
+            RelationIntent(
+                ElementIntent("Source", (SourceReference("request", "unit"),)),
+                None,
+                "relative_position",
+                destination_offset=1,
+            ),
+            {"collection_position": 3},
+            4,
+        ),
+        (
+            RelationIntent(
+                ElementIntent("Source", (SourceReference("request", "unit"),)),
+                None,
+                "absolute_position",
+                destination_ordinal=5,
+            ),
+            {"collection_position": 2},
+            5,
+        ),
+    ),
+)
+def test_browsergym_drag_relation_declares_exact_independent_position_progress(
+    interaction: RelationIntent,
+    source_state: dict[str, object],
+    expected_value: int,
+) -> None:
+    state = _active_drag_relation_state(interaction)
+    affordance = replace(
+        _affordance(
+            "source",
+            action="drag",
+            locator={"backend_handle": "source"},
+            label="Source",
+        ),
+        state=source_state,
+    )
+    proposal = PlannerProposal(
+        proposal_id="drag-source",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.DRAG,
+        target_affordance_id=affordance.id,
+        destination_affordance_id="destination",
+    )
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        [VerifierSpec("evidence", "last_action_error", "")],
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("mouse_drag_and_drop", {"from_x": 1, "from_y": 1, "to_x": 2, "to_y": 2}),
+        affordance=affordance,
+    )
+
+    assert declared[-1] == VerifierSpec(
+        "control_state",
+        "source",
+        {"field": "collection_position", "value": expected_value},
+        strict=False,
+        evidence_key="relation_state:source:collection_position",
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
+
+
+def test_browsergym_containment_relation_declares_observed_inside_progress() -> None:
+    source_ref = (SourceReference("request", "unit"),)
+    state = _active_drag_relation_state(
+        RelationIntent(
+            ElementIntent("smaller box", source_ref, relative_size="smallest"),
+            ElementIntent("larger box", source_ref, relative_size="largest"),
+            "drag_to",
+        )
+    )
+    affordance = _affordance(
+        "source",
+        action="drag",
+        locator={"backend_handle": "source"},
+        label="s",
+    )
+    proposal = PlannerProposal(
+        proposal_id="drag-containment",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.DRAG,
+        target_affordance_id=affordance.id,
+        destination_affordance_id="destination",
+    )
+
+    declared = declare_browsergym_active_subgoal_evidence(
+        [VerifierSpec("evidence", "last_action_error", "")],
+        proposal=proposal,
+        state=state,
+        action=BrowserGymAction("mouse_drag_and_drop", {"from_x": 1, "from_y": 1, "to_x": 2, "to_y": 2}),
+        affordance=affordance,
+    )
+
+    assert declared[-1] == VerifierSpec(
+        "control_state",
+        "source",
+        {"field": "inside_largest", "value": True},
+        strict=False,
+        evidence_key="relation_state:source:inside_largest",
+        progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
+    )
 
 
 def test_browsergym_exact_typed_value_declares_active_subgoal_evidence() -> None:

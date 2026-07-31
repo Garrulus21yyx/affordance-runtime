@@ -62,12 +62,52 @@ class IntentEntity(StrictModel):
     source_ref: str = Field(min_length=1)
 
 
+class TaskInteractionRelationKind(StrEnum):
+    DRAG_TO = "drag_to"
+    RELATIVE_POSITION = "relative_position"
+    ABSOLUTE_POSITION = "absolute_position"
+
+
+class TaskInteractionRelationSpec(StrictModel):
+    """Source-authorized relation semantics; observed endpoints remain runtime-bound."""
+
+    kind: TaskInteractionRelationKind
+    destination: str = Field(default="", max_length=480)
+    relative_offset: int | None = Field(default=None, ge=-100, le=100)
+    destination_ordinal: int | None = Field(default=None, ge=1, le=10_000)
+
+    @property
+    def runtime_tuple(self) -> tuple[str, str, int | None, int | None]:
+        return self.kind.value, self.destination, self.relative_offset, self.destination_ordinal
+
+    @model_validator(mode="after")
+    def validate_endpoint_form(self) -> "TaskInteractionRelationSpec":
+        if self.kind == TaskInteractionRelationKind.DRAG_TO:
+            if (
+                not self.destination.strip()
+                or self.relative_offset is not None
+                or self.destination_ordinal is not None
+            ):
+                raise ValueError("drag-to relation requires only a destination")
+        elif self.kind == TaskInteractionRelationKind.RELATIVE_POSITION:
+            if (
+                self.destination
+                or self.relative_offset in {None, 0}
+                or self.destination_ordinal is not None
+            ):
+                raise ValueError("relative-position relation requires only a nonzero offset")
+        elif self.destination or self.relative_offset is not None or self.destination_ordinal is None:
+            raise ValueError("absolute-position relation requires only a destination ordinal")
+        return self
+
+
 class RequestedEffect(StrictModel):
     operation_class: OperationClass
     target: str = Field(min_length=1)
     capability: str = ""
     description: str = ""
     source_ref: str = Field(min_length=1)
+    interaction_relation: TaskInteractionRelationSpec | None = None
 
 
 class IntentAmbiguity(StrictModel):
@@ -178,6 +218,7 @@ class TaskObligationSpec(StrictModel):
     value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
     expected_value: str = Field(default="", max_length=480)
     interaction_values: tuple[str, ...] = ()
+    interaction_relation: TaskInteractionRelationSpec | None = None
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -210,6 +251,12 @@ class TaskObligationSpec(StrictModel):
             or self.value_source != TaskObligationValueSource.LITERAL
         ):
             raise ValueError("interaction values require a literal selection obligation")
+        if self.interaction_relation is not None and (
+            self.kind != TaskObligationKind.EFFECT
+            or self.relation != TaskObligationRelation.HAS_CHANGED
+            or self.value_source != TaskObligationValueSource.NONE
+        ):
+            raise ValueError("interaction relation requires a value-free changed effect")
         if self.construction_source == GraphConstructionSource.CANONICAL_COMPILER and not self.typed_evidence_requirements:
             raise ValueError("canonical task obligation requires typed evidence")
         if self.blocking and not self.evidence_requirements:

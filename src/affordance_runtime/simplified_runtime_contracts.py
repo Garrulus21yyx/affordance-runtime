@@ -94,6 +94,7 @@ class ElementIntent:
     collection_scope: str = ""
     collection_cardinality: int | None = None
     operation: ElementOperationKind = ElementOperationKind.AUTO
+    relative_size: Literal["", "smallest", "largest"] = ""
 
     def __post_init__(self) -> None:
         _require_nonblank("element intent target", self.target)
@@ -117,6 +118,8 @@ class ElementIntent:
                 raise ValueError("element intent collection cardinality requires a scope")
         if not isinstance(self.operation, ElementOperationKind):
             raise ValueError("unsupported element operation")
+        if self.relative_size not in {"", "smallest", "largest"}:
+            raise ValueError("unsupported relative-size selector")
 
 
 @dataclass(frozen=True)
@@ -128,11 +131,21 @@ class CollectionIntent:
 @dataclass(frozen=True)
 class RelationIntent:
     source: ElementIntent
-    destination: ElementIntent
+    destination: ElementIntent | None
     relation: str
+    destination_offset: int | None = None
+    destination_ordinal: int | None = None
 
     def __post_init__(self) -> None:
         _require_nonblank("relation intent relation", self.relation)
+        destination_forms = sum(
+            value is not None
+            for value in (self.destination, self.destination_offset, self.destination_ordinal)
+        )
+        if destination_forms != 1:
+            raise ValueError("relation intent requires exactly one destination form")
+        if self.destination_offset == 0:
+            raise ValueError("relation destination offset cannot be zero")
 
 
 @dataclass(frozen=True)
@@ -175,6 +188,7 @@ def interaction_for_state(
     source_refs: tuple[SourceReference, ...],
     interaction_values: tuple[str, ...] = (),
     value_source: tuple[str, tuple[SourceReference, ...]] | None = None,
+    interaction_relation: tuple[str, str, int | None, int | None] | None = None,
 ) -> InteractionIntent:
     """Project one sourced state outcome into its typed interaction intent."""
 
@@ -189,7 +203,21 @@ def interaction_for_state(
         role=("collection" if is_collection else element_role),
         ordinal=ordinal,
         match_by_role=is_collection or role_only,
+        relative_size=_relative_size_selector(subject),
     )
+    if interaction_relation is not None and not is_collection:
+        interaction_kind, destination_subject, destination_offset, destination_ordinal = interaction_relation
+        destination: ElementIntent | None = None
+        if destination_subject:
+            projected = interaction_for_state(
+                destination_subject,
+                StateCriterionRelation.IS_AVAILABLE,
+                None,
+                source_refs,
+            )
+            if isinstance(projected, ElementIntent):
+                destination = projected
+        return RelationIntent(target, destination, interaction_kind, destination_offset, destination_ordinal)
     if value_source is not None and not is_collection:
         source_subject, value_source_refs = value_source
         source = interaction_for_state(
@@ -214,6 +242,15 @@ def interaction_for_state(
             source_refs,
         ),
     )
+
+
+def _relative_size_selector(subject: str) -> Literal["", "smallest", "largest"]:
+    tokens = set(re.findall(r"[a-z0-9]+", subject.casefold()))
+    if tokens & {"small", "smaller", "smallest"}:
+        return "smallest"
+    if tokens & {"large", "larger", "largest"}:
+        return "largest"
+    return ""
 
 
 _ELEMENT_ROLES = frozenset(

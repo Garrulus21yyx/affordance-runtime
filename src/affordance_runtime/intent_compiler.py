@@ -35,6 +35,8 @@ from affordance_runtime.task_intake import (
     SemanticValueConstraint,
     SemanticValueRelation,
     StrictModel,
+    TaskInteractionRelationKind,
+    TaskInteractionRelationSpec,
     TaskObligationKind,
     TaskObligationRelation,
     TaskObligationSpec,
@@ -107,6 +109,7 @@ class LLMTaskObligationSpec(StrictModel):
     value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
     expected_value: str = Field(default="", max_length=480)
     interaction_values: tuple[str, ...] = ()
+    interaction_relation: TaskInteractionRelationSpec | None = None
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -741,6 +744,7 @@ def _canonicalize_requested_effects_draft(
     """
 
     draft = _normalize_explicit_action_draft(draft, request)
+    draft = _normalize_explicit_relation_draft(draft, request)
     draft = _normalize_value_entry_draft(draft, request)
     draft = _restore_explicit_submit_effect(draft, request)
     inferred_structure = _infer_task_structure(draft)
@@ -832,6 +836,69 @@ def _explicit_value_transfer_pairs(
     if len(sources) != 1 or len(destinations) != 1 or sources[0] >= destinations[0]:
         return ()
     return ((sources[0], destinations[0]),)
+
+
+_EXPLICIT_DRAG_TO = re.compile(
+    r"\b(?:drag|move)\s+(?:the\s+)?(?P<source>.+?)\s+"
+    r"(?:(?:so\s+that\s+(?:it|they)\s+(?:is|are)\s+)?(?:completely\s+)?)"
+    r"(?:inside|into|onto|to)\s+(?:the\s+)?(?P<destination>.+?)(?:[.!?]|$)",
+    re.IGNORECASE,
+)
+_EXPLICIT_RELATIVE_DRAG = re.compile(
+    r"\b(?:drag|move)\s+(?:the\s+)?(?P<source>.+?)\s+"
+    r"(?P<direction>up|down)\s+by\s+(?:one|1)\s+position(?:[.!?]|$)",
+    re.IGNORECASE,
+)
+_EXPLICIT_ABSOLUTE_DRAG = re.compile(
+    r"\b(?:drag|move)\s+(?:the\s+)?(?P<source>.+?)\s+to\s+(?:the\s+)?"
+    r"(?P<ordinal>\d+)(?:st|nd|rd|th)?\s+position(?:[.!?]|$)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_explicit_relation_draft(
+    draft: IntentDraft,
+    request: UserRequest,
+) -> IntentDraft:
+    """Bind one explicit source relation without inventing an observed endpoint."""
+
+    if len(draft.requested_effects) != 1:
+        return draft
+    raw_text = " ".join(request.raw_text.split())
+    relative = _EXPLICIT_RELATIVE_DRAG.search(raw_text)
+    absolute = _EXPLICIT_ABSOLUTE_DRAG.search(raw_text)
+    direct = _EXPLICIT_DRAG_TO.search(raw_text)
+    if relative is not None:
+        source = relative.group("source").strip()
+        relation = TaskInteractionRelationSpec(
+            kind=TaskInteractionRelationKind.RELATIVE_POSITION,
+            relative_offset=1 if relative.group("direction").casefold() == "down" else -1,
+        )
+    elif absolute is not None:
+        source = absolute.group("source").strip()
+        relation = TaskInteractionRelationSpec(
+            kind=TaskInteractionRelationKind.ABSOLUTE_POSITION,
+            destination_ordinal=int(absolute.group("ordinal")),
+        )
+    elif direct is not None:
+        source = direct.group("source").strip()
+        destination = direct.group("destination").strip()
+        if not source or not destination or source.casefold() == destination.casefold():
+            return draft
+        relation = TaskInteractionRelationSpec(
+            kind=TaskInteractionRelationKind.DRAG_TO,
+            destination=destination,
+        )
+    else:
+        return draft
+    effect = draft.requested_effects[0].model_copy(
+        update={
+            "operation_class": OperationClass.REVERSIBLE_WRITE,
+            "target": source,
+            "interaction_relation": relation,
+        }
+    )
+    return draft.model_copy(update={"requested_effects": (effect,)})
 
 
 def _normalize_explicit_action_draft(

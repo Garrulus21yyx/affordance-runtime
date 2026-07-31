@@ -161,7 +161,11 @@ def _interaction_target_ids(step: StepSpec) -> tuple[str, ...]:
     interaction = step.interaction
     if isinstance(interaction, RelationIntent):
         if interaction.relation == "value_transfer":
-            return (interaction.destination.target,)
+            return (
+                (interaction.destination.target,)
+                if interaction.destination is not None
+                else ()
+            )
         return (interaction.source.target,)
     if isinstance(interaction, CollectionIntent):
         return (interaction.collection.target,)
@@ -172,7 +176,7 @@ def _interaction_target_ids(step: StepSpec) -> tuple[str, ...]:
 
 def _interaction_destination_ids(step: StepSpec) -> tuple[str, ...]:
     interaction = step.interaction
-    if isinstance(interaction, RelationIntent):
+    if isinstance(interaction, RelationIntent) and interaction.destination is not None:
         return (interaction.destination.target,)
     return ()
 
