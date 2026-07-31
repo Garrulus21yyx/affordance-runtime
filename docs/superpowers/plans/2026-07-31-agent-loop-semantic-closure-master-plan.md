@@ -142,9 +142,9 @@ Update this table with exact revision and evidence after every completed unit. â
 | mutable State/Trace writers | measure M0 | 1 | pending |
 | default compatibility adapters | measure M0 | 0 | pending |
 | core benchmark/task specializations | measure M0 | 0 | pending |
-| progress-credit liveness cycles | 3 known | 0 | pending |
-| clean 6x2 | 12/12 at prior clean candidate | 12/12 same revision | pending |
-| fresh 30x2 | 12/60, 48 failures at prior clean candidate | DoD in review archive | pending |
+| progress-credit liveness cycles | 3 known | 0 | targeted click-dialog terminal-evidence cycle closed; breadth audit pending |
+| clean 6x2 | 12/12 at prior clean candidate | 12/12 same revision | 12/12 at clean `e9d7414` |
+| fresh 30x2 | 12/60, 48 failures at prior clean candidate | DoD in review archive | 16/60 at clean `e9d7414`; 44 typed clusters remain; promotion held |
 
 ## 7. Stop conditions
 
@@ -161,4 +161,3 @@ Stop and diagnose before proceeding when any of these occurs:
 ## 8. Final promotion gate
 
 Promotion remains held until the same immutable revision passes full pytest, Ruff, core mypy, build, architecture/import/LOC gates, clean 6x2, and fresh 30x2 under the declared policy. No official score is claimed without explicit authorization.
-

@@ -18,6 +18,55 @@ current_head_recalibration:
     seed_specific_production_branches: forbidden
     generic_invariant_evidence: required
     targeted_benchmark_only_evidence: insufficient
+behavioral_closure_evidence_2026_07_31:
+  revision: e9d741460b2832e0c8f6c9b734a43efcd5af35bd
+  working_tree_clean: true
+  focused_residuals:
+    click_button_seed_1:
+      repeated_runs: 3
+      passed: 3
+      model_stage: action_choice_build
+      action_choice_count: 1
+      selection_source: runtime_unique_choice
+    form_sequence_seed_1:
+      passed: true
+      action_count: 8
+      timeline_preserved: true
+    click_dialog_seeds_0_1:
+      passed: 2
+      total: 2
+      former_failure: terminal_evidence_scope_was_removed_before_progress_binding
+      repair: preserve_task_terminal_scope_and_criterion_links
+  clean_pr_6x2:
+    passed: 12
+    total: 12
+    runtime_failures: 0
+    provider_failures: 0
+    identity_digest: sha256:873e0eb0b6197719e8bd56021a964422f97463fd4a87dea66dc1b9683345ff49
+    report_sha256: fcd227ebc0a6ea6bd4ae495573e7495f8999ba053774186d54673027b9510f9c
+  fresh_diagnostic_30x2:
+    passed: 16
+    total: 60
+    runtime_failures: 44
+    provider_failures: 0
+    unclustered_failures: 0
+    unrun_episodes: 0
+    identity_digest: sha256:d9de5e65cce8e823372215a975462a07ce577c0377478c9422b29a1487ac6839
+    report_sha256: 8a12ee10d22e62a9fc91fa5ab9f9c8ce6dbdfcd8fe5679ce63e8c7a4ec2a1b23
+    failure_clusters:
+      schema_incompatible: 2
+      intent_compilation_rejected: 1
+      interaction_target_absent: 23
+      interaction_target_ambiguous: 4
+      no_active_step_action_choice: 2
+      no_feasible_action_choice: 9
+      terminal_without_root_cause: 1
+      verification_failed: 2
+  interpretation:
+    - The protected clean corridor is closed on this revision.
+    - Fresh breadth improved from 12/60 to 16/60 but remains far below semantic closure.
+    - Forty-one of forty-four failures are still at or before typed planning/choice production, including schema and intent admission.
+    - Promotion remains held; task-specific repairs and fallback masking remain prohibited.
 promotion_status: held
 closure_status: decomposition_complete_but_purification_incomplete
 sar_9_full_closure: not_approved
