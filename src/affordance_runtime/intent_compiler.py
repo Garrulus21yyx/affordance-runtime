@@ -842,6 +842,10 @@ def _normalize_value_entry_draft(
     """Prevent explicit value-entry imperatives from becoming read-only tasks."""
 
     raw_text = request.raw_text
+    requested_effects = _normalize_explicit_ordinal_effect_targets(
+        draft.requested_effects,
+        raw_text,
+    )
     selection_values, select_target = _extract_literal_selection_values(raw_text)
     select_value = ", ".join(selection_values)
     value_entry = _looks_like_value_entry_request(raw_text)
@@ -851,8 +855,8 @@ def _normalize_value_entry_draft(
     )
     if not select_value and not value_entry:
         return draft
-    if selection_values and select_target != "slider" and draft.requested_effects:
-        selection_effect = draft.requested_effects[0].model_copy(
+    if selection_values and select_target != "slider" and requested_effects:
+        selection_effect = requested_effects[0].model_copy(
             update={
                 "operation_class": OperationClass.REVERSIBLE_WRITE,
                 "target": select_target,
@@ -860,7 +864,7 @@ def _normalize_value_entry_draft(
         )
         trailing_effects = tuple(
             item
-            for item in draft.requested_effects[1:]
+            for item in requested_effects[1:]
             if "submit" in item.target.casefold()
         )
         updated_effects = (selection_effect, *trailing_effects)
@@ -879,7 +883,7 @@ def _normalize_value_entry_draft(
                 *({OperationClass.NAVIGATION} if select_value else set()),
             }
             else item
-            for index, item in enumerate(draft.requested_effects)
+            for index, item in enumerate(requested_effects)
         )
     constraints = draft.candidate_semantic_value_constraints
     if not literal_value:
@@ -889,8 +893,10 @@ def _normalize_value_entry_draft(
                 "candidate_semantic_value_constraints": constraints,
             }
         )
-    target = updated_effects[0].target if updated_effects else ""
-    source_ref = updated_effects[0].source_ref if updated_effects else request.request_id
+    entry_index = 0 if select_value and updated_effects else _entry_effect_index(updated_effects, raw_text)
+    target_effect = updated_effects[entry_index] if entry_index is not None else None
+    target = target_effect.target if target_effect is not None else ""
+    source_ref = target_effect.source_ref if target_effect is not None else request.request_id
     literal_values = selection_values or ((literal_value,) if literal_value else ())
     for value in literal_values:
         if any(
@@ -985,6 +991,7 @@ def _extract_literal_entry_value(
     del success_criteria
     for pattern in (
         r"\benter\s+(.+?)\s+as\s+",
+        r"\b(?:enter|type|input|fill|write|put)\s+(?:the\s+)?(?:number|text|value)\s+['\"]([^'\"]+)['\"]\s+(?:into|in)\b",
         r"\benter\s+['\"]([^'\"]+)['\"]\s+into\b",
         r"\btype\s+['\"]([^'\"]+)['\"]",
         r"\binput\s+['\"]([^'\"]+)['\"]",
@@ -993,6 +1000,80 @@ def _extract_literal_entry_value(
         match = re.search(pattern, raw_text, flags=re.IGNORECASE)
         if match:
             return match.group(1).strip(" .,'\"")
+    return ""
+
+
+def _normalize_explicit_ordinal_effect_targets(
+    effects: tuple[RequestedEffect, ...],
+    raw_text: str,
+) -> tuple[RequestedEffect, ...]:
+    normalized = list(effects)
+    for role, ordinal in _explicit_ordinal_role_bindings(raw_text):
+        candidate_indexes = tuple(
+            index
+            for index, effect in enumerate(normalized)
+            if _effect_target_role(effect.target) == role
+        )
+        if len(candidate_indexes) != 1:
+            continue
+        index = candidate_indexes[0]
+        normalized[index] = normalized[index].model_copy(
+            update={"target": f"{role}_{ordinal}"}
+        )
+    return tuple(normalized)
+
+
+def _entry_effect_index(
+    effects: tuple[RequestedEffect, ...],
+    raw_text: str,
+) -> int | None:
+    entry_roles = tuple(
+        role
+        for role, _ in _explicit_ordinal_role_bindings(raw_text)
+        if role in {"searchbox", "textbox"}
+    )
+    requested_role = entry_roles[-1] if entry_roles else "textbox"
+    candidates = tuple(
+        index
+        for index, effect in enumerate(effects)
+        if _effect_target_role(effect.target) == requested_role
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    return 0 if len(effects) == 1 else None
+
+
+def _explicit_ordinal_role_bindings(raw_text: str) -> tuple[tuple[str, int], ...]:
+    bindings: list[tuple[str, int]] = []
+    for match in re.finditer(
+        r"\b(?P<ordinal>\d+)(?:st|nd|rd|th)\s+(?P<role>radio\s+button|text\s*box|text\s+input\s+field|text\s+field|search\s+field|checkbox|button|link)\b",
+        raw_text,
+        flags=re.IGNORECASE,
+    ):
+        ordinal = int(match.group("ordinal"))
+        role = _effect_target_role(match.group("role"))
+        if ordinal > 0 and role:
+            bindings.append((role, ordinal))
+    return tuple(bindings)
+
+
+def _effect_target_role(target: str) -> str:
+    normalized = re.sub(r"[^a-z]+", " ", target.casefold()).strip()
+    if "radio" in normalized.split():
+        return "radio"
+    if "checkbox" in normalized.split():
+        return "checkbox"
+    if any(
+        phrase in normalized
+        for phrase in ("text box", "textbox", "text input", "text field", "input field")
+    ):
+        return "textbox"
+    if "search" in normalized.split() and "field" in normalized.split():
+        return "searchbox"
+    if "link" in normalized.split():
+        return "link"
+    if "button" in normalized.split():
+        return "button"
     return ""
 
 

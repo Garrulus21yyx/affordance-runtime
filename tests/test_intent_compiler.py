@@ -567,6 +567,53 @@ def test_llm_compiler_canonicalizes_explicit_entry_value_as_write_obligation() -
     )
 
 
+def test_llm_compiler_binds_ordinal_entry_value_to_matching_effect() -> None:
+    model = FixedModel(
+        IntentDraft(
+            objective='Check a radio control and enter "-7" into a text control.',
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="radio_button[3]",
+                    source_ref="raw_text",
+                ),
+                RequestedEffect(
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    target="text_box[1]",
+                    source_ref="raw_text",
+                ),
+            ),
+            candidate_success_criteria=(
+                "The requested radio control is checked.",
+                "The requested text control contains -7.",
+            ),
+            task_structure=TaskStructure.MULTI_STAGE,
+        )
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(
+            model,
+            coverage_checker=CountingCompleteCoverageChecker(),
+        ).compile(
+            UserRequest(
+                request_id="ordinal-entry",
+                raw_text='Check the 4th radio button and enter the number "-7" into the 2nd textbox.',
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    first, second = result.task_spec.obligations
+    assert first.subject == "radio_4"
+    assert first.relation == TaskObligationRelation.HAS_CHANGED
+    assert second.subject == "textbox_2"
+    assert second.relation == TaskObligationRelation.EQUALS
+    assert second.expected_value == "-7"
+    assert second.depends_on == (first.obligation_id,)
+
+
 def test_llm_compiler_does_not_literalize_page_sourced_text_below() -> None:
     model = FixedModel(
         IntentDraft(
