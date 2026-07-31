@@ -575,6 +575,136 @@ def test_action_choice_builder_binds_role_value_descriptor() -> None:
     assert result.choices[0].parameters == {"text": "Orchid"}
 
 
+@pytest.mark.parametrize(
+    ("subject", "expected"),
+    (
+        ("date_field", "2031-09-17"),
+        ("text_input_field:Cobalt", "Cobalt"),
+    ),
+)
+def test_action_choice_builder_normalizes_composite_editable_roles(
+    subject: str,
+    expected: str,
+) -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:editable",
+        subject=subject,
+        expected_value=expected,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:renamed-entry",
+                surface="dom",
+                role="textbox",
+                label="Renamed entry",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:renamed-entry"
+    assert result.choices[0].parameters == {"text": expected}
+
+
+@pytest.mark.parametrize("observed_role", ("generic", "button"))
+def test_action_choice_builder_uses_exact_label_and_compatible_capability(
+    observed_role: str,
+) -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:overview",
+        subject="link:label:Overview",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:overview",
+                surface="dom",
+                role=observed_role,
+                label="Overview",
+                supported_actions=("activate",),
+                state={"enabled": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:overview"
+
+
+def test_action_choice_builder_rejects_roleless_capability_without_identity_match() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:overview",
+        subject="link:label:Overview",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:unrelated",
+                surface="dom",
+                role="generic",
+                label="Unrelated",
+                supported_actions=("activate",),
+                state={"enabled": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "interaction_target_absent"
+
+
 def test_action_choice_builder_uses_unique_semantic_label_within_typed_role() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

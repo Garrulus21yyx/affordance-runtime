@@ -199,9 +199,11 @@ _ELEMENT_ROLES = frozenset(
     }
 )
 _ROLE_PHRASE_ALIASES = {
+    "date_field": "textbox",
     "search_field": "searchbox",
     "text_field": "textbox",
     "text_input": "textbox",
+    "text_input_field": "textbox",
 }
 
 

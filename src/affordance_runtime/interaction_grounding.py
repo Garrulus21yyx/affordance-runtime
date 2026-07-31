@@ -94,13 +94,21 @@ def _match_element(
     matches = tuple(
         item
         for item in targets
-        if (not role or _role_matches(role, item.role))
-        and (
-            intent.match_by_role
-            or
-            item.target_id == intent.target
-            or item.label.strip().casefold() == identity
-            or _semantic_label_matches(intent.target, item.label)
+        if (
+            (intent.match_by_role and (not role or _role_matches(role, item.role)))
+            or (
+                not intent.match_by_role
+                and (
+                    item.target_id == intent.target
+                    or item.label.strip().casefold() == identity
+                    or _semantic_label_matches(intent.target, item.label)
+                )
+                and (
+                    not role
+                    or _role_matches(role, item.role)
+                    or _role_capability_compatible(role, item)
+                )
+            )
         )
     )
     if intent.ordinal is not None:
@@ -145,6 +153,29 @@ def _role_matches(requested: str, observed: str) -> bool:
     }
     actual = observed.strip().casefold()
     return actual == requested or actual in aliases.get(requested, set())
+
+
+def _role_capability_compatible(requested: str, target: GroundingTarget) -> bool:
+    actual = target.role.strip().casefold()
+    command_roles = {"button", "link", "menuitem", "tab"}
+    if requested in command_roles and actual in command_roles:
+        return "activate" in target.supported_actions
+    if actual not in {"", "generic", "none"}:
+        return False
+    required_action = {
+        "button": "activate",
+        "checkbox": "activate",
+        "combobox": "select_option",
+        "link": "activate",
+        "listbox": "select_option",
+        "menuitem": "activate",
+        "radio": "activate",
+        "searchbox": "type_text",
+        "slider": "press_key",
+        "tab": "activate",
+        "textbox": "type_text",
+    }.get(requested)
+    return required_action is not None and required_action in target.supported_actions
 
 
 def _semantic_label_matches(requested: str, observed: str) -> bool:
