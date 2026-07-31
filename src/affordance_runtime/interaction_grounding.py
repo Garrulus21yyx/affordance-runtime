@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping
@@ -99,6 +100,7 @@ def _match_element(
             or
             item.target_id == intent.target
             or item.label.strip().casefold() == identity
+            or _semantic_label_matches(intent.target, item.label)
         )
     )
     if intent.ordinal is not None:
@@ -110,6 +112,18 @@ def _match_element(
             if len(role_matches) >= intent.ordinal
             else ()
         )
+    role_matches = tuple(
+        item for item in targets if role and _role_matches(role, item.role)
+    )
+    if not matches and role and intent.ordinal is None:
+        if len(role_matches) == 1:
+            matches = role_matches
+        elif len(role_matches) > 1:
+            return GroundingResult(
+                GroundingStatus.AMBIGUOUS,
+                targets=role_matches,
+                reason_code="interaction_target_ambiguous",
+            )
     if len(matches) == 1:
         return GroundingResult(GroundingStatus.RESOLVED, targets=matches)
     if len(matches) > 1:
@@ -131,6 +145,14 @@ def _role_matches(requested: str, observed: str) -> bool:
     }
     actual = observed.strip().casefold()
     return actual == requested or actual in aliases.get(requested, set())
+
+
+def _semantic_label_matches(requested: str, observed: str) -> bool:
+    requested_tokens = set(re.findall(r"[a-z0-9]+", requested.casefold()))
+    observed_tokens = set(re.findall(r"[a-z0-9]+", observed.casefold()))
+    if not requested_tokens or not observed_tokens:
+        return False
+    return observed_tokens.issubset(requested_tokens) or requested_tokens.issubset(observed_tokens)
 
 
 def _combined_status(*results: GroundingResult) -> GroundingStatus:

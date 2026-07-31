@@ -674,7 +674,7 @@ def test_browsergym_click_completed_outcome_declares_independent_progress_eviden
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
     assert declared[-2].strict is False
-    assert declared[-2].progress_scope == ProgressEvidenceScope.NONE
+    assert declared[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
 
 
 def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_failure() -> None:
@@ -768,9 +768,18 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
         action=BrowserGymAction("click", {"bid": "12"}),
         affordance=affordance,
     )
+    bound = bind_active_subgoal_verifiers(tuple(declared), state)
+
+    assert bound[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
+    assert bound[-2].criterion_ids == (
+        "subgoal:button-one-completed:criterion:0",
+    )
+    assert bound[-2].requirement_ids == (
+        "subgoal:button-one-completed:evidence-requirement:0",
+    )
 
     report = VerifierLadder().verify_report(
-        bind_active_subgoal_verifiers(tuple(declared), state),
+        bound,
         ExecutionReceipt(
             "contract",
             "browsergym",
@@ -784,6 +793,15 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
     )
 
     assert report.passed
+    assert report.evidence[-2].passed
+    assert report.evidence[-2].source == "external_evaluator"
+    assert report.evidence[-2].criterion_ids == (
+        "subgoal:button-one-completed:criterion:0",
+    )
+    assert report.evidence[-2].requirement_ids == (
+        "subgoal:button-one-completed:evidence-requirement:0",
+    )
+    assert not report.evidence[-1].passed
 
 
 def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_family() -> None:

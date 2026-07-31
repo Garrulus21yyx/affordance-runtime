@@ -483,7 +483,7 @@ def declare_browsergym_active_subgoal_evidence(
         declared = list(verifier_plan)
         if declared and declared[-1].kind == "state_delta_or_terminal":
             declared[-1] = replace(declared[-1], strict=False)
-        return _append_authoritative_progress_spec(declared, completed_click_progress)
+        return [*declared, completed_click_progress]
     slider_progress = _browsergym_slider_exact_progress_spec(
         action,
         verifier_plan[-1],

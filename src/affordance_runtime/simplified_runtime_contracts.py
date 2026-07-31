@@ -198,6 +198,11 @@ _ELEMENT_ROLES = frozenset(
         "textbox",
     }
 )
+_ROLE_PHRASE_ALIASES = {
+    "search_field": "searchbox",
+    "text_field": "textbox",
+    "text_input": "textbox",
+}
 
 
 def _element_identity(
@@ -210,6 +215,9 @@ def _element_identity(
     if structured is not None:
         label, role, role_only = structured
         return label, role, role_only, None
+    role_value = _role_value_identity(subject, expected_value)
+    if role_value is not None:
+        return role_value
     semantic_identifier = _semantic_state_identifier(subject, expected_value)
     if semantic_identifier is not None:
         return semantic_identifier
@@ -230,6 +238,9 @@ def _semantic_state_identifier(
     subject: str,
     expected_value: FrozenScalar,
 ) -> tuple[str, str, bool, int | None] | None:
+    role_alias = _ROLE_PHRASE_ALIASES.get(subject.casefold())
+    if role_alias:
+        return role_alias, role_alias, True, None
     if "_" not in subject:
         return None
     tokens = tuple(item for item in subject.split("_") if item)
@@ -252,6 +263,18 @@ def _semantic_state_identifier(
             remaining.remove(ordinal_token)
     label = " ".join(remaining)
     return (label or role), role, not label, ordinal
+
+
+def _role_value_identity(
+    subject: str,
+    expected_value: FrozenScalar,
+) -> tuple[str, str, bool, int | None] | None:
+    identity, separator, value = subject.rpartition(":")
+    if not separator or expected_value is None:
+        return None
+    if value.strip().casefold() != str(expected_value).strip().casefold():
+        return None
+    return _semantic_state_identifier(identity.strip(), None)
 
 
 def _structured_element_identity(subject: str) -> tuple[str, str, bool] | None:

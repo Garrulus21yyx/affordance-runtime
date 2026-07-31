@@ -536,6 +536,134 @@ def test_action_choice_builder_binds_label_role_state_identifier() -> None:
     assert result.choices[0].target_id == "semantic:archive"
 
 
+def test_action_choice_builder_binds_role_value_descriptor() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:entry",
+        subject="text_field:Orchid",
+        expected_value="Orchid",
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:entry",
+                surface="dom",
+                role="textbox",
+                label="",
+                supported_actions=("type_text",),
+                state={"value": ""},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:entry"
+    assert result.choices[0].parameters == {"text": "Orchid"}
+
+
+def test_action_choice_builder_uses_unique_semantic_label_within_typed_role() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:close",
+        subject="dialog_box_close_button",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:titlebar",
+                surface="dom",
+                role="button",
+                label="ui-dialog-titlebar",
+                supported_actions=("activate",),
+                state={"enabled": True},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:close",
+                surface="dom",
+                role="button",
+                label="Close",
+                supported_actions=("activate",),
+                state={"enabled": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:close"
+
+
+def test_action_choice_builder_does_not_guess_between_same_role_targets() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:close",
+        subject="dialog_box_close_button",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            *(
+                UnifiedObservationTarget(
+                    target_id=f"semantic:button:{index}",
+                    surface="dom",
+                    role="button",
+                    label=label,
+                    supported_actions=("activate",),
+                    state={"enabled": True},
+                )
+                for index, label in enumerate(("X", "Cancel"), start=1)
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "interaction_target_ambiguous"
+
+
 def test_action_choice_builder_creates_has_changed_activation_choice_for_button() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 
