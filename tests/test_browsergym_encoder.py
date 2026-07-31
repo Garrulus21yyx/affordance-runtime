@@ -159,6 +159,21 @@ def test_press_verifier_binds_the_pre_action_scroll_state() -> None:
     assert verifiers[-1].expected == {"field": "scroll_top", "changed_from": 25}
 
 
+@pytest.mark.parametrize("options", ("Norfolk Island", ["Alpha", "Beta"]))
+def test_select_verifier_uses_the_observed_selected_option_set(options: object) -> None:
+    snapshot = BrowserSnapshot(Observation("rev-1"), DomAdapter().transduce("<main></main>", environment_revision="rev-1"))
+
+    verifiers = browsergym_action_verifiers(
+        BrowserGymAction("select_option", {"bid": "select", "options": options}),
+        snapshot,
+    )
+
+    assert verifiers[-1].expected == {
+        "field": "selected_options",
+        "value": [options] if isinstance(options, str) else options,
+    }
+
+
 def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
     model = DomAdapter().transduce("<main></main>", environment_revision="rev-1")
     snapshot = BrowserSnapshot(

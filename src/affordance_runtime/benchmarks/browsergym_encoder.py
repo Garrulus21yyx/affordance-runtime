@@ -387,11 +387,15 @@ def browsergym_action_verifiers(
             VerifierSpec(
                 "control_state",
                 action_bid,
-                (
-                    {"field": "selected_options", "value": selected_options}
-                    if isinstance(selected_options, Sequence) and not isinstance(selected_options, (str, bytes))
-                    else {"field": "value", "value": str(selected_options)}
-                ),
+                {
+                    "field": "selected_options",
+                    "value": (
+                        list(selected_options)
+                        if isinstance(selected_options, Sequence)
+                        and not isinstance(selected_options, (str, bytes))
+                        else [str(selected_options)]
+                    ),
+                },
             )
         )
     elif action.name == "press":

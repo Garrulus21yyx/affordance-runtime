@@ -748,9 +748,9 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         "arguments": {"bid": "select-bid", "options": "earth"},
     }
     assert contract.verifier_plan[-1] == VerifierSpec(
-            "control_state",
-            "select-bid",
-            {"field": "value", "value": "earth"},
+        "control_state",
+        "select-bid",
+        {"field": "selected_options", "value": ["earth"]},
             progress_scope=ProgressEvidenceScope.TASK_TERMINAL,
     )
 
