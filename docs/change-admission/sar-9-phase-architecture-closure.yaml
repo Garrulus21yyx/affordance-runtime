@@ -185,6 +185,102 @@ behavioral_closure_evidence_2026_07_31:
       This is a typed semantic capability unit, not an SAR-9 LOC-closure claim.
       It adds no stage, compatibility adapter, task-specific branch, benchmark
       dependency, State/Trace writer, or ratchet increase. Promotion remains held.
+  m6_relation_semantics:
+    revision: a2f8aab35b8edc0cfc18a517e3a0583c0440759a
+    status: generic_unit_complete_not_promotion
+    canonical_replacement:
+      - TaskInteractionRelationSpec_is_the_source_owned_relation_contract
+      - exactly_one_of_explicit_destination_relative_offset_or_absolute_ordinal
+      - relation_identity_is_part_of_obligation_identity
+      - RelationIntent_preserves_the_same_typed_destination_form
+      - both_drag_endpoints_are_resolved_through_GroundingResult
+      - ActionChoice_emits_only_the_canonical_drag_action
+      - collection_position_cardinality_relative_size_and_containment_are_observed_facts
+      - relation_progress_is_verified_from_post_action_observation
+    fail_closed_guards:
+      - unresolved_or_ambiguous_source_or_destination_produces_no_choice
+      - same_resolved_endpoint_is_rejected
+      - missing_drag_capability_is_distinct_from_absent_target
+      - missing_collection_position_is_capability_missing
+      - no_label_fallback_for_relative_size_or_position
+      - no_connector_action_token_in_core
+      - no_task_id_seed_title_or_benchmark_import_in_core
+      - no_hidden_submit_action_synthesized_from_environment_convention
+    targeted_relation_replay:
+      drag_items:
+        seeds: [0, 1]
+        passed: 2/2
+        official_reward: 1.0
+        runtime_verification: 2/2
+      drag_box:
+        seeds: [0, 1]
+        authorized_relation_actions_dispatched: 2/2
+        authorized_relation_steps_completed: 2/2
+        external_reward: 0/2
+        terminal_runtime_failure: no_active_step_action_choice
+        remaining_owner: M8_taskplan_and_terminal_admission
+        authority_reason: >-
+          The source authorizes moving the small box inside the large box. The
+          environment additionally requires Submit, but that control is absent
+          from source authority. Runtime must not manufacture a third action
+          merely to satisfy this benchmark convention.
+      relation_report_v3_sha256: 4beacdb4c725500ce2d21a75582cd2ce166b25de9c1accb2ade8e807c8d8223e
+      relation_report_v5_sha256: e146fb66a8f0ec461ab9f87fbdd894e949ffbc712c8078ab75cc676064500da0
+    breadth_failure_and_handling:
+      accidental_default_pr_run:
+        revision: 4b8b8ba
+        configured_shape: 6x3
+        result: 16/18
+        failures:
+          - choose-list_seed_1_verification_failed_control_state
+          - form-sequence_seed_2_interaction_target_absent
+        handling: >-
+          This was not represented as the requested 6x2 gate. The exact seed
+          count was supplied on the next run; form-sequence seed 2 remains
+          outside the protected 6x2 corridor and is not called closed.
+      interim_exact_6x2:
+        revision: 4b8b8ba
+        result: 11/12
+        failure: choose-list_seed_1_verification_failed_control_state
+        root_cause: >-
+          The observer reliably emitted selected_options while the verifier
+          required a scalar value key for a scalar select action argument.
+        generic_repair_revision: d621a48e124750dc79f54fa411b89d9cfc80f974
+        generic_repair: normalize_scalar_or_list_expected_selection_then_compare_selected_options
+        targeted_choose_list_after_repair: 2/2
+        no_task_or_seed_specialization: true
+      validation_environment:
+        failures:
+          - bare_python_resolved_to_agent_reach_venv_without_project_PYTHONPATH
+          - uv_run_dependency_resolution_found_existing_Playwright_1_44_vs_1_61_extra_conflict
+          - miniconda_pytest_had_incompatible_async_plugin_and_browser_binary_versions
+          - mypy_found_and_repaired_real_optional_relative_offset_narrowing
+        handling: >-
+          Product validation was rerun with the known BrowserGym Python 3.12
+          runtime and explicit project PYTHONPATH. Environment failures are not
+          counted as product passes, and the dependency conflict remains visible.
+    verification:
+      focused_tests: 230_passed_after_final_type_narrowing
+      full_pytest: 1438_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      diff_check: passed
+      architecture_ratchet: task_planning_1642_at_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:fe0e1d1f61888d439b606348d43c5907f6cde6ad0712a44403f18a8fc4f76445
+      clean_report_sha256: 01dca141d739abdfa3039f9b1627bfabba392197706f28b28975270d114dcbe4
+    incomplete_requirements:
+      - drag_box_hidden_terminal_action_authority_mismatch_owned_by_M8
+      - fresh_30x2_deferred_to_declared_M8_or_M9_gate
+    architecture_gate_interpretation: >-
+      M6 is a typed semantic capability unit. It adds no stage, compatibility
+      adapter, mutable writer, stage edge, benchmark dependency, or ratchet
+      increase. It does not satisfy M9 purification, negative LOC, compatibility
+      deletion, StateKernel slimming, or final promotion.
   typed_model_output_boundary:
     revision: 3a041e34b6cf17c807299c373365f7b3a1c7e850
     trigger:
