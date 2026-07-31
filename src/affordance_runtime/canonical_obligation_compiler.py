@@ -98,12 +98,13 @@ class CanonicalObligationCompiler:
         for effect in effects:
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
+            semantic_target = _canonical_effect_target(effect.target)
             interaction_values = exact_values_by_target.get(effect.target, ())
             literal_value = ", ".join(interaction_values)
             completed_action = (
                 effect.operation_class == OperationClass.NAVIGATION
                 and _success_criteria_marks_action_completed(
-                    target=effect.target,
+                    target=semantic_target,
                     success_criteria=success_criteria,
                 )
             )
@@ -118,7 +119,7 @@ class CanonicalObligationCompiler:
                 else (
                     TaskObligationRelation.IS_COMPLETED
                     if completed_action
-                    else _effect_relation_for_literal(effect.target, literal_value)
+                    else _effect_relation_for_literal(semantic_target, literal_value)
                 )
             )
             evidence_kind = (
@@ -134,12 +135,12 @@ class CanonicalObligationCompiler:
             inputs.append(
                 CanonicalEffectInput(
                     operation_class=effect.operation_class,
-                    target=effect.target,
+                    target=semantic_target,
                     source_unit_ids=(effect.source_ref,),
                     evidence=(
                         EvidenceRequirement(
                             kind=evidence_kind,
-                            subject=effect.target,
+                            subject=semantic_target,
                             relation=relation,
                             value_ref=literal_value,
                             minimum_strength="independent",
@@ -388,6 +389,24 @@ class CanonicalObligationCompiler:
             proposal_claim_ids=claim_id_map,
             issues=tuple(issues),
         )
+
+
+_TEXT_SELECTOR_EFFECT = re.compile(
+    r"^(?P<role>button|checkbox|combobox|link|listbox|menuitem|radio|tab)"
+    r"\[text\(\)=(?P<quote>['\"])(?P<label>[^'\"]+)(?P=quote)\]$",
+    re.IGNORECASE,
+)
+
+
+def _canonical_effect_target(target: str) -> str:
+    """Repair one bounded provider text-selector form into semantic identity."""
+
+    match = _TEXT_SELECTOR_EFFECT.fullmatch(target.strip())
+    if match is None:
+        return target
+    role = match.group("role").casefold()
+    label = match.group("label").strip()
+    return f"{role}:label='{label}'"
 
 
 def _identity(effect: CanonicalEffectInput) -> str:

@@ -360,7 +360,16 @@ def test_action_choice_builder_resolves_unique_exact_label_subject() -> None:
     assert result.choices[0].target_id == "semantic:target-button"
 
 
-@pytest.mark.parametrize("subject", ("Confirm button", "button Confirm", "confirm_button"))
+@pytest.mark.parametrize(
+    "subject",
+    (
+        "Confirm button",
+        "button Confirm",
+        "confirm_button",
+        "button:label='Confirm'",
+        "button:label:Confirm",
+    ),
+)
 def test_action_choice_builder_binds_generic_label_and_role_identity(subject: str) -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

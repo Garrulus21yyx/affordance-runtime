@@ -199,6 +199,9 @@ _ELEMENT_ROLES = frozenset(
 def _element_identity(subject: str) -> tuple[str, str, bool]:
     """Separate an explicit leading/trailing role token from a semantic label."""
 
+    structured = _structured_element_identity(subject)
+    if structured is not None:
+        return structured
     tokens = subject.replace("_", " ").split()
     if not tokens:
         return subject, "", False
@@ -210,6 +213,23 @@ def _element_identity(subject: str) -> tuple[str, str, bool]:
     label_tokens = tokens[1:] if first == role else tokens[:-1]
     label = " ".join(label_tokens)
     return (label or role), role, not label
+
+
+def _structured_element_identity(subject: str) -> tuple[str, str, bool] | None:
+    """Decode the bounded ``role:label=value`` semantic descriptor grammar."""
+
+    role_text, separator, label_text = subject.partition(":label")
+    role = role_text.strip().casefold()
+    if not separator or role not in _ELEMENT_ROLES:
+        return None
+    if not label_text or label_text[0] not in {"=", ":"}:
+        return None
+    label = label_text[1:].strip()
+    if len(label) >= 2 and label[0] == label[-1] and label[0] in {"'", '"'}:
+        label = label[1:-1].strip()
+    if not label or ":" in label:
+        return None
+    return label, role, False
 
 
 @dataclass(frozen=True)

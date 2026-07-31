@@ -128,6 +128,37 @@ def test_flat_navigation_effect_with_click_success_criterion_is_completed_action
     assert obligation.relation == TaskObligationRelation.IS_COMPLETED
 
 
+@pytest.mark.parametrize(
+    ("provider_target", "semantic_target"),
+    (
+        ("button[text()='Archive']", "button:label='Archive'"),
+        ('link[text()="Reports"]', "link:label='Reports'"),
+    ),
+)
+def test_canonical_compiler_repairs_bounded_text_selector_to_semantic_identity(
+    provider_target: str,
+    semantic_target: str,
+) -> None:
+    ledger = _ledger_for("Activate the named control.")
+
+    graph = CanonicalObligationCompiler().compile_requested_effects(
+        ledger,
+        (
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target=provider_target,
+                source_ref=ledger.raw_text_unit_id,
+            ),
+        ),
+        success_criteria=("The named control was activated.",),
+    )
+
+    obligation = graph.obligations[0]
+    assert obligation.subject == semantic_target
+    assert obligation.typed_evidence_requirements[0].subject == semantic_target
+    assert "text()" not in obligation.subject
+
+
 def test_requested_effect_sequence_preserves_dependency_and_terminal_boundary() -> None:
     ledger = _ledger_for("Activate Alpha. Then activate Beta.")
     alpha_source, beta_source = _required_clause_units(ledger)
