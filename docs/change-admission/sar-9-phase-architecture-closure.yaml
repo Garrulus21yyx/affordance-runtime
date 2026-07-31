@@ -442,6 +442,66 @@ behavioral_closure_evidence_2026_07_31:
         interpretation: >-
           This is a materially improved but incomplete M8 breadth checkpoint.
           Clean protection is closed; fresh behavioral promotion remains held.
+    typed_focus_semantics_unit:
+      revision: 2886aef92e934714c0ed4c0edd8b94b678ade4b2
+      status: closed_generic_unit_not_m8_or_promotion_closure
+      failure_progression:
+        - boundary: task_planning
+          failure: precondition_only_outcome
+          cause: explicit_focus_was_still_compiled_as_is_available
+          treatment: typed_focus_operation_compiles_to_post_action_is_completed
+        - boundary: action_choice_grounding
+          failure: interaction_target_absent
+          cause: qualified_namespace_role_was_treated_as_a_literal_label
+          treatment: bounded_namespace_role_identity_with_ambiguous_multi_match_fail_closed
+        - boundary: planning_request_projection
+          failure: interaction_target_absent
+          cause: unified_targets_with_more_than_one_semantic_action_were_dropped
+          treatment: preserve_one_target_with_its_complete_typed_action_set
+        - boundary: verification
+          failure: control_state_focused_false_after_terminal_success
+          cause: focus_handlers_may_blur_synchronously_before_the_post_action_snapshot
+          treatment: verify_focus_state_delta_or_positive_terminal_oracle_from_the_execution_receipt
+      canonical_replacement:
+        - TaskInteractionOperationKind_focus_is_Runtime_owned
+        - TaskPlanActionFamily_focus_accepts_only_completed_or_changed_outcomes
+        - ElementOperationKind_and_PlannerActionKind_focus_are_typed_end_to_end
+        - provider_cannot_grant_focus_for_a_non_focus_request
+        - multi_action_unified_targets_are_preserved_without_target_duplication
+        - focus_verification_requires_state_delta_or_positive_terminal_success
+      fail_closed_guards:
+        - no_task_id_or_seed_dispatch_in_core
+        - qualified_role_with_multiple_matches_remains_ambiguous
+        - nonterminal_unchanged_focus_state_fails
+        - one_choice_is_selected_by_Runtime_without_model_selection
+      targeted_focus_text_clean:
+        result: 2/2
+        runtime_verification: 2/2
+        external_evaluator: 2/2
+        model_stage: action_choice_build
+        grounded_target_count: 1_each
+        action_choice_count: 1_each
+        selection_source: runtime_unique_choice
+        runtime_failures: 0
+        provider_failures: 0
+        identity_digest: sha256:ceeb2c7fb9ec86e758b797bb5d27b08530181fb0f2e1c7b346af9b2bb68fd23a
+        report_sha256: 6eac9360742b0fa6ee8d64fd1e3b0236f3a4d8fd0397c3103340f78918104029
+      verification:
+        full_pytest: 1458_passed
+        ruff: passed
+        core_mypy: passed_153_source_files
+        build: passed
+        diff_check: passed
+        architecture_control_module_gate: passed_task_planning_1639_below_1642
+        clean_pr_6x2: 12/12
+        clean_runtime_verification: 12/12
+        clean_external_evaluator: 12/12
+        clean_runtime_failures: 0
+        clean_provider_failures: 0
+        clean_missing_or_unrun: 0
+        clean_identity_digest: sha256:e58a1cc9d6251adcfbb40559d550e780d60f569f96472f42c91073e5a414ae5a
+        clean_report_sha256: 47814faaf443d807747ccc2994f773d4f493801a7b0087060cac0d717933f469
+      fresh_30x2: not_rerun_until_remaining_M8_residuals_close
     ordinal_value_binding_unit:
       revision: d6096ec
       generic_invariants:
