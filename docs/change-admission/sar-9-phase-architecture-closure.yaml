@@ -281,6 +281,66 @@ behavioral_closure_evidence_2026_07_31:
       adapter, mutable writer, stage edge, benchmark dependency, or ratchet
       increase. It does not satisfy M9 purification, negative LOC, compatibility
       deletion, StateKernel slimming, or final promotion.
+  m7_spatial_semantics:
+    revision: 250b44aea2d030e12b04efade706519327e4cad1
+    status: generic_unit_complete_not_promotion
+    former_placeholder:
+      RegionIntent_always_returned: region_grounding_unavailable
+      canonical_obligation_spatial_capability: absent
+      action_choice_region_branch: absent
+    canonical_replacement:
+      - explicit_source_spatial_language_binds_spatial_point_capability
+      - provider_obligation_schema_cannot_grant_nonempty_capability
+      - canonical_obligation_preserves_runtime_owned_interaction_capability
+      - RegionIntent_is_projected_before_action_choice
+      - only_current_SVG_or_visual_targets_with_calibrated_geometry_are_eligible
+      - Runtime_emits_POINT_ACTIVATE_without_model_or_coordinate_authorship
+      - post_action_progress_requires_a_new_geometry_marker_near_the_bound_point
+    fail_closed_guards:
+      - missing_granted_capability_is_capability_missing
+      - same_label_DOM_target_is_not_spatial_grounding
+      - absent_confidence_source_ref_or_calibrated_geometry_is_capability_missing
+      - coordinate_signs_are_part_of_semantic_identity
+      - multiple_calibrated_region_matches_are_ambiguous
+      - default_nonspatial_intent_does_not_create_region_choices
+      - no_task_id_seed_title_or_BrowserGym_import_in_core_spatial_logic
+    external_confirmation:
+      grid_coordinate:
+        seeds: [0, 1]
+        passed: 2/2
+        route_source: svg
+        runtime_verification: 2/2
+        report_sha256: 8a84886ff56ab0be9e98bc3203c3721264eb781f16255ddd063bc1834c2a6cf7
+      circle_center:
+        seed_1: passed_full_point_and_explicit_submit_sequence
+        seed_0: intent_compilation_rejected
+        seed_0_reason: provider_referenced_unknown_source_clause_id
+        remaining_owner: M8_taskplan_and_intent_admission
+        interpretation: >-
+          M7 must not weaken source lineage to make seed 0 pass. The source-id
+          repair needs a deterministic source-unit binding rule in M8.
+        report_sha256: e6f69177c9f50608aab29f0c3bea71c645c5f43aada04237eeb2b167f109bf00
+    verification:
+      full_pytest: 1447_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      diff_check: passed
+      architecture_ratchet: task_planning_1642_at_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:f584609914237d1b6f29fd1b9f662105649dee257d8b7ca28e3d2e6e2c9ecfd5
+      clean_report_sha256: 74981ac659d3406f05b615e8daa0c9bc26b11b164e66577f915a65f29fbd704d
+    incomplete_requirements:
+      - source_clause_lineage_repair_owned_by_M8
+      - fresh_30x2_deferred_to_declared_M8_or_M9_gate
+    architecture_gate_interpretation: >-
+      M7 is a semantic capability cutover, not M9 architecture closure. It
+      adds no stage, compatibility adapter, writer, stage edge, or core
+      benchmark dependency. Its added semantic LOC must still be offset by
+      the required M9 orchestration deletion before promotion.
   typed_model_output_boundary:
     revision: 3a041e34b6cf17c807299c373365f7b3a1c7e850
     trigger:
