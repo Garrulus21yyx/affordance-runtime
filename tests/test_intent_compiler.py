@@ -1458,13 +1458,16 @@ def test_llm_compiler_preserves_multiple_collection_members_as_typed_values() ->
     assert submit.depends_on == (selection.obligation_id,)
 
 
-def test_llm_compiler_preserves_slider_numeric_value_in_multistage_graph() -> None:
+@pytest.mark.parametrize("provider_target", ("slider", "slider:7"))
+def test_llm_compiler_preserves_slider_numeric_value_in_multistage_graph(
+    provider_target: str,
+) -> None:
     draft = IntentDraft(
         objective="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",
         requested_effects=(
             RequestedEffect(
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                target="slider",
+                target=provider_target,
                 source_ref="form-sequence",
             ),
             RequestedEffect(

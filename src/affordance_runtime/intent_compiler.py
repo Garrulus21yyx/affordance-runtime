@@ -1070,6 +1070,26 @@ def _normalize_value_entry_draft(
     )
     selection_values, select_target = _extract_literal_selection_values(raw_text)
     select_value = ", ".join(selection_values)
+    selection_effect_index: int | None = None
+    if selection_values and select_target == "slider":
+        slider_indexes = tuple(
+            index
+            for index, effect in enumerate(requested_effects)
+            if _effect_target_role(effect.target) == "slider"
+        )
+        if len(slider_indexes) == 1:
+            selection_effect_index = slider_indexes[0]
+            requested_effects = tuple(
+                effect.model_copy(
+                    update={
+                        "operation_class": OperationClass.REVERSIBLE_WRITE,
+                        "target": "slider",
+                    }
+                )
+                if index == selection_effect_index
+                else effect
+                for index, effect in enumerate(requested_effects)
+            )
     value_entry = _looks_like_value_entry_request(raw_text)
     literal_value = select_value or _extract_literal_entry_value(
         raw_text,
@@ -1078,6 +1098,7 @@ def _normalize_value_entry_draft(
     if not select_value and not value_entry:
         return draft
     if selection_values and select_target != "slider" and requested_effects:
+        selection_effect_index = 0
         selection_effect = requested_effects[0].model_copy(
             update={
                 "operation_class": OperationClass.REVERSIBLE_WRITE,
@@ -1115,7 +1136,18 @@ def _normalize_value_entry_draft(
                 "candidate_semantic_value_constraints": constraints,
             }
         )
-    entry_index = 0 if select_value and updated_effects else _entry_effect_index(updated_effects, raw_text)
+    entry_index = (
+        selection_effect_index
+        if select_value
+        else _entry_effect_index(updated_effects, raw_text)
+    )
+    if select_value and entry_index is None:
+        return draft.model_copy(
+            update={
+                "requested_effects": updated_effects,
+                "candidate_semantic_value_constraints": constraints,
+            }
+        )
     target_effect = updated_effects[entry_index] if entry_index is not None else None
     target = target_effect.target if target_effect is not None else ""
     source_ref = target_effect.source_ref if target_effect is not None else request.request_id
@@ -1281,6 +1313,8 @@ def _explicit_ordinal_role_bindings(raw_text: str) -> tuple[tuple[str, int], ...
 
 def _effect_target_role(target: str) -> str:
     normalized = re.sub(r"[^a-z]+", " ", target.casefold()).strip()
+    if "slider" in normalized.split():
+        return "slider"
     if "radio" in normalized.split():
         return "radio"
     if "checkbox" in normalized.split():
