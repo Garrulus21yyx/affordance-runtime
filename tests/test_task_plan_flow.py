@@ -6,6 +6,7 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation, RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureClass
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_plan_flow import (
@@ -20,7 +21,6 @@ from affordance_runtime.task_plan_lifecycle import (
     TaskPlanReplacementReason,
 )
 from affordance_runtime.task_planning import (
-    PlanningRouter,
     SubgoalOutcome,
     SubgoalOutcomeRelation,
     SubgoalSpec,
@@ -28,6 +28,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from runtime_test_support import make_interaction
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,39 @@ def _task() -> TaskSpec:
         requested_capabilities=("settings.write",),
         source_request_ref="request-flow",
     )
+
+
+class FlatFixturePlanner:
+    def plan(self, context):  # type: ignore[no-untyped-def]
+        task = context.task_spec
+        outcome = SubgoalOutcome(
+            subject="setting",
+            relation=SubgoalOutcomeRelation.IS_COMPLETED,
+        )
+        return TaskPlan(
+            plan_id=f"plan-{context.current_plan_version + 1}",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="setting-saved",
+                    objective=task.objective,
+                    interaction=ElementIntent(
+                        "setting",
+                        (SourceReference("request-flow", "unit:setting"),),
+                    ),
+                    success_criteria=task.success_criteria,
+                    evidence_requirements=task.evidence_requirements,
+                    operation_class=task.operation_class,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=outcome,
+                ),
+            ),
+        )
 
 
 def _snapshot() -> BrowserSnapshot:
@@ -90,7 +124,7 @@ def test_task_plan_trace_projection_payload_is_deeply_immutable_from_source_payl
 
 def test_flow_prepares_accepted_initial_plan_without_mutating_state() -> None:
     state = _state()
-    result = TaskPlanFlow(TaskPlanLifecycle(PlanningRouter())).prepare(
+    result = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         state,
         _snapshot(),
@@ -105,7 +139,7 @@ def test_flow_prepares_accepted_initial_plan_without_mutating_state() -> None:
 
 
 def test_commit_preparation_projects_initial_trace_without_state_mutation() -> None:
-    result = TaskPlanFlow(TaskPlanLifecycle(PlanningRouter())).prepare(
+    result = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         _state(),
         _snapshot(),
@@ -128,7 +162,7 @@ def test_commit_preparation_projects_initial_trace_without_state_mutation() -> N
 
 class InvalidPlanner:
     def plan(self, context):  # type: ignore[no-untyped-def]
-        plan = PlanningRouter().plan(context)
+        plan = FlatFixturePlanner().plan(context)
         return plan.model_copy(update={"task_id": "wrong-task"})
 
 
@@ -149,6 +183,7 @@ class AlreadySatisfiedEntryPlanner:
                 SubgoalSpec(
                     subgoal_id="save-available",
                     objective=outcome.description(),
+                    interaction=make_interaction('test target'),
                     success_criteria=(outcome.description(),),
                     evidence_requirements=("current button availability",),
                     operation_class=OperationClass.READ_ONLY,
@@ -208,7 +243,7 @@ def test_commit_preparation_projects_failure_and_normalizes_commit_exception() -
     assert rejection.kind == "TaskPlanRejected"
     assert rejection.payload["validation"] == "reject"
 
-    accepted = TaskPlanFlow(TaskPlanLifecycle(PlanningRouter())).prepare(
+    accepted = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         _state(),
         _snapshot(),
@@ -246,6 +281,7 @@ def _state_requiring_replacement() -> StateKernel:
     first = SubgoalSpec(
         subgoal_id="first",
         objective="setting preparation changed",
+        interaction=make_interaction('setting preparation'),
         success_criteria=("setting preparation changed",),
         evidence_requirements=("preparation evidence",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -258,6 +294,7 @@ def _state_requiring_replacement() -> StateKernel:
     unsupported = SubgoalSpec(
         subgoal_id="unsupported",
         objective="Save setting is checked",
+        interaction=make_interaction('Save setting'),
         depends_on=("first",),
         success_criteria=("Save setting is checked",),
         evidence_requirements=("current checked state",),
@@ -294,6 +331,7 @@ class ReplacementPlanner:
                 subject="Save setting",
                 relation=self.relation,
             ).description(),
+            interaction=make_interaction('Save setting'),
             depends_on=("first",),
             success_criteria=("replacement outcome",),
             evidence_requirements=("fresh current state",),
@@ -343,6 +381,7 @@ def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replann
     first = SubgoalSpec(
         subgoal_id="first",
         objective="setting preparation changed",
+        interaction=make_interaction('setting preparation'),
         success_criteria=("setting preparation changed",),
         evidence_requirements=("preparation evidence",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -355,6 +394,7 @@ def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replann
     visible = SubgoalSpec(
         subgoal_id="visible",
         objective="Save setting is visible",
+        interaction=make_interaction('Save setting'),
         depends_on=("first",),
         success_criteria=("Save setting is visible",),
         evidence_requirements=("current button visibility",),
@@ -398,6 +438,7 @@ def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_acti
     first = SubgoalSpec(
         subgoal_id="first",
         objective="text field value changed",
+        interaction=make_interaction('text field'),
         success_criteria=("text field value changed",),
         evidence_requirements=("text evidence",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -410,6 +451,7 @@ def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_acti
     submit_available = SubgoalSpec(
         subgoal_id="submit-available",
         objective="Save setting is available",
+        interaction=make_interaction('Save setting'),
         depends_on=("first",),
         success_criteria=("Save setting is available",),
         evidence_requirements=("current button availability",),

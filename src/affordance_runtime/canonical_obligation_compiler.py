@@ -37,6 +37,7 @@ class CanonicalEffectInput(StrictModel):
     evidence: tuple[EvidenceRequirement, ...] = Field(min_length=1)
     depends_on_effect_indexes: tuple[int, ...] = ()
     terminal: bool = True
+    interaction_values: tuple[str, ...] = ()
 
 
 class CanonicalObligationGraph(StrictModel):
@@ -85,16 +86,20 @@ class CanonicalObligationCompiler:
 
         known_units = {unit.source_unit_id for unit in source_ledger.units}
         inputs: list[CanonicalEffectInput] = []
-        exact_values_by_target = {
-            constraint.target: constraint.value
-            for constraint in semantic_value_constraints
-            if constraint.relation == SemanticValueRelation.EXACT
-            and constraint.target
-        }
+        exact_values_by_target: dict[str, tuple[str, ...]] = {}
+        for constraint in semantic_value_constraints:
+            if constraint.relation != SemanticValueRelation.EXACT or not constraint.target:
+                continue
+            exact_values_by_target[constraint.target] = tuple(
+                dict.fromkeys(
+                    (*exact_values_by_target.get(constraint.target, ()), constraint.value)
+                )
+            )
         for effect in effects:
             if effect.source_ref not in known_units:
                 raise ValueError("requested effect references unknown source unit")
-            literal_value = exact_values_by_target.get(effect.target, "")
+            interaction_values = exact_values_by_target.get(effect.target, ())
+            literal_value = ", ".join(interaction_values)
             completed_action = (
                 effect.operation_class == OperationClass.NAVIGATION
                 and _success_criteria_marks_action_completed(
@@ -143,6 +148,7 @@ class CanonicalObligationCompiler:
                     ),
                     depends_on_effect_indexes=((len(inputs) - 1,) if preserve_sequence and inputs else ()),
                     terminal=(not preserve_sequence or len(inputs) == len(effects) - 1),
+                    interaction_values=interaction_values,
                 )
             )
         return self.compile(source_ledger, tuple(inputs))
@@ -207,6 +213,11 @@ class CanonicalObligationCompiler:
                     else TaskObligationValueSource.NONE
                 ),
                 expected_value=literal_value,
+                interaction_values=(
+                    effect.interaction_values
+                    if relation == TaskObligationRelation.IS_SELECTED
+                    else ()
+                ),
                 claim_ids=(claim_id,),
                 depends_on=tuple(obligation_ids[item] for item in effect.depends_on_effect_indexes),
                 evidence_requirements=tuple(f"{item.kind.value}:{item.subject}" for item in effect.evidence),
@@ -357,6 +368,7 @@ class CanonicalObligationCompiler:
                     relation=obligation.relation,
                     value_source=obligation.value_source,
                     expected_value=obligation.expected_value,
+                    interaction_values=obligation.interaction_values,
                     value_obligation_id=canonical_value_obligation_id,
                     claim_ids=canonical_claim_ids,
                     depends_on=tuple(obligation_id_map[item] for item in obligation.depends_on),
@@ -427,7 +439,7 @@ def _effect_relation_for_literal(
 ) -> TaskObligationRelation:
     if not literal_value:
         return TaskObligationRelation.HAS_CHANGED
-    if target.strip().casefold() in {"list", "dropdown", "select", "combobox"}:
+    if _semantic_tokens(target).intersection({"list", "dropdown", "select", "combobox"}):
         return TaskObligationRelation.IS_SELECTED
     return TaskObligationRelation.EQUALS
 

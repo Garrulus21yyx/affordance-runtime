@@ -387,6 +387,7 @@ def _subgoal_from_step(step: StepSpec, task_operation: OperationClass) -> Subgoa
         ),
         action_family=_legacy_action_family_for_step(criterion, task_operation),
         outcome=outcome,
+        interaction=step.interaction,
     )
 
 

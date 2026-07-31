@@ -15,6 +15,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from runtime_test_support import make_interaction
 
 
 def _plan(
@@ -25,6 +26,7 @@ def _plan(
     text_subgoal = SubgoalSpec(
         subgoal_id="text-field-changed",
         objective="text field has changed",
+        interaction=make_interaction('text field'),
         success_criteria=("text field has changed",),
         evidence_requirements=("post-text evidence",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -37,6 +39,7 @@ def _plan(
     read_only_subgoal = SubgoalSpec(
         subgoal_id="submit-button-available",
         objective=f"submit button {relation.value}",
+        interaction=make_interaction('test target'),
         depends_on=("text-field-changed",),
         success_criteria=(f"submit button {relation.value}",),
         evidence_requirements=("current submit button observation",),
@@ -186,6 +189,7 @@ def test_selected_list_value_can_be_completed_from_current_observation() -> None
             SubgoalSpec(
                 subgoal_id="list-selected",
                 objective="list has selected value",
+                interaction=make_interaction('list'),
                 success_criteria=("list has selected value",),
                 evidence_requirements=("current list observation",),
                 operation_class=OperationClass.REVERSIBLE_WRITE,

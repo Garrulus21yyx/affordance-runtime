@@ -199,6 +199,7 @@ def test_negative_behavior_matrix_stops_before_contract_or_effect(
         AdversarialSemanticPlanner(target_label),
         executor,
         contract_builder=ContractBuilder(),
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=_task(objective, targets)))
 
     assert result.status == RuntimeStep.ABORTED
@@ -217,6 +218,7 @@ def test_ambiguity_control_requests_clarification_without_effect() -> None:
         AdversarialSemanticPlanner(ask_user=True),
         executor,
         contract_builder=ContractBuilder(),
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=_task("Update the profile", ("profile",))))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION

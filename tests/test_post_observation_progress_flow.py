@@ -42,6 +42,7 @@ from affordance_runtime.task_planning import (
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification import VerificationReport, VerificationStatus
+from runtime_test_support import make_interaction
 
 
 class _Budget:
@@ -141,6 +142,7 @@ def _subgoal(
     return SubgoalSpec(
         subgoal_id=subgoal_id,
         objective=f"complete {subgoal_id}",
+        interaction=make_interaction('field'),
         depends_on=depends_on,
         success_criteria=(f"criterion:{subgoal_id}",),
         evidence_requirements=(f"evidence:{subgoal_id}",),

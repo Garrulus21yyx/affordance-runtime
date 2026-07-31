@@ -1025,6 +1025,51 @@ def test_llm_compiler_restores_explicit_submit_effect_omitted_from_draft() -> No
     assert submit.depends_on == (selection.obligation_id,)
 
 
+def test_llm_compiler_preserves_multiple_collection_members_as_typed_values() -> None:
+    draft = IntentDraft(
+        objective="Select Lumen, Vela from the results list and click Submit.",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="results list",
+                source_ref="multi-select",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                target="results list selection",
+                source_ref="multi-select",
+            ),
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="Submit button",
+                source_ref="multi-select",
+            ),
+        ),
+        candidate_success_criteria=(
+            "Lumen and Vela are selected in the results list.",
+            "The Submit button is clicked.",
+        ),
+        task_structure=TaskStructure.MULTI_STAGE,
+    )
+
+    result = asyncio.run(
+        LLMIntentCompiler(FixedModel(draft)).compile(
+            UserRequest(
+                request_id="multi-select",
+                raw_text="Select Lumen, Vela from the results list and click Submit.",
+            )
+        )
+    )
+
+    assert result.status == CompilationStatus.READY
+    assert result.task_spec is not None
+    selection, submit = result.task_spec.obligations
+    assert selection.subject == "results list"
+    assert selection.relation == TaskObligationRelation.IS_SELECTED
+    assert selection.interaction_values == ("Lumen", "Vela")
+    assert submit.depends_on == (selection.obligation_id,)
+
+
 def test_llm_compiler_preserves_slider_numeric_value_in_multistage_graph() -> None:
     draft = IntentDraft(
         objective="Select 7 with the slider, click the 3rd checkbox, then hit Submit.",

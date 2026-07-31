@@ -7,6 +7,11 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Affordance
+from affordance_runtime.interaction_grounding import (
+    GroundingStatus,
+    GroundingTarget,
+    InteractionGrounder,
+)
 from affordance_runtime.planning_request import (
     PlannerAdmissionSource,
     PlannerAdmissionView,
@@ -220,12 +225,26 @@ def _active_step_admission(
     active_step = step_view.active_step
     if active_step is None or step_view.activity_status != StepActivityStatus.ACTIVE:
         return None
-    allowed = _active_step_subjects(active_step)
-    if not allowed:
+    inventory = _planner_affordance_inventory(snapshot)
+    grounding = InteractionGrounder().ground(
+        active_step.interaction,
+        tuple(
+            GroundingTarget(
+                target_id=item.id,
+                role=item.role,
+                label=item.label,
+                supported_actions=(item.action,),
+                state=item.state,
+            )
+            for item in inventory
+        ),
+    )
+    if grounding.status != GroundingStatus.RESOLVED:
         return None
-    current_target_ids = tuple(dict.fromkeys(item.id for item in _planner_affordance_inventory(snapshot)))
-    if not set(current_target_ids).intersection(allowed):
-        return None
+    allowed = frozenset(
+        item.target_id for item in (*grounding.targets, *grounding.destinations)
+    )
+    current_target_ids = tuple(dict.fromkeys(item.id for item in inventory))
     decisions = tuple(
         TargetAdmissionDecision(
             target_id=target_id,
@@ -249,15 +268,6 @@ def _active_step_admission(
         target_decisions=decisions,
         excluded_target_ids=tuple(item.target_id for item in decisions),
     )
-
-
-def _active_step_subjects(active_step: object) -> frozenset[str]:
-    subjects: list[str] = []
-    for criterion in getattr(active_step, "completion_criteria", ()) + getattr(active_step, "preconditions", ()):
-        subject = getattr(criterion, "subject", "")
-        if isinstance(subject, str) and subject.strip():
-            subjects.append(subject)
-    return frozenset(subjects)
 
 
 def _compatibility_active_step_objective(state: StateKernel) -> str:

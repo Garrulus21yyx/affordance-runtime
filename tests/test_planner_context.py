@@ -28,6 +28,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from runtime_test_support import make_interaction
 
 
 def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -138,6 +139,7 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
     )
     from affordance_runtime.simplified_runtime_contracts import (
         CriterionEvidencePolicy,
+        ElementIntent,
         EvidenceStrength,
         SourceReference,
         StateCriterion,
@@ -167,6 +169,7 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
     step = StepSpec(
         step_id="ready-step",
         objective="display name input equals Ada",
+        interaction=ElementIntent("display name input", criterion.source_refs),
         completion_criteria=(criterion,),
         source_refs=criterion.source_refs,
     )
@@ -239,6 +242,7 @@ def test_builder_exposes_typed_active_subgoal_action_family() -> None:
                 SubgoalSpec(
                     subgoal_id="enter-name",
                     objective="display name input equals Ada",
+                    interaction=make_interaction('display name input equals Ada'),
                     success_criteria=("display name input equals Ada",),
                     evidence_requirements=("fresh input-value observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -272,6 +276,7 @@ def test_builder_does_not_activate_next_step_while_building_read_only_context() 
                 SubgoalSpec(
                     subgoal_id="enter-name",
                     objective="display name input equals Ada",
+                    interaction=make_interaction('display name input equals Ada'),
                     success_criteria=("display name input equals Ada",),
                     evidence_requirements=("fresh input-value observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,

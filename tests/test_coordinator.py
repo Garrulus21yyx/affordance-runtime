@@ -50,6 +50,7 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import FailureOwner, classify_failure
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_committer import runtime_state_snapshot
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
@@ -77,6 +78,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.trace import TraceDag
+from runtime_test_support import make_interaction
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -160,15 +162,19 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
             executor=FakeExecutor(),
             contract_builder=_metadata_builder("saved"),
             artifacts=ArtifactStore(tmp_path / "artifacts"),
+            task_planner=SingleStageTaskPlanner(),
         ).run(_semantic_envelope("run-1"))
     )
 
     assert result.status == RuntimeStep.DONE
-    assert result.result == {"saved": True}
+    assert result.result == {
+        "task_plan_id": "plan-single-stage",
+        "completed_subgoal_ids": ["subgoal-1"],
+    }
     assert result.verification is not None and result.verification.passed
-    assert result.state.observation_count == 5
+    assert result.state.observation_count == 4
     event_types = [node.kind for node in result.trace.nodes]
-    assert event_types.count("PlanningTurnEvaluated") == 2
+    assert event_types.count("PlanningTurnEvaluated") == 1
     assert "ActionCompleted" not in event_types
     assert event_types.count("ActionOutcomeRecorded") == 1
     assert event_types.count("PostActionEvaluated") == 1
@@ -184,7 +190,7 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     )
     assert evaluated.payload["action_effect_status"] == "passed"
     assert evaluated.payload["active_step_status"] == "completed"
-    assert evaluated.payload["task_completion_status"] == "not_evaluated"
+    assert evaluated.payload["task_completion_status"] == "completed"
     assert evaluated.payload["progress_committed"] is True
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
@@ -199,6 +205,7 @@ def test_coordinator_continues_an_upstream_compiler_trace() -> None:
         planner=SavePlanner(),
         executor=FakeExecutor(),
         contract_builder=_metadata_builder("saved"),
+                     task_planner=None,
     ).run_sync(_semantic_envelope("run-upstream"), trace)
 
     assert result.trace is trace
@@ -276,6 +283,7 @@ def test_coordinator_traces_source_assertion_decisions_and_targeted_perception()
         observer=observer,
         planner=FinishPlanner(),
         executor=FakeExecutor(),
+             task_planner=None,
     ).run_sync(_semantic_envelope("assertion-trace"))
 
     events = [node.kind for node in result.trace.nodes]
@@ -350,6 +358,7 @@ def test_coordinator_bounds_repeated_targeted_perception_requests() -> None:
         planner=FinishPlanner(),
         executor=FakeExecutor(),
         budget=RunBudget(max_active_perception_observations=2),
+           task_planner=None,
     ).run_sync(_semantic_envelope("bounded-perception"))
 
     assert observer.targeted_calls == 2
@@ -382,6 +391,7 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
             planner=SavePlanner(),
             executor=executor,
             contract_builder=_metadata_builder("saved"),
+            task_planner=SingleStageTaskPlanner(),
         ).run(
             _semantic_envelope("run-drift")
         )
@@ -434,6 +444,36 @@ class ReplanObserver:
         return self.snapshots.pop(0)
 
 
+class SingleStageTaskPlanner:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        task = context.task_spec
+        outcome = SubgoalOutcome(
+            subject="Save",
+            relation=SubgoalOutcomeRelation.IS_COMPLETED,
+        )
+        return TaskPlan(
+            plan_id="plan-single-stage",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="subgoal-1",
+                    objective=task.objective,
+                    interaction=make_interaction("Save"),
+                    success_criteria=task.success_criteria,
+                    evidence_requirements=task.evidence_requirements,
+                    operation_class=task.operation_class,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=outcome,
+                ),
+            ),
+        )
+
+
 class TwoStageTaskPlanner:
     def plan(self, context: TaskPlanningContext) -> TaskPlan:
         task_spec = context.task_spec
@@ -448,6 +488,7 @@ class TwoStageTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="write",
                     objective="Write settings",
+                    interaction=make_interaction('Write settings'),
                     success_criteria=("settings are saved",),
                     evidence_requirements=("saved observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -455,6 +496,7 @@ class TwoStageTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="confirm",
                     objective="Confirm settings",
+                    interaction=make_interaction('Confirm settings'),
                     depends_on=("write",),
                     success_criteria=("settings are saved",),
                     evidence_requirements=("saved observation",),
@@ -477,6 +519,7 @@ class UnsupportedThenValidTaskPlanner:
         first = SubgoalSpec(
             subgoal_id="write",
             objective="Write settings",
+            interaction=make_interaction('settings'),
             success_criteria=("settings are saved",),
             evidence_requirements=("saved observation",),
             operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -489,6 +532,7 @@ class UnsupportedThenValidTaskPlanner:
         unsupported = SubgoalSpec(
             subgoal_id="confirm",
             objective="Save is checked",
+            interaction=make_interaction('Save'),
             depends_on=("write",),
             success_criteria=("Save is checked",),
             evidence_requirements=("current checked state",),
@@ -506,6 +550,7 @@ class UnsupportedThenValidTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="confirm-replacement",
                     objective="settings confirmation changed",
+                    interaction=make_interaction('settings confirmation'),
                     depends_on=("write",),
                     success_criteria=("settings are saved",),
                     evidence_requirements=("saved observation",),
@@ -553,6 +598,7 @@ class CurrentStateReadOnlyTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="text-field-changed",
                     objective="text field has changed",
+                    interaction=make_interaction('text field'),
                     success_criteria=("text field has changed",),
                     evidence_requirements=("post-text evidence",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -565,6 +611,7 @@ class CurrentStateReadOnlyTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="submit-button-available",
                     objective="submit button is available",
+                    interaction=make_interaction('submit_button'),
                     depends_on=("text-field-changed",),
                     success_criteria=("submit button is available",),
                     evidence_requirements=("current submit button observation",),
@@ -616,6 +663,7 @@ class InitialAlreadySatisfiedTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="submit-button-available",
                     objective="submit button is available",
+                    interaction=make_interaction('submit_button'),
                     success_criteria=("submit button is available",),
                     evidence_requirements=("current submit button observation",),
                     operation_class=OperationClass.READ_ONLY,
@@ -925,6 +973,7 @@ class ReplanningTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="write",
                     objective="Write settings",
+                    interaction=make_interaction('Write settings'),
                     success_criteria=("settings are saved",),
                     evidence_requirements=("saved observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -995,6 +1044,7 @@ class EvidenceAwareTaskPlanner:
         discover = SubgoalSpec(
             subgoal_id="discover",
             objective="Discover saved state",
+            interaction=make_interaction('Discover saved state'),
             success_criteria=("saved state is observed",),
             evidence_requirements=("independent saved observation",),
             operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1004,6 +1054,7 @@ class EvidenceAwareTaskPlanner:
             objective=(
                 "Apply using verified saved-state evidence" if discovered else "Apply using the initial assumption"
             ),
+            interaction=make_interaction('test target'),
             depends_on=("discover",),
             success_criteria=("settings are saved",),
             evidence_requirements=("independent saved observation",),
@@ -1127,6 +1178,7 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
                     )
                 }
             ),
+            task_planner=SingleStageTaskPlanner(),
         ).run(_semantic_envelope("run-loop"))
     )
 
@@ -1285,11 +1337,15 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
                     )
                 }
             ),
+            task_planner=SingleStageTaskPlanner(),
         ).run(RunRequest(task_spec=task, capabilities=["settings.write"]))
     )
 
     assert result.status == RuntimeStep.DONE
-    assert result.result == {"saved": True}
+    assert result.result == {
+        "task_plan_id": "plan-single-stage",
+        "completed_subgoal_ids": ["subgoal-1"],
+    }
     events = [node.kind for node in result.trace.nodes]
     assert events.count("PlannerProposalProduced") == 1
     assert result.state.latest_planner_proposal
@@ -1316,6 +1372,11 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
                 SubgoalSpec(
                     subgoal_id="save-observed",
                     objective="Save state is recorded",
+                    interaction=ElementIntent(
+                        "Save",
+                        (SourceReference("request", "request:save"),),
+                        role="button",
+                    ),
                     success_criteria=("Save state is recorded",),
                     evidence_requirements=("post-action Save state",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1672,6 +1733,7 @@ def test_coordinator_rejects_stale_task_revision_before_execution() -> None:
             planner=AsyncSemanticSavePlanner(revision=2),
             executor=FakeExecutor(),
             contract_builder=ContractBuilder(),
+                         task_planner=None,
         ).run(RunRequest(task_spec=task))
     )
 
@@ -1699,6 +1761,7 @@ def test_coordinator_rejects_missing_proposal_provenance_before_execution() -> N
             planner=MissingProvenancePlanner(),
             executor=FakeExecutor(),
             contract_builder=ContractBuilder(),
+                         task_planner=None,
         ).run(RunRequest(task_spec=_semantic_task()))
     )
 
@@ -1735,6 +1798,7 @@ def test_semantic_planner_can_request_clarification_without_contract_or_effect()
             planner=ClarifyingPlanner(),
             executor=FakeExecutor(),
             contract_builder=ContractBuilder(),
+                         task_planner=None,
         ).run(RunRequest(task_spec=_semantic_task()))
     )
 
@@ -1773,6 +1837,7 @@ def test_request_planner_unsupported_reason_reaches_recovery_failure() -> None:
         observer=StableObserver(),
         planner=UnsupportedChoicePlanner(),
         executor=FakeExecutor(),
+             task_planner=None,
     ).run_sync(RunRequest(task_spec=_semantic_task()))
 
     assert result.state.last_receipt is None
@@ -1794,6 +1859,7 @@ def test_legacy_planner_no_proposal_fails_closed_without_replan() -> None:
         planner=LegacyNoProposalPlanner(),
         executor=FakeExecutor(),
         budget=RunBudget(max_recoveries=2),
+           task_planner=None,
     ).run_sync(RunRequest(task_spec=_semantic_task()))
 
     assert result.state.current_failure is not None
@@ -1813,6 +1879,7 @@ def test_coordinator_checkpoints_typed_provider_failure_as_resumable_deferral(tm
         planner=QuotaExhaustedPlanner(),
         executor=FakeExecutor(),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
+              task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DEFERRED

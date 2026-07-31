@@ -21,6 +21,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from runtime_test_support import make_interaction
 
 
 def _plan() -> TaskPlan:
@@ -35,6 +36,7 @@ def _plan() -> TaskPlan:
             SubgoalSpec(
                 subgoal_id="field:value",
                 objective="field equals dark",
+                interaction=make_interaction('field'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=SubgoalOutcome(
@@ -46,6 +48,7 @@ def _plan() -> TaskPlan:
             SubgoalSpec(
                 subgoal_id="settings:submitted",
                 objective="settings submission is completed",
+                interaction=make_interaction('settings submission'),
                 depends_on=("field:value",),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.ACTIVATE,

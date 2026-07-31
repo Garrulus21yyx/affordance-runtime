@@ -5,6 +5,7 @@ import pytest
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
@@ -34,6 +35,7 @@ def _step() -> StepSpec:
     return StepSpec(
         step_id="step:name",
         objective="Type Alice into Name",
+        interaction=ElementIntent("semantic:name", (_source(),)),
         completion_criteria=(_criterion("semantic:name"),),
         source_refs=(_source(),),
     )

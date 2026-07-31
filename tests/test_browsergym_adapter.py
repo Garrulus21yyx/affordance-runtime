@@ -570,12 +570,10 @@ def test_browsergym_episode_traverses_full_coordinator_and_official_grade(tmp_pa
     events = [item["event_type"] for item in trace_events]
     required = [
         "TaskCreated",
-        "TaskPlanAccepted",
         "PlannerProposalProduced",
         "ContractBuilt",
         "ActionStarted",
         "ActionOutcomeRecorded",
-        "TaskPlanCompleted",
         "PostActionEvaluated",
         "TaskCompleted",
     ]

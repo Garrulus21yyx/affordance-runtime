@@ -8,6 +8,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     CompositeCriterion,
     CompositeCriterionOperator,
     CriterionEvidencePolicy,
+    ElementIntent,
     EvidenceStrength,
     ExecutionAttempt,
     ObservationIdentity,
@@ -98,6 +99,7 @@ def test_step_spec_rejects_precondition_as_completion_criterion() -> None:
         StepSpec(
             step_id="step:submit",
             objective="Submit the form",
+            interaction=ElementIntent("semantic:submit", (_source(),)),
             completion_criteria=(precondition,),
             source_refs=(_source(),),
         )
@@ -107,6 +109,7 @@ def test_task_plan_view_is_identity_exact_and_deeply_immutable() -> None:
     step = StepSpec(
         step_id="step:type-name",
         objective="Type the name",
+        interaction=ElementIntent("semantic:name", (_source(),)),
         completion_criteria=(
             StateCriterion(
                 criterion_id="criterion:name",

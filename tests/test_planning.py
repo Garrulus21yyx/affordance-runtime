@@ -32,6 +32,7 @@ from affordance_runtime.planning import (
     TaskPlanProgressTarget,
     resolve_task_plan_progress_target,
 )
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import (
@@ -48,11 +49,21 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from runtime_test_support import make_interaction
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
     producer_id="planning-test-fixture",
 )
+
+
+def _interaction(target: str, *, role: str = "", ordinal: int | None = None) -> ElementIntent:
+    return ElementIntent(
+        target,
+        (SourceReference("request-1", "request-1:whole"),),
+        role=role,
+        ordinal=ordinal,
+    )
 
 
 def _active_plan_state() -> StateKernel:
@@ -69,6 +80,7 @@ def _active_plan_state() -> StateKernel:
                 SubgoalSpec(
                     subgoal_id="observe",
                     objective="The saved state is visible",
+                    interaction=make_interaction('The saved state is visible'),
                     success_criteria=("saved state is visible",),
                     evidence_requirements=("fresh saved-state observation",),
                     operation_class=OperationClass.READ_ONLY,
@@ -191,6 +203,7 @@ def test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target() -> Non
                 SubgoalSpec(
                     subgoal_id="slider-changed",
                     objective="slider value has changed",
+                    interaction=_interaction("semantic:slider", role="slider"),
                     success_criteria=("slider value has changed",),
                     evidence_requirements=("post-slider observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -198,6 +211,7 @@ def test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target() -> Non
                 SubgoalSpec(
                     subgoal_id="checkbox-changed",
                     objective="checkbox state has changed",
+                    interaction=make_interaction('checkbox state has changed'),
                     depends_on=("slider-changed",),
                     success_criteria=("checkbox state has changed",),
                     evidence_requirements=("post-checkbox observation",),
@@ -274,6 +288,7 @@ def test_subgoal_evidence_binder_rejects_progress_target_until_dependencies_comp
                 SubgoalSpec(
                     subgoal_id="slider-changed",
                     objective="slider value has changed",
+                    interaction=make_interaction('slider value has changed'),
                     success_criteria=("slider value has changed",),
                     evidence_requirements=("post-slider observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -281,6 +296,7 @@ def test_subgoal_evidence_binder_rejects_progress_target_until_dependencies_comp
                 SubgoalSpec(
                     subgoal_id="checkbox-changed",
                     objective="checkbox state has changed",
+                    interaction=make_interaction('checkbox state has changed'),
                     depends_on=("slider-changed",),
                     success_criteria=("checkbox state has changed",),
                     evidence_requirements=("post-checkbox observation",),
@@ -327,6 +343,7 @@ def test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposa
                 SubgoalSpec(
                     subgoal_id="slider-changed",
                     objective="slider value has changed",
+                    interaction=_interaction("semantic:slider", role="slider"),
                     success_criteria=("slider value has changed",),
                     evidence_requirements=("post-slider observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -339,6 +356,7 @@ def test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposa
                 SubgoalSpec(
                     subgoal_id="checkbox-changed",
                     objective="checkbox-3 state has changed",
+                    interaction=_interaction("semantic:checkbox-3", role="checkbox"),
                     depends_on=("slider-changed",),
                     success_criteria=("checkbox-3 state has changed",),
                     evidence_requirements=("post-checkbox observation",),
@@ -354,6 +372,7 @@ def test_resolve_task_plan_progress_target_uses_runtime_target_not_stale_proposa
     )
     state.activate_next_step()
     state.complete_step("slider-changed", ("evidence:slider",))
+    state.activate_next_step()
     checkbox = Affordance(
         "semantic:checkbox-3",
         Surface.DOM,
@@ -414,6 +433,9 @@ def test_resolve_task_plan_progress_target_uses_current_target_state_for_value_s
                 SubgoalSpec(
                     subgoal_id="slider-value-7",
                     objective="slider_value_7 has changed",
+                    interaction=_interaction(
+                        "semantic:ui-slider-handle", role="slider"
+                    ),
                     success_criteria=("slider_value_7 has changed",),
                     evidence_requirements=("post-slider observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -932,11 +954,12 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
                     evidence_requirements=("theme evidence",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     action_family=TaskPlanActionFamily.TYPE_TEXT,
-                    outcome=SubgoalOutcome(
-                        subject=active_target,
-                        relation=SubgoalOutcomeRelation.EQUALS,
-                        value="dark",
-                    ),
+                        outcome=SubgoalOutcome(
+                            subject=active_target,
+                            relation=SubgoalOutcomeRelation.EQUALS,
+                            value="dark",
+                        ),
+                        interaction=_interaction(active_target),
                 ),
                 SubgoalSpec(
                     subgoal_id="step:submit",
@@ -946,10 +969,11 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     action_family=TaskPlanActionFamily.ACTIVATE,
                     depends_on=("step:theme",),
-                    outcome=SubgoalOutcome(
-                        subject=cross_step_target,
-                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
-                    ),
+                        outcome=SubgoalOutcome(
+                            subject=cross_step_target,
+                            relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                        ),
+                        interaction=_interaction(cross_step_target),
                 ),
             ),
         )
@@ -1016,10 +1040,11 @@ def test_proposal_validator_enforces_active_step_action_family_when_available() 
                     evidence_requirements=("submit evidence",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     action_family=TaskPlanActionFamily.POINT_ACTIVATE,
-                    outcome=SubgoalOutcome(
-                        subject=active_target,
-                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
-                    ),
+                        outcome=SubgoalOutcome(
+                            subject=active_target,
+                            relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                        ),
+                        interaction=_interaction(active_target),
                 ),
             ),
         )
@@ -1089,10 +1114,11 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
                     evidence_requirements=("checkbox_3_state evidence",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     action_family=TaskPlanActionFamily.ACTIVATE,
-                    outcome=SubgoalOutcome(
-                        subject="checkbox_3_state",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                    ),
+                        outcome=SubgoalOutcome(
+                            subject="checkbox_3_state",
+                            relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                        ),
+                        interaction=_interaction("checkbox", role="checkbox", ordinal=3),
                 ),
             ),
         )

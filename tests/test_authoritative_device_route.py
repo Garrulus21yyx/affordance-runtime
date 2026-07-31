@@ -196,6 +196,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
                 )
             }
         ),
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["device.write"]))
 
     assert result.status == RuntimeStep.DONE

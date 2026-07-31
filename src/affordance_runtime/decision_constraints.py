@@ -6,10 +6,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
-from affordance_runtime.active_step_targeting import (
-    ActiveStepTargetView,
-    resolve_active_step_target_ids,
-)
 from affordance_runtime.collection_window import OrdinalRouteConstraint, resolve_global_ordinal_constraint
 from affordance_runtime.planner_context import PlannerContext
 from affordance_runtime.planner_model_orchestrator import (
@@ -91,29 +87,6 @@ class StrictDecisionConstraintBuilder:
             targets = {PlannerActionKind.ACTIVATE.value: [ordinal.target_id]}
             allowed_text_values = ()
             require_bound_text_source = False
-        scoped_targets = resolve_active_step_target_ids(
-            subject=context.active_subgoal,
-            targets=tuple(str(item) for item in context.task_spec.get("targets", ())),
-            affordances=tuple(
-                ActiveStepTargetView(
-                    target_id=item.id,
-                    role=item.role,
-                    label=item.label,
-                    actions=(item.action,),
-                    state=item.state,
-                )
-                for item in context.affordances
-            ),
-        )
-        if scoped_targets and context.active_subgoal_action_family:
-            action = context.active_subgoal_action_family
-            available = targets.get(action, [])
-            matched = [item for item in available if item in scoped_targets]
-            if matched:
-                permitted = [action]
-                targets = {action: matched}
-                allowed_text_values = ()
-                require_bound_text_source = False
         return DecisionConstraintSet(
             permitted_action_kinds=tuple(permitted),
             compatible_target_ids={key: tuple(value) for key, value in targets.items()},

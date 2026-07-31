@@ -368,6 +368,7 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
@@ -417,6 +418,7 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
+        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=_task(with_entity=True),
@@ -551,6 +553,7 @@ def test_failed_later_skill_step_preserves_verified_progress_and_falls_through()
         ProfileExecutor(world, fail_email_effect=True),
         contract_builder=builder,
         task_skill_runtime=runtime,
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.WAITING_CLARIFICATION
@@ -612,6 +615,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     )
                 }
             ),
+            task_planner=None,
         ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         assert result.status == RuntimeStep.DONE
         trace_path = JsonlTraceWriter(tmp_path / f"training-{index}.jsonl").write(result.trace)
@@ -660,6 +664,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 }
             ),
             task_skill_runtime=_accepted_runtime(proposal.payload),
+            task_planner=None,
         ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
@@ -768,6 +773,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
         task_skill_runtime=loaded.task_skill_runtime,
         runtime_profile_digest=loaded.profile_digest,
         loaded_profile_artifact_ids=loaded.artifact_ids,
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
     kinds = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
@@ -816,6 +822,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 }
             ),
             task_skill_runtime=_accepted_runtime(payload),
+            task_planner=None,
         ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)

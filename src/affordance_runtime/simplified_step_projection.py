@@ -207,6 +207,7 @@ def project_legacy_task_plan_to_step_view(
                 StepSpec(
                     step_id=subgoal.subgoal_id,
                     objective=subgoal.objective,
+                    interaction=subgoal.interaction,
                     completion_criteria=(criterion,),
                     source_refs=criterion.source_refs,
                     depends_on=subgoal.depends_on,

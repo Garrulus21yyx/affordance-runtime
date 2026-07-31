@@ -52,6 +52,84 @@ CriterionRole: TypeAlias = Literal["completion", "precondition"]
 FrozenScalar: TypeAlias = str | bool | int | float | None
 
 
+class ValueExprKind(StrEnum):
+    LITERAL = "literal"
+    SOURCE_VALUE = "source_value"
+
+
+@dataclass(frozen=True)
+class ValueExpr:
+    kind: ValueExprKind
+    values: tuple[FrozenScalar, ...]
+    source_refs: tuple[SourceReference, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ValueExprKind):
+            raise ValueError("unsupported value expression kind")
+        _require_tuple("value expression values", self.values)
+        if not self.values:
+            raise ValueError("value expression cannot be empty")
+        for value in self.values:
+            _reject_mutable_value(value)
+        _require_tuple("value expression source refs", self.source_refs)
+        if not self.source_refs:
+            raise ValueError("value expression source refs cannot be empty")
+
+
+@dataclass(frozen=True)
+class ElementIntent:
+    target: str
+    source_refs: tuple[SourceReference, ...]
+    role: str = ""
+    ordinal: int | None = None
+    match_by_role: bool = False
+
+    def __post_init__(self) -> None:
+        _require_nonblank("element intent target", self.target)
+        _require_tuple("element intent source refs", self.source_refs)
+        if not self.source_refs:
+            raise ValueError("element intent source refs cannot be empty")
+        if self.role:
+            _require_nonblank("element intent role", self.role)
+        if self.ordinal is not None and self.ordinal < 1:
+            raise ValueError("element intent ordinal must be positive")
+        if self.match_by_role and not self.role:
+            raise ValueError("role-only element intent requires a role")
+
+
+@dataclass(frozen=True)
+class CollectionIntent:
+    collection: ElementIntent
+    members: ValueExpr
+
+
+@dataclass(frozen=True)
+class RelationIntent:
+    source: ElementIntent
+    destination: ElementIntent
+    relation: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank("relation intent relation", self.relation)
+
+
+@dataclass(frozen=True)
+class RegionIntent:
+    region: str
+    capability: str
+    source_refs: tuple[SourceReference, ...]
+
+    def __post_init__(self) -> None:
+        _require_nonblank("region intent region", self.region)
+        _require_nonblank("region intent capability", self.capability)
+        _require_tuple("region intent source refs", self.source_refs)
+        if not self.source_refs:
+            raise ValueError("region intent source refs cannot be empty")
+
+
+InteractionIntent: TypeAlias = ElementIntent | CollectionIntent | RelationIntent | RegionIntent
+
+
 @dataclass(frozen=True)
 class SourceReference:
     source_id: str
@@ -66,6 +144,37 @@ class SourceReference:
             _require_nonblank("claim_id", self.claim_id)
         _require_tuple("field_path", self.field_path)
         _require_no_blank_values("field_path", self.field_path)
+
+
+def interaction_for_state(
+    subject: str,
+    relation: StateCriterionRelation,
+    expected_value: FrozenScalar,
+    source_refs: tuple[SourceReference, ...],
+    interaction_values: tuple[str, ...] = (),
+) -> InteractionIntent:
+    """Project one sourced state outcome into its typed interaction intent."""
+
+    target = ElementIntent(
+        subject,
+        source_refs,
+        role=("collection" if relation == StateCriterionRelation.IS_SELECTED else ""),
+        match_by_role=relation == StateCriterionRelation.IS_SELECTED,
+    )
+    if (
+        relation != StateCriterionRelation.IS_SELECTED
+        or expected_value is None
+        or expected_value == ""
+    ):
+        return target
+    return CollectionIntent(
+        target,
+        ValueExpr(
+            ValueExprKind.LITERAL,
+            interaction_values or (expected_value,),
+            source_refs,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -156,6 +265,7 @@ Criterion: TypeAlias = (
 class StepSpec:
     step_id: str
     objective: str
+    interaction: InteractionIntent
     completion_criteria: tuple[Criterion, ...]
     source_refs: tuple[SourceReference, ...]
     depends_on: tuple[str, ...] = ()
@@ -164,6 +274,11 @@ class StepSpec:
     def __post_init__(self) -> None:
         _require_nonblank("step_id", self.step_id)
         _require_nonblank("objective", self.objective)
+        if not isinstance(
+            self.interaction,
+            (ElementIntent, CollectionIntent, RelationIntent, RegionIntent),
+        ):
+            raise ValueError("unsupported interaction intent")
         _require_tuple("completion_criteria", self.completion_criteria)
         if not self.completion_criteria:
             raise ValueError("step completion criteria cannot be empty")

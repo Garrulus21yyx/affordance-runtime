@@ -42,6 +42,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.verification import VerifierLadder, VerifierSpec
+from runtime_test_support import make_interaction
 
 
 def _affordance(
@@ -199,6 +200,7 @@ def _active_typed_outcome_state(
                 SubgoalSpec(
                     subgoal_id="enter-search",
                     objective=f"search box value {relation.value} {value}",
+                    interaction=make_interaction('search box value'),
                     success_criteria=(f"search box value {relation.value} {value}",),
                     evidence_requirements=("current search box value",),
                     operation_class=OperationClass.READ_ONLY,
@@ -233,6 +235,7 @@ def _active_completed_click_outcome_state(
                 SubgoalSpec(
                     subgoal_id="button-one-completed",
                     objective="button ONE is completed",
+                    interaction=make_interaction('button ONE'),
                     success_criteria=("button ONE is completed",),
                     evidence_requirements=("post-click observation for button ONE",),
                     operation_class=OperationClass.NAVIGATION,
@@ -837,6 +840,7 @@ def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress(
                 SubgoalSpec(
                     subgoal_id="slider-changed",
                     objective="slider value has changed",
+                    interaction=make_interaction('slider value'),
                     success_criteria=("slider value has changed",),
                     evidence_requirements=("post-slider observation",),
                     operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -849,6 +853,7 @@ def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress(
                 SubgoalSpec(
                     subgoal_id="checkbox-changed",
                     objective="checkbox state has changed",
+                    interaction=make_interaction('checkbox state'),
                     depends_on=("slider-changed",),
                     success_criteria=("checkbox state has changed",),
                     evidence_requirements=("post-checkbox observation",),

@@ -105,6 +105,7 @@ class LLMTaskObligationSpec(StrictModel):
     relation: TaskObligationRelation
     value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
     expected_value: str = Field(default="", max_length=480)
+    interaction_values: tuple[str, ...] = ()
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -705,7 +706,22 @@ def _canonicalize_requested_effects_draft(
     inferred_structure = _infer_task_structure(draft)
     if inferred_structure != draft.task_structure:
         draft = draft.model_copy(update={"task_structure": inferred_structure})
-    incomplete_provider_graph = not draft.candidate_source_claims or not draft.candidate_obligations
+    constraint_pairs = {
+        (item.target.strip().casefold(), item.value)
+        for item in draft.candidate_semantic_value_constraints
+        if item.relation == SemanticValueRelation.EXACT
+    }
+    obligation_pairs = {
+        (item.subject.strip().casefold(), value)
+        for item in draft.candidate_obligations
+        for value in item.interaction_values
+        or ((item.expected_value,) if item.expected_value else ())
+    }
+    incomplete_provider_graph = (
+        not draft.candidate_source_claims
+        or not draft.candidate_obligations
+        or not constraint_pairs.issubset(obligation_pairs)
+    )
     multi_effect_sequence = len(draft.requested_effects) > 1
     if (
         draft.task_structure != TaskStructure.FLAT
@@ -786,7 +802,8 @@ def _normalize_value_entry_draft(
     """Prevent explicit value-entry imperatives from becoming read-only tasks."""
 
     raw_text = request.raw_text
-    select_value, select_target = _extract_literal_selection_value(raw_text)
+    selection_values, select_target = _extract_literal_selection_values(raw_text)
+    select_value = ", ".join(selection_values)
     value_entry = _looks_like_value_entry_request(raw_text)
     literal_value = select_value or _extract_literal_entry_value(
         raw_text,
@@ -794,22 +811,36 @@ def _normalize_value_entry_draft(
     )
     if not select_value and not value_entry:
         return draft
-    updated_effects = tuple(
-        item.model_copy(
+    if selection_values and select_target != "slider" and draft.requested_effects:
+        selection_effect = draft.requested_effects[0].model_copy(
             update={
                 "operation_class": OperationClass.REVERSIBLE_WRITE,
-                **({"target": select_target} if select_target and index == 0 else {}),
+                "target": select_target,
             }
         )
-        if item.operation_class
-        in {
-            OperationClass.READ_ONLY,
-            OperationClass.EXTERNAL_SIDE_EFFECT,
-            *({OperationClass.NAVIGATION} if select_value else set()),
-        }
-        else item
-        for index, item in enumerate(draft.requested_effects)
-    )
+        trailing_effects = tuple(
+            item
+            for item in draft.requested_effects[1:]
+            if "submit" in item.target.casefold()
+        )
+        updated_effects = (selection_effect, *trailing_effects)
+    else:
+        updated_effects = tuple(
+            item.model_copy(
+                update={
+                    "operation_class": OperationClass.REVERSIBLE_WRITE,
+                    **({"target": select_target} if select_target and index == 0 else {}),
+                }
+            )
+            if item.operation_class
+            in {
+                OperationClass.READ_ONLY,
+                OperationClass.EXTERNAL_SIDE_EFFECT,
+                *({OperationClass.NAVIGATION} if select_value else set()),
+            }
+            else item
+            for index, item in enumerate(draft.requested_effects)
+        )
     constraints = draft.candidate_semantic_value_constraints
     if not literal_value:
         return draft.model_copy(
@@ -818,19 +849,22 @@ def _normalize_value_entry_draft(
                 "candidate_semantic_value_constraints": constraints,
             }
         )
-    if not any(
-        item.relation == SemanticValueRelation.EXACT
-        and item.value == literal_value
-        and item.target in {effect.target for effect in updated_effects}
-        for item in constraints
-    ):
-        target = updated_effects[0].target if updated_effects else ""
-        source_ref = updated_effects[0].source_ref if updated_effects else request.request_id
+    target = updated_effects[0].target if updated_effects else ""
+    source_ref = updated_effects[0].source_ref if updated_effects else request.request_id
+    literal_values = selection_values or ((literal_value,) if literal_value else ())
+    for value in literal_values:
+        if any(
+            item.relation == SemanticValueRelation.EXACT
+            and item.value == value
+            and item.target == target
+            for item in constraints
+        ):
+            continue
         constraints = (
             *constraints,
             SemanticValueConstraint(
                 relation=SemanticValueRelation.EXACT,
-                value=literal_value,
+                value=value,
                 target=target,
                 source_ref=source_ref,
             ),
@@ -923,21 +957,32 @@ def _extract_literal_entry_value(
 
 
 def _extract_literal_selection_value(raw_text: str) -> tuple[str, str]:
+    values, target = _extract_literal_selection_values(raw_text)
+    return ", ".join(values), target
+
+
+def _extract_literal_selection_values(raw_text: str) -> tuple[tuple[str, ...], str]:
     list_match = re.search(
-        r"\bselect\s+(.+?)\s+from\s+(?:the\s+)?(?:list|dropdown|select)\b",
+        r"\bselect\s+(.+?)\s+from\s+(?:the\s+)?((?:[\w-]+\s+){0,3}(?:list|dropdown|select))\b",
         raw_text,
         flags=re.IGNORECASE,
     )
     if list_match:
-        return list_match.group(1).strip(" .,'\""), "list"
+        raw_values = list_match.group(1).strip(" .,'\"")
+        values = tuple(
+            value.strip(" .,'\"")
+            for value in raw_values.split(",")
+            if value.strip(" .,'\"")
+        )
+        return values, list_match.group(2).strip().casefold()
     slider_match = re.search(
         r"\bselect\s+(-?\d+(?:\.\d+)?)\s+with\s+(?:the\s+)?slider\b",
         raw_text,
         flags=re.IGNORECASE,
     )
     if slider_match:
-        return slider_match.group(1).strip(" .,'\""), "slider"
-    return "", ""
+        return (slider_match.group(1).strip(" .,'\""),), "slider"
+    return (), ""
 
 
 def _normalize_coverage_claim_references(

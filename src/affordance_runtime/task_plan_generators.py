@@ -12,18 +12,14 @@ from typing import Awaitable, Protocol
 
 from affordance_runtime.simplified_runtime_contracts import (
     CriterionEvidencePolicy,
+    ElementIntent,
     EvidenceStrength,
-    SourceReference,
     StateCriterion,
     StateCriterionRelation,
     StepSpec,
+    interaction_for_state,
 )
-from affordance_runtime.task_intake import (
-    SourcedTaskClaim,
-    TaskObligationSpec,
-    TaskSpec,
-    TaskStructure,
-)
+from affordance_runtime.task_intake import TaskObligationSpec, TaskSpec, TaskStructure
 from affordance_runtime.task_plan_contracts import (
     PlanCandidate,
     TaskPlanGeneratorSource,
@@ -33,6 +29,7 @@ from affordance_runtime.task_planning import (
     TaskPlanCandidate,
     TaskPlanningContext,
 )
+from affordance_runtime.task_source_references import subgoal_source_refs, task_source_refs
 
 
 class PlanCandidateGeneratorPort(Protocol):
@@ -50,7 +47,7 @@ class RulePlanCandidateGenerator:
 
     def generate(self, context: TaskPlanningContext) -> PlanCandidate:
         task_spec = context.task_spec
-        source_refs = _task_source_refs(task_spec)
+        source_refs = task_source_refs(task_spec)
         return PlanCandidate(
             task_spec_identity=task_spec.identity,
             task_revision=task_spec.revision,
@@ -74,10 +71,11 @@ class PricingPlanCandidateGenerator:
             StepSpec(
                 step_id="reveal-pro",
                 objective="Reveal the Pro plan limits",
+                interaction=ElementIntent("pricing.pro", task_source_refs(context.task_spec)),
                 completion_criteria=(
                     StateCriterion(
                         criterion_id="criterion:reveal-pro",
-                        source_refs=_task_source_refs(context.task_spec),
+                        source_refs=task_source_refs(context.task_spec),
                         subject="pricing.pro",
                         relation=StateCriterionRelation.IS_VISIBLE,
                         expected_value=True,
@@ -87,15 +85,18 @@ class PricingPlanCandidateGenerator:
                         ),
                     ),
                 ),
-                source_refs=_task_source_refs(context.task_spec),
+                source_refs=task_source_refs(context.task_spec),
             ),
             StepSpec(
                 step_id="reveal-enterprise",
                 objective="Reveal the Enterprise plan limits",
+                interaction=ElementIntent(
+                    "pricing.enterprise", task_source_refs(context.task_spec)
+                ),
                 completion_criteria=(
                     StateCriterion(
                         criterion_id="criterion:reveal-enterprise",
-                        source_refs=_task_source_refs(context.task_spec),
+                        source_refs=task_source_refs(context.task_spec),
                         subject="pricing.enterprise",
                         relation=StateCriterionRelation.IS_VISIBLE,
                         expected_value=True,
@@ -105,7 +106,7 @@ class PricingPlanCandidateGenerator:
                         ),
                     ),
                 ),
-                source_refs=_task_source_refs(context.task_spec),
+                source_refs=task_source_refs(context.task_spec),
                 depends_on=("reveal-pro",),
             ),
         )
@@ -117,7 +118,7 @@ class PricingPlanCandidateGenerator:
             generator_version="tpa-5-draft",
             steps=steps,
             assumptions=("pricing cards can be revealed independently",),
-            source_refs=_task_source_refs(context.task_spec),
+            source_refs=task_source_refs(context.task_spec),
         )
 
 
@@ -159,11 +160,15 @@ def _steps_from_task_spec(
             )
             for obligation in task_spec.obligations
         )
-    source_refs = _task_source_refs(task_spec)
+    source_refs = task_source_refs(task_spec)
     return (
         StepSpec(
             step_id="step:implicit",
             objective=task_spec.objective,
+            interaction=ElementIntent(
+                task_spec.targets[0] if task_spec.targets else task_spec.task_id,
+                source_refs,
+            ),
             completion_criteria=(
                 StateCriterion(
                     criterion_id="criterion:step:implicit",
@@ -187,7 +192,7 @@ def plan_candidate_from_provider_candidate(
     context: TaskPlanningContext,
 ) -> PlanCandidate:
     task_spec = context.task_spec
-    source_refs = _task_source_refs(task_spec)
+    source_refs = task_source_refs(task_spec)
     steps = []
     for item in candidate.subgoals:
         outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
@@ -195,6 +200,12 @@ def plan_candidate_from_provider_candidate(
             StepSpec(
                 step_id=item.subgoal_id,
                 objective=outcome.description(),
+                interaction=interaction_for_state(
+                    outcome.subject,
+                    StateCriterionRelation(outcome.relation),
+                    outcome.value or None,
+                    source_refs,
+                ),
                 depends_on=item.depends_on,
                 completion_criteria=(
                     StateCriterion(
@@ -230,12 +241,19 @@ def _step_from_obligation(
     *,
     default_evidence_source_kind: str,
 ) -> StepSpec:
-    source_refs = _subgoal_source_refs(obligation.obligation_id, task_spec)
+    source_refs = subgoal_source_refs(obligation.obligation_id, task_spec)
     objective = _objective_for_obligation(obligation, task_spec)
     _reject_forbidden_step_content(objective)
     return StepSpec(
         step_id=obligation.obligation_id,
         objective=objective,
+        interaction=interaction_for_state(
+            obligation.subject,
+            StateCriterionRelation(obligation.relation),
+            obligation.expected_value or None,
+            source_refs,
+            obligation.interaction_values,
+        ),
         depends_on=obligation.depends_on,
         completion_criteria=(
             StateCriterion(
@@ -266,47 +284,6 @@ def _objective_for_obligation(
     if obligation.expected_value is not None:
         return f"{obligation.subject} {obligation.relation.value} {obligation.expected_value}"
     return f"{obligation.subject} {obligation.relation.value}"
-
-
-def _task_source_refs(task_spec: TaskSpec) -> tuple[SourceReference, ...]:
-    refs: list[SourceReference] = []
-    for claim in task_spec.source_claims:
-        refs.extend(_claim_source_refs(claim))
-    if refs:
-        return tuple(refs)
-    return (
-        SourceReference(
-            source_id=task_spec.source_request_ref,
-            source_unit_id=f"{task_spec.source_request_ref}:whole_request",
-        ),
-    )
-
-
-def _subgoal_source_refs(subgoal_id: str, task_spec: TaskSpec) -> tuple[SourceReference, ...]:
-    obligation = next((item for item in task_spec.obligations if item.obligation_id == subgoal_id), None)
-    if obligation is None:
-        return _task_source_refs(task_spec)
-    claims = {item.claim_id: item for item in task_spec.source_claims}
-    refs: list[SourceReference] = []
-    for claim_id in obligation.claim_ids:
-        claim = claims.get(claim_id)
-        if claim is not None:
-            refs.extend(_claim_source_refs(claim))
-    if refs:
-        return tuple(refs)
-    return _task_source_refs(task_spec)
-
-
-def _claim_source_refs(claim: SourcedTaskClaim) -> tuple[SourceReference, ...]:
-    source_unit_ids = claim.source_unit_ids or (f"{claim.source_ref}:{claim.claim_id}",)
-    return tuple(
-        SourceReference(
-            source_id=claim.source_ref,
-            source_unit_id=source_unit_id,
-            claim_id=claim.claim_id,
-        )
-        for source_unit_id in source_unit_ids
-    )
 
 
 def _reject_forbidden_step_content(value: str) -> None:

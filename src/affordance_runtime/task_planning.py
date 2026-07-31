@@ -22,6 +22,11 @@ from affordance_runtime.criteria import (
 )
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.semantics import CriterionRelation
+from affordance_runtime.simplified_runtime_contracts import (
+    InteractionIntent,
+    StateCriterionRelation,
+    interaction_for_state,
+)
 from affordance_runtime.task_intake import (
     OperationClass,
     StrictModel,
@@ -31,6 +36,7 @@ from affordance_runtime.task_intake import (
     TaskSpec,
     TaskStructure,
 )
+from affordance_runtime.task_source_references import obligation_source_refs, task_source_refs
 from affordance_runtime.verification import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
@@ -82,6 +88,7 @@ class TaskPlanValidationStatus(StrEnum):
 class SubgoalSpec(StrictModel):
     subgoal_id: str = Field(min_length=1)
     objective: str = Field(min_length=1)
+    interaction: InteractionIntent
     depends_on: tuple[str, ...] = ()
     success_criteria: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
@@ -897,28 +904,23 @@ class TaskPlanValidator:
             repairable = [
                 issue
                 for issue in repairable
-                if not (
-                    issue.detail == entry_state_issue.detail
-                    and issue.code == "outcome_value_forbidden"
-                )
+                if (issue.detail, issue.code)
+                != (entry_state_issue.detail, "outcome_value_forbidden")
             ]
             repairable.append(entry_state_issue)
         else:
-            entry_issue = task_plan_entry_state_support_issue(
-                plan,
-                planning_context,
-            ) or task_plan_entry_feasibility_issue(plan, planning_context)
+            entry_issue = task_plan_entry_state_support_issue(plan, planning_context)
+            entry_issue = entry_issue or task_plan_entry_feasibility_issue(plan, planning_context)
             if entry_issue is not None:
                 repairable.append(entry_issue)
         dependency_targets = {dependency for item in plan.subgoals for dependency in item.depends_on}
         if not any(item.subgoal_id not in dependency_targets for item in plan.subgoals):
             fatal.append(TaskPlanValidationIssue(code="missing_terminal_subgoal"))
 
-        if fatal:
-            return TaskPlanValidationReport(status=TaskPlanValidationStatus.REJECT, issues=tuple(fatal + repairable))
-        if repairable:
-            return TaskPlanValidationReport(status=TaskPlanValidationStatus.REPAIRABLE, issues=tuple(repairable))
-        return TaskPlanValidationReport(status=TaskPlanValidationStatus.ACCEPT)
+        status = TaskPlanValidationStatus.REJECT if fatal else (
+            TaskPlanValidationStatus.REPAIRABLE if repairable else TaskPlanValidationStatus.ACCEPT
+        )
+        return TaskPlanValidationReport(status=status, issues=tuple(fatal + repairable))
 
 
 def task_plan_entry_feasibility_issue(
@@ -1329,6 +1331,10 @@ class TaskObligationOutcomeCompiler:
                 else ""
             ),
         )
+        source_refs = obligation_source_refs(
+            obligation,
+            context.task_spec if context is not None else None,
+        )
         return SubgoalSpec(
             subgoal_id=obligation.obligation_id,
             objective=outcome.description(),
@@ -1342,19 +1348,26 @@ class TaskObligationOutcomeCompiler:
             ),
             action_family=_infer_obligation_action_family(obligation, task_operation, relation, context),
             outcome=outcome,
+            interaction=interaction_for_state(
+                outcome.subject,
+                StateCriterionRelation(outcome.relation),
+                outcome.value,
+                source_refs,
+                obligation.interaction_values,
+            ),
         )
 
 
 @dataclass(frozen=True)
 class RuleTaskPlanner:
-    """Compile immutable obligations, retaining the legacy flat fallback."""
+    """Compile canonical immutable obligations."""
 
     obligation_compiler: TaskObligationOutcomeCompiler = TaskObligationOutcomeCompiler()
 
     def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        if context.task_spec.obligations:
-            return self.obligation_compiler.compile(context)
-        return synthetic_task_plan(context, generated_by=TaskPlanSource.RULE)
+        if not context.task_spec.obligations:
+            raise ValueError("rule task planning requires canonical obligations")
+        return self.obligation_compiler.compile(context)
 
 
 TASK_PLANNER_PROMPT_VERSION = "task-planner-v12"
@@ -1452,13 +1465,20 @@ def _legacy_plan_from_provider_candidate(
         supersedes_plan_id=context.current_plan_id,
         based_on_state_version=context.state_version,
         generated_by=TaskPlanSource.LLM,
-        subgoals=tuple(_legacy_subgoal_from_provider_candidate(item) for item in candidate.subgoals),
+        subgoals=tuple(
+            _legacy_subgoal_from_provider_candidate(item, context)
+            for item in candidate.subgoals
+        ),
         assumptions=candidate.assumptions,
     )
 
 
-def _legacy_subgoal_from_provider_candidate(item: TaskPlanSubgoalCandidate) -> SubgoalSpec:
+def _legacy_subgoal_from_provider_candidate(
+    item: TaskPlanSubgoalCandidate,
+    context: TaskPlanningContext,
+) -> SubgoalSpec:
     outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
+    source_refs = task_source_refs(context.task_spec)
     return SubgoalSpec(
         subgoal_id=item.subgoal_id,
         objective=outcome.description(),
@@ -1468,6 +1488,12 @@ def _legacy_subgoal_from_provider_candidate(item: TaskPlanSubgoalCandidate) -> S
         operation_class=item.operation_class,
         action_family=TaskPlanActionFamily(item.action_family),
         outcome=outcome,
+        interaction=interaction_for_state(
+            outcome.subject,
+            StateCriterionRelation(outcome.relation),
+            outcome.value,
+            source_refs,
+        ),
         max_actions=item.max_actions,
         max_recoveries=item.max_recoveries,
     )
@@ -1475,23 +1501,16 @@ def _legacy_subgoal_from_provider_candidate(item: TaskPlanSubgoalCandidate) -> S
 
 @dataclass(frozen=True)
 class PlanningRouter:
-    """Routes simple work to the flat path and delegates complex work explicitly."""
+    """Compile canonical obligations or delegate explicit open-world decomposition."""
 
-    rule_planner: TaskPlannerPort = field(default_factory=RuleTaskPlanner)
+    obligation_compiler: TaskObligationOutcomeCompiler = TaskObligationOutcomeCompiler()
     complex_planner: TaskPlannerPort | None = None
 
-    def plan(
-        self,
-        context: TaskPlanningContext,
-        *,
-        complex_task: bool | None = None,
-    ) -> TaskPlan | Awaitable[TaskPlan]:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan | Awaitable[TaskPlan]:
         if context.task_spec.obligations:
-            return self.rule_planner.plan(context)
-        if complex_task is None:
-            complex_task = context.task_spec.task_structure == TaskStructure.MULTI_STAGE
-        if not complex_task:
-            return self.rule_planner.plan(context)
+            return self.obligation_compiler.compile(context)
+        if context.task_spec.task_structure != TaskStructure.MULTI_STAGE:
+            raise ValueError("flat task planning requires canonical obligations")
         if self.complex_planner is None:
             raise ValueError("complex task requires an LLMTaskPlanner or accepted task planner")
         return self.complex_planner.plan(context)
@@ -1578,35 +1597,6 @@ def _planning_url_origin(value: str) -> str:
     if parsed.scheme and parsed.netloc:
         return f"{parsed.scheme}://{parsed.netloc}"
     return parsed.scheme or ""
-
-
-def synthetic_task_plan(
-    context: TaskPlanningContext,
-    *,
-    generated_by: TaskPlanSource = TaskPlanSource.RULE,
-) -> TaskPlan:
-    """Preserve the existing flat action loop as one verifier-backed subgoal."""
-
-    task_spec = context.task_spec
-    return TaskPlan(
-        plan_id=f"plan-{uuid4().hex}",
-        task_id=task_spec.task_id,
-        task_revision=task_spec.revision,
-        plan_version=context.current_plan_version + 1,
-        supersedes_plan_id=context.current_plan_id,
-        based_on_state_version=context.state_version,
-        generated_by=generated_by,
-        subgoals=(
-            SubgoalSpec(
-                subgoal_id="subgoal-1",
-                objective=task_spec.objective,
-                success_criteria=task_spec.success_criteria,
-                evidence_requirements=task_spec.evidence_requirements or task_spec.success_criteria,
-                operation_class=task_spec.operation_class,
-            ),
-        ),
-        assumptions=(),
-    )
 
 
 def _has_cycle(subgoals: tuple[SubgoalSpec, ...]) -> bool:

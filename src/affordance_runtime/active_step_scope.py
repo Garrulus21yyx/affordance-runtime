@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from affordance_runtime.simplified_runtime_contracts import (
+    CollectionIntent,
+    ElementIntent,
+    RelationIntent,
     StepActivityStatus,
     StepSpec,
 )
@@ -69,7 +72,8 @@ class ActiveStepScope:
             snapshot_id=snapshot_id,
             activity_status=activity_status,
             active_step_id=step.step_id,
-            permitted_target_ids=_criterion_subjects(step),
+            permitted_target_ids=_interaction_target_ids(step),
+            permitted_destination_ids=_interaction_destination_ids(step),
         )
 
     @classmethod
@@ -153,13 +157,22 @@ class ActiveStepScope:
         return ActiveStepScopeDecision(True, "within_active_step_scope")
 
 
-def _criterion_subjects(step: StepSpec) -> tuple[str, ...]:
-    subjects: list[str] = []
-    for criterion in step.completion_criteria + step.preconditions:
-        subject = getattr(criterion, "subject", "")
-        if isinstance(subject, str) and subject.strip():
-            subjects.append(subject)
-    return tuple(dict.fromkeys(subjects))
+def _interaction_target_ids(step: StepSpec) -> tuple[str, ...]:
+    interaction = step.interaction
+    if isinstance(interaction, RelationIntent):
+        return (interaction.source.target,)
+    if isinstance(interaction, CollectionIntent):
+        return (interaction.collection.target,)
+    if isinstance(interaction, ElementIntent):
+        return (interaction.target,)
+    return ()
+
+
+def _interaction_destination_ids(step: StepSpec) -> tuple[str, ...]:
+    interaction = step.interaction
+    if isinstance(interaction, RelationIntent):
+        return (interaction.destination.target,)
+    return ()
 
 
 def _require_nonblank(label: str, value: str) -> None:

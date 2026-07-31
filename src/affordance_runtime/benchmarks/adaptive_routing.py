@@ -430,6 +430,7 @@ def run_adaptive_routing_case(
             accepted_skill.artifact_ids if accepted_skill is not None else ()
         ),
         artifacts=artifacts,
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)

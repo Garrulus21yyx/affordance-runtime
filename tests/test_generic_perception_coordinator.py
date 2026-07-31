@@ -189,6 +189,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         executor=VisualExecutor(pointer),
         contract_builder=VerifiedVisualContractBuilder(),  # type: ignore[arg-type]
         artifacts=ArtifactStore(tmp_path / "artifacts"),
+        task_planner=None,
     )
     result = coordinator.run_sync(RunRequest(task_spec=task))
 
@@ -357,6 +358,7 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
         executor=executors,
         contract_builder=VerifiedSaveContractBuilder(),  # type: ignore[arg-type]
         artifacts=ArtifactStore(tmp_path / "artifacts"),
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
@@ -448,6 +450,7 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
         executor=VisualExecutor(CanvasPointer(page)),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
         budget=RunBudget(max_active_perception_observations=1),
+        task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE

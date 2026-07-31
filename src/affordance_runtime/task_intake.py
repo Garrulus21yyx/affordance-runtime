@@ -177,6 +177,7 @@ class TaskObligationSpec(StrictModel):
     relation: TaskObligationRelation
     value_source: TaskObligationValueSource = TaskObligationValueSource.NONE
     expected_value: str = Field(default="", max_length=480)
+    interaction_values: tuple[str, ...] = ()
     value_obligation_id: str = Field(default="", max_length=120)
     claim_ids: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
@@ -200,6 +201,15 @@ class TaskObligationSpec(StrictModel):
             raise ValueError("task obligation references cannot be blank")
         if any(not item.strip() for item in self.evidence_requirements):
             raise ValueError("task obligation evidence requirements cannot be blank")
+        if len(self.interaction_values) != len(set(self.interaction_values)) or any(
+            not item.strip() for item in self.interaction_values
+        ):
+            raise ValueError("task obligation interaction values must be unique and nonblank")
+        if self.interaction_values and (
+            self.relation != TaskObligationRelation.IS_SELECTED
+            or self.value_source != TaskObligationValueSource.LITERAL
+        ):
+            raise ValueError("interaction values require a literal selection obligation")
         if self.construction_source == GraphConstructionSource.CANONICAL_COMPILER and not self.typed_evidence_requirements:
             raise ValueError("canonical task obligation requires typed evidence")
         if self.blocking and not self.evidence_requirements:

@@ -546,6 +546,7 @@ def run_browsergym_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
+            task_planner=None,
         ).run_sync(RunRequest(task_spec=task_spec))
         planner_error = next(
             (

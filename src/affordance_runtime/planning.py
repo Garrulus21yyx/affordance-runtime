@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -11,10 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from affordance_runtime.active_step_scope import ActiveStepScope
-from affordance_runtime.active_step_targeting import (
-    ActiveStepTargetView,
-    resolve_active_step_target_ids,
-)
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.collection_window import (
     resolve_global_ordinal_constraint,
@@ -32,6 +27,11 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.grounding import RoutePlan, UnifiedAffordance
+from affordance_runtime.interaction_grounding import (
+    GroundingStatus,
+    GroundingTarget,
+    InteractionGrounder,
+)
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
 from affordance_runtime.routing import CostAwareRouter
 from affordance_runtime.scope_authorization import ProposalScopeEvaluator, ScopeRejectionKind
@@ -244,7 +244,7 @@ class ProposalRejected(ValueError):
         super().__init__(f"{code.value}: {detail}" if detail else code.value)
 
 
-def _legacy_active_step_scope(
+def _active_step_scope(
     state: StateKernel,
     snapshot: BrowserSnapshot,
 ) -> ActiveStepScope | None:
@@ -257,16 +257,13 @@ def _legacy_active_step_scope(
         (item for item in state.task_plan.subgoals if item.subgoal_id == active_step_id),
         None,
     )
-    if subgoal is None or subgoal.outcome is None:
+    if subgoal is None:
         return None
-    subject = subgoal.outcome.subject
-    if not subject:
-        return None
-    target_ids = resolve_active_step_target_ids(
-        subject=subject,
-        affordances=_snapshot_active_step_target_views(snapshot),
+    grounding = InteractionGrounder().ground(
+        subgoal.interaction,
+        _snapshot_grounding_targets(snapshot),
     )
-    if not target_ids:
+    if grounding.status != GroundingStatus.RESOLVED:
         return None
     return ActiveStepScope(
         task_revision=state.task_plan.task_revision,
@@ -274,17 +271,20 @@ def _legacy_active_step_scope(
         snapshot_id=snapshot.observation.snapshot_id,
         activity_status=StepActivityStatus.ACTIVE,
         active_step_id=active_step_id,
-        permitted_target_ids=target_ids,
+        permitted_target_ids=tuple(item.target_id for item in grounding.targets),
+        permitted_destination_ids=tuple(
+            item.target_id for item in grounding.destinations
+        ),
         permitted_action_kinds=((subgoal.action_family.value,) if subgoal.action_family is not None else ()),
     )
 
 
-def _snapshot_active_step_target_views(
+def _snapshot_grounding_targets(
     snapshot: BrowserSnapshot,
-) -> tuple[ActiveStepTargetView, ...]:
+) -> tuple[GroundingTarget, ...]:
     source_by_id = {item.id: item for item in snapshot.affordance_model.affordances}
     if snapshot.unified_affordances:
-        views: list[ActiveStepTargetView] = []
+        views: list[GroundingTarget] = []
         for item in snapshot.unified_affordances:
             state: Mapping[str, Any] = {}
             source = next(
@@ -298,21 +298,21 @@ def _snapshot_active_step_target_views(
             if source is not None:
                 state = source.state
             views.append(
-                ActiveStepTargetView(
+                GroundingTarget(
                     target_id=item.semantic_target_id,
                     role=item.role,
                     label=item.label,
-                    actions=tuple(sorted(item.supported_actions)),
+                    supported_actions=tuple(sorted(item.supported_actions)),
                     state=state,
                 )
             )
         return tuple(views)
     return tuple(
-        ActiveStepTargetView(
+        GroundingTarget(
             target_id=item.id,
             role=item.role,
             label=item.label,
-            actions=(item.action,),
+            supported_actions=(item.action,),
             state=item.state,
         )
         for item in snapshot.affordance_model.affordances
@@ -357,8 +357,8 @@ class PlannerProposalValidator:
                 proposal.target_affordance_id,
             )
         self._validate_target(proposal.target_affordance_id, proposal.action_kind, snapshot)
-        self._validate_active_step_scope(proposal, state, snapshot)
-        self._validate_task_scope(proposal, task_spec, snapshot)
+        if not self._validate_active_step_scope(proposal, state, snapshot):
+            self._validate_task_scope(proposal, task_spec, snapshot)
         if proposal.action_kind != PlannerActionKind.DRAG:
             if proposal.destination_affordance_id:
                 raise ProposalRejected(
@@ -378,13 +378,13 @@ class PlannerProposalValidator:
         proposal: PlannerProposal,
         state: StateKernel,
         snapshot: BrowserSnapshot,
-    ) -> None:
-        scope = _legacy_active_step_scope(state, snapshot)
+    ) -> bool:
+        scope = _active_step_scope(state, snapshot)
         if scope is None:
-            return
+            return False
         decision = scope.evaluate(proposal)
         if decision.allowed:
-            return
+            return True
         raise ProposalRejected(
             ProposalRejectionCode.TARGET_OUT_OF_SCOPE,
             decision.reason_code,
@@ -418,13 +418,6 @@ class PlannerProposalValidator:
             ordinal_constraint=ordinal_constraint,
         )
         if decision.authorized:
-            return
-        resolved_target_ids = resolve_active_step_target_ids(
-            subject=task_spec.objective,
-            targets=task_spec.targets,
-            affordances=_snapshot_active_step_target_views(snapshot),
-        )
-        if proposal.target_affordance_id in resolved_target_ids:
             return
         rejection = (
             ProposalRejectionCode.UNREQUESTED_EFFECT
@@ -674,70 +667,15 @@ def resolve_task_plan_progress_target(
         or proposal.snapshot_id != snapshot.observation.snapshot_id
     ):
         return None
-    target_tokens = _progress_target_tokens(
-        _progress_target_description(proposal.target_affordance_id, snapshot)
-    )
-    if not target_tokens:
-        return None
-    completed = set(state.task_progress.completed_subgoal_ids)
-    unavailable = completed | set(state.task_progress.failed_subgoal_ids)
-    candidates = tuple(
-        item
-        for item in state.task_plan.subgoals
-        if item.subgoal_id not in unavailable
-        and set(item.depends_on).issubset(completed)
-        and (
-            item.action_family is None
-            or item.action_family.value == proposal.action_kind.value
-        )
-        and item.outcome is not None
-        and _progress_target_tokens(item.outcome.subject).issubset(target_tokens)
-    )
-    if len(candidates) != 1:
+    scope = _active_step_scope(state, snapshot)
+    if scope is None or not scope.evaluate(proposal).allowed:
         return None
     return TaskPlanProgressTarget(
         plan_id=state.task_plan.plan_id,
         plan_version=state.task_plan.plan_version,
-        subgoal_id=candidates[0].subgoal_id,
+        subgoal_id=scope.active_step_id or "",
         based_on_state_version=state.version,
     )
-
-
-def _progress_target_tokens(value: str) -> set[str]:
-    ignored = {
-        "semantic",
-        "state",
-        "value",
-        "control",
-        "field",
-        "button",
-    }
-    return {
-        token
-        for token in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
-        if token and token not in ignored
-    }
-
-
-def _progress_target_description(
-    semantic_target_id: str,
-    snapshot: BrowserSnapshot,
-) -> str:
-    label, role = _semantic_target_label_role(semantic_target_id, snapshot)
-    state_values: list[str] = []
-    affordance = next(
-        (item for item in snapshot.affordance_model.affordances if item.id == semantic_target_id),
-        None,
-    )
-    if affordance is not None:
-        state_values.extend(str(value) for value in affordance.state.values())
-    unified = next(
-        (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
-        None,
-    )
-    if unified is not None:
-        state_values.extend(value for _key, value in unified.accepted_state)
-    return " ".join((semantic_target_id, label, role, *state_values))
 
 
 @dataclass(frozen=True)

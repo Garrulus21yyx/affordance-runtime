@@ -389,6 +389,7 @@ class GeneralistLMPlanner:
                 state_version=request.state_version,
                 snapshot_id=request.snapshot_id,
                 active_step_id=request.active_step_id,
+                grounding=request.grounding,
                 choices=request.choices,
             ),
         )

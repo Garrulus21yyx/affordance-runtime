@@ -362,6 +362,7 @@ def _run_fixture(
         artifacts=ArtifactStore(artifact_root),
         runtime_profile_digest=runtime_profile_digest,
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
+        task_planner=None,
     ).run_sync(
         RunRequest(
             task_spec=TaskSpec(

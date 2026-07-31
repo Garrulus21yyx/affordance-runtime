@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
     EvidenceStrength,
+    SourceReference,
     StepActivityStatus,
 )
 from affordance_runtime.simplified_step_projection import (
@@ -104,6 +106,16 @@ def _task_spec() -> TaskSpec:
 
 
 def _plan(task: TaskSpec) -> TaskPlan:
+    name_source = SourceReference(
+        source_id="source:user:1",
+        source_unit_id="unit:type-name",
+        claim_id="claim:type-name",
+    )
+    submit_source = SourceReference(
+        source_id="source:user:1",
+        source_unit_id="unit:submit",
+        claim_id="claim:submit",
+    )
     return TaskPlan(
         plan_id="plan:1",
         task_id=task.task_id,
@@ -122,6 +134,7 @@ def _plan(task: TaskSpec) -> TaskPlan:
                     relation=SubgoalOutcomeRelation.EQUALS,
                     value="Alice",
                 ),
+                interaction=ElementIntent("semantic:name", (name_source,)),
                 success_criteria=("name equals Alice",),
                 evidence_requirements=("evidence:name",),
             ),
@@ -134,6 +147,11 @@ def _plan(task: TaskSpec) -> TaskPlan:
                 outcome=SubgoalOutcome(
                     subject="semantic:submit",
                     relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+                interaction=ElementIntent(
+                    "semantic:submit",
+                    (submit_source,),
+                    role="button",
                 ),
                 success_criteria=("form submitted",),
                 evidence_requirements=("evidence:submit",),

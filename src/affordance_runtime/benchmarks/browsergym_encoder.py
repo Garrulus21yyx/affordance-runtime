@@ -20,6 +20,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
+from affordance_runtime.simplified_runtime_contracts import CollectionIntent
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
@@ -498,6 +499,11 @@ def declare_browsergym_active_subgoal_evidence(
         relation=active.outcome.relation,
         outcome_value=active.outcome.value,
         affordance=affordance,
+        collection_intent=(
+            active.interaction
+            if isinstance(active.interaction, CollectionIntent)
+            else None
+        ),
     ):
         return verifier_plan
     declared = list(verifier_plan)
@@ -662,6 +668,7 @@ def _browsergym_postcondition_proves_outcome(
     relation: SubgoalOutcomeRelation,
     outcome_value: str,
     affordance: Affordance,
+    collection_intent: CollectionIntent | None = None,
 ) -> bool:
     expected = verifier.expected if isinstance(verifier.expected, Mapping) else {}
     normalized_outcome = browsergym_fill_value(affordance.state, outcome_value.strip())
@@ -688,10 +695,21 @@ def _browsergym_postcondition_proves_outcome(
             if isinstance(options, Sequence) and not isinstance(options, (str, bytes))
             else [str(options)]
         )
-        return bool(normalized_outcome) and (
+        intended_members = (
+            [str(item) for item in collection_intent.members.values]
+            if collection_intent is not None
+            else [normalized_outcome]
+        )
+        return bool(intended_members) and (
+            (relation == SubgoalOutcomeRelation.IS_SELECTED and selected == intended_members)
+            or
             (relation == SubgoalOutcomeRelation.EQUALS and selected == [normalized_outcome])
             or (relation == SubgoalOutcomeRelation.CONTAINS and normalized_outcome in selected)
-            or (relation == SubgoalOutcomeRelation.IS_SELECTED and normalized_outcome in selected)
+            or (
+                collection_intent is None
+                and relation == SubgoalOutcomeRelation.IS_SELECTED
+                and normalized_outcome in selected
+            )
         )
     if action.name == "press" and verifier.kind == "control_state":
         return relation == SubgoalOutcomeRelation.HAS_CHANGED and "changed_from" in expected

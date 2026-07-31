@@ -27,6 +27,7 @@ class FailureKind(StrEnum):
     OBSERVATION_INSUFFICIENT = "observation_insufficient"
     PROVIDER_OR_SCHEMA_FAILURE = "provider_or_schema_failure"
     AUTHORITY_BLOCKED = "authority_blocked"
+    CAPABILITY_MISSING = "capability_missing"
     UNKNOWN = "unknown"
 
 

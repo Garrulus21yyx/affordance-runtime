@@ -6,6 +6,7 @@ import pytest
 
 from affordance_runtime.simplified_runtime_contracts import (
     CriterionEvidencePolicy,
+    ElementIntent,
     EvidenceStrength,
     SourceReference,
     StateCriterion,
@@ -81,6 +82,7 @@ def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepS
     return StepSpec(
         step_id=step_id,
         objective=f"complete {step_id}",
+        interaction=ElementIntent("semantic:setting", (_source(),)),
         completion_criteria=(_criterion(f"criterion:{step_id}"),),
         source_refs=(_source(),),
         depends_on=depends_on,
@@ -97,6 +99,7 @@ def _criterion_step(
     return StepSpec(
         step_id=step_id,
         objective=f"{subject} {relation.value}",
+        interaction=ElementIntent(subject, (_source(),)),
         completion_criteria=(
             _state_criterion(
                 criterion_id=f"criterion:{step_id}",

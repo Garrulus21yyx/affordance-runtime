@@ -46,6 +46,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.task_skills import TaskSkillRuntimeDecision
+from runtime_test_support import make_interaction
 
 
 def _snapshot(sequence: int) -> BrowserSnapshot:
@@ -284,6 +285,7 @@ class FailOnceTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="inspect",
                     objective="Inspect the selected account",
+                    interaction=make_interaction('Inspect the selected account'),
                     success_criteria=("selected account is identified",),
                     evidence_requirements=("current account evidence",),
                     operation_class=OperationClass.READ_ONLY,

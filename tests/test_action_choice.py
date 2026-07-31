@@ -5,13 +5,19 @@ import asyncio
 import pytest
 
 from affordance_runtime.active_step_scope import ActiveStepScope
+from affordance_runtime.interaction_grounding import GroundingResult, GroundingStatus
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
+    CollectionIntent,
+    ElementIntent,
+    InteractionIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
     StepSpec,
+    ValueExpr,
+    ValueExprKind,
 )
 from affordance_runtime.unified_observation import (
     UnifiedObservation,
@@ -47,10 +53,16 @@ def _criterion(
     )
 
 
-def _step(*, criterion: StateCriterion, step_id: str = "step:1") -> StepSpec:
+def _step(
+    *,
+    criterion: StateCriterion,
+    step_id: str = "step:1",
+    interaction: InteractionIntent | None = None,
+) -> StepSpec:
     return StepSpec(
         step_id=step_id,
         objective="Complete the current step",
+        interaction=interaction or ElementIntent(criterion.subject, (_source(),)),
         completion_criteria=(criterion,),
         source_refs=(_source(),),
     )
@@ -311,7 +323,7 @@ def test_action_choice_builder_distinguishes_unresolved_target_from_no_action() 
 
     assert isinstance(result, ActionChoiceFailure)
     assert result.kind == FailureKind.GROUNDING_AMBIGUOUS
-    assert result.reason_code == "action_choice_target_unresolved"
+    assert result.reason_code == "interaction_target_absent"
 
 
 def test_action_choice_builder_resolves_unique_exact_label_subject() -> None:
@@ -460,7 +472,14 @@ def test_action_choice_builder_creates_select_option_choice() -> None:
         relation=CriterionRelation.IS_SELECTED,
         expected_value="Blue",
     )
-    step = _step(criterion=criterion, step_id="step:select")
+    step = _step(
+        criterion=criterion,
+        step_id="step:select",
+        interaction=CollectionIntent(
+            ElementIntent("Color", (_source(),), role="combobox"),
+            ValueExpr(ValueExprKind.LITERAL, ("Blue",), (_source(),)),
+        ),
+    )
 
     result = ActionChoiceBuilder().build(
         task_revision=1,
@@ -486,6 +505,45 @@ def test_action_choice_builder_creates_select_option_choice() -> None:
     assert choice.parameters == {"option": "Blue"}
 
 
+def test_action_choice_builder_binds_multiple_typed_collection_members() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:members",
+        subject="legacy collection completion text",
+        relation=CriterionRelation.IS_SELECTED,
+        expected_value="Lumen, Vela",
+    )
+    step = _step(
+        criterion=criterion,
+        step_id="step:members",
+        interaction=CollectionIntent(
+            ElementIntent("Results", (_source(),), role="combobox"),
+            ValueExpr(ValueExprKind.LITERAL, ("Lumen", "Vela"), (_source(),)),
+        ),
+    )
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:results",
+                surface="dom",
+                role="combobox",
+                label="Results",
+                supported_actions=("select_option",),
+                state={"selected_options": (), "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].parameters == {"option": ["Lumen", "Vela"]}
+
+
 def test_action_choice_builder_does_not_treat_available_options_as_selected() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 
@@ -495,7 +553,14 @@ def test_action_choice_builder_does_not_treat_available_options_as_selected() ->
         relation=CriterionRelation.IS_SELECTED,
         expected_value="Ertha",
     )
-    step = _step(criterion=criterion, step_id="step:select")
+    step = _step(
+        criterion=criterion,
+        step_id="step:select",
+        interaction=CollectionIntent(
+            ElementIntent("options", (_source(),), role="combobox"),
+            ValueExpr(ValueExprKind.LITERAL, ("Ertha",), (_source(),)),
+        ),
+    )
 
     result = ActionChoiceBuilder().build(
         task_revision=1,
@@ -589,7 +654,7 @@ def test_action_choice_builder_creates_terminal_activation_choice() -> None:
     assert choice.criterion_ids == ("criterion:submit",)
 
 
-def test_action_choice_builder_resolves_legacy_submission_subject_to_unique_submit() -> None:
+def test_action_choice_builder_grounds_typed_submit_intent_independently_of_criterion_subject() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 
     criterion = _criterion(
@@ -598,7 +663,11 @@ def test_action_choice_builder_resolves_legacy_submission_subject_to_unique_subm
         relation=CriterionRelation.IS_COMPLETED,
         expected_value=True,
     )
-    step = _step(criterion=criterion, step_id="step:submit")
+    step = _step(
+        criterion=criterion,
+        step_id="step:submit",
+        interaction=ElementIntent("Submit", (_source(),), role="button"),
+    )
 
     result = ActionChoiceBuilder().build(
         task_revision=1,
@@ -761,6 +830,7 @@ def test_action_choice_dispatcher_auto_selects_unique_choice_without_model_call(
         state_version=7,
         snapshot_id="snapshot:1",
         active_step_id="step:name",
+        grounding=GroundingResult(GroundingStatus.RESOLVED),
         choices=(
             ActionChoice(
                 choice_id="choice:one",
@@ -811,6 +881,7 @@ def test_action_choice_dispatcher_calls_planner_for_multiple_choices() -> None:
         state_version=7,
         snapshot_id="snapshot:1",
         active_step_id="step:name",
+        grounding=GroundingResult(GroundingStatus.RESOLVED),
         choices=(
             ActionChoice(
                 choice_id="choice:one",
@@ -870,6 +941,7 @@ def test_action_choice_dispatcher_validates_async_planner_selection() -> None:
         state_version=7,
         snapshot_id="snapshot:1",
         active_step_id="step:name",
+        grounding=GroundingResult(GroundingStatus.RESOLVED),
         choices=(
             ActionChoice(
                 choice_id="choice:one",

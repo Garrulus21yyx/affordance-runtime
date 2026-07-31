@@ -30,7 +30,18 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    EvidenceKind,
+    EvidenceRequirement,
+    GraphConstructionSource,
+    OperationClass,
+    SourcedTaskClaim,
+    TaskClaimKind,
+    TaskObligationKind,
+    TaskObligationRelation,
+    TaskObligationSpec,
+    TaskSpec,
+)
 from affordance_runtime.task_planning import (
     LLMTaskPlanner,
     RuleTaskPlanner,
@@ -216,6 +227,38 @@ def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:
 
 def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAblationRun:
     environment = _StageEnvironment()
+    use_canonical_flat_plan = profile == "flat" or (profile == "adaptive" and target_stage == 1)
+    flat_claims = (
+        SourcedTaskClaim(
+            claim_id="advance-once",
+            kind=TaskClaimKind.EFFECT,
+            statement="advance the controlled environment once",
+            source_ref="task-planning-ablation",
+            source_unit_ids=("task-planning-ablation:advance",),
+            construction_source=GraphConstructionSource.CANONICAL_COMPILER,
+        ),
+    )
+    flat_obligations = (
+        TaskObligationSpec(
+            obligation_id="advance-once",
+            kind=TaskObligationKind.EFFECT,
+            subject="Advance",
+            relation=TaskObligationRelation.HAS_CHANGED,
+            claim_ids=("advance-once",),
+            evidence_requirements=("independent stage observation",),
+            typed_evidence_requirements=(
+                EvidenceRequirement(
+                    kind=EvidenceKind.DOM_STATE,
+                    subject="Advance",
+                    relation=TaskObligationRelation.HAS_CHANGED,
+                    minimum_strength="authoritative",
+                    source_constraints=("task-planning-ablation",),
+                ),
+            ),
+            terminal=True,
+            construction_source=GraphConstructionSource.CANONICAL_COMPILER,
+        ),
+    )
     spec = TaskSpec(
         task_id=f"task-planning-{profile}-{case_id}",
         revision=1,
@@ -225,6 +268,8 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         success_criteria=(f"stage equals {target_stage}",),
         evidence_requirements=("stage observation",),
         source_request_ref="task-planning-ablation",
+        source_claims=flat_claims if use_canonical_flat_plan else (),
+        obligations=flat_obligations if use_canonical_flat_plan else (),
     )
     planner, model = _profile_planner(profile, target_stage)
     counting = _CountingPlanner(planner)

@@ -15,7 +15,11 @@ from affordance_runtime.grounding import (
     EvidenceKind as GroundingEvidenceKind,
 )
 from affordance_runtime.runtime import RunRequest
-from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    SourceReference,
+    StepActivityStatus,
+)
 from affordance_runtime.simplified_step_projection import LegacyStepProjectionStatus
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
@@ -39,6 +43,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
+from runtime_test_support import make_interaction
 
 
 def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -104,6 +109,14 @@ def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     return RunRequest(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
+def _name_interaction() -> ElementIntent:
+    return ElementIntent(
+        "Name",
+        (SourceReference("request-source", "unit:enter-name", "claim:enter-name"),),
+        role="textbox",
+    )
+
+
 def test_builder_projects_identity_observation_and_budget_without_mutation() -> None:
     from affordance_runtime.planning_request_builder import (
         PlanningRequestBuilder,
@@ -153,6 +166,7 @@ def test_builder_does_not_activate_ready_legacy_step() -> None:
                     SubgoalSpec(
                         subgoal_id="step:enter-name",
                         objective="display name input equals Ada",
+                        interaction=_name_interaction(),
                         outcome=None,
                         success_criteria=("display name input equals Ada",),
                     evidence_requirements=("fresh input-value observation",),
@@ -193,6 +207,7 @@ def test_builder_projects_active_legacy_step_action_family() -> None:
                 SubgoalSpec(
                     subgoal_id="step:enter-name",
                     objective="display name input equals Ada",
+                    interaction=_name_interaction(),
                     outcome=SubgoalOutcome(
                         subject="display name",
                         relation=SubgoalOutcomeRelation.EQUALS,
@@ -233,6 +248,7 @@ def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
                 SubgoalSpec(
                     subgoal_id="unknown-step",
                     objective="unknown step",
+                    interaction=make_interaction('unknown step'),
                     outcome=None,
                     success_criteria=("unknown",),
                     evidence_requirements=("fresh input-value observation",),
@@ -303,6 +319,7 @@ def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> 
                 SubgoalSpec(
                     subgoal_id="step:enter-name",
                     objective="display name input equals Ada",
+                    interaction=make_interaction('display name'),
                     outcome=SubgoalOutcome(
                         subject="display name",
                         relation=SubgoalOutcomeRelation.EQUALS,
@@ -316,6 +333,7 @@ def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> 
                 SubgoalSpec(
                     subgoal_id="step:submit",
                     objective="settings submission is completed",
+                    interaction=make_interaction('settings submission'),
                     depends_on=("step:enter-name",),
                     outcome=SubgoalOutcome(
                         subject="settings submission",

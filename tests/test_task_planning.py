@@ -1,9 +1,11 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 from affordance_runtime.contracts import Observation
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -44,7 +46,6 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
     TaskPlanValidationStatus,
     TaskPlanValidator,
-    synthetic_task_plan,
     task_plan_allowed_outcome_relations,
     task_plan_provider_model_for_context,
     task_plan_repair_directives,
@@ -52,6 +53,7 @@ from affordance_runtime.task_planning import (
     task_spec_planning_summary,
 )
 from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
+from runtime_test_support import make_interaction
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
@@ -80,6 +82,39 @@ def _context(*, state_version: int = 4) -> TaskPlanningContext:
             replans_remaining=2,
             recoveries_remaining=2,
             effectful_actions_remaining=2,
+        ),
+    )
+
+
+def synthetic_task_plan(
+    context: TaskPlanningContext,
+    *,
+    generated_by: TaskPlanSource = TaskPlanSource.RULE,
+) -> TaskPlan:
+    """Test-only plan fixture for validator cases that intentionally bypass intake."""
+
+    task = context.task_spec
+    source_id = task.source_request_ref or task.task_id
+    return TaskPlan(
+        plan_id=f"plan-{uuid4().hex}",
+        task_id=task.task_id,
+        task_revision=task.revision,
+        plan_version=context.current_plan_version + 1,
+        supersedes_plan_id=context.current_plan_id,
+        based_on_state_version=context.state_version,
+        generated_by=generated_by,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="subgoal-1",
+                objective=task.objective,
+                interaction=ElementIntent(
+                    task.targets[0] if task.targets else task.objective,
+                    (SourceReference(source_id, f"{source_id}:whole_request"),),
+                ),
+                success_criteria=task.success_criteria,
+                evidence_requirements=task.evidence_requirements or task.success_criteria,
+                operation_class=task.operation_class,
+            ),
         ),
     )
 
@@ -294,13 +329,9 @@ def test_obligation_compiler_leaves_ambiguous_current_affordance_family_unresolv
     assert plan.subgoals[0].action_family is None
 
 
-def test_simple_router_preserves_flat_path_as_one_verifier_backed_subgoal() -> None:
-    plan = PlanningRouter().plan(_context())
-
-    assert plan.generated_by == TaskPlanSource.RULE
-    assert len(plan.subgoals) == 1
-    assert plan.subgoals[0].objective == _task().objective
-    assert TaskPlanValidator().validate(plan, _task(), state_version=4).status == TaskPlanValidationStatus.ACCEPT
+def test_simple_router_rejects_flat_task_without_canonical_obligations() -> None:
+    with pytest.raises(ValueError, match="requires canonical obligations"):
+        PlanningRouter().plan(_context())
 
 
 def test_obligation_outcome_compiler_preserves_dependency_and_dynamic_value_identity() -> None:
@@ -532,6 +563,7 @@ def test_llm_facing_subgoal_schema_requires_typed_outcome_and_evidence() -> None
     assert set(SubgoalSpec.model_json_schema()["required"]) == {
         "subgoal_id",
         "objective",
+        "interaction",
         "operation_class",
     }
     assert task_planner_model_config().prompt_version == "task-planner-v12"
@@ -795,6 +827,7 @@ def test_validator_rejects_stale_escalating_and_cyclic_plans() -> None:
             SubgoalSpec(
                 subgoal_id="a",
                 objective="Write theme",
+                interaction=make_interaction('Write theme'),
                 depends_on=("b",),
                 success_criteria=("theme is dark",),
                 evidence_requirements=("API confirms",),
@@ -803,6 +836,7 @@ def test_validator_rejects_stale_escalating_and_cyclic_plans() -> None:
             SubgoalSpec(
                 subgoal_id="b",
                 objective="Confirm theme",
+                interaction=make_interaction('Confirm theme'),
                 depends_on=("a",),
                 success_criteria=("theme is dark",),
                 evidence_requirements=("API confirms",),
@@ -834,6 +868,7 @@ def test_validator_marks_missing_verification_requirements_repairable() -> None:
             SubgoalSpec(
                 subgoal_id="a",
                 objective="Update theme",
+                interaction=make_interaction('Update theme'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
             ),
         ),
@@ -1261,6 +1296,7 @@ def test_validator_repairs_current_submit_button_availability_after_text_progres
     first = SubgoalSpec(
         subgoal_id="text-changed",
         objective="text field has changed",
+        interaction=make_interaction('text_field:Kanesha'),
         success_criteria=("text field has changed",),
         evidence_requirements=("post-text observation",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1273,6 +1309,7 @@ def test_validator_repairs_current_submit_button_availability_after_text_progres
     availability = SubgoalSpec(
         subgoal_id="submit-available",
         objective="submit_button is available",
+        interaction=make_interaction('submit_button'),
         success_criteria=("submit_button is available",),
         evidence_requirements=("current submit-button observation",),
         operation_class=OperationClass.READ_ONLY,
@@ -1637,6 +1674,7 @@ def test_validator_checks_only_current_ready_subgoal_against_inventory() -> None
     first = SubgoalSpec(
         subgoal_id="enter",
         objective="search text equals Myron",
+        interaction=make_interaction('search text'),
         success_criteria=("search text equals Myron",),
         evidence_requirements=("current input value",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1650,6 +1688,7 @@ def test_validator_checks_only_current_ready_subgoal_against_inventory() -> None
     later = SubgoalSpec(
         subgoal_id="open",
         objective="results page is available",
+        interaction=make_interaction('results page'),
         depends_on=("enter",),
         success_criteria=("results page is available",),
         evidence_requirements=("current page observation",),
@@ -1802,6 +1841,7 @@ def test_precondition_issue_projects_to_typed_repair_directive() -> None:
                         SubgoalSpec(
                             subgoal_id="activate-control",
                             objective="setting control is available",
+                            interaction=make_interaction('setting control'),
                             success_criteria=("setting control is available",),
                             evidence_requirements=("current control state",),
                             operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1878,6 +1918,7 @@ def test_progress_selects_ready_subgoals_serially_and_preserves_evidence() -> No
     first = SubgoalSpec(
         subgoal_id="write",
         objective="Write",
+        interaction=make_interaction('Write'),
         success_criteria=("written",),
         evidence_requirements=("receipt",),
         operation_class=OperationClass.REVERSIBLE_WRITE,
@@ -1885,6 +1926,7 @@ def test_progress_selects_ready_subgoals_serially_and_preserves_evidence() -> No
     second = SubgoalSpec(
         subgoal_id="verify",
         objective="Verify",
+        interaction=make_interaction('Verify'),
         depends_on=("write",),
         success_criteria=("verified",),
         evidence_requirements=("API",),

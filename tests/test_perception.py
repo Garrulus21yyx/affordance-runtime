@@ -7,6 +7,7 @@ from affordance_runtime.perception import (
 )
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_planning import SubgoalSpec
+from runtime_test_support import make_interaction
 
 
 def _task(objective: str) -> TaskSpec:
@@ -240,6 +241,7 @@ def test_subgoal_evidence_requirements_drive_perception_even_when_task_is_plain(
     subgoal = SubgoalSpec(
         subgoal_id="inspect-chart",
         objective="Inspect the current chart",
+        interaction=make_interaction('Inspect the current chart'),
         success_criteria=("the marked point is identified",),
         evidence_requirements=("visual appearance and spatial position",),
         operation_class=OperationClass.READ_ONLY,

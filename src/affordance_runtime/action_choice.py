@@ -16,15 +16,22 @@ from enum import StrEnum
 from typing import Awaitable, Protocol, TypeAlias, cast
 
 from affordance_runtime.active_step_scope import ActiveStepScope
-from affordance_runtime.active_step_targeting import (
-    ActiveStepTargetView,
-    resolve_active_step_target_ids,
-)
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
+from affordance_runtime.interaction_grounding import (
+    GroundingResult,
+    GroundingStatus,
+    GroundingTarget,
+    InteractionGrounder,
+)
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
 from affordance_runtime.semantics import CriterionRelation
-from affordance_runtime.simplified_runtime_contracts import StateCriterion, StepSpec
+from affordance_runtime.simplified_runtime_contracts import (
+    CollectionIntent,
+    RelationIntent,
+    StateCriterion,
+    StepSpec,
+)
 from affordance_runtime.unified_observation import (
     UnifiedObservation,
     UnifiedObservationTarget,
@@ -113,6 +120,7 @@ class ActionChoiceSet:
     state_version: int
     snapshot_id: str
     active_step_id: str
+    grounding: GroundingResult
     choices: tuple[ActionChoice, ...]
 
     def __post_init__(self) -> None:
@@ -122,6 +130,8 @@ class ActionChoiceSet:
             raise ValueError("state version cannot be negative")
         _require_nonblank("snapshot_id", self.snapshot_id)
         _require_nonblank("active_step_id", self.active_step_id)
+        if self.grounding.status != GroundingStatus.RESOLVED:
+            raise ValueError("action choice set requires resolved grounding")
         _require_tuple("choices", self.choices)
         if not self.choices:
             raise ValueError("action choice set cannot be empty")
@@ -179,6 +189,7 @@ class ChoicePlanningRequest:
     state_version: int
     snapshot_id: str
     active_step_id: str
+    grounding: GroundingResult
     choices: tuple[ActionChoice, ...]
 
     @classmethod
@@ -188,6 +199,7 @@ class ChoicePlanningRequest:
             state_version=choices.state_version,
             snapshot_id=choices.snapshot_id,
             active_step_id=choices.active_step_id,
+            grounding=choices.grounding,
             choices=choices.choices,
         )
 
@@ -324,44 +336,82 @@ class ActionChoiceBuilder:
             )
 
         targets = {item.target_id: item for item in observation.targets}
-        target_views = tuple(_target_view(item) for item in observation.targets)
-        choices: list[ActionChoice] = []
-        unresolved_target = False
-        for criterion in step.completion_criteria:
-            if not isinstance(criterion, StateCriterion):
-                continue
-            if criterion.subject not in scope.permitted_target_ids:
-                continue
-            target_ids = resolve_active_step_target_ids(
-                subject=criterion.subject,
-                targets=scope.permitted_target_ids,
-                affordances=target_views,
+        grounding = InteractionGrounder().ground(
+            step.interaction,
+            tuple(_grounding_target(item) for item in observation.targets),
+        )
+        if grounding.status != GroundingStatus.RESOLVED:
+            return ActionChoiceFailure(
+                kind=(
+                    FailureKind.CAPABILITY_MISSING
+                    if grounding.status == GroundingStatus.CAPABILITY_MISSING
+                    else FailureKind.GROUNDING_AMBIGUOUS
+                ),
+                reason_code=grounding.reason_code or "interaction_grounding_failed",
+                owner=FailureOwner.STEP_PLANNER,
             )
-            if not target_ids:
-                unresolved_target = True
-                continue
-            for target_id in target_ids:
-                target = targets.get(target_id)
-                if target is None:
-                    unresolved_target = True
-                    continue
-                choice = _choice_for_criterion(
-                    task_revision=task_revision,
-                    state_version=state_version,
-                    snapshot_id=observation.snapshot_id,
-                    step_id=step.step_id,
-                    criterion=criterion,
-                    target=target,
+        choices: list[ActionChoice] = []
+        criteria = tuple(
+            item for item in step.completion_criteria if isinstance(item, StateCriterion)
+        )
+        criterion_ids = tuple(item.criterion_id for item in criteria)
+        if isinstance(step.interaction, CollectionIntent):
+            target = targets.get(grounding.targets[0].target_id)
+            if target is not None and _supports(target, PlannerActionKind.SELECT_OPTION):
+                choices.append(
+                    _make_choice(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        action_kind=PlannerActionKind.SELECT_OPTION,
+                        target_id=target.target_id,
+                        parameters=dict(grounding.parameters),
+                        criterion_ids=criterion_ids,
+                    )
                 )
-                if choice is not None:
-                    choices.append(choice)
+        elif isinstance(step.interaction, RelationIntent):
+            source = targets.get(grounding.targets[0].target_id)
+            destination = targets.get(grounding.destinations[0].target_id)
+            if (
+                source is not None
+                and destination is not None
+                and _supports(source, PlannerActionKind.DRAG)
+            ):
+                choices.append(
+                    _make_choice(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        action_kind=PlannerActionKind.DRAG,
+                        target_id=source.target_id,
+                        destination_id=destination.target_id,
+                        parameters={},
+                        criterion_ids=criterion_ids,
+                    )
+                )
+        else:
+            grounded_targets = tuple(
+                targets[item.target_id]
+                for item in grounding.targets
+                if item.target_id in targets
+            )
+            for criterion in criteria:
+                for target in grounded_targets:
+                    choice = _choice_for_criterion(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        criterion=criterion,
+                        target=target,
+                    )
+                    if choice is not None:
+                        choices.append(choice)
 
+        choices = _coalesce_semantic_choices(choices)
         if not choices:
-            if unresolved_target:
-                return ActionChoiceFailure(
-                    kind=FailureKind.GROUNDING_AMBIGUOUS,
-                    reason_code="action_choice_target_unresolved",
-                )
             return ActionChoiceFailure(
                 kind=FailureKind.NO_FEASIBLE_ACTION,
                 reason_code="no_feasible_action_choice",
@@ -371,8 +421,49 @@ class ActionChoiceBuilder:
             state_version=state_version,
             snapshot_id=observation.snapshot_id,
             active_step_id=step.step_id,
+            grounding=grounding,
             choices=tuple(choices),
         )
+
+
+def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice]:
+    grouped: dict[tuple[object, ...], list[ActionChoice]] = {}
+    for choice in choices:
+        key = (
+            choice.task_revision,
+            choice.state_version,
+            choice.snapshot_id,
+            choice.active_step_id,
+            choice.action_kind,
+            choice.target_id,
+            choice.destination_id,
+            json.dumps(
+                to_json_compatible(choice.parameters),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+        grouped.setdefault(key, []).append(choice)
+    return [
+        _make_choice(
+            task_revision=members[0].task_revision,
+            state_version=members[0].state_version,
+            snapshot_id=members[0].snapshot_id,
+            step_id=members[0].active_step_id,
+            action_kind=members[0].action_kind,
+            target_id=members[0].target_id,
+            destination_id=members[0].destination_id,
+            parameters=dict(members[0].parameters),
+            criterion_ids=tuple(
+                dict.fromkeys(
+                    criterion_id
+                    for member in members
+                    for criterion_id in member.criterion_ids
+                )
+            ),
+        )
+        for members in grouped.values()
+    ]
 
 
 def _choice_for_criterion(
@@ -467,12 +558,12 @@ def _choice_for_criterion(
     return None
 
 
-def _target_view(target: UnifiedObservationTarget) -> ActiveStepTargetView:
-    return ActiveStepTargetView(
+def _grounding_target(target: UnifiedObservationTarget) -> GroundingTarget:
+    return GroundingTarget(
         target_id=target.target_id,
         role=target.role,
         label=target.label,
-        actions=target.supported_actions,
+        supported_actions=target.supported_actions,
         state=target.state,
     )
 
@@ -596,6 +687,7 @@ def _make_choice(
     target_id: str,
     parameters: dict[str, object],
     criterion_ids: tuple[str, ...],
+    destination_id: str = "",
 ) -> ActionChoice:
     payload = {
         "task_revision": task_revision,
@@ -604,7 +696,7 @@ def _make_choice(
         "active_step_id": step_id,
         "action_kind": action_kind.value,
         "target_id": target_id,
-        "destination_id": "",
+        "destination_id": destination_id,
         "parameters": to_json_compatible(freeze_json(parameters)),
         "criterion_ids": criterion_ids,
         "source": ChoiceSource.RUNTIME.value,
@@ -620,6 +712,7 @@ def _make_choice(
         active_step_id=step_id,
         action_kind=action_kind,
         target_id=target_id,
+        destination_id=destination_id,
         parameters=parameters,
         criterion_ids=criterion_ids,
     )

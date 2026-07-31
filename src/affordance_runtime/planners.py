@@ -26,6 +26,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.simplified_runtime_contracts import ElementIntent
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_planning import (
     SubgoalSpec,
@@ -33,6 +34,7 @@ from affordance_runtime.task_planning import (
     TaskPlanningContext,
     TaskPlanSource,
 )
+from affordance_runtime.task_source_references import task_source_refs
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
@@ -110,6 +112,11 @@ class PricingTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="reveal-pro",
                     objective="Reveal the Pro plan limits",
+                    interaction=ElementIntent(
+                        "Show Pro limits",
+                        task_source_refs(context.task_spec),
+                        role="button",
+                    ),
                     success_criteria=("Pro limits are structurally visible",),
                     evidence_requirements=("post-action DOM shows visible Pro limits",),
                     operation_class=OperationClass.READ_ONLY,
@@ -117,6 +124,11 @@ class PricingTaskPlanner:
                 SubgoalSpec(
                     subgoal_id="reveal-enterprise",
                     objective="Reveal the Enterprise plan limits",
+                    interaction=ElementIntent(
+                        "Show Enterprise limits",
+                        task_source_refs(context.task_spec),
+                        role="button",
+                    ),
                     depends_on=("reveal-pro",),
                     success_criteria=("Enterprise limits are structurally visible",),
                     evidence_requirements=("post-action DOM shows visible Enterprise limits",),

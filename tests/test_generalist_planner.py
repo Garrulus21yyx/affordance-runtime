@@ -49,6 +49,7 @@ from affordance_runtime.generalist_planner import (
     _repair_constraints,
     build_planner_context,
 )
+from affordance_runtime.interaction_grounding import GroundingResult, GroundingStatus
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage, StructuredModelError
 from affordance_runtime.planner_context import _bounded_affordances, _compact_mapping
 from affordance_runtime.planning import PlannerActionKind
@@ -68,6 +69,7 @@ from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
     SourceReference,
     StateCriterion,
     StepActivityStatus,
@@ -105,6 +107,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from runtime_test_support import make_interaction
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -143,6 +146,10 @@ def _request_with_active_step(
     step = StepSpec(
         step_id="step:current",
         objective="Complete the current step",
+        interaction=ElementIntent(
+            getattr(criteria[0], "subject", "semantic:current"),
+            (_request_source(),),
+        ),
         completion_criteria=criteria,
         source_refs=(_request_source(),),
     )
@@ -481,11 +488,11 @@ def test_strict_planner_reports_typed_failure_when_choice_target_unresolved() ->
     response = asyncio.run(planner.propose(request))
 
     assert isinstance(response, PlannerUnsupportedResponse)
-    assert response.reason_code == "action_choice_target_unresolved"
+    assert response.reason_code == "interaction_target_absent"
     assert planner.model_call_count == 0
 
 
-def test_strict_planner_selects_choice_id_for_multiple_actionchoices() -> None:
+def test_strict_planner_uses_one_typed_interaction_for_multiple_completion_criteria() -> None:
     @dataclass
     class ChoiceModel:
         provider: str = "fixed"
@@ -557,11 +564,11 @@ def test_strict_planner_selects_choice_id_for_multiple_actionchoices() -> None:
 
     assert isinstance(response, PlannerProposalResponse)
     assert response.proposal.action_kind == PlannerActionKind.TYPE_TEXT
-    assert response.proposal.target_affordance_id == "semantic:second"
+    assert response.proposal.target_affordance_id == "semantic:first"
     assert response.proposal.parameters == {"text": "Alice"}
     assert response.proposal_provenance is not None
-    assert response.proposal_provenance.producer_id == "runtime-action-choice-selector"
-    assert planner.model_call_count == 1
+    assert response.proposal_provenance.producer_id == "runtime-action-choice"
+    assert planner.model_call_count == 0
 
 
 def test_generalist_choice_selector_rejects_unknown_choice_id() -> None:
@@ -610,6 +617,7 @@ def test_generalist_choice_selector_rejects_unknown_choice_id() -> None:
         state_version=7,
         snapshot_id="snapshot:1",
         active_step_id="step:current",
+        grounding=GroundingResult(GroundingStatus.RESOLVED),
         choices=choices,
     )
 
@@ -647,9 +655,8 @@ def test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection
             StateCriterion(
                 criterion_id="criterion:second",
                 source_refs=(_request_source(),),
-                subject="semantic:second",
-                relation=CriterionRelation.EQUALS,
-                expected_value="Alice",
+                subject="semantic:first",
+                relation=CriterionRelation.IS_COMPLETED,
                 evidence_policy=_request_policy(),
             ),
         ),
@@ -659,15 +666,7 @@ def test_strict_planner_returns_typed_failure_for_unknown_actionchoice_selection
                 surface="dom",
                 role="textbox",
                 label="First",
-                supported_actions=("type_text",),
-                state={"value": ""},
-            ),
-            PlannerAffordanceView(
-                target_id="semantic:second",
-                surface="dom",
-                role="textbox",
-                label="Second",
-                supported_actions=("type_text",),
+                supported_actions=("type_text", "activate"),
                 state={"value": ""},
             ),
         ),
@@ -1607,6 +1606,7 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
                     relation=SubgoalOutcomeRelation.EQUALS,
                     value="dark",
                 ),
+                interaction=ElementIntent("field", (_request_source(),)),
             ),
             SubgoalSpec(
                 subgoal_id="settings:submitted",
@@ -1617,6 +1617,9 @@ def test_generalist_propose_uses_immutable_request_context_and_admission() -> No
                 outcome=SubgoalOutcome(
                     subject="settings submission",
                     relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+                interaction=ElementIntent(
+                    "settings submission", (_request_source(),), role="button"
                 ),
             ),
         ),
@@ -1900,6 +1903,7 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
                     relation=SubgoalOutcomeRelation.EQUALS,
                     value="dark",
                 ),
+                interaction=ElementIntent("field", (_request_source(),)),
             ),
             SubgoalSpec(
                 subgoal_id="settings:submitted",
@@ -1910,6 +1914,9 @@ def test_strict_planner_uses_active_step_admission_without_terminal_readiness(
                 outcome=SubgoalOutcome(
                     subject="settings submission",
                     relation=SubgoalOutcomeRelation.IS_COMPLETED,
+                ),
+                interaction=ElementIntent(
+                    "settings submission", (_request_source(),), role="button"
                 ),
             ),
         ),
@@ -3593,6 +3600,7 @@ def test_strict_planner_does_not_guess_exact_value_when_no_actionchoice_exists()
             SubgoalSpec(
                 subgoal_id="date-field:value",
                 objective="date_field equals 01/18/2019",
+                interaction=make_interaction('date_field'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=SubgoalOutcome(
@@ -3730,6 +3738,7 @@ def test_strict_planner_does_not_guess_target_derived_text_value_without_actionc
             SubgoalSpec(
                 subgoal_id="text-field:changed",
                 objective="text_field:Myron has changed",
+                interaction=make_interaction('text_field:Myron'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=SubgoalOutcome(
@@ -3783,6 +3792,7 @@ def test_strict_planner_does_not_guess_slider_press_key_without_actionchoice() -
             SubgoalSpec(
                 subgoal_id="slider-value:changed",
                 objective="slider_value_7 has changed",
+                interaction=make_interaction('slider_value_7'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.PRESS_KEY,
                 outcome=SubgoalOutcome(
@@ -3857,6 +3867,7 @@ def test_strict_planner_does_not_override_explanatory_slider_clarification_witho
             SubgoalSpec(
                 subgoal_id="slider-value:changed",
                 objective="slider_value has changed",
+                interaction=make_interaction('slider_value'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.PRESS_KEY,
                 outcome=SubgoalOutcome(
@@ -3920,6 +3931,7 @@ def test_strict_planner_advances_from_verified_slider_to_requested_checkbox() ->
             SubgoalSpec(
                 subgoal_id="slider-value:changed",
                 objective="slider_value_7 has changed",
+                interaction=make_interaction('slider_value_7'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.PRESS_KEY,
                 outcome=SubgoalOutcome(
@@ -3990,6 +4002,7 @@ def test_strict_planner_stops_negative_slider_at_target_before_checkbox() -> Non
             SubgoalSpec(
                 subgoal_id="slider-value:changed",
                 objective="slider_value has changed",
+                interaction=make_interaction('slider_value'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.PRESS_KEY,
                 outcome=SubgoalOutcome(
@@ -4067,6 +4080,7 @@ def test_strict_planner_advances_from_completed_checkbox_to_terminal_submit() ->
             SubgoalSpec(
                 subgoal_id="checkbox:checked",
                 objective="checkbox_3_state has changed",
+                interaction=make_interaction('checkbox_3_state'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.ACTIVATE,
                 outcome=SubgoalOutcome(
@@ -4141,6 +4155,7 @@ def test_strict_planner_submits_after_checked_checkbox_without_verified_effect_t
             SubgoalSpec(
                 subgoal_id="submit",
                 objective="submit_button is completed",
+                interaction=make_interaction('submit_button'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.ACTIVATE,
                 outcome=SubgoalOutcome(
@@ -4218,6 +4233,7 @@ def test_strict_planner_submits_after_verified_checkbox_even_when_active_subgoal
             SubgoalSpec(
                 subgoal_id="slider-value:changed",
                 objective="slider_value_7 has changed",
+                interaction=make_interaction('slider_value_7'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.PRESS_KEY,
                 outcome=SubgoalOutcome(
@@ -4283,6 +4299,7 @@ def test_strict_planner_no_longer_guesses_page_text_when_no_actionchoice_exists(
             SubgoalSpec(
                 subgoal_id="text-field:changed",
                 objective="text_field has changed",
+                interaction=make_interaction('text_field'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=SubgoalOutcome(
@@ -4363,6 +4380,7 @@ def test_strict_planner_does_not_submit_after_verified_page_text_without_actionc
             SubgoalSpec(
                 subgoal_id="text-field:changed",
                 objective="text_field has changed",
+                interaction=make_interaction('text_field'),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=SubgoalOutcome(

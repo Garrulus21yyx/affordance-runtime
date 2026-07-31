@@ -169,7 +169,7 @@ def test_apply_admission_without_admission_preserves_context() -> None:
     assert result.summary.excluded_target_ids == ()
 
 
-def test_build_scopes_checkbox_ordinal_active_step_to_current_target() -> None:
+def test_build_does_not_parse_legacy_active_step_text_into_target_authority() -> None:
     context = _context(
         task_spec={"objective": "Click the 3rd checkbox", "targets": ("checkbox_3_state",)},
         active_subgoal="checkbox_3_state has changed",
@@ -224,5 +224,9 @@ def test_build_scopes_checkbox_ordinal_active_step_to_current_target() -> None:
         },
     )
 
-    assert constraints.permitted_action_kinds == ("activate",)
-    assert constraints.compatible_target_ids["activate"] == ("checkbox-3",)
+    assert constraints.permitted_action_kinds == ("activate", "finish", "ask_user")
+    assert constraints.compatible_target_ids == {
+        "activate": ("checkbox-1", "checkbox-2", "checkbox-3", "submit-button"),
+        "finish": (),
+        "ask_user": (),
+    }

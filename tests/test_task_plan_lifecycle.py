@@ -4,7 +4,12 @@ from inspect import getsource
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
-from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion, StepSpec
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    SourceReference,
+    StateCriterion,
+    StepSpec,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     EvidenceKind,
@@ -33,6 +38,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
     TaskPlanValidationStatus,
 )
+from runtime_test_support import make_interaction
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,15 @@ class CandidateInitialPlanner:
                 StepSpec(
                     step_id="setting-saved",
                     objective="setting is saved",
+                    interaction=ElementIntent(
+                        "setting",
+                        (
+                            SourceReference(
+                                source_id="request-lifecycle",
+                                source_unit_id="unit:setting",
+                            ),
+                        ),
+                    ),
                     completion_criteria=(
                         StateCriterion(
                             criterion_id="criterion:setting-saved",
@@ -101,6 +116,39 @@ def _task() -> TaskSpec:
         requested_capabilities=("settings.write",),
         source_request_ref="request-lifecycle",
     )
+
+
+class FlatFixturePlanner:
+    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+        task = context.task_spec
+        outcome = SubgoalOutcome(
+            subject="setting",
+            relation=SubgoalOutcomeRelation.IS_COMPLETED,
+        )
+        return TaskPlan(
+            plan_id=f"plan-{context.current_plan_version + 1}",
+            task_id=task.task_id,
+            task_revision=task.revision,
+            plan_version=context.current_plan_version + 1,
+            supersedes_plan_id=context.current_plan_id,
+            based_on_state_version=context.state_version,
+            generated_by=TaskPlanSource.RULE,
+            subgoals=(
+                SubgoalSpec(
+                    subgoal_id="setting-saved",
+                    objective=task.objective,
+                    interaction=ElementIntent(
+                        "setting",
+                        (SourceReference("request-lifecycle", "unit:setting"),),
+                    ),
+                    success_criteria=task.success_criteria,
+                    evidence_requirements=task.evidence_requirements,
+                    operation_class=task.operation_class,
+                    action_family=TaskPlanActionFamily.ACTIVATE,
+                    outcome=outcome,
+                ),
+            ),
+        )
 
 
 def _obligation_task() -> TaskSpec:
@@ -165,7 +213,7 @@ def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> N
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     state.remember_observation(_snapshot().observation)
-    lifecycle = TaskPlanLifecycle(PlanningRouter())
+    lifecycle = TaskPlanLifecycle(FlatFixturePlanner())
 
     transition = lifecycle.propose_initial(task, state, _snapshot(), Limits())
 
@@ -259,13 +307,13 @@ def test_lifecycle_projects_bounded_current_state_without_password_value() -> No
 
 class InvalidAsyncPlanner:
     async def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        valid = PlanningRouter().plan(context)
+        valid = FlatFixturePlanner().plan(context)
         return valid.model_copy(update={"task_id": "different-task"})
 
 
 class UnavailableEntryPlanner:
     def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        valid = PlanningRouter().plan(context)
+        valid = FlatFixturePlanner().plan(context)
         return valid.model_copy(
             update={
                 "subgoals": (
@@ -326,7 +374,7 @@ def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[Task
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     context = TaskPlanLifecycle.build_context(task, state, _snapshot(), Limits(), reason="initial")
-    base = PlanningRouter().plan(context)
+    base = FlatFixturePlanner().plan(context)
     first = base.subgoals[0].model_copy(
         update={
             "subgoal_id": "first",
@@ -336,6 +384,7 @@ def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[Task
     second = SubgoalSpec(
         subgoal_id="second",
         objective="setting control is selected",
+        interaction=make_interaction('setting control'),
         outcome=SubgoalOutcome(
             subject="setting control",
             relation=SubgoalOutcomeRelation.IS_SELECTED,
@@ -355,7 +404,7 @@ def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[Task
 def test_lifecycle_requests_replacement_for_newly_ready_unavailable_family() -> None:
     task, state = _installed_two_step_state(TaskPlanActionFamily.SELECT_OPTION)
 
-    decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
+    decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
         _snapshot(),
@@ -380,7 +429,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
         Limits(),
         reason="initial",
     )
-    base = PlanningRouter().plan(context)
+    base = FlatFixturePlanner().plan(context)
     first = base.subgoals[0].model_copy(
         update={
             "subgoal_id": "first",
@@ -390,6 +439,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     already_visible = SubgoalSpec(
         subgoal_id="already-visible",
         objective="Save setting is visible",
+        interaction=make_interaction('Save setting'),
         outcome=SubgoalOutcome(
             subject="Save setting",
             relation=SubgoalOutcomeRelation.IS_VISIBLE,
@@ -405,7 +455,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     )
     state.complete_step("first", ("evidence:first",))
 
-    decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
+    decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
         _snapshot(),
@@ -434,13 +484,14 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
         Limits(),
         reason="initial",
     )
-    base = PlanningRouter().plan(context)
+    base = FlatFixturePlanner().plan(context)
     first = base.subgoals[0].model_copy(
         update={"subgoal_id": "first", "action_family": TaskPlanActionFamily.ACTIVATE}
     )
     unsupported = SubgoalSpec(
         subgoal_id="unsupported",
         objective="Save setting is checked",
+        interaction=make_interaction('Save setting'),
         outcome=SubgoalOutcome(
             subject="Save setting",
             relation=SubgoalOutcomeRelation.IS_CHECKED,
@@ -454,7 +505,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
     state.install_task_plan(base.model_copy(update={"subgoals": (first, unsupported)}))
     state.complete_step("first", ("evidence:first",))
 
-    decision = TaskPlanLifecycle(PlanningRouter()).evaluate_replacement(
+    decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
         _snapshot(),
@@ -474,7 +525,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
 
 def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replanning() -> None:
     task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
-    lifecycle = TaskPlanLifecycle(PlanningRouter())
+    lifecycle = TaskPlanLifecycle(FlatFixturePlanner())
 
     compatible = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
     empty_snapshot = BrowserSnapshot(
@@ -504,6 +555,7 @@ class ReplacementPlanner:
         completed = SubgoalSpec(
             subgoal_id="first",
             objective="model-authored replacement of verified state",
+            interaction=make_interaction('different setting'),
             outcome=SubgoalOutcome(
                 subject="different setting",
                 relation=SubgoalOutcomeRelation.HAS_CHANGED,
@@ -516,6 +568,7 @@ class ReplacementPlanner:
         unfinished = SubgoalSpec(
             subgoal_id="replacement",
             objective="setting control is saved",
+            interaction=make_interaction('setting control'),
             outcome=SubgoalOutcome(
                 subject="setting control",
                 relation=SubgoalOutcomeRelation.IS_COMPLETED,

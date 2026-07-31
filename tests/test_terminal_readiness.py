@@ -8,6 +8,7 @@ from affordance_runtime.grounding import (
     GroundingSource,
     UnifiedAffordance,
 )
+from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
 from affordance_runtime.task_intake import (
     OperationClass,
     SourcedTaskClaim,
@@ -196,6 +197,9 @@ def _plan(*, prerequisite_outcome: bool = True, terminal_outcome: bool = True) -
             SubgoalSpec(
                 subgoal_id="field:value",
                 objective="field equals dark",
+                interaction=ElementIntent(
+                    "field", (SourceReference("request", "unit:field"),)
+                ),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.TYPE_TEXT,
                 outcome=(
@@ -211,6 +215,11 @@ def _plan(*, prerequisite_outcome: bool = True, terminal_outcome: bool = True) -
             SubgoalSpec(
                 subgoal_id="settings:submitted",
                 objective="settings submission is completed",
+                interaction=ElementIntent(
+                    "settings submission",
+                    (SourceReference("request", "unit:submit"),),
+                    role="button",
+                ),
                 depends_on=("field:value",),
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 action_family=TaskPlanActionFamily.ACTIVATE,
