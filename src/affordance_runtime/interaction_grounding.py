@@ -24,6 +24,11 @@ class GroundingStatus(StrEnum):
     CAPABILITY_MISSING = "capability_missing"
 
 
+class GroundingRole(StrEnum):
+    DIRECT = "direct"
+    ENABLING = "enabling"
+
+
 @dataclass(frozen=True)
 class GroundingTarget:
     target_id: str
@@ -40,6 +45,7 @@ class GroundingResult:
     destinations: tuple[GroundingTarget, ...] = ()
     parameters: FrozenDict = field(default_factory=lambda: FrozenDict({}))
     reason_code: str = ""
+    role: GroundingRole = GroundingRole.DIRECT
 
 
 @dataclass(frozen=True)
@@ -82,7 +88,32 @@ class InteractionGrounder:
                 targets=collection.targets,
                 parameters=FrozenDict({"option": parameter}),
             )
-        return _match_element(interaction, targets)
+        direct = _match_element(interaction, targets)
+        if direct.status != GroundingStatus.ABSENT or interaction.enabler is None:
+            return direct
+        enabler = _match_element(interaction.enabler, targets)
+        if enabler.status != GroundingStatus.RESOLVED:
+            return GroundingResult(
+                enabler.status,
+                targets=enabler.targets,
+                reason_code="interaction_enabler_unresolved",
+            )
+        enabling_target = enabler.targets[0]
+        if enabling_target.state.get("expanded") is True:
+            return GroundingResult(
+                GroundingStatus.ABSENT,
+                reason_code="interaction_enabler_already_satisfied",
+            )
+        if enabling_target.state.get("expanded") is not False:
+            return GroundingResult(
+                GroundingStatus.CAPABILITY_MISSING,
+                reason_code="interaction_enabler_state_missing",
+            )
+        return GroundingResult(
+            GroundingStatus.RESOLVED,
+            targets=enabler.targets,
+            role=GroundingRole.ENABLING,
+        )
 
 
 def _match_element(

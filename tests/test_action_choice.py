@@ -497,6 +497,190 @@ def test_action_choice_builder_binds_typed_role_ordinal_after_reordering() -> No
     assert result.choices[0].target_id == "semantic:second"
 
 
+@pytest.mark.parametrize("subject", ("radio_button_2", "radio_button[2]"))
+def test_action_choice_builder_binds_compound_role_ordinal_after_reordering(
+    subject: str,
+) -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
+
+    criterion = _criterion(
+        criterion_id="criterion:second-radio",
+        subject=subject,
+        relation=CriterionRelation.HAS_CHANGED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=interaction_for_state(
+            criterion.subject,
+            criterion.relation,
+            criterion.expected_value,
+            (_source(),),
+        ),
+    )
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:renamed-first",
+                surface="dom",
+                role="radio",
+                label="Renamed first",
+                supported_actions=("activate",),
+                state={"checked": False},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:renamed-second",
+                surface="dom",
+                role="radio",
+                label="Renamed second",
+                supported_actions=("activate",),
+                state={"checked": False},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert result.choices[0].target_id == "semantic:renamed-second"
+
+
+def test_action_choice_builder_emits_explicit_enabling_choice_for_missing_target() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet, ChoiceRole
+
+    criterion = _criterion(
+        criterion_id="criterion:report",
+        subject="Quarterly report",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "Quarterly report",
+            (_source(),),
+            role="link",
+            enabler=ElementIntent("Reports", (_source(),), role="button"),
+        ),
+    )
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:reports",
+                surface="dom",
+                role="button",
+                label="Reports",
+                supported_actions=("activate",),
+                state={"expanded": False, "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].target_id == "semantic:reports"
+    assert result.choices[0].role == ChoiceRole.ENABLING
+    assert result.choices[0].criterion_ids == ()
+
+
+def test_action_choice_builder_liveness_blocks_satisfied_enabler() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceFailure
+
+    criterion = _criterion(
+        criterion_id="criterion:report",
+        subject="Quarterly report",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "Quarterly report",
+            (_source(),),
+            role="link",
+            enabler=ElementIntent("Reports", (_source(),), role="button"),
+        ),
+    )
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:reports",
+                surface="dom",
+                role="button",
+                label="Reports",
+                supported_actions=("activate",),
+                state={"expanded": True, "enabled": True, "visible": True},
+            )
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "interaction_enabler_already_satisfied"
+
+
+def test_action_choice_builder_prefers_direct_target_over_explicit_enabler() -> None:
+    from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet, ChoiceRole
+
+    criterion = _criterion(
+        criterion_id="criterion:report",
+        subject="Quarterly report",
+        relation=CriterionRelation.IS_COMPLETED,
+        expected_value=None,
+    )
+    step = _step(
+        criterion=criterion,
+        interaction=ElementIntent(
+            "Quarterly report",
+            (_source(),),
+            role="link",
+            enabler=ElementIntent("Reports", (_source(),), role="button"),
+        ),
+    )
+
+    result = ActionChoiceBuilder().build(
+        task_revision=1,
+        state_version=7,
+        step=step,
+        scope=_scope(step),
+        observation=_observation(
+            UnifiedObservationTarget(
+                target_id="semantic:reports",
+                surface="dom",
+                role="button",
+                label="Reports",
+                supported_actions=("activate",),
+                state={"expanded": False, "enabled": True, "visible": True},
+            ),
+            UnifiedObservationTarget(
+                target_id="semantic:quarterly-report",
+                surface="dom",
+                role="link",
+                label="Quarterly report",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            ),
+        ),
+    )
+
+    assert isinstance(result, ActionChoiceSet)
+    assert len(result.choices) == 1
+    assert result.choices[0].target_id == "semantic:quarterly-report"
+    assert result.choices[0].role == ChoiceRole.DIRECT
+    assert result.choices[0].criterion_ids == ("criterion:report",)
+
+
 def test_action_choice_builder_binds_label_role_state_identifier() -> None:
     from affordance_runtime.action_choice import ActionChoiceBuilder, ActionChoiceSet
 

@@ -7,6 +7,7 @@ benchmarks. Runtime hookup and authority cutover are separate slices.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, TypeAlias
@@ -83,6 +84,7 @@ class ElementIntent:
     role: str = ""
     ordinal: int | None = None
     match_by_role: bool = False
+    enabler: ElementIntent | None = None
 
     def __post_init__(self) -> None:
         _require_nonblank("element intent target", self.target)
@@ -95,6 +97,8 @@ class ElementIntent:
             raise ValueError("element intent ordinal must be positive")
         if self.match_by_role and not self.role:
             raise ValueError("role-only element intent requires a role")
+        if self.enabler is not None and self.enabler.enabler is not None:
+            raise ValueError("element intent enablers cannot be nested")
 
 
 @dataclass(frozen=True)
@@ -217,6 +221,9 @@ def _element_identity(
     if structured is not None:
         label, role, role_only = structured
         return label, role, role_only, None
+    role_ordinal = _compound_role_ordinal_identity(subject)
+    if role_ordinal is not None:
+        return role_ordinal
     role_value = _role_value_identity(subject, expected_value)
     if role_value is not None:
         return role_value
@@ -265,6 +272,22 @@ def _semantic_state_identifier(
             remaining.remove(ordinal_token)
     label = " ".join(remaining)
     return (label or role), role, not label, ordinal
+
+
+def _compound_role_ordinal_identity(
+    subject: str,
+) -> tuple[str, str, bool, int | None] | None:
+    match = re.fullmatch(
+        r"(?P<role>[a-z]+)(?:_button)?(?:_(?P<ordinal>\d+)|\[(?P<bracket_ordinal>\d+)\])(?:_state)?",
+        subject.casefold(),
+    )
+    if match is None or match.group("role") not in _ELEMENT_ROLES:
+        return None
+    ordinal = int(match.group("ordinal") or match.group("bracket_ordinal"))
+    if ordinal < 1:
+        return None
+    role = match.group("role")
+    return role, role, True, ordinal
 
 
 def _role_value_identity(

@@ -19,6 +19,7 @@ from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
 from affordance_runtime.interaction_grounding import (
     GroundingResult,
+    GroundingRole,
     GroundingStatus,
     GroundingTarget,
     InteractionGrounder,
@@ -42,6 +43,12 @@ class ChoiceSource(StrEnum):
     RUNTIME = "runtime"
 
 
+class ChoiceRole(StrEnum):
+    DIRECT = "direct"
+    ENABLING = "enabling"
+    INFORMATION = "information"
+
+
 FrozenJsonObject: TypeAlias = FrozenDict
 ActionChoiceBuildResult: TypeAlias = "ActionChoiceSet | ActionChoiceFailure"
 
@@ -58,6 +65,7 @@ class ActionChoice:
     destination_id: str = ""
     parameters: FrozenJsonObject = field(default_factory=lambda: FrozenDict({}))
     criterion_ids: tuple[str, ...] = ()
+    role: ChoiceRole = ChoiceRole.DIRECT
     source: ChoiceSource = ChoiceSource.RUNTIME
 
     def __init__(
@@ -73,6 +81,7 @@ class ActionChoice:
         destination_id: str = "",
         parameters: dict[str, object] | FrozenJsonObject | None = None,
         criterion_ids: tuple[str, ...] = (),
+        role: ChoiceRole = ChoiceRole.DIRECT,
         source: ChoiceSource = ChoiceSource.RUNTIME,
     ) -> None:
         object.__setattr__(self, "choice_id", choice_id)
@@ -89,6 +98,7 @@ class ActionChoice:
             parameters if isinstance(parameters, FrozenDict) else FrozenDict(parameters or {}),
         )
         object.__setattr__(self, "criterion_ids", tuple(criterion_ids))
+        object.__setattr__(self, "role", role)
         object.__setattr__(self, "source", source)
         self.__post_init__()
 
@@ -110,6 +120,8 @@ class ActionChoice:
             raise ValueError("choice parameters must be deeply immutable")
         _require_tuple("criterion_ids", self.criterion_ids)
         _require_unique_nonblank("criterion ids", self.criterion_ids)
+        if not isinstance(self.role, ChoiceRole):
+            raise ValueError("unsupported choice role")
         if not isinstance(self.source, ChoiceSource):
             raise ValueError("unsupported choice source")
 
@@ -355,7 +367,23 @@ class ActionChoiceBuilder:
             item for item in step.completion_criteria if isinstance(item, StateCriterion)
         )
         criterion_ids = tuple(item.criterion_id for item in criteria)
-        if isinstance(step.interaction, CollectionIntent):
+        if grounding.role == GroundingRole.ENABLING:
+            target = targets.get(grounding.targets[0].target_id)
+            if target is not None and _supports(target, PlannerActionKind.ACTIVATE):
+                choices.append(
+                    _make_choice(
+                        task_revision=task_revision,
+                        state_version=state_version,
+                        snapshot_id=observation.snapshot_id,
+                        step_id=step.step_id,
+                        action_kind=PlannerActionKind.ACTIVATE,
+                        target_id=target.target_id,
+                        parameters={},
+                        criterion_ids=(),
+                        role=ChoiceRole.ENABLING,
+                    )
+                )
+        elif isinstance(step.interaction, CollectionIntent):
             target = targets.get(grounding.targets[0].target_id)
             if target is not None and _supports(target, PlannerActionKind.SELECT_OPTION):
                 choices.append(
@@ -437,6 +465,7 @@ def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice
             choice.action_kind,
             choice.target_id,
             choice.destination_id,
+            choice.role,
             json.dumps(
                 to_json_compatible(choice.parameters),
                 sort_keys=True,
@@ -461,6 +490,7 @@ def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice
                     for criterion_id in member.criterion_ids
                 )
             ),
+            role=members[0].role,
         )
         for members in grouped.values()
     ]
@@ -688,6 +718,7 @@ def _make_choice(
     parameters: dict[str, object],
     criterion_ids: tuple[str, ...],
     destination_id: str = "",
+    role: ChoiceRole = ChoiceRole.DIRECT,
 ) -> ActionChoice:
     payload = {
         "task_revision": task_revision,
@@ -699,6 +730,7 @@ def _make_choice(
         "destination_id": destination_id,
         "parameters": to_json_compatible(freeze_json(parameters)),
         "criterion_ids": criterion_ids,
+        "role": role.value,
         "source": ChoiceSource.RUNTIME.value,
     }
     digest = hashlib.sha256(
@@ -715,6 +747,7 @@ def _make_choice(
         destination_id=destination_id,
         parameters=parameters,
         criterion_ids=criterion_ids,
+        role=role,
     )
 
 
