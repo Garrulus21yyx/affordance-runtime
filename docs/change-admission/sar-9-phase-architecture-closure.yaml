@@ -134,6 +134,57 @@ behavioral_closure_evidence_2026_07_31:
       This semantic capability increment adds canonical contracts and tests, so it
       is not counted as SAR-9 architecture slimming and cannot satisfy the negative
       orchestration LOC gate. M4 and promotion remain open.
+  m5_observed_value_transfer:
+    revision: 732cae00edb9c490147878059c134483b3229054
+    status: generic_unit_complete_not_promotion
+    failure_chain:
+      - textarea_current_state_was_ambiguous_with_its_scroll_region_proxy
+      - textarea_element_kind_was_flattened_into_the_shared_textbox_role
+      - bounded_planner_state_could_drop_semantic_keys_by_alphabetic_truncation
+      - relation_destination_was_outside_the_single_target_active_step_scope
+      - dynamic_obligation_output_was_rejected_by_literal_value_scope_authorization
+    canonical_replacement:
+      - observation_value_source_to_obligation_output_dependency
+      - typed_RelationIntent_value_transfer
+      - element_kind_and_role_remain_distinct
+      - exact_safe_control_value_only
+      - destination_is_the_effect_target_for_value_transfer
+      - observed_value_transfer_authorization_binds_source_and_destination_candidates
+      - proposal_rejection_context_preserved_through_grounding_binding
+    fail_closed_guards:
+      - no_observed_text_fallback
+      - no_password_value
+      - no_truncated_prefix_or_suffix_value
+      - no_empty_or_over_240_character_value
+      - no_same_source_and_destination
+      - no_stale_candidate
+      - no_parameter_source_value_mismatch
+      - no_task_id_seed_or_benchmark_branch
+    targeted_copy_paste:
+      seeds: [0, 1]
+      passed: 2/2
+      official_reward: 1.0
+      runtime_verification: 2/2
+      runtime_failures: 0
+      action_families: [fill, click]
+      report_sha256: a7cd6a3540837efc190f09f2b1ee2141a7ab46ca0bea64b98618b6bd5fb5ab04
+    verification:
+      focused_tests: 231_passed
+      full_pytest: 1422_passed
+      ruff: passed
+      core_mypy: passed_117_source_files
+      build: passed
+      architecture_ratchet: task_planning_1641_below_1642_ceiling
+      clean_pr_6x2: 12/12
+      clean_runtime_failures: 0
+      clean_provider_failures: 0
+      clean_missing_or_unrun: 0
+      clean_identity_digest: sha256:73020dcf8092b04a89b2bf5ddbd5964a6d1c0272d34872782092ec609e19c649
+      clean_report_sha256: 2d2de3ae3dc9b54f2703e44a9aac0d32efe2843d277ee879ae175741dd904f1d
+    architecture_gate_interpretation: >-
+      This is a typed semantic capability unit, not an SAR-9 LOC-closure claim.
+      It adds no stage, compatibility adapter, task-specific branch, benchmark
+      dependency, State/Trace writer, or ratchet increase. Promotion remains held.
   typed_model_output_boundary:
     revision: 3a041e34b6cf17c807299c373365f7b3a1c7e850
     trigger:
