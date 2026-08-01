@@ -141,15 +141,15 @@ Run: `PYTHONPATH=src python -m pytest -q && ruff check src tests && git diff --c
 
 Expected: 1459 tests pass, Ruff passes, diff check exits 0.
 
-- [ ] **Step 2: Commit and push source changes**
+- [x] **Step 2: Commit and push source changes**
 
 Stage only the report pages, shared CSS, overview, README, design, and this plan. Commit with `add conversion audit chapter pages` and push `agent/migrate-runtime-components`.
 
-- [ ] **Step 3: Publish the static subtree**
+- [x] **Step 3: Publish the static subtree**
 
 Run `git subtree split --prefix docs/affordance-runtime-deep-dive HEAD`, push that commit to `refs/heads/gh-pages`, and wait for the Pages build to reach `built`.
 
-- [ ] **Step 4: Verify public URLs**
+- [x] **Step 4: Verify public URLs**
 
 Fetch the root page and every detail page under `https://garrulus21yyx.github.io/affordance-runtime/`. Require HTTP 200 and verify each page-specific `<title>` plus semantic-loss ledger marker.
 
