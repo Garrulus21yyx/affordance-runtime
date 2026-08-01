@@ -3,6 +3,13 @@
 This directory contains current Runtime governance documents, historical audits,
 and archived architecture records. When documents conflict, use the order below.
 
+## Reader guide
+
+- [Affordance Runtime 中文完整架构解读](affordance-runtime-deep-dive/index.html)
+  provides a source-anchored, end-to-end GitHub Pages report covering natural-language
+  intake, TaskSpec/TaskPlan compilation, the five-stage loop, context handling,
+  safety, recovery, verification, evidence, and terminology.
+
 ## Current architecture authority
 
 The current long-term production target is:
