@@ -3,6 +3,14 @@
 这是一个零依赖静态 GitHub Pages 报告，入口为 `index.html`。页面内容绑定到分支
 `agent/migrate-runtime-components` 的提交 `786857f8fb61aa99f2c7e6a23eb8225957e1438b`。
 
+总览页的核心 E2E 章节分别链接到九个转换审计单页：`entrypoints.html`、
+`intake.html`、`planning.html`、`agent-loop.html`、`perception-action.html`、
+`verification.html`、`recovery.html`、`context.html` 和 `evidence.html`。
+
+每个单页必须维持相同审计协议：输入对象、转换者、字段映射、输出对象、保留语义、
+可能的语义损失、风险、防护、失败出口和本页损失账本。修改章节名称或文件名时，必须
+同步更新总览入口以及详情页的上一章/下一章导航。
+
 ## 本地预览
 
 在仓库根目录执行：

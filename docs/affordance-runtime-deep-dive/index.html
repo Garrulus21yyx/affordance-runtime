@@ -90,6 +90,7 @@
 
       <section id="entrypoints">
         <div class="section-head"><div class="section-no">SECTION 03</div><div><h2>入口与外层调用：谁能把任务送进来</h2><p>同一个 Runtime 有多种外壳，但进入内核后收敛为同一套协议。</p></div></div>
+        <a class="chapter-link" href="entrypoints.html">查看入口逐步转换与语义损失</a>
         <div class="scroll-table"><table><thead><tr><th>入口</th><th>提交对象</th><th>调用路径</th><th>边界意义</th></tr></thead><tbody>
           <tr><td>Python API</td><td><code>RunRequest</code></td><td><code>RuntimeClient → RunCoordinator.run</code></td><td>最直接的嵌入方式</td></tr>
           <tr><td>稳定任务 API</td><td><code>TaskRequest</code></td><td><code>TaskRuntimeService → TaskRunner</code></td><td>支持 submit、execute、revise、approve、cancel、result、evidence、trace</td></tr>
@@ -104,6 +105,7 @@
 
       <section id="intake">
         <div class="section-head"><div class="section-no">SECTION 04</div><div><h2>自然语言如何变成可执行语义</h2><p>关键不是抽取几个槽位，而是建立来源、授权、义务和完成证据之间的可证明关系。</p></div></div>
+        <a class="chapter-link" href="intake.html">查看自然语言编译逐步转换与语义损失</a>
         <h3>4.1 编译流水线</h3>
         <ol>
           <li><strong>接收 UserRequest：</strong><code>raw_text</code> 配合 conversation、attachment、target、profile 的引用和调用者、渠道、语言、时间信息。</li>
@@ -141,6 +143,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="planning">
         <div class="section-head"><div class="section-no">SECTION 05</div><div><h2>Planner 到 Task：计划如何拆，结构语言如何形成</h2><p>这里有两层 planning：任务级步骤分解，以及当前步骤内的动作选择。</p></div></div>
+        <a class="chapter-link" href="planning.html">查看规划逐步转换与语义损失</a>
         <h3>5.1 任务级：TaskSpec → TaskPlan → StepSpec</h3>
         <p>若 TaskSpec 已有义务图，<code>RuleTaskPlanGenerator</code> 通常按义务生成 StepSpec：每个步骤绑定 objective、<code>InteractionIntent</code>、completion criteria、source refs、depends_on 和 preconditions。随后 <code>TaskPlanAuthorityBinder</code> 才赋予 plan_id、version、based_on_state_version 与 supersedes。模型候选不带这些权威字段。</p>
         <div class="two-col">
@@ -175,6 +178,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="agent-loop">
         <div class="section-head"><div class="section-no">SECTION 06</div><div><h2>Agent Loop：每一轮到底怎么走</h2><p>实现不是简单 ReAct while-loop，而是阶段协议、单写者提交和失败所有者路由。</p></div></div>
+        <a class="chapter-link" href="agent-loop.html">查看五阶段循环逐步转换与语义损失</a>
         <div class="loop-map" role="img" aria-label="感知、规划、执行、进度、恢复五阶段循环">
           <div class="loop-node"><b>Perception</b><span>捕获一致快照，融合来源；必要时主动探测证据缺口。</span></div>
           <div class="loop-node"><b>Planning</b><span>对齐当前状态、计划和活跃步骤；选择有界动作。</span></div>
@@ -207,6 +211,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="perception-action">
         <div class="section-head"><div class="section-no">SECTION 07</div><div><h2>从“看到页面”到“执行动作”</h2><p>目标不是从截图猜坐标，而是把语义意图绑定到当前、可追溯、未过期的界面证据。</p></div></div>
+        <a class="chapter-link" href="perception-action.html">查看感知、Grounding 与执行逐步转换</a>
         <h3>7.1 统一观测</h3>
         <p><code>UnifiedObservation</code> 把不同来源投影成 target-centric 视图：每个 target 有 id、surface、role、label、supported actions、state、confidence、conflict codes 和 source refs；整份观测绑定 snapshot、page revision 与 environment revision。</p>
         <p><code>PerceptionSession</code> 负责一次一致捕获，并可保存截图 Artifact。主动感知不是任意探索：<code>EvidenceGap</code> 明确缺什么证据，<code>ProbeCapability</code> 必须只读，<code>ProbeBudget</code> 限制观测、超时、模型调用、成本与产物数，<code>ProbeCommand</code> 要求一个新的、一致的 epoch。</p>
@@ -229,6 +234,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="verification">
         <div class="section-head"><div class="section-no">SECTION 08</div><div><h2>验证、进度与终态：怎么知道真的完成</h2><p>执行是尝试改变世界；验证才是判断世界是否改变。</p></div></div>
+        <a class="chapter-link" href="verification.html">查看验证与终态逐步转换及语义损失</a>
         <h3>8.1 三层结果必须分开</h3>
         <div class="three-col">
           <article class="panel"><span class="tag">ACTION EFFECT</span><h4>动作效果</h4><p>这次 contract 的 expected effect 是否发生，例如购物车数量增加。</p></article>
@@ -254,6 +260,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="recovery">
         <div class="section-head"><div class="section-no">SECTION 09</div><div><h2>失败恢复与安全：不是“一律重试三次”</h2><p>恢复首先要知道失败发生在哪一层、外部效果是否可能已发生、下一步该由谁负责。</p></div></div>
+        <a class="chapter-link" href="recovery.html">查看失败分类与恢复逐步转换</a>
         <h3>9.1 统一失败信封</h3>
         <p><code>FailureEnvelope</code> 可以覆盖 intake、observation、planning、grounding、preflight、execution、verification、progress、provider context 等阶段，记录 failure class、语义族哈希、精确调试哈希、state/snapshot/proposal/contract 谱系、证据、剩余预算和 effect status。</p>
         <div class="scroll-table"><table><thead><tr><th>EffectStatus</th><th>含义</th><th>恢复约束</th></tr></thead><tbody>
@@ -290,6 +297,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="context">
         <div class="section-head"><div class="section-no">SECTION 10</div><div><h2>上下文工程与压缩：仓库实际做了什么</h2><p>这是最容易被“通用 Agent 经验”带偏的部分，必须严格按代码表述。</p></div></div>
+        <a class="chapter-link" href="context.html">查看上下文投影、压缩与语义损失</a>
         <h3>10.1 当前实现：每轮重建有界投影</h3>
         <p>Planner 不直接读取整条 Trace，也不拿完整页面原始数据。<code>PlannerContext</code>/<code>PlanningRequest</code> 按当前 TaskSpec、活跃步骤、当前观测、预算、最近结果、验证状态、恢复摘要和少量 accepted knowledge 重新构建。页面文本、affordance 数、artifact refs 等都有边界；artifact 路径会被哈希化；任务命名还会从某些摘要中移除，降低 benchmark leakage。</p>
         <div class="object-chain"><span>StateKernel 当前态</span><i>+</i><span>BrowserSnapshot</span><i>+</i><span>TaskSpec</span><i>→</i><span>只读 bounded projection</span><i>→</i><span>model messages</span></div>
@@ -317,6 +325,7 @@ TaskSpec（Runtime 规范化并授权）
 
       <section id="evidence">
         <div class="section-head"><div class="section-no">SECTION 11</div><div><h2>证据、评测、演化与 E2E</h2><p>把“运行成功”“基准得分高”“经验可复用”拆成三套不同门槛。</p></div></div>
+        <a class="chapter-link" href="evidence.html">查看证据、评测与演化逐步转换</a>
         <h3>11.1 运行时证据</h3>
         <p><code>ArtifactStore</code> 按 run 保存 observation、screenshot、receipt、verification、run.json 和 events.jsonl，并为产物计算 SHA-256。<code>TraceDag</code> 的每个节点记录 kind、payload、parents 和 timestamp，写出时成为带 sequence 与 parent_event_ids 的 JSONL。</p>
         <p>这支持回答：哪个观测促成哪个提议？哪个合同产生哪个回执？哪个后验验证支撑哪个步骤完成？失败恢复从哪条证据分支出来？</p>
