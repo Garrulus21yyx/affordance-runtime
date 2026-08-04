@@ -259,9 +259,25 @@ details > div { padding: 0 1rem 1rem; }
 .keep-flag { color: #145f60; background: #e7f6f3; }
 .architecture-diff { margin: 2rem 0; }
 .architecture-diff table { min-width: 980px; }
+.architecture-note {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .8rem;
+  margin: 1rem 0 1.8rem;
+  padding: .8rem;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.52);
+}
+.architecture-note > div { min-width: 0; padding: .8rem; border-radius: 8px; }
+.architecture-note strong { display: block; margin-bottom: .35rem; font-family: var(--mono); font-size: .78rem; }
+.architecture-note p { margin: 0; font-size: .9rem; }
+.architecture-note .current-fact { border-left: 4px solid var(--red); background: #fff3ef; }
+.architecture-note .proposed-target { border-left: 4px solid var(--green); background: #eaf8f3; }
 
 @media (max-width: 760px) {
   .architecture-comparison { grid-template-columns: 1fr; }
+  .architecture-note { grid-template-columns: 1fr; }
   .architecture-view { max-width: 100%; overflow: hidden; }
   .architecture-diff .scroll-table { width: 100%; max-width: 100%; overflow-x: auto; }
 }
