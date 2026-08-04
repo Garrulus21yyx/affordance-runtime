@@ -201,6 +201,11 @@ details > div { padding: 0 1rem 1rem; }
   .detail-page .scroll-table { width: 100%; max-width: 100%; overflow-x: auto; contain: inline-size; }
 }
 
+.conversion-block,
+.loss-ledger,
+.architecture-view,
+.architecture-diff { scroll-margin-top: 1.5rem; }
+
 @media print {
   .sidebar, .mobile-toggle { display: none !important; }
   .page-shell { display: block; }
