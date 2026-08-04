@@ -7,6 +7,11 @@
 `intake.html`、`planning.html`、`agent-loop.html`、`perception-action.html`、
 `verification.html`、`recovery.html`、`context.html` 和 `evidence.html`。
 
+`architecture-modification-audit.md` 是所收架构修改意见的规范追踪报告。它逐项区分
+固定基线的当前事实、明确保留的安全边界、当前缺口、建议目标和后置事项，并将每个
+条目映射到公开页面的稳定锚点和固定提交源码。总览 `SECTION 02` 同时展示 CURRENT
+当前实现链与 PROPOSED 建议目标链；建议链不表示 Runtime 已经完成对应改造。
+
 每个单页必须维持相同审计协议：输入对象、转换者、字段映射、输出对象、保留语义、
 可能的语义损失、风险、防护、失败出口和本页损失账本。修改章节名称或文件名时，必须
 同步更新总览入口以及详情页的上一章/下一章导航。
@@ -37,3 +42,10 @@ python -m http.server 8000 --directory docs
 - 代码分支或提交变化后，更新页面顶部版本戳，并复核所有“已实现/未实现”判断。
 - 新增术语时必须在正文首次出现处解释，并同步术语表。
 - JavaScript 只做导航增强；关闭脚本后，正文、锚点与折叠内容仍应可读。
+- 修改意见审计必须保留 `CURRENT`、`KEEP`、`GAP`、`PROPOSED`、`DEFERRED`
+  五种口径，不能把目标建议合并进当前事实。
+- 九个详情页的 conversion block ID 是公开深链接接口；如确需改名，必须保留兼容锚点
+  或同步修复 Markdown、总览、测试和已发布链接。
+- 当前审计中的实现判断和源码链接固定绑定
+  `786857f8fb61aa99f2c7e6a23eb8225957e1438b`。未来 Runtime 发生变化时应新增事实基线
+  审计，不能静默把这份历史意见改写成另一个提交的状态。

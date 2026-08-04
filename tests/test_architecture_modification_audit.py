@@ -3,7 +3,6 @@ from __future__ import annotations
 from html.parser import HTMLParser
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "docs" / "affordance-runtime-deep-dive"
 AUDIT = SITE / "architecture-modification-audit.md"
