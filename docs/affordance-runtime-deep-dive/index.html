@@ -192,7 +192,7 @@ TaskSpec（Runtime 规范化并授权）
         <div class="section-head"><div class="section-no">SECTION 05</div><div><h2>Planner 到 Task：计划如何拆，结构语言如何形成</h2><p>这里有两层 planning：任务级步骤分解，以及当前步骤内的动作选择。</p></div></div>
         <a class="chapter-link" href="planning.html">查看规划逐步转换与语义损失</a>
         <h3>5.1 任务级：TaskSpec → TaskPlan → StepSpec</h3>
-        <p>若 TaskSpec 已有义务图，<code>RuleTaskPlanGenerator</code> 通常按义务生成 StepSpec：每个步骤绑定 objective、<code>InteractionIntent</code>、completion criteria、source refs、depends_on 和 preconditions。随后 <code>TaskPlanAuthorityBinder</code> 才赋予 plan_id、version、based_on_state_version 与 supersedes。模型候选不带这些权威字段。</p>
+        <p>若 TaskSpec 已有义务图，<code>RulePlanCandidateGenerator</code> 通常按义务生成 StepSpec：每个步骤绑定 objective、<code>InteractionIntent</code>、completion criteria、source refs、depends_on 和 preconditions。随后 <code>TaskPlanAuthorityBinder</code> 才赋予 plan_id、version、based_on_state_version 与 supersedes。模型候选不带这些权威字段。</p>
         <div class="two-col">
           <article class="panel"><span class="tag">INTERACTION</span><h4>InteractionIntent：要怎么与界面交互</h4><p>有 ElementIntent、CollectionIntent、RelationIntent、RegionIntent 四种类型。例如“结果列表第二项”是 collection + ordinal 关系，不是 CSS selector。</p></article>
           <article class="panel"><span class="tag">COMPLETION</span><h4>StateCriterion：什么状态算完成</h4><p>有 subject、relation、expected、evidence policy 和来源引用。交互方式与完成条件分离，避免“点过按钮”被误算为“效果已经发生”。</p></article>

@@ -179,3 +179,17 @@ def test_audit_preserves_fact_baseline_and_status_vocabulary() -> None:
     for status in ("CURRENT", "KEEP", "GAP", "PROPOSED", "DEFERRED"):
         assert f"`{status}`" in text
     assert "建议目标不是当前实现" in text
+
+
+def test_named_pages_distinguish_current_facts_from_targets() -> None:
+    expected = {
+        "intake.html": ("raw-text", "TaskSpecAuthority"),
+        "planning.html": ("legacy SubgoalSpec", "TaskPlan&lt;StepSpec&gt;"),
+        "perception-action.html": ("PlannerObservationView", "Runtime candidate space"),
+        "verification.html": ("两条窄机制", "completion expression"),
+        "context.html": ("PlannerContext", "pure provider serializer"),
+        "agent-loop.html": ("REUSE_LATEST_OBSERVATION", "建议目标"),
+    }
+    for filename, markers in expected.items():
+        text = (SITE / filename).read_text(encoding="utf-8")
+        assert all(marker in text for marker in markers), (filename, markers)
