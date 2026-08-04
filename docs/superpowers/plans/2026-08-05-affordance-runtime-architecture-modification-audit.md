@@ -706,7 +706,7 @@ git commit -m "document architecture audit maintenance"
 - No additional source files expected.
 - Deploy: subtree rooted at `docs/affordance-runtime-deep-dive` to `gh-pages`.
 
-- [ ] **Step 1: Confirm the source branch is clean and push it**
+- [x] **Step 1: Confirm the source branch is clean and push it**
 
 Run:
 
@@ -717,15 +717,15 @@ git push origin agent/migrate-runtime-components
 
 Expected: only the branch tracking line remains and the push succeeds.
 
-- [ ] **Step 2: Deploy the site subtree to `gh-pages`**
+- [x] **Step 2: Deploy the site subtree to `gh-pages`**
 
 Use the repository’s established subtree deployment procedure from the previous report publication. Confirm the deployed commit contains `architecture-modification-audit.md`, the updated `index.html`, all nine detail pages, CSS and JavaScript.
 
-- [ ] **Step 3: Wait for GitHub Pages to report a successful build**
+- [x] **Step 3: Wait for GitHub Pages to report a successful build**
 
 Query the Pages build API until the deployed commit reports `built` with no error. Do not claim publication merely because `git push` succeeded.
 
-- [ ] **Step 4: Verify public pages and exact anchors**
+- [x] **Step 4: Verify public pages and exact anchors**
 
 Fetch the overview, nine detail pages and representative anchors with a cache-busting query. Confirm HTTP 200 and markers for:
 
@@ -742,6 +742,6 @@ PROPOSED · 建议目标（尚未实现）
 
 Expected: all public URLs return 200 and contain the correct current/proposed text.
 
-- [ ] **Step 5: Record completion in this plan and commit the status update**
+- [x] **Step 5: Record completion in this plan and commit the status update**
 
 Mark every completed checkbox, run `git diff --check`, commit only the plan status, and push the source branch. The Pages subtree does not need redeployment for a plan-only change outside the site directory.
