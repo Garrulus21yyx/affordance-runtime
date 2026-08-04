@@ -1,6 +1,6 @@
 # Affordance Runtime Architecture Modification Audit Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Produce a complete Chinese Markdown audit of the supplied architecture modification opinion, map every source point to exact live-page anchors and baseline code evidence, and show the current and proposed architectures side by side on the GitHub Pages overview.
 
@@ -66,7 +66,7 @@ index.html: current-architecture, proposed-architecture, architecture-diff, modi
 - Create: `tests/test_architecture_modification_audit.py`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Write a documentation contract that enumerates every required source ID and anchor**
+- [x] **Step 1: Write a documentation contract that enumerates every required source ID and anchor**
 
 Create the test with Python standard-library parsing. Use these constants and checks verbatim:
 
@@ -181,7 +181,7 @@ def test_audit_preserves_fact_baseline_and_status_vocabulary() -> None:
     assert "建议目标不是当前实现" in text
 ```
 
-- [ ] **Step 2: Run the contract and confirm that the missing deliverables fail**
+- [x] **Step 2: Run the contract and confirm that the missing deliverables fail**
 
 Run:
 
@@ -191,7 +191,7 @@ PYTHONPATH=src python -m pytest tests/test_architecture_modification_audit.py -q
 
 Expected: failures because `architecture-modification-audit.md`, the stable detail anchors and the overview comparison do not yet exist.
 
-- [ ] **Step 3: Commit the failing contract**
+- [x] **Step 3: Commit the failing contract**
 
 ```bash
 git add tests/test_architecture_modification_audit.py
@@ -215,7 +215,7 @@ git commit -m "test architecture audit traceability"
 - Modify: `docs/affordance-runtime-deep-dive/styles.css`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Assign every conversion block the canonical ID from the file map**
+- [x] **Step 1: Assign every conversion block the canonical ID from the file map**
 
 For each `<article class="conversion-block">`, add the matching `id`, for example:
 
@@ -231,7 +231,7 @@ For each `<section class="loss-ledger">`, add the matching page loss-ledger ID, 
 
 Use exactly the complete anchor list in “Canonical identifier sets”; do not rename visible step IDs or headings.
 
-- [ ] **Step 2: Make fixed-header anchor navigation readable**
+- [x] **Step 2: Make fixed-header anchor navigation readable**
 
 Add the following CSS:
 
@@ -244,7 +244,7 @@ Add the following CSS:
 }
 ```
 
-- [ ] **Step 3: Run the anchor test**
+- [x] **Step 3: Run the anchor test**
 
 Run:
 
@@ -254,7 +254,7 @@ PYTHONPATH=src python -m pytest tests/test_architecture_modification_audit.py::t
 
 Expected: `1 passed`.
 
-- [ ] **Step 4: Check HTML ID uniqueness across all pages**
+- [x] **Step 4: Check HTML ID uniqueness across all pages**
 
 Run:
 
@@ -283,7 +283,7 @@ PY
 
 Expected: `HTML ID PASS`.
 
-- [ ] **Step 5: Commit the anchor contract**
+- [x] **Step 5: Commit the anchor contract**
 
 ```bash
 git add docs/affordance-runtime-deep-dive/*.html docs/affordance-runtime-deep-dive/styles.css
@@ -298,7 +298,7 @@ git commit -m "add stable architecture report anchors"
 - Create: `docs/affordance-runtime-deep-dive/architecture-modification-audit.md`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Create the report front matter and evidence rules**
+- [x] **Step 1: Create the report front matter and evidence rules**
 
 The document must begin with these sections and statements:
 
@@ -322,7 +322,7 @@ The document must begin with these sections and statements:
 
 The overview table must summarize all 25 `OP-*` items with columns: ID, faithful opinion, status, exact public page anchor, baseline code evidence, and disposition.
 
-- [ ] **Step 2: Write `OP-00` through `OP-08` without collapsing intake and planning distinctions**
+- [x] **Step 2: Write `OP-00` through `OP-08` without collapsing intake and planning distinctions**
 
 Use one H3 section per ID and the fixed ten-field template from the design spec. Preserve these subjects exactly:
 
@@ -340,7 +340,7 @@ OP-08 multiple terminal obligations and composite completion
 
 Map them to `entrypoints.html#01-b-run-request`, `intake.html#02-a-source-ledger`, `intake.html#02-b-intent-draft`, `intake.html#02-c-canonical-obligations`, `intake.html#02-d-task-spec-admission`, `planning.html#03-a-plan-candidate`, `planning.html#03-b-plan-authority`, and `verification.html#06-d-task-completion` as applicable. Every source link must include the full baseline SHA.
 
-- [ ] **Step 3: Write `OP-09` through `OP-16` and preserve candidate-space versus prompt-space separation**
+- [x] **Step 3: Write `OP-09` through `OP-16` and preserve candidate-space versus prompt-space separation**
 
 Preserve these subjects exactly:
 
@@ -357,7 +357,7 @@ OP-16 keep ActionContract and execution boundaries; split internal services behi
 
 Map to `perception-action.html#05-a-browser-snapshot`, `#05-b-unified-observation`, `#05-c-grounding-choice`, `context.html#08-a-planning-request`, `#08-b-planner-context`, `planning.html#03-d-action-choice`, `perception-action.html#05-d-action-contract`, and `#05-e-execution-receipt`.
 
-- [ ] **Step 4: Write `OP-17` through `OP-24` and separate effect, step and task evidence**
+- [x] **Step 4: Write `OP-17` through `OP-24` and separate effect, step and task evidence**
 
 Preserve these subjects exactly:
 
@@ -374,7 +374,7 @@ OP-24 Trace, Artifact, Benchmark and Skill Evolution stay outside synchronous co
 
 Map to `verification.html#06-a-verification-report`, `#06-c-step-completion`, `#06-d-task-completion`, `agent-loop.html#04-d-loop-directive`, `recovery.html#07-b-recovery-owner`, and all relevant `evidence.html` anchors.
 
-- [ ] **Step 5: Add the complete non-OP ledgers**
+- [x] **Step 5: Add the complete non-OP ledgers**
 
 Add dedicated sections whose rows contain every ID from these groups and preserve the supplied meaning:
 
@@ -394,7 +394,7 @@ FLAT-05 terminal-readiness compatibility + progress completion + latest-report c
 
 Then add exact P0, P1, P2 and P3 ledgers using every priority ID from the canonical set. Do not merge `P0-2` and `P0-3`: composable semantic support must precede deletion of regex normalizers.
 
-- [ ] **Step 6: Add the 11-stage proposed production chain and six page dispositions**
+- [x] **Step 6: Add the 11-stage proposed production chain and six page dispositions**
 
 Write `CHAIN-01` through `CHAIN-11` in the same order as the opinion:
 
@@ -406,7 +406,7 @@ contract and execution; post-action proof; step/task progress; unique task compl
 
 Write `PAGE-INTAKE`, `PAGE-PLANNING`, `PAGE-PERCEPTION`, `PAGE-VERIFICATION`, `PAGE-CONTEXT`, and `PAGE-AGENT-LOOP` as a page-change matrix. Add `FINAL-ROUNDTRIP-01` through `FINAL-ROUNDTRIP-04` and `FINAL-PRINCIPLE` verbatim in meaning: natural language once, one lossless requirement/criterion representation, TaskPlan directly stores StepSpec, Runtime uses full UnifiedObservation, and one post-action observation proves effect/step/task.
 
-- [ ] **Step 7: Add a machine-readable coverage ledger**
+- [x] **Step 7: Add a machine-readable coverage ledger**
 
 End the document with a table containing one row for every required source ID. Use columns:
 
@@ -416,7 +416,7 @@ Source ID | Markdown section | Public page anchor | Baseline evidence or “targ
 
 Do not leave blank cells and do not use placeholder tokens, “同上” or “见前文”.
 
-- [ ] **Step 8: Run the Markdown coverage and baseline tests**
+- [x] **Step 8: Run the Markdown coverage and baseline tests**
 
 Run:
 
@@ -430,7 +430,7 @@ PYTHONPATH=src python -m pytest \
 
 Expected: `3 passed`.
 
-- [ ] **Step 9: Commit the canonical audit**
+- [x] **Step 9: Commit the canonical audit**
 
 ```bash
 git add docs/affordance-runtime-deep-dive/architecture-modification-audit.md
@@ -446,11 +446,11 @@ git commit -m "document architecture modification audit"
 - Modify: `docs/affordance-runtime-deep-dive/styles.css`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Add a visible link to the detailed Markdown audit**
+- [x] **Step 1: Add a visible link to the detailed Markdown audit**
 
 Add `id="modification-audit"` in Section 02 and a link to the GitHub-rendered Markdown on the source branch. The link label must say “逐条修改意见审计（Markdown）”, and the nearby text must state that implementation facts stay bound to the baseline SHA.
 
-- [ ] **Step 2: Render the true current implementation chain**
+- [x] **Step 2: Render the true current implementation chain**
 
 Add an architecture block with `id="current-architecture"`, class `architecture-view current`, and visible label `CURRENT · 当前实现`. Its chain must include:
 
@@ -466,7 +466,7 @@ UserRequest → SourceLedger → LLMIntentDraft → IntentDraft
 
 State explicitly that this is a readable projection of the fixed baseline, not a proposed design.
 
-- [ ] **Step 3: Render the proposed 11-stage chain**
+- [x] **Step 3: Render the proposed 11-stage chain**
 
 Add an architecture block with `id="proposed-architecture"`, class `architecture-view proposed`, and visible label `PROPOSED · 建议目标（尚未实现）`. Render `CHAIN-01` through `CHAIN-11` without deleting the authority boundaries:
 
@@ -479,11 +479,11 @@ UserRequest → SourceLedger → IntentProposal → TaskSpecAuthority → TaskSp
 → full TaskSpec completion expression → TaskCompletionVerifier → RuntimeCommitter → TaskCompleted
 ```
 
-- [ ] **Step 4: Add a per-layer current/proposed difference table**
+- [x] **Step 4: Add a per-layer current/proposed difference table**
 
 Add `id="architecture-diff"` and class `architecture-diff`. Include rows for semantics, TaskSpec, task planning, observation, model context, choice, execution, post-action observation, step evidence, task completion, and offline evidence. Each row must include change type, semantic-loss/authority implication and linked `OP-*` IDs.
 
-- [ ] **Step 5: Preserve the three-plane explanation and clarify flattening scope**
+- [x] **Step 5: Preserve the three-plane explanation and clarify flattening scope**
 
 Keep data/control/authority planes and add this rule in a warning callout:
 
@@ -491,11 +491,11 @@ Keep data/control/authority planes and add this rule in a warning callout:
 扁平化的是重复数据表示和重叠权威所有者；Intent/Plan admission、ActionContract、独立验证、Runtime progress commit 等安全边界必须保留。
 ```
 
-- [ ] **Step 6: Style the comparison without color-only semantics**
+- [x] **Step 6: Style the comparison without color-only semantics**
 
 Add CSS for `.architecture-comparison`, `.architecture-view`, `.architecture-label`, `.architecture-diff`, `.current`, and `.proposed`. Use borders, headings and explicit text labels; at `max-width: 760px`, stack columns and keep tables inside `.scroll-table`.
 
-- [ ] **Step 7: Run the overview separation test**
+- [x] **Step 7: Run the overview separation test**
 
 Run:
 
@@ -505,7 +505,7 @@ PYTHONPATH=src python -m pytest tests/test_architecture_modification_audit.py::t
 
 Expected: `1 passed`.
 
-- [ ] **Step 8: Commit the overview comparison**
+- [x] **Step 8: Commit the overview comparison**
 
 ```bash
 git add docs/affordance-runtime-deep-dive/index.html docs/affordance-runtime-deep-dive/styles.css
@@ -526,11 +526,11 @@ git commit -m "compare current and proposed runtime architecture"
 - Modify: `docs/affordance-runtime-deep-dive/styles.css`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Add a reusable current/proposed comparison callout style**
+- [x] **Step 1: Add a reusable current/proposed comparison callout style**
 
 Add `.architecture-note`, `.architecture-note .current-fact`, and `.architecture-note .proposed-target`. Each note must display text labels `当前实现` and `建议目标（尚未实现）`; color may reinforce but never replace the labels.
 
-- [ ] **Step 2: Correct intake semantics and authority wording**
+- [x] **Step 2: Correct intake semantics and authority wording**
 
 Near `#02-b-intent-draft`, `#02-c-canonical-obligations`, and `#02-d-task-spec-admission`, state:
 
@@ -541,7 +541,7 @@ Near `#02-b-intent-draft`, `#02-c-canonical-obligations`, and `#02-d-task-spec-a
 
 Also state that `PREFIX`/`SUFFIX` exist in intake schema but `compile_requested_effects()` only admits `EXACT` into the canonical obligation path. Do not claim the normalizers are already legacy-disabled.
 
-- [ ] **Step 3: Correct the planning authority round trip**
+- [x] **Step 3: Correct the planning authority round trip**
 
 Near `#03-b-plan-authority`, add the exact current chain:
 
@@ -551,7 +551,7 @@ PlanCandidate<StepSpec> → TaskPlanAuthorityBinder._subgoal_from_step() → Tas
 
 State that `_subgoal_from_step()` selects `completion_criteria[0]` and stringifies expected values. Mark direct `TaskPlan<StepSpec> + TaskProgress` as proposed, not current.
 
-- [ ] **Step 4: Correct perception ordering and candidate-space semantics**
+- [x] **Step 4: Correct perception ordering and candidate-space semantics**
 
 Near `#05-b-unified-observation`, distinguish:
 
@@ -562,7 +562,7 @@ PROPOSED: BrowserSnapshot/perception fusion → canonical full UnifiedObservatio
 
 Near `#05-c-grounding-choice`, preserve the opinion’s recommendation to add a predicate resolver rather than more raw-text regex.
 
-- [ ] **Step 5: Correct task-completion claims**
+- [x] **Step 5: Correct task-completion claims**
 
 Rewrite the transformer and risk text at `#06-d-task-completion` so it says:
 
@@ -572,15 +572,15 @@ Rewrite the transformer and risk text at `#06-d-task-completion` so it says:
 
 Add the proposed input set `TaskSpec completion expression + TaskProgress evidence index + current observation + evidence validity policy`, and preserve the fact that receipt success alone cannot complete a task.
 
-- [ ] **Step 6: Correct context-domain duplication wording**
+- [x] **Step 6: Correct context-domain duplication wording**
 
 Near `#08-b-planner-context`, label `PlanningRequest → PlannerContext → model messages` as current. Label `PlanningRequest → pure provider serializer → model messages` as proposed. Keep current compaction behavior in `#08-c-context-compaction`; do not imply `PlannerContext` has already been removed.
 
-- [ ] **Step 7: Add post-action observation reuse as a proposal**
+- [x] **Step 7: Add post-action observation reuse as a proposal**
 
 Near `#04-d-loop-directive`, state that current flow can capture a post-action snapshot in ProgressStage and then capture again when the next coordinator turn enters PerceptionStage. Show `REUSE_LATEST_OBSERVATION` or `CONTINUE_WITH_OBSERVATION` only as a proposed directive, with recapture retained for loading, conflict, inconclusive verification, targeted perception or timeout.
 
-- [ ] **Step 8: Add page-specific marker assertions to the documentation test**
+- [x] **Step 8: Add page-specific marker assertions to the documentation test**
 
 Append this test:
 
@@ -599,7 +599,7 @@ def test_named_pages_distinguish_current_facts_from_targets() -> None:
         assert all(marker in text for marker in markers), (filename, markers)
 ```
 
-- [ ] **Step 9: Run all documentation contract tests**
+- [x] **Step 9: Run all documentation contract tests**
 
 Run:
 
@@ -609,7 +609,7 @@ PYTHONPATH=src python -m pytest tests/test_architecture_modification_audit.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 10: Commit the targeted detail corrections**
+- [x] **Step 10: Commit the targeted detail corrections**
 
 ```bash
 git add \
@@ -632,7 +632,7 @@ git commit -m "clarify current and proposed architecture details"
 - Modify: `docs/affordance-runtime-deep-dive/README.md`
 - Test: `tests/test_architecture_modification_audit.py`
 
-- [ ] **Step 1: Update maintenance documentation**
+- [x] **Step 1: Update maintenance documentation**
 
 Document:
 
@@ -644,7 +644,7 @@ implementation claims and source links remain bound to 786857f8...;
 future Runtime changes require a new baseline audit rather than silently changing this report.
 ```
 
-- [ ] **Step 2: Check Markdown for placeholders and missing source IDs**
+- [x] **Step 2: Check Markdown for placeholders and missing source IDs**
 
 Run:
 
@@ -657,7 +657,7 @@ PYTHONPATH=src python -m pytest tests/test_architecture_modification_audit.py -q
 
 Expected: no placeholder matches and all documentation tests pass.
 
-- [ ] **Step 3: Validate HTML links, fragments and assets locally**
+- [x] **Step 3: Validate HTML links, fragments and assets locally**
 
 Run a Python standard-library crawler across all ten HTML pages. It must parse every local `href`, confirm the target file exists, and confirm fragments exist in the target file. Expected final output:
 
@@ -665,7 +665,7 @@ Run a Python standard-library crawler across all ten HTML pages. It must parse e
 LOCAL LINK PASS: 10 HTML pages
 ```
 
-- [ ] **Step 4: Run syntax and repository verification**
+- [x] **Step 4: Run syntax and repository verification**
 
 Run:
 
@@ -678,7 +678,7 @@ git diff --check
 
 Expected: JavaScript syntax passes, Ruff passes, all tests pass, and no whitespace errors are reported.
 
-- [ ] **Step 5: Run desktop and mobile browser verification**
+- [x] **Step 5: Run desktop and mobile browser verification**
 
 Serve `docs/affordance-runtime-deep-dive` over HTTP and use Playwright to visit the overview plus nine detail pages at widths 1280 and 320. For every visit assert:
 
@@ -691,7 +691,7 @@ all canonical fragment URLs land on a visible target
 
 Expected: `20/20 viewport checks passed` and no console errors.
 
-- [ ] **Step 6: Commit maintenance documentation and final test adjustments**
+- [x] **Step 6: Commit maintenance documentation and final test adjustments**
 
 ```bash
 git add docs/affordance-runtime-deep-dive/README.md tests/test_architecture_modification_audit.py
