@@ -69,16 +69,63 @@
 
       <section id="global-atlas">
         <div class="section-head"><div class="section-no">SECTION 02</div><div><h2>全局混合式架构图谱</h2><p>横向看数据如何变形，纵向看权威如何逐层收紧。</p></div></div>
-        <div class="atlas" role="img" aria-label="八层架构图谱：入口、语义、计划、感知、决策、执行、验证和证据">
-          <div class="atlas-row"><div class="rail-label">01 / INGRESS</div><div class="rail-flow"><b>自然语言、父 Agent、CLI、JSON-RPC</b><small>TaskRequest / UserRequest / RunRequest</small></div><div class="rail-owner">调用者提供目标，不提供底层 GUI 权力</div></div>
-          <div class="atlas-row"><div class="rail-label">02 / SEMANTICS</div><div class="rail-flow"><b>来源账本 → 草稿 → 规范任务</b><small>SourceLedger → IntentDraft → TaskSpec</small></div><div class="rail-owner">Runtime 编号、校验、覆盖证明</div></div>
-          <div class="atlas-row"><div class="rail-label">03 / PLAN</div><div class="rail-flow"><b>义务图 → 步骤图 → 活跃步骤</b><small>PlanCandidate → TaskPlan → StepSpec</small></div><div class="rail-owner">模型可提议；Authority Binder 授权</div></div>
-          <div class="atlas-row"><div class="rail-label">04 / PERCEIVE</div><div class="rail-flow"><b>多源捕获 → 一致观测 → 可供性</b><small>BrowserSnapshot → UnifiedObservation</small></div><div class="rail-owner">同一 epoch，保留来源与冲突</div></div>
-          <div class="atlas-row"><div class="rail-label">05 / DECIDE</div><div class="rail-flow"><b>有界上下文 → Runtime 候选 → 模型选 ID</b><small>PlanningRequest → ActionChoice → Proposal</small></div><div class="rail-owner">严格模式不允许自由造坐标</div></div>
-          <div class="atlas-row"><div class="rail-label">06 / ACT</div><div class="rail-flow"><b>合同绑定 → 预检 → 原子执行</b><small>ActionContract → ApprovalToken → Receipt</small></div><div class="rail-owner">能力、策略、租约、快照四重门</div></div>
-          <div class="atlas-row"><div class="rail-label">07 / PROVE</div><div class="rail-flow"><b>动作后新观测 → 验证 → 进度归因</b><small>VerificationReport → Step / Task completion</small></div><div class="rail-owner">回执不是证明，完成权在 Runtime</div></div>
-          <div class="atlas-row"><div class="rail-label">08 / RECORD</div><div class="rail-flow"><b>单写者提交 → 因果事件 → 可复现产物</b><small>StateKernel + TraceDag + ArtifactStore</small></div><div class="rail-owner">当前状态与完整历史分离</div></div>
+        <div class="callout" id="modification-audit"><strong>逐条修改意见审计</strong>下面并列区分固定基线的真实生产路径与尚未实现的建议目标。每个判断、风险、优先级、源码证据和线上落点都在 <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/agent/migrate-runtime-components/docs/affordance-runtime-deep-dive/architecture-modification-audit.md">逐条修改意见审计（Markdown）</a> 中展开；实现事实仍绑定 <code>786857f8fb61…</code>。</div>
+
+        <div class="architecture-comparison">
+          <article class="architecture-view current" id="current-architecture">
+            <div class="architecture-label">CURRENT · 当前实现</div>
+            <h3>固定事实基线中的真实对象往返</h3>
+            <p>这是对生产路径的可读投影，不是目标设计。红色缺口标签表示意见指出的重复表达或有损往返。</p>
+            <ol class="architecture-chain">
+              <li><b>入口</b><code>UserRequest → SourceLedger</code></li>
+              <li><b>多次语义处理</b><code>LLMIntentDraft → IntentDraft → raw-text semantic normalizers → CanonicalObligationCompiler → TaskSpec</code><span class="gap-flag">重复理解</span></li>
+              <li><b>计划兼容往返</b><code>PlanCandidate&lt;StepSpec&gt; → TaskPlan&lt;SubgoalSpec&gt; → TaskPlanView&lt;StepSpec&gt;</code><span class="gap-flag">StepSpec → legacy SubgoalSpec → StepSpec</span></li>
+              <li><b>先裁剪再统一</b><code>BrowserSnapshot → bounded PlannerObservationView → UnifiedObservation → ActionChoice</code><span class="gap-flag">prompt space 限制 candidate space</span></li>
+              <li><b>上下文二次投影</b><code>PlanningRequest → PlannerContext → provider JSON</code></li>
+              <li><b>合同与执行</b><code>ActionChoice → ActionContract → ExecutionReceipt</code><span class="keep-flag">应保留</span></li>
+              <li><b>动作后证明</b><code>fresh post-action observation → VerificationReport → legacy TaskProgress</code><span class="keep-flag">应保留</span></li>
+              <li><b>两套窄终态机制</b><code>TerminalReadiness compatibility + latest-report TaskCompletionVerifier</code><span class="gap-flag">不是完整 TaskSpec closure</span></li>
+            </ol>
+          </article>
+
+          <article class="architecture-view proposed" id="proposed-architecture">
+            <div class="architecture-label">PROPOSED · 建议目标（尚未实现）</div>
+            <h3>意见建议的 11 段唯一生产链</h3>
+            <p>目标收缩重复表示，但不删除 admission、ActionContract、独立验证和 Runtime commit 等权威边界。</p>
+            <ol class="architecture-chain proposed-chain">
+              <li><b>01 外部输入</b><code>UserRequest → ingress validation</code></li>
+              <li><b>02 一次语义理解</b><code>SourceLedger → IntentProposal</code></li>
+              <li><b>03 任务权威化</b><code>TaskSpecAuthority → TaskSpec</code></li>
+              <li><b>04 Task 级规划</b><code>TaskComplexityRouter → PlanCandidate&lt;StepSpec&gt; → TaskPlanAuthority → TaskPlan&lt;StepSpec&gt;</code></li>
+              <li><b>05 感知</b><code>PerceptionSession → canonical UnifiedObservation</code></li>
+              <li><b>06 Step precheck</b><code>Active StepSpec + observation → StepCompletionPrecheck</code></li>
+              <li><b>07 Step 决策</b><code>ActionChoiceBuilder → 0 / 1 / N → bounded choice selection</code></li>
+              <li><b>08 合同与执行</b><code>ActionContract → policy / capability / approval → Executor → Receipt</code></li>
+              <li><b>09 动作后证明</b><code>reusable post-action UnifiedObservation → verifier ladder → ActionOutcome</code></li>
+              <li><b>10 进度</b><code>StepCompletionVerifier → TaskProgress</code></li>
+              <li><b>11 唯一完成权威</b><code>full TaskSpec completion expression → TaskCompletionVerifier → RuntimeCommitter → TaskCompleted</code></li>
+            </ol>
+          </article>
         </div>
+
+        <div class="architecture-diff" id="architecture-diff">
+          <h3>逐层对比：保留、收缩、替换、新增</h3>
+          <div class="scroll-table"><table><thead><tr><th>层</th><th>当前实现</th><th>建议目标</th><th>变化</th><th>语义/权威影响</th><th>审计条目</th></tr></thead><tbody>
+            <tr><td>自然语言</td><td>模型图 + regex normalizers + coverage review</td><td>一次 IntentProposal</td><td>收缩</td><td>减少重复理解；保留 admission</td><td><a href="intake.html#02-b-intent-draft">OP-02</a></td></tr>
+            <tr><td>TaskSpec</td><td>effects/criteria/claims/obligations 并行</td><td>requirement + composite completion</td><td>替换</td><td>单一语义 authority</td><td><a href="intake.html#02-d-task-spec-admission">OP-04/05</a></td></tr>
+            <tr><td>Task plan</td><td>StepSpec → SubgoalSpec → StepSpec</td><td>TaskPlan&lt;StepSpec&gt;</td><td>收缩</td><td>避免 criteria/value/evidence 降维</td><td><a href="planning.html#03-b-plan-authority">OP-06–08</a></td></tr>
+            <tr><td>Observation</td><td>bounded view 后生成 Runtime observation</td><td>canonical full view 后分叉</td><td>替换</td><td>prompt 裁剪不再删除候选</td><td><a href="perception-action.html#05-b-unified-observation">OP-09/10</a></td></tr>
+            <tr><td>模型上下文</td><td>PlanningRequest → PlannerContext</td><td>typed request → pure serializer</td><td>收缩</td><td>减少二次领域投影</td><td><a href="context.html#08-b-planner-context">OP-11/12</a></td></tr>
+            <tr><td>Choice</td><td>0/1/N，N 的语义字段较少</td><td>保留 0/1/N，增强 bounded decision view</td><td>保留 + 新增</td><td>不开放自由坐标</td><td><a href="planning.html#03-d-action-choice">OP-13/14</a></td></tr>
+            <tr><td>执行</td><td>ActionContract + gates + executor</td><td>边界保留，内部 service 可拆</td><td>保留</td><td>Planner 不能直连 executor</td><td><a href="perception-action.html#05-d-action-contract">OP-16</a></td></tr>
+            <tr><td>Post action</td><td>fresh capture 后下轮可能再捕获</td><td>同一 observation 复用，按需 recapture</td><td>新增</td><td>减少重复采集但保留 freshness</td><td><a href="agent-loop.html#04-d-loop-directive">OP-17/18</a></td></tr>
+            <tr><td>Step evidence</td><td>强证据绑定，真值/因果模式未统一显式化</td><td>satisfaction mode + validity policy</td><td>新增</td><td>按任务类型要求因果证明</td><td><a href="verification.html#06-c-step-completion">OP-19/21</a></td></tr>
+            <tr><td>Task completion</td><td>两套窄机制</td><td>完整 TaskSpec closure</td><td>替换</td><td>唯一完成权威</td><td><a href="verification.html#06-d-task-completion">OP-20/22</a></td></tr>
+            <tr><td>离线证据</td><td>Trace/Artifact/benchmark/evolution</td><td>继续异步、不得影响当次完成</td><td>保留</td><td>运行权威与评测演化隔离</td><td><a href="evidence.html#09-a-trace-dag">OP-24</a></td></tr>
+          </tbody></table></div>
+        </div>
+
+        <div class="callout warn"><strong>扁平化边界</strong>扁平化的是重复数据表示和重叠权威所有者；Intent/Plan admission、ActionContract、独立验证、Runtime progress commit 等安全边界必须保留。</div>
 
         <h3>三条不能混淆的链</h3>
         <div class="three-col">

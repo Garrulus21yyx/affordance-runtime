@@ -201,6 +201,71 @@ details > div { padding: 0 1rem 1rem; }
   .detail-page .scroll-table { width: 100%; max-width: 100%; overflow-x: auto; contain: inline-size; }
 }
 
+.architecture-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+.architecture-view {
+  min-width: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,.68);
+}
+.architecture-view.current { border-top: 6px solid #9d4d42; }
+.architecture-view.proposed { border-top: 6px solid var(--green); }
+.architecture-label {
+  display: inline-block;
+  margin-bottom: .75rem;
+  padding: .28rem .58rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+.current .architecture-label { color: #7d332b; background: #fff3ef; }
+.proposed .architecture-label { color: #145f60; background: #eaf8f5; }
+.architecture-view h3 { margin-top: 0; }
+.architecture-chain { display: grid; gap: .65rem; margin: 1rem 0 0; padding: 0; list-style: none; counter-reset: architecture-step; }
+.architecture-chain li {
+  position: relative;
+  display: grid;
+  gap: .22rem;
+  padding: .75rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,.72);
+}
+.architecture-chain li + li::before {
+  content: "↓";
+  position: absolute;
+  top: -.78rem;
+  left: 50%;
+  color: var(--muted);
+}
+.architecture-chain code { white-space: normal; overflow-wrap: anywhere; }
+.gap-flag, .keep-flag {
+  width: fit-content;
+  padding: .18rem .42rem;
+  border-radius: 4px;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.gap-flag { color: #7d332b; background: #fff0eb; }
+.keep-flag { color: #145f60; background: #e7f6f3; }
+.architecture-diff { margin: 2rem 0; }
+.architecture-diff table { min-width: 980px; }
+
+@media (max-width: 760px) {
+  .architecture-comparison { grid-template-columns: 1fr; }
+  .architecture-view { max-width: 100%; overflow: hidden; }
+  .architecture-diff .scroll-table { width: 100%; max-width: 100%; overflow-x: auto; }
+}
+
 .conversion-block,
 .loss-ledger,
 .architecture-view,
