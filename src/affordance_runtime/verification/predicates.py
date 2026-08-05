@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from affordance_runtime.criteria import (
@@ -35,7 +35,7 @@ class EvidenceProvider(Protocol):
 
 @dataclass(frozen=True)
 class PredicateEvaluator:
-    providers: tuple[EvidenceProvider, ...] = ()
+    providers: tuple[EvidenceProvider, ...] = field(default_factory=lambda: _providers())
 
     def evaluate(
         self, expression: CriterionExpr, context: PredicateEvidenceContext
@@ -82,7 +82,11 @@ class PredicateEvaluator:
         allowed = tuple(item for item in evidence if _admitted(item, predicate, context))
         if any(item.conflict for item in evidence) or _material_value_conflict(allowed):
             return _evaluation(predicate, CriterionStatus.CONFLICT, allowed, "material_evidence_conflict")
-        stale = tuple(item for item in evidence if item not in allowed and item.observation_ref)
+        stale = tuple(
+            item
+            for item in evidence
+            if _is_stale_current_evidence(item, predicate, context)
+        )
         if not allowed:
             return _evaluation(
                 predicate,
@@ -138,6 +142,30 @@ def _admitted(
         ):
             return False
     return not evidence.error_code
+
+
+def _is_stale_current_evidence(
+    evidence: PredicateEvidence,
+    predicate: PredicateExpr,
+    context: PredicateEvidenceContext,
+) -> bool:
+    policy = predicate.policy
+    assurance_rank = {
+        AssuranceLevel.WEAK: 0,
+        AssuranceLevel.STRUCTURAL: 1,
+        AssuranceLevel.AUTHORITATIVE: 2,
+    }
+    return bool(
+        policy.validity == EvidenceValidityMode.CURRENT_OBSERVATION
+        and evidence.observation_ref
+        and evidence.observation_ref != context.current_observation_ref
+        and (
+            not policy.allowed_source_kinds
+            or evidence.source_kind in policy.allowed_source_kinds
+        )
+        and assurance_rank[evidence.assurance]
+        >= assurance_rank[policy.minimum_assurance]
+    )
 
 
 def _matches(predicate: PredicateExpr, observed: object) -> bool:
@@ -236,3 +264,9 @@ def _inconclusive(statuses: tuple[CriterionStatus, ...]) -> CriterionStatus:
         if status in statuses:
             return status
     return CriterionStatus.UNKNOWN
+
+
+def _providers() -> tuple[EvidenceProvider, ...]:
+    from affordance_runtime.verification.providers import MECHANICAL_EVIDENCE_PROVIDERS
+
+    return MECHANICAL_EVIDENCE_PROVIDERS

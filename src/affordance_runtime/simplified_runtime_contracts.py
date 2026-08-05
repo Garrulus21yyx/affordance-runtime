@@ -452,24 +452,6 @@ NavigationCriterion = StateCriterion
 
 
 @dataclass(frozen=True)
-class ArtifactCriterion(StateCriterion):
-    artifact_ref: str = ""
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        _require_nonblank("artifact_ref", self.artifact_ref)
-
-
-@dataclass(frozen=True)
-class ApiCriterion(StateCriterion):
-    api_ref: str = ""
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        _require_nonblank("api_ref", self.api_ref)
-
-
-@dataclass(frozen=True)
 class CompositeCriterion(_CriterionBase):
     operator: CompositeCriterionOperator = CompositeCriterionOperator.ALL_OF
     child_criterion_ids: tuple[str, ...] = ()
@@ -488,8 +470,6 @@ class CompositeCriterion(_CriterionBase):
 
 Criterion: TypeAlias = (
     StateCriterion
-    | ArtifactCriterion
-    | ApiCriterion
     | CompositeCriterion
 )
 

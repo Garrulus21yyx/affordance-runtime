@@ -24,6 +24,7 @@ from affordance_runtime.verification.contracts import (
     SatisfactionMode,
 )
 from affordance_runtime.verification.predicates import PredicateEvaluator
+from affordance_runtime.verification.providers import MECHANICAL_EVIDENCE_PROVIDERS
 
 
 @dataclass(frozen=True)
@@ -105,3 +106,60 @@ def test_composites_preserve_typed_status_and_no_evidence_is_unknown() -> None:
     assert evaluator.evaluate(AnyOf("any", (yes, no)), context).status == CriterionStatus.SATISFIED
     assert evaluator.evaluate(Not("not", no), context).status == CriterionStatus.SATISFIED
     assert PredicateEvaluator().evaluate(yes, context).status == CriterionStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "assurance"),
+    (
+        (EvidenceSourceKind.DOM_STATE, AssuranceLevel.STRUCTURAL),
+        (EvidenceSourceKind.API_STATE, AssuranceLevel.AUTHORITATIVE),
+        (EvidenceSourceKind.ARTIFACT_INTEGRITY, AssuranceLevel.AUTHORITATIVE),
+    ),
+)
+def test_shared_provider_contract(source_kind, assurance) -> None:  # noqa: ANN001
+    policy = _policy(
+        minimum_assurance=assurance,
+        allowed_source_kinds=(source_kind,),
+    )
+    predicate = _predicate(PredicateOperator.EQUALS, policy=policy)
+    context = PredicateEvidenceContext(
+        "observation:2",
+        (_evidence(source_kind=source_kind, assurance=assurance),),
+    )
+    assert (
+        PredicateEvaluator(MECHANICAL_EVIDENCE_PROVIDERS)
+        .evaluate(predicate, context)
+        .status
+        == CriterionStatus.SATISFIED
+    )
+
+
+def test_provider_conflict_and_high_risk_weak_evidence_are_not_satisfied() -> None:
+    predicate = _predicate(PredicateOperator.EQUALS)
+    conflict = PredicateEvidenceContext(
+        "observation:2",
+        (
+            _evidence("ready", evidence_ref="evidence:a"),
+            _evidence("waiting", evidence_ref="evidence:b"),
+        ),
+    )
+    assert PredicateEvaluator().evaluate(predicate, conflict).status == CriterionStatus.CONFLICT
+
+    high_risk = _predicate(
+        PredicateOperator.EQUALS,
+        policy=_policy(
+            validity=EvidenceValidityMode.FINAL_RECHECK,
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+            allowed_source_kinds=(EvidenceSourceKind.API_STATE,),
+        ),
+    )
+    weak = PredicateEvidenceContext(
+        "observation:2",
+        (
+            _evidence(
+                source_kind=EvidenceSourceKind.MODEL_SEMANTIC,
+                assurance=AssuranceLevel.WEAK,
+            ),
+        ),
+    )
+    assert PredicateEvaluator().evaluate(high_risk, weak).status == CriterionStatus.UNKNOWN
