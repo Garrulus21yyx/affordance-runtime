@@ -1,12 +1,13 @@
 # ActionContract Digest Threat Model
 
-> Status: SAR-1.1 active correctness/security closure record.
-> Scope: ActionContract digest identity and approval-token binding.
+> **Lifecycle:** CURRENT REFERENCE THREAT MODEL
+> **Implementation scope:** existing ActionContract digest identity and approval-token binding
+> **Target alignment:** canonical observation/Catalog identity and typed evaluation requirements remain hash-critical under the current authoritative architecture
 
 ## Boundary
 
 `ActionContract.contract_hash` is the stable digest used to bind an accepted
-Runtime action to approval, preflight, execution, verification, trace, and
+Runtime action to approval, preflight, execution, typed evaluation, trace, and
 recovery evidence. The digest is meaningful only if every hash-critical field is
 deeply immutable before the hash is computed.
 
@@ -46,6 +47,10 @@ SAR-1 treats at least these `ActionContract` fields as hash-critical:
 
 Analytics-only data must not be added to `ActionContract`. It belongs in trace
 or artifact records.
+
+`verifier_plan` is the current implementation-era field name recorded by this
+threat model. The target contract replaces provider planning with typed
+`evaluation_requirements`; the immutability and stale-hash rule is unchanged.
 
 ## Canonical algorithm
 

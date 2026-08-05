@@ -1,5 +1,8 @@
 # Scenario: Pricing Extraction
 
+> **Lifecycle:** CURRENT REFERENCE SCENARIO
+> **Architecture:** read-only TaskSpec → canonical observation → Runtime choices/contracts → evidence-backed result
+
 ## Scenario ID
 
 `saas.pricing.read_only.v1`
@@ -49,7 +52,7 @@ references.
 - final URL
 - screenshot of pricing section
 - DOM or accessibility evidence for extracted text
-- trace links from task -> observation -> snapshot -> contracts -> verifier
+- trace links from TaskSpec → canonical observation → contracts → typed evaluation
 
 ## Permitted Actions
 
@@ -96,13 +99,13 @@ max_effectful_actions: 0
 
 ## Expected Trace Nodes
 
-- task envelope
+- SourceEnvelope and admitted read-only TaskSpec
 - initial observation
-- affordance snapshot for home page
+- canonical home-page observation epoch and SourceCoverage
 - navigation contract to pricing page
 - post-navigation observation
 - extraction evidence nodes
-- verification report against oracle
+- CriterionEvaluation/TaskCompletionEvaluation against the oracle
 - final result
 
 ## Pass Criteria

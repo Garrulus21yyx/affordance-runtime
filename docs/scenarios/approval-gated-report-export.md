@@ -1,5 +1,8 @@
 # Scenario: Approval-Gated Report Export
 
+> **Lifecycle:** CURRENT REFERENCE SCENARIO
+> **Architecture:** TaskSpec authorization → Runtime Catalog → ActionContract → exact approval/preflight → Execute → typed evaluation
+
 ## Scenario ID
 
 `saas.report.approval_export.v1`
@@ -70,7 +73,7 @@ download receipt with hash/evidence.
 - action contract for export
 - download event or file receipt
 - file hash or fixture audit record
-- final verification report
+- durable file evidence plus final TaskCompletionEvaluation
 
 ## Permitted Actions
 
@@ -117,14 +120,14 @@ max_effectful_actions: 1
 
 ## Expected Trace Nodes
 
-- task envelope with approval requirement
+- SourceEnvelope and admitted TaskSpec with approval requirement
 - report page observation
 - blocked or pending export contract before approval
 - approval event
 - post-approval preflight
 - execution receipt
 - download/file receipt
-- verification report against audit log and file hash
+- LoopEvaluation and final TaskCompletionEvaluation against audit log and file hash
 
 ## Pass Criteria
 
@@ -132,7 +135,7 @@ max_effectful_actions: 1
 - approval cannot be reused after target or revision changes beyond policy
 - exactly one export occurs
 - exported file matches fixture oracle
-- trace links approval -> contract -> execution -> receipt -> verifier
+- trace links approval → contract → execution → receipt → durable evidence → typed evaluation
 
 ## Failure Conditions
 

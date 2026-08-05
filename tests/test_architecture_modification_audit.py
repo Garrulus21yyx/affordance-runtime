@@ -4,7 +4,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SITE = ROOT / "docs" / "affordance-runtime-deep-dive"
+SITE = (
+    ROOT
+    / "docs"
+    / "archive"
+    / "superseded-2026-08-05"
+    / "affordance-runtime-deep-dive"
+)
 AUDIT = SITE / "architecture-modification-audit.md"
 BASELINE = "786857f8fb61aa99f2c7e6a23eb8225957e1438b"
 PUBLIC_BASE = "https://garrulus21yyx.github.io/affordance-runtime"

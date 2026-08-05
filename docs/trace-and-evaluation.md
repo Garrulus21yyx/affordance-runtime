@@ -1,291 +1,91 @@
-# Trace and Evaluation
+# Trace and Evaluation Contract
 
-## 1. Trace-First Rule
+> **Lifecycle:** CURRENT NORMATIVE CONTRACT
+> **Scope:** trace events, evidence locations, typed evaluation, external evaluation, and replay
 
-Every run must be replayable enough for debugging and evaluation.
+## 1. Trace rule
 
-The trace is the substrate for:
+Trace records committed Runtime facts in causal order. It is an offline
+consumer of authoritative transitions, not a completion or recovery owner.
 
-- diagnosis
-- benchmark scoring
-- regression replay
-- skill mining
-- policy evolution
-- parent-agent reporting
+Each event carries run/task identity, relevant revision/epoch/contract refs,
+event type, typed payload, causal parent refs, timestamp/sequence, and artifact
+refs. Raw user request content is not copied by default; SourceEnvelope refs,
+hashes, and lengths preserve identity without broad disclosure.
 
-## 2. Storage Model
+## 2. Four distinct results
 
-The canonical storage can be an append-only JSONL event log. DAG parent links
-are stored on events and used to derive causal views.
+| Layer | Question | Result |
+|---|---|---|
+| receipt | did backend dispatch report success/failure? | ExecutionReceipt |
+| action effect | did this ActionContract's expected local effect occur? | CriterionEvaluation |
+| step | does StepSpec.completion hold? | CriterionEvaluation |
+| task | does full TaskSpec.success closure hold with required constraints/rechecks? | TaskCompletionEvaluation |
 
-This keeps streaming simple while preserving causality for:
+No result substitutes for another. Plan exhaustion and external reward are not
+TaskCompleted.
 
-- recovery branches
-- parallel observations
-- candidate plans
-- parent/subagent handoff
-- evolution proposals
+## 3. Criterion policy
 
-## 3. Trace Event
-
-Each observation, affordance snapshot, contract, capability decision, execution
-receipt, verifier result, recovery attempt, and evolution proposal is a trace
-event with parent links and artifact references.
-
-Example event:
-
-```json
-{
-  "schema_version": "1.0",
-  "run_id": "run_001",
-  "event_id": "evt_0004",
-  "step": 4,
-  "state": "ACTING",
-  "parents": ["contract_0003"],
-  "observation_ref": "artifacts/run_001/obs_004.json",
-  "snapshot_id": "snap_004",
-  "contract_hash": "sha256:...",
-  "execution_receipt": {
-    "backend": "playwright_dom",
-    "status": "success",
-    "latency_ms": 134,
-    "started_revision": "rev_12",
-    "ended_revision": "rev_13"
-  },
-  "verification": {
-    "postcondition": "enterprise_details_visible",
-    "status": "PASSED",
-    "evidence_refs": ["artifacts/run_001/dom_005.json"]
-  }
-}
-```
-
-## 4. Minimum Trace Fields
-
-Every completed run should include:
-
-- task envelope
-- runtime version
-- contract schema version
-- environment version
-- observation refs
-- snapshot ids
-- action contracts
-- policy and approval decisions
-- execution receipts
-- post-action observations
-- verification reports
-- recovery decisions
-- final result
-- artifact index
-
-Sensitive values such as passwords, cookies, tokens, and unnecessary private
-form content must be redacted or omitted from trace artifacts.
-
-## 5. Evaluation Layers
-
-Evaluate eight layers:
-
-1. Observation: did the runtime perceive the right state?
-2. Affordance modeling: did it expose the right actions?
-3. Action execution: did it perform the selected action?
-4. Verification: did it judge success correctly?
-5. Recovery: did it adapt when the environment changed?
-6. Safety: did it block unapproved or tainted side effects?
-7. Replay: can the failure or success be reproduced semantically?
-8. Evolution: did proposed harness changes pass regression gates?
-
-## 6. Metric Families
-
-### Task Success
+Each criterion leaf uses the minimum orthogonal policy:
 
 ```text
-task_success_rate
-postcondition_pass_rate
-completion_rate
+SatisfactionMode     = STATE_HOLDS | ACTION_CAUSED
+EvidenceValidityMode = CURRENT_OBSERVATION | DURABLE | FINAL_RECHECK
+AssuranceLevel       = WEAK | STRUCTURAL | AUTHORITATIVE
 ```
 
-### Efficiency
+Status is one of `SATISFIED`, `UNSATISFIED`, `UNKNOWN`, `STALE`, `CONFLICT`,
+`UNSUPPORTED`, or `ERROR`. No evidence means UNKNOWN; disabled evaluation never
+creates synthetic PASSED.
+
+## 4. Evidence locations
+
+1. Current observation evidence stays in canonical UnifiedObservation.
+2. Contract-bound causality stays in a bounded RecentActionOutcome index.
+3. Artifact hash, resource/version, transaction ID, external final recheck, or
+   human confirmation may enter the small DurableEvidenceStore.
+
+Only durable evidence crosses observation epochs. Historical current-state
+evidence is admitted only when the criterion validity mode explicitly permits
+it.
+
+## 5. Providers and admission
+
+DOM, AX, visual, control-state, API, artifact, network, external, and optional
+model/human providers extract evidence with source, freshness, assurance, and
+observed value metadata. Typed predicate evaluators own operators.
+
+EvidenceAdmissionPolicy decides whether an evidence record is usable for one
+typed criterion ID. It does not own AllOf/AnyOf/root completion semantics.
+ModelVerifier provides evidence only; model-only evidence cannot complete
+high-risk external effects.
+
+## 6. Task completion
+
+RuntimeCommitter may emit TaskCompleted only when TaskCompletionEvaluator
+returns:
 
 ```text
-step_count
-latency_ms
-token_cost
-observation_cost
-affordance_refresh_count
-cost_per_success
+TaskSpec.success root == SATISFIED
+AND no required constraint violation
+AND no unresolved external effect
+AND all required FINAL_RECHECK completed
 ```
 
-### Reliability
+Evaluation runs on the initial canonical observation, completed active step,
+new durable evidence, returned external recheck, plan exhaustion, Planner Finish
+request, and immediately before every TaskCompleted commit.
 
-```text
-selector_failure_rate
-visual_fallback_rate
-retry_count
-replan_count
-stale_detection_recall
-false_stale_block_rate
-effect_receipt_coverage
-verifier_false_accept_rate
-```
+## 7. External evaluation and claims
 
-### Safety
+Benchmark oracles and rewards are stored separately from Runtime status. Reports
+bind repository revision, dirty state, environment/assets, profile, provider,
+budgets, seeds, missing/unrun episodes, Runtime result, external result, and
+official-claim flag.
 
-```text
-constraint_violation_rate
-high_risk_action_blocked
-approval_required_count
-unsafe_action_attempts
-safe_abort_count
-unsafe_side_effect_rate
-approval_gate_pass_rate
-```
+Historical evidence remains valid only for its exact identity. Replay may
+diagnose or test a proposed generic fix; it cannot rewrite the original trace.
 
-### Traceability
-
-```text
-evidence_coverage
-decision_reason_coverage
-postcondition_coverage
-failure_classification_coverage
-trace_parent_coverage
-trace_required_field_coverage
-```
-
-### Harness Evolution
-
-```text
-evolution_accept_rate
-quarantine_rate
-rollback_rate
-regression_delta
-negative_example_coverage
-```
-
-## 7. Metric Definition Rules
-
-Each metric must define:
-
-```text
-name
-definition
-numerator
-denominator
-direction
-unit
-ground_truth_source
-aggregation
-acceptance_threshold
-```
-
-Examples:
-
-```text
-stale_detection_recall
-  blocked injected-stale actions / injected-stale actions
-  direction: higher better
-  ground truth: perturbation label
-
-verifier_false_accept_rate
-  failed ground-truth outcomes judged successful / failed outcomes
-  direction: lower better
-  ground truth: scenario oracle
-
-unsafe_side_effect_rate
-  unsafe side effects / side-effect opportunities
-  direction: lower better
-  ground truth: policy log + fixture audit log
-```
-
-## 8. Benchmark Suites
-
-### Local SaaS Tasks
-
-The MVP starts with three local SaaS tasks because they make the runtime's
-differentiators visible:
-
-- [Pricing Extraction](scenarios/pricing-extraction.md): read-only extraction
-  with evidence chain.
-- [Reversible Settings Update](scenarios/settings-update.md): controlled write
-  with modal, selector drift, async button state, and persistence oracle.
-- [Approval-Gated Report Export](scenarios/approval-gated-report-export.md):
-  approval-gated side effect with download/file receipt.
-
-### MiniWoB++
-
-Use for atomic web interaction:
-
-- click
-- type
-- select
-- drag
-- form submission
-- small navigation tasks
-
-### WebArena-Style Mock Environments
-
-Use for realistic multi-step workflows:
-
-- shopping
-- email
-- forum
-- admin dashboard
-- support portal
-
-### VisualWebArena-Style Tasks
-
-Use for visual grounding:
-
-- image-dependent selection
-- layout-dependent tasks
-- visual comparison
-- mark-level target matching
-
-### WoT / Device Demo
-
-Use only as a non-web affordance proof:
-
-- thermostat
-- lighting
-- projector
-- failure injection
-- postcondition mismatch
-
-## 9. Reports
-
-Each evaluation run should output:
-
-```text
-eval_report.json
-eval_report.md
-metrics.csv
-failure_cases/
-trace_index.json
-screenshots/
-artifacts/
-regression_summary.md
-```
-
-The Markdown report should summarize:
-
-- task suite
-- environment versions
-- runtime version
-- model/provider
-- baseline and ablation configuration
-- success metrics
-- failure taxonomy
-- selected trace links
-- proposed evolution artifacts
-
-## 10. Trace Acceptance Requirements
-
-Every completed run should make these questions answerable:
-
-1. Which environment revision was the action based on?
-2. Which affordance and lease produced the action contract?
-3. Which capability gate allowed or blocked it?
-4. What structural receipt or verifier evidence proved the effect?
-5. What changed in the State Kernel after the action?
-6. If recovery happened, what failed and which policy was selected?
-7. Can the trace be replayed offline or semantically?
+The previous detailed document is archived at
+[maintained-pre-consolidation/trace-and-evaluation.md](archive/superseded-2026-08-05/maintained-pre-consolidation/trace-and-evaluation.md).

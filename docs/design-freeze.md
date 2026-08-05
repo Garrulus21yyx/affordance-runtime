@@ -1,11 +1,13 @@
 # Design Freeze and Implementation Gates
 
-Superseded by SAR-0.
+> **Lifecycle:** ARCHIVED POINTER
+
+Superseded by the Task Contract-centered authoritative target architecture.
 
 Current authority:
 
-- [Affordance Runtime Authoritative Optimized Architecture](superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
-- [Affordance Runtime Substitutive Refactor Execution Plan](superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
+- [Task Contract-Centered Authoritative Runtime Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Task Contract-Centered Runtime Architecture Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
 - [Documentation Index](README.md)
 
 The former design-freeze document is archived at

@@ -1,17 +1,20 @@
-# Architecture
+# Architecture Entry Point
 
-Superseded by SAR-0.
+> **Lifecycle:** CURRENT REFERENCE ENTRYPOINT
+> **Authority:** redirects readers; does not duplicate the authoritative design
 
-Current authority:
+Current target authority:
 
-- [Affordance Runtime Authoritative Optimized Architecture](superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md)
-- [Affordance Runtime Substitutive Refactor Execution Plan](superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md)
+- [Task Contract-Centered Authoritative Runtime Architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
+- [Task Contract-Centered Runtime Architecture Evolution Plan](superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md)
+
+Current truth and governance:
+
+- [Implementation Status](implementation-status.md)
+- [Current Implementation Plan](current-implementation-plan.md)
+- [Architecture Governance Track](architecture-governance-track.md)
 - [Documentation Index](README.md)
-- [Horizontal Architecture Governance Track](architecture-governance-track.md)
 
-The former root architecture document is archived at
+The former root architecture is preserved at
 [archive/superseded-2026-07-29/architecture.md](archive/superseded-2026-07-29/architecture.md).
-
-Current governance still preserves the core invariant that `RunCoordinator` is
-the sole authoritative task-execution commit sequencer. The archived document is
-history; current changes must follow SAR-0 plus `architecture-governance-track.md`.
+It is history, not a competing design.

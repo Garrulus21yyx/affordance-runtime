@@ -5,11 +5,26 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src" / "affordance_runtime"
-GOVERNANCE_DOC = REPOSITORY_ROOT / "docs" / "architecture-governance-track.md"
+DOC_ARCHIVE_20260805 = (
+    REPOSITORY_ROOT / "docs" / "archive" / "superseded-2026-08-05"
+)
+STATUS_SNAPSHOT_DIR = DOC_ARCHIVE_20260805 / "status-snapshots"
+
+# Most document assertions in this module freeze the evidence and admission
+# narrative that existed before the 2026-08-05 documentation consolidation.
+# Read those assertions from immutable snapshots instead of forcing historical
+# milestone prose back into the maintained current documents.
+GOVERNANCE_DOC = (
+    STATUS_SNAPSHOT_DIR / "architecture-governance-track-pre-consolidation.md"
+)
 CHANGE_ADMISSION_DIR = REPOSITORY_ROOT / "docs" / "change-admission"
-PROJECT_PLAN = REPOSITORY_ROOT / "docs" / "project-plan.md"
-CURRENT_PLAN = REPOSITORY_ROOT / "docs" / "current-implementation-plan.md"
-IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
+PROJECT_PLAN = STATUS_SNAPSHOT_DIR / "project-plan-pre-consolidation.md"
+CURRENT_PLAN = STATUS_SNAPSHOT_DIR / "current-implementation-plan-pre-consolidation.md"
+IMPLEMENTATION_STATUS = STATUS_SNAPSHOT_DIR / "implementation-status-pre-consolidation.md"
+LIVE_GOVERNANCE_DOC = REPOSITORY_ROOT / "docs" / "architecture-governance-track.md"
+LIVE_PROJECT_PLAN = REPOSITORY_ROOT / "docs" / "project-plan.md"
+LIVE_CURRENT_PLAN = REPOSITORY_ROOT / "docs" / "current-implementation-plan.md"
+LIVE_IMPLEMENTATION_STATUS = REPOSITORY_ROOT / "docs" / "implementation-status.md"
 ARCHITECTURE_DOC = REPOSITORY_ROOT / "docs" / "architecture.md"
 TASKPLAN_AUTHORITY_ARCHITECTURE = (
     REPOSITORY_ROOT
@@ -20,24 +35,32 @@ TASKPLAN_AUTHORITY_PLAN = (
     / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-taskplan-authority-execution-plan.md"
 )
 AUTHORITATIVE_OPTIMIZED_ARCHITECTURE = (
-    REPOSITORY_ROOT
-    / "docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md"
+    DOC_ARCHIVE_20260805
+    / "superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md"
 )
 SUBSTITUTIVE_REFACTOR_PLAN = (
+    DOC_ARCHIVE_20260805
+    / "superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md"
+)
+TASK_CONTRACT_ARCHITECTURE = (
     REPOSITORY_ROOT
-    / "docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md"
+    / "docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md"
+)
+TASK_CONTRACT_EVOLUTION_PLAN = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md"
 )
 TASKPLAN_CALL_SITE_AUDIT = (
-    REPOSITORY_ROOT / "docs" / "audits" / "taskplan-authority-call-sites.md"
+    DOC_ARCHIVE_20260805 / "audits" / "taskplan-authority-call-sites.md"
 )
 STEP_PLANNER_READ_SET_AUDIT = (
-    REPOSITORY_ROOT / "docs" / "audits" / "step-planner-standard-input-read-set.md"
+    DOC_ARCHIVE_20260805 / "audits" / "step-planner-standard-input-read-set.md"
 )
 TASKSKILL_AUTHORITY_AUDIT = (
-    REPOSITORY_ROOT / "docs" / "audits" / "taskskill-progress-authority.md"
+    DOC_ARCHIVE_20260805 / "audits" / "taskskill-progress-authority.md"
 )
 INTENT_GOVERNANCE = (
-    REPOSITORY_ROOT / "docs" / "intent-schema-authority-governance-20260726.md"
+    DOC_ARCHIVE_20260805 / "root" / "intent-schema-authority-governance-20260726.md"
 )
 CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
@@ -230,44 +253,63 @@ def _class_method(
 
 
 def test_horizontal_governance_document_is_active_and_non_blocking() -> None:
-    assert GOVERNANCE_DOC.exists()
-    text = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+    assert LIVE_GOVERNANCE_DOC.exists()
+    text = " ".join(
+        LIVE_GOVERNANCE_DOC.read_text(encoding="utf-8").split()
+    ).casefold()
+    manifest = (
+        REPOSITORY_ROOT / "docs" / "documentation-manifest.yaml"
+    ).read_text(encoding="utf-8")
 
-    assert "independent horizontal governance track" in text
-    assert "not a unified-rewrite prerequisite" in text
-    assert "synchronous change-admission gate" in text
+    assert "lifecycle:** current normative policy" in text
+    assert "synchronous architecture admission" in text
+    assert "independent of feature priority" in text
+    assert "one production writer" in text
     for path in GOVERNED_DOCUMENTS:
-        assert "architecture-governance-track.md" in path.read_text(encoding="utf-8"), path
+        assert str(path.relative_to(REPOSITORY_ROOT)) in manifest, path
     for ceiling in CONTROL_MODULE_LINE_CEILINGS.values():
         assert f"{ceiling:,}" in text
     for ceiling in CONTROL_METHOD_LINE_CEILINGS.values():
         assert f"{ceiling:,}" in text
-    assert f"{RUN_COORDINATOR_METHOD_CEILING} `runcoordinator` methods" in text
+    assert f"`runcoordinator` method count | {RUN_COORDINATOR_METHOD_CEILING} methods" in text
 
 
 def test_governance_status_and_dual_lane_policy_have_one_current_source() -> None:
-    project_plan = " ".join(PROJECT_PLAN.read_text(encoding="utf-8").split()).casefold()
-    current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
-    status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
-    governance = " ".join(GOVERNANCE_DOC.read_text(encoding="utf-8").split()).casefold()
+    project_plan = " ".join(
+        LIVE_PROJECT_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    current_plan = " ".join(
+        LIVE_CURRENT_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    status = " ".join(
+        LIVE_IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()
+    ).casefold()
+    governance = " ".join(
+        LIVE_GOVERNANCE_DOC.read_text(encoding="utf-8").split()
+    ).casefold()
     architecture = " ".join(ARCHITECTURE_DOC.read_text(encoding="utf-8").split()).casefold()
-    intent = " ".join(INTENT_GOVERNANCE.read_text(encoding="utf-8").split()).casefold()
+    intent_history = " ".join(
+        INTENT_GOVERNANCE.read_text(encoding="utf-8").split()
+    ).casefold()
+    intent_pointer = " ".join(
+        (REPOSITORY_ROOT / "docs" / "intent-schema-authority-governance-20260726.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
 
-    assert "current milestone status is maintained exclusively" in project_plan
-    assert "one active vertical slice" in current_plan
-    assert "one active horizontal slice" in current_plan
-    assert "milestone status" in status
-    assert "evidence maturity" in status
-    assert "promotion status" in status
-    assert "architecture admission" in status
+    assert "status is maintained only" in project_plan
+    assert "one vertical authority migration" in current_plan
+    assert "one independent horizontal containment slice" in current_plan
+    assert "current-vs-target matrix" in status
+    assert "promotion remains held" in status
     assert "remote ci" in status
-    assert "double-track, one-gate" in governance
-    assert "single production writer" in governance
-    assert "sole authoritative task-execution commit sequencer" in architecture
-    assert "sg1-sg7 targeted confirmation is locally complete" in intent
-    assert "protected cross-family / pr breadth is the active vertical slice" in intent
-    assert "historical sg7 targeted result alone" in intent
-    assert "remains incomplete" in intent
+    assert "one vertical behavior/authority slice" in governance
+    assert "one production writer" in governance
+    assert "current reference entrypoint" in architecture
+    assert "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in architecture
+    assert "archived pointer" in intent_pointer
+    assert "obligation-era remediation record is historical" in intent_pointer
+    assert "sg1-sg7 targeted confirmation is locally complete" in intent_history
 
 
 def test_reviewed_architecture_debt_and_sg7_admission_record_are_visible() -> None:
@@ -357,7 +399,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
         REPOSITORY_ROOT
         / "docs/archive/superseded-2026-07-29/2026-07-29-affordance-runtime-simplification-execution-plan.md"
     )
-    role_audit = REPOSITORY_ROOT / "docs" / "audits" / "obligation-execution-role-audit.md"
+    role_audit = DOC_ARCHIVE_20260805 / "audits" / "obligation-execution-role-audit.md"
 
     assert odg_record.exists()
     assert odg_2_record.exists()
@@ -647,7 +689,8 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "odg_advanced_attribution: experimental_only" in status
     assert "coordinator_commit: not_authorized" in status
     assert "taskplan_authority: compatibility_only_target" in status
-    assert "the current default path follows sar-0 authoritative optimized architecture" in governance
+    assert "the current long-term target follows the task contract-centered authoritative architecture" in governance
+    assert "sar-0 remains migration history" in governance
     assert "s0/s1/s2, tpa-0 through tpa-5, and odg-0 through odg-9 are historical" in governance
     assert "substitutive one-in/one-out migration" in governance
     assert "advanced attribution is `experimental_only`" in governance
@@ -675,7 +718,7 @@ def test_obligation_driven_progress_decision_is_current_and_non_promotional() ->
     assert "no change may create simultaneous completion authorities" in governance
     assert "s1 simplified core contracts may add a neutral contract module" in governance
     assert "foundation-only boundary" in governance
-    assert "sar-1 deep immutability" in governance
+    assert "active architecture plan defines the next semantic and completion-closure slices" in governance
     assert "s2 legacy-step compatibility projection may read taskplan" in governance
     assert "exact subgoal id to canonical obligation id" in governance
     assert "s2.1 hardens this projection before tpa-2" in governance
@@ -1832,9 +1875,10 @@ def test_sar0_authoritative_architecture_freeze_is_recorded() -> None:
     assert "next_slice: sar-2-relation-criterion-evidence-vocabulary-unification" in status
     assert "additive_foundation_expansion: stopped" in status
     assert "superseded_archive: docs/archive/superseded-2026-07-29/readme.md" in status
-    assert "2026-07-29-affordance-runtime-authoritative-optimized-architecture.md" in readme
-    assert "2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md" in readme
-    assert "docs/archive/superseded-2026-07-29/readme.md" in readme
+    assert "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in readme
+    assert "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md" in readme
+    assert "superseded notice (2026-08-05)" in architecture
+    assert (DOC_ARCHIVE_20260805 / "README.md").exists()
 
     archived_paths = (
         "2026-07-29-affordance-runtime-simplified-target-architecture.md",
@@ -1882,6 +1926,9 @@ def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> No
     ).casefold()
     status = " ".join(IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()).casefold()
     current_plan = " ".join(CURRENT_PLAN.read_text(encoding="utf-8").split()).casefold()
+    live_status = " ".join(
+        LIVE_IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()
+    ).casefold()
 
     legacy_docs = (
         "architecture.md",
@@ -1893,21 +1940,214 @@ def test_sar0_archives_legacy_root_architecture_docs_and_keeps_redirects() -> No
         redirect_path = REPOSITORY_ROOT / "docs" / legacy_doc
         assert archive_path.exists()
         redirect_text = " ".join(redirect_path.read_text(encoding="utf-8").split()).casefold()
-        assert "superseded by sar-0" in redirect_text
-        assert "2026-07-29-affordance-runtime-authoritative-optimized-architecture.md" in redirect_text
-        assert "2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md" in redirect_text
+        if legacy_doc == "architecture.md":
+            assert "current reference entrypoint" in redirect_text
+            assert "history, not a competing design" in redirect_text
+        else:
+            assert "archived pointer" in redirect_text
+            assert "superseded by the task contract-centered authoritative target architecture" in redirect_text
+        assert "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in redirect_text
+        assert "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md" in redirect_text
         assert legacy_doc in archive_readme
 
     assert "[architecture](docs/architecture.md)" not in readme
     assert "[complete architecture blueprint](docs/complete-architecture-blueprint.md)" not in readme
     assert "[design freeze and implementation gates](docs/design-freeze.md)" not in readme
-    assert "legacy root architecture redirects" in docs_readme
-    assert "git owns the exact repository head identity" in docs_readme
-    assert "`implementation-status.md` records the reviewed closure" in docs_readme
-    assert "`current-implementation-plan.md` owns the active queue" in docs_readme
-    assert "this readme owns navigation and conflict precedence only" in docs_readme
+    assert "current target authority" in docs_readme
+    assert "git owns the exact current repository revision" in live_status
+    assert "implementation status" in docs_readme
+    assert "current implementation plan" in docs_readme
+    assert "starting point for human maintenance and ai retrieval" in docs_readme
     assert "legacy_root_architecture_docs:" in status
     assert "legacy_root_architecture_docs: archived_with_redirects" in current_plan
+
+
+def test_task_contract_centered_authority_is_complete_and_navigable() -> None:
+    assert TASK_CONTRACT_ARCHITECTURE.exists()
+    assert TASK_CONTRACT_EVOLUTION_PLAN.exists()
+
+    architecture_source = TASK_CONTRACT_ARCHITECTURE.read_text(encoding="utf-8")
+    architecture = " ".join(architecture_source.split()).casefold()
+    evolution_plan = " ".join(
+        TASK_CONTRACT_EVOLUTION_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    readme = " ".join(
+        (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8").split()
+    ).casefold()
+    docs_readme = " ".join(
+        (REPOSITORY_ROOT / "docs" / "README.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    status = " ".join(
+        LIVE_IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()
+    ).casefold()
+    current_plan = " ".join(
+        LIVE_CURRENT_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+
+    required_architecture_terms = (
+        "taskspecauthority",
+        "sourceenvelope",
+        "sourceanchor",
+        "minimalintentproposal",
+        "semanticaudit",
+        "source_binding_digest",
+        "taskplanauthority",
+        "taskplanningrequest",
+        "choiceplanningrequest",
+        "perceptioncapture",
+        "canonicalobservationbuilder",
+        "canonical unifiedobservation",
+        "runtime-owned full actionchoicecatalog",
+        "choicebuildreport",
+        "choicepresentationprojector",
+        "choicepage",
+        "sourcecoverage",
+        "observationstore",
+        "unpresented_choice_id",
+        "actioncontract",
+        "approvaltoken",
+        "plan_exhausted",
+        "task_completed",
+        "precondition",
+        "progress_effect",
+        "terminal_effect",
+        "evidence_only",
+        "opensemanticexpr",
+        "criterionpolicy",
+        "state_holds",
+        "action_caused",
+        "current_observation",
+        "durable",
+        "final_recheck",
+        "weak",
+        "structural",
+        "authoritative",
+        "criterionevaluation",
+        "taskcompletionevaluation",
+        "loopevaluator",
+        "evidenceadmissionpolicy",
+        "observationcontinuation",
+        "augment_targeted",
+        "wait_and_recapture",
+        "durableevidencestore",
+        "receipt success ≠ action effect observed",
+        "plan exhausted ≠ task completed",
+        "model presentation space ≠ runtime candidate space",
+        "改变 model presentation policy",
+    )
+    for term in required_architecture_terms:
+        assert term in architecture
+
+    required_plan_terms = (
+        "src-thin-intake",
+        "src-task-contract",
+        "src-obligation-plan",
+        "src-role-drift",
+        "src-step-roundtrip",
+        "src-evidence-fidelity",
+        "src-completion-authority",
+        "src-p0-p5",
+        "op-00`–`op-08",
+        "op-09`–`op-15",
+        "op-16`–`op-24",
+        "p0-1`–`p0-6",
+        "p1-1`–`p1-5",
+        "p2-1`–`p2-5",
+        "p3-1`–`p3-3",
+        "chain-01`–`chain-11",
+        "p0-a`–`p0-d",
+        "p0-e",
+        "p1`–`p5",
+        "bplus-00`–`bplus-11",
+        "loopver-00`–`loopver-16",
+    )
+    for term in required_plan_terms:
+        assert term in evolution_plan
+
+    for amendment_number in range(19):
+        amendment_id = f"acr-{amendment_number:02d}"
+        assert amendment_id in evolution_plan
+        assert amendment_id in architecture
+    assert "acr-final" in evolution_plan
+    assert "acr-final" in architecture
+
+    for observation_gate_number in range(1, 15):
+        gate_id = f"obs-{observation_gate_number:02d}"
+        assert gate_id in evolution_plan
+        assert gate_id in architecture
+
+    for source_gate_number in range(1, 13):
+        gate_id = f"sou-{source_gate_number:02d}"
+        assert gate_id in evolution_plan
+        assert gate_id in architecture
+
+    for verification_gate_number in range(1, 15):
+        gate_id = f"ver-{verification_gate_number:02d}"
+        assert gate_id in evolution_plan
+        assert gate_id in architecture
+    assert "rec-01" in evolution_plan
+    assert "rec-01" in architecture
+
+    for amendment_number in range(12):
+        amendment_id = f"bplus-{amendment_number:02d}"
+        assert amendment_id in evolution_plan
+        assert amendment_id in architecture
+
+    for amendment_number in range(17):
+        amendment_id = f"loopver-{amendment_number:02d}"
+        assert amendment_id in evolution_plan
+        assert amendment_id in architecture
+
+    for cutover_slice in ("s1", "s2", "s3", "s4", "v1", "v2", "v3", "v4", "v5"):
+        assert f"| `{cutover_slice}` |" in architecture
+    for verification_priority in ("ver-p0", "ver-p1", "ver-p2", "ver-p3"):
+        assert f"| `{verification_priority}` |" in architecture
+
+    authoritative_active_step_edges = (
+        'UR["UserRequest"] --> SE["SourceEnvelope',
+        "SE --> MI",
+        "MI --> TSA",
+        "UO --> ACB",
+        'ACB --> CAT["Runtime-owned full ActionChoiceCatalog',
+        "CAT --> ZERO",
+        'ZERO -->|"N"| CPP["ChoicePresentationProjector"]',
+        'CPP --> PAGE["bounded ChoicePage"]',
+        'PAGE --> CPR["ChoicePlanningRequest"]',
+        "RCPT --> POSTCAP",
+        "POSTCAP --> POST",
+        'POST --> LOOP["Inline LoopEvaluationPhase"]',
+        "LEV --> COMMIT",
+    )
+    for edge in authoritative_active_step_edges:
+        assert edge in architecture_source
+    assert "APR --> ACB" not in architecture_source
+    assert "class ActionPlanningRequest" not in architecture_source
+
+    for text in (readme, docs_readme):
+        assert "2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in text
+        assert "2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md" in text
+
+    assert "authoritative_target: current_not_implemented_as_a_whole" in status
+    assert "active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_page" in status
+    assert "source_target: sourceenvelope_plus_selective_sourceanchor" in status
+    assert "semantic_audit: risk_triggered_veto_or_clarify_only" in status
+    assert "verification_shape: loop_native_typed_evaluation" in status
+    assert "task_completion_semantics: taskcompletionevaluator" in status
+    assert "task_completion_commit: runtimecommitter_only" in status
+    assert "source_invariants: sou-01_through_sou-12" in status
+    assert "observation_invariants: obs-01_through_obs-14" in status
+    assert "verification_invariants: ver-01_through_ver-14" in status
+    assert "recovery_invariants: rec-01" in status
+    assert "authoritative_architecture: docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md" in current_plan
+    assert "default_source_target: sourceenvelope_plus_selective_sourceanchor" in current_plan
+    assert "optional_audit_target: semanticaudit_veto_or_clarify_only" in current_plan
+    assert "planning_target: observation_grounded_taskplan_of_stepspec" in current_plan
+    assert "choice_target: full_runtime_actionchoicecatalog_before_choicepage" in current_plan
+    assert "verification_target: loop_native_typed_loopevaluator" in current_plan
+    assert "completion_semantics_owner: taskcompletionevaluator" in current_plan
+    assert "completion_commit_owner: runtimecommitter" in current_plan
 
 
 def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:

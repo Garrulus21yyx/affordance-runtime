@@ -1,0 +1,142 @@
+schema_version: 1
+updated: 2026-08-05
+repository: affordance-runtime
+
+authority_precedence:
+  - authoritative_architecture
+  - authoritative_evolution_plan
+  - current_implementation_truth
+  - normative_policy_or_contract
+  - maintained_reference
+  - immutable_record
+  - archived_history
+
+discovery:
+  - role: human_and_ai_documentation_index
+    path: docs/README.md
+    lifecycle: current
+  - role: machine_readable_documentation_index
+    path: docs/documentation-manifest.yaml
+    lifecycle: current
+
+authoritative:
+  - role: authoritative_architecture
+    path: docs/superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md
+    lifecycle: current
+  - role: authoritative_evolution_plan
+    path: docs/superpowers/plans/2026-08-05-task-contract-centered-runtime-architecture-evolution-plan.md
+    lifecycle: current
+
+status:
+  - role: product_roadmap
+    path: docs/project-plan.md
+    lifecycle: current
+  - role: active_execution_queue
+    path: docs/current-implementation-plan.md
+    lifecycle: current
+  - role: implementation_truth
+    path: docs/implementation-status.md
+    lifecycle: current
+
+normative:
+  - role: documentation_lifecycle_governance
+    path: docs/documentation-governance.md
+    lifecycle: current
+  - role: architecture_change_admission
+    path: docs/architecture-governance-track.md
+    lifecycle: current
+  - role: responsibility_containment
+    path: docs/responsibility-containment-boundary.md
+    lifecycle: current
+  - role: runtime_product_boundary
+    path: docs/runtime-first-boundary.md
+    lifecycle: current
+  - role: benchmark_boundary
+    path: docs/benchmark-governance-boundary.md
+    lifecycle: current
+  - role: task_intake_and_planning_contract
+    path: docs/task-intake-and-planner.md
+    lifecycle: current
+  - role: perception_and_recovery_contract
+    path: docs/active-perception-and-online-recovery.md
+    lifecycle: current
+  - role: orchestration_contract
+    path: docs/orchestration-and-feedback.md
+    lifecycle: current
+  - role: trace_and_evaluation_contract
+    path: docs/trace-and-evaluation.md
+    lifecycle: current
+  - role: integration_contract
+    path: docs/integrations.md
+    lifecycle: current
+  - role: controlled_evolution_contract
+    path: docs/harness-evolution.md
+    lifecycle: current
+  - role: benchmark_execution_policy
+    path: docs/benchmark-plan.md
+    lifecycle: current
+
+reference:
+  - role: architecture_entrypoint
+    path: docs/architecture.md
+    lifecycle: current
+  - role: approval_scenario
+    path: docs/scenarios/approval-gated-report-export.md
+    lifecycle: current
+  - role: read_only_scenario
+    path: docs/scenarios/pricing-extraction.md
+    lifecycle: current
+  - role: reversible_effect_scenario
+    path: docs/scenarios/settings-update.md
+    lifecycle: current
+  - role: action_contract_digest_threat_model
+    path: docs/security/action-contract-digest-threat-model.md
+    lifecycle: current
+
+immutable_records:
+  - path: docs/evidence/
+    lifecycle: immutable_record
+    semantic_authority: false
+  - path: docs/change-admission/
+    lifecycle: immutable_record
+    semantic_authority: false
+
+archive_collections:
+  - path: docs/archive/superseded-2026-07-29/
+    lifecycle: archived
+  - path: docs/archive/sar-9-phase-extraction/
+    lifecycle: archived
+  - path: docs/archive/superseded-2026-08-05/
+    lifecycle: archived
+
+stable_redirects:
+  - path: docs/complete-architecture-blueprint.md
+    lifecycle: redirect
+  - path: docs/design-freeze.md
+    lifecycle: redirect
+  - path: docs/superpowers/specs/2026-07-29-affordance-runtime-authoritative-optimized-architecture.md
+    lifecycle: redirect
+  - path: docs/superpowers/plans/2026-07-29-affordance-runtime-substitutive-refactor-execution-plan.md
+    lifecycle: redirect
+  - path: docs/superpowers/plans/2026-07-31-agent-loop-semantic-closure-master-plan.md
+    lifecycle: redirect
+  - path: docs/current-architecture-audit-20260722.md
+    lifecycle: redirect
+  - path: docs/current-closure-audit-20260724.md
+    lifecycle: redirect
+  - path: docs/current-governance-critical-audit-20260725.md
+    lifecycle: redirect
+  - path: docs/planner-recovery-governance-audit-20260723.md
+    lifecycle: redirect
+  - path: docs/intent-schema-authority-governance-20260726.md
+    lifecycle: redirect
+  - path: docs/audits/taskplan-authority-call-sites.md
+    lifecycle: redirect
+  - path: docs/audits/step-planner-standard-input-read-set.md
+    lifecycle: redirect
+  - path: docs/audits/taskskill-progress-authority.md
+    lifecycle: redirect
+  - path: docs/reviews/2026-07-31-coordinator-slimming-and-behavior-priority.md
+    lifecycle: redirect
+  - path: docs/reviews/2026-07-31-optimized-agent-loop-target-review.md
+    lifecycle: redirect

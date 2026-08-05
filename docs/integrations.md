@@ -1,191 +1,71 @@
 # Integrations
 
-## 1. Integration Principle
+> **Lifecycle:** CURRENT NORMATIVE CONTRACT
+> **Scope:** parent-agent, CLI, service, adapter, and result boundaries
 
-Affordance Runtime should be callable by existing agents without requiring them
-to adopt its internal architecture.
+## 1. Integration principle
 
-The parent agent sends a bounded task. The runtime returns a structured result,
-evidence, trace id, and any required follow-up decision.
+A caller submits bounded user intent and legal source references. The caller
+does not need to adopt Runtime internals and cannot bypass Runtime authority by
+supplying accepted TaskSpec identity, concrete selector/coordinate, capability,
+approval, verification result, or TaskCompleted state.
 
-## 2. Interfaces
+## 2. Request boundary
 
-Current implemented interface:
+An integration request may provide:
 
-```text
-TaskRuntimeService
-  submit / execute / get_run / approve / cancel
-  get_result / get_evidence / get_trace
+- request/caller/conversation identity and revision;
+- request text or stable source ref;
+- attachment, target, and profile-context refs;
+- caller-granted capability context;
+- risk/approval policy refs;
+- run budgets and continuation/cancellation handles.
 
-TaskToolAdapter
-  gui_submit_task / gui_execute_task / gui_get_run / gui_approve_task
-  gui_cancel_task / gui_get_result / gui_get_evidence / gui_get_trace
-```
+Runtime creates SourceEnvelope and interprets a MinimalIntentProposal. Material
+fields use SourceAnchor. Optional SemanticAudit may veto or request
+clarification. TaskSpecAuthority alone admits the TaskSpec.
 
-`LocalScenarioTaskRunner` connects this interface to the real Chromium runtime.
-`ExternalTaskProtocol` exposes the same eight operations over newline-delimited
-JSON-RPC `affordance-task-rpc/1.0`. The server runs in a separate process and
-also owns the local fixture and browser sessions.
+## 3. Runtime operations
 
-Run the real external LangGraph proof with:
-
-```bash
-python scripts/langgraph_parent_smoke.py --output evidence/parent
-```
-
-The compiled graph completes pricing, retrieves result/evidence/trace, submits
-an export, observes `waiting_approval`, supplies a scoped approval, then
-retrieves the verified download evidence. `gui_click`, `gui_type`, and
-`gui_observe` are not present in external tool discovery.
-
-### 2.1 CLI
-
-```bash
-affordance-runtime run \
-  --task "Open the pricing page and extract plan limits" \
-  --target "https://example.com" \
-  --read-only
-```
-
-### 2.2 Optional REST Transport
-
-```http
-POST /v1/tasks
-GET /v1/runs/{run_id}
-GET /v1/traces/{trace_id}
-POST /v1/evals
-```
-
-### 2.3 External Task JSON-RPC and Optional MCP Mapping
-
-Implemented protocol methods:
+A service/tool surface may expose:
 
 ```text
-runtime/info
-tools/list
-tools/call
-shutdown
+submit / execute / get_run
+approve / deny / cancel / clarify
+get_result / get_evidence / get_trace
 ```
 
-Each request and response uses JSON-RPC 2.0 on one line. This is the current
-equivalent external protocol required by M7. MCP can map the same stable tool
-schemas later without changing runtime authority.
+Approval binds one exact ActionContract hash and state/page revision. Parent
+agents cannot approve an action family or stale future action in advance.
 
-Optional MCP mapping:
+## 4. Result boundary
 
-Tools:
+The integration result distinguishes:
 
-```text
-gui_run_task
-gui_get_run
-gui_get_evidence
-gui_get_trace
-gui_replay_trace
-gui_run_eval
-```
+- Runtime lifecycle/terminal status;
+- TaskCompletionEvaluation and result payload;
+- pending approval/clarification/recheck;
+- typed failure and recovery state;
+- observation, artifact, durable-evidence, and trace refs;
+- external evaluator result when applicable.
 
-Production MCP should expose task-level APIs. Low-level primitives such as
-`gui_observe`, `gui_click`, and `gui_type` can exist as internal/debug tools,
-but they should not be the primary external contract because they bypass the
-State Kernel, Affordance Lease, Capability Gate, Action Contract, and Verifier
-Ladder.
+Receipt success, plan exhaustion, model finish, or benchmark reward is never
+reported as Runtime task success by itself.
 
-### 2.4 LangGraph Parent - implemented
+## 5. Adapter boundary
 
-The M7 parent is a compiled LangGraph 1.2 graph whose nodes call the external
-task protocol:
+BrowserGym, Playwright, DOM, visual, AX, API, device, and future desktop/mobile
+adapters translate public Runtime contracts. They may capture source data,
+route validated concrete actions, and collect external results. They may not
+own TaskSpec, full Catalog membership, ActionContract admission, recovery
+policy, or completion semantics.
 
-```text
-Agent State
-  -> discover task tools
-  -> submit / execute pricing
-  -> collect result / evidence / trace
-  -> submit / execute export
-  -> approve export
-  -> collect result / evidence / trace
-```
+## 6. Streaming and cancellation
 
-LangGraph never receives a browser session or primitive action executor. The
-runtime process remains the sole execution authority.
+Streaming projects committed events. Cancellation and user takeover are typed
+Runtime transitions; they do not directly mutate provider/session state behind
+the committer. Sensitive source content and artifacts are returned by scoped
+refs rather than embedded in every event/result.
 
-### 2.5 Codex / Claude Tool Adapter
-
-The runtime should expose a simple tool call:
-
-```json
-{
-  "task": "Find the latest invoice and download it.",
-  "constraints": {
-    "read_only_until_download": true,
-    "no_payment": true
-  }
-}
-```
-
-Return:
-
-```json
-{
-  "status": "success",
-  "result": {},
-  "trace_id": "run_001",
-  "evidence": [],
-  "artifacts": []
-}
-```
-
-### 2.6 OpenHands / Coding Agent Adapter
-
-Coding agents often need a browser or GUI operator for:
-
-- local app verification
-- UI regression checks
-- documentation search
-- admin panel setup
-- browser reproduction
-
-Affordance Runtime can act as a browser/GUI subagent with strict trace and
-approval boundaries.
-
-## 3. Parent-Agent Contract
-
-Parent agents should receive only decision-relevant events:
-
-```text
-success
-failed
-blocked
-needs_approval
-needs_user_login
-needs_parent_context
-unsafe_action_blocked
-```
-
-They should not receive raw low-level event streams unless explicitly requested.
-
-## 4. Safety Constraints
-
-The interface should support constraints:
-
-```json
-{
-  "read_only": true,
-  "no_purchase": true,
-  "no_delete": true,
-  "no_external_message": true,
-  "require_approval_for": ["payment", "delete", "submit_application"]
-}
-```
-
-## 5. Standalone vs Subagent
-
-### Standalone
-
-The runtime owns the task loop and reports the final result.
-
-### Subagent
-
-The parent agent owns the broader goal. The runtime owns bounded GUI execution.
-
-This separation is important. Affordance Runtime should not pretend to be the
-entire agent stack when it is being used as an execution substrate.
+The previous integration document is archived at
+[maintained-pre-consolidation/integrations.md](archive/superseded-2026-08-05/maintained-pre-consolidation/integrations.md).

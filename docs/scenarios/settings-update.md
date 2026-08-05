@@ -1,5 +1,8 @@
 # Scenario: Reversible Settings Update
 
+> **Lifecycle:** CURRENT REFERENCE SCENARIO
+> **Architecture:** effect-authorized TaskSpec → ActionContract/gates → contract-bound ACTION_CAUSED evidence → final persisted-state recheck
+
 ## Scenario ID
 
 `saas.settings.reversible_write.v1`
@@ -100,13 +103,13 @@ max_effectful_actions: 2
 
 ## Expected Trace Nodes
 
-- task envelope with granted capability
+- SourceEnvelope and admitted TaskSpec with capability ceiling
 - pre-action observation and setting value
-- action contract bound to snapshot, page revision, and target fingerprint
+- ActionContract bound to canonical observation, Catalog choice, page revision, and target fingerprint
 - capability gate decision
 - execution receipt
 - post-action observation
-- verification report against fixture oracle
+- LoopEvaluation and final authoritative recheck against the fixture oracle
 - optional compensation/restore action
 
 ## Pass Criteria
