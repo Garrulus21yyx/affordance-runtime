@@ -104,6 +104,7 @@ class PredicateEvidence:
 class PredicateEvidenceContext:
     current_observation_ref: str
     evidence: tuple[PredicateEvidence, ...] = ()
+    current_observation: object | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence", tuple(self.evidence))

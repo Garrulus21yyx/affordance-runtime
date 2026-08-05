@@ -19,6 +19,7 @@ from affordance_runtime.runtime_evidence import (
     RecentActionOutcomeEvidence,
     RecentActionOutcomeEvidenceIndex,
 )
+from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -138,6 +139,43 @@ def test_shared_provider_contract(source_kind, assurance) -> None:  # noqa: ANN0
         .status
         == CriterionStatus.SATISFIED
     )
+
+
+def test_structural_and_artifact_providers_read_canonical_observation() -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:2",
+        page_revision="page:2",
+        environment_revision="env:2",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:status",
+                surface="dom",
+                role="status",
+                label="Status",
+                supported_actions=(),
+                state={"equals": "ready"},
+            ),
+        ),
+        artifact_refs=("artifact:report",),
+    )
+    context = PredicateEvidenceContext(
+        "observation:2", current_observation=observation
+    )
+    assert PredicateEvaluator().evaluate(
+        _predicate(PredicateOperator.EQUALS), context
+    ).status == CriterionStatus.SATISFIED
+
+    artifact = PredicateExpr(
+        "criterion:artifact",
+        SubjectExpr("artifact", "artifact:report"),
+        PredicateOperator.EXISTS,
+        _policy(
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+            allowed_source_kinds=(EvidenceSourceKind.ARTIFACT_INTEGRITY,),
+        ),
+    )
+    assert PredicateEvaluator().evaluate(artifact, context).status == CriterionStatus.SATISFIED
 
 
 def test_provider_conflict_and_high_risk_weak_evidence_are_not_satisfied() -> None:
