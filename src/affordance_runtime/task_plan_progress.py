@@ -10,6 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from affordance_runtime.runtime_evidence import (
+    DurableEvidenceStore,
+    RecentActionOutcomeEvidence,
+    RecentActionOutcomeEvidenceIndex,
+)
 from affordance_runtime.simplified_runtime_contracts import StateCriterion, StateCriterionRelation
 from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.task_planner import (
@@ -37,10 +42,17 @@ class TaskProgress:
     failed_step_ids: list[str] = field(default_factory=list)
     facts: dict[str, object] = field(default_factory=dict)
     bindings: dict[str, object] = field(default_factory=dict)
-    recent_action_outcome_refs: list[str] = field(default_factory=list)
-    durable_evidence_refs: list[str] = field(default_factory=list)
+    recent_action_outcomes: RecentActionOutcomeEvidenceIndex = field(
+        default_factory=RecentActionOutcomeEvidenceIndex
+    )
+    durable_evidence: DurableEvidenceStore = field(default_factory=DurableEvidenceStore)
     action_count_by_step: dict[str, int] = field(default_factory=dict)
     replan_count: int = 0
+
+    def record_action_outcome(self, outcome: object) -> None:
+        self.recent_action_outcomes.append(
+            RecentActionOutcomeEvidence.from_action_outcome(outcome)
+        )
 
     @property
     def completed_step_ids(self) -> tuple[str, ...]:

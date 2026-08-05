@@ -13,6 +13,12 @@ from affordance_runtime.criteria import (
     PredicateOperator,
     SubjectExpr,
 )
+from affordance_runtime.runtime_evidence import (
+    CurrentObservationEvidence,
+    DurableEvidenceStore,
+    RecentActionOutcomeEvidence,
+    RecentActionOutcomeEvidenceIndex,
+)
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -163,3 +169,70 @@ def test_provider_conflict_and_high_risk_weak_evidence_are_not_satisfied() -> No
         ),
     )
     assert PredicateEvaluator().evaluate(high_risk, weak).status == CriterionStatus.UNKNOWN
+
+
+def test_state_holds_does_not_prove_action_caused_without_exact_lineage() -> None:
+    state_holds = _predicate(PredicateOperator.EQUALS)
+    caused = PredicateExpr(
+        "criterion:caused",
+        state_holds.subject,
+        state_holds.operator,
+        _policy(
+            satisfaction=SatisfactionMode.ACTION_CAUSED,
+            causal_lineage_required=True,
+        ),
+        state_holds.value,
+    )
+    current_fact = _evidence()
+    context = PredicateEvidenceContext("observation:2", (current_fact,))
+    assert PredicateEvaluator().evaluate(state_holds, context).status == CriterionStatus.SATISFIED
+    assert PredicateEvaluator().evaluate(caused, context).status == CriterionStatus.UNKNOWN
+
+    causal = _evidence(
+        contract_id="contract:1",
+        receipt_ref="receipt:1",
+        pre_observation_ref="observation:1",
+        post_observation_ref="observation:2",
+        effect_criterion_ids=("criterion:caused",),
+    )
+    assert (
+        PredicateEvaluator()
+        .evaluate(caused, PredicateEvidenceContext("observation:2", (causal,)))
+        .status
+        == CriterionStatus.SATISFIED
+    )
+
+
+def test_evidence_lifetimes_are_epoch_bound_bounded_and_selectively_durable() -> None:
+    current = CurrentObservationEvidence("evidence:current", "observation:1", "criterion:1")
+    assert current.current_at("observation:1")
+    assert not current.current_at("observation:2")
+
+    index = RecentActionOutcomeEvidenceIndex(capacity=2)
+    for number in range(3):
+        index.append(
+            RecentActionOutcomeEvidence(
+                f"outcome:{number}",
+                f"contract:{number}",
+                f"receipt:{number}",
+                f"observation:{number}",
+                f"observation:{number + 1}",
+                ("criterion:effect",),
+                (f"evidence:{number}",),
+                True,
+            )
+        )
+    assert [item.outcome_id for item in index.records] == ["outcome:1", "outcome:2"]
+
+    store = DurableEvidenceStore()
+    dom = _evidence(durable=True)
+    artifact = _evidence(
+        evidence_ref="artifact:sha256",
+        source_kind=EvidenceSourceKind.ARTIFACT_INTEGRITY,
+        assurance=AssuranceLevel.AUTHORITATIVE,
+        observation_ref="observation:1",
+        durable=True,
+    )
+    assert not store.admit(dom)
+    assert store.admit(artifact)
+    assert store.records == [artifact]

@@ -24,6 +24,10 @@ evaluators own classification, handoff and recovery-outcome policy;
 RuntimeCommitSession owns lifecycle only; RuntimeCommitter applies already
 evaluated typed transitions/events/completion. The legacy Runtime planning
 owner was deleted, leaving only a named one-way external provider adapter.
+P2-1/P2-2/P2-3 are now cut over: canonical typed criterion policy and recursive
+evaluation feed three mechanical provider groups, while current, recent-causal
+and durable evidence have distinct bounded lifetimes. P2-4 remains deferred;
+no model/human fallback provider was added.
 
 Documentation consolidation does not promote any production capability.
 
@@ -37,13 +41,14 @@ Documentation consolidation does not promote any production capability.
 | Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; planner policy emits authority-free PlanCandidate | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
-| Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route and LoopEvaluator consumes canonical post-action evidence | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1 complete; P2 provider expansion pending |
+| Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route and mechanical evidence is grouped by structural/resource/artifact responsibility | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1/P2 mechanical baseline complete |
 | Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; bounded ChoicePage and displayed-ID validation are separate owners | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C complete |
 | ActionContract and gates | selected choice, Catalog digest, canonical observation and current binding are sealed into ActionContract; ordered Task/Capability/Approval/Freshness admission is in-process and typed | retain and bind to canonical observation/catalog identity | P0-C complete; later policy matrix refinement pending |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
-| Verification | mechanical verifier reports remain evidence providers; pure LoopEvaluator separates action effect, active-step completion, triggered task completion and continuation proposal; disabled verification and receipt-only reports cannot complete a step/task | loop-native typed evaluation with bounded evidence locations | P0-A/P1-E1 complete; P2 provider/policy expansion pending |
+| Verification | mechanical verifier facts feed typed predicate/composite evaluation; pure LoopEvaluator separates action effect, active-step completion, triggered task completion and continuation; disabled verification, receipt-only and unsupported operators cannot complete a step/task | loop-native typed evaluation with bounded evidence locations | P0-A/P1-E1 and P2-1/P2-2 complete; P2-4 deferred |
 | Criterion contracts | canonical immutable Predicate/AllOf/AnyOf/Not/OpenSemantic AST and orthogonal satisfaction/validity/assurance policy are implemented; registered vocabulary without mechanical coverage returns UNSUPPORTED | one typed criterion vocabulary independent of provider coverage | P2-1 complete |
 | Evidence providers | shared mechanical contract groups structural DOM/AX/Visual/SVG, resource API/WoT/Device/transaction and artifact/file/materialization facts; providers do not evaluate task completion or mutate state | focused fact providers feeding pure predicate evaluation | P2-2 complete; P2-4 model/human expansion deferred |
+| Evidence lifetimes | current facts are epoch refs; exact contract/receipt/pre/post/effect lineage is retained in a 40-record recent index; only explicitly durable artifact/resource/transaction/human records enter a bounded durable store | CurrentObservation + RecentActionOutcome + DurableEvidence | P2-3 complete |
 | Task completion | full typed TaskSpec.success closure, declared constraints/effects, authoritative final rechecks and source-bound required outputs are evaluated by the pure TaskCompletionEvaluator; RuntimeCommitter is the sole TaskCompleted writer; latest-report, plan/prose and no-TaskSpec fallbacks are removed | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A complete |
 | Observation continuation | perception owner returns REUSE, AUGMENT_TARGETED, RECAPTURE or WAIT_AND_RECAPTURE from freshness/stability/coverage/conflict; fresh reusable capture is not immediately duplicated | typed continuation proposal outside Coordinator/Committer | P1-E2 complete |
 | Recovery | RecoveryStage owns typed classification, handoff/exhaustion/error mapping and strategy choice; RecoveryObservationEvaluator and RecoveryActionEvaluator settle typed outcomes; Coordinator and RuntimeCommitSession only follow results | typed causes, no generic-string ownership, no blind external retry | P1-C1 complete |
@@ -57,7 +62,7 @@ authoritative_target: current_not_implemented_as_a_whole
 active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_page
 cross_surface_foundations: existing_not_canonical_cutover
 cross_surface_target: DOM_AX_Visual_SVG_WoT_API_Device
-cross_surface_cutover: P0_B_P0_C_P1_complete_P2_pending
+cross_surface_cutover: P0_B_P0_C_P1_P2_mechanical_baseline_complete
 source_target: SourceEnvelope_plus_risk_proportionate_MaterialBinding_and_selective_SourceAnchor
 semantic_audit: risk_triggered_veto_or_clarify_only
 material_binding_policy: P0_E5_effect_specific_coverage_complete
@@ -71,10 +76,10 @@ choice_presentation_contract: canonical_P0_C_cutover_complete
 catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
 observation_indexed_epoch: canonical_P0_B_cutover_complete
 authority_in_process_composition: shared_in_process_observation_store_complete
-criterion_provider_phasing: P1_loop_evaluator_complete_P2_provider_expansion_pending
+criterion_provider_phasing: P2_mechanical_baseline_complete_P2_4_deferred
 typed_task_planner_trigger: P1_canonical_plan_candidate_and_authority_complete
 risk_derived_feature_profiles: target_not_implemented
-verification_shape: P1_loop_native_typed_evaluation_complete_P2_provider_matrix_pending
+verification_shape: P2_typed_policy_predicates_and_mechanical_provider_matrix_complete
 task_completion_semantics: canonical_P0_A_cutover_complete
 required_output_closure: narrow_typed_P0_A_complete_full_P3_contract_pending
 task_completion_commit: RuntimeCommitter_only
@@ -111,7 +116,7 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5 and all P1 rows are complete; the external provider `subgoals` wire adapter is isolated in `legacy_task_plan_provider.py`, remains one-way and expires at P3-4; P2 has not started |
+| production behavior change | P0-A/B/C/D/E/E5, all P1 rows and P2-1/P2-2/P2-3 are complete; P2-4 remains deferred; the external provider `subgoals` wire adapter remains isolated and expires at P3-4; P3/P4/P5 have not started |
 
 ## 6. Historical ledger
 

@@ -212,6 +212,8 @@ class ProgressStage:
             action.skill_step_id or action.contract.affordance_id,
             state.phase,
         )
+        if state.task_progress is not None:
+            state.task_progress.record_action_outcome(outcome_commit.outcome)
         state.record_action_progress(
             action.action_signature,
             post_snapshot.observation.environment_revision,
