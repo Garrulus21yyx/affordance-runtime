@@ -26,6 +26,89 @@ class CriterionStatus(StrEnum):
     ERROR = "error"
 
 
+class SatisfactionMode(StrEnum):
+    STATE_HOLDS = "state_holds"
+    ACTION_CAUSED = "action_caused"
+
+
+class EvidenceValidityMode(StrEnum):
+    CURRENT_OBSERVATION = "current_observation"
+    DURABLE = "durable"
+    FINAL_RECHECK = "final_recheck"
+
+
+class AssuranceLevel(StrEnum):
+    WEAK = "weak"
+    STRUCTURAL = "structural"
+    AUTHORITATIVE = "authoritative"
+
+
+class EvidenceSourceKind(StrEnum):
+    DOM_STATE = "dom_state"
+    ACCESSIBILITY_STATE = "accessibility_state"
+    VISUAL_STATE = "visual_state"
+    SVG_GEOMETRY = "svg_geometry"
+    WOT_DESCRIPTION = "wot_description"
+    WOT_PROPERTY_STATE = "wot_property_state"
+    API_STATE = "api_state"
+    DEVICE_STATE = "device_state"
+    WOT_ACTION_RESULT = "wot_action_result"
+    NETWORK_TRANSACTION = "network_transaction"
+    ARTIFACT_INTEGRITY = "artifact_integrity"
+    FILE_RECEIPT = "file_receipt"
+    DOWNLOAD_RECEIPT = "download_receipt"
+    MODEL_SEMANTIC = "model_semantic"
+    HUMAN_CONFIRMATION = "human_confirmation"
+
+
+@dataclass(frozen=True)
+class CriterionPolicy:
+    satisfaction: SatisfactionMode = SatisfactionMode.STATE_HOLDS
+    validity: EvidenceValidityMode = EvidenceValidityMode.CURRENT_OBSERVATION
+    minimum_assurance: AssuranceLevel = AssuranceLevel.STRUCTURAL
+    allowed_source_kinds: tuple[EvidenceSourceKind, ...] = ()
+    causal_lineage_required: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "allowed_source_kinds", tuple(self.allowed_source_kinds))
+        if self.satisfaction == SatisfactionMode.ACTION_CAUSED and not self.causal_lineage_required:
+            raise ValueError("ACTION_CAUSED policy requires causal lineage")
+
+
+@dataclass(frozen=True)
+class PredicateEvidence:
+    evidence_ref: str
+    subject_ref: str
+    observed_value: Any
+    source_kind: EvidenceSourceKind
+    assurance: AssuranceLevel
+    observation_ref: str = ""
+    contract_id: str = ""
+    receipt_ref: str = ""
+    pre_observation_ref: str = ""
+    post_observation_ref: str = ""
+    effect_criterion_ids: tuple[str, ...] = ()
+    durable: bool = False
+    authoritative_final_recheck: bool = False
+    conflict: bool = False
+    error_code: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.evidence_ref.strip() or not self.subject_ref.strip():
+            raise ValueError("predicate evidence requires identity and subject")
+        object.__setattr__(self, "observed_value", freeze_json(self.observed_value))
+        object.__setattr__(self, "effect_criterion_ids", tuple(self.effect_criterion_ids))
+
+
+@dataclass(frozen=True)
+class PredicateEvidenceContext:
+    current_observation_ref: str
+    evidence: tuple[PredicateEvidence, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evidence", tuple(self.evidence))
+
+
 class SuccessExpression(_FrozenModel):
     """One recursively typed TaskSpec.success expression node."""
 
