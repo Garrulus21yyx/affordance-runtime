@@ -9,6 +9,7 @@ from time import time
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.material_contracts import MaterialBinding, MaterialEffectKind
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
@@ -107,7 +108,9 @@ class TaskInteractionOperationKind(StrEnum):
 
 
 class RequestedEffect(StrictModel):
+    effect_id: str = Field(default="", max_length=240)
     operation_class: OperationClass
+    material_effect_kind: MaterialEffectKind = MaterialEffectKind.NONE
     target: str = Field(min_length=1)
     capability: str = ""
     description: str = ""
@@ -338,7 +341,7 @@ class SemanticValueConstraint(StrictModel):
 
 
 class TaskSpec(StrictModel):
-    schema_version: str = "1.3"
+    schema_version: str = "1.4"
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     objective: str = Field(min_length=1)
@@ -357,6 +360,7 @@ class TaskSpec(StrictModel):
     final_recheck_criterion_ids: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
+    material_bindings: tuple[MaterialBinding, ...] = ()
     source_claims: tuple[SourcedTaskClaim, ...] = ()
     obligations: tuple[TaskObligationSpec, ...] = ()
     forbidden_effects: tuple[str, ...] = ()

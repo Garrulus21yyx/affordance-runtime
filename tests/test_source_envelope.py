@@ -1,8 +1,12 @@
+import hashlib
+
 import pytest
 
 from affordance_runtime.source_envelope import (
+    ExternalExactAnchor,
     MaterialField,
     SourceEnvelopeBuilder,
+    SourceKind,
 )
 from affordance_runtime.task_intake import UserRequest
 
@@ -42,3 +46,32 @@ def test_material_authority_uses_exact_source_anchor(field, text, excerpt) -> No
     assert anchor.span == (start, start + len(excerpt))
     assert anchor.content_length == len(excerpt)
     assert excerpt not in anchor.model_dump_json()
+
+
+def test_indirect_unstructured_source_accepts_prevalidated_exact_excerpt_metadata() -> None:
+    request = UserRequest(
+        request_id="request-attachment",
+        raw_text="Use the recipient in the attachment",
+        attachment_refs=("attachment:recipient.pdf@v3",),
+    )
+    excerpt = "Ada"
+
+    envelope = SourceEnvelopeBuilder().build(
+        request,
+        external_exact_anchors=(
+            ExternalExactAnchor(
+                source_kind=SourceKind.ATTACHMENT,
+                source_index=0,
+                material_field=MaterialField.RECIPIENT,
+                span_start=12,
+                span_end=15,
+                content_digest="sha256:" + hashlib.sha256(excerpt.encode()).hexdigest(),
+                content_length=len(excerpt),
+            ),
+        ),
+    )
+
+    anchor = envelope.anchors[1]
+    assert anchor.material_field == MaterialField.RECIPIENT
+    assert anchor.source_id.endswith(":source:attachment:0")
+    assert anchor.span == (12, 15)

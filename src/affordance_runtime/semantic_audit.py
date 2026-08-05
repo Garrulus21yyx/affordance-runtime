@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from affordance_runtime.source_envelope import MaterialField, SourceEnvelope, SourceKind
+from affordance_runtime.source_envelope import SourceEnvelope, SourceKind
 from affordance_runtime.task_intake import OperationClass, StrictModel
 from affordance_runtime.task_spec_authority import MinimalIntentProposal
 
@@ -64,30 +64,6 @@ class SemanticAudit:
                 triggered=True,
                 trigger_reasons=tuple(reasons),
                 issue_codes=("material_source_conflict",),
-                source_envelope_ref=envelope.identity,
-            )
-        material_fields = {
-            anchor.material_field
-            for anchor in envelope.anchors
-            if anchor.material_field is not None
-        }
-        high_risk = bool(
-            operations
-            & {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE}
-        )
-        required_material = {
-            MaterialField.RECIPIENT,
-            MaterialField.AMOUNT,
-            MaterialField.EXTERNAL_DESTINATION,
-            MaterialField.DESTRUCTIVE_TARGET,
-            MaterialField.FILE,
-        }
-        if high_risk and not material_fields.intersection(required_material):
-            return SemanticAuditResult(
-                status=SemanticAuditStatus.CLARIFICATION_REQUIRED,
-                triggered=True,
-                trigger_reasons=tuple(reasons),
-                issue_codes=("material_scope_not_exactly_anchored",),
                 source_envelope_ref=envelope.identity,
             )
         return SemanticAuditResult(

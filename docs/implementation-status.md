@@ -11,9 +11,11 @@ The Task Contract-centered target is **not implemented as a whole**. Current
 production code contains substantial ActionContract, approval, preflight,
 execution, observation, verification, recovery, trace, planner-request, and
 Coordinator-containment foundations. P0-A completion authority, P0-B canonical
-observation authority, and P0-C Runtime-owned action space are cut over. It
-still retains legacy source, broader TaskSpec shape, and
-TaskPlan/Subgoal/PlanProgress paths that later slices explicitly replace.
+observation authority, P0-C Runtime-owned action space, and P0-E thin source /
+single semantic admission are cut over. P0-E5 also replaces the flawed
+"any material exact anchor" shortcut with effect-specific typed material
+binding coverage. The broader compatibility TaskSpec shape and
+TaskPlan/Subgoal/PlanProgress paths remain for later substitutive slices.
 
 Documentation consolidation does not promote any production capability.
 
@@ -21,9 +23,9 @@ Documentation consolidation does not promote any production capability.
 
 | Area | Current implementation truth | Target | Status |
 |---|---|---|---|
-| Source intake | heavy SourceLedger/clause/claim/obligation compatibility remains on default paths | lightweight SourceEnvelope + selective SourceAnchor; optional SemanticAudit | pending cutover |
-| Semantic authority | raw-language read/write boundaries are not yet represented by the target SourceContextView/TaskSpecGap contracts across production modules | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | pending cutover |
-| Task contract | TaskSpec now carries the narrow typed success expression, required outputs, constraints, external effects and final-recheck references needed by P0-A; the broader extraction-era shape remains | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P0-A narrow closure fields implemented; P3 contract cutover pending |
+| Source intake | default path is SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpecAuthority; default SourceLedger/claim/obligation owners are deleted | lightweight SourceEnvelope + risk-proportionate MaterialBinding/selective SourceAnchor; optional SemanticAudit | P0-E complete |
+| Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers exist; execution consumers are denied source context; effect-specific material completeness is deterministic authority policy rather than audit/span inference | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E complete; P3 canonical requirement binding remains |
+| Task contract | TaskSpec now carries narrow typed success/output closure plus admitted P0-E5 material bindings and their digest; the broader extraction-era compatibility shape remains | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P0-A/P0-E narrow fields implemented; P3 contract cutover pending |
 | Task planning | legacy Step/Subgoal projections and obligation-shaped routing remain | observation-grounded replaceable TaskPlan<StepSpec> | pending cutover |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
 | Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings and ActionContractBuilder selects the current route | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C complete; P1–P2 pending |
@@ -43,9 +45,11 @@ active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_p
 cross_surface_foundations: existing_not_canonical_cutover
 cross_surface_target: DOM_AX_Visual_SVG_WoT_API_Device
 cross_surface_cutover: P0-B_P0-C_complete_P1_P2_pending
-source_target: SourceEnvelope_plus_selective_SourceAnchor
+source_target: SourceEnvelope_plus_risk_proportionate_MaterialBinding_and_selective_SourceAnchor
 semantic_audit: risk_triggered_veto_or_clarify_only
-semantic_authority_boundary: target_not_implemented
+material_binding_policy: P0_E5_effect_specific_coverage_complete
+exact_span_policy: indirect_unstructured_provenance_only
+semantic_authority_boundary: P0_E_admission_and_read_set_cutover_complete_P3_requirement_binding_pending
 semantic_context_visibility: bounded_context_only_allowlist
 execution_raw_text_input: prohibited_target_not_cut_over
 requirement_identity: target_not_implemented
@@ -62,7 +66,7 @@ task_completion_semantics: canonical_P0_A_cutover_complete
 required_output_closure: narrow_typed_P0_A_complete_full_P3_contract_pending
 task_completion_commit: RuntimeCommitter_only
 evidence_locations: current_observation_plus_bounded_recent_ActionOutcome_plus_small_DurableEvidenceStore
-source_invariants: SOU-01_through_SOU-12
+source_invariants: SOU-01_through_SOU-12_plus_MAT-01_through_MAT-07
 observation_invariants: OBS-01_through_OBS-14
 verification_invariants: VER-01_through_VER-14
 recovery_invariants: REC-01

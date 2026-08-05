@@ -11,6 +11,7 @@
 > **2026-08-05 Semantic Authority / Contract Closure 补充：** 第一轮审查的 requirement identity、dependency、choice presentation 与 output closure 建议继续有效；第二轮审查覆盖其严格 raw-text firewall，最终采用 `single semantic admission, bounded contextual rereading, no downstream authority expansion`。
 > **2026-08-05 Physical Minimality 补充：** 本文中的完整性、authority 与 store 是逻辑合同，不自动要求全量内存物化、独立 class/service/process/database/model call；首期采用 indexed/ref-based state、in-process policy composition、typed trigger 与 risk-derived feature profile。
 > **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 是共享 TaskSpec/TaskPlan/Catalog/ActionContract/LoopEvaluator 的 acquisition、grounding、execution 与 evidence surfaces；WoT 显式进入图与 vocabulary，但不形成独立 Agent/Planner/TaskSpec。
+> **2026-08-05 Material Binding 纠偏：** material authority 采用 effect-specific typed binding coverage，而不是字符级 span 配额。直接、明确的用户值可用 `DIRECT_USER_EXPLICIT` 准入；间接非结构化来源才要求 exact excerpt，结构化外部来源使用 versioned field identity。`SourceAnchor` 只证明 provenance，不能替代字段完整性、capability、approval、grounding 或 ActionContract。
 
 ## 0. 权威决议
 
@@ -74,7 +75,7 @@ requested output declared ≠ required output materialized
 
 ### 0.1 架构法律
 
-1. **Source 默认只做 envelope-level authority binding。** `SourceEnvelope` 始终存在；精确 `SourceAnchor` 只绑定 material fields；clause/claim/obligation coverage 只在 optional SemanticAudit 中按风险运行。
+1. **Source 默认只做 envelope-level authority binding。** `SourceEnvelope` 始终存在；material fields 使用风险相称的 typed `MaterialBinding`，精确 `SourceAnchor` 只在间接非结构化来源需要 excerpt provenance 时使用；clause/claim/obligation coverage 只在 optional SemanticAudit 中按风险运行。
 2. **Planner 只消费 admitted semantics。** Task Planner 默认消费 TaskSpec；确有里程碑语用需要时可额外接收 bounded、read-only、`context_only` 的 `SourceContextView`。Planner 不得修订任务含义、授权、禁止效果或成功条件；Step Choice Planner 默认不得接收原始请求。
 3. **角色由容器定义。** precondition、step completion、task success 与 evidence policy 不能靠漂移 enum 猜测。
 4. **计划服从当前事实。** TaskPlan 必须基于 fresh canonical observation 生成并允许被整体替换。
@@ -193,7 +194,7 @@ optional capability     != enabled on every task
 |---|---|---|
 | `DIRECT_LOW_RISK` | SourceEnvelope、TaskSpec、canonical observation、direct/single-step plan、small Catalog、ActionContract、mechanical evaluation | 不默认启用 SemanticAudit、paging、ModelVerifier、OpenSemanticResolver 或 durable transaction evidence |
 | `MULTI_STEP` | 上述能力 + rolling TaskPlan、bindings、bounded recent outcomes、typed replan、artifact handoff | 仍不默认启用高风险审计或 model evidence |
-| `HIGH_RISK_MULTI_SOURCE` | 上述能力 + exact material anchors、risk-triggered SemanticAudit、approval、authoritative final recheck、material-conflict handling、必要 durable evidence | 只启用任务实际需要的 provider/sidecar |
+| `HIGH_RISK_MULTI_SOURCE` | 上述能力 + effect-specific material coverage、indirect-source exact excerpts、risk-triggered SemanticAudit、approval、authoritative final recheck、material-conflict handling、必要 durable evidence | 只启用任务实际需要的 provider/sidecar |
 
 Profile 只能决定 optional machinery 是否激活，不能关闭 Task authority、capability、必要 approval、freshness/preflight、required-output closure、uncertain-effect protection 或 RuntimeCommitter single-writer。
 
@@ -305,7 +306,7 @@ flowchart LR
 
 `SourceEnvelope` 默认、轻量、始终存在，只保存 whole-request identity/digest、conversation/attachment/target/profile refs、caller identity 与 conversation revision。原始全文只在 intake 短生命周期上下文中存在；Trace 默认只保存 hash/length/refs。
 
-`SourceAnchor` 是 selective binding：ordinary low-risk field 可引用 whole-request anchor；recipient、amount、account、file、external destination、destructive target、forbidden effect、approval-related constraint 等 material field 优先使用精确 source/span anchor。默认不做 clause splitting、claim graph、coverage graph 或 obligation graph。
+`SourceAnchor` 是 selective provenance primitive：ordinary low-risk field 可引用 whole-request anchor；间接的 attachment/email/web/profile 自然语言中，recipient、amount、account、file、external destination、destructive target、forbidden effect、approval-related constraint 等 material field 应使用精确 source/span anchor。直接用户明确输入不因缺少字符 offset 而失败；typed external ingress 使用 resource/version/field identity。默认不做 clause splitting、claim graph、coverage graph 或 obligation graph。
 
 `MinimalIntentProposal` 只表达：
 
@@ -320,7 +321,7 @@ flowchart LR
 
 它是不可信 proposal，不能携带 accepted task identity、capability grant、步骤、selector、approval 或 completion state。
 
-`SemanticAudit` 只在 external/irreversible effect、多 authority sources、attachment/profile 参与授权、source conflict、material field ambiguity 或 policy-required audit 时运行。它只能 `PASS | VETO | CLARIFICATION_REQUIRED`，不得补写 effect、修改 success、授予 capability，或把 observation/page content 提升为用户授权。
+`TaskSpecAuthority` 内的小型 `MaterialBindingPolicy` 先按 effect 校验必需 material fields；`SemanticAudit` 只在 external/irreversible effect、多 authority sources、attachment/profile 参与授权、source conflict、解释异常、material field ambiguity 或 policy-required audit 时运行。它只能 `PASS | VETO | CLARIFICATION_REQUIRED`，不得承担普通字段完整性检查，不得补写 effect、修改 success、授予 capability，或把 observation/page content 提升为用户授权。
 
 ### 板块 B：TaskSpec Authority
 
@@ -437,7 +438,7 @@ class SourceEnvelope:
 
 `SourceEnvelopeBuilder` 是 code-owned deterministic builder。它只回答“哪些 source 是本次任务的合法 authority input、其 identity/version 是什么”，不回答“source 表达了什么”。默认不生成 clause units，不受 32-clause bound 限制，也不要求模型输出 coverage/claim/obligation graph。
 
-### 4.2 Selective SourceAnchor
+### 4.2 Selective SourceAnchor 与 risk-proportionate MaterialBinding
 
 ```python
 @dataclass(frozen=True)
@@ -449,7 +450,48 @@ class SourceAnchor:
     content_digest: str = ""
 ```
 
-普通低风险字段允许 whole-request anchor。以下 material fields 优先精确 anchor：recipient、amount、account、file、external destination、destructive target、forbidden effect 与 approval-related constraint。Anchor 只证明 lineage；它不证明 proposal interpretation 正确，也不授予执行权。
+`SourceAnchor` 只证明 lineage；它不证明 proposal interpretation 正确，也不授予 capability、approval、grounding、execution 或 completion 权。普通低风险字段允许 whole-request anchor。字符级 exact span 只对间接、非结构化来源中的 material value 提供 excerpt provenance，不是所有高风险请求的通用准入门。
+
+```python
+class MaterialBindingKind(Enum):
+    DIRECT_USER_EXPLICIT = "direct_user_explicit"
+    EXACT_SOURCE_EXCERPT = "exact_source_excerpt"
+    TYPED_EXTERNAL = "typed_external"
+    USER_CONFIRMED = "user_confirmed"
+
+@dataclass(frozen=True)
+class MaterialBinding:
+    binding_id: str
+    effect_ref: str
+    field: MaterialField
+    value: TypedValue
+    source_ref: SourceRef
+    binding_kind: MaterialBindingKind
+    source_anchor_ref: SourceAnchorRef | None = None
+    external_field_ref: str | None = None
+    confirmation_ref: ConfirmationRecordRef | None = None
+```
+
+来源与风险规则固定为：
+
+| 来源形式 | 可接受的 material binding | 准入要求 |
+|---|---|---|
+| 当前 user request 中直接明确的 typed value | `DIRECT_USER_EXPLICIT` | value 必须能在 request 中确定性匹配；不要求字符 offset |
+| attachment/email/web/profile 等间接非结构化文本 | `EXACT_SOURCE_EXCERPT` | field-matched exact anchor，且 excerpt digest 与 typed value 一致 |
+| typed external ingress | `TYPED_EXTERNAL` | versioned source identity + typed field path；不得来自 Runtime observation target |
+| 后续用户确认 | `USER_CONFIRMED` | 绑定明确的 versioned conversation confirmation record；不得由模型或页面自确认 |
+| DOM/AX/Visual/SVG/WoT/API/Device current observation | 不可作为 material authorization | 只可用于 grounding、state、preflight 与 evidence |
+
+`MaterialBindingPolicy` 是 `TaskSpecAuthority` 的小型 deterministic admission collaborator，不是 graph、store、service 或第二次模型审查。它按每个 effect 的稳定 ID 校验字段组：
+
+| Effect kind | 必需字段组 |
+|---|---|
+| `SEND` | recipient；external destination 或 channel；content 或 attachment/file |
+| `PAYMENT` | payee 或 account；amount；currency |
+| `DELETE` | destructive target；scope |
+| `SHARE` | principal；resource；permission |
+
+同一 effect 的一个不相关 FILE/AMOUNT anchor 不能替代 recipient/payee/account；whole-request anchor 不能替代间接来源的 exact/typed binding。字段缺失、同字段冲突或来源不足返回 typed clarification/veto。具体 action-time approval 仍绑定完整 ActionContract；material admission 不等于提前批准动作。
 
 ### 4.3 MinimalIntentProposal 与 optional SemanticAudit
 
@@ -477,7 +519,7 @@ class SemanticAudit:
 
 Audit triggers：external side effect、irreversible action、multiple authority sources、attachment/profile 参与授权、source conflict、recipient/amount/destructive-scope ambiguity，或 explicit enterprise/user audit policy。
 
-SemanticAudit 可以阻止准入、请求澄清、指出 material field 无合法来源或 source conflict；它不能补充 requested effect、创建 obligation、修改 success criterion、授予 capability、把 page content 提升为用户要求，或把 rejected proposal 升级为 ready。
+SemanticAudit 可以阻止准入、请求澄清、指出 source conflict、异常跨来源解释或不一致风险范围；普通 material field 的 effect-specific completeness 与 provenance-form 校验归 `MaterialBindingPolicy/TaskSpecAuthority`。Audit 不能补充 requested effect、创建 obligation、修改 success criterion、授予 capability、把 page content 提升为用户要求，或把 rejected proposal 升级为 ready。
 
 ### 4.4 TaskSpec v2
 
@@ -488,7 +530,7 @@ SemanticAudit 可以阻止准入、请求澄清、指出 material field 无合�
 class TaskRequirement:
     requirement_id: str
     semantic_payload: RequirementExpr
-    source_anchor_refs: tuple[SourceAnchorRef, ...]
+    source_binding_refs: tuple[SourceBindingRef, ...]
 
 @dataclass(frozen=True)
 class OutputSpec:
@@ -517,7 +559,7 @@ class TaskSpec:
 
 `requested_output_refs` 是 `required_outputs[*].requirement_ref` 的 deterministic projection，不是第二份持久化语义。`success` leaf、effect authorization、constraint、preference 与 output container 引用 canonical `TaskRequirement.requirement_id`；它们不分别用自由文本重述 recipient、amount、message、target 或 desired result。
 
-`objective` 只用于解释和用户可读摘要，明确不具 semantic authority，也不能被 Planner、grounder、gate 或 evaluator 用来恢复缺失的 typed requirement。TaskSpec 中不存在 `source_claims`、`obligations`、claim dependencies、terminal flags、task structure、action family、interaction operation 或 execution evidence instances。`source_binding_digest` 覆盖 admitted material requirement/output field → SourceAnchor bindings。
+`objective` 只用于解释和用户可读摘要，明确不具 semantic authority，也不能被 Planner、grounder、gate 或 evaluator 用来恢复缺失的 typed requirement。TaskSpec 中不存在 `source_claims`、`obligations`、claim dependencies、terminal flags、task structure、action family、interaction operation 或 execution evidence instances。`source_binding_digest` 覆盖 admitted material requirement/output field → `MaterialBinding`，并间接绑定 SourceEnvelope/SourceAnchor/external field identity；它不是一张新的 provenance graph。
 
 ### 4.5 稳定性与 revision 规则
 
@@ -2040,8 +2082,8 @@ foundation
 |---|---|
 | `SOU-01` | SourceEnvelope 轻量、immutable、始终存在，拥有 source identity/version，不拥有语义。 |
 | `SOU-02` | 默认 SourceEnvelopeBuilder 不做 clause splitting、claim graph、coverage graph 或 obligation graph。 |
-| `SOU-03` | recipient/amount/account/file/external destination/destructive target 等 material fields 优先使用精确 SourceAnchor。 |
-| `SOU-04` | ordinary low-risk field 允许绑定 whole-request anchor。 |
+| `SOU-03` | material authorization 使用 typed `MaterialBinding`；direct user explicit value 不要求字符级 span。 |
+| `SOU-04` | indirect unstructured material value 使用 field-matched exact excerpt；typed external ingress 使用 versioned field identity。 |
 | `SOU-05` | SemanticAudit 只由 high-risk、multi-source、conflict 或 explicit policy trigger 启用。 |
 | `SOU-06` | SemanticAudit 只能 pass/veto/clarify，不能添加 effect、修改 success 或授予 capability。 |
 | `SOU-07` | TaskSpec 只绑定 source_envelope_ref 与 source_binding_digest，不复制 raw source/claim graph。 |
@@ -2050,6 +2092,18 @@ foundation
 | `SOU-10` | Trace 默认只记录 source hash/length/ref，不复制 raw request content。 |
 | `SOU-11` | 旧 SourceLedger 的 clause/span/coverage 能力只可作为 optional SemanticAudit implementation。 |
 | `SOU-12` | TaskPlan 是 observation-grounded milestone graph，不是 intake obligation graph。 |
+
+#### Material Binding Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `MAT-01` | 每个 external/irreversible effect 必须有稳定 effect ID、与风险一致的 operation/effect kind，以及该 kind 的完整 material field-group coverage；effect kind 不得把 operation 降级为 read-only/reversible。 |
+| `MAT-02` | `DIRECT_USER_EXPLICIT` value 只需在当前 request 中确定性匹配；不得仅因缺少 exact span 请求澄清。 |
+| `MAT-03` | attachment/email/web/profile 等间接非结构化 material value 必须用 field-matched exact excerpt；typed external value 必须绑定 versioned source/field identity。 |
+| `MAT-04` | DOM/AX/Visual/SVG/WoT/API/Device current observation/page/screen 不得创建 material authorization。 |
+| `MAT-05` | SourceAnchor 只证明 provenance，不证明字段完整性，也不授予 capability、approval、grounding、contract 或 completion。 |
+| `MAT-06` | 一个无关 field anchor、whole-request anchor 或其他 effect 的 binding 不得满足当前 effect 的缺失 material field。 |
+| `MAT-07` | missing/conflicted/insufficient material binding 返回 typed clarification/veto；SemanticAudit 不承担普通字段完整性校验。 |
 
 #### Semantic Authority Boundary Gate
 

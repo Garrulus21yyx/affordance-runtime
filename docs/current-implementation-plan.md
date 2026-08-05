@@ -30,6 +30,7 @@ documentation_manifest: docs/documentation-manifest.yaml
 execution_table: granular_P0_through_P5
 migration_mode: substitutive_no_bidirectional_legacy_coupling
 default_source_target: SourceEnvelope_plus_selective_SourceAnchor
+material_binding_target: effect_specific_risk_proportionate_typed_coverage
 optional_audit_target: SemanticAudit_veto_or_clarify_only
 semantic_context_target: bounded_read_only_SourceContextView
 semantic_write_owner: TaskSpecAuthority_only
@@ -95,6 +96,7 @@ remove inside their owning migration slice, not through an unrelated rewrite.
 | `generalist_planner.py` | provider-facing planning adapter | Runtime Catalog, StateKernel, BrowserSnapshot or action dispatch | `P4-2`; move closed step choice to `step_choice_planner.py` |
 | `task_planning.py` | legacy compatibility until direct StepSpec cutover | canonical plan contracts, progress state and verifier semantics together | `P1-P1`–`P1-P3`; canonical contracts remain in `task_plan_contracts.py` and planner policy moves to `task_planner.py` |
 | `intent_compiler.py` / `task_spec_authority.py` | untrusted minimal proposal interpretation / sole accepted TaskSpec admission | source graphs, planning, capability grant or observation-derived authority | P0-E complete |
+| `material_contracts.py` / `material_binding_policy.py` | typed material binding vocabulary / deterministic per-effect field coverage and provenance-form admission | graph/store/model call, SemanticAudit policy, capability/approval/grounding/contract decisions | P0-E5 complete; P3 folds values into canonical requirements without a second registry |
 | `verification/mechanical.py` | mechanical verifier reports used as admitted evidence input | root completion, progress decisions or commit | P0-A package cutover complete; further provider/evidence-policy refinement remains in `P1-E1`/`P2` |
 
 New files are justified only when they own one durable contract or decision.
@@ -170,6 +172,7 @@ documented external/public adapter with a consumer and expiry may survive to P5.
 | `P0-E2` | Add `task_spec_authority.py`; make `intent_compiler.py` emit untrusted MinimalIntentProposal only | compiler cannot admit TaskSpec or derive steps | `P0-E1` | one admission/rejection test; reuse intake cases | **completed (2026-08-05)** — compiler exposes proposal-only `propose`; `TaskSpecAuthority` alone validates/admit revisions and binds Envelope identity |
 | `P0-E3` | Add `source_context.py` and `semantic_audit.py` with consumer allowlist and risk-triggered pass/veto/clarify contract | no audit repair/write authority; execution receives no source context | `P0-E2` | one low-risk no-audit path and one high-risk veto/clarify path | **completed (2026-08-05)** — three-consumer bounded read set; ordinary audit skipped; triggered audit is PASS/VETO/CLARIFICATION_REQUIRED only |
 | `P0-E4` | Cut default `task_intake.py`/`task_pipeline.py` to Envelope→Proposal→Authority; move reusable high-risk audit capability behind `semantic_audit.py` rather than wrapping the default SourceLedger route | delete default SourceLedger/claim/obligation prompt, schema, converters, call paths and graph-only tests | `P0-E2`–`P0-E3` | one default-path import/call sentinel and one optional-audit entry test | **completed (2026-08-05)** — default pipeline is Envelope→Proposal→optional Audit→Authority; SourceLedger/coverage/obligation compiler owners and graph-only tests deleted |
+| `P0-E5` | Add `material_contracts.py` + `material_binding_policy.py`; extend `source_envelope.py` with prevalidated external exact-anchor ingress; make proposal/effect IDs carry risk-proportionate typed bindings and make TaskSpecAuthority validate SEND/PAYMENT/DELETE/SHARE field groups | remove SemanticAudit's “any material exact anchor passes” shortcut; exact SourceAnchor remains provenance-only; no graph/store/service or second semantic owner | `P0-E2`–`P0-E4` | three focused regressions: direct explicit send without span admitted; indirect attachment recipient clarifies; amount-only payment clarifies; page-authority and operation-downgrade rejection reuse the same suite | **completed (2026-08-05)** — direct/indirect/typed/confirmed binding forms, per-effect coverage, binding digest and typed clarification/policy failures are on the default authority path |
 
 ### P0-D — Required redlines without a test-building project
 
@@ -204,9 +207,9 @@ documented external/public adapter with a consumer and expiry may survive to P5.
 
 | ID | Deliverable and exact files | Legacy deletion/isolation | Depends on | Minimal verification | Status |
 |---|---|---|---|---|---|
-| `P3-1` | Define canonical TaskRequirement/InputBinding/OutputSpec and TaskSpec v2 in `task_intake.py`; admission remains in `task_spec_authority.py` | remove execution steps/action family/current UI facts from accepted TaskSpec | P0-E, P2-1 | one lossless material requirement/output schema case | pending |
+| `P3-1` | Define canonical TaskRequirement/InputBinding/OutputSpec and TaskSpec v2 in `task_intake.py`; fold P0-E5 material values into the canonical requirement/input payloads while retaining stable MaterialBinding refs/digest; admission remains in `task_spec_authority.py` | remove execution steps/action family/current UI facts and the temporary standalone `TaskSpec.material_bindings` bridge; do not add a second material registry or projector round-trip | P0-E, P2-1 | one lossless material requirement/output/binding schema case | pending |
 | `P3-2` | Add requirement/effect refs to StepSpec and authority validation in `task_plan_contracts.py` | reject steps with no TaskSpec trace or observation-grounded enabling need | P3-1, P1-P2 | one read-only and one effectful traceability case | pending |
-| `P3-3` | Bind SourceContextView to admitted IDs/anchors in `source_context.py`; return typed TaskSpecGap | no downstream patch/reinterpret path | P3-1 | one allowed planner context and one prohibited execution read-set case | pending |
+| `P3-3` | Bind SourceContextView to admitted requirement/material-binding/anchor IDs in `source_context.py`; return typed TaskSpecGap | no downstream patch/reinterpret path; direct explicit bindings do not acquire synthetic spans | P3-1 | one allowed planner context and one prohibited execution read-set case | pending |
 | `P3-4` | Delete the remaining compatibility-only `TaskSpec.source_claims`/`obligations` schema fields (the old IntentDraft/validator writer is already deleted; default P0-E production no longer populates, serializes or plans from graph fields) | keep optional audit storage isolated from planning/progress | P3-1–P3-3 | delete superseded compatibility schema tests; run retained intake suite | pending — explicit final deadline for the compatibility fields retained by P0-E |
 
 ### P4 — Rolling task planning and strict step choice

@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 
 from pydantic import Field
 
-from affordance_runtime.source_envelope import SourceEnvelope
+from affordance_runtime.material_binding_policy import MaterialBindingPolicy
+from affordance_runtime.material_contracts import MaterialBinding
+from affordance_runtime.source_envelope import SourceEnvelope, SourceKind
 from affordance_runtime.task_intake import (
     AmbiguityRisk,
     CompilationIssue,
@@ -43,6 +45,7 @@ class MinimalIntentProposal(StrictModel):
     evidence_requirements: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
+    material_bindings: tuple[MaterialBinding, ...] = ()
     forbidden_effects: tuple[str, ...] = ()
     ambiguities: tuple[IntentAmbiguity, ...] = ()
     task_structure: TaskStructure = TaskStructure.FLAT
@@ -67,6 +70,9 @@ class TaskSpecAuthority:
     """Validate, canonicalize and admit exactly one TaskSpec revision."""
 
     policy: CompilationPolicy = field(default_factory=CompilationPolicy)
+    material_binding_policy: MaterialBindingPolicy = field(
+        default_factory=MaterialBindingPolicy
+    )
 
     def admit(
         self,
@@ -104,12 +110,22 @@ class TaskSpecAuthority:
                 "capability_not_allowed",
                 "forbidden_effect",
                 "unauthorized_external_effect",
+                "observation_cannot_authorize_material_binding",
+                "material_effect_operation_mismatch",
             }
-            status = (
-                CompilationStatus.POLICY_CONFLICT
-                if any(item.code in policy_codes for item in issues)
-                else CompilationStatus.UNSUPPORTED
-            )
+            clarification_codes = {
+                "material_effect_id_required",
+                "material_effect_kind_required",
+                "material_binding_missing",
+                "material_binding_conflict",
+                "material_binding_provenance_insufficient",
+            }
+            if any(item.code in policy_codes for item in issues):
+                status = CompilationStatus.POLICY_CONFLICT
+            elif any(item.code in clarification_codes for item in issues):
+                status = CompilationStatus.NEEDS_CLARIFICATION
+            else:
+                status = CompilationStatus.UNSUPPORTED
             return TaskSpecAdmissionResult(
                 status=status,
                 request_id=request.request_id,
@@ -140,6 +156,7 @@ class TaskSpecAuthority:
             final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
             constraints=proposal.constraints,
             semantic_value_constraints=proposal.semantic_value_constraints,
+            material_bindings=proposal.material_bindings,
             # Compatibility fields intentionally stay empty on the canonical path.
             source_claims=(),
             obligations=(),
@@ -151,7 +168,9 @@ class TaskSpecAuthority:
             ambiguity_status="resolved" if not proposal.ambiguities else "non_blocking",
             source_request_ref=request.request_id,
             source_envelope_ref=envelope.identity,
-            source_binding_digest=envelope.binding_digest,
+            source_binding_digest=self.material_binding_policy.binding_digest(
+                envelope, proposal.material_bindings
+            ),
             field_provenance=(),
         )
         return TaskSpecAdmissionResult(
@@ -169,8 +188,15 @@ class TaskSpecAuthority:
     ) -> list[CompilationIssue]:
         if envelope.request_id != request.request_id:
             return [CompilationIssue(code="source_envelope_request_mismatch", field="request_id")]
-        authorized = {item.anchor_id for item in envelope.anchors}
-        authorized.update(item.source_id for item in envelope.sources)
+        authority_source_ids = {
+            item.source_id for item in envelope.sources if item.kind != SourceKind.TARGET
+        }
+        authorized = {
+            item.anchor_id
+            for item in envelope.anchors
+            if item.source_id in authority_source_ids
+        }
+        authorized.update(authority_source_ids)
         issues: list[CompilationIssue] = []
         forbidden = {_normalized(item) for item in (*self.policy.forbidden_effects, *proposal.forbidden_effects)}
         for index, effect in enumerate(proposal.requested_effects):
@@ -206,6 +232,14 @@ class TaskSpecAuthority:
         for index, constraint in enumerate(proposal.semantic_value_constraints):
             if constraint.source_ref not in authorized:
                 issues.append(CompilationIssue(code="unsourced_semantic_value_constraint", field=f"semantic_value_constraints[{index}]", detail=constraint.source_ref))
+        issues.extend(
+            self.material_binding_policy.validate(
+                request,
+                envelope,
+                proposal.requested_effects,
+                proposal.material_bindings,
+            )
+        )
         return issues
 
 

@@ -33,12 +33,24 @@ request identity/digest, caller/conversation revision, and attachment/target/
 profile references. It does not split clauses or construct claim, coverage, or
 obligation graphs.
 
-`SourceAnchor` selectively binds material fields. Recipient, amount, account,
-file, external destination, destructive target, forbidden effect, and
-approval-related constraint prefer exact legal source spans. Ordinary low-risk
-fields may bind a whole-request anchor.
+`SourceAnchor` is a selective provenance primitive, not a span quota. Ordinary
+low-risk fields may bind a whole-request anchor. Material admission uses one of
+four typed forms:
 
-Page observations cannot become user authority sources.
+- `DIRECT_USER_EXPLICIT`: the typed value deterministically occurs in the current request; no character offset is required;
+- `EXACT_SOURCE_EXCERPT`: an indirect unstructured attachment/email/web/profile value has a field-matched exact anchor;
+- `TYPED_EXTERNAL`: a structured ingress value binds a versioned source and typed field path;
+- `USER_CONFIRMED`: a later explicit user confirmation binds a versioned conversation confirmation record.
+
+Page observations cannot become user authority sources. Exact anchors prove
+lineage only; they do not prove field completeness and do not grant capability,
+approval, grounding, an ActionContract, or completion.
+
+`MaterialBindingPolicy`, composed inside `TaskSpecAuthority`, checks each
+external/irreversible effect independently: SEND requires recipient +
+destination/channel + content/file; PAYMENT requires payee/account + amount +
+currency; DELETE requires target + scope; SHARE requires principal + resource +
+permission. One unrelated FILE or AMOUNT anchor cannot satisfy another field.
 
 ## 3. MinimalIntentProposal and SemanticAudit
 
@@ -49,7 +61,9 @@ steps, selector, capability, approval, or completion state.
 
 `SemanticAudit` runs only for configured risk, irreversible/external effects,
 multiple authority sources, attachment/profile authorization, material source
-conflict, or material-field ambiguity. It may pass, veto, or request
+conflict, abnormal interpretation, or material-field ambiguity. Ordinary
+effect-specific field completeness belongs to `MaterialBindingPolicy`, not the
+audit. The audit may pass, veto, or request
 clarification. It cannot add effects, alter success, grant capability, or repair
 an invalid proposal into a ready TaskSpec.
 
@@ -63,6 +77,12 @@ TaskSpecAuthority validates and freezes:
 - typed success expression and stable required OutputSpecs with materialization/source-binding policies;
 - risk policy;
 - `source_envelope_ref` and `source_binding_digest`.
+
+The P0-E production bridge stores admitted `material_bindings` directly on the
+current TaskSpec shape so later stages cannot recover them from prose. P3 folds
+those values into canonical `TaskRequirement`/`InputBinding` payloads and keeps
+only stable binding references plus the digest; it must not introduce a second
+material registry or a legacy round-trip.
 
 TaskSpec has no steps, current UI facts, action family, selector/coordinate,
 claim/obligation graph, evidence instances, or completion flags.

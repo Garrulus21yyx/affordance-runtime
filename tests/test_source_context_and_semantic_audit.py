@@ -1,11 +1,12 @@
+from affordance_runtime.material_contracts import MaterialEffectKind
 from affordance_runtime.semantic_audit import (
     SemanticAudit,
     SemanticAuditStatus,
 )
 from affordance_runtime.source_context import SourceContextConsumer, SourceContextProjector
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
-from affordance_runtime.task_intake import OperationClass, RequestedEffect, UserRequest
-from affordance_runtime.task_spec_authority import MinimalIntentProposal
+from affordance_runtime.task_intake import CompilationStatus, OperationClass, RequestedEffect, UserRequest
+from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSpecAuthority
 
 
 def _proposal(envelope, operation=OperationClass.READ_ONLY):
@@ -13,7 +14,11 @@ def _proposal(envelope, operation=OperationClass.READ_ONLY):
         objective="Inspect settings",
         requested_effects=(
             RequestedEffect(
+                effect_id="effect:settings" if operation == OperationClass.IRREVERSIBLE else "",
                 operation_class=operation,
+                material_effect_kind=(
+                    MaterialEffectKind.DELETE if operation == OperationClass.IRREVERSIBLE else MaterialEffectKind.NONE
+                ),
                 target="settings",
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
@@ -22,7 +27,7 @@ def _proposal(envelope, operation=OperationClass.READ_ONLY):
     )
 
 
-def test_low_risk_audit_is_skipped_and_high_risk_missing_scope_clarifies() -> None:
+def test_audit_only_flags_trigger_while_authority_owns_material_completeness() -> None:
     low_request = UserRequest(request_id="low", raw_text="Inspect settings")
     low_envelope = SourceEnvelopeBuilder().build(low_request)
     high_request = UserRequest(request_id="high", raw_text="Delete it")
@@ -38,8 +43,16 @@ def test_low_risk_audit_is_skipped_and_high_risk_missing_scope_clarifies() -> No
     assert low.triggered is False
     assert low.status == SemanticAuditStatus.PASS
     assert high.triggered is True
-    assert high.status == SemanticAuditStatus.CLARIFICATION_REQUIRED
+    assert high.status == SemanticAuditStatus.PASS
     assert high.trigger_reasons == ("irreversible_effect",)
+
+    admitted = TaskSpecAuthority().admit(
+        high_request,
+        high_envelope,
+        _proposal(high_envelope, OperationClass.IRREVERSIBLE),
+    )
+    assert admitted.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert {issue.code for issue in admitted.issues} == {"material_binding_missing"}
 
 
 def test_execution_consumer_cannot_obtain_source_context() -> None:

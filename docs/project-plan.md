@@ -62,7 +62,7 @@ The phase order is normative; status is maintained only in
 | `P0-B` | `PerceptionCapture → CanonicalObservationBuilder` establishes the only current semantic observation authority behind immutable epoch refs/indexes for DOM/AX/Visual/SVG/WoT/API/Device. |
 | `P0-C` | Runtime builds the surface-neutral, logically complete `ActionChoiceCatalog` before any bounded model-facing ChoicePage; eager/lazy/indexed realizations preserve membership/order/digest. |
 | `P0-D` | Regression redlines cover omitted target/state fields, conflicts, multi-binding, truncated pages, stale approval/contract identity, and physical-layout invariance. |
-| `P0-E` | Default intake uses lightweight `SourceEnvelope`; clause/claim/obligation coverage moves to optional SemanticAudit. |
+| `P0-E` | Default intake uses lightweight `SourceEnvelope`; risk-proportionate typed MaterialBinding provides per-effect field coverage; exact anchors are reserved for indirect provenance; clause/claim/obligation coverage leaves the default path and SemanticAudit remains optional. |
 
 ### P1 — Direct plan and loop-native evaluation
 
@@ -83,7 +83,7 @@ The phase order is normative; status is maintained only in
 
 - TaskSpecAuthority is the only admission and revision owner;
 - TaskSpec contains authorization and terminal semantics, not execution graphs;
-- selective SourceAnchor bindings are frozen into `source_binding_digest`;
+- risk-proportionate MaterialBindings are frozen into `source_binding_digest`; direct explicit values do not require spans, while indirect unstructured values require exact excerpts;
 - SemanticAudit remains pass/veto/clarify-only.
 
 ### P4 — Observation-grounded rolling planning

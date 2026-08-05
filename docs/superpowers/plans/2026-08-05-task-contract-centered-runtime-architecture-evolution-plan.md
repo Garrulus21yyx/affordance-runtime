@@ -11,6 +11,7 @@
 > **2026-08-05 Semantic Authority / Contract Closure 补充：** 第一份复核提供 requirement/dependency/choice/output 收口，第二份复核只覆盖其严格 raw-text firewall；最终采用 Task Meaning Write Barrier、bounded `SourceContextView` 与 raw-text-free execution chain。§10.4 登记合并结果。
 > **2026-08-05 Physical Minimality 补充：** 复核识别的过重风险按“已覆盖、补充实现约束、明确拒绝”处理；full Catalog、canonical observation、authority、Criterion、Planner 与 optional capability 不得被机械实现成 eager copy、微服务森林或默认多模型链。§10.5 登记处理结果。
 > **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 显式共享同一 TaskSpec、TaskPlan、Catalog、ActionContract 与 LoopEvaluator；Planner 选择 semantic action，Runtime 在 contract 阶段选择 backend/binding。§10.6 登记处理结果。
+> **2026-08-05 Material Binding 纠偏：** exact span 从通用高风险准入门降为间接非结构化来源的 provenance 形式；准入改由 `MaterialBindingPolicy/TaskSpecAuthority` 按 effect 校验 typed material field groups。SemanticAudit 不再以“存在任意一个 material anchor”代替字段完整性。§10.7 登记处理结果。
 
 ## 0. 演进决议
 
@@ -114,7 +115,7 @@ UserRequest
     → immutable TaskSpec
 ```
 
-`SourceEnvelope` 始终存在，只保存全文 identity/version、外部 source refs、caller/conversation identity 与 content digests；不做 clause splitting、dependency parsing、claim/coverage/obligation graph。精确 span 只用于 recipient、amount、account、file、external destination、destructive target、forbidden effect 和 approval-related constraint 等 material fields。`SemanticAudit` 只能 pass/veto/clarify，不能创建或修改 TaskSpec。
+`SourceEnvelope` 始终存在，只保存全文 identity/version、外部 source refs、caller/conversation identity 与 content digests；不做 clause splitting、dependency parsing、claim/coverage/obligation graph。直接用户明确 material value 使用 typed `DIRECT_USER_EXPLICIT` binding，无须预生成字符 offset；间接非结构化来源使用 field-matched exact excerpt，typed external ingress 使用 versioned field identity。`SemanticAudit` 只能 pass/veto/clarify，不能创建或修改 TaskSpec，也不代替 TaskSpecAuthority 的 effect-specific field coverage gate。
 
 ### 0.3 Verification 物理内化、逻辑分权
 
@@ -337,7 +338,7 @@ TaskPlanAuthority 不添加步骤、不授予 capability、不修改 TaskSpec，
 | 当前概念 | 目标位置 |
 |---|---|
 | 用户授权效果、硬约束、禁止效果、终态 | `TaskSpec` |
-| 来源 identity/version 与 material-field lineage | always-on `SourceEnvelope` + selective `SourceAnchor` |
+| 来源 identity/version 与 material-field lineage | always-on `SourceEnvelope` + risk-proportionate `MaterialBinding`；exact SourceAnchor 仅为一种 provenance form |
 | 高风险/多来源/conflict 的细粒度 coverage audit | optional `SemanticAudit`，veto/clarify only |
 | 步骤、依赖、interaction intent、action budget | `TaskPlan<StepSpec>` |
 | 已完成状态、facts、bindings、evidence instances | `TaskProgress` 与 append-only ledgers |
@@ -656,6 +657,7 @@ UserRequest
 |---|---|---|---|
 | `SourceEnvelopeBuilder` | UserRequest refs + identity/version metadata | immutable SourceEnvelope | clause splitting、语义解释、graph 构建 |
 | `SourceAnchorBuilder` | material field + authorized source | selective SourceAnchor | 为所有低风险句子强制建图 |
+| `MaterialBindingPolicy` | effect kinds + typed values + source identities/anchors | field coverage / typed admission issues + binding digest | 模型调用、graph/store、capability/approval/grounding/contract 决策 |
 | `MinimalIntentInterpreter` | UserRequest short-lived content + SourceEnvelope | anchor-bound MinimalIntentProposal | 提交 TaskSpec、生成步骤 |
 | `SemanticAudit` | proposal + envelope/anchors | pass/veto/clarify | 添加效果、修改 success、提升授权 |
 | `TaskSpecAuthority` | proposal + policy + sources | immutable TaskSpec / typed rejection | 推断步骤、静默补 submit/delete/payment |
@@ -699,7 +701,7 @@ UserRequest
 | `P0-B` | `PerceptionCapture → CanonicalObservationBuilder → UnifiedObservation` 先于所有 presentation；显式统一 DOM/AX/Visual/SVG/WoT/API/Device | 可与 P0-A 并行 | production 无 `from_planner_observation`；所有 surface 的 coverage/conflict/bindings 保真 |
 | `P0-C` | 将 ActionChoiceBuilder 移出 GeneralistLMPlanner，先建 surface-neutral logical full Catalog 再建 ChoicePage；允许 eager/lazy/indexed membership | P0-B | presentation/materialization limits 与 backend preference 不进入 semantic membership；同一 canonical inputs 得到相同 count/membership/order/digest |
 | `P0-D` | 写第 81 个目标、12-field state、artifact/label/context limit、conflict、multi-binding、raw-text execution read-set、TaskSpecGap、output closure 与 physical-minimality 回归红线 | P0-A/B/C 同阶段 | presentation 不改变 Catalog；execution path 无 raw/SourceContextView；语义缺口不静默扩权；lazy/index layout 不改变 semantics |
-| `P0-E` | SourceEnvelope 成为 default source path；普通 intake 不建 clause/claim/obligation graph | 可与 P0-A 并行 | SourceLedger clause bound 不再阻塞普通任务；TaskSpec 使用 envelope ref + binding digest |
+| `P0-E` | SourceEnvelope 成为 default source path；普通 intake 不建 clause/claim/obligation graph；material admission 使用 effect-specific typed binding coverage | 可与 P0-A 并行 | SourceLedger clause bound 不再阻塞普通任务；direct explicit 不要求 span；indirect source/page authority/缺失字段按 typed policy 拒绝或澄清；TaskSpec 使用 envelope ref + binding digest |
 
 ### P1：直接 canonical TaskPlan，删除 legacy 往返
 
@@ -731,7 +733,7 @@ UserRequest
 |---|---|---|
 | `P3-1` | 冻结 TaskSpec v2 schema 与 TaskSpecAuthority | 只保存 source_envelope_ref/source_binding_digest；Planner 不能修改 accepted meaning |
 | `P3-2` | SemanticAudit 保持 risk-triggered veto/clarify-only | 不增加用户效果、修改 success 或授权 |
-| `P3-3` | Selective SourceAnchor policy | material fields 精确 anchor；低风险字段允许 whole-request anchor |
+| `P3-3` | Risk-proportionate MaterialBinding + selective SourceAnchor policy | direct explicit 无 span；indirect unstructured exact excerpt；typed external version/field；按 effect field groups 完整覆盖 |
 | `P3-4` | Canonical TaskRequirement identity 与 requirement-ref containers | material semantics 单一 typed payload；objective 不可补字段 |
 | `P3-5` | SourceContextProjector + Task Meaning Write Barrier | 只读 context_only allowlist；只有 TaskSpecAuthority 写 accepted meaning |
 | `P3-6` | Stable required OutputSpec schema | output ID、materialization criterion、source-binding policy 完整 |
@@ -850,7 +852,8 @@ approval 必须绑定完整 ActionContract hash 与当前 page revision。任何
 ### 8.9 SourceEnvelope 与选择性审计
 
 - 普通低风险请求只构建 SourceEnvelope，不能因 33 个句子或没有 claim/obligation graph 而 fail；
-- recipient、amount、account、file、destructive target 等 material fields 必须绑定合法 SourceAnchor；
+- direct user explicit material value 可用 typed binding 且不要求 span；间接非结构化值必须 exact excerpt，typed external 值必须绑定 versioned field identity；
+- SEND/PAYMENT/DELETE/SHARE 分别校验自身必需字段组，一个无关 FILE/AMOUNT anchor 不能替代 recipient/payee/account；
 - high-risk/multi-source/conflict 触发 SemanticAudit，audit 只能 veto/clarify；
 - 页面 observation 不能被提升为用户授权 source；
 - TaskSpec 只保存 `source_envelope_ref` 与 `source_binding_digest`。
@@ -930,8 +933,8 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 |---|---|
 | `SOU-01` | SourceEnvelope 轻量、immutable、始终存在，拥有 source identity/version，不拥有语义。 |
 | `SOU-02` | 默认 SourceEnvelopeBuilder 不做 clause splitting、claim graph、coverage graph 或 obligation graph。 |
-| `SOU-03` | recipient/amount/account/file/external destination/destructive target 等 material fields 优先使用精确 SourceAnchor。 |
-| `SOU-04` | ordinary low-risk field 允许绑定 whole-request anchor。 |
+| `SOU-03` | material authorization 使用 typed MaterialBinding；direct user explicit value 不要求字符级 span。 |
+| `SOU-04` | indirect unstructured value 使用 field-matched exact excerpt；typed external ingress 使用 versioned field identity。 |
 | `SOU-05` | SemanticAudit 只由 high-risk/multi-source/conflict/policy trigger 启用。 |
 | `SOU-06` | SemanticAudit 只能 pass/veto/clarify，不能添加 effect、修改 success 或授予 capability。 |
 | `SOU-07` | TaskSpec 只绑定 source_envelope_ref 与 source_binding_digest，不复制 raw source/claim graph。 |
@@ -940,6 +943,18 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | `SOU-10` | Trace 默认只记录 source hash/length/ref，不复制 raw request content。 |
 | `SOU-11` | 旧 SourceLedger 的 clause/span/coverage 能力只可作为 optional SemanticAudit implementation。 |
 | `SOU-12` | TaskPlan 是 observation-grounded milestone graph，不是 intake obligation graph。 |
+
+### 9.2.1 MaterialBinding 不变量
+
+| ID | 不变量 |
+|---|---|
+| `MAT-01` | 每个 external/irreversible effect 有稳定 ID、风险一致的 operation/effect kind 和完整 required material field groups；kind 不得降级 operation class。 |
+| `MAT-02` | direct user explicit value 在 request 中确定性匹配即可，不因缺少 exact span 失败。 |
+| `MAT-03` | 间接非结构化 material value 使用 field-matched exact excerpt；typed external value 使用 versioned source/field identity。 |
+| `MAT-04` | page/screen/current observation 不得创建 material authorization。 |
+| `MAT-05` | SourceAnchor 只证明 provenance，不授予 capability、approval、grounding、contract 或 completion。 |
+| `MAT-06` | Binding 按 effect + field 隔离；一个任意/无关 anchor 不能满足其他字段或 effect。 |
+| `MAT-07` | completeness 归 MaterialBindingPolicy/TaskSpecAuthority；SemanticAudit 只处理冲突、异常解释和风险范围。 |
 
 ### 9.3 Loop-native Verification 不变量
 
@@ -1144,7 +1159,8 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | Criterion 首期范围过大 | vocabulary 与 provider coverage 分离 | §3.9、§6 P2-1、§9.5 | §5.2、§15、§17.1 | ADOPT CONSTRAINT |
 | TaskPlanner 每轮重规划 | typed planning gate + reuse/direct fast path | §0.5、§3.9、§4、§6 P4-6、§9.5 | §6.6、§15、§17.1 | ADOPT CONSTRAINT |
 | 所有 optional 能力默认开启 | risk-derived feature profiles | §0.5、§3.9、§7、§9.5 | §0.5、§16、§17.1 | ADOPT CONSTRAINT |
-| selective SourceAnchor / optional audit / bounded evidence / deferred ModelVerifier / raw-text boundary | 现有合同已经覆盖，保持原 owner 与触发规则 | §0.2–§0.4、§3.5、§6、§9.2–§9.4 | §0.3–§0.4、§4.3、§4.8、§9、§17.1 | ALREADY COVERED |
+| exact SourceAnchor 扩散到所有 material fields | 采用 risk-proportionate MaterialBinding；exact excerpt 只用于间接非结构化来源，字段完整性由 TaskSpecAuthority 校验 | §0.2、§5、§6 P0-E/P3-3、§9.2.1 | §4.2–§4.4、§17.1 | CORRECTED |
+| optional audit / bounded evidence / deferred ModelVerifier / raw-text boundary | 保持原 owner 与触发规则 | §0.2–§0.4、§3.5、§6、§9.2–§9.4 | §0.3–§0.4、§4.3、§4.8、§9、§17.1 | ALREADY COVERED |
 | 撤销 TaskRequirement，改为分散 effect/constraint/criterion/output IDs | 会重新引入 semantic identity 漂移；保持 flat canonical TaskRequirement table | §3.6、§6 P3-4、§9.4 | §4.4、§4.9、§17.1 | REJECT |
 | ChoicePresentation / required-output closure 是新缺口 | 当前目标合同已经补齐 | §3.8、§6、§9.4 | §7.5、§9.4、§17.1 | ALREADY COVERED |
 | 权威文档过大 | 不新增第三 authority；同一文档保持核心法律→schema→迁移/gate→mapping 层级 | §0、§10、§11 | §0、§15–§19 | ADOPT DOCUMENT LAYERING |
@@ -1158,6 +1174,18 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | semantic action 与 backend route 分离 | Planner 选 semantic action；ActionContractBuilder 选 current binding/backend | §3.10、§5、§9.6 | §7、§10.4–§10.5、§17.1 | ADOPT INVARIANT |
 | 当前代码已有跨表面基础 | DOM、visual/SVG、WoT adapter/grounding/executor/route 继续保留；canonical-first/full-Catalog/loop-provider cutover 仍属 P0-B/P0-C/P1–P2 | §1、§6、§11 | §15 | RECORD CURRENT VS TARGET |
 
+### 10.7 Risk-proportionate Material Binding 纠偏覆盖台账
+
+| Amendment | 附件要求 | 本规划落点 | Spec 落点 | 状态 |
+|---|---|---|---|---|
+| `MAT-01` | 不对每个高风险自然语言字段强制字符级 exact span | §0.2、§6 P0-E/P3-3、§9.2.1 | §0、§4.2、§17.1 | ADOPT |
+| `MAT-02` | direct user explicit / exact excerpt / typed external / user confirmed 四种 binding | §0.2、§5、§9.2.1 | §4.2 | ADOPT |
+| `MAT-03` | source type × risk policy；page/screen 不得创建授权 | §0.2、§5、§8.9、§9.2.1 | §4.2、§17.1 | ADOPT |
+| `MAT-04` | TaskSpecAuthority 按 SEND/PAYMENT/DELETE/SHARE 校验必需字段组 | §5、§6 P0-E/P3-3、§9.2.1 | §4.2–§4.4 | ADOPT |
+| `MAT-05` | exact anchor 只证明 provenance，不替代 approval/capability/grounding/contract | §9.2.1 | §4.2、§17.1 | ADOPT |
+| `MAT-06` | 字段 completeness 从 SemanticAudit 移入小型 deterministic policy | §0.2、§5、§6 P0-E、§9.2.1 | §4.2–§4.3 | ADOPT |
+| `MAT-07` | direct send、indirect attachment、amount-only payment 与 page-authority 回归 | §8.9、§9.2.1 | §17.1 | REQUIRED MINIMAL GATE |
+
 ## 11. 完成状态
 
 | 步骤 | 状态 | 产物或验证 |
@@ -1170,7 +1198,8 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | 合入 Semantic Authority / Contract Closure 补充 | DONE | `NLI-01`–`NLI-08`、`REQ-01`–`REQ-05`、`DEP-01`–`DEP-03`、`CHOICE-13`、`OUT-01`–`OUT-03` |
 | 合入 Physical Minimality 风险约束 | DONE | `CAT-PHY-01`、`OBS-PHY-01`、`AUTH-PHY-01`、`CRIT-PHY-01`、`PLAN-PHY-01`、`PROFILE-01`；审计建议按 adopt/already-covered/reject 分类 |
 | 合入 Cross-Surface Visibility 补充 | DONE | `Surface.WOT`、typed WoT evidence roles、`SURFACE-01`–`SURFACE-03`；不改变 P0–P5 顺序 |
+| 合入 Risk-proportionate Material Binding 纠偏 | DONE | `MaterialBindingKind`、effect-specific field coverage、`MAT-01`–`MAT-07`；exact span 不再是直接明确指令的通用门禁 |
 | 生成权威总图和细节板块 | DONE | 派生权威架构文档，含总图、九个板块、合同、迁移、门禁与逐条映射 |
-| 完整性、链接、Mermaid 和事实状态自检 | DONE | 1476 项全库测试、137 项文档/架构门禁、Ruff、8 张 Mermaid、maintained-link/lifecycle、8 个 reader questions 与 diff 检查 |
+| 完整性、链接和事实状态自检 | DONE | 1210 项全库测试、38 项最终聚焦 source/authority/architecture/documentation 门禁、Ruff、maintained-link/lifecycle 与 diff 检查 |
 
 验证使用仓库记录的 dedicated Python 3.12 环境，避免默认 `uv run` 同时求解 BrowserGym Playwright 1.44 与 web extra Playwright 1.61.0 的已知可选依赖冲突。最终结果以本次变更完成前的 fresh verification 输出为准。

@@ -9,6 +9,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.material_contracts import MaterialField
+
 
 class _FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -21,17 +23,6 @@ class SourceKind(StrEnum):
     TARGET = "target"
     PROFILE = "profile"
     EXTERNAL = "external"
-
-
-class MaterialField(StrEnum):
-    RECIPIENT = "recipient"
-    AMOUNT = "amount"
-    ACCOUNT = "account"
-    EXTERNAL_DESTINATION = "external_destination"
-    DESTRUCTIVE_TARGET = "destructive_target"
-    FILE = "file"
-    FORBIDDEN_EFFECT = "forbidden_effect"
-    APPROVAL_CONSTRAINT = "approval_constraint"
 
 
 class SourceRef(_FrozenModel):
@@ -68,6 +59,26 @@ class SourceAnchor(_FrozenModel):
             start, end = self.span
             if end <= start or end - start != self.content_length:
                 raise ValueError("anchor span must be non-empty and match content length")
+        return self
+
+
+class ExternalExactAnchor(_FrozenModel):
+    """Prevalidated exact excerpt metadata supplied by a source ingress owner."""
+
+    source_kind: SourceKind
+    source_index: int = Field(ge=0)
+    material_field: MaterialField
+    span_start: int = Field(ge=0)
+    span_end: int = Field(gt=0)
+    content_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    content_length: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_external_anchor(self) -> "ExternalExactAnchor":
+        if self.source_kind in {SourceKind.REQUEST, SourceKind.TARGET}:
+            raise ValueError("external exact anchor requires a non-observation external source")
+        if self.span_end <= self.span_start or self.span_end - self.span_start != self.content_length:
+            raise ValueError("external exact anchor span must match content length")
         return self
 
 
@@ -115,6 +126,7 @@ class SourceEnvelopeBuilder:
         caller_revision: str = "",
         external_source_refs: tuple[str, ...] = (),
         exact_anchors: tuple[tuple[MaterialField, int, int], ...] = (),
+        external_exact_anchors: tuple[ExternalExactAnchor, ...] = (),
     ) -> SourceEnvelope:
         raw_text = request.raw_text
         request_source_id = f"{request.request_id}:source:request"
@@ -162,6 +174,30 @@ class SourceEnvelopeBuilder:
                     span_end=end,
                     content_digest=_digest(excerpt),
                     content_length=len(excerpt),
+                )
+            )
+        source_by_kind_index: dict[tuple[SourceKind, int], SourceRef] = {}
+        for source in sources:
+            if source.kind == SourceKind.REQUEST:
+                continue
+            source_index = int(source.source_id.rsplit(":", maxsplit=1)[-1])
+            source_by_kind_index[source.kind, source_index] = source
+        for index, descriptor in enumerate(external_exact_anchors):
+            source = source_by_kind_index.get((descriptor.source_kind, descriptor.source_index))
+            if source is None:
+                raise ValueError("external exact anchor references an absent source")
+            anchors.append(
+                SourceAnchor(
+                    anchor_id=(
+                        f"{request.request_id}:anchor:{descriptor.source_kind.value}:"
+                        f"{descriptor.material_field.value}:{index}"
+                    ),
+                    source_id=source.source_id,
+                    material_field=descriptor.material_field,
+                    span_start=descriptor.span_start,
+                    span_end=descriptor.span_end,
+                    content_digest=descriptor.content_digest,
+                    content_length=descriptor.content_length,
                 )
             )
         binding_payload = json.dumps(
