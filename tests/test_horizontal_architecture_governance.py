@@ -2150,6 +2150,92 @@ def test_task_contract_centered_authority_is_complete_and_navigable() -> None:
     assert "completion_commit_owner: runtimecommitter" in current_plan
 
 
+def test_semantic_authority_and_task_contract_closure_amendment_is_complete() -> None:
+    architecture = " ".join(
+        TASK_CONTRACT_ARCHITECTURE.read_text(encoding="utf-8").split()
+    ).casefold()
+    evolution_plan = " ".join(
+        TASK_CONTRACT_EVOLUTION_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+    task_intake = " ".join(
+        (REPOSITORY_ROOT / "docs/task-intake-and-planner.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    containment = " ".join(
+        (REPOSITORY_ROOT / "docs/responsibility-containment-boundary.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    governance = " ".join(
+        LIVE_GOVERNANCE_DOC.read_text(encoding="utf-8").split()
+    ).casefold()
+    orchestration = " ".join(
+        (REPOSITORY_ROOT / "docs/orchestration-and-feedback.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    trace = " ".join(
+        (REPOSITORY_ROOT / "docs/trace-and-evaluation.md")
+        .read_text(encoding="utf-8")
+        .split()
+    ).casefold()
+    status = " ".join(
+        LIVE_IMPLEMENTATION_STATUS.read_text(encoding="utf-8").split()
+    ).casefold()
+    current_plan = " ".join(
+        LIVE_CURRENT_PLAN.read_text(encoding="utf-8").split()
+    ).casefold()
+
+    for prefix, count in (("nli", 8), ("req", 5), ("dep", 3), ("out", 3)):
+        for number in range(1, count + 1):
+            invariant_id = f"{prefix}-{number:02d}"
+            assert invariant_id in architecture
+            assert invariant_id in evolution_plan
+    assert "choice-13" in architecture
+    assert "choice-13" in evolution_plan
+
+    required_architecture_terms = (
+        "semantic authority boundary",
+        "single semantic admission, bounded contextual rereading, no downstream authority expansion",
+        "raw language visibility and semantic authority are separate",
+        "class sourcecontextview",
+        'authority: literal["context_only"]',
+        "class anchoredexcerpt",
+        "linked_requirement_ids",
+        "linked_criterion_ids",
+        "class taskrequirement",
+        "semantic_payload: requirementexpr",
+        "requirements: tuple[taskrequirement, ...]",
+        "allowed_effect_refs",
+        "hard_constraint_refs",
+        "forbidden_effect_refs",
+        "requested_output_refs",
+        "requirement_refs: tuple[requirementref, ...]",
+        "class taskspecgap",
+        "class choicepresentation",
+        "generation_reason_codes",
+        "all required outputs materialized",
+        "source-bound",
+    )
+    for term in required_architecture_terms:
+        assert term in architecture
+
+    assert "only intake interpretation, taskspec admission, and optional audit may read raw user language" not in architecture
+    assert "sourcecontextview" in task_intake
+    assert "taskspecgap" in task_intake
+    assert "task meaning write barrier" in governance
+    assert "raw-text-free execution authority" in containment
+    assert "execution path does not receive sourcecontextview" in orchestration
+    assert "all required outputs are materialized and source-bound" in trace
+    assert "semantic_authority_boundary: target_not_implemented" in status
+    assert "requirement_identity: target_not_implemented" in status
+    assert "required_output_closure: target_not_implemented" in status
+    assert "semantic_context_target: bounded_read_only_sourcecontextview" in current_plan
+    assert "requirement_identity_target: canonical_taskrequirement_refs" in current_plan
+    assert "required_output_target: materialized_and_source_bound_before_completion" in current_plan
+
+
 def test_sar1_deep_immutability_digest_repair_is_recorded() -> None:
     record_path = CHANGE_ADMISSION_DIR / "sar-1-deep-immutability-and-stale-contract-hash.yaml"
     closure_record_path = CHANGE_ADMISSION_DIR / "sar-1-1-hash-reachable-hidden-mutability-closure.yaml"

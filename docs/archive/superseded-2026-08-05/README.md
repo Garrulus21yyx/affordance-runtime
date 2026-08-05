@@ -47,6 +47,7 @@ which has no immutable path dependency, is reached through this archive index.
 | 2026-08-01 deep-dive site designs/plans | `superpowers/` | archived fixed-baseline report plus current documentation index |
 | 2026-08-05 modification-audit design/plan | `superpowers/` | incorporated into the current architecture and coverage ledgers |
 | 2026-08-05 documentation authority consolidation plan | `superpowers/plans/` | completed; current lifecycle is governed by the manifest and documentation policy |
+| 2026-08-05 semantic authority and Task Contract closure plan | `superpowers/plans/` | completed; amendment merged into the existing authoritative architecture and evolution plan |
 
 Small `ARCHIVED POINTER` files remain at legacy superpowers paths referenced by
 immutable change-admission records. They are redirects, not current plans.

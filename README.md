@@ -30,7 +30,15 @@ SourceEnvelope
 `TaskSpec` owns user authorization and completion semantics. `TaskPlan` is a
 replaceable execution hypothesis. `ActionContract` is one grounded, gated,
 expiring transaction. `TaskCompletionEvaluator` evaluates full TaskSpec success;
-only RuntimeCommitter writes authoritative completion.
+all required structured outputs must also be materialized and source-bound when
+required; only RuntimeCommitter writes authoritative completion.
+
+TaskSpecAuthority is the only accepted-meaning writer. Task Planner and
+OpenSemanticResolver may receive bounded, source-bound, explicitly
+non-authoritative context when needed; action construction, gates, execution,
+evaluation, completion, and commit do not use raw request text. In short:
+single semantic admission, bounded contextual rereading, no downstream
+authority expansion.
 
 The target is not implemented as a whole. See
 [Implementation Status](docs/implementation-status.md) for current code truth.

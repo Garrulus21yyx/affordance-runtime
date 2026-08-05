@@ -28,6 +28,8 @@ failure-string interpretation, or recovery-command synthesis.
 | material source binding | SourceAnchorBuilder + TaskSpecAuthority | effect/capability grant |
 | optional provenance audit | SemanticAudit | modifying proposal or TaskSpec |
 | accepted task meaning | TaskSpecAuthority | steps/actions |
+| canonical requirement identity | TaskSpecAuthority | duplicate semantic copies or claim/obligation graph |
+| bounded source context | SourceContextProjector | semantic admission or unrestricted conversation projection |
 | current plan admission | TaskPlanAuthority | modifying TaskSpec or granting capability |
 | current observed semantics | CanonicalObservationBuilder | reading model presentation policy |
 | full current legal choices | ActionChoiceBuilder | model call, execution, approval |
@@ -38,6 +40,7 @@ failure-string interpretation, or recovery-command synthesis.
 | evidence extraction | internal EvidenceProvider | root completion or state writes |
 | typed loop evaluation | LoopEvaluator | execution or progress mutation |
 | task closure semantics | TaskCompletionEvaluator | state commit |
+| required output closure | TaskCompletionEvaluator | Planner prose as structured output |
 | failure classification | FailureOwnerRouter | recovery execution |
 | recovery decision | typed owner | arbitrary StateKernel mutation |
 | state and trace commit | RuntimeCommitter | semantic reinterpretation |
@@ -63,14 +66,25 @@ not import benchmark behavior.
 
 ## 4. Planner containment
 
-Task Planner may propose `StepSpec` milestones. Step Choice Planner may select
-only IDs shown in a bounded ChoicePage. Neither may:
+Task Planner may propose `StepSpec` milestones and, when explicitly needed,
+read a bounded `context_only` SourceContextView. Every Step must reference
+existing TaskSpec requirement IDs. Step Choice Planner may select only IDs
+shown in a bounded ChoicePage and normally receives no source text. Neither may:
 
 - patch TaskSpec;
 - build the Runtime Catalog;
 - invent selector, coordinate, backend, capability, or approval;
 - construct or execute ActionContract;
 - write TaskProgress or terminal state.
+
+The raw-text-free execution authority boundary covers ActionChoiceBuilder,
+grounding/predicate resolution, selection validation, ActionContractBuilder,
+all gates, Executor, LoopEvaluator, TaskCompletionEvaluator, and
+RuntimeCommitter. These modules do not receive raw request, conversation text,
+legacy claims, or SourceContextView. OpenSemanticResolver and
+ClarificationComposer are bounded semantic consumers, not execution owners;
+they return typed resolution, TaskSpecGap, or a question without modifying
+TaskSpec.
 
 ## 5. State containment
 

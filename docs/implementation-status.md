@@ -21,14 +21,15 @@ Documentation consolidation does not promote any production capability.
 | Area | Current implementation truth | Target | Status |
 |---|---|---|---|
 | Source intake | heavy SourceLedger/clause/claim/obligation compatibility remains on default paths | lightweight SourceEnvelope + selective SourceAnchor; optional SemanticAudit | pending cutover |
-| Task contract | TaskSpec still carries extraction-era execution/provenance fields | stable authorization/constraint/forbidden-effect/success contract | pending cutover |
+| Semantic authority | raw-language read/write boundaries are not yet represented by the target SourceContextView/TaskSpecGap contracts across production modules | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | pending cutover |
+| Task contract | TaskSpec still carries extraction-era execution/provenance fields and lacks canonical TaskRequirement/output closure shape | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | pending cutover |
 | Task planning | legacy Step/Subgoal projections and obligation-shaped routing remain | observation-grounded replaceable TaskPlan<StepSpec> | pending cutover |
 | Observation | UnifiedObservation foundation exists; presentation-derived paths remain | capture-built canonical observation is sole Runtime authority | pending cutover |
-| Action choice | typed ActionChoice foundations exist; ownership/order still has compatibility paths | full Runtime Catalog before bounded ChoicePage | pending cutover |
+| Action choice | typed ActionChoice foundations exist; ownership/order and presentation semantics still have compatibility paths | full Runtime Catalog before bounded semantic ChoicePage | pending cutover |
 | ActionContract and gates | versioning, authorization, capability, approval, preflight and stale checks have substantive foundations | retain and bind to canonical observation/catalog identity | retain + harden |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
 | Verification | mechanical verifiers and typed reports exist; legacy Boolean/latest-report/fallback surfaces remain | loop-native typed evaluation with bounded evidence locations | pending cutover |
-| Task completion | centralized success commit foundations exist; full TaskSpec.success closure is not the sole default authority | pure TaskCompletionEvaluator + RuntimeCommitter-only commit | P0-A pending |
+| Task completion | centralized success commit foundations exist; full TaskSpec.success plus required-output closure is not the sole default authority | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A pending |
 | Recovery | typed owner/router and bounded recovery foundations exist | typed causes, no generic-string ownership, no blind external retry | retain + refine |
 | Trace/evaluation | trace, artifacts, benchmark reports and evidence records exist | offline consumers, never synchronous completion authority | retain |
 
@@ -39,14 +40,26 @@ authoritative_target: current_not_implemented_as_a_whole
 active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_page
 source_target: SourceEnvelope_plus_selective_SourceAnchor
 semantic_audit: risk_triggered_veto_or_clarify_only
+semantic_authority_boundary: target_not_implemented
+semantic_context_visibility: bounded_context_only_allowlist
+execution_raw_text_input: prohibited_target_not_cut_over
+requirement_identity: target_not_implemented
+dependency_model: typed_value_refs_plus_StepSpec_depends_on
+choice_presentation_contract: target_not_implemented
 verification_shape: loop_native_typed_evaluation
 task_completion_semantics: TaskCompletionEvaluator
+required_output_closure: target_not_implemented
 task_completion_commit: RuntimeCommitter_only
 evidence_locations: current_observation_plus_bounded_recent_ActionOutcome_plus_small_DurableEvidenceStore
 source_invariants: SOU-01_through_SOU-12
 observation_invariants: OBS-01_through_OBS-14
 verification_invariants: VER-01_through_VER-14
 recovery_invariants: REC-01
+semantic_authority_invariants: NLI-01_through_NLI-08
+requirement_invariants: REQ-01_through_REQ-05
+dependency_invariants: DEP-01_through_DEP-03
+choice_invariants: CHOICE-13
+output_invariants: OUT-01_through_OUT-03
 ```
 
 ## 4. Evidence and promotion

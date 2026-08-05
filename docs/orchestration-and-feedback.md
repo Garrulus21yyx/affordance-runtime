@@ -45,6 +45,13 @@ Planner selects among displayed members of a Runtime-built Catalog. Zero/one/N
 choice handling is Runtime-owned. A model request never creates the candidate
 space it is asked to reason over.
 
+Task Planner may receive an optional bounded SourceContextView as a
+non-authoritative side input. The execution path does not receive
+SourceContextView or raw request content. If planning or open-semantic
+resolution discovers missing admitted meaning, the loop routes TaskSpecGap or
+clarification; it does not continue to action construction with inferred
+authority.
+
 ## 4. Live feedback
 
 Feedback consists of committed typed facts:
@@ -64,6 +71,7 @@ Streaming UI may project these events but cannot mutate their meaning.
 - new observation epoch invalidates stale Catalog/contract/approval bindings;
 - plan replacement does not revise TaskSpec;
 - plan exhaustion triggers final evaluation, not completion;
+- required outputs must be typed-materialized and source-bound when required before completion;
 - uncertain external effects route to inspect/recheck/block, not automatic retry;
 - post-action observation is reused when the typed Perception disposition permits.
 

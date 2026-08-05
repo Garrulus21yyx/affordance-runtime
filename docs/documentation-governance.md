@@ -46,13 +46,17 @@ Maintained documents use the following meanings:
 - `SourceEnvelope` is the always-on lightweight source identity/version record.
 - `SourceAnchor` selectively binds material fields to legal source spans.
 - `SemanticAudit` is optional, risk-triggered, and pass/veto/clarify-only.
-- `TaskSpec` is the stable user authorization and completion contract.
+- `TaskSpecAuthority` is the only Task Meaning Write Barrier.
+- `SourceContextView` is bounded, read-only, source-bound, and always `context_only`; visibility is not authority.
+- `TaskRequirement` gives each material requirement one canonical typed identity.
+- `TaskSpec` is the stable user authorization and completion contract; its objective is explanatory only.
 - `TaskPlan<StepSpec>` is a replaceable, observation-grounded milestone graph.
 - `Canonical UnifiedObservation` is the current observed semantic authority.
 - `ActionChoiceCatalog` is Runtime-owned and complete before model presentation.
 - `ActionContract` is one grounded, gated, expiring transaction.
 - `LoopEvaluator` performs typed effect/step/task evaluation inside the loop.
 - `TaskCompletionEvaluator` owns pure TaskSpec.success closure semantics.
+- required OutputSpec materialization/source binding is part of task closure.
 - `RuntimeCommitter` is the only writer of authoritative progress and terminal state.
 
 Historical documents may contain superseded vocabulary. Their archive status is

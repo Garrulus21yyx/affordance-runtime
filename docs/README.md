@@ -24,6 +24,12 @@ SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpec
 → LoopEvaluator → RuntimeCommitter
 ```
 
+`SourceContextView` is an optional read-only side input for the allowlisted
+Task Planner/OpenSemanticResolver/ClarificationComposer semantic consumers. It
+does not add a stage or authority to the production chain. TaskSpecAuthority is
+the only accepted-meaning writer; execution and completion paths remain
+raw-text-free.
+
 ## 2. Current implementation truth and work
 
 - [Project Plan](project-plan.md): durable P0–P5 product roadmap.

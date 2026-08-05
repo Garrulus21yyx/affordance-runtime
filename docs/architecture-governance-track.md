@@ -28,6 +28,13 @@ writer for each affected state surface.
 9. `RuntimeCommitter` is the single production state/trace writer.
 10. Trace, benchmark, evolution, model evidence, and archived documents have no synchronous authority.
 
+The `TaskSpecAuthority` rule is the Task Meaning Write Barrier. Raw language
+visibility and semantic authority are separate: TaskPlanner,
+OpenSemanticResolver, and ClarificationComposer may receive explicitly bounded
+`context_only` source excerpts, but cannot create or revise accepted IDs.
+Action construction, binding, gates, execution, evaluation, completion, and
+commit remain raw-text-free.
+
 No change may create simultaneous progress, plan-admission, observation,
 choice-space, completion, or commit authorities.
 
@@ -65,6 +72,9 @@ generic invariant and regression; it cannot define Runtime semantics.
 
 Natural-language fallback logic belongs in typed intake/semantic owners, not in
 strict Step Planner, Coordinator, recovery policy, or benchmark adapters.
+Source-assisted downstream reasoning must reference existing canonical IDs;
+missing semantics returns TaskSpecGap/clarification rather than silent plan or
+contract expansion.
 
 ## 6. Horizontal ratchets
 

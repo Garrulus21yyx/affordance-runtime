@@ -8,6 +8,7 @@
 > **冲突优先级：** 本文取代 2026-07-29 权威架构中与 TaskSpec、TaskPlan、TaskProgress、observation/choice authority、criterion/evidence 和 task completion authority 冲突的目标设计；未冲突的 ActionContract、capability、approval、verification、recovery、single-writer、trace 和 benchmark governance 设计继续有效。
 > **2026-08-05 Active-step 修正：** `ActionChoiceCatalog` 必须从 canonical observation 完整建立后，才允许生成任何 model-facing `ChoicePlanningRequest`；旧的 `PlanningRequest → ActionChoiceSet` 顺序无效。
 > **2026-08-05 Source / Verification 收口：** 默认 intake 采用 `SourceEnvelope + selective SourceAnchor`，旧 SourceLedger clause/claim/obligation coverage 迁入 optional `SemanticAudit`；verification 采用 loop-native typed `LoopEvaluationPhase`，但 `TaskCompletionEvaluator` 与 `RuntimeCommitter` 继续保持逻辑与写权限隔离。
+> **2026-08-05 Semantic Authority / Contract Closure 补充：** 第一轮审查的 requirement identity、dependency、choice presentation 与 output closure 建议继续有效；第二轮审查覆盖其严格 raw-text firewall，最终采用 `single semantic admission, bounded contextual rereading, no downstream authority expansion`。
 
 ## 0. 权威决议
 
@@ -65,12 +66,14 @@ plan exhausted ≠ task completed
 model presentation space ≠ runtime candidate space
 source envelope ≠ semantic claim graph
 loop-native evaluation ≠ planner-owned completion
+raw language visibility ≠ semantic authority
+requested output declared ≠ required output materialized
 ```
 
 ### 0.1 架构法律
 
 1. **Source 默认只做 envelope-level authority binding。** `SourceEnvelope` 始终存在；精确 `SourceAnchor` 只绑定 material fields；clause/claim/obligation coverage 只在 optional SemanticAudit 中按风险运行。
-2. **Planner 只消费 TaskSpec。** Planner 不得修订任务含义、授权、禁止效果或成功条件。
+2. **Planner 只消费 admitted semantics。** Task Planner 默认消费 TaskSpec；确有里程碑语用需要时可额外接收 bounded、read-only、`context_only` 的 `SourceContextView`。Planner 不得修订任务含义、授权、禁止效果或成功条件；Step Choice Planner 默认不得接收原始请求。
 3. **角色由容器定义。** precondition、step completion、task success 与 evidence policy 不能靠漂移 enum 猜测。
 4. **计划服从当前事实。** TaskPlan 必须基于 fresh canonical observation 生成并允许被整体替换。
 5. **Runtime candidate space 先于 model presentation space。** Runtime 从 canonical observation 生成完整 `ActionChoiceCatalog`；模型只可在当前 `ChoicePage` 选择已展示 choice ID，或返回封闭的翻页、typed refinement、ask/defer 决策。
@@ -128,6 +131,42 @@ RuntimeCommitter
 ```
 
 这既不是删除 provenance/verification，也不是建设两个平行大平台；它把细粒度审计和复杂 evidence orchestration 从默认主链移出，同时保留来源授权边界和独立完成权威。
+
+### 0.4 Semantic Authority 与 Task Contract closure 不变量
+
+本架构限制的是 accepted meaning 的写权限和 authority elevation，不是所有语言文本的读取次数：
+
+```text
+single semantic admission
++ bounded contextual rereading
++ no downstream authority expansion
+```
+
+Raw language visibility and semantic authority are separate。三层边界固定为：
+
+1. **Meaning Authority Boundary：**只有 `TaskSpecAuthority` 可以 admit/revise accepted requirement、authorization、constraint、forbidden effect 与 success semantics。
+2. **Read-only Semantic Context Boundary：**`TaskPlanner`、`OpenSemanticResolver` 与 `ClarificationComposer` 可按需读取 source-bound、明确 `context_only` 的片段；其输出必须引用现有 canonical IDs。
+3. **Raw-text-free Execution Authority Boundary：**action-space construction、grounding、contract binding、authority/capability/approval/preflight、execution、loop evaluation、task completion 与 commit 不读取 raw user language，也不能从 objective/source excerpt 临时猜权限或完成条件。
+
+```mermaid
+flowchart LR
+    UR["UserRequest"] --> MIP["Untrusted MinimalIntentProposal"]
+    MIP --> TSA["TaskSpecAuthority<br/>only meaning writer"]
+    TSA --> TS["Accepted TaskSpec<br/>canonical requirement IDs"]
+
+    ANCH["Accepted SourceAnchors"] -. "bounded projection" .-> SCV["SourceContextView<br/>context_only"]
+    TS --> TP["TaskPlanner"]
+    SCV -. "optional" .-> TP
+    TS --> OSR["OpenSemanticResolver"]
+    SCV -. "exact linked excerpts" .-> OSR
+    SCV -. "gap wording only" .-> CC["ClarificationComposer"]
+
+    TS --> EXEC["Action construction → Gates → Execute<br/>→ Evaluate → Commit"]
+    OBS["Canonical Observation"] --> EXEC
+    SCV --> BLOCK["No execution-authority edge"]
+```
+
+原始语言可以被受限参考，但 accepted task meaning 只有一份。若下游发现 admitted TaskSpec 缺少必要语义，只能返回 `TaskSpecGap` 或 `ClarificationRequired`；不能静默补写 TaskSpec、StepSpec effect 或 ActionContract。
 
 ## 1. 唯一权威总图
 
@@ -417,23 +456,39 @@ SemanticAudit 可以阻止准入、请求澄清、指出 material field 无合�
 
 ```python
 @dataclass(frozen=True)
+class TaskRequirement:
+    requirement_id: str
+    semantic_payload: RequirementExpr
+    source_anchor_refs: tuple[SourceAnchorRef, ...]
+
+@dataclass(frozen=True)
+class OutputSpec:
+    output_id: str
+    requirement_ref: RequirementRef
+    materialization: CriterionExpr
+    source_binding_required: bool = True
+
+@dataclass(frozen=True)
 class TaskSpec:
     task_ref: TaskRef
     objective: str
+    requirements: tuple[TaskRequirement, ...]
     inputs: tuple[InputBinding, ...]
-    allowed_effects: tuple[EffectAuthorization, ...]
-    hard_constraints: tuple[ConstraintExpr, ...]
-    preferences: tuple[PreferenceSpec, ...]
-    forbidden_effects: tuple[EffectPattern, ...]
+    allowed_effect_refs: tuple[RequirementRef, ...]
+    hard_constraint_refs: tuple[RequirementRef, ...]
+    preference_refs: tuple[RequirementRef, ...]
+    forbidden_effect_refs: tuple[RequirementRef, ...]
     success: CriterionExpr
-    requested_outputs: tuple[OutputSpec, ...]
+    required_outputs: tuple[OutputSpec, ...]
     capability_ceiling: frozenset[CapabilityId]
     risk_policy_ref: str
     source_envelope_ref: str
     source_binding_digest: str
 ```
 
-TaskSpec 中不存在 `source_claims`、`obligations`、claim dependencies、terminal flags、task structure、action family、interaction operation 或 execution evidence instances。`source_binding_digest` 覆盖 admitted material field → SourceAnchor bindings。
+`requested_output_refs` 是 `required_outputs[*].requirement_ref` 的 deterministic projection，不是第二份持久化语义。`success` leaf、effect authorization、constraint、preference 与 output container 引用 canonical `TaskRequirement.requirement_id`；它们不分别用自由文本重述 recipient、amount、message、target 或 desired result。
+
+`objective` 只用于解释和用户可读摘要，明确不具 semantic authority，也不能被 Planner、grounder、gate 或 evaluator 用来恢复缺失的 typed requirement。TaskSpec 中不存在 `source_claims`、`obligations`、claim dependencies、terminal flags、task structure、action family、interaction operation 或 execution evidence instances。`source_binding_digest` 覆盖 admitted material requirement/output field → SourceAnchor bindings。
 
 ### 4.5 稳定性与 revision 规则
 
@@ -476,6 +531,69 @@ AND current preflight passes
 | ambiguity status | unresolved 时不产生 TaskSpec |
 | `operation_class` | 从 allowed effects + risk policy 派生；若缓存，不得成为第二权威 |
 
+### 4.8 Semantic Authority Boundary 与 SourceContextView
+
+`SourceEnvelope.request_text_ref` 允许 source owner 在严格 allowlist 下投影已准入节点对应的只读上下文，但不把 unrestricted conversation、attachment body 或页面文本重新放回 Runtime read model：
+
+```python
+@dataclass(frozen=True)
+class AnchoredExcerpt:
+    anchor_ref: str
+    text: str
+    linked_requirement_ids: tuple[str, ...]
+    linked_criterion_ids: tuple[str, ...]
+
+@dataclass(frozen=True)
+class SourceContextView:
+    source_envelope_ref: str
+    anchored_excerpts: tuple[AnchoredExcerpt, ...]
+    request_summary: str = ""
+    authority: Literal["context_only"] = "context_only"
+
+@dataclass(frozen=True)
+class TaskSpecGap:
+    source_anchor_ref: str
+    linked_requirement_ids: tuple[str, ...]
+    missing_semantics: str
+```
+
+`SourceContextProjector` 只能从 accepted `TaskSpec.source_binding_digest` 和引用的 `SourceAnchor` 产生 view。`request_summary` 是 explanatory summary，不是 TaskSpec fallback。消费者 allowlist 固定为：
+
+| Consumer | 可见上下文 | 输出限制 |
+|---|---|---|
+| `TaskPlanner` | 可选 bounded SourceContextView | Step 必须引用已有 requirement/effect IDs；不得创建 accepted semantics |
+| `OpenSemanticResolver` | typed OpenSemanticCriterion + exact linked excerpts + current admissible targets | 只解析现有 criterion；返回 typed resolution/evidence、TaskSpecGap 或 clarification |
+| `ClarificationComposer` | 与 gap/ambiguity 精确绑定的 excerpt | 只生成问题，不修改 TaskSpec |
+| `StepChoicePlanner` | 默认无 raw/source context | 只消费 Active Step + ChoicePage |
+| `RecoveryPolicy` | 默认无 raw/source context | 语义缺口转 TaskSpecGap/clarification |
+
+以下 execution authority path 不得接收 `SourceContextView`、raw request、conversation content、legacy IntentDraft 或 source claim：
+
+```text
+ActionChoiceBuilder → InteractionGrounder → ValuePredicateResolver
+→ ActionSelectionValidator → ActionContractBuilder
+→ TaskAuthorityGate / CapabilityGate / ApprovalGate / PreflightService
+→ Executor → LoopEvaluator → TaskCompletionEvaluator → RuntimeCommitter
+```
+
+有界 proposal repair 只能在 TaskSpec admission 前替换 untrusted proposal；它不能产生第二份 accepted semantic representation。
+
+### 4.9 Atomic requirement identity 与 dependency 单一落位
+
+系统保存一个扁平 canonical requirement table 和一个 success expression tree；`TaskRequirement` 不是 claim/obligation node，不携带 blocking/terminal/dependency edges。
+
+语义依赖与执行依赖只允许以下落位：
+
+```text
+semantic value dependency
+    → InputRef / BindingRef / ObservationValueRef / typed ValueExpr
+
+execution milestone ordering
+    → StepSpec.depends_on
+```
+
+TaskSpec 不再保存 accepted claim dependency、obligation dependency 或第三套 task dependency graph。需要“先读 ID，再填表”的任务由 binding declaration/ref 表达值流，由当前 TaskPlan DAG 表达执行顺序。
+
 ## 5. Semantic AST 与最小 CriterionPolicy
 
 ### 5.1 ValueExpr
@@ -510,6 +628,7 @@ SubjectExpr = EntityRef | CollectionRef | QueryRef | FieldSubject
 @dataclass(frozen=True)
 class PredicateExpr:
     criterion_id: str
+    requirement_refs: tuple[RequirementRef, ...]
     subject: SubjectExpr
     operator: PredicateOperator
     value: ValueExpr | None
@@ -548,7 +667,7 @@ CriterionExpr = (
 
 `Not` 只能来自用户明确否定、deterministic normalization 或 source-bound proposal。Planner 不得因为 positive criterion 已满足而把它反转成 negative criterion。
 
-`OpenSemanticCriterion`（迁移期可保留 `OpenSemanticExpr` alias）只保真保存尚未注册但明确的用户语义。它可以触发 registered resolver、bounded ModelVerifier evidence 或 clarification；它不能直接生成 ActionContract。
+`OpenSemanticCriterion`（迁移期可保留 `OpenSemanticExpr` alias）只保真保存尚未注册但明确的用户语义。它可以触发 registered resolver、bounded ModelVerifier evidence 或 clarification；它不能直接生成 ActionContract。`OpenSemanticResolver` 只接收 typed criterion、其 exact SourceAnchor excerpts、current admissible targets 与 allowed action/value boundary，不接收 unrestricted conversation 或 page text 作为 authority。解析结果必须保留已有 requirement/criterion/anchor IDs；无法解析或发现语义缺失时返回 `TaskSpecGap` / `ClarificationRequired`，不能 patch TaskSpec。
 
 Criterion 说明“什么必须为真”，DOM/AX/API/Visual/Model/Human 说明“可由什么来源证明”。source kind 必须放在 policy/provider 层，禁止生成 `DomPredicateCriterion`、`ApiPredicateCriterion` 等组合爆炸。
 
@@ -632,6 +751,7 @@ TaskPlan 可以是完整小 DAG、rolling-horizon partial plan 或单 step plan�
 class StepSpec:
     step_id: str
     objective: str
+    requirement_refs: tuple[RequirementRef, ...]
     depends_on: tuple[str, ...]
     interaction_scope: InteractionIntent
     preconditions: tuple[CriterionExpr, ...]
@@ -706,11 +826,13 @@ Authority 必须验证：
 2. based-on observation/state 未失效；
 3. step IDs 唯一、dependency DAG 无环；
 4. entry steps 可解释且 completion 可验证；
-5. 所有效果动作有 TaskSpec authorization refs；
-6. 不含 selector、coordinate、backend、approval 或 capability grant；
-7. budgets 在 Runtime policy 内；
-8. replan 没有重定义已提交事实；
-9. assumptions 与 replan triggers typed 且可审计。
+5. 每个 Step 都引用其服务的 canonical TaskSpec requirement IDs；read-only/data-discovery Step 即使没有 effect，也必须具备 `requirement_refs`；
+6. 所有效果动作有 TaskSpec effect authorization refs；
+7. objective/completion/effect 不能引入 TaskSpec 未准入的新 requirement；只允许 current observation-grounded enabling condition；
+8. 不含 selector、coordinate、backend、approval 或 capability grant；
+9. budgets 在 Runtime policy 内；
+10. replan 没有重定义已提交事实；
+11. assumptions 与 replan triggers typed 且可审计。
 
 决策只允许：
 
@@ -872,6 +994,23 @@ ActionSelectionProposal = (
 
 ```python
 @dataclass(frozen=True)
+class ChoicePresentation:
+    choice_id: str
+    action_kind: ActionKind
+    target_id: str
+    target_label: str
+    target_role: str
+    destination_id: str | None
+    destination_label: str | None
+    relevant_current_state: FrozenObject
+    expected_effect_refs: tuple[CriterionRef, ...]
+    requirement_refs: tuple[RequirementRef, ...]
+    generation_reason_codes: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    conflict_status: ConflictStatus
+    risk: RiskLevel
+
+@dataclass(frozen=True)
 class ChoicePage:
     catalog_digest: str
     total_choice_count: int
@@ -883,6 +1022,8 @@ class ChoicePage:
     continuation_token: str | None
     projection_policy_id: str
 ```
+
+`ChoicePresentation` 是 bounded semantic context：它必须足以比较当前页内多个合法选择，但不得包含 selector、coordinate、locator、backend handle、approval token、hidden choice ID 或 unrestricted source text。其 requirement/effect linkage 只能引用 accepted TaskSpec IDs；`generation_reason_codes` 解释 Runtime 为何生成该 choice，不向 Planner 转移 choice admission authority。
 
 若 `choice_id ∈ full catalog` 但 `choice_id ∉ current presented page`，`ActionSelectionValidator` 必须返回 `UNPRESENTED_CHOICE_ID`。模型必须先请求下一页或 typed retrieval；此规则同时封住 prompt injection 对隐藏 ID 的猜测执行。
 
@@ -1071,6 +1212,8 @@ class TaskCompletionEvaluation:
     status: CriterionStatus
     root_criterion_id: str
     criterion_results: tuple[CriterionEvaluation, ...]
+    required_output_results: tuple[OutputMaterializationEvaluation, ...]
+    missing_required_outputs: tuple[str, ...]
     missing_rechecks: tuple[str, ...]
     constraint_violations: tuple[str, ...]
     uncertain_external_effects: tuple[str, ...]
@@ -1084,9 +1227,11 @@ TaskSpec.success root == SATISFIED
 AND no required constraint violation
 AND no unresolved external effect
 AND all required FINAL_RECHECK completed
+AND all required outputs materialized
+AND every required output that requires lineage is source-bound
 ```
 
-Planner `FinishProposal` 只转换为 `FinalVerificationRequested`；plan exhausted、latest passed report、reward、receipt 或 terminal_readiness 都不能替代 root evaluation。
+Output materialization 是 typed closure，不是 Planner prose。`OutputSpec.materialization` 必须证明 structured result 已构造；`source_binding_required=True` 时还必须具有合法 source/artifact/resource refs。Planner `FinishProposal` 只转换为 `FinalVerificationRequested`；plan exhausted、latest passed report、reward、receipt、自然语言总结或 terminal_readiness 都不能替代 root/output evaluation。
 
 ### 9.5 Task completion evaluation 触发器
 
@@ -1373,11 +1518,13 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 | Material-field source binding | `SourceAnchorBuilder` + TaskSpecAuthority admission | 授予 effect/capability |
 | 自然语言提案 | `MinimalIntentInterpreter` | 创建 accepted TaskSpec |
 | 来源/风险审计 | optional `SemanticAudit` | 添加要求、修改 success、升级授权 |
+| Bounded source context projection | `SourceContextProjector` | 创建 requirement、扩大 consumer allowlist、把 summary 变成 authority |
 | Task meaning 与 revision | `TaskSpecAuthority` | 生成步骤或动作 |
+| Canonical requirement identity | `TaskSpecAuthority` | 创建 obligation/dependency graph、由 objective 恢复字段 |
 | Perception acquisition + coverage | `PerceptionSession` | 把未采集目标宣称为不存在 |
 | Canonical current world | `CanonicalObservationBuilder` + `ObservationStore` | 读取 model projection policy、修改 task/progress |
 | Model presentation view | 对应 `TaskPlanningObservationProjector` / `ChoicePresentationProjector` | 改变 canonical observation 或 Catalog |
-| Plan proposal | `TaskPlanner` | 创建 PlanRef 或执行动作 |
+| Plan proposal | `TaskPlanner` | 创建 PlanRef、执行动作、从 SourceContextView 创建新 requirement |
 | Plan admission | `TaskPlanAuthority` | 添加步骤、授予 capability |
 | Plan install/replace | `Coordinator / TaskTransitionService` | 发明 plan semantics |
 | Progress/fact/binding/recent outcome/durable evidence | `TaskProgressService` + bounded stores | 根据 receipt 完成 task、持久化 current facts |
@@ -1395,7 +1542,9 @@ ArtifactStore   → DOM、截图、AX tree 等大型历史内容
 | Evidence extraction | internal `EvidenceProvider` | 判断 root completion、写 state |
 | Effect/step/task typed evaluation | `LoopEvaluator` | 执行动作、写 progress、提交 terminal |
 | Evidence admission | `EvidenceAdmissionPolicy` | 重定义 criterion/composite semantics |
+| Open semantic resolution | bounded `OpenSemanticResolver` | 修改 TaskSpec、读取 unrestricted conversation/page text、授予 effect |
 | Task closure semantics | `TaskCompletionEvaluator` | 写 StateKernel、根据 plan exhausted 通过 |
+| Required output closure | `TaskCompletionEvaluator` | 用 Planner prose 代替 typed/source-bound materialization |
 | Observation continuation | `PerceptionOwner` | 隐式重复 capture、修改 task |
 | Durable evidence persistence | `DurableEvidenceStore` | 保存 current observation 或无界 action history |
 | Failure classification | `FailureOwnerRouter` | 执行 recovery |
@@ -1719,6 +1868,9 @@ foundation
 - 不让默认 intake 为普通任务建立 request → clause ledger → claim/obligation graph → model coverage audit。
 - 不让 SourceEnvelope、SourceAnchor 或 SemanticAudit 成为新的 planning/progress graph 或 execution authority。
 - 不让 SemanticAudit 修订 proposal/TaskSpec；它只能 pass、veto 或请求 clarification。
+- 不建设“TaskSpec 后所有模块绝对不可读取任何 source excerpt”的 strict raw-text firewall；只允许显式 `context_only`、source-bound、consumer-allowlisted rereading。
+- 不让 bounded contextual rereading 产生新 requirement、effect、constraint、capability、success semantics 或 TaskSpec revision。
+- 不让 action construction、contract/gate、execution、evaluation、completion 或 commit 接收 raw request/SourceContextView。
 - 不默认建设独立 verifier service、VerifierPlanner、full EvidenceGraph 或无界 EvidenceIndex。
 - 不把 current observation facts 复制进 durable store，也不让历史 current-state evidence 跨 epoch 自动有效。
 - 不让 CriteriaEvidenceMatcher、EvidenceAdmissionPolicy、ModelVerifier 或 mechanical provider 拥有 composite/root completion semantics。
@@ -1779,6 +1931,36 @@ foundation
 | `SOU-11` | 旧 SourceLedger 的 clause/span/coverage 能力只可作为 optional SemanticAudit implementation。 |
 | `SOU-12` | TaskPlan 是 observation-grounded milestone graph，不是 intake obligation graph。 |
 
+#### Semantic Authority Boundary Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `NLI-01` | `TaskSpecAuthority` 是唯一可 admit/revise task meaning、authorization、constraints、forbidden effects 与 success semantics 的 owner。 |
+| `NLI-02` | TaskSpec admission 后，raw/anchored source text 只能通过明确 `context_only` 的 read-only view 暴露。 |
+| `NLI-03` | 使用 source-text assistance 的 plan、open-semantic resolution、clarification 必须引用已有 requirement、criterion、effect-authorization 或 SourceAnchor IDs。 |
+| `NLI-04` | 下游发现语义缺口时只返回 `TaskSpecGap` / `ClarificationRequired`，不得 patch/reinterpret TaskSpec。 |
+| `NLI-05` | Action-space construction、contract binding、authority gates、execution、verification/evaluation 与 completion 不得使用 raw user language。 |
+| `NLI-06` | `OpenSemanticResolver` 只能接收 typed OpenSemanticCriterion 与 exact linked SourceAnchor excerpts，不能把 unrestricted conversation/page text 当 authority。 |
+| `NLI-07` | Observation、website/tool/email/PDF/screen content 可用于 grounding/evidence，但不能创建用户授权。 |
+| `NLI-08` | Bounded repair 必须在 admission 前替换 untrusted proposal，不得形成第二份 accepted semantic representation。 |
+
+#### Atomic Requirement / Dependency / Choice / Output Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `REQ-01` | 每个 material user requirement 只有一个 stable ID 与一个 typed semantic payload。 |
+| `REQ-02` | Authorization、constraint、success 与 output container 引用 canonical IDs，不各自重述 free-form semantics。 |
+| `REQ-03` | `TaskSpec.objective` 仅为 explanatory summary，不得用于恢复缺失 typed requirement。 |
+| `REQ-04` | 每个 StepSpec 携带 `requirement_refs`；effectful Step 还必须携带 `effect_authorization_refs`。 |
+| `REQ-05` | TaskPlanAuthority 拒绝无法 trace 到 TaskSpec requirement/effect IDs 或 current observation-grounded enabling need 的 objective/completion/effect。 |
+| `DEP-01` | Semantic value dependency 只由 typed InputRef/BindingRef/ValueExpr 表达一次。 |
+| `DEP-02` | Execution ordering 只由 current TaskPlan `StepSpec.depends_on` 表达。 |
+| `DEP-03` | Accepted TaskSpec 不存在 claim/obligation dependency graph。 |
+| `CHOICE-13` | 每个 presented choice 包含 bounded target semantics、relevant state、requirement/effect linkage、conflict、risk 与 generation reason；不包含 execution binding 或 hidden IDs。 |
+| `OUT-01` | 每个 required OutputSpec 有 stable output ID 与 typed materialization criterion。 |
+| `OUT-02` | TaskCompleted 要求所有 required outputs materialized，并按声明 source-bound。 |
+| `OUT-03` | Planner prose/summary 不能替代 required structured output。 |
+
 #### Loop-native Verification / Recovery Gate
 
 | ID | 阻塞不变量 |
@@ -1836,6 +2018,10 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - verification disabled、provider 缭乱或 evidence 缺失只能得到 UNKNOWN/UNSUPPORTED/ERROR，绝不能 synthetic PASSED。
 - external transaction 已执行但状态不确定时必须 authoritative final recheck 或 block/user handoff，不得盲重试。
 - fresh/stable post-action observation 直接复用；仅缺目标 source 时 targeted augment；loading 时 wait-and-recapture；stale/conflict 时 recapture。
+- Task Planner 使用 bounded SourceContextView 生成的每个 Step 必须引用已有 requirement IDs；发现未准入含义时必须返回 TaskSpecGap/clarification。
+- OpenSemanticResolver 只能解析与当前 criterion 精确绑定的 excerpt；unrestricted raw request 或 page text 不能成为授权输入。
+- 改写 ChoicePresentation 的 label/state page budget 不得改变 full Catalog；presented choice 必须保留 requirement/effect/conflict/risk/reason 语义。
+- success root 已满足但 required structured output 未 materialize 或缺少要求的 source binding 时，任务不得完成。
 
 ### 17.3 治理 Gate
 
@@ -1850,6 +2036,9 @@ Runtime catalog construction must not call PlanningRequestBuilder
 |---|---|
 | 薄 intake / 厚 execution loop | §0、§1、§2 |
 | TaskSpec 稳定授权合同 | §0、§4 |
+| Semantic Authority Boundary / bounded source context | §0.4、§4.8、§12、§17.1 |
+| Atomic TaskRequirement identity | §4.4、§4.9、§5、§6、§17.1 |
+| Semantic value vs execution-order dependency | §4.9、§6、§17.1 |
 | SourceEnvelope always-on + selective SourceAnchor | §1、§2 板块 A、§4 |
 | Optional SemanticAudit veto/clarify-only | §1、§2 板块 A/B、§4.3 |
 | TaskSpec what vs TaskPlan how | §0、§6 |
@@ -1863,12 +2052,14 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | TaskPlanningRequest / ChoicePlanningRequest | §7.1、§7.4 |
 | Runtime-owned full ActionChoiceCatalog 0/1/N | §7.2–§7.3 |
 | ChoicePage / paging / typed retrieval | §7.4–§7.6 |
+| ChoicePresentation bounded semantic contract | §7.5、§17.1 |
 | Grounding 与 PredicateResolver | §7.8 |
 | ActionContract 与四重 gate | §8 |
 | 动作附近审批 | §8.3 |
 | receipt/effect/step/task 四层 typed evaluation | §9 |
 | loop-native physical sequence / logical authority separation | §1、§9.1、§12 |
 | `PLAN_EXHAUSTED != TASK_COMPLETED` | §0、§3.2、§9 |
+| Required output materialization closure | §4.4、§9.4、§17.1 |
 | pre-plan already-satisfied check | §1、§9.2、§13.4 |
 | PerceptionCapture / canonical-first observation / SourceCoverage | §10 |
 | post-action observation 四态 continuation | §9.7、§10 |
@@ -1942,6 +2133,17 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | `LOOPVER-15` P0–P3 verification priority | §15 |
 | `LOOPVER-16` VER-01–VER-14、OBS-13–OBS-14、REC-01 | §17.1 |
 
+### 18.4 Semantic Authority / Contract Closure 补充逐条映射
+
+| Amendment | 权威设计落点 |
+|---|---|
+| strict Semantic Firewall 修正为 Task Meaning Write Barrier | §0.4、§4.8、§12 |
+| `NLI-01`–`NLI-08` single admission / bounded rereading | §4.8、§17.1 |
+| `TaskRequirement` 与 `REQ-01`–`REQ-05` | §4.4、§4.9、§5、§6.2、§6.5、§17.1 |
+| `DEP-01`–`DEP-03` dependency 单一落位 | §4.9、§6、§17.1 |
+| `ChoicePresentation` 与 `CHOICE-13` | §7.5、§17.1 |
+| required OutputSpec 与 `OUT-01`–`OUT-03` | §4.4、§9.4、§17.1 |
+
 ## 19. 最终收口
 
 目标 Runtime 的主线最终只允许：
@@ -1950,6 +2152,8 @@ Runtime catalog construction must not call PlanningRequestBuilder
 one source-bound task contract
 one lightweight immutable SourceEnvelope per admitted request revision
 zero or one risk-triggered SemanticAudit with veto/clarify-only authority
+zero or one bounded context_only SourceContextView per allowlisted semantic consumer request
+one canonical TaskRequirement identity per material user requirement
 one current execution plan
 one canonical observation epoch per current state
 one runtime-owned full action choice catalog per active-step epoch
@@ -1958,6 +2162,7 @@ one concrete action contract per attempt
 one typed LoopEvaluation per post-action evaluation cycle
 one bounded RecentActionOutcome index and one small DurableEvidenceStore
 one pure task completion semantic authority
+one typed/source-bound materialization result per required OutputSpec
 one state/trace committer
 ```
 

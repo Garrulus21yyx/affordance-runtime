@@ -20,7 +20,7 @@ hashes, and lengths preserve identity without broad disclosure.
 | receipt | did backend dispatch report success/failure? | ExecutionReceipt |
 | action effect | did this ActionContract's expected local effect occur? | CriterionEvaluation |
 | step | does StepSpec.completion hold? | CriterionEvaluation |
-| task | does full TaskSpec.success closure hold with required constraints/rechecks? | TaskCompletionEvaluation |
+| task | does full TaskSpec.success and required-output closure hold with constraints/rechecks? | TaskCompletionEvaluation |
 
 No result substitutes for another. Plan exhaustion and external reward are not
 TaskCompleted.
@@ -71,7 +71,13 @@ TaskSpec.success root == SATISFIED
 AND no required constraint violation
 AND no unresolved external effect
 AND all required FINAL_RECHECK completed
+AND all required outputs are materialized and source-bound when required
 ```
+
+Each required OutputSpec has a stable output ID and typed materialization
+criterion. Output results are part of TaskCompletionEvaluation. Planner prose,
+an unstructured final summary, or a satisfied environment state cannot replace
+a required structured output or its source binding.
 
 Evaluation runs on the initial canonical observation, completed active step,
 new durable evidence, returned external recheck, plan exhaustion, Planner Finish

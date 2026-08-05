@@ -18,6 +18,14 @@ natural-language interpretation
 The model proposes. Runtime-owned authorities admit, bind, gate, evaluate, and
 commit.
 
+The semantic-authority rule is:
+
+```text
+single semantic admission
++ bounded contextual rereading
++ no downstream authority expansion
+```
+
 ## 2. Default source path
 
 `SourceEnvelopeBuilder` always creates one lightweight immutable envelope with
@@ -49,10 +57,10 @@ an invalid proposal into a ready TaskSpec.
 
 TaskSpecAuthority validates and freezes:
 
-- objective and input bindings;
-- allowed effects and capability ceiling;
-- hard constraints, preferences, and forbidden effects;
-- typed success expression and requested outputs;
+- explanatory objective and input bindings;
+- one flat canonical `TaskRequirement` table;
+- allowed-effect, constraint, preference, forbidden-effect, success, and output references to canonical requirement IDs;
+- typed success expression and stable required OutputSpecs with materialization/source-binding policies;
 - risk policy;
 - `source_envelope_ref` and `source_binding_digest`.
 
@@ -63,18 +71,50 @@ TaskSpec revision is allowed only for user clarification/modification or a
 policy/authorization change that requires reconfirmation. Observation, failure,
 replan, or Planner preference cannot revise TaskSpec.
 
-## 5. Task planning horizon
+## 5. Semantic Authority Boundary
+
+`TaskSpecAuthority` is the only Task Meaning Write Barrier. Raw language
+visibility does not grant semantic authority.
+
+`SourceContextProjector` may produce an immutable `SourceContextView` containing
+only accepted `AnchoredExcerpt` values, their existing requirement/criterion
+IDs, and an optional non-authoritative summary. Its authority is always
+`context_only`.
+
+Allowed readers are:
+
+- Task Planner, only when bounded source pragmatics materially help milestone decomposition;
+- OpenSemanticResolver, only for the exact excerpts linked to an existing OpenSemanticCriterion;
+- ClarificationComposer, only to phrase a question for a typed ambiguity or `TaskSpecGap`.
+
+They cannot create requirements, effects, constraints, capability, success
+semantics, or TaskSpec revisions. Missing admitted semantics returns
+`TaskSpecGap` or clarification. Step Choice Planner normally receives no source
+context. Action choice construction, grounding/predicate resolution, contract
+binding, gates, execution, evaluation, completion, and commit receive no raw
+request or SourceContextView.
+
+Bounded proposal repair occurs before admission and replaces the untrusted
+proposal; it never creates a second accepted meaning.
+
+## 6. Task planning horizon
 
 Task Planner consumes an immutable TaskPlanningRequest containing TaskSpec,
 bounded canonical-observation projection, verified progress/bindings, recent
-typed failures, assumptions, and budgets. It proposes `StepSpec` milestones.
+typed failures, assumptions, and budgets. When explicitly required, it may also
+receive the bounded read-only SourceContextView described above. It proposes
+`StepSpec` milestones; every Step carries `requirement_refs`, and effectful
+Steps also carry `effect_authorization_refs`.
 
 TaskPlanAuthority validates identity, dependencies, criterion fidelity,
-observation/state basis, authorization compatibility, and digest. The accepted
+observation/state basis, canonical requirement/effect traceability,
+authorization compatibility, and digest. Semantic value dependencies use typed
+Input/Binding/Value refs; execution ordering uses only `StepSpec.depends_on`.
+The accepted
 TaskPlan stores `StepSpec` directly and can be replaced without changing
 TaskSpec. It is a Milestone Graph, never an intake obligation graph.
 
-## 6. Active-step choice horizon
+## 7. Active-step choice horizon
 
 For the active step, Runtime first builds the complete legal
 `ActionChoiceCatalog` from TaskSpec/TaskPlan/progress/current canonical
@@ -91,22 +131,30 @@ Step Choice Planner may select only a displayed choice ID, request next page,
 apply a sealed typed refinement, ask, or defer. It cannot invent action,
 binding, selector, coordinate, backend, capability, or approval.
 
-## 7. Selection and ActionContract
+Each `ChoicePresentation` includes bounded target label/role, destination,
+relevant current state, requirement/effect refs, evidence refs, conflict, risk,
+and generation reason codes. It excludes selector, coordinate, locator,
+backend handle, approval token, hidden IDs, and unrestricted source text.
+
+## 8. Selection and ActionContract
 
 ActionSelectionValidator checks current Catalog/page membership and identity.
 ActionContractBuilder routes canonical bindings and produces one immutable,
 expiring transaction. Task authority, capability, approval, and freshness/
 preflight gates run after binding and before execution.
 
-## 8. Planner finish
+## 9. Planner finish and required outputs
 
 Planner FinishProposal is only `FinalVerificationRequested`. Initial state may
 already satisfy a `STATE_HOLDS` task without an action. Plan exhaustion and
-Planner finish never imply TaskCompleted.
+Planner finish never imply TaskCompleted. TaskCompleted additionally requires
+every required OutputSpec to be materialized and source-bound when its policy
+requires lineage; Planner prose cannot substitute for structured output.
 
-## 9. Typed intake/planning outcomes
+## 10. Typed intake/planning outcomes
 
 - clarification required;
+- TaskSpecGap discovered by bounded contextual reasoning;
 - proposal rejected or bounded repair required;
 - planning infeasible or stale;
 - perception coverage/state required;
