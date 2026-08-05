@@ -6,6 +6,7 @@ from affordance_runtime.active_perception import (
     EvidenceGap,
     EvidenceGapExtractor,
     EvidenceGapKind,
+    ObservationContinuationPolicy,
     PerceptionResolution,
     PerceptionResolutionStatus,
     ProbeAvailability,
@@ -33,10 +34,65 @@ from affordance_runtime.grounding import (
 from affordance_runtime.perception_session import PerceptionCapture, PerceptionSession
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.unified_grounding import candidate_from_affordance
+from affordance_runtime.unified_observation import (
+    CoverageCompleteness,
+    CoverageStatus,
+    SourceCoverage,
+    UnifiedObservation,
+)
+from affordance_runtime.verification.contracts import ObservationDisposition
 
 
 def _capture(snapshot: BrowserSnapshot) -> PerceptionCapture:
     return PerceptionCapture.from_browser_snapshot(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("loading", "stable", "coverage_gap", "expected"),
+    (
+        (False, True, False, ObservationDisposition.REUSE),
+        (False, True, True, ObservationDisposition.AUGMENT_TARGETED),
+        (False, False, False, ObservationDisposition.RECAPTURE),
+        (True, True, False, ObservationDisposition.WAIT_AND_RECAPTURE),
+    ),
+)
+def test_observation_continuation_policy_has_four_typed_states(
+    loading: bool,
+    stable: bool,
+    coverage_gap: bool,
+    expected: ObservationDisposition,
+) -> None:
+    coverage = (
+        SourceCoverage(
+            source=GroundingSource.DOM,
+            capture_policy_id="bounded",
+            captured_item_count=1,
+            truncated=False,
+            omitted_item_count_estimate=None,
+            completeness=CoverageCompleteness.BOUNDED,
+            status=CoverageStatus.REQUIRED_PROPERTY_UNOBSERVED,
+        ),
+    ) if coverage_gap else ()
+    observation = UnifiedObservation(
+        epoch_id="epoch:1",
+        page_revision="page:1",
+        environment_revision="environment:1",
+        observed_text="",
+        targets=(),
+        source_coverage=coverage,
+        artifact_refs=(),
+        captured_at_s=1.0,
+        digest="sha256:test",
+        metadata={"loading": loading},
+    )
+
+    decision = ObservationContinuationPolicy().decide(
+        observation,
+        environment_stable=stable,
+    )
+
+    assert decision.disposition == expected
+    assert decision.observation_ref == "epoch:1"
 
 
 def _gap() -> EvidenceGap:
@@ -435,7 +491,7 @@ def test_gap_extractor_derives_missing_visual_requirement_with_task_risk() -> No
         run_id="run-1",
         task_revision=2,
         plan_version=3,
-        active_subgoal_id="inspect-visual",
+        active_step_id="inspect-visual",
     )
 
     by_kind = {item.gap_kind: item for item in gaps}

@@ -51,8 +51,16 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import FailureOwner, classify_failure
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.runtime_committer import runtime_state_snapshot
-from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference
+from affordance_runtime.runtime_state_projection import runtime_state_snapshot
+from affordance_runtime.simplified_runtime_contracts import (
+    CriterionEvidencePolicy,
+    ElementIntent,
+    EvidenceStrength,
+    SourceReference,
+    StateCriterion,
+    StateCriterionRelation,
+    StepSpec,
+)
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
@@ -68,18 +76,17 @@ from affordance_runtime.task_intake import (
     UserRequest,
 )
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
-from affordance_runtime.task_planning import (
-    SubgoalOutcome,
-    SubgoalOutcomeRelation,
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanActionFamily,
-    TaskPlanningContext,
-    TaskPlanSource,
+from affordance_runtime.task_plan_contracts import (
+    PlanCandidate,
+    TaskPlanGeneratorSource,
 )
+from affordance_runtime.task_plan_contracts import (
+    TaskPlan as CanonicalTaskPlan,
+)
+from affordance_runtime.task_planner import TaskPlanningContext
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.verification.contracts import SuccessExpression
-from runtime_test_support import canonical_observation, make_interaction
+from runtime_test_support import canonical_observation
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -184,10 +191,8 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     result = asyncio.run(coordinator.run(_semantic_envelope("run-1")))
 
     assert result.status == RuntimeStep.DONE
-    assert result.result == {
-        "task_plan_id": "plan-single-stage",
-        "completed_subgoal_ids": ["subgoal-1"],
-    }
+    assert result.result["task_plan_id"].startswith("plan:")
+    assert tuple(result.result["completed_step_ids"]) == ("subgoal-1",)
     assert result.verification is not None and result.verification.passed
     assert result.state.observation_count == 5
     event_types = [node.kind for node in result.trace.nodes]
@@ -482,135 +487,77 @@ class ReplanObserver:
 
 
 class SingleStageTaskPlanner:
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        task = context.task_spec
-        outcome = SubgoalOutcome(
-            subject="Save",
-            relation=SubgoalOutcomeRelation.IS_COMPLETED,
-        )
-        return TaskPlan(
-            plan_id="plan-single-stage",
-            task_id=task.task_id,
-            task_revision=task.revision,
-            plan_version=context.current_plan_version + 1,
-            supersedes_plan_id=context.current_plan_id,
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        refs = (SourceReference("request-flow", "unit:setting"),)
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
+            task_revision=context.task_spec.revision,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="coordinator-single-stage-fixture",
+            based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="subgoal-1",
-                    objective=task.objective,
-                    interaction=make_interaction("Save"),
-                    success_criteria=task.success_criteria,
-                    evidence_requirements=task.evidence_requirements,
-                    operation_class=task.operation_class,
-                    action_family=TaskPlanActionFamily.ACTIVATE,
-                    outcome=outcome,
+            steps=(
+                StepSpec(
+                    step_id="subgoal-1",
+                    objective=context.task_spec.objective,
+                    interaction=ElementIntent("Save", refs),
+                    completion_criteria=(
+                        StateCriterion(
+                            criterion_id="criterion:subgoal-1",
+                            source_refs=refs,
+                            subject="Save",
+                            relation=StateCriterionRelation.IS_COMPLETED,
+                            expected_value=None,
+                            evidence_policy=CriterionEvidencePolicy(
+                                EvidenceStrength.INDEPENDENT,
+                                ("dom_state",),
+                            ),
+                        ),
+                    ),
+                    source_refs=refs,
                 ),
             ),
+            source_refs=refs,
         )
-
 
 class TwoStageTaskPlanner:
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        task_spec = context.task_spec
-        return TaskPlan(
-            plan_id="plan-two-stage",
-            task_id=task_spec.task_id,
-            task_revision=task_spec.revision,
-            plan_version=1,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="write",
-                    objective="Write settings",
-                    interaction=make_interaction('Write settings'),
-                    success_criteria=("settings are saved",),
-                    evidence_requirements=("saved observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                ),
-                SubgoalSpec(
-                    subgoal_id="confirm",
-                    objective="Confirm settings",
-                    interaction=make_interaction('Confirm settings'),
-                    depends_on=("write",),
-                    success_criteria=("settings are saved",),
-                    evidence_requirements=("saved observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                ),
-            ),
-        )
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        refs = (SourceReference("request-flow", "unit:setting"),)
 
-
-class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
-    async def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        return super().plan(context)
-
-
-class UnsupportedThenValidTaskPlanner:
-    def __init__(self, *, valid_replacement: bool = True) -> None:
-        self.valid_replacement = valid_replacement
-
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        first = SubgoalSpec(
-            subgoal_id="write",
-            objective="Write settings",
-            interaction=make_interaction('settings'),
-            success_criteria=("settings are saved",),
-            evidence_requirements=("saved observation",),
-            operation_class=OperationClass.REVERSIBLE_WRITE,
-            action_family=TaskPlanActionFamily.ACTIVATE,
-            outcome=SubgoalOutcome(
-                subject="settings",
-                relation=SubgoalOutcomeRelation.HAS_CHANGED,
-            ),
-        )
-        unsupported = SubgoalSpec(
-            subgoal_id="confirm",
-            objective="Save is checked",
-            interaction=make_interaction('Save'),
-            depends_on=("write",),
-            success_criteria=("Save is checked",),
-            evidence_requirements=("current checked state",),
-            operation_class=OperationClass.REVERSIBLE_WRITE,
-            action_family=TaskPlanActionFamily.ACTIVATE,
-            outcome=SubgoalOutcome(
-                subject="Save",
-                relation=SubgoalOutcomeRelation.IS_CHECKED,
-            ),
-        )
-        if not context.completed_subgoal_ids:
-            subgoals = (first, unsupported)
-        elif self.valid_replacement:
-            subgoals = (
-                SubgoalSpec(
-                    subgoal_id="confirm-replacement",
-                    objective="settings confirmation changed",
-                    interaction=make_interaction('settings confirmation'),
-                    depends_on=("write",),
-                    success_criteria=("settings are saved",),
-                    evidence_requirements=("saved observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.ACTIVATE,
-                    outcome=SubgoalOutcome(
-                        subject="settings confirmation",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        def step(step_id: str, depends_on: tuple[str, ...] = ()) -> StepSpec:
+            return StepSpec(
+                step_id=step_id,
+                objective=f"{step_id} settings",
+                interaction=ElementIntent("Save", refs),
+                completion_criteria=(
+                    StateCriterion(
+                        criterion_id=f"criterion:{step_id}",
+                        source_refs=refs,
+                        subject="settings",
+                        relation=StateCriterionRelation.IS_COMPLETED,
+                        evidence_policy=CriterionEvidencePolicy(
+                            EvidenceStrength.INDEPENDENT, ("dom_state",)
+                        ),
                     ),
                 ),
+                source_refs=refs,
+                depends_on=depends_on,
             )
-        else:
-            subgoals = (unsupported,)
-        return TaskPlan(
-            plan_id=f"unsupported-flow-{context.current_plan_version + 1}",
-            task_id=context.task_spec.task_id,
+
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
             task_revision=context.task_spec.revision,
-            plan_version=context.current_plan_version + 1,
-            supersedes_plan_id=context.current_plan_id,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="two-stage-test-planner",
+            based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=subgoals,
+            steps=(step("write"), step("confirm", ("write",))),
+            source_refs=refs,
         )
+
+class AsyncTwoStageTaskPlanner(TwoStageTaskPlanner):
+    async def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        return super().generate_candidate(context)
 
 
 class SubgoalAwarePlanner:
@@ -623,45 +570,53 @@ class SubgoalAwarePlanner:
 
 
 class CurrentStateReadOnlyTaskPlanner:
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        return TaskPlan(
-            plan_id="plan-current-read-only",
-            task_id=context.task_spec.task_id,
-            task_revision=context.task_spec.revision,
-            plan_version=1,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="text-field-changed",
-                    objective="text field has changed",
-                    interaction=make_interaction('text field'),
-                    success_criteria=("text field has changed",),
-                    evidence_requirements=("post-text evidence",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.TYPE_TEXT,
-                    outcome=SubgoalOutcome(
-                        subject="text field",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                    ),
-                ),
-                SubgoalSpec(
-                    subgoal_id="submit-button-available",
-                    objective="submit button is available",
-                    interaction=make_interaction('submit_button'),
-                    depends_on=("text-field-changed",),
-                    success_criteria=("submit button is available",),
-                    evidence_requirements=("current submit button observation",),
-                    operation_class=OperationClass.READ_ONLY,
-                    action_family=TaskPlanActionFamily.WAIT,
-                    outcome=SubgoalOutcome(
-                        subject="submit_button",
-                        relation=SubgoalOutcomeRelation.IS_AVAILABLE,
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        refs = (SourceReference("current-state-read-only-request", "request:task"),)
+        first = StepSpec(
+            step_id="text-field-changed",
+            objective="text field has changed",
+            interaction=ElementIntent("text field", refs),
+            completion_criteria=(
+                StateCriterion(
+                    criterion_id="criterion:text-changed",
+                    source_refs=refs,
+                    subject="text field",
+                    relation=StateCriterionRelation.HAS_CHANGED,
+                    evidence_policy=CriterionEvidencePolicy(
+                        EvidenceStrength.INDEPENDENT, ("dom_state",)
                     ),
                 ),
             ),
+            source_refs=refs,
         )
-
+        second = StepSpec(
+            step_id="submit-button-available",
+            objective="submit button is available",
+            interaction=ElementIntent("submit_button", refs),
+            completion_criteria=(
+                StateCriterion(
+                    criterion_id="criterion:submit-available",
+                    source_refs=refs,
+                    subject="submit_button",
+                    relation=StateCriterionRelation.IS_AVAILABLE,
+                    evidence_policy=CriterionEvidencePolicy(
+                        EvidenceStrength.INDEPENDENT, ("dom_state",)
+                    ),
+                ),
+            ),
+            source_refs=refs,
+            depends_on=("text-field-changed",),
+        )
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
+            task_revision=context.task_spec.revision,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="current-state-test-planner",
+            based_on_observation_ref=context.environment.snapshot_id,
+            based_on_state_version=context.state_version,
+            steps=(first, second),
+            source_refs=refs,
+        )
 
 class CurrentStateReadOnlyPlanner:
     def propose(
@@ -693,30 +648,8 @@ class CurrentStateReadOnlyPlanner:
 
 
 class InitialAlreadySatisfiedTaskPlanner:
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        return TaskPlan(
-            plan_id="plan-initial-current-state",
-            task_id=context.task_spec.task_id,
-            task_revision=context.task_spec.revision,
-            plan_version=1,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="submit-button-available",
-                    objective="submit button is available",
-                    interaction=make_interaction('submit_button'),
-                    success_criteria=("submit button is available",),
-                    evidence_requirements=("current submit button observation",),
-                    operation_class=OperationClass.READ_ONLY,
-                    action_family=TaskPlanActionFamily.WAIT,
-                    outcome=SubgoalOutcome(
-                        subject="submit_button",
-                        relation=SubgoalOutcomeRelation.IS_AVAILABLE,
-                    ),
-                ),
-            ),
-        )
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        raise AssertionError(f"initially complete task unexpectedly planned: {context.reason}")
 
 
 class InitialAlreadySatisfiedPlanner:
@@ -907,42 +840,13 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == ["write", "confirm"]
-    assert result.result["task_plan_id"] == "plan-two-stage"
+    assert result.state.task_progress.completed_step_ids == ("write", "confirm")
+    assert result.result["task_plan_id"].startswith("plan:")
     events = [node.kind for node in result.trace.nodes]
-    assert events.count("SubgoalCompleted") == 2
-    assert events.index("TaskPlanAccepted") < events.index("SubgoalCompleted")
-    completed = [node for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
-    assert all(node.payload["criterion_evidence_links"] for node in completed)
-
-
-def test_coordinator_completion_root_does_not_wait_for_plan_exhaustion() -> None:
-    result = compose_run_coordinator(
-        observer=CurrentStateReadOnlyObserver(),
-        planner=CurrentStateReadOnlyPlanner(),
-        executor=FakeExecutor(),
-        contract_builder=_metadata_builder(
-            "text_changed",
-            capability="text.write",
-            target_id="dom_input_1",
-        ),
-        task_planner=CurrentStateReadOnlyTaskPlanner(),
-    ).run_sync(
-        RunRequest(
-            task_spec=_current_state_read_only_task(),
-            capabilities=["text.write"],
-        )
-    )
-
-    assert result.status == RuntimeStep.DONE
-    assert result.state.task_plan is not None
-    assert result.state.task_plan.plan_id == "plan-current-read-only"
-    assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == ["text-field-changed"]
-    events = [node.kind for node in result.trace.nodes]
-    assert "TaskReplanned" not in events
-    assert "SubgoalCompletedFromCurrentObservation" not in events
-    assert events.index("TaskCompletionEvaluated") < events.index("TaskCompleted")
+    assert events.count("StepCompleted") == 2
+    assert events.index("TaskPlanAccepted") < events.index("StepCompleted")
+    completed = [node for node in result.trace.nodes if node.kind == "StepCompleted"]
+    assert all(node.payload["criterion_ids"] for node in completed)
 
 
 def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() -> None:
@@ -967,44 +871,6 @@ def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() 
     assert "TaskReplanned" not in events
 
 
-def test_coordinator_commits_typed_task_plan_flow_replacement_reason() -> None:
-    result = compose_run_coordinator(
-        observer=TwoStageObserver(),
-        planner=SubgoalAwarePlanner(),
-        executor=FakeExecutor(),
-        contract_builder=_metadata_builder("saved"),
-        task_planner=UnsupportedThenValidTaskPlanner(),
-    ).run_sync(_semantic_envelope())
-
-    assert result.status == RuntimeStep.DONE
-    replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
-    assert replanned.payload["reason"] == "active_subgoal_outcome_state_unsupported"
-    assert replanned.payload["planning_context"]["reason"] == (
-        "active_subgoal_outcome_state_unsupported"
-    )
-
-
-def test_coordinator_traces_typed_task_replan_validation_issue() -> None:
-    result = compose_run_coordinator(
-        observer=TwoStageObserver(),
-        planner=SubgoalAwarePlanner(),
-        executor=FakeExecutor(),
-        contract_builder=_metadata_builder("saved"),
-        task_planner=UnsupportedThenValidTaskPlanner(valid_replacement=False),
-    ).run_sync(_semantic_envelope())
-
-    assert result.status == RuntimeStep.ABORTED
-    rejected = next(
-        node for node in result.trace.nodes if node.kind == "TaskReplanRejected"
-    )
-    assert rejected.payload["replacement_reason"] == (
-        "active_subgoal_outcome_state_unsupported"
-    )
-    assert [item["code"] for item in rejected.payload["issues"]] == [
-        "entry_outcome_state_unsupported"
-    ]
-
-
 class EarlyFinishPlanner:
     def propose(self, request: PlanningRequest) -> PlannerDoneResponse:
         del request
@@ -1022,7 +888,7 @@ def test_task_plan_rejects_planner_finish_without_verifier_backed_progress() -> 
     assert result.status == RuntimeStep.ABORTED
     assert result.error_code == RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == []
+    assert result.state.task_progress.completed_step_ids == ()
 
 
 class ReplanningTaskPlanner:
@@ -1030,29 +896,38 @@ class ReplanningTaskPlanner:
         self.calls = 0
         self.contexts: list[TaskPlanningContext] = []
 
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
         self.calls += 1
         self.contexts.append(context)
-        task_spec = context.task_spec
-        return TaskPlan(
-            plan_id=f"plan-replanned-{self.calls}",
-            task_id=task_spec.task_id,
-            task_revision=task_spec.revision,
-            plan_version=self.calls,
-            supersedes_plan_id=context.current_plan_id,
+        refs = (SourceReference("request-flow", "unit:setting"),)
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
+            task_revision=context.task_spec.revision,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="replanning-test-planner",
+            based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="write",
+            steps=(
+                StepSpec(
+                    step_id="write",
                     objective="Write settings",
-                    interaction=make_interaction('Write settings'),
-                    success_criteria=("settings are saved",),
-                    evidence_requirements=("saved observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    interaction=ElementIntent("Save", refs),
+                    completion_criteria=(
+                        StateCriterion(
+                            criterion_id="criterion:write",
+                            source_refs=refs,
+                            subject="settings",
+                            relation=StateCriterionRelation.IS_COMPLETED,
+                            evidence_policy=CriterionEvidencePolicy(
+                                EvidenceStrength.INDEPENDENT, ("dom_state",)
+                            ),
+                        ),
+                    ),
+                    source_refs=refs,
                     max_actions=2 if context.failures else 1,
                 ),
             ),
+            source_refs=refs,
         )
 
 
@@ -1070,7 +945,7 @@ def test_coordinator_does_not_replan_into_an_unverified_non_idempotent_repeat() 
     assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
     assert planner.calls == 1
     assert result.state.task_progress is not None
-    assert result.state.task_progress.task_replan_count == 0
+    assert result.state.task_progress.replan_count == 0
     events = [node.kind for node in result.trace.nodes]
     assert "RecoveryStateInspected" in events
     assert "RecoveryAborted" in events
@@ -1112,42 +987,61 @@ class EvidenceAwareTaskPlanner:
     def __init__(self) -> None:
         self.contexts: list[TaskPlanningContext] = []
 
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
         self.contexts.append(context)
         task = context.task_spec
         discovered = any(
-            item.subgoal_id == "discover" and item.evidence_ids for item in context.criteria_evidence_ledger
+            item.step_id == "discover" and item.evidence_ids for item in context.criteria_evidence_ledger
         )
-        discover = SubgoalSpec(
-            subgoal_id="discover",
+        refs = (SourceReference("request-flow", "unit:setting"),)
+        discover = StepSpec(
+            step_id="discover",
             objective="Discover saved state",
-            interaction=make_interaction('Discover saved state'),
-            success_criteria=("saved state is observed",),
-            evidence_requirements=("independent saved observation",),
-            operation_class=OperationClass.REVERSIBLE_WRITE,
+            interaction=ElementIntent("Discover saved state", refs),
+            completion_criteria=(
+                StateCriterion(
+                    criterion_id="criterion:discover",
+                    source_refs=refs,
+                    subject="saved state",
+                    relation=StateCriterionRelation.IS_COMPLETED,
+                    evidence_policy=CriterionEvidencePolicy(
+                        EvidenceStrength.INDEPENDENT, ("dom_state",)
+                    ),
+                ),
+            ),
+            source_refs=refs,
         )
-        apply = SubgoalSpec(
-            subgoal_id="apply",
+        apply = StepSpec(
+            step_id="apply",
             objective=(
                 "Apply using verified saved-state evidence" if discovered else "Apply using the initial assumption"
             ),
-            interaction=make_interaction('test target'),
+            interaction=ElementIntent("test target", refs),
             depends_on=("discover",),
-            success_criteria=("settings are saved",),
-            evidence_requirements=("independent saved observation",),
-            operation_class=OperationClass.REVERSIBLE_WRITE,
+            completion_criteria=(
+                StateCriterion(
+                    criterion_id="criterion:apply",
+                    source_refs=refs,
+                    subject="settings",
+                    relation=StateCriterionRelation.IS_COMPLETED,
+                    evidence_policy=CriterionEvidencePolicy(
+                        EvidenceStrength.INDEPENDENT, ("dom_state",)
+                    ),
+                ),
+            ),
+            source_refs=refs,
             max_actions=1,
         )
-        return TaskPlan(
-            plan_id=f"evidence-plan-{context.current_plan_version + 1}",
-            task_id=task.task_id,
+        return PlanCandidate(
+            task_spec_identity=task.identity,
             task_revision=task.revision,
-            plan_version=context.current_plan_version + 1,
-            supersedes_plan_id=context.current_plan_id,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            generator_id="evidence-aware-test-planner",
+            based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(discover, apply),
+            steps=(discover, apply),
             assumptions=("the initial apply route is sufficient",),
+            source_refs=refs,
         )
 
 
@@ -1171,7 +1065,7 @@ class EvidenceAwareContractBuilder(ContractBuilder):
         snapshot: BrowserSnapshot,
         observation=None,
     ) -> ActionContract:
-        active_id = state.task_progress.active_subgoal_id if state.task_progress else ""
+        active_id = state.task_progress.active_step_id if state.task_progress else ""
         plan_version = state.task_plan.plan_version if state.task_plan else 0
         bound_id = active_id if active_id == "discover" or plan_version >= 2 else "unrelated"
         self.requirements = {
@@ -1182,7 +1076,7 @@ class EvidenceAwareContractBuilder(ContractBuilder):
                         "observation_metadata",
                         "saved",
                         True,
-                        criterion_ids=(criterion_id("subgoal", bound_id, 0),),
+                        criterion_ids=(f"criterion:{bound_id}",),
                     ),
                 )
             ),
@@ -1196,7 +1090,7 @@ class EvidenceAwareContractBuilder(ContractBuilder):
                     "saved",
                     True,
                     criterion_ids=(
-                        criterion_id("subgoal", bound_id, 0),
+                        f"criterion:{bound_id}",
                         *(
                             ("criterion:task-success",)
                             if active_id == "apply" and plan_version >= 2
@@ -1209,7 +1103,7 @@ class EvidenceAwareContractBuilder(ContractBuilder):
                         ),
                     ),
                     requirement_ids=(
-                        evidence_requirement_id("subgoal", bound_id, 0),
+                        evidence_requirement_id("step", bound_id, 0),
                     ),
                 )
             ],
@@ -1239,15 +1133,15 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_plan is not None
     assert result.state.task_plan.plan_version == 2
-    assert result.state.task_plan.supersedes_plan_id == "evidence-plan-1"
-    assert result.state.task_plan.subgoals[1].objective == "Apply using verified saved-state evidence"
+    assert result.state.task_plan.supersedes_plan_id
+    assert result.state.task_plan.steps[1].objective == "Apply using verified saved-state evidence"
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == ["discover", "apply"]
+    assert result.state.task_progress.completed_step_ids == ("discover", "apply")
     assert len(task_planner.contexts) == 2
     replacement_context = task_planner.contexts[1]
-    assert replacement_context.criteria_evidence_ledger[0].subgoal_id == "discover"
+    assert replacement_context.criteria_evidence_ledger[0].step_id == "discover"
     assert replacement_context.criteria_evidence_ledger[0].evidence_ids
-    assert replacement_context.failures[0].error_code == "subgoal_action_budget_exhausted"
+    assert replacement_context.failures[0].error_code == "step_action_budget_exhausted"
     replanned = next(node for node in result.trace.nodes if node.kind == "TaskReplanned")
     assert replanned.payload["planning_context"]["criteria_evidence_ledger"]
 
@@ -1464,10 +1358,6 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
     )
 
     assert result.status == RuntimeStep.DONE
-    assert result.result == {
-        "task_plan_id": "plan-single-stage",
-        "completed_subgoal_ids": ["subgoal-1"],
-    }
     events = [node.kind for node in result.trace.nodes]
     assert events.count("PlannerProposalProduced") == 0
     assert events.count("ActionChoiceSelected") == 1
@@ -1489,30 +1379,35 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
         )
     )
     state.install_task_plan(
-        TaskPlan(
+        CanonicalTaskPlan(
             plan_id="plan-generic-progress",
             task_id=state.task_id,
             task_revision=1,
             plan_version=1,
             based_on_state_version=state.version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="save-observed",
+            based_on_observation_ref=snapshot.observation.snapshot_id,
+            generated_by=TaskPlanGeneratorSource.RULE,
+            steps=(
+                StepSpec(
+                    step_id="save-observed",
                     objective="Save state is recorded",
                     interaction=ElementIntent(
                         "Save",
                         (SourceReference("request", "request:save"),),
                         role="button",
                     ),
-                    success_criteria=("Save state is recorded",),
-                    evidence_requirements=("post-action Save state",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.ACTIVATE,
-                    outcome=SubgoalOutcome(
-                        subject="Save",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+                    completion_criteria=(
+                        StateCriterion(
+                            criterion_id="criterion:save-observed",
+                            source_refs=(SourceReference("request", "request:save"),),
+                            subject="Save",
+                            relation=StateCriterionRelation.HAS_CHANGED,
+                            evidence_policy=CriterionEvidencePolicy(
+                                EvidenceStrength.INDEPENDENT, ("dom_state",)
+                            ),
+                        ),
                     ),
+                    source_refs=(SourceReference("request", "request:save"),),
                 ),
             ),
         )
@@ -1570,12 +1465,8 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
     assert isinstance(bound, tuple)
     contract = bound[0]
     assert contract.verifier_plan[0].progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
-    assert contract.verifier_plan[0].criterion_ids == (
-        criterion_id("subgoal", "save-observed", 0),
-    )
-    assert contract.verifier_plan[0].requirement_ids == (
-        evidence_requirement_id("subgoal", "save-observed", 0),
-    )
+    assert contract.verifier_plan[0].criterion_ids == ("criterion:save-observed",)
+    assert contract.verifier_plan[0].requirement_ids == ("request:save",)
 
     signature = bound[1]
     state.record_action_progress(

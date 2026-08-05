@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from affordance_runtime.simplified_runtime_contracts import (
+    CompositeCriterion,
+    CompositeCriterionOperator,
     CriterionEvidencePolicy,
     ElementIntent,
     EvidenceStrength,
@@ -16,13 +16,12 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
     TaskPlanView,
 )
-from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
     PlanCandidate,
     PlanIssueKind,
     PlanIssueReport,
-    TaskPlanAuthorityBinder,
+    TaskPlanAuthority,
     TaskPlanDecision,
     TaskPlanDecisionStatus,
     TaskPlanGeneratorSource,
@@ -31,9 +30,6 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
 )
-from affordance_runtime.task_planning import TaskPlanActionFamily
-
-SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
 
 def _source() -> SourceReference:
@@ -89,106 +85,66 @@ def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepS
     )
 
 
-def _criterion_step(
-    step_id: str,
-    *,
-    subject: str,
-    relation: StateCriterionRelation,
-    expected_value: object = None,
-) -> StepSpec:
-    return StepSpec(
-        step_id=step_id,
-        objective=f"{subject} {relation.value}",
-        interaction=ElementIntent(subject, (_source(),)),
-        completion_criteria=(
-            _state_criterion(
-                criterion_id=f"criterion:{step_id}",
-                subject=subject,
-                relation=relation,
-                expected_value=expected_value,
-            ),
-        ),
-        source_refs=(_source(),),
-    )
-
-
-def _candidate(*steps: StepSpec) -> PlanCandidate:
+def _candidate(
+    *steps: StepSpec,
+    observation_ref: str = "snapshot:1",
+    state_version: int = 3,
+) -> PlanCandidate:
     return PlanCandidate(
         task_spec_identity="sha256:task",
         task_revision=1,
         generated_by=TaskPlanGeneratorSource.RULE,
         generator_id="rule-task-planner",
         steps=steps or (_step(),),
+        based_on_observation_ref=observation_ref,
+        based_on_state_version=state_version,
         source_refs=(_source(),),
     )
 
 
-def test_task_plan_authority_binder_preserves_bindable_action_family() -> None:
+def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> None:
     request = InitialTaskPlanRequest(
         task_spec_identity="sha256:task",
         task_revision=1,
         evaluated_at_state_version=3,
-        objective="Complete controls",
-        observation_refs=("snapshot:1",),
-        remaining_budget_steps=5,
-        operation_class=OperationClass.REVERSIBLE_WRITE,
-    )
-    candidate = _candidate(
-        _criterion_step(
-            "text",
-            subject="text_field:Myron",
-            relation=StateCriterionRelation.HAS_CHANGED,
-        ),
-        _criterion_step(
-            "slider",
-            subject="slider_value_7",
-            relation=StateCriterionRelation.HAS_CHANGED,
-        ),
-        _criterion_step(
-            "checkbox",
-            subject="checkbox_3_state",
-            relation=StateCriterionRelation.HAS_CHANGED,
-        ),
-        _criterion_step(
-            "submit",
-            subject="submit_button_state",
-            relation=StateCriterionRelation.HAS_CHANGED,
-        ),
-    )
-
-    plan = TaskPlanAuthorityBinder().bind_initial(request, candidate)
-
-    assert tuple(item.action_family for item in plan.subgoals) == (
-        TaskPlanActionFamily.TYPE_TEXT,
-        TaskPlanActionFamily.PRESS_KEY,
-        TaskPlanActionFamily.ACTIVATE,
-        TaskPlanActionFamily.ACTIVATE,
-    )
-
-
-def test_task_plan_authority_binder_does_not_infer_action_family_for_read_only_step() -> None:
-    request = InitialTaskPlanRequest(
-        task_spec_identity="sha256:task",
-        task_revision=1,
-        evaluated_at_state_version=3,
-        objective="Observe controls",
+        objective="Preserve canonical step semantics",
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
     )
-
-    plan = TaskPlanAuthorityBinder().bind_initial(
-        request,
-        _candidate(
-            _criterion_step(
-                "visible",
-                subject="submit_button_state",
-                relation=StateCriterionRelation.IS_AVAILABLE,
-            ),
-        ),
+    first = _state_criterion(
+        criterion_id="criterion:first",
+        subject="amount",
+        relation=StateCriterionRelation.EQUALS,
+        expected_value=500,
+    )
+    second = _state_criterion(
+        criterion_id="criterion:second",
+        subject="approved",
+        relation=StateCriterionRelation.EQUALS,
+        expected_value=True,
+    )
+    composite = CompositeCriterion(
+        criterion_id="criterion:all",
+        source_refs=(_source(),),
+        operator=CompositeCriterionOperator.ALL_OF,
+        child_criterion_ids=(first.criterion_id, second.criterion_id),
+    )
+    step = StepSpec(
+        step_id="step:typed",
+        objective="preserve typed completion",
+        interaction=ElementIntent("semantic:setting", (_source(),)),
+        completion_criteria=(first, second, composite),
+        source_refs=(_source(),),
     )
 
-    assert plan.subgoals[0].operation_class == OperationClass.READ_ONLY
-    assert plan.subgoals[0].action_family is None
+    decision = TaskPlanAuthority().admit_initial(request, _candidate(step))
+    assert decision.plan is not None
+    plan = decision.plan
+
+    assert plan.steps == (step,)
+    assert plan.steps[0].completion_criteria[0].expected_value == 500
+    assert plan.steps[0].completion_criteria[1].expected_value is True
+    assert plan.based_on_observation_ref == "snapshot:1"
 
 
 def _plan_view() -> TaskPlanView:
@@ -219,7 +175,7 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
     assert not hasattr(draft, "supersedes_plan_id")
-    assert not hasattr(draft, "based_on_state_version")
+    assert draft.based_on_state_version == 3
     assert draft.steps[1].depends_on == ("step:a",)
 
     with pytest.raises(ValueError, match="step ids must be unique"):
@@ -241,8 +197,6 @@ def test_task_plan_draft_rejects_authority_fields_and_bad_graph() -> None:
 
 
 def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
-    source = (SOURCE_ROOT / "task_plan_contracts.py").read_text(encoding="utf-8")
-
     candidate = PlanCandidate(
         task_spec_identity="sha256:task",
         task_revision=1,
@@ -253,8 +207,8 @@ def test_plan_candidate_is_the_canonical_unaccepted_plan_model() -> None:
     )
 
     assert isinstance(candidate, PlanCandidate)
-    assert "class PlanCandidate" in source
-    assert "TaskPlanDraft" not in source
+    assert not hasattr(candidate, "plan_id")
+    assert not hasattr(candidate, "plan_version")
 
 
 def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None:
@@ -315,7 +269,7 @@ def test_plan_issue_report_cannot_carry_plan_patch_fields() -> None:
 
 
 def test_task_plan_decision_status_invariants() -> None:
-    plan = TaskPlanAuthorityBinder().bind_initial(
+    decision = TaskPlanAuthority().admit_initial(
         InitialTaskPlanRequest(
             task_spec_identity="sha256:task",
             task_revision=1,
@@ -326,7 +280,8 @@ def test_task_plan_decision_status_invariants() -> None:
         ),
         _candidate(),
     )
-    accepted = TaskPlanDecision.accepted(plan)
+    assert decision.plan is not None
+    accepted = TaskPlanDecision.accepted(decision.plan)
     assert accepted.status == TaskPlanDecisionStatus.ACCEPTED
     assert accepted.plan_digest
 
@@ -335,7 +290,7 @@ def test_task_plan_decision_status_invariants() -> None:
     with pytest.raises(ValueError, match="rejected decision cannot carry plan"):
         TaskPlanDecision(
             TaskPlanDecisionStatus.REJECTED,
-            plan=plan,
+            plan=decision.plan,
             issues=(TaskPlanIssue("fatal", "bad"),),
         )
     with pytest.raises(ValueError, match="repair decision requires directives"):
@@ -349,7 +304,7 @@ def test_task_plan_decision_status_invariants() -> None:
     assert repair.status == TaskPlanDecisionStatus.REPAIR_REQUIRED
 
 
-def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
+def test_task_plan_authority_owns_plan_identity_versions_and_freshness() -> None:
     request = InitialTaskPlanRequest(
         task_spec_identity="sha256:task",
         task_revision=1,
@@ -358,16 +313,20 @@ def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
     )
-    binder = TaskPlanAuthorityBinder()
-    first = binder.bind_initial(request, _candidate())
-    retry = binder.bind_initial(request, _candidate())
+    authority = TaskPlanAuthority()
+    first_decision = authority.admit_initial(request, _candidate())
+    retry_decision = authority.admit_initial(request, _candidate())
+    assert first_decision.plan is not None
+    assert retry_decision.plan is not None
+    first = first_decision.plan
+    retry = retry_decision.plan
 
     assert first.plan_id == retry.plan_id
     assert first.plan_version == 1
     assert first.supersedes_plan_id == ""
     assert first.based_on_state_version == 3
 
-    revision = binder.bind_revision(
+    revision_decision = authority.admit_revision(
         TaskPlanRevisionRequest(
             task_spec_identity="sha256:task",
             task_revision=1,
@@ -396,9 +355,25 @@ def test_task_plan_authority_binder_owns_plan_identity_and_versions() -> None:
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
         ),
-        _candidate(_step("step:1"), _step("step:2", depends_on=("step:1",))),
+        _candidate(
+            _step("step:1"),
+            _step("step:2", depends_on=("step:1",)),
+            observation_ref="snapshot:2",
+            state_version=8,
+        ),
     )
-
+    assert revision_decision.plan is not None
+    revision = revision_decision.plan
     assert revision.plan_version == 2
     assert revision.supersedes_plan_id == first.plan_id
     assert revision.plan_id != first.plan_id
+
+    stale = authority.admit_initial(
+        request,
+        _candidate(observation_ref="snapshot:stale", state_version=2),
+    )
+    assert stale.status == TaskPlanDecisionStatus.REJECTED
+    assert {issue.code for issue in stale.issues} == {
+        "observation_basis_stale",
+        "state_basis_stale",
+    }

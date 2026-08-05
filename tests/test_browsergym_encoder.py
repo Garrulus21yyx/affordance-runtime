@@ -30,18 +30,18 @@ from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     Surface,
 )
-from affordance_runtime.planning import PlannerActionKind, PlannerProposal, bind_active_subgoal_verifiers
-from affordance_runtime.simplified_runtime_contracts import ElementIntent, RelationIntent, SourceReference
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal, bind_active_step_verifiers
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    RelationIntent,
+    SourceReference,
+    StateCriterion,
+    StepSpec,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import (
-    SubgoalOutcome,
-    SubgoalOutcomeRelation,
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanActionFamily,
-    TaskPlanSource,
-)
+from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.verification.mechanical import VerifierLadder, VerifierSpec
 from runtime_test_support import make_interaction, remember_observation
 
@@ -220,7 +220,7 @@ def test_click_verifier_requires_the_observed_disclosure_toggle() -> None:
 def _active_typed_outcome_state(
     *,
     value: str = "Myron",
-    relation: SubgoalOutcomeRelation = SubgoalOutcomeRelation.EQUALS,
+    relation: CriterionRelation = CriterionRelation.EQUALS,
 ) -> StateKernel:
     state = StateKernel("task-1", "Search for Myron")
     state.install_task_plan(
@@ -230,21 +230,15 @@ def _active_typed_outcome_state(
             task_revision=1,
             plan_version=1,
             based_on_state_version=state.version,
-            generated_by=TaskPlanSource.LLM,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="enter-search",
-                    objective=f"search box value {relation.value} {value}",
-                    interaction=make_interaction('search box value'),
-                    success_criteria=(f"search box value {relation.value} {value}",),
-                    evidence_requirements=("current search box value",),
-                    operation_class=OperationClass.READ_ONLY,
-                    action_family=TaskPlanActionFamily.TYPE_TEXT,
-                    outcome=SubgoalOutcome(
-                        subject="search box value",
-                        relation=relation,
-                        value=value,
-                    ),
+            based_on_observation_ref="snapshot-1",
+            generated_by=TaskPlanGeneratorSource.LLM,
+            steps=(
+                _canonical_step(
+                    "enter-search",
+                    f"search box value {relation.value} {value}",
+                    "search box value",
+                    relation,
+                    value,
                 ),
             ),
         )
@@ -254,8 +248,6 @@ def _active_typed_outcome_state(
 
 
 def _active_completed_click_outcome_state(
-    *,
-    action_family: TaskPlanActionFamily | None = TaskPlanActionFamily.ACTIVATE,
 ) -> StateKernel:
     state = StateKernel("task-1", "Click button ONE, then click button TWO")
     state.install_task_plan(
@@ -265,20 +257,15 @@ def _active_completed_click_outcome_state(
             task_revision=1,
             plan_version=1,
             based_on_state_version=state.version,
-            generated_by=TaskPlanSource.LLM,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="button-one-completed",
-                    objective="button ONE is completed",
-                    interaction=make_interaction('button ONE'),
-                    success_criteria=("button ONE is completed",),
-                    evidence_requirements=("post-click observation for button ONE",),
-                    operation_class=OperationClass.NAVIGATION,
-                    action_family=action_family,
-                    outcome=SubgoalOutcome(
-                        subject="button ONE",
-                        relation=SubgoalOutcomeRelation.IS_COMPLETED,
-                    ),
+            based_on_observation_ref="snapshot-1",
+            generated_by=TaskPlanGeneratorSource.LLM,
+            steps=(
+                _canonical_step(
+                    "button-one-completed",
+                    "button ONE is completed",
+                    "button ONE",
+                    CriterionRelation.IS_COMPLETED,
+                    None,
                 ),
             ),
         )
@@ -296,26 +283,56 @@ def _active_drag_relation_state(interaction: RelationIntent) -> StateKernel:
             task_revision=1,
             plan_version=1,
             based_on_state_version=state.version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="drag-relation",
-                    objective="source has changed",
+            based_on_observation_ref="snapshot-1",
+            generated_by=TaskPlanGeneratorSource.RULE,
+            steps=(
+                _canonical_step(
+                    "drag-relation",
+                    "source has changed",
+                    "Source",
+                    CriterionRelation.HAS_CHANGED,
+                    None,
                     interaction=interaction,
-                    success_criteria=("source has changed",),
-                    evidence_requirements=("fresh source relation state",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.DRAG,
-                    outcome=SubgoalOutcome(
-                        subject="Source",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                    ),
                 ),
             ),
         )
     )
     state.activate_next_step()
     return state
+
+
+def _canonical_step(
+    step_id: str,
+    objective: str,
+    subject: str,
+    relation: CriterionRelation,
+    expected_value: str | None,
+    *,
+    interaction: object | None = None,
+    depends_on: tuple[str, ...] = (),
+) -> StepSpec:
+    requirement_id = f"subgoal:{step_id}:evidence-requirement:0"
+    source_refs = (SourceReference("request", requirement_id),)
+    return StepSpec(
+        step_id=step_id,
+        objective=objective,
+        interaction=interaction or make_interaction(subject),
+        completion_criteria=(
+            StateCriterion(
+                criterion_id=f"subgoal:{step_id}:criterion:0",
+                source_refs=source_refs,
+                subject=subject,
+                relation=relation,
+                expected_value=expected_value,
+                evidence_policy=EvidencePolicy(
+                    minimum_strength=EvidenceStrength.INDEPENDENT,
+                    allowed_source_kinds=("dom_state",),
+                ),
+            ),
+        ),
+        source_refs=source_refs,
+        depends_on=depends_on,
+    )
 
 
 @pytest.mark.parametrize(
@@ -472,7 +489,7 @@ def test_browsergym_exact_typed_value_declares_active_subgoal_evidence() -> None
 def test_browsergym_has_changed_text_value_declares_active_subgoal_evidence() -> None:
     state = _active_typed_outcome_state(
         value="Kanesha",
-        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        relation=CriterionRelation.HAS_CHANGED,
     )
     affordance = _affordance(
         "tt",
@@ -524,7 +541,7 @@ def test_browsergym_typed_match_requires_exact_normalized_value(
 ) -> None:
     state = _active_typed_outcome_state(
         value=outcome_value,
-        relation=SubgoalOutcomeRelation.MATCHES,
+        relation=CriterionRelation.MATCHES,
     )
     affordance = _affordance(
         "search",
@@ -565,23 +582,17 @@ def test_browsergym_typed_match_requires_exact_normalized_value(
 def test_browsergym_slider_handle_progress_declares_active_subgoal_evidence() -> None:
     state = _active_typed_outcome_state(
         value="7",
-        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        relation=CriterionRelation.HAS_CHANGED,
     )
     state.task_plan = state.task_plan.model_copy(
         update={
-            "subgoals": (
-                state.task_plan.subgoals[0].model_copy(
-                    update={
-                        "objective": "slider_value_7 has changed",
-                        "success_criteria": ("slider_value_7 has changed",),
-                        "evidence_requirements": ("current slider value",),
-                        "action_family": TaskPlanActionFamily.PRESS_KEY,
-                        "outcome": SubgoalOutcome(
-                            subject="slider_value_7",
-                            relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                            value="7",
-                        ),
-                    },
+            "steps": (
+                _canonical_step(
+                    "enter-search",
+                    "slider_value_7 has changed",
+                    "slider_value_7",
+                    CriterionRelation.HAS_CHANGED,
+                    "7",
                 ),
             )
         },
@@ -628,24 +639,18 @@ def test_browsergym_slider_handle_progress_declares_active_subgoal_evidence() ->
 def test_browsergym_slider_progress_uses_goal_value_when_active_step_lost_value() -> None:
     state = _active_typed_outcome_state(
         value="",
-        relation=SubgoalOutcomeRelation.HAS_CHANGED,
+        relation=CriterionRelation.HAS_CHANGED,
     )
     state.goal = "Select -3 with the slider, click the 1st checkbox, then hit Submit."
     state.task_plan = state.task_plan.model_copy(
         update={
-            "subgoals": (
-                state.task_plan.subgoals[0].model_copy(
-                    update={
-                        "objective": "slider_value has changed",
-                        "success_criteria": ("slider_value has changed",),
-                        "evidence_requirements": ("current slider value",),
-                        "action_family": TaskPlanActionFamily.PRESS_KEY,
-                        "outcome": SubgoalOutcome(
-                            subject="slider_value",
-                            relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                            value="",
-                        ),
-                    },
+            "steps": (
+                _canonical_step(
+                    "enter-search",
+                    "slider_value has changed",
+                    "slider_value",
+                    CriterionRelation.HAS_CHANGED,
+                    None,
                 ),
             )
         },
@@ -693,7 +698,7 @@ def test_browsergym_slider_progress_uses_goal_value_when_active_step_lost_value(
         evidence_key="slider_target:17",
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
-    bound = bind_active_subgoal_verifiers(tuple(declared), state)
+    bound = bind_active_step_verifiers(tuple(declared), state)
     assert bound[-2].criterion_ids == ()
     assert bound[-2].requirement_ids == ()
     assert bound[-1].criterion_ids
@@ -888,7 +893,7 @@ def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_fai
     )
 
     report = VerifierLadder().verify_report(
-        bind_active_subgoal_verifiers(tuple(declared), state),
+        bind_active_step_verifiers(tuple(declared), state),
         ExecutionReceipt(
                 "contract",
                 "browsergym",
@@ -945,7 +950,7 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
         action=BrowserGymAction("click", {"bid": "12"}),
         affordance=affordance,
     )
-    bound = bind_active_subgoal_verifiers(tuple(declared), state)
+    bound = bind_active_step_verifiers(tuple(declared), state)
 
     assert bound[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
     assert bound[-2].criterion_ids == (
@@ -981,8 +986,8 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
     assert not report.evidence[-1].passed
 
 
-def test_browsergym_click_completed_outcome_does_not_require_task_plan_action_family() -> None:
-    state = _active_completed_click_outcome_state(action_family=None)
+def test_browsergym_click_completed_criterion_does_not_require_legacy_action_family() -> None:
+    state = _active_completed_click_outcome_state()
     affordance = _affordance(
         "semantic:one",
         action="activate",
@@ -1030,34 +1035,23 @@ def test_browsergym_checkbox_has_changed_click_declares_active_subgoal_progress(
             task_revision=1,
             plan_version=1,
             based_on_state_version=state.version,
-            generated_by=TaskPlanSource.LLM,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="slider-changed",
-                    objective="slider value has changed",
-                    interaction=make_interaction('slider value'),
-                    success_criteria=("slider value has changed",),
-                    evidence_requirements=("post-slider observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.PRESS_KEY,
-                    outcome=SubgoalOutcome(
-                        subject="slider value",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                    ),
+            based_on_observation_ref="snapshot-1",
+            generated_by=TaskPlanGeneratorSource.LLM,
+            steps=(
+                _canonical_step(
+                    "slider-changed",
+                    "slider value has changed",
+                    "slider value",
+                    CriterionRelation.HAS_CHANGED,
+                    None,
                 ),
-                SubgoalSpec(
-                    subgoal_id="checkbox-changed",
-                    objective="checkbox state has changed",
-                    interaction=make_interaction('checkbox state'),
+                _canonical_step(
+                    "checkbox-changed",
+                    "checkbox state has changed",
+                    "checkbox state",
+                    CriterionRelation.HAS_CHANGED,
+                    None,
                     depends_on=("slider-changed",),
-                    success_criteria=("checkbox state has changed",),
-                    evidence_requirements=("post-checkbox observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.ACTIVATE,
-                    outcome=SubgoalOutcome(
-                        subject="checkbox state",
-                        relation=SubgoalOutcomeRelation.HAS_CHANGED,
-                    ),
                 ),
             ),
         )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
 
 from affordance_runtime.execution_phase import ActionStage, ActionStageInput
 from affordance_runtime.perception_phase import PerceptionStage, PerceptionStageInput
@@ -20,53 +19,20 @@ from affordance_runtime.progress_phase import (
     ProgressStageInput,
 )
 from affordance_runtime.recovery_phase import RecoveryStage
-from affordance_runtime.recovery_protocol import RecoveryKind
-from affordance_runtime.recovery_state_projection import (
-    available_owner_recovery_kinds,
-)
 from affordance_runtime.runtime import RunRequest
-from affordance_runtime.runtime_committer import (
-    RuntimeCommitSession,
-    RuntimeCommitter,
-    perception_state_view,
-    runtime_state_snapshot,
-)
+from affordance_runtime.runtime_committer import RuntimeCommitter
+from affordance_runtime.runtime_loop_phase import RuntimeCommitSession
 from affordance_runtime.runtime_result_phase import (
     RunResult,
     RuntimeResultPhase,
 )
+from affordance_runtime.runtime_state_projection import (
+    perception_state_view,
+    runtime_state_snapshot,
+)
 from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.trace import TraceDag
-
-
-def _available_action_recovery_kinds(
-    failure_phase: str,
-    contract: Any,
-    state: Any,
-) -> frozenset[RecoveryKind]:
-    available: set[RecoveryKind] = set()
-    if failure_phase == "grounding_binding":
-        available.add(RecoveryKind.REGROUND)
-    if failure_phase == "preflight":
-        available.add(RecoveryKind.REOBSERVE)
-    if failure_phase in {"execution_uncertain", "verification"}:
-        available.update({RecoveryKind.REOBSERVE, RecoveryKind.INSPECT_POST_STATE})
-    if contract is None:
-        return frozenset(available)
-    if contract.idempotency_key:
-        available.add(RecoveryKind.RETRY_IDEMPOTENT)
-    if contract.compensation:
-        available.add(RecoveryKind.COMPENSATE)
-    route_plan = contract.route_plan
-    if route_plan is not None and any(
-        item.candidate_id != route_plan.selected_candidate.candidate_id
-        for item in route_plan.viable_alternatives
-    ):
-        available.add(RecoveryKind.REROUTE)
-    tried_backends = {state.last_receipt.backend} if state.last_receipt is not None else set()
-    if any(item not in tried_backends for item in contract.fallback_backends):
-        available.add(RecoveryKind.REROUTE)
-    return frozenset(available)
+from affordance_runtime.verification.contracts import ObservationDisposition
 
 
 @dataclass(frozen=True)
@@ -115,6 +81,7 @@ class RunCoordinator:
             budget,
             upstream_trace,
         )
+        reusable_capture = None
         while True:
             if (terminal := loop.check_budget()) is not None:
                 return terminal
@@ -122,15 +89,19 @@ class RunCoordinator:
                 PerceptionStageInput(
                     envelope=envelope,
                     state_view=perception_state_view(envelope, loop.state, loop.budget),
+                    initial_snapshot=reusable_capture,
                 )
             )
+            reusable_capture = None
             loop.commit(perception)
             if perception.failure is not None:
                 if not self.action_stage.recovery_enabled:
                     return loop.fail_observation(perception.failure)
                 terminal = loop.recover(
                     perception.failure,
-                    frozenset({RecoveryKind.REOBSERVE}),
+                    self.recovery_stage.available_commands(
+                        perception.failure, runtime_state_snapshot(loop.state)
+                    ),
                     preserve_terminal=True,
                 )
                 if terminal is not None:
@@ -145,11 +116,8 @@ class RunCoordinator:
                 if self.progress_stage.task_skill_runtime is not None
                 else None
             )
-            recovered_verification, recovery_terminal, loop.parent = (
-                self.committer.commit_recovery_observation(
-                    loop.state,
-                    loop.trace,
-                    loop.parent,
+            recovered_verification, recovery_terminal = (
+                loop.commit_recovery_observation(
                     capture,
                     self.progress_stage.execution_loop,
                     task_skill_progress=recovery_skill_progress,
@@ -195,8 +163,8 @@ class RunCoordinator:
             if planning.failure is not None:
                 terminal = loop.recover(
                     planning.failure,
-                    available_owner_recovery_kinds(
-                        self.recovery_stage.owner_dispatcher
+                    self.recovery_stage.available_commands(
+                        planning.failure, runtime_state_snapshot(loop.state)
                     ),
                 )
                 if terminal is not None:
@@ -237,11 +205,8 @@ class RunCoordinator:
             if action.failure is not None:
                 terminal = loop.recover(
                     action.failure,
-                    available_owner_recovery_kinds(self.recovery_stage.owner_dispatcher)
-                    | _available_action_recovery_kinds(
-                        action.failure.phase.value,
-                        loop.state.current_contract,
-                        loop.state,
+                    self.recovery_stage.available_commands(
+                        action.failure, runtime_state_snapshot(loop.state)
                     ),
                 )
                 if terminal is not None:
@@ -275,14 +240,22 @@ class RunCoordinator:
             if progress.failure is not None:
                 terminal = loop.recover(
                     progress.failure,
-                    available_owner_recovery_kinds(self.recovery_stage.owner_dispatcher)
-                    | _available_action_recovery_kinds(
-                        progress.failure.phase.value,
-                        loop.state.current_contract,
-                        loop.state,
+                    self.recovery_stage.available_commands(
+                        progress.failure, runtime_state_snapshot(loop.state)
                     ),
                     terminate_all_handoffs=True,
                 )
                 if terminal is not None:
                     return terminal
                 continue
+            continuation = (
+                progress.output.loop_evaluation.observation_continuation
+                if progress.output is not None
+                and progress.output.loop_evaluation is not None
+                else None
+            )
+            if continuation is not None and continuation.disposition in {
+                ObservationDisposition.REUSE,
+                ObservationDisposition.AUGMENT_TARGETED,
+            }:
+                reusable_capture = progress.output.capture

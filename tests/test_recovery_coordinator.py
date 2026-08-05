@@ -77,7 +77,7 @@ def _failure(
         error_code="runtime_failure",
         message="generic runtime failure",
         state_version=3,
-        active_subgoal_id="subgoal-1",
+        active_step_id="subgoal-1",
         expected_effect="complete the current semantic obligation",
         effect_status=effect_status,
         attempted_strategy_ids=attempted,

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from affordance_runtime.active_perception import (
     EvidenceGap,
+    ObservationContinuationPolicy,
     PerceptionResolution,
     PerceptionResolutionStatus,
     ProbePlan,
@@ -38,10 +39,11 @@ from affordance_runtime.perception_session import (
     PerceptionSession,
 )
 from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.simplified_runtime_contracts import StepSpec
 from affordance_runtime.stage_protocol import RuntimeEvent, RuntimeTransition, StageResult
 from affordance_runtime.task_intake import OperationClass
-from affordance_runtime.task_planning import SubgoalSpec
 from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.contracts import ObservationContinuation
 
 
 @dataclass(frozen=True)
@@ -52,9 +54,9 @@ class PerceptionStateView:
     active_perception_count: int
     task_revision: int
     plan_version: int
-    active_subgoal_id: str
+    active_step_id: str
     remaining_budgets: RemainingRecoveryBudgets
-    active_subgoal: SubgoalSpec | str = ""
+    active_subgoal: StepSpec | str = ""
     attempted_probe_fingerprints: frozenset[str] = frozenset()
     failed_sources: frozenset[GroundingSource] = frozenset()
     effectful_action: bool = False
@@ -83,6 +85,7 @@ class ObservationOutput:
     probe_receipts: tuple[ProbeReceipt, ...] = ()
     perception_resolution: PerceptionResolution | None = None
     artifact_refs: tuple[str, ...] = ()
+    continuation: ObservationContinuation | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,9 @@ class PerceptionStage:
     budget: object | None = None
     observation_builder: CanonicalObservationBuilder = CanonicalObservationBuilder()
     observation_store: InMemoryObservationStore = field(default_factory=InMemoryObservationStore)
+    continuation_policy: ObservationContinuationPolicy = field(
+        default_factory=ObservationContinuationPolicy
+    )
 
     def run(self, stage_input: PerceptionStageInput) -> StageResult[ObservationOutput]:
         view = stage_input.state_view
@@ -129,7 +135,7 @@ class PerceptionStage:
                     state_version=view.state_version,
                     task_revision=view.task_revision,
                     plan_version=view.plan_version,
-                    active_subgoal_id=view.active_subgoal_id,
+                    active_step_id=view.active_step_id,
                     expected_effect=stage_input.envelope.goal,
                     remaining_budgets=view.remaining_budgets,
                     recoverable=True,
@@ -204,6 +210,7 @@ class PerceptionStage:
             probe_receipts=receipts,
             perception_resolution=resolution,
             artifact_refs=tuple(dict.fromkeys(artifact_refs)),
+            continuation=self.continuation_policy.decide(canonical_observations[-1]),
         )
         transition = RuntimeTransition(
             phase=phase,
@@ -242,7 +249,7 @@ class PerceptionStage:
                 state_version=view.state_version + len(captured),
                 task_revision=view.task_revision,
                 plan_version=view.plan_version,
-                active_subgoal_id=view.active_subgoal_id,
+                active_step_id=view.active_step_id,
                 observation_epoch_id=snapshot.observation.snapshot_id,
                 snapshot_id=snapshot.observation.snapshot_id,
                 expected_effect=stage_input.envelope.goal,
@@ -314,7 +321,7 @@ class PerceptionStage:
                     run_id=stage_input.envelope.task_id,
                     task_revision=view.task_revision,
                     plan_version=view.plan_version,
-                    active_subgoal_id=view.active_subgoal_id,
+                    active_step_id=view.active_step_id,
                     state_version=view.state_version + len(captured),
                     remaining_observations=max(0, remaining),
                     attempted_probe_fingerprints=frozenset(attempted),

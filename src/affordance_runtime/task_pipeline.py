@@ -26,7 +26,8 @@ from affordance_runtime.stage_protocol import (
     build_failure_owner_handoff,
 )
 from affordance_runtime.task_intake import CompilationIssue, CompilationStatus, TaskStructure, UserRequest
-from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
+from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.task_planning import LegacyTaskPlanProviderAdapter
 from affordance_runtime.task_spec_authority import TaskSpecAdmissionResult, TaskSpecAuthority
 from affordance_runtime.trace import TraceDag, TraceNode
 
@@ -117,7 +118,7 @@ class GeneralistTaskPipeline:
                             flow.lifecycle,
                             planner=replace(
                                 task_planner,
-                                complex_planner=LLMTaskPlanner(self.compiler.model),
+                                complex_planner=LegacyTaskPlanProviderAdapter(self.compiler.model),
                             ),
                         ),
                     ),

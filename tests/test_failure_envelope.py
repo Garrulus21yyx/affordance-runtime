@@ -36,7 +36,7 @@ def test_failure_envelope_is_valid_without_proposal_or_contract() -> None:
         state_version=4,
         task_revision=2,
         plan_version=1,
-        active_subgoal_id="subgoal-1",
+        active_step_id="subgoal-1",
         remaining_budgets=_budgets(),
     )
 
@@ -54,7 +54,7 @@ def test_semantic_family_excludes_target_backend_and_dynamic_debug_values() -> N
         error_code="binding_failed",
         message="selector=#save backend=dom target=abc123 failed at 100",
         state_version=1,
-        active_subgoal_id="save-settings",
+        active_step_id="save-settings",
         expected_effect="persist notification preference",
         snapshot_id="snapshot-a",
         debug_context={"backend": "dom", "target": "abc123"},
@@ -67,7 +67,7 @@ def test_semantic_family_excludes_target_backend_and_dynamic_debug_values() -> N
         error_code="binding_failed",
         message="selector=#commit backend=visual target=def456 failed at 200",
         state_version=2,
-        active_subgoal_id="save-settings",
+        active_step_id="save-settings",
         expected_effect="persist notification preference",
         snapshot_id="snapshot-b",
         debug_context={"backend": "visual", "target": "def456"},

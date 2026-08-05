@@ -27,15 +27,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.simplified_runtime_contracts import ElementIntent
-from affordance_runtime.task_intake import OperationClass
-from affordance_runtime.task_planning import (
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanningContext,
-    TaskPlanSource,
-)
-from affordance_runtime.task_source_references import task_source_refs
+from affordance_runtime.task_planner import TaskPlanningContext
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
@@ -138,44 +130,11 @@ class PricingPlanner:
 class PricingTaskPlanner:
     """Reference-app multi-stage plan; no selectors or backend authority."""
 
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        return TaskPlan(
-            plan_id=f"pricing-plan-v{context.current_plan_version + 1}",
-            task_id=context.task_spec.task_id,
-            task_revision=context.task_spec.revision,
-            plan_version=context.current_plan_version + 1,
-            supersedes_plan_id=context.current_plan_id,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="reveal-pro",
-                    objective="Reveal the Pro plan limits",
-                    interaction=ElementIntent(
-                        "Show Pro limits",
-                        task_source_refs(context.task_spec),
-                        role="button",
-                    ),
-                    success_criteria=("Pro limits are structurally visible",),
-                    evidence_requirements=("post-action DOM shows visible Pro limits",),
-                    operation_class=OperationClass.READ_ONLY,
-                ),
-                SubgoalSpec(
-                    subgoal_id="reveal-enterprise",
-                    objective="Reveal the Enterprise plan limits",
-                    interaction=ElementIntent(
-                        "Show Enterprise limits",
-                        task_source_refs(context.task_spec),
-                        role="button",
-                    ),
-                    depends_on=("reveal-pro",),
-                    success_criteria=("Enterprise limits are structurally visible",),
-                    evidence_requirements=("post-action DOM shows visible Enterprise limits",),
-                    operation_class=OperationClass.READ_ONLY,
-                ),
-            ),
-            assumptions=("pricing cards can be revealed independently",),
-        )
+    def generate_candidate(self, context: TaskPlanningContext):  # noqa: ANN201
+        from affordance_runtime.task_plan_generators import PricingPlanCandidateGenerator
+
+        return PricingPlanCandidateGenerator().generate(context)
+
 
 
 @dataclass(frozen=True)

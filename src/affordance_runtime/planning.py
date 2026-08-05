@@ -31,7 +31,15 @@ from affordance_runtime.scope_authorization import (
     ProposalScopeEvaluator,
     ScopeRejectionKind,
 )
-from affordance_runtime.simplified_runtime_contracts import RelationIntent, StepActivityStatus
+from affordance_runtime.simplified_runtime_contracts import (
+    CollectionIntent,
+    ElementIntent,
+    ElementOperationKind,
+    RegionIntent,
+    RelationIntent,
+    StepActivityStatus,
+    StepSpec,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
@@ -248,11 +256,11 @@ def _active_step_scope(
 ) -> ActiveStepScope | None:
     if state.task_plan is None or state.task_progress is None:
         return None
-    active_step_id = state.task_progress.active_subgoal_id
+    active_step_id = state.task_progress.active_step_id
     if not active_step_id:
         return None
     subgoal = next(
-        (item for item in state.task_plan.subgoals if item.subgoal_id == active_step_id),
+        (item for item in state.task_plan.steps if item.step_id == active_step_id),
         None,
     )
     if subgoal is None:
@@ -279,7 +287,7 @@ def _active_step_scope(
         permitted_destination_ids=tuple(
             item.target_id for item in grounding.destinations
         ),
-        permitted_action_kinds=((subgoal.action_family.value,) if subgoal.action_family is not None else ()),
+        permitted_action_kinds=_step_action_kinds(subgoal),
     )
 
 
@@ -329,14 +337,14 @@ def _canonical_active_step_scope(
 ) -> ActiveStepScope | None:
     if state.task_plan is None or state.task_progress is None:
         return None
-    active_step_id = state.task_progress.active_subgoal_id
+    active_step_id = state.task_progress.active_step_id
     if not active_step_id:
         return None
     subgoal = next(
         (
             item
-            for item in state.task_plan.subgoals
-            if item.subgoal_id == active_step_id
+            for item in state.task_plan.steps
+            if item.step_id == active_step_id
         ),
         None,
     )
@@ -373,12 +381,25 @@ def _canonical_active_step_scope(
         permitted_destination_ids=tuple(
             item.target_id for item in grounding.destinations
         ),
-        permitted_action_kinds=(
-            (subgoal.action_family.value,)
-            if subgoal.action_family is not None
-            else ()
-        ),
+        permitted_action_kinds=_step_action_kinds(subgoal),
     )
+
+
+def _step_action_kinds(step: StepSpec) -> tuple[str, ...]:
+    interaction = step.interaction
+    if isinstance(interaction, RegionIntent):
+        return (PlannerActionKind.POINT_ACTIVATE.value,)
+    if isinstance(interaction, CollectionIntent):
+        return (PlannerActionKind.SELECT_OPTION.value,)
+    if isinstance(interaction, RelationIntent):
+        return (PlannerActionKind.DRAG.value,)
+    if isinstance(interaction, ElementIntent):
+        return {
+            ElementOperationKind.FOCUS: (PlannerActionKind.FOCUS.value,),
+            ElementOperationKind.SCROLL_FORWARD: (PlannerActionKind.SCROLL.value,),
+            ElementOperationKind.SCROLL_BACKWARD: (PlannerActionKind.SCROLL.value,),
+        }.get(interaction.operation, ())
+    return ()
 
 
 def _canonical_active_value_transfer_source_target(
@@ -391,8 +412,8 @@ def _canonical_active_value_transfer_source_target(
     active = next(
         (
             item
-            for item in state.task_plan.subgoals
-            if item.subgoal_id == state.task_progress.active_subgoal_id
+            for item in state.task_plan.steps
+            if item.step_id == state.task_progress.active_step_id
         ),
         None,
     )
@@ -435,8 +456,8 @@ def _active_value_transfer_source_target(
     active = next(
         (
             item
-            for item in state.task_plan.subgoals
-            if item.subgoal_id == state.task_progress.active_subgoal_id
+            for item in state.task_plan.steps
+            if item.step_id == state.task_progress.active_step_id
         ),
         None,
     )
@@ -646,17 +667,17 @@ class ContractRequirements:
 
 @dataclass(frozen=True)
 class TaskPlanProgressTarget:
-    """Runtime-owned target for binding verifier evidence to a TaskPlan subgoal."""
+    """Runtime-owned target for binding verifier evidence to a TaskPlan step."""
 
     plan_id: str
     plan_version: int
-    subgoal_id: str
+    step_id: str
     based_on_state_version: int
 
 
 @dataclass(frozen=True)
-class SubgoalEvidenceBinder:
-    """Validate explicit verifier-to-subgoal links without inferring by timing."""
+class StepEvidenceBinder:
+    """Validate explicit verifier-to-step links without inferring by timing."""
 
     def bind(
         self,
@@ -673,30 +694,22 @@ class SubgoalEvidenceBinder:
         ):
             return tuple(self._strip_subgoal_links(item) for item in verifier_plan)
         active_id = (
-            progress_target.subgoal_id
+            progress_target.step_id
             if progress_target is not None
-            else state.task_progress.active_subgoal_id
+            else state.task_progress.active_step_id
         )
-        subgoal = next(
-            (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+        step = next(
+            (item for item in state.task_plan.steps if item.step_id == active_id),
             None,
         )
-        if subgoal is None:
+        if step is None:
             return verifier_plan
-        if progress_target is not None and not set(subgoal.depends_on).issubset(
-            state.task_progress.completed_subgoal_ids
+        if progress_target is not None and not set(step.depends_on).issubset(
+            state.task_progress.completed_step_ids
         ):
             return verifier_plan
-        criterion_prefix = f"subgoal:{subgoal.subgoal_id}:criterion:"
-        requirement_prefix = f"subgoal:{subgoal.subgoal_id}:evidence-requirement:"
-        allowed_criteria = {
-            f"{criterion_prefix}{index}"
-            for index, _description in enumerate(subgoal.success_criteria)
-        }
-        allowed_requirements = {
-            f"{requirement_prefix}{index}"
-            for index, _description in enumerate(subgoal.evidence_requirements)
-        }
+        allowed_criteria = {item.criterion_id for item in step.completion_criteria}
+        allowed_requirements = {item.source_unit_id for item in step.source_refs}
         return tuple(
             self._validate_spec(
                 item,
@@ -781,21 +794,21 @@ def _progress_target_current(
         progress_target.plan_id == state.task_plan.plan_id
         and progress_target.plan_version == state.task_plan.plan_version
         and progress_target.based_on_state_version == state.version
-        and progress_target.subgoal_id
-        not in set(state.task_progress.completed_subgoal_ids)
-        | set(state.task_progress.failed_subgoal_ids)
+        and progress_target.step_id
+        not in set(state.task_progress.completed_step_ids)
+        | set(state.task_progress.failed_step_ids)
     )
 
 
-def bind_active_subgoal_verifiers(
+def bind_active_step_verifiers(
     verifier_plan: tuple[VerifierSpec, ...],
     state: StateKernel,
     *,
     progress_target: TaskPlanProgressTarget | None = None,
 ) -> tuple[VerifierSpec, ...]:
-    """Compatibility entrypoint for explicit subgoal evidence validation."""
+    """Bind explicit verifier evidence to the current canonical step."""
 
-    return SubgoalEvidenceBinder().bind(
+    return StepEvidenceBinder().bind(
         verifier_plan,
         state,
         progress_target=progress_target,
@@ -823,7 +836,7 @@ def resolve_task_plan_progress_target(
     return TaskPlanProgressTarget(
         plan_id=state.task_plan.plan_id,
         plan_version=state.task_plan.plan_version,
-        subgoal_id=scope.active_step_id or "",
+        step_id=scope.active_step_id or "",
         based_on_state_version=state.version,
     )
 

@@ -40,16 +40,11 @@ from affordance_runtime.task_intake import (
     UserRequest,
 )
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
-from affordance_runtime.task_planning import (
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanningContext,
-    TaskPlanSource,
-)
+from affordance_runtime.task_plan_generators import RulePlanCandidateGenerator
+from affordance_runtime.task_planner import TaskPlanningContext
 from affordance_runtime.task_skills import TaskSkillRuntimeDecision
 from affordance_runtime.task_spec_authority import MinimalIntentProposal
 from affordance_runtime.verification.contracts import SuccessExpression
-from runtime_test_support import make_interaction
 
 
 def _snapshot(sequence: int, *, completion: bool = False) -> BrowserSnapshot:
@@ -287,28 +282,11 @@ class FailOnceTaskPlanner:
     def __init__(self) -> None:
         self.calls = 0
 
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
+    def generate_candidate(self, context: TaskPlanningContext):
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("transient task-plan schema failure")
-        return TaskPlan(
-            plan_id="recovered-task-plan",
-            task_id=context.task_spec.task_id,
-            task_revision=context.task_spec.revision,
-            plan_version=1,
-            based_on_state_version=context.state_version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="inspect",
-                    objective="Inspect the selected account",
-                    interaction=make_interaction('Inspect the selected account'),
-                    success_criteria=("selected account is identified",),
-                    evidence_requirements=("current account evidence",),
-                    operation_class=OperationClass.READ_ONLY,
-                ),
-            ),
-        )
+        return RulePlanCandidateGenerator().generate(context)
 
 
 def _task_spec() -> TaskSpec:

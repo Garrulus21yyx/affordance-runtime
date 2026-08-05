@@ -26,7 +26,7 @@ from affordance_runtime.perception import (
     perception_task_terms,
 )
 from affordance_runtime.runtime import RunRequest
-from affordance_runtime.task_planning import SubgoalSpec
+from affordance_runtime.simplified_runtime_contracts import StepSpec
 from affordance_runtime.unified_observation import (
     CoverageCompleteness,
     CoverageStatus,
@@ -125,7 +125,7 @@ class ObservationSource(Protocol):
 class PerceptionCaptureRequest:
     envelope: RunRequest
     sequence: int
-    active_subgoal: SubgoalSpec | str = ""
+    active_subgoal: StepSpec | str = ""
     failed_sources: frozenset[GroundingSource] = frozenset()
 
     def __post_init__(self) -> None:
@@ -185,7 +185,7 @@ class PerceptionSession:
                         for item in (
                             envelope.task_spec.objective,
                             active_subgoal.objective
-                            if isinstance(active_subgoal, SubgoalSpec)
+                            if isinstance(active_subgoal, StepSpec)
                             else active_subgoal or "",
                         )
                         if item

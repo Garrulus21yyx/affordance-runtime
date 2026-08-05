@@ -46,7 +46,7 @@ from affordance_runtime.perception_session import (
 from affordance_runtime.planning import (
     PlannerActionKind,
     ProposalRejected,
-    bind_active_subgoal_verifiers,
+    bind_active_step_verifiers,
     proposal_error_code,
     proposal_record,
     resolve_task_plan_progress_target,
@@ -309,7 +309,7 @@ class ActionStage:
         contract = replace(
             contract,
             verifier_plan=list(
-                bind_active_subgoal_verifiers(
+                bind_active_step_verifiers(
                     tuple(contract.verifier_plan),
                     cast(Any, stage_input.state_view),
                     progress_target=progress_target,
@@ -621,8 +621,8 @@ class ActionStage:
                     else 1
                 ),
                 plan_version=plan.plan_version if plan is not None else 0,
-                active_subgoal_id=(
-                    progress.active_subgoal_id if progress is not None else ""
+                active_step_id=(
+                    progress.active_step_id if progress is not None else ""
                 ),
                 state_version=stage_input.state_view.version,
                 remaining_observations=stage_input.remaining_budgets.observations,
@@ -786,7 +786,7 @@ class ActionStage:
         rebound = replace(
             rebound,
             verifier_plan=list(
-                bind_active_subgoal_verifiers(
+                bind_active_step_verifiers(
                     tuple(rebound.verifier_plan),
                     cast(Any, stage_input.state_view),
                     progress_target=progress_target,
@@ -879,7 +879,7 @@ class ActionStage:
             state_version=view.version,
             task_revision=plan.task_revision if plan is not None else stage_input.envelope.task_spec.revision if stage_input.envelope.task_spec is not None else 1,
             plan_version=plan.plan_version if plan is not None else 0,
-            active_subgoal_id=view.task_progress.active_subgoal_id if view.task_progress is not None else "",
+            active_step_id=view.task_progress.active_step_id if view.task_progress is not None else "",
             observation_epoch_id=stage_input.capture.observation.snapshot_id,
             snapshot_id=stage_input.capture.observation.snapshot_id,
             proposal_id=(
@@ -1000,7 +1000,7 @@ def _capture_request(
     return PerceptionCaptureRequest(
         envelope=stage_input.envelope,
         sequence=stage_input.state_view.observation_count + 1 + sequence_offset,
-        active_subgoal=TaskPlanLifecycle.active_subgoal_for_perception(
+        active_subgoal=TaskPlanLifecycle.active_step_for_perception(
             cast(Any, stage_input.state_view)
         )
         or "",

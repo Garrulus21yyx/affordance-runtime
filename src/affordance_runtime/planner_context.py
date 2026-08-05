@@ -478,14 +478,9 @@ def _satisfied_action_targets(state: StateKernel) -> dict[str, tuple[str, ...]]:
 
 
 def _active_subgoal_action_family(state: StateKernel) -> str:
-    if state.task_plan is None or state.task_progress is None:
-        return ""
-    active_id = state.task_progress.active_subgoal_id
-    subgoal = next(
-        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
-        None,
-    )
-    return subgoal.action_family.value if subgoal is not None and subgoal.action_family else ""
+    """Legacy model-view field; canonical StepSpec does not prescribe an action kind."""
+
+    return ""
 
 
 def _permitted_action_kinds(

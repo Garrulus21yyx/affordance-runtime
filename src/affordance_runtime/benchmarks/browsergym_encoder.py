@@ -21,10 +21,16 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
-from affordance_runtime.simplified_runtime_contracts import CollectionIntent, RegionIntent, RelationIntent
+from affordance_runtime.semantics import CriterionRelation
+from affordance_runtime.simplified_runtime_contracts import (
+    CollectionIntent,
+    RegionIntent,
+    RelationIntent,
+    StateCriterion,
+    StepSpec,
+)
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
-from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
 from affordance_runtime.unified_grounding import source_affordance_for_candidate
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.visual_contracts import VisualContractBinder
@@ -488,21 +494,18 @@ def declare_browsergym_active_subgoal_evidence(
 
     if not verifier_plan or state.task_plan is None or state.task_progress is None:
         return verifier_plan
-    active_id = state.task_progress.active_subgoal_id
+    active_id = state.task_progress.active_step_id
     active = next(
-        (item for item in state.task_plan.subgoals if item.subgoal_id == active_id),
+        (item for item in state.task_plan.steps if item.step_id == active_id),
         None,
     )
+    criterion = _primary_state_completion_criterion(active)
     if (
         active is None
-        or active.outcome is None
-        or (
-            active.action_family is not None
-            and active.action_family.value != proposal.action_kind.value
-        )
+        or criterion is None
         or (
             not isinstance(active.interaction, RelationIntent)
-            and not _browsergym_outcome_target_matches(active.outcome.subject, affordance)
+            and not _browsergym_outcome_target_matches(criterion.subject, affordance)
         )
     ):
         return verifier_plan
@@ -515,7 +518,7 @@ def declare_browsergym_active_subgoal_evidence(
         return _append_authoritative_progress_spec(verifier_plan, spatial_progress)
     completed_click_progress = _browsergym_completed_click_progress_spec(
         action,
-        relation=active.outcome.relation,
+        relation=criterion.relation,
     )
     if completed_click_progress is not None:
         declared = list(verifier_plan)
@@ -537,8 +540,8 @@ def declare_browsergym_active_subgoal_evidence(
     if not _browsergym_postcondition_proves_outcome(
         action,
         verifier_plan[-1],
-        relation=active.outcome.relation,
-        outcome_value=active.outcome.value,
+        relation=criterion.relation,
+        outcome_value="" if criterion.expected_value is None else str(criterion.expected_value),
         affordance=affordance,
         collection_intent=(
             active.interaction
@@ -616,11 +619,11 @@ def _browsergym_outcome_target_matches(subject: str, affordance: Affordance) -> 
 def _browsergym_completed_click_progress_spec(
     action: BrowserGymAction,
     *,
-    relation: SubgoalOutcomeRelation,
+    relation: CriterionRelation,
 ) -> VerifierSpec | None:
     if action.name not in {"click", "click_no_navigation"}:
         return None
-    if relation != SubgoalOutcomeRelation.IS_COMPLETED:
+    if relation != CriterionRelation.IS_COMPLETED:
         return None
     action_bid = str(action.arguments.get("bid") or "")
     if not action_bid:
@@ -637,14 +640,15 @@ def _browsergym_completed_click_progress_spec(
 def _browsergym_spatial_point_progress_spec(
     action: BrowserGymAction,
     *,
-    active: SubgoalSpec,
+    active: StepSpec,
     snapshot: BrowserSnapshot | None,
 ) -> VerifierSpec | None:
+    criterion = _primary_state_completion_criterion(active)
     if (
         action.name != "mouse_click"
         or not isinstance(active.interaction, RegionIntent)
-        or active.outcome is None
-        or active.outcome.relation != SubgoalOutcomeRelation.IS_COMPLETED
+        or criterion is None
+        or criterion.relation != CriterionRelation.IS_COMPLETED
         or snapshot is None
     ):
         return None
@@ -677,7 +681,7 @@ def _browsergym_spatial_point_progress_spec(
 def _browsergym_drag_progress_spec(
     action: BrowserGymAction,
     *,
-    active: SubgoalSpec,
+    active: StepSpec,
     affordance: Affordance,
 ) -> VerifierSpec | None:
     if action.name not in {"drag_and_drop", "mouse_drag_and_drop"}:
@@ -718,7 +722,7 @@ def _browsergym_slider_exact_progress_spec(
     action: BrowserGymAction,
     verifier: VerifierSpec,
     *,
-    active: SubgoalSpec,
+    active: StepSpec,
     proposal: PlannerProposal,
     state: StateKernel,
 ) -> VerifierSpec | None:
@@ -743,17 +747,23 @@ def _browsergym_slider_exact_progress_spec(
 
 def _requested_slider_progress_value(
     *,
-    active: SubgoalSpec,
+    active: StepSpec,
     proposal: PlannerProposal,
     state: StateKernel,
 ) -> str | None:
-    if active.outcome is not None and active.outcome.value.strip():
-        return active.outcome.value.strip()
+    criterion = _primary_state_completion_criterion(active)
+    if criterion is not None and criterion.expected_value is not None:
+        value = str(criterion.expected_value).strip()
+        if value:
+            return value
     candidates = (
-        active.outcome.subject if active.outcome is not None else "",
+        criterion.subject if criterion is not None else "",
         active.objective,
-        " ".join(active.success_criteria),
-        " ".join(active.evidence_requirements),
+        " ".join(
+            item.subject
+            for item in active.completion_criteria
+            if isinstance(item, StateCriterion)
+        ),
         proposal.subgoal,
         " ".join(proposal.expected_effects),
         " ".join(proposal.evidence_requirements),
@@ -764,6 +774,15 @@ def _requested_slider_progress_value(
         if value is not None:
             return value
     return None
+
+
+def _primary_state_completion_criterion(step: StepSpec | None) -> StateCriterion | None:
+    if step is None:
+        return None
+    return next(
+        (item for item in step.completion_criteria if isinstance(item, StateCriterion)),
+        None,
+    )
 
 
 def _single_slider_numeric_value(text: str) -> str | None:
@@ -786,7 +805,7 @@ def _browsergym_postcondition_proves_outcome(
     action: BrowserGymAction,
     verifier: VerifierSpec,
     *,
-    relation: SubgoalOutcomeRelation,
+    relation: CriterionRelation,
     outcome_value: str,
     affordance: Affordance,
     collection_intent: CollectionIntent | None = None,
@@ -798,14 +817,14 @@ def _browsergym_postcondition_proves_outcome(
         return (
             relation
             in {
-                SubgoalOutcomeRelation.EQUALS,
-                SubgoalOutcomeRelation.HAS_CHANGED,
-                SubgoalOutcomeRelation.MATCHES,
+                CriterionRelation.EQUALS,
+                CriterionRelation.HAS_CHANGED,
+                CriterionRelation.MATCHES,
             }
             and bool(normalized_outcome)
             and actual == normalized_outcome
         ) or (
-            relation == SubgoalOutcomeRelation.CONTAINS
+            relation == CriterionRelation.CONTAINS
             and bool(normalized_outcome)
             and normalized_outcome in actual
         )
@@ -822,34 +841,34 @@ def _browsergym_postcondition_proves_outcome(
             else [normalized_outcome]
         )
         return bool(intended_members) and (
-            (relation == SubgoalOutcomeRelation.IS_SELECTED and selected == intended_members)
+            (relation == CriterionRelation.IS_SELECTED and selected == intended_members)
             or
-            (relation == SubgoalOutcomeRelation.EQUALS and selected == [normalized_outcome])
-            or (relation == SubgoalOutcomeRelation.CONTAINS and normalized_outcome in selected)
+            (relation == CriterionRelation.EQUALS and selected == [normalized_outcome])
+            or (relation == CriterionRelation.CONTAINS and normalized_outcome in selected)
             or (
                 collection_intent is None
-                and relation == SubgoalOutcomeRelation.IS_SELECTED
+                and relation == CriterionRelation.IS_SELECTED
                 and normalized_outcome in selected
             )
         )
     if action.name == "press" and verifier.kind == "control_state":
-        return relation == SubgoalOutcomeRelation.HAS_CHANGED and "changed_from" in expected
+        return relation == CriterionRelation.HAS_CHANGED and "changed_from" in expected
     if action.name == "focus" and verifier.kind == "state_delta_or_terminal":
         return (
-            relation == SubgoalOutcomeRelation.IS_COMPLETED
+            relation == CriterionRelation.IS_COMPLETED
             and expected.get("field") == "focused"
             and "changed_from" in expected
         )
     if action.name in {"click", "click_no_navigation"} and verifier.kind == "control_state":
         return (
-            relation == SubgoalOutcomeRelation.IS_EXPANDED
+            relation == CriterionRelation.IS_EXPANDED
             and expected.get("field") == "aria_expanded"
             and expected.get("value") == "true"
         ) or (
             relation
             in {
-                SubgoalOutcomeRelation.HAS_CHANGED,
-                SubgoalOutcomeRelation.IS_CHECKED,
+                CriterionRelation.HAS_CHANGED,
+                CriterionRelation.IS_CHECKED,
             }
             and expected.get("field") == "checked"
             and "changed_from" in expected

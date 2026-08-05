@@ -130,20 +130,20 @@ def test_decision_constraint_set_copies_and_freezes_compatible_targets() -> None
 
 def test_apply_admission_filters_excluded_targets_and_returns_summary() -> None:
     admission = PlannerAdmissionView(
-        source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+        source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
         task_revision=1,
         snapshot_id="snapshot-1",
         target_decisions=(
             TargetAdmissionDecision(
                 target_id="submit-button",
                 status=TargetAdmissionStatus.BLOCKED,
-                reason_code="terminal_dependency_blocked",
+                reason_code="active_step_dependency_blocked",
                 blocking_step_ids=("step:type-name",),
             ),
             TargetAdmissionDecision(
                 target_id="help-link",
                 status=TargetAdmissionStatus.UNRESOLVED,
-                reason_code="terminal_grounding_unresolved",
+                reason_code="active_step_grounding_unresolved",
             ),
         ),
         excluded_target_ids=("submit-button", "help-link"),

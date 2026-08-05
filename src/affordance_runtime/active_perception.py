@@ -19,6 +19,15 @@ from affordance_runtime.grounding import (
     PerceptionRequirements,
 )
 from affordance_runtime.task_intake import OperationClass, StrictModel
+from affordance_runtime.unified_observation import (
+    ConflictStatus,
+    CoverageStatus,
+    UnifiedObservation,
+)
+from affordance_runtime.verification.contracts import (
+    ObservationContinuation,
+    ObservationDisposition,
+)
 
 if TYPE_CHECKING:
     from affordance_runtime.perception_session import PerceptionCapture
@@ -65,12 +74,58 @@ class PerceptionResolutionStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+@dataclass(frozen=True)
+class ObservationContinuationPolicy:
+    """Choose the next observation operation from canonical observation facts."""
+
+    def decide(
+        self,
+        observation: UnifiedObservation,
+        *,
+        environment_stable: bool = True,
+        now_s: float | None = None,
+    ) -> ObservationContinuation:
+        if bool(observation.metadata.get("loading")):
+            disposition = ObservationDisposition.WAIT_AND_RECAPTURE
+            reason = "environment_loading"
+        elif not environment_stable:
+            disposition = ObservationDisposition.RECAPTURE
+            reason = "environment_revision_unstable"
+        elif now_s is not None and any(
+            target.freshness.expires_at_s
+            and target.freshness.expires_at_s <= now_s
+            for target in observation.targets
+            if hasattr(target, "freshness")
+        ):
+            disposition = ObservationDisposition.RECAPTURE
+            reason = "observation_expired"
+        elif any(
+            getattr(target, "conflict_status", None)
+            in {ConflictStatus.MATERIAL_CONFLICT, ConflictStatus.INCONCLUSIVE}
+            for target in observation.targets
+        ) or any(
+            coverage.status
+            in {
+                CoverageStatus.ACQUISITION_TRUNCATED,
+                CoverageStatus.REQUIRED_PROPERTY_UNOBSERVED,
+                CoverageStatus.SOURCE_NOT_ACQUIRED,
+            }
+            for coverage in observation.source_coverage
+        ):
+            disposition = ObservationDisposition.AUGMENT_TARGETED
+            reason = "bounded_evidence_gap"
+        else:
+            disposition = ObservationDisposition.REUSE
+            reason = "fresh_stable_observation"
+        return ObservationContinuation(disposition, observation.epoch_id, reason)
+
+
 class EvidenceGap(StrictModel):
     gap_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     task_revision: int = Field(ge=1)
     plan_version: int = Field(default=0, ge=0)
-    active_subgoal_id: str = ""
+    active_step_id: str = ""
     entity_key: str = Field(min_length=1)
     property_key: str = Field(min_length=1)
     gap_kind: EvidenceGapKind
@@ -284,7 +339,7 @@ class EvidenceGapExtractor:
         run_id: str,
         task_revision: int,
         plan_version: int = 0,
-        active_subgoal_id: str = "",
+        active_step_id: str = "",
     ) -> tuple[EvidenceGap, ...]:
         gaps: list[EvidenceGap] = []
         decisions = {
@@ -321,7 +376,7 @@ class EvidenceGapExtractor:
                     run_id=run_id,
                     task_revision=task_revision,
                     plan_version=plan_version,
-                    active_subgoal_id=active_subgoal_id,
+                    active_step_id=active_step_id,
                     entity_key=request.entity_key,
                     property_key=request.property_key,
                     gap_kind=gap_kind,
@@ -364,7 +419,7 @@ class EvidenceGapExtractor:
                         run_id=run_id,
                         task_revision=task_revision,
                         plan_version=plan_version,
-                        active_subgoal_id=active_subgoal_id,
+                        active_step_id=active_step_id,
                         entity_key="task:unresolved-target",
                         property_key="semantic_target",
                         gap_kind=gap_kind,
@@ -403,7 +458,7 @@ class EvidenceGapExtractor:
                         run_id=run_id,
                         task_revision=task_revision,
                         plan_version=plan_version,
-                        active_subgoal_id=active_subgoal_id,
+                        active_step_id=active_step_id,
                         entity_key="task:required-evidence",
                         property_key=property_key,
                         gap_kind=gap_kind,

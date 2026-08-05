@@ -19,14 +19,11 @@ from affordance_runtime.planning_request_builder import (
     PlanningRequestBuilder,
 )
 from affordance_runtime.runtime import RunRequest
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
+from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion, StepSpec
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import (
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanActionFamily,
-    TaskPlanSource,
-)
+from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 
@@ -208,74 +205,68 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
     assert context.active_subgoal_action_family == ""
 
 
-def test_builder_exposes_typed_active_subgoal_action_family() -> None:
+def _context_plan(task: TaskSpec, state: StateKernel) -> TaskPlan:
+    source_refs = (SourceReference("request", "context-requirement"),)
+    return TaskPlan(
+        plan_id="plan-context",
+        task_id=task.task_id,
+        task_revision=task.revision,
+        plan_version=1,
+        based_on_state_version=state.version,
+        based_on_observation_ref="snapshot-1",
+        generated_by=TaskPlanGeneratorSource.RULE,
+        steps=(
+            StepSpec(
+                step_id="enter-name",
+                objective="display name input equals Ada",
+                interaction=make_interaction("display name input equals Ada"),
+                completion_criteria=(
+                    StateCriterion(
+                        criterion_id="criterion:enter-name",
+                        source_refs=source_refs,
+                        subject="display name input",
+                        relation=CriterionRelation.EQUALS,
+                        expected_value="Ada",
+                        evidence_policy=EvidencePolicy(
+                            minimum_strength=EvidenceStrength.INDEPENDENT,
+                            allowed_source_kinds=("dom_state",),
+                        ),
+                    ),
+                ),
+                source_refs=source_refs,
+            ),
+        ),
+    )
+
+
+def test_builder_exposes_canonical_active_step_without_prescribing_action_family() -> None:
     envelope, state, snapshot = _fixture()
     task = envelope.task_spec
     assert task is not None
-    state.install_task_plan(
-        TaskPlan(
-            plan_id="plan-context",
-            task_id=task.task_id,
-            task_revision=task.revision,
-            plan_version=1,
-            based_on_state_version=state.version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="enter-name",
-                    objective="display name input equals Ada",
-                    interaction=make_interaction('display name input equals Ada'),
-                    success_criteria=("display name input equals Ada",),
-                    evidence_requirements=("fresh input-value observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.TYPE_TEXT,
-                ),
-            ),
-        )
-    )
+    state.install_task_plan(_context_plan(task, state))
 
     state.activate_next_step()
 
     context = PlannerContextBuilder().build(envelope, state, snapshot)
 
     assert context.active_subgoal == "display name input equals Ada"
-    assert context.active_subgoal_action_family == "type_text"
+    assert context.active_subgoal_action_family == ""
 
 
 def test_builder_does_not_activate_next_step_while_building_read_only_context() -> None:
     envelope, state, snapshot = _fixture()
     task = envelope.task_spec
     assert task is not None
-    state.install_task_plan(
-        TaskPlan(
-            plan_id="plan-context",
-            task_id=task.task_id,
-            task_revision=task.revision,
-            plan_version=1,
-            based_on_state_version=state.version,
-            generated_by=TaskPlanSource.RULE,
-            subgoals=(
-                SubgoalSpec(
-                    subgoal_id="enter-name",
-                    objective="display name input equals Ada",
-                    interaction=make_interaction('display name input equals Ada'),
-                    success_criteria=("display name input equals Ada",),
-                    evidence_requirements=("fresh input-value observation",),
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    action_family=TaskPlanActionFamily.TYPE_TEXT,
-                ),
-            ),
-        )
-    )
+    state.install_task_plan(_context_plan(task, state))
     assert state.task_progress is not None
-    assert state.task_progress.active_subgoal_id == ""
+    assert state.task_progress.active_step_id == ""
     before_version = state.version
 
     context = PlannerContextBuilder().build(envelope, state, snapshot)
 
     assert context.active_subgoal == task.objective
     assert context.active_subgoal_action_family == ""
-    assert state.task_progress.active_subgoal_id == ""
+    assert state.task_progress.active_step_id == ""
     assert state.version == before_version
 
 

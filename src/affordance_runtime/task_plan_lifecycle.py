@@ -7,43 +7,38 @@ transitions while the Coordinator remains the sole control-flow authority and
 
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Awaitable, Mapping, Protocol, cast
 
 from affordance_runtime.async_bridge import resolve_awaitable
-from affordance_runtime.simplified_step_projection import (
-    LegacyStepProjectionStatus,
-    project_state_legacy_task_plan_to_step_view,
+from affordance_runtime.simplified_runtime_contracts import (
+    StepActivityStatus,
+    StepProgressView,
+    StepSpec,
+    TaskPlanView,
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_contracts import (
     InitialTaskPlanRequest,
     PlanCandidate,
+    TaskPlan,
     TaskPlanAuthority,
+    TaskPlanDecision,
     TaskPlanDecisionStatus,
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
 )
-from affordance_runtime.task_planning import (
+from affordance_runtime.task_planner import (
     CriteriaEvidenceLedgerEntry,
     PlanningAffordanceState,
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlannerPort,
     TaskPlanningBudgetSummary,
     TaskPlanningContext,
     TaskPlanningFailureSummary,
     TaskPlanningRecoverySummary,
-    TaskPlanValidationReport,
-    TaskPlanValidator,
-    task_plan_entry_feasibility_issue,
-    task_plan_entry_state_issue,
-    task_plan_entry_state_support_issue,
 )
 from affordance_runtime.unified_observation import UnifiedObservation
 
@@ -67,24 +62,30 @@ class TaskPlanBudgetLimits(Protocol):
     def max_effectful_actions(self) -> int: ...
 
 
+class TaskPlannerPort(Protocol):
+    def generate_candidate(
+        self, context: TaskPlanningContext
+    ) -> PlanCandidate | Awaitable[PlanCandidate]: ...
+
+
 @dataclass(frozen=True)
 class TaskPlanTransition:
     """A proposed immutable plan transition, before state mutation."""
 
     context: TaskPlanningContext
     plan: TaskPlan
-    validation: TaskPlanValidationReport
+    decision: TaskPlanDecision
     previous_plan: TaskPlan | None = None
 
 
 class TaskPlanReplacementReason(StrEnum):
-    SUBGOAL_ACTION_BUDGET_EXHAUSTED = "subgoal_action_budget_exhausted"
-    ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE = "active_subgoal_action_family_unavailable"
-    ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED = (
-        "active_subgoal_outcome_already_satisfied"
+    STEP_ACTION_BUDGET_EXHAUSTED = "step_action_budget_exhausted"
+    ACTIVE_STEP_ACTION_FAMILY_UNAVAILABLE = "active_step_action_family_unavailable"
+    ACTIVE_STEP_OUTCOME_ALREADY_SATISFIED = (
+        "active_step_outcome_already_satisfied"
     )
-    ACTIVE_SUBGOAL_OUTCOME_STATE_UNSUPPORTED = (
-        "active_subgoal_outcome_state_unsupported"
+    ACTIVE_STEP_OUTCOME_STATE_UNSUPPORTED = (
+        "active_step_outcome_state_unsupported"
     )
 
 
@@ -93,7 +94,7 @@ class TaskPlanReplacementDecision:
     """Authority-free lifecycle decision consumed by the state committer."""
 
     reason: TaskPlanReplacementReason | None = None
-    subgoal_id: str = ""
+    step_id: str = ""
     unavailable_action_family: str = ""
 
     @property
@@ -106,7 +107,6 @@ class TaskPlanLifecycle:
     """Prepare task-plan transitions without owning mutable run state."""
 
     planner: TaskPlannerPort
-    validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     authority: TaskPlanAuthority = field(default_factory=TaskPlanAuthority)
 
     def propose_initial(
@@ -117,12 +117,8 @@ class TaskPlanLifecycle:
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanTransition:
         context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
-        candidate_value = _initial_plan_candidate(self.planner, context)
-        if candidate_value is None:
-            plan = _legacy_initial_task_plan(self.planner, context)
-        else:
-            candidate = _resolve_plan_candidate(candidate_value)
-            decision = self.authority.admit_initial(
+        candidate = _resolve_plan_candidate(self.planner.generate_candidate(context))
+        decision = self.authority.admit_initial(
                 InitialTaskPlanRequest(
                     task_spec_identity=task_spec.identity,
                     task_revision=task_spec.revision,
@@ -135,16 +131,10 @@ class TaskPlanLifecycle:
                 ),
                 candidate,
             )
-            if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
-                raise ValueError("initial TaskPlan candidate was not accepted")
-            plan = decision.plan
-        validation = self.validator.validate(
-            plan,
-            task_spec,
-            state_version=state.version,
-            planning_context=context,
-        )
-        return TaskPlanTransition(context=context, plan=plan, validation=validation)
+        if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
+            raise ValueError("initial TaskPlan candidate was not accepted")
+        plan = decision.plan
+        return TaskPlanTransition(context=context, plan=plan, decision=decision)
 
     def propose_replacement(
         self,
@@ -159,32 +149,18 @@ class TaskPlanLifecycle:
         if previous_plan is None or state.task_progress is None:
             raise ValueError("cannot replan without an active TaskPlan")
         context = self.build_context(task_spec, state, snapshot, budget, reason=reason)
-        candidate_value = _initial_plan_candidate(self.planner, context)
-        if candidate_value is None:
-            plan = _resolve_task_plan(self.planner.plan(context))
-        else:
-            projection = project_state_legacy_task_plan_to_step_view(
-                task_spec=task_spec,
-                state=state,
-            )
-            if (
-                projection.status != LegacyStepProjectionStatus.PROJECTED
-                or projection.task_plan_view is None
-                or projection.step_progress_view is None
-            ):
-                raise ValueError("cannot admit replacement without projected previous plan")
-            candidate = _resolve_plan_candidate(candidate_value)
-            decision = self.authority.admit_revision(
+        candidate = _resolve_plan_candidate(self.planner.generate_candidate(context))
+        decision = self.authority.admit_revision(
                 TaskPlanRevisionRequest(
                     task_spec_identity=task_spec.identity,
                     task_revision=task_spec.revision,
                     evaluated_at_state_version=state.version,
-                    previous_plan=projection.task_plan_view,
-                    previous_progress=projection.step_progress_view,
+                    previous_plan=_plan_view(previous_plan, task_spec, state),
+                    previous_progress=_progress_view(previous_plan, state),
                     trigger=TaskPlanRevisionTrigger(
                         kind=_revision_trigger_kind(reason),
                         reason_code=reason,
-                        affected_step_id=state.task_progress.active_subgoal_id,
+                        affected_step_id=state.task_progress.active_step_id,
                     ),
                     operation_class=task_spec.operation_class,
                     observation_refs=(snapshot.epoch_id,),
@@ -193,25 +169,13 @@ class TaskPlanLifecycle:
                 ),
                 candidate,
             )
-            if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
-                raise ValueError("replacement TaskPlan candidate was not accepted")
-            plan = decision.plan
-        plan = _carry_forward_completed_subgoals(
-            plan,
-            previous_plan,
-            tuple(state.task_progress.completed_subgoal_ids),
-        )
-        validation = self.validator.validate(
-            plan,
-            task_spec,
-            state_version=state.version,
-            previous_plan=previous_plan,
-            planning_context=context,
-        )
+        if decision.status != TaskPlanDecisionStatus.ACCEPTED or decision.plan is None:
+            raise ValueError("replacement TaskPlan candidate was not accepted")
+        plan = decision.plan
         return TaskPlanTransition(
             context=context,
             plan=plan,
-            validation=validation,
+            decision=decision,
             previous_plan=previous_plan,
         )
 
@@ -236,56 +200,30 @@ class TaskPlanLifecycle:
             return TaskPlanReplacementDecision()
         if self.should_replan(state):
             return TaskPlanReplacementDecision(
-                reason=TaskPlanReplacementReason.SUBGOAL_ACTION_BUDGET_EXHAUSTED,
-                subgoal_id=state.task_progress.active_subgoal_id,
+                reason=TaskPlanReplacementReason.STEP_ACTION_BUDGET_EXHAUSTED,
+                step_id=state.task_progress.active_step_id,
             )
-        context = self.build_context(
-            task_spec,
-            state,
-            snapshot,
-            budget,
-            reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE.value,
-        )
-        state_issue = task_plan_entry_state_issue(state.task_plan, context)
-        if state_issue is not None:
-            return TaskPlanReplacementDecision(
-                reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED,
-                subgoal_id=state_issue.detail,
-            )
-        support_issue = task_plan_entry_state_support_issue(state.task_plan, context)
-        if support_issue is not None:
-            return TaskPlanReplacementDecision(
-                reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_STATE_UNSUPPORTED,
-                subgoal_id=support_issue.detail,
-            )
-        issue = task_plan_entry_feasibility_issue(state.task_plan, context)
-        if issue is None:
-            return TaskPlanReplacementDecision()
-        return TaskPlanReplacementDecision(
-            reason=TaskPlanReplacementReason.ACTIVE_SUBGOAL_ACTION_FAMILY_UNAVAILABLE,
-            subgoal_id=issue.detail,
-            unavailable_action_family=(issue.disallowed_values[0] if issue.disallowed_values else ""),
-        )
+        return TaskPlanReplacementDecision()
 
     @staticmethod
     def completed(state: StateKernel) -> bool:
         if state.task_plan is None or state.task_progress is None:
             return False
-        completed = set(state.task_progress.completed_subgoal_ids)
-        return all(item.subgoal_id in completed for item in state.task_plan.subgoals)
+        completed = set(state.task_progress.completed_step_ids)
+        return all(item.step_id in completed for item in state.task_plan.steps)
 
     @staticmethod
-    def active_subgoal_spec(state: StateKernel) -> SubgoalSpec | None:
+    def active_step_spec(state: StateKernel) -> StepSpec | None:
         if state.task_plan is None or state.task_progress is None:
             return None
-        active_id = state.task_progress.active_subgoal_id
-        return next((item for item in state.task_plan.subgoals if item.subgoal_id == active_id), None)
+        active_id = state.task_progress.active_step_id
+        return state.task_plan.step(active_id)
 
     @classmethod
-    def active_subgoal_for_perception(cls, state: StateKernel) -> SubgoalSpec | str | None:
+    def active_step_for_perception(cls, state: StateKernel) -> StepSpec | str | None:
         if state.task_plan is None or state.task_progress is None:
             return None
-        return cls.active_subgoal_spec(state)
+        return cls.active_step_spec(state)
 
     @staticmethod
     def build_context(
@@ -316,17 +254,17 @@ class TaskPlanLifecycle:
                     phase=state.phase,
                     error_code=latest.status.value,
                     reason=latest.reason[:500],
-                    subgoal_id=progress.active_subgoal_id if progress is not None else "",
+                    step_id=progress.active_step_id if progress is not None else "",
                     environment_revision=snapshot.environment_revision,
                 ),
             )
-        elif reason == "subgoal_action_budget_exhausted":
+        elif reason == "step_action_budget_exhausted":
             failures = (
                 TaskPlanningFailureSummary(
                     phase="task_planning",
-                    error_code="subgoal_action_budget_exhausted",
-                    reason="active subgoal exhausted its action budget without matched criteria evidence",
-                    subgoal_id=progress.active_subgoal_id if progress is not None else "",
+                    error_code="step_action_budget_exhausted",
+                    reason="active step exhausted its action budget without matched criteria evidence",
+                    step_id=progress.active_step_id if progress is not None else "",
                     environment_revision=snapshot.environment_revision,
                 ),
             )
@@ -364,16 +302,16 @@ class TaskPlanLifecycle:
                 url=str(snapshot.metadata.get("url") or ""),
                 affordances=affordances,
             ),
-            active_subgoal_id=progress.active_subgoal_id if progress is not None else "",
-            completed_subgoal_ids=tuple(progress.completed_subgoal_ids) if progress is not None else (),
-            failed_subgoal_ids=tuple(progress.failed_subgoal_ids) if progress is not None else (),
+            active_step_id=progress.active_step_id if progress is not None else "",
+            completed_step_ids=tuple(progress.completed_step_ids) if progress is not None else (),
+            failed_step_ids=tuple(progress.failed_step_ids) if progress is not None else (),
             criteria_evidence_ledger=(
                 tuple(
                     CriteriaEvidenceLedgerEntry(
-                        subgoal_id=subgoal_id,
-                        evidence_ids=tuple(evidence_ids),
+                        step_id=record.step_id,
+                        evidence_ids=record.evidence_refs,
                     )
-                    for subgoal_id, evidence_ids in sorted(progress.evidence_by_subgoal.items())
+                    for record in progress.verified_steps
                 )
                 if progress is not None
                 else ()
@@ -386,7 +324,7 @@ class TaskPlanLifecycle:
                 observations_remaining=max(0, budget.max_observations - state.observation_count),
                 replans_remaining=max(
                     0,
-                    budget.max_replans - (progress.task_replan_count if progress is not None else 0),
+                    budget.max_replans - (progress.replan_count if progress is not None else 0),
                 ),
                 recoveries_remaining=max(0, budget.max_recoveries - state.recovery_count),
                 effectful_actions_remaining=max(
@@ -397,31 +335,8 @@ class TaskPlanLifecycle:
         )
 
 
-def _resolve_task_plan(value: TaskPlan | Awaitable[TaskPlan]) -> TaskPlan:
-    if not inspect.isawaitable(value):
-        return value
-    return cast(TaskPlan, resolve_awaitable(value))
-
-
-def _legacy_initial_task_plan(
-    planner: TaskPlannerPort,
-    context: TaskPlanningContext,
-) -> TaskPlan:
-    return _resolve_task_plan(planner.plan(context))
-
-
-def _initial_plan_candidate(
-    planner: TaskPlannerPort,
-    context: TaskPlanningContext,
-) -> PlanCandidate | Awaitable[PlanCandidate] | None:
-    generate_candidate = getattr(planner, "generate_candidate", None)
-    if generate_candidate is not None:
-        return generate_candidate(context)
-    return None
-
-
 def _resolve_plan_candidate(value: PlanCandidate | Awaitable[PlanCandidate]) -> PlanCandidate:
-    if not inspect.isawaitable(value):
+    if not hasattr(value, "__await__"):
         return value
     return cast(PlanCandidate, resolve_awaitable(value))
 
@@ -438,27 +353,45 @@ def _revision_trigger_kind(reason: str) -> str:
     return "step_unexecutable"
 
 
-def _carry_forward_completed_subgoals(
-    replacement: TaskPlan,
-    previous: TaskPlan,
-    completed_subgoal_ids: tuple[str, ...],
-) -> TaskPlan:
-    """Restore exact completed authority while retaining model-owned unfinished units."""
+def _plan_view(plan: TaskPlan, task_spec: TaskSpec, state: StateKernel) -> TaskPlanView:
+    active = state.task_progress.active_step_id if state.task_progress is not None else None
+    return TaskPlanView(
+        plan_id=plan.plan_id,
+        plan_version=plan.plan_version,
+        task_spec_identity=task_spec.identity,
+        task_revision=task_spec.revision,
+        steps=plan.steps,
+        active_step_id=active or None,
+    )
 
-    if not completed_subgoal_ids:
-        return replacement
-    completed = set(completed_subgoal_ids)
-    previous_by_id = {item.subgoal_id: item for item in previous.subgoals}
-    missing_authority = completed - previous_by_id.keys()
-    if missing_authority:
-        raise ValueError("completed subgoal is missing from the previous TaskPlan")
-    preserved = tuple(
-        item for item in previous.subgoals if item.subgoal_id in completed
+
+def _progress_view(plan: TaskPlan, state: StateKernel) -> StepProgressView:
+    progress = state.task_progress
+    if progress is None:
+        raise ValueError("replacement requires task progress")
+    completed = tuple(progress.completed_step_ids)
+    failed = tuple(progress.failed_step_ids)
+    ready = tuple(progress.ready_step_ids(plan))
+    activity = (
+        StepActivityStatus.ACTIVE
+        if progress.active_step_id
+        else StepActivityStatus.READY_NOT_ACTIVATED
+        if ready
+        else StepActivityStatus.COMPLETED
     )
-    unfinished = tuple(
-        item for item in replacement.subgoals if item.subgoal_id not in completed
+    return StepProgressView(
+        plan_id=plan.plan_id,
+        plan_version=plan.plan_version,
+        active_step_id=progress.active_step_id or None,
+        activity_status=activity,
+        completed_step_ids=completed,
+        failed_step_ids=failed,
+        ready_step_ids=ready,
+        evidence_by_step_id=tuple(
+            (step_id, progress.evidence_for_step(step_id))
+            for step_id in completed
+        ),
     )
-    return replacement.model_copy(update={"subgoals": (*preserved, *unfinished)})
 
 
 def _planning_affordance_state(

@@ -49,7 +49,7 @@ def _failure(
         state_version=5,
         task_revision=1,
         plan_version=1,
-        active_subgoal_id="step-1",
+        active_step_id="step-1",
         expected_effect="complete current step",
         proposal_rejection=proposal_rejection,
         attempted_strategy_ids=(),

@@ -503,6 +503,8 @@ class StepSpec:
     source_refs: tuple[SourceReference, ...]
     depends_on: tuple[str, ...] = ()
     preconditions: tuple[Criterion, ...] = ()
+    max_actions: int = 10
+    max_recoveries: int = 2
 
     def __post_init__(self) -> None:
         _require_nonblank("step_id", self.step_id)
@@ -523,6 +525,10 @@ class StepSpec:
         if self.step_id in self.depends_on:
             raise ValueError("step cannot depend on itself")
         _require_tuple("preconditions", self.preconditions)
+        if self.max_actions < 1:
+            raise ValueError("step action budget must be positive")
+        if self.max_recoveries < 0:
+            raise ValueError("step recovery budget cannot be negative")
         for criterion in self.completion_criteria:
             if criterion.role == "precondition":
                 raise ValueError("precondition cannot be used as a completion criterion")

@@ -255,14 +255,14 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     assert model.calls == 2
     task_plan = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
     assert task_plan.payload["generated_by"] == "llm"
-    completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
+    completed = [node.payload["step_id"] for node in result.trace.nodes if node.kind == "StepCompleted"]
     assert len(completed) == 2
     assert completed == ["discover", "confirm"]
     assert result.coordinator is not None
     progress = result.coordinator.state.task_progress
     assert progress is not None
-    assert progress.completed_subgoal_ids == completed
-    assert all(progress.evidence_by_subgoal[identifier] for identifier in completed)
+    assert progress.completed_step_ids == tuple(completed)
+    assert all(progress.evidence_for_step(identifier) for identifier in completed)
     assert "ActivePerceptionPlanned" not in [node.kind for node in result.trace.nodes]
 
 

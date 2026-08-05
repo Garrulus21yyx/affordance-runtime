@@ -36,7 +36,6 @@ class PlannerStepProjectionStatus(StrEnum):
 
 
 class PlannerAdmissionSource(StrEnum):
-    LEGACY_TERMINAL_READINESS = "legacy_terminal_readiness"
     ACTIVE_STEP_SCOPE = "active_step_scope"
 
 

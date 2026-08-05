@@ -50,10 +50,6 @@ from affordance_runtime.recovery_protocol import classify_failure
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint, semantic_target_descriptor
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
-from affordance_runtime.simplified_step_projection import (
-    LegacyStepProjectionStatus,
-    project_state_legacy_task_plan_to_step_view,
-)
 from affordance_runtime.stage_protocol import (
     LoopDirective,
     RuntimeEvent,
@@ -62,6 +58,7 @@ from affordance_runtime.stage_protocol import (
     StageResult,
     TerminalResult,
 )
+from affordance_runtime.task_plan_contracts import project_task_plan_views
 from affordance_runtime.task_plan_flow import (
     TaskPlanCommitPreparation,
     TaskPlanCommitStateView,
@@ -172,23 +169,25 @@ class PlanningStage:
         task_spec = stage_input.envelope.task_spec
         if task_spec is None:
             return None
-        projection = project_state_legacy_task_plan_to_step_view(
-            task_spec=task_spec,
-            state=cast(Any, stage_input.state_view),
+        plan = stage_input.state_view.task_plan
+        progress = stage_input.state_view.task_progress
+        if plan is None or progress is None:
+            return None
+        task_plan_view, step_progress_view = project_task_plan_views(
+            plan,
+            task_spec_identity=task_spec.identity,
+            task_revision=task_spec.revision,
+            progress=progress,
         )
         if (
-            projection.status != LegacyStepProjectionStatus.PROJECTED
-            or projection.task_plan_view is None
-            or projection.step_progress_view is None
-            or projection.step_progress_view.activity_status != StepActivityStatus.ACTIVE
-            or not projection.step_progress_view.active_step_id
+            step_progress_view.activity_status != StepActivityStatus.ACTIVE
+            or not step_progress_view.active_step_id
         ):
             return None
         step = next(
             (
-                item
-                for item in projection.task_plan_view.steps
-                if item.step_id == projection.step_progress_view.active_step_id
+                item for item in task_plan_view.steps
+                if item.step_id == step_progress_view.active_step_id
             ),
             None,
         )
@@ -201,7 +200,6 @@ class PlanningStage:
             step=step,
             activity_status=StepActivityStatus.ACTIVE,
         )
-        plan = stage_input.state_view.task_plan
         catalog_or_failure = self.catalog_builder.build(
             task_revision=task_spec.revision,
             task_spec=task_spec,
@@ -342,15 +340,15 @@ class PlanningStage:
         transition = preparation.transition
         plan = transition.plan
         completed = tuple(
-            getattr(stage_input.state_view.task_progress, "completed_subgoal_ids", ())
+            getattr(stage_input.state_view.task_progress, "completed_step_ids", ())
             if stage_input.state_view.task_progress is not None
             else ()
         )
         active = next(
             (
-                item.subgoal_id
-                for item in plan.subgoals
-                if item.subgoal_id not in completed and set(item.depends_on).issubset(completed)
+                item.step_id
+                for item in plan.steps
+                if item.step_id not in completed and set(item.depends_on).issubset(completed)
             ),
             "",
         )
@@ -653,7 +651,7 @@ class PlanningStage:
             state_version=view.version,
             task_revision=plan.task_revision if plan is not None else stage_input.envelope.task_spec.revision if stage_input.envelope.task_spec is not None else 1,
             plan_version=plan.plan_version if plan is not None else 0,
-            active_subgoal_id=view.task_progress.active_subgoal_id if view.task_progress is not None else "",
+            active_step_id=view.task_progress.active_step_id if view.task_progress is not None else "",
             observation_epoch_id=stage_input.observation.epoch_id,
             snapshot_id=stage_input.observation.epoch_id,
             expected_effect=stage_input.envelope.goal,

@@ -13,18 +13,16 @@ from pydantic import Field, model_validator
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 
 from affordance_runtime import task_action_family_resolution as action_family_resolution
-from affordance_runtime.contracts import Observation
-from affordance_runtime.criteria import (
-    CriteriaEvidenceMatcher,
-    SubgoalVerificationReport,
-    criteria_from_descriptions,
-    evidence_requirements_from_descriptions,
-)
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import (
+    CriterionEvidencePolicy,
+    EvidenceStrength,
     InteractionIntent,
+    SourceReference,
+    StateCriterion,
     StateCriterionRelation,
+    StepSpec,
     interaction_for_state,
 )
 from affordance_runtime.task_intake import (
@@ -37,8 +35,8 @@ from affordance_runtime.task_intake import (
     TaskStructure,
     operation_class_rank,
 )
+from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
 from affordance_runtime.task_source_references import obligation_source_refs, obligation_value_source, task_source_refs
-from affordance_runtime.verification.mechanical import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
     r"(?:"
@@ -488,7 +486,7 @@ def task_plan_provider_model_for_context(
     constrain_entry = bool(
         allowed_families and allowed_families != frozenset(TaskPlanActionFamily)
     )
-    relax_replacement_cardinality = bool(context.completed_subgoal_ids)
+    relax_replacement_cardinality = bool(context.completed_step_ids)
     if not constrain_entry and not relax_replacement_cardinality:
         return TaskPlanProviderEnvelope
     allowed_values = tuple(sorted(item.value for item in allowed_families))
@@ -604,60 +602,15 @@ class TaskPlanningContext(StrictModel):
     current_plan_id: str = ""
     current_plan_version: int = Field(default=0, ge=0)
     environment: PlanningEnvironmentSummary = Field(default_factory=PlanningEnvironmentSummary)
-    active_subgoal_id: str = ""
-    completed_subgoal_ids: tuple[str, ...] = ()
-    failed_subgoal_ids: tuple[str, ...] = ()
+    active_step_id: str = ""
+    completed_step_ids: tuple[str, ...] = ()
+    failed_step_ids: tuple[str, ...] = ()
     criteria_evidence_ledger: tuple[CriteriaEvidenceLedgerEntry, ...] = ()
     failures: tuple[TaskPlanningFailureSummary, ...] = Field(default=(), max_length=16)
     recovery_summary: TaskPlanningRecoverySummary | None = None
     disproved_assumptions: tuple[str, ...] = Field(default=(), max_length=16)
     remaining_budget: TaskPlanningBudgetSummary
 
-
-@dataclass
-class TaskProgress:
-    """Mutable execution progress, deliberately kept out of TaskPlan."""
-
-    active_subgoal_id: str = ""
-    completed_subgoal_ids: list[str] = field(default_factory=list)
-    failed_subgoal_ids: list[str] = field(default_factory=list)
-    evidence_by_subgoal: dict[str, list[str]] = field(default_factory=dict)
-    action_count_by_subgoal: dict[str, int] = field(default_factory=dict)
-    task_replan_count: int = 0
-
-    def ready_subgoal_ids(self, plan: TaskPlan) -> tuple[str, ...]:
-        completed = set(self.completed_subgoal_ids)
-        unavailable = completed | set(self.failed_subgoal_ids)
-        return tuple(
-            subgoal.subgoal_id
-            for subgoal in plan.subgoals
-            if subgoal.subgoal_id not in unavailable and all(item in completed for item in subgoal.depends_on)
-        )
-
-    def activate_next(self, plan: TaskPlan) -> str:
-        if self.active_subgoal_id:
-            return self.active_subgoal_id
-        ready = self.ready_subgoal_ids(plan)
-        self.active_subgoal_id = ready[0] if ready else ""
-        return self.active_subgoal_id
-
-    def complete(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
-        if subgoal_id not in self.completed_subgoal_ids:
-            self.completed_subgoal_ids.append(subgoal_id)
-        self.evidence_by_subgoal[subgoal_id] = list(dict.fromkeys(evidence))
-        if self.active_subgoal_id == subgoal_id:
-            self.active_subgoal_id = ""
-
-    def record_action(self, subgoal_id: str) -> None:
-        self.action_count_by_subgoal[subgoal_id] = self.action_count_by_subgoal.get(subgoal_id, 0) + 1
-
-    def action_budget_exhausted(self, plan: TaskPlan) -> bool:
-        active_id = self.active_subgoal_id
-        subgoal = next((item for item in plan.subgoals if item.subgoal_id == active_id), None)
-        return subgoal is not None and self.action_count_by_subgoal.get(active_id, 0) >= subgoal.max_actions
-
-
-PlanProgress = TaskProgress
 
 class TaskPlanValidationIssue(StrictModel):
     code: str = Field(min_length=1)
@@ -720,7 +673,7 @@ class TaskPlanValidator:
         if not 1 <= len(plan.subgoals) <= self.max_subgoals:
             fatal.append(TaskPlanValidationIssue(code="subgoal_count_out_of_bounds"))
         completed_ids = (
-            set(planning_context.completed_subgoal_ids)
+            set(planning_context.completed_step_ids)
             if planning_context is not None
             else set()
         )
@@ -1169,14 +1122,14 @@ def _contextual_entry_subgoal(
 ) -> SubgoalSpec | None:
     if context is None:
         return None
-    completed = set(context.completed_subgoal_ids)
-    failed = set(context.failed_subgoal_ids)
-    if context.active_subgoal_id:
+    completed = set(context.completed_step_ids)
+    failed = set(context.failed_step_ids)
+    if context.active_step_id:
         active = next(
             (
                 item
                 for item in plan.subgoals
-                if item.subgoal_id == context.active_subgoal_id
+                if item.subgoal_id == context.active_step_id
                 and item.subgoal_id not in completed | failed
             ),
             None,
@@ -1253,37 +1206,6 @@ def task_plan_repair_directives(
 
 class TaskPlannerPort(Protocol):
     def plan(self, context: TaskPlanningContext) -> TaskPlan | Awaitable[TaskPlan]: ...
-
-
-class SubgoalVerifierPort(Protocol):
-    def verify(
-        self,
-        subgoal: SubgoalSpec,
-        report: VerificationReport,
-        observation: Observation,
-    ) -> SubgoalVerificationReport: ...
-
-
-@dataclass(frozen=True)
-class VerifierBackedSubgoalVerifier:
-    """Bind fresh independent evidence to the active subgoal's obligations."""
-    matcher: CriteriaEvidenceMatcher = CriteriaEvidenceMatcher()
-
-    def verify(
-        self,
-        subgoal: SubgoalSpec,
-        report: VerificationReport,
-        observation: Observation,
-    ) -> SubgoalVerificationReport:
-        match = self.matcher.match(
-            criteria=criteria_from_descriptions("subgoal", subgoal.subgoal_id, subgoal.success_criteria),
-            requirements=evidence_requirements_from_descriptions(
-                "subgoal", subgoal.subgoal_id, subgoal.evidence_requirements
-            ),
-            verification=report,
-            observation=observation,
-        )
-        return SubgoalVerificationReport(subgoal.subgoal_id, match)
 
 
 @dataclass(frozen=True)
@@ -1369,20 +1291,8 @@ class TaskObligationOutcomeCompiler:
         )
 
 
-@dataclass(frozen=True)
-class RuleTaskPlanner:
-    """Compile canonical immutable obligations."""
-
-    obligation_compiler: TaskObligationOutcomeCompiler = TaskObligationOutcomeCompiler()
-
-    def plan(self, context: TaskPlanningContext) -> TaskPlan:
-        if not context.task_spec.obligations:
-            raise ValueError("rule task planning requires canonical obligations")
-        return self.obligation_compiler.compile(context)
-
-
 TASK_PLANNER_PROMPT_VERSION = "task-planner-v13"
-_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. Use is_checked only for a checkable state, is_selected only for a selectable state, and is_expanded only for an expandable state; ordinary buttons, links, and textboxes do not gain those states merely because they can be activated. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_subgoal_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderEnvelope. Put the first currently executable and currently unsatisfied outcome in entry_subgoal and later effect-dependent outcomes in remaining_subgoals. Treat current_state as observation evidence only: do not return an entry outcome already proven by its uniquely matching current affordance. Repair an already-satisfied entry by choosing a different pending outcome, never by negating the predicate. Use is_checked only for a checkable state, is_selected only for a selectable state, and is_expanded only for an expandable state; ordinary buttons, links, and textboxes do not gain those states merely because they can be activated. equals, contains, matches, and is_ordered_as require a non-empty value. is_visible, is_absent, is_available, is_checked, is_expanded, is_completed, and has_changed require an empty value; never encode true or false in value. is_selected may name an optional selected value. When completed_step_ids are supplied, return only new or unfinished subgoals; Runtime carries the exact immutable completed units forward.
 Decompose only open-world, multi-stage, cross-application, or data-dependent work into 2-8 outcome-oriented subgoals. Represent each outcome only as a subject, one supplied state relation, and an optional semantic value. Declare exactly one supplied semantic action_family that can satisfy that state. Every subgoal needs non-empty independent evidence requirements. Preserve the supplied TaskSpec constraints and operation class; do not invent destructive scope, recipients, credentials, payment, approval, or authority.
 Subgoals are desired environment states, never UI scripts. action_family is only a semantic family constraint, not an action instruction. Use an outcome relation compatible with that family: focus completes or changes focus state; type_text changes/matches a value; select_option selects or changes a value; drag changes order/state; navigate exposes a destination; scroll exposes content; activate/point_activate produces an exact, checked, expanded, completed, visible, absent, or changed state. is_available is only a precondition for an action requiring a current target, and is_selected belongs to select_option rather than generic activation. Do not output selectors, coordinates, target ids, backend handles, executable code, capabilities, approval tokens, action sequences, or success criteria prose; Runtime derives the criterion from the typed outcome. Dependencies express a small serial-ready partial order. The runtime executes one ready subgoal at a time and independently verifies progress."""
 
@@ -1398,22 +1308,20 @@ def task_planner_model_config() -> ModelConfig:
 
 
 @dataclass
-class LLMTaskPlanner:
-    """Model-backed task decomposition with exactly one repairable retry."""
+class LegacyTaskPlanProviderAdapter:
+    """One-way external provider schema adapter into canonical PlanCandidate.
+
+    The provider response still uses the pre-P1 ``subgoals`` wire schema.  It is
+    never installed or validated as legacy runtime state and must not be
+    imported by canonical plan modules.
+    """
 
     model: ModelPort
-    validator: TaskPlanValidator = field(default_factory=TaskPlanValidator)
     config: ModelConfig = field(default_factory=task_planner_model_config)
 
-    async def plan(self, context: TaskPlanningContext) -> TaskPlan:
+    async def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
         candidate = await self._provider_candidate(context)
-        return _legacy_plan_from_provider_candidate(candidate, context)
-
-    async def generate_candidate(self, context: TaskPlanningContext):  # noqa: ANN201
-        from affordance_runtime.task_plan_generators import plan_candidate_from_provider_candidate
-
-        candidate = await self._provider_candidate(context)
-        return plan_candidate_from_provider_candidate(candidate, context)
+        return _canonical_candidate_from_legacy_provider(candidate, context)
 
     async def _provider_candidate(self, context: TaskPlanningContext) -> TaskPlanCandidate:
         task_spec = context.task_spec
@@ -1431,133 +1339,64 @@ class LLMTaskPlanner:
         ]
         provider_model = task_plan_provider_model_for_context(context)
         envelope = await self.model.generate_structured(messages, provider_model, self.config)
-        candidate = envelope.to_candidate()
-        plan = _legacy_plan_from_provider_candidate(candidate, context)
-        report = self.validator.validate(
-            plan,
-            task_spec,
-            state_version=context.state_version,
-            previous_plan_id=context.current_plan_id,
-            previous_plan_version=context.current_plan_version,
-            planning_context=context,
-        )
-        if report.status != TaskPlanValidationStatus.REPAIRABLE:
-            return candidate
-        repair_context = {
-            "validation_errors": [item.model_dump(mode="json") for item in report.issues],
-            "repair_directives": [
-                item.model_dump(mode="json")
-                for item in task_plan_repair_directives(report.issues)
-            ],
-            "instruction": "Repair only the reported plan fields; retain outcome-only semantics and constraints.",
-        }
-        repaired_envelope = await self.model.generate_structured(
-            [
-                *messages,
-                ModelMessage(role="assistant", content=envelope.model_dump_json()),
-                ModelMessage(role="user", content=json.dumps(repair_context, sort_keys=True)),
-            ],
-            provider_model,
-            self.config,
-        )
-        return repaired_envelope.to_candidate()
+        return envelope.to_candidate()
 
 
-def _legacy_plan_from_provider_candidate(
+def _canonical_candidate_from_legacy_provider(
     candidate: TaskPlanCandidate,
     context: TaskPlanningContext,
-) -> TaskPlan:
+) -> PlanCandidate:
     task_spec = context.task_spec
-    return TaskPlan(
-        plan_id=f"plan-{uuid4().hex}",
-        task_id=task_spec.task_id,
+    source_refs = task_source_refs(task_spec)
+    steps = tuple(
+        _canonical_step_from_legacy_provider(item, source_refs)
+        for item in candidate.subgoals
+    )
+    return PlanCandidate(
+        task_spec_identity=task_spec.identity,
         task_revision=task_spec.revision,
-        plan_version=context.current_plan_version + 1,
-        supersedes_plan_id=context.current_plan_id,
+        generated_by=TaskPlanGeneratorSource.LLM,
+        generator_id="legacy-task-plan-provider-adapter",
+        generator_version="p1-one-way-edge-v1",
+        based_on_observation_ref=context.environment.snapshot_id,
         based_on_state_version=context.state_version,
-        generated_by=TaskPlanSource.LLM,
-        subgoals=tuple(
-            _legacy_subgoal_from_provider_candidate(item, context)
-            for item in candidate.subgoals
-        ),
+        steps=steps,
         assumptions=candidate.assumptions,
+        source_refs=source_refs,
     )
 
 
-def _legacy_subgoal_from_provider_candidate(
+def _canonical_step_from_legacy_provider(
     item: TaskPlanSubgoalCandidate,
-    context: TaskPlanningContext,
-) -> SubgoalSpec:
-    outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
-    source_refs = task_source_refs(context.task_spec)
-    return SubgoalSpec(
-        subgoal_id=item.subgoal_id,
+    source_refs: tuple[SourceReference, ...],
+) -> StepSpec:
+    outcome = item.outcome
+    relation = StateCriterionRelation(outcome.relation)
+    expected_value = outcome.value or None
+    return StepSpec(
+        step_id=item.subgoal_id,
         objective=outcome.description(),
-        depends_on=item.depends_on,
-        success_criteria=(outcome.description(),),
-        evidence_requirements=item.evidence_requirements,
-        operation_class=item.operation_class,
-        action_family=TaskPlanActionFamily(item.action_family),
-        outcome=outcome,
         interaction=interaction_for_state(
             outcome.subject,
-            StateCriterionRelation(outcome.relation),
-            outcome.value,
+            relation,
+            expected_value,
             source_refs,
         ),
-        max_actions=item.max_actions,
-        max_recoveries=item.max_recoveries,
-    )
-
-
-@dataclass(frozen=True)
-class PlanningRouter:
-    """Compile canonical obligations or delegate explicit open-world decomposition."""
-
-    obligation_compiler: TaskObligationOutcomeCompiler = TaskObligationOutcomeCompiler()
-    complex_planner: TaskPlannerPort | None = None
-
-    def plan(self, context: TaskPlanningContext) -> TaskPlan | Awaitable[TaskPlan]:
-        if context.task_spec.obligations:
-            return self.obligation_compiler.compile(context)
-        if context.task_spec.task_structure != TaskStructure.MULTI_STAGE:
-            return _plan_flat_accepted_task(context)
-        if self.complex_planner is None:
-            raise ValueError("complex task requires an LLMTaskPlanner or accepted task planner")
-        return self.complex_planner.plan(context)
-
-
-def _plan_flat_accepted_task(context: TaskPlanningContext) -> TaskPlan:
-    """Project one admitted flat outcome without graph-shaped intake semantics."""
-
-    task_spec = context.task_spec
-    target = task_spec.targets[0] if task_spec.targets else task_spec.objective
-    relation = (
-        StateCriterionRelation.IS_VISIBLE
-        if task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-        else StateCriterionRelation.IS_COMPLETED
-    )
-    refs = task_source_refs(task_spec)
-    outcome = SubgoalOutcome(subject=target, relation=SubgoalOutcomeRelation(relation))
-    return TaskPlan(
-        plan_id=f"plan-{uuid4().hex}",
-        task_id=task_spec.task_id,
-        task_revision=task_spec.revision,
-        plan_version=context.current_plan_version + 1,
-        supersedes_plan_id=context.current_plan_id,
-        based_on_state_version=context.state_version,
-        generated_by=TaskPlanSource.RULE,
-        subgoals=(
-            SubgoalSpec(
-                subgoal_id="subgoal:accepted-outcome",
-                objective=task_spec.objective,
-                interaction=interaction_for_state(target, relation, "", refs),
-                success_criteria=task_spec.success_criteria,
-                evidence_requirements=task_spec.evidence_requirements,
-                operation_class=task_spec.operation_class,
-                outcome=outcome,
+        completion_criteria=(
+            StateCriterion(
+                criterion_id=f"criterion:{item.subgoal_id}",
+                source_refs=source_refs,
+                subject=outcome.subject,
+                relation=relation,
+                expected_value=expected_value,
+                evidence_policy=CriterionEvidencePolicy(
+                    minimum_strength=EvidenceStrength.INDEPENDENT,
+                    allowed_source_kinds=("dom_state",),
+                ),
             ),
         ),
+        source_refs=source_refs,
+        depends_on=item.depends_on,
     )
 
 

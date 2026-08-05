@@ -31,7 +31,7 @@ from affordance_runtime.planners import (
 from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import PlanningRouter
+from affordance_runtime.task_planner import PlanningRouter
 
 
 def build_parser() -> argparse.ArgumentParser:

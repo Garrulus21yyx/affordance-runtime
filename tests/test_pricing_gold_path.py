@@ -137,10 +137,10 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == [
+    assert result.state.task_progress.completed_step_ids == (
         "reveal-pro",
         "reveal-enterprise",
-    ]
+    )
     proposed = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
     encoded_context = json.dumps(to_json_compatible(proposed.payload["planning_context"]), sort_keys=True)
     assert "selector" not in encoded_context
@@ -306,7 +306,7 @@ def test_real_chromium_pricing_task_uses_normal_task_planning_entrypoint(
         name: {key: value for key, value in plan.items() if key != "visible"} for name, plan in oracle_plans.items()
     } == PRICING_DATA
     assert oracle_plans and all(plan["visible"] for plan in oracle_plans.values())
-    assert [event["payload"]["subgoal_id"] for event in events if event["event_type"] == "SubgoalCompleted"] == [
+    assert [event["payload"]["step_id"] for event in events if event["event_type"] == "StepCompleted"] == [
         "reveal-pro",
         "reveal-enterprise",
     ]

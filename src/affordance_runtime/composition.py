@@ -31,13 +31,7 @@ from affordance_runtime.runtime_result_phase import RuntimeResultPhase
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.task_plan_flow import TaskPlanFlow
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
-from affordance_runtime.task_planning import (
-    PlanningRouter,
-    SubgoalVerifierPort,
-    TaskPlannerPort,
-    TaskPlanValidator,
-    VerifierBackedSubgoalVerifier,
-)
+from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.verification.mechanical import VerifierLadder
 
@@ -60,8 +54,6 @@ def compose_run_coordinator(
     proposal_validator: PlannerProposalValidator | None = None,
     proposal_recovery_policy: ProposalRejectionRecoveryPolicy | None = None,
     task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
-    task_plan_validator: TaskPlanValidator | None = None,
-    subgoal_verifier: SubgoalVerifierPort | None = None,
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None,
     runtime_profile_digest: str = "",
     loaded_profile_artifact_ids: tuple[str, ...] = (),
@@ -105,7 +97,6 @@ def compose_run_coordinator(
         TaskPlanFlow(
             TaskPlanLifecycle(
                 planner=resolved_task_planner,
-                validator=task_plan_validator or TaskPlanValidator(),
             )
         )
         if resolved_task_planner is not None
@@ -161,7 +152,6 @@ def compose_run_coordinator(
     progress = ProgressStage(
         execution_loop=execution_loop,
         perception_session=session,
-        subgoal_verifier=subgoal_verifier or VerifierBackedSubgoalVerifier(),
         route_calibrator=resolved_calibrator,
         observation_builder=observation_builder,
         observation_store=observation_store,

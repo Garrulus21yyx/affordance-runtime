@@ -29,7 +29,7 @@ class ActivePerceptionFlowContext:
     run_id: str
     task_revision: int
     plan_version: int
-    active_subgoal_id: str
+    active_step_id: str
     state_version: int
     remaining_observations: int
     attempted_probe_fingerprints: frozenset[str]
@@ -73,7 +73,7 @@ class ActivePerceptionFlow:
             run_id=context.run_id,
             task_revision=context.task_revision,
             plan_version=context.plan_version,
-            active_subgoal_id=context.active_subgoal_id,
+            active_step_id=context.active_step_id,
         )
         if not gaps:
             return ActivePerceptionPreparation(context, ())

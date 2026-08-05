@@ -64,6 +64,43 @@ class RecoveryStage:
     runtime_profile_digest: str = ""
     loaded_profile_artifact_ids: tuple[str, ...] = ()
 
+    def available_commands(
+        self,
+        failure: FailureEnvelope,
+        state: RuntimeStateSnapshot,
+    ) -> frozenset[RecoveryKind]:
+        """Project typed recovery affordances; Coordinator only orchestrates them."""
+
+        available = set(self.owner_dispatcher.available_kinds)
+        phase = failure.phase.value
+        if phase == "grounding_binding":
+            available.add(RecoveryKind.REGROUND)
+        if phase == "preflight":
+            available.add(RecoveryKind.REOBSERVE)
+        if phase in {"observation", "fusion"}:
+            available.add(RecoveryKind.REOBSERVE)
+        if phase in {"execution_uncertain", "verification"}:
+            available.update({RecoveryKind.REOBSERVE, RecoveryKind.INSPECT_POST_STATE})
+        contract = state.current_contract
+        if contract is None:
+            return frozenset(available)
+        if contract.idempotency_key:
+            available.add(RecoveryKind.RETRY_IDEMPOTENT)
+        if contract.compensation:
+            available.add(RecoveryKind.COMPENSATE)
+        route_plan = contract.route_plan
+        if route_plan is not None and any(
+            item.candidate_id != route_plan.selected_candidate.candidate_id
+            for item in route_plan.viable_alternatives
+        ):
+            available.add(RecoveryKind.REROUTE)
+        tried_backends = (
+            {state.last_receipt.backend} if state.last_receipt is not None else set()
+        )
+        if any(item not in tried_backends for item in contract.fallback_backends):
+            available.add(RecoveryKind.REROUTE)
+        return frozenset(available)
+
     def run(self, stage_input: RecoveryStageInput) -> StageResult[RecoveryOutput]:
         failure = stage_input.failure
         classification = classify_failure(

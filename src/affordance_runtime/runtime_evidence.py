@@ -66,8 +66,8 @@ def verification_confirms_effect_absent(report: VerificationReport) -> bool:
 
 def semantic_progress_fingerprint(state: StateKernel) -> str:
     progress = {
-        "completed_subgoals": (
-            list(state.task_progress.completed_subgoal_ids)
+        "completed_steps": (
+            list(state.task_progress.completed_step_ids)
             if state.task_progress is not None
             else []
         ),

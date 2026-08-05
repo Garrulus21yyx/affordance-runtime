@@ -8,7 +8,11 @@ from time import time
 from typing import Any, cast
 
 from affordance_runtime.action_outcome_flow import record_contract_action_outcome_trace
-from affordance_runtime.active_perception import ActivePerceptionRequest, ProbeReceipt
+from affordance_runtime.active_perception import (
+    ActivePerceptionRequest,
+    ObservationContinuationPolicy,
+    ProbeReceipt,
+)
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
@@ -32,8 +36,8 @@ from affordance_runtime.perception_session import (
 )
 from affordance_runtime.route_calibration import RouteCalibrator, RouteOutcome, RouteOutcomeStatus, RouteScope
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.runtime_committer import project_working_phase
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint, verification_satisfies_effect
+from affordance_runtime.runtime_state_projection import project_working_phase
 from affordance_runtime.simplified_runtime_contracts import ActionOutcome
 from affordance_runtime.stage_protocol import (
     LoopDirective,
@@ -43,17 +47,20 @@ from affordance_runtime.stage_protocol import (
     StageResult,
     TerminalResult,
 )
-from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits
+from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits, TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
     commit_current_state_completion,
     commit_task_skill_terminal_progress,
     commit_verified_task_progress,
 )
-from affordance_runtime.task_planning import SubgoalVerifierPort
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
 from affordance_runtime.unified_observation import UnifiedObservation
-from affordance_runtime.verification.contracts import TaskCompletionEvaluation
+from affordance_runtime.verification.contracts import (
+    LoopEvaluation,
+    TaskCompletionEvaluation,
+)
+from affordance_runtime.verification.loop_evaluator import LoopEvaluator
 from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus
 from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
 from affordance_runtime.verification_report_adapter import (
@@ -127,14 +134,18 @@ class ProgressOutput:
     completion_committed: bool = False
     evaluation: PostActionEvaluation | None = None
     task_completion: TaskCompletionEvaluation | None = None
+    loop_evaluation: LoopEvaluation | None = None
 
 
 @dataclass(frozen=True)
 class ProgressStage:
     execution_loop: ContractExecutionLoop
     perception_session: PerceptionSession
-    subgoal_verifier: SubgoalVerifierPort
     route_calibrator: RouteCalibrator
+    loop_evaluator: LoopEvaluator = field(default_factory=LoopEvaluator)
+    continuation_policy: ObservationContinuationPolicy = field(
+        default_factory=ObservationContinuationPolicy
+    )
     observation_builder: CanonicalObservationBuilder = CanonicalObservationBuilder()
     observation_store: InMemoryObservationStore = field(default_factory=InMemoryObservationStore)
     task_skill_runtime: AcceptedTaskSkillRuntime | None = None
@@ -241,6 +252,17 @@ class ProgressStage:
         )
         if task_completion is not None and skill_task_completion is None:
             self._record_task_completion_evaluation(events, state, task_completion)
+        loop_evaluation = self.loop_evaluator.evaluate(
+            receipt=action.receipt,
+            report=report,
+            observation=post_snapshot.observation,
+            active_step=TaskPlanLifecycle.active_step_spec(state),
+            task_completion=task_completion,
+        )
+        loop_evaluation = replace(
+            loop_evaluation,
+            observation_continuation=self.continuation_policy.decide(canonical),
+        )
         output = ProgressOutput(
             post_snapshot,
             canonical,
@@ -250,6 +272,7 @@ class ProgressStage:
             verification_ref,
             outcome_commit.outcome,
             task_completion=task_completion,
+            loop_evaluation=loop_evaluation,
         )
         if terminal is not None:
             return self._result(
@@ -264,9 +287,7 @@ class ProgressStage:
                 state=state,
                 trace=cast(Any, events),
                 parent=cast(Any, events.root()),
-                subgoal_verifier=self.subgoal_verifier,
-                verification=report,
-                observation=post_snapshot.observation,
+                step_completion=loop_evaluation.step_completion,
                 task_planner_is_router=self.task_planner_is_router,
                 skill_complete=skill_complete,
                 skill_progress=skill_progress,
@@ -279,11 +300,11 @@ class ProgressStage:
                     contract_id=action.contract.id,
                     active_step_status=(
                         ActiveStepEvaluationStatus.COMPLETED
-                        if progress.subgoal_completion_committed
+                        if progress.step_completion_committed
                         else ActiveStepEvaluationStatus.INCOMPLETE
                     ),
                     task_completion_status=TaskCompletionEvaluationStatus.COMPLETED,
-                    progress_committed=progress.subgoal_completion_committed,
+                    progress_committed=progress.step_completion_committed,
                     liveness_decision="terminal",
                 )
                 output = replace(output, evaluation=evaluation)
@@ -305,7 +326,7 @@ class ProgressStage:
                     contract_id=action.contract.id,
                     active_step_status=(
                         ActiveStepEvaluationStatus.COMPLETED
-                        if progress.subgoal_completion_committed
+                        if progress.step_completion_committed
                         else ActiveStepEvaluationStatus.INCOMPLETE
                     ),
                     task_completion_status=(
@@ -313,7 +334,7 @@ class ProgressStage:
                         if completion.completed
                         else TaskCompletionEvaluationStatus.INCOMPLETE
                     ),
-                    progress_committed=progress.subgoal_completion_committed,
+                    progress_committed=progress.step_completion_committed,
                     liveness_decision="terminal" if completion.completed else "replan",
                 )
                 output = replace(
@@ -344,7 +365,7 @@ class ProgressStage:
                 contract_id=action.contract.id,
                 active_step_status=(
                     ActiveStepEvaluationStatus.COMPLETED
-                    if progress.subgoal_completion_committed
+                    if progress.step_completion_committed
                     else ActiveStepEvaluationStatus.INCOMPLETE
                 ),
                 task_completion_status=(
@@ -352,10 +373,10 @@ class ProgressStage:
                     if task_completion is not None
                     else TaskCompletionEvaluationStatus.NOT_EVALUATED
                 ),
-                progress_committed=progress.subgoal_completion_committed,
+                progress_committed=progress.step_completion_committed,
                 liveness_decision=(
                     "advance_step"
-                    if progress.subgoal_completion_committed
+                    if progress.step_completion_committed
                     else "reconcile_active_step"
                 ),
             )
@@ -626,7 +647,7 @@ class ProgressStage:
             state_version=state.version,
             task_revision=plan.task_revision if plan is not None else stage_input.envelope.task_spec.revision if stage_input.envelope.task_spec is not None else 1,
             plan_version=plan.plan_version if plan is not None else 0,
-            active_subgoal_id=state.task_progress.active_subgoal_id if state.task_progress is not None else "",
+            active_step_id=state.task_progress.active_step_id if state.task_progress is not None else "",
             observation_epoch_id=state.current_snapshot_id,
             snapshot_id=state.current_snapshot_id,
             contract=action.contract,

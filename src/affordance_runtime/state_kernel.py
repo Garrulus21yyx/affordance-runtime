@@ -14,7 +14,8 @@ from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.observation_store import ObservationCommit, ObservationRef
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
-from affordance_runtime.task_planning import TaskPlan, TaskProgress
+from affordance_runtime.task_plan_contracts import TaskPlan
+from affordance_runtime.task_plan_progress import TaskProgress
 from affordance_runtime.verification.contracts import CriterionEvaluation
 from affordance_runtime.verification.mechanical import VerificationReport
 
@@ -211,32 +212,41 @@ class StateKernel:
     def active_subgoal(self) -> str:
         if self.task_plan is None or self.task_progress is None:
             return ""
-        identifier = self.task_progress.active_subgoal_id
-        return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
+        identifier = self.task_progress.active_step_id
+        return next((item.objective for item in self.task_plan.steps if item.step_id == identifier), "")
 
     def activate_next_step(self) -> str:
         if self.task_plan is None or self.task_progress is None:
             return ""
-        previous = self.task_progress.active_subgoal_id
+        previous = self.task_progress.active_step_id
         identifier = self.task_progress.activate_next(self.task_plan)
         if identifier != previous:
             self.version += 1
-        return next((item.objective for item in self.task_plan.subgoals if item.subgoal_id == identifier), "")
+        return next((item.objective for item in self.task_plan.steps if item.step_id == identifier), "")
 
-    def complete_step(self, subgoal_id: str, evidence: tuple[str, ...]) -> None:
+    def complete_step(
+        self,
+        step_id: str,
+        evidence: tuple[str, ...],
+        criterion_ids: tuple[str, ...] = (),
+    ) -> None:
         if self.task_plan is None or self.task_progress is None:
-            raise ValueError("cannot complete a subgoal without a TaskPlan")
-        if subgoal_id not in {item.subgoal_id for item in self.task_plan.subgoals}:
-            raise ValueError("unknown TaskPlan subgoal")
-        self.task_progress.complete(subgoal_id, evidence)
+            raise ValueError("cannot complete a step without a TaskPlan")
+        self.task_progress.complete(
+            plan=self.task_plan,
+            step_id=step_id,
+            criterion_ids=criterion_ids,
+            evidence_refs=evidence,
+            state_version=self.version,
+        )
         self.version += 1
 
-    def record_subgoal_action(self) -> None:
+    def record_step_action(self) -> None:
         if self.task_plan is None or self.task_progress is None:
             return
-        subgoal_id = self.task_progress.active_subgoal_id
-        if subgoal_id:
-            self.task_progress.record_action(subgoal_id)
+        step_id = self.task_progress.active_step_id
+        if step_id:
+            self.task_progress.record_action(step_id)
             self.version += 1
 
     def replace_task_plan(self, plan: TaskPlan) -> None:
@@ -250,16 +260,11 @@ class StateKernel:
             raise ValueError("replanned TaskPlan must supersede the active plan")
         if plan.plan_id == self.task_plan.plan_id:
             raise ValueError("replanned TaskPlan requires a new plan_id")
-        new_ids = {item.subgoal_id for item in plan.subgoals}
-        completed = set(self.task_progress.completed_subgoal_ids)
-        if not completed.issubset(new_ids):
-            raise ValueError("replanned TaskPlan must preserve verified subgoals")
-        previous_by_id = {item.subgoal_id: item for item in self.task_plan.subgoals}
-        replacement_by_id = {item.subgoal_id: item for item in plan.subgoals}
-        if any(replacement_by_id[item] != previous_by_id[item] for item in completed):
-            raise ValueError("replanned TaskPlan cannot redefine a verified subgoal")
         self.task_plan = plan
-        self.task_progress = TaskProgress(completed_subgoal_ids=list(self.task_progress.completed_subgoal_ids), evidence_by_subgoal={key: list(value) for key, value in self.task_progress.evidence_by_subgoal.items()}, task_replan_count=self.task_progress.task_replan_count + 1)
+        self.task_progress.active_step_id = ""
+        self.task_progress.failed_step_ids = []
+        self.task_progress.action_count_by_step = {}
+        self.task_progress.replan_count += 1
         self.version += 1
 
     def current_revision(self) -> str:

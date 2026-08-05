@@ -4,40 +4,38 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from affordance_runtime.contracts import Observation
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits, TaskPlanLifecycle
 from affordance_runtime.task_plan_progress import (
-    CurrentStateSubgoalCompletionEvaluator,
-    SubgoalCompletionPreparation,
+    CurrentStateStepCompletionEvaluator,
+    StepCompletionPreparation,
     TaskPlanProgressStateView,
     current_state_evidence_refs,
 )
-from affordance_runtime.task_planning import SubgoalVerifierPort
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag, TraceNode
 from affordance_runtime.unified_observation import UnifiedObservation
-from affordance_runtime.verification.mechanical import VerificationReport
+from affordance_runtime.verification.contracts import CriterionEvaluation, CriterionStatus
 
 
 @dataclass(frozen=True)
-class CurrentStateSubgoalCompletionCommit:
-    preparation: SubgoalCompletionPreparation
+class CurrentStateStepCompletionCommit:
+    preparation: StepCompletionPreparation
     evidence_refs: tuple[str, ...]
-    completed_subgoal_ids: tuple[str, ...]
+    completed_step_ids: tuple[str, ...]
     task_plan_completed: bool
 
     @property
-    def subgoal_id(self) -> str:
-        return self.preparation.subgoal_id
+    def step_id(self) -> str:
+        return self.preparation.step_id
 
     def completion_payload(self, state_phase: str) -> dict[str, object]:
         return {
             "state": state_phase,
             "plan_id": self.preparation.plan_id,
             "plan_version": self.preparation.plan_version,
-            "subgoal_id": self.preparation.subgoal_id,
+            "step_id": self.preparation.step_id,
             "evidence": list(self.evidence_refs),
             "criterion_ids": list(self.preparation.criterion_ids),
             "requirement_ids": list(self.preparation.requirement_ids),
@@ -50,14 +48,14 @@ class CurrentStateSubgoalCompletionCommit:
         return {
             "state": state_phase,
             "task_plan_id": self.preparation.plan_id,
-            "completed_subgoal_ids": list(self.completed_subgoal_ids),
+            "completed_step_ids": list(self.completed_step_ids),
         }
 
 
 @dataclass(frozen=True)
 class VerifiedTaskProgressCommit:
     parent: TraceNode
-    subgoal_completion_committed: bool
+    step_completion_committed: bool
     task_plan_completed: bool
     task_completion_requested: bool
 
@@ -78,21 +76,21 @@ class TaskSkillTerminalProgressCommit:
         }
 
 
-def prepare_current_state_subgoal_completion(
+def prepare_current_state_step_completion(
     task_spec: TaskSpec | None,
     state: StateKernel,
     snapshot: UnifiedObservation,
     budget: TaskPlanBudgetLimits,
     *,
-    evaluator: CurrentStateSubgoalCompletionEvaluator | None = None,
-) -> CurrentStateSubgoalCompletionCommit | None:
+    evaluator: CurrentStateStepCompletionEvaluator | None = None,
+) -> CurrentStateStepCompletionCommit | None:
     if task_spec is None or state.task_plan is None or state.task_progress is None:
         return None
-    active_subgoal_id = state.task_progress.active_subgoal_id
-    if not active_subgoal_id:
-        ready = state.task_progress.ready_subgoal_ids(state.task_plan)
-        active_subgoal_id = ready[0] if ready else ""
-    if not active_subgoal_id:
+    active_step_id = state.task_progress.active_step_id
+    if not active_step_id:
+        ready = state.task_progress.ready_step_ids(state.task_plan)
+        active_step_id = ready[0] if ready else ""
+    if not active_step_id:
         return None
     context = TaskPlanLifecycle.build_context(
         task_spec,
@@ -106,11 +104,11 @@ def prepare_current_state_subgoal_completion(
         plan_version=state.task_plan.plan_version,
         plan_based_on_state_version=state.task_plan.based_on_state_version,
         evaluated_at_state_version=state.version,
-        active_subgoal_id=active_subgoal_id,
-        completed_subgoal_ids=tuple(state.task_progress.completed_subgoal_ids),
-        failed_subgoal_ids=tuple(state.task_progress.failed_subgoal_ids),
+        active_step_id=active_step_id,
+        completed_step_ids=tuple(state.task_progress.completed_step_ids),
+        failed_step_ids=tuple(state.task_progress.failed_step_ids),
     )
-    preparation = (evaluator or CurrentStateSubgoalCompletionEvaluator()).evaluate(
+    preparation = (evaluator or CurrentStateStepCompletionEvaluator()).evaluate(
         plan=state.task_plan,
         progress=progress,
         environment=context.environment,
@@ -124,18 +122,18 @@ def prepare_current_state_subgoal_completion(
     completed_ids = tuple(
         dict.fromkeys(
             (
-                *state.task_progress.completed_subgoal_ids,
-                preparation.subgoal_id,
+                *state.task_progress.completed_step_ids,
+                preparation.step_id,
             )
         )
     )
     completed = set(completed_ids)
-    return CurrentStateSubgoalCompletionCommit(
+    return CurrentStateStepCompletionCommit(
         preparation=preparation,
         evidence_refs=current_state_evidence_refs(preparation.evidence),
-        completed_subgoal_ids=completed_ids,
+        completed_step_ids=completed_ids,
         task_plan_completed=all(
-            item.subgoal_id in completed for item in state.task_plan.subgoals
+            item.step_id in completed for item in state.task_plan.steps
         ),
     )
 
@@ -148,7 +146,7 @@ def commit_current_state_completion(
     trace: TraceDag,
     parent: TraceNode,
 ) -> TraceNode | None:
-    completion = prepare_current_state_subgoal_completion(
+    completion = prepare_current_state_step_completion(
         task_spec,
         state,
         snapshot,
@@ -156,9 +154,13 @@ def commit_current_state_completion(
     )
     if completion is None:
         return None
-    state.complete_step(completion.subgoal_id, completion.evidence_refs)
+    state.complete_step(
+        completion.step_id,
+        completion.evidence_refs,
+        completion.preparation.criterion_ids,
+    )
     parent = trace.add(
-        "SubgoalCompletedFromCurrentObservation",
+        "StepCompletedFromCurrentObservation",
         completion.completion_payload(state.phase),
         parents=[parent.id],
     )
@@ -176,38 +178,32 @@ def commit_verified_task_progress(
     state: StateKernel,
     trace: TraceDag,
     parent: TraceNode,
-    subgoal_verifier: SubgoalVerifierPort,
-    verification: VerificationReport,
-    observation: Observation,
+    step_completion: CriterionEvaluation | None,
     task_planner_is_router: bool,
     skill_complete: bool,
     skill_progress: TaskSkillRunState | None = None,
 ) -> VerifiedTaskProgressCommit:
     if state.task_plan is None or state.task_progress is None:
         return VerifiedTaskProgressCommit(parent, False, False, False)
-    subgoal = TaskPlanLifecycle.active_subgoal_spec(state)
-    progress_report = (
-        subgoal_verifier.verify(
-            subgoal,
-            verification,
-            observation,
-        )
-        if subgoal is not None
-        else None
-    )
-    if progress_report is not None and progress_report.passed and subgoal is not None:
+    step = TaskPlanLifecycle.active_step_spec(state)
+    if (
+        step_completion is not None
+        and step_completion.status == CriterionStatus.SATISFIED
+        and step is not None
+    ):
         state.complete_step(
-            subgoal.subgoal_id,
-            progress_report.match.evidence_ids,
+            step.step_id,
+            step_completion.evidence_refs,
+            tuple(item.criterion_id for item in step.completion_criteria),
         )
         parent = trace.add(
-            "SubgoalCompleted",
+            "StepCompleted",
             {
                 "state": state.phase,
                 "plan_id": state.task_plan.plan_id,
-                "subgoal_id": subgoal.subgoal_id,
-                "evidence": list(progress_report.match.evidence_ids),
-                "criterion_evidence_links": [asdict(item) for item in progress_report.match.links],
+                "step_id": step.step_id,
+                "evidence": list(step_completion.evidence_refs),
+                "criterion_ids": [item.criterion_id for item in step.completion_criteria],
             },
             parents=[parent.id],
         )
@@ -218,12 +214,12 @@ def commit_verified_task_progress(
             {
                 "state": state.phase,
                 "task_plan_id": state.task_plan.plan_id,
-                "completed_subgoal_ids": list(state.task_progress.completed_subgoal_ids),
+                "completed_step_ids": list(state.task_progress.completed_step_ids),
             },
             parents=[parent.id],
         )
         if not (
-            len(state.task_plan.subgoals) > 1
+            len(state.task_plan.steps) > 1
             or not task_planner_is_router
             or skill_complete
         ):
@@ -242,17 +238,18 @@ def commit_verified_task_progress(
         else:
             state.final_result = {
                 "task_plan_id": state.task_plan.plan_id,
-                "completed_subgoal_ids": list(state.task_progress.completed_subgoal_ids),
+                "completed_step_ids": list(state.task_progress.completed_step_ids),
             }
         return VerifiedTaskProgressCommit(parent, True, True, True)
-    if progress_report is not None and subgoal is not None:
+    if step_completion is not None and step is not None:
         parent = trace.add(
-            "SubgoalEvidenceRejected",
+            "StepEvidenceRejected",
             {
                 "state": state.phase,
                 "plan_id": state.task_plan.plan_id,
-                "subgoal_id": subgoal.subgoal_id,
-                "criteria_match": asdict(progress_report.match),
+                "step_id": step.step_id,
+                "status": step_completion.status.value,
+                "reason_code": step_completion.reason_code,
             },
             parents=[parent.id],
         )
@@ -291,7 +288,7 @@ def commit_task_skill_terminal_progress(
 
 
 def _still_current(
-    preparation: SubgoalCompletionPreparation,
+    preparation: StepCompletionPreparation,
     state: StateKernel,
 ) -> bool:
     return (

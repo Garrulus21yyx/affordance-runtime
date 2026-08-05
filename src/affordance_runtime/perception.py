@@ -9,8 +9,8 @@ from typing import Protocol
 
 from affordance_runtime.contracts import RiskLevel
 from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
+from affordance_runtime.simplified_runtime_contracts import StepSpec
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import SubgoalSpec
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualGroundingRequest,
@@ -151,7 +151,7 @@ class PerceptionEscalation:
 def derive_perception_requirements(
     task: TaskSpec,
     *,
-    active_subgoal: SubgoalSpec | str | None = None,
+    active_subgoal: StepSpec | str | None = None,
     escalation: PerceptionEscalation | None = None,
 ) -> PerceptionRequirements:
     """Derive bounded evidence needs without selecting a concrete backend."""
@@ -302,7 +302,7 @@ def route_perception_requirements(
 def perception_task_terms(
     task: TaskSpec,
     *,
-    active_subgoal: SubgoalSpec | str | None = None,
+    active_subgoal: StepSpec | str | None = None,
 ) -> tuple[str, ...]:
     """Return bounded semantic terms for selective structured observers."""
 
@@ -312,13 +312,25 @@ def perception_task_terms(
     return tuple(dict.fromkeys([*whole, *parts]))[:32]
 
 
-def _perception_text(task: TaskSpec, active_subgoal: SubgoalSpec | str | None) -> str:
+def _perception_text(task: TaskSpec, active_subgoal: StepSpec | str | None) -> str:
     subgoal_parts: tuple[str, ...]
-    if isinstance(active_subgoal, SubgoalSpec):
+    if isinstance(active_subgoal, StepSpec):
         subgoal_parts = (
             active_subgoal.objective,
-            *active_subgoal.success_criteria,
-            *active_subgoal.evidence_requirements,
+            *(
+                " ".join(
+                    (
+                        getattr(criterion, "subject", ""),
+                        getattr(getattr(criterion, "relation", None), "value", ""),
+                        *getattr(
+                            getattr(criterion, "evidence_policy", None),
+                            "allowed_source_kinds",
+                            (),
+                        ),
+                    )
+                )
+                for criterion in active_subgoal.completion_criteria
+            ),
         )
     elif isinstance(active_subgoal, str):
         subgoal_parts = (active_subgoal,)

@@ -84,7 +84,8 @@ from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
-from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
+from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.task_planning import LegacyTaskPlanProviderAdapter
 from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.unified_observation import UnifiedObservation
@@ -775,7 +776,9 @@ def run_browsergym_generalist_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
-            task_planner=PlanningRouter(complex_planner=LLMTaskPlanner(model)),
+            task_planner=PlanningRouter(
+                complex_planner=LegacyTaskPlanProviderAdapter(model)
+            ),
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
         ).run_sync(
             RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]),

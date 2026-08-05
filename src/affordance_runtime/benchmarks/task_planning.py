@@ -10,9 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
-
-from pydantic import BaseModel
+from typing import Any
 
 from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
@@ -20,7 +18,6 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
-from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -31,28 +28,18 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.task_intake import (
-    EvidenceKind,
-    EvidenceRequirement,
-    GraphConstructionSource,
-    OperationClass,
-    SourcedTaskClaim,
-    TaskClaimKind,
-    TaskObligationKind,
-    TaskObligationRelation,
-    TaskObligationSpec,
-    TaskSpec,
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    SourceReference,
+    StateCriterion,
+    StepSpec,
 )
-from affordance_runtime.task_planning import (
-    LLMTaskPlanner,
-    RuleTaskPlanner,
-    TaskPlanCandidate,
-    TaskPlannerPort,
-    TaskPlanningContext,
-)
+from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
+from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningContext
 from affordance_runtime.verification.contracts import SuccessExpression
 
-T = TypeVar("T", bound=BaseModel)
 ABLATION_PROFILES = ("flat", "always_plan", "adaptive")
 
 
@@ -136,7 +123,7 @@ class _StageContractBuilder(ActionContractMaterializer):
     def build(self, proposal, task_spec, state, snapshot, observation=None):
         next_stage = int(snapshot.observation.metadata["stage"]) + 1
         active_id = (
-            state.task_progress.active_subgoal_id
+            state.task_progress.active_step_id
             if state.task_progress
             else "subgoal-1"
         )
@@ -157,30 +144,53 @@ class _StageContractBuilder(ActionContractMaterializer):
 
 
 @dataclass
-class _FixedTaskPlanModel:
-    candidate: TaskPlanCandidate
-    provider: str = "fixed"
-    model: str = "controlled-task-plan"
-    endpoint_class: str = "test"
-    last_call: ModelCallRecord | None = None
+class _FixedCanonicalPlanner:
+    target_stage: int
     calls: int = 0
 
-    async def generate_structured(
-        self,
-        messages: Sequence[ModelMessage],
-        output_schema: type[T],
-        config: ModelConfig,
-    ) -> T:
-        del messages, config
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
         self.calls += 1
-        subgoals = self.candidate.subgoals
-        return output_schema.model_validate(
-            {
-                "entry_subgoal": subgoals[0].model_dump(mode="json"),
-                "remaining_subgoals": [item.model_dump(mode="json") for item in subgoals[1:]],
-                "assumptions": list(self.candidate.assumptions),
-            }
+        source_refs = (SourceReference("task-planning-ablation", "task-planning-ablation:advance"),)
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
+            task_revision=context.task_spec.revision,
+            generated_by=TaskPlanGeneratorSource.LLM,
+            generator_id="controlled-task-plan",
+            based_on_observation_ref=context.environment.snapshot_id,
+            based_on_state_version=context.state_version,
+            steps=tuple(_stage_step(index) for index in range(1, self.target_stage + 1)),
+            source_refs=source_refs,
         )
+
+
+def _stage_step(index: int) -> StepSpec:
+    step_id = f"stage-{index}"
+    source_refs = (
+        SourceReference(
+            "task-planning-ablation",
+            evidence_requirement_id("subgoal", step_id, 0),
+        ),
+    )
+    return StepSpec(
+        step_id=step_id,
+        objective=f"stage equals {index}",
+        interaction=ElementIntent("Advance", source_refs),
+        completion_criteria=(
+            StateCriterion(
+                criterion_id=criterion_id("subgoal", step_id, 0),
+                source_refs=source_refs,
+                subject="stage",
+                relation=CriterionRelation.EQUALS,
+                expected_value=index,
+                evidence_policy=EvidencePolicy(
+                    minimum_strength=EvidenceStrength.INDEPENDENT,
+                    allowed_source_kinds=("dom_state",),
+                ),
+            ),
+        ),
+        source_refs=source_refs,
+        depends_on=(f"stage-{index - 1}",) if index > 1 else (),
+    )
 
 
 @dataclass
@@ -188,9 +198,9 @@ class _CountingPlanner:
     delegate: TaskPlannerPort
     calls: int = 0
 
-    def plan(self, context: TaskPlanningContext):  # type: ignore[no-untyped-def]
+    def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
         self.calls += 1
-        return self.delegate.plan(context)
+        return self.delegate.generate_candidate(context)
 
 
 def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:
@@ -235,43 +245,11 @@ def run_task_planning_ablation(output_dir: Path) -> dict[str, Any]:
 
 def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAblationRun:
     environment = _StageEnvironment()
-    use_canonical_flat_plan = profile == "flat" or (profile == "adaptive" and target_stage == 1)
-    flat_claims = (
-        SourcedTaskClaim(
-            claim_id="advance-once",
-            kind=TaskClaimKind.EFFECT,
-            statement="advance the controlled environment once",
-            source_ref="task-planning-ablation",
-            source_unit_ids=("task-planning-ablation:advance",),
-            construction_source=GraphConstructionSource.CANONICAL_COMPILER,
-        ),
-    )
-    flat_obligations = (
-        TaskObligationSpec(
-            obligation_id="advance-once",
-            kind=TaskObligationKind.EFFECT,
-            subject="Advance",
-            relation=TaskObligationRelation.HAS_CHANGED,
-            claim_ids=("advance-once",),
-            evidence_requirements=("independent stage observation",),
-            typed_evidence_requirements=(
-                EvidenceRequirement(
-                    kind=EvidenceKind.DOM_STATE,
-                    subject="Advance",
-                    relation=TaskObligationRelation.HAS_CHANGED,
-                    minimum_strength="authoritative",
-                    source_constraints=("task-planning-ablation",),
-                ),
-            ),
-            terminal=True,
-            construction_source=GraphConstructionSource.CANONICAL_COMPILER,
-        ),
-    )
     spec = TaskSpec(
         task_id=f"task-planning-{profile}-{case_id}",
         revision=1,
         objective=f"Reach stage {target_stage}",
-        operation_class=OperationClass.READ_ONLY,
+        operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("advance",),
         success_criteria=(f"stage equals {target_stage}",),
         success=SuccessExpression(
@@ -281,8 +259,6 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         ),
         evidence_requirements=("stage observation",),
         source_request_ref="task-planning-ablation",
-        source_claims=flat_claims if use_canonical_flat_plan else (),
-        obligations=flat_obligations if use_canonical_flat_plan else (),
     )
     planner, model = _profile_planner(profile, target_stage)
     counting = _CountingPlanner(planner)
@@ -302,37 +278,20 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         action_count=result.state.step_count,
         task_plan_calls=counting.calls,
         model_calls=model.calls if model is not None else 0,
-        task_replans=result.state.task_progress.task_replan_count if result.state.task_progress else 0,
+        task_replans=result.state.task_progress.replan_count if result.state.task_progress else 0,
         trace_events=tuple(node.kind for node in result.trace.nodes),
     )
 
 
-def _profile_planner(profile: str, target_stage: int) -> tuple[TaskPlannerPort, _FixedTaskPlanModel | None]:
+def _profile_planner(
+    profile: str,
+    target_stage: int,
+) -> tuple[TaskPlannerPort, _FixedCanonicalPlanner | None]:
     if profile == "flat":
-        return RuleTaskPlanner(), None
-    candidate = TaskPlanCandidate.model_validate(
-        {
-            "subgoals": [
-                {
-                    "subgoal_id": f"stage-{index}",
-                    "outcome": {
-                        "subject": "stage",
-                        "relation": "equals",
-                        "value": str(index),
-                    },
-                    "depends_on": [f"stage-{index - 1}"] if index > 1 else [],
-                    "evidence_requirements": ["stage observation"],
-                    "operation_class": "read_only",
-                    "action_family": "activate",
-                }
-                for index in range(1, 4)
-            ]
-        }
-    )
-    model = _FixedTaskPlanModel(candidate)
-    llm = LLMTaskPlanner(model)
+        return PlanningRouter(), None
+    model = _FixedCanonicalPlanner(target_stage)
     if profile == "always_plan":
-        return llm, model
+        return model, model
     if profile == "adaptive":
-        return (RuleTaskPlanner(), None) if target_stage == 1 else (llm, model)
+        return (PlanningRouter(), None) if target_stage == 1 else (model, model)
     raise ValueError(f"unsupported task-planning profile: {profile}")

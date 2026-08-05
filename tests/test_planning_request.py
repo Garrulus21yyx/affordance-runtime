@@ -37,7 +37,7 @@ def test_planner_admission_view_is_identity_bound_and_deeply_immutable() -> None
         blocking_step_ids=("step:type-name",),
     )
     admission = PlannerAdmissionView(
-        source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+        source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
         task_revision=1,
         snapshot_id="snapshot-1",
         target_decisions=(decision,),
@@ -57,7 +57,7 @@ def test_planner_admission_rejects_inconsistent_exclusions() -> None:
 
     with pytest.raises(ValueError, match="excluded target"):
         PlannerAdmissionView(
-            source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+            source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
             task_revision=1,
             snapshot_id="snapshot-1",
             target_decisions=(),
@@ -87,7 +87,7 @@ def test_planner_admission_rejects_duplicate_decisions_and_unexplained_blocking(
     )
     with pytest.raises(ValueError, match="unique"):
         PlannerAdmissionView(
-            source=PlannerAdmissionSource.LEGACY_TERMINAL_READINESS,
+            source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
             task_revision=1,
             snapshot_id="snapshot-1",
             target_decisions=(decision, decision),

@@ -17,19 +17,14 @@ from affordance_runtime.simplified_runtime_contracts import (
     StateCriterion,
     StateCriterionRelation,
     StepSpec,
-    interaction_for_state,
 )
-from affordance_runtime.task_intake import TaskObligationSpec, TaskSpec, TaskStructure
+from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
 from affordance_runtime.task_plan_contracts import (
     PlanCandidate,
     TaskPlanGeneratorSource,
 )
-from affordance_runtime.task_planning import (
-    SubgoalOutcome,
-    TaskPlanCandidate,
-    TaskPlanningContext,
-)
-from affordance_runtime.task_source_references import subgoal_source_refs, task_source_refs
+from affordance_runtime.task_planner import TaskPlanningContext
+from affordance_runtime.task_source_references import task_source_refs
 
 
 class PlanCandidateGeneratorPort(Protocol):
@@ -41,7 +36,7 @@ class PlanCandidateGeneratorPort(Protocol):
 
 @dataclass(frozen=True)
 class RulePlanCandidateGenerator:
-    """Generate authority-free plan candidates from canonical task obligations."""
+    """Generate a direct StepSpec proposal from accepted task meaning."""
 
     default_evidence_source_kind: str = "dom_state"
 
@@ -54,6 +49,8 @@ class RulePlanCandidateGenerator:
             generated_by=TaskPlanGeneratorSource.RULE,
             generator_id="rule-task-plan-generator",
             generator_version="sar-3-direct-candidate",
+            based_on_observation_ref=context.environment.snapshot_id,
+            based_on_state_version=context.state_version,
             steps=_steps_from_task_spec(
                 task_spec,
                 default_evidence_source_kind=self.default_evidence_source_kind,
@@ -116,6 +113,8 @@ class PricingPlanCandidateGenerator:
             generated_by=TaskPlanGeneratorSource.RULE,
             generator_id="pricing-task-plan-generator",
             generator_version="tpa-5-draft",
+            based_on_observation_ref=context.environment.snapshot_id,
+            based_on_state_version=context.state_version,
             steps=steps,
             assumptions=("pricing cards can be revealed independently",),
             source_refs=task_source_refs(context.task_spec),
@@ -135,8 +134,6 @@ class PlanCandidateGeneratorRouter:
         *,
         complex_task: bool | None = None,
     ) -> PlanCandidate | Awaitable[PlanCandidate]:
-        if context.task_spec.obligations:
-            return self.rule_generator.generate(context)
         if complex_task is None:
             complex_task = context.task_spec.task_structure == TaskStructure.MULTI_STAGE
         if not complex_task:
@@ -151,16 +148,12 @@ def _steps_from_task_spec(
     *,
     default_evidence_source_kind: str,
 ) -> tuple[StepSpec, ...]:
-    if task_spec.obligations:
-        return tuple(
-            _step_from_obligation(
-                obligation,
-                task_spec,
-                default_evidence_source_kind=default_evidence_source_kind,
-            )
-            for obligation in task_spec.obligations
-        )
     source_refs = task_source_refs(task_spec)
+    relation = (
+        StateCriterionRelation.IS_VISIBLE
+        if task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+        else StateCriterionRelation.IS_COMPLETED
+    )
     return (
         StepSpec(
             step_id="step:implicit",
@@ -174,8 +167,8 @@ def _steps_from_task_spec(
                     criterion_id="criterion:step:implicit",
                     source_refs=source_refs,
                     subject=task_spec.targets[0] if task_spec.targets else task_spec.task_id,
-                    relation=StateCriterionRelation.IS_VISIBLE,
-                    expected_value=True,
+                    relation=relation,
+                    expected_value=(True if relation == StateCriterionRelation.IS_VISIBLE else None),
                     evidence_policy=CriterionEvidencePolicy(
                         minimum_strength=EvidenceStrength.INDEPENDENT,
                         allowed_source_kinds=(default_evidence_source_kind,),
@@ -185,115 +178,3 @@ def _steps_from_task_spec(
             source_refs=source_refs,
         ),
     )
-
-
-def plan_candidate_from_provider_candidate(
-    candidate: TaskPlanCandidate,
-    context: TaskPlanningContext,
-) -> PlanCandidate:
-    task_spec = context.task_spec
-    source_refs = task_source_refs(task_spec)
-    steps = []
-    for item in candidate.subgoals:
-        outcome = SubgoalOutcome.model_validate(item.outcome.model_dump(mode="json"))
-        steps.append(
-            StepSpec(
-                step_id=item.subgoal_id,
-                objective=outcome.description(),
-                interaction=interaction_for_state(
-                    outcome.subject,
-                    StateCriterionRelation(outcome.relation),
-                    outcome.value or None,
-                    source_refs,
-                ),
-                depends_on=item.depends_on,
-                completion_criteria=(
-                    StateCriterion(
-                        criterion_id=f"criterion:{item.subgoal_id}",
-                        source_refs=source_refs,
-                        subject=outcome.subject,
-                        relation=StateCriterionRelation(outcome.relation),
-                        expected_value=outcome.value or None,
-                        evidence_policy=CriterionEvidencePolicy(
-                            minimum_strength=EvidenceStrength.INDEPENDENT,
-                            allowed_source_kinds=("dom_state",),
-                        ),
-                    ),
-                ),
-                source_refs=source_refs,
-            )
-        )
-    return PlanCandidate(
-        task_spec_identity=task_spec.identity,
-        task_revision=task_spec.revision,
-        generated_by=TaskPlanGeneratorSource.LLM,
-        generator_id="llm-task-planner",
-        generator_version="sar-3-provider-candidate",
-        steps=tuple(steps),
-        assumptions=candidate.assumptions,
-        source_refs=source_refs,
-    )
-
-
-def _step_from_obligation(
-    obligation: TaskObligationSpec,
-    task_spec: TaskSpec,
-    *,
-    default_evidence_source_kind: str,
-) -> StepSpec:
-    source_refs = subgoal_source_refs(obligation.obligation_id, task_spec)
-    objective = _objective_for_obligation(obligation, task_spec)
-    _reject_forbidden_step_content(objective)
-    return StepSpec(
-        step_id=obligation.obligation_id,
-        objective=objective,
-        interaction=interaction_for_state(
-            obligation.subject,
-            StateCriterionRelation(obligation.relation),
-            obligation.expected_value or None,
-            source_refs,
-            obligation.interaction_values,
-            interaction_relation=(
-                obligation.interaction_relation.runtime_tuple
-                if obligation.interaction_relation is not None
-                else None
-            ),
-            interaction_operation=obligation.interaction_operation.value,
-        ),
-        depends_on=obligation.depends_on,
-        completion_criteria=(
-            StateCriterion(
-                criterion_id=f"criterion:{obligation.obligation_id}",
-                source_refs=source_refs,
-                subject=obligation.subject,
-                relation=StateCriterionRelation(obligation.relation),
-                expected_value=obligation.expected_value,
-                evidence_policy=CriterionEvidencePolicy(
-                    minimum_strength=EvidenceStrength.INDEPENDENT,
-                    allowed_source_kinds=(default_evidence_source_kind,),
-                ),
-            ),
-        ),
-        source_refs=source_refs,
-    )
-
-
-def _objective_for_obligation(
-    obligation: TaskObligationSpec,
-    task_spec: TaskSpec,
-) -> str:
-    claims = {item.claim_id: item for item in task_spec.source_claims}
-    for claim_id in obligation.claim_ids:
-        claim = claims.get(claim_id)
-        if claim is not None and claim.statement.strip():
-            return claim.statement
-    if obligation.expected_value is not None:
-        return f"{obligation.subject} {obligation.relation.value} {obligation.expected_value}"
-    return f"{obligation.subject} {obligation.relation.value}"
-
-
-def _reject_forbidden_step_content(value: str) -> None:
-    lowered = value.casefold()
-    forbidden = ("selector", "xpath", "backend", "coordinate", "locator", "approval_token", "#")
-    if any(item in lowered for item in forbidden):
-        raise ValueError("forbidden implementation detail in task plan draft")

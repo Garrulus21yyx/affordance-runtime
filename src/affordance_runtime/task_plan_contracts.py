@@ -1,9 +1,4 @@
-"""Neutral TaskPlan authority contracts.
-
-TPA-4/SAR-3 foundation. This module defines candidate, request, decision, issue,
-and generator contracts for a future TaskPlanAuthority owner. It does not connect
-those contracts to runtime plan admission or Coordinator commit paths.
-"""
+"""Canonical TaskPlan contracts and admission authority."""
 
 from __future__ import annotations
 
@@ -12,24 +7,16 @@ import json
 import re
 from dataclasses import dataclass, is_dataclass
 from enum import StrEnum
-from typing import Awaitable, Protocol
+from typing import Any, Awaitable, Protocol
 
 from affordance_runtime.simplified_runtime_contracts import (
     SourceReference,
-    StateCriterion,
+    StepActivityStatus,
     StepProgressView,
     StepSpec,
     TaskPlanView,
 )
-from affordance_runtime.task_intake import OperationClass
-from affordance_runtime.task_planning import (
-    SubgoalOutcome,
-    SubgoalOutcomeRelation,
-    SubgoalSpec,
-    TaskPlan,
-    TaskPlanActionFamily,
-    TaskPlanSource,
-)
+from affordance_runtime.task_intake import OperationClass, StrictModel
 
 _FORBIDDEN_IMPLEMENTATION_DETAIL = re.compile(
     r"(?:\bselector\b|\bxpath\b|\bbackend\b|\bcoordinate\b|\blocator\b|#[-_\w]+|approval_token)",
@@ -42,6 +29,70 @@ class TaskPlanGeneratorSource(StrEnum):
     LLM = "llm"
     PARENT = "parent"
     SKILL = "skill"
+
+
+class TaskPlan(StrictModel):
+    """One admitted, observation-bound execution hypothesis."""
+
+    schema_version: str = "2.0"
+    plan_id: str
+    task_id: str
+    task_revision: int
+    plan_version: int
+    supersedes_plan_id: str = ""
+    based_on_state_version: int
+    based_on_observation_ref: str
+    generated_by: TaskPlanGeneratorSource
+    steps: tuple[StepSpec, ...]
+    assumptions: tuple[str, ...] = ()
+
+    def step(self, step_id: str) -> StepSpec | None:
+        return next((item for item in self.steps if item.step_id == step_id), None)
+
+
+def project_task_plan_views(
+    plan: TaskPlan,
+    *,
+    task_spec_identity: str,
+    task_revision: int,
+    progress: Any,
+) -> tuple[TaskPlanView, StepProgressView]:
+    completed = tuple(progress.completed_step_ids)
+    failed = tuple(progress.failed_step_ids)
+    active = progress.active_step_id or None
+    ready = tuple(progress.ready_step_ids(plan)) if active is None else ()
+    status = (
+        StepActivityStatus.ACTIVE
+        if active is not None
+        else StepActivityStatus.READY_NOT_ACTIVATED
+        if ready
+        else StepActivityStatus.COMPLETED
+        if set(completed) == {step.step_id for step in plan.steps}
+        else StepActivityStatus.NO_PLAN
+    )
+    return (
+        TaskPlanView(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            task_spec_identity=task_spec_identity,
+            task_revision=task_revision,
+            steps=plan.steps,
+            active_step_id=active,
+        ),
+        StepProgressView(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            active_step_id=active,
+            activity_status=status,
+            completed_step_ids=completed,
+            failed_step_ids=failed,
+            ready_step_ids=ready,
+            evidence_by_step_id=tuple(
+                (step_id, tuple(progress.evidence_for_step(step_id)))
+                for step_id in completed
+            ),
+        ),
+    )
 
 
 class PlanIssueKind(StrEnum):
@@ -67,6 +118,8 @@ class PlanCandidate:
     generated_by: TaskPlanGeneratorSource
     generator_id: str
     steps: tuple[StepSpec, ...]
+    based_on_observation_ref: str = ""
+    based_on_state_version: int = -1
     generator_version: str = ""
     assumptions: tuple[str, ...] = ()
     source_refs: tuple[SourceReference, ...] = ()
@@ -89,6 +142,10 @@ class PlanCandidate:
             raise ValueError("draft source refs cannot be empty")
         _reject_forbidden_text((*self.assumptions,))
         _validate_draft_step_graph(self.steps)
+        if self.based_on_observation_ref:
+            _require_nonblank("based_on_observation_ref", self.based_on_observation_ref)
+        if self.based_on_state_version < -1:
+            raise ValueError("candidate state version cannot be less than -1")
 
 
 @dataclass(frozen=True)
@@ -242,6 +299,10 @@ class TaskPlanDecision:
             repair_directives=directives,
         )
 
+    @classmethod
+    def rejected(cls, *issues: TaskPlanIssue) -> TaskPlanDecision:
+        return cls(status=TaskPlanDecisionStatus.REJECTED, issues=issues)
+
     def __post_init__(self) -> None:
         if not isinstance(self.status, TaskPlanDecisionStatus):
             raise ValueError("unsupported task plan decision status")
@@ -268,61 +329,75 @@ class TaskPlanDecision:
 
 
 @dataclass(frozen=True)
-class TaskPlanAuthorityBinder:
-    def bind_initial(self, request: InitialTaskPlanRequest, draft: PlanCandidate) -> TaskPlan:
-        _validate_draft_matches_request(request, draft)
-        digest = _digest(draft)
-        return _bind_task_plan(
-            request=request,
-            draft=draft,
-            plan_id=_plan_id(
-                request.task_spec_identity,
-                request.task_revision,
-                request.evaluated_at_state_version,
-                "",
-                0,
-                digest,
-            ),
-            plan_version=1,
-            supersedes_plan_id="",
-        )
-
-    def bind_revision(self, request: TaskPlanRevisionRequest, draft: PlanCandidate) -> TaskPlan:
-        _validate_draft_matches_request(request, draft)
-        digest = _digest(draft)
-        return _bind_task_plan(
-            request=request,
-            draft=draft,
-            plan_id=_plan_id(
-                request.task_spec_identity,
-                request.task_revision,
-                request.evaluated_at_state_version,
-                request.previous_plan.plan_id,
-                request.previous_plan.plan_version,
-                digest,
-            ),
-            plan_version=request.previous_plan.plan_version + 1,
-            supersedes_plan_id=request.previous_plan.plan_id,
-        )
-
-
-@dataclass(frozen=True)
 class TaskPlanAuthority:
-    binder: TaskPlanAuthorityBinder = TaskPlanAuthorityBinder()
-
     def admit_initial(
         self,
         request: InitialTaskPlanRequest,
         candidate: PlanCandidate,
     ) -> TaskPlanDecision:
-        return TaskPlanDecision.accepted(self.binder.bind_initial(request, candidate))
+        issues = self._validate(request, candidate)
+        if issues:
+            return TaskPlanDecision.rejected(*issues)
+        return TaskPlanDecision.accepted(
+            _bind_task_plan(
+                request=request,
+                draft=candidate,
+                plan_id=_plan_id(
+                    request.task_spec_identity,
+                    request.task_revision,
+                    request.evaluated_at_state_version,
+                    "",
+                    0,
+                    _digest(candidate),
+                ),
+                plan_version=1,
+                supersedes_plan_id="",
+            )
+        )
 
     def admit_revision(
         self,
         request: TaskPlanRevisionRequest,
         candidate: PlanCandidate,
     ) -> TaskPlanDecision:
-        return TaskPlanDecision.accepted(self.binder.bind_revision(request, candidate))
+        issues = self._validate(request, candidate)
+        if issues:
+            return TaskPlanDecision.rejected(*issues)
+        return TaskPlanDecision.accepted(
+            _bind_task_plan(
+                request=request,
+                draft=candidate,
+                plan_id=_plan_id(
+                    request.task_spec_identity,
+                    request.task_revision,
+                    request.evaluated_at_state_version,
+                    request.previous_plan.plan_id,
+                    request.previous_plan.plan_version,
+                    _digest(candidate),
+                ),
+                plan_version=request.previous_plan.plan_version + 1,
+                supersedes_plan_id=request.previous_plan.plan_id,
+            )
+        )
+
+    @staticmethod
+    def _validate(
+        request: InitialTaskPlanRequest | TaskPlanRevisionRequest,
+        candidate: PlanCandidate,
+    ) -> tuple[TaskPlanIssue, ...]:
+        issues: list[TaskPlanIssue] = []
+        if candidate.task_spec_identity != request.task_spec_identity:
+            issues.append(TaskPlanIssue("task_identity_mismatch", "candidate task identity is stale"))
+        if candidate.task_revision != request.task_revision:
+            issues.append(TaskPlanIssue("task_revision_mismatch", "candidate task revision is stale"))
+        current_observation_ref = request.observation_refs[0]
+        if candidate.based_on_observation_ref != current_observation_ref:
+            issues.append(TaskPlanIssue("observation_basis_stale", "candidate observation basis is not current"))
+        if candidate.based_on_state_version != request.evaluated_at_state_version:
+            issues.append(TaskPlanIssue("state_basis_stale", "candidate state basis is not current"))
+        if len(candidate.steps) > request.remaining_budget_steps:
+            issues.append(TaskPlanIssue("step_budget_exceeded", "candidate exceeds remaining step budget"))
+        return tuple(issues)
 
 
 class TaskPlanGeneratorPort(Protocol):
@@ -347,75 +422,11 @@ def _bind_task_plan(
         plan_version=plan_version,
         supersedes_plan_id=supersedes_plan_id,
         based_on_state_version=request.evaluated_at_state_version,
-        generated_by=TaskPlanSource(draft.generated_by.value),
-        subgoals=tuple(_subgoal_from_step(step, request.operation_class) for step in draft.steps),
+        based_on_observation_ref=request.observation_refs[0],
+        generated_by=draft.generated_by,
+        steps=draft.steps,
         assumptions=draft.assumptions,
     )
-
-
-def _subgoal_from_step(step: StepSpec, task_operation: OperationClass) -> SubgoalSpec:
-    criterion = step.completion_criteria[0]
-    outcome = (
-        SubgoalOutcome(
-            subject=criterion.subject,
-            relation=SubgoalOutcomeRelation(criterion.relation.value),
-            value="" if criterion.expected_value is None else str(criterion.expected_value),
-        )
-        if isinstance(criterion, StateCriterion)
-        else None
-    )
-    return SubgoalSpec(
-        subgoal_id=step.step_id,
-        objective=outcome.description() if outcome is not None else step.objective,
-        depends_on=step.depends_on,
-        success_criteria=(
-            (outcome.description(),)
-            if outcome is not None
-            else tuple(criterion.criterion_id for criterion in step.completion_criteria)
-        ),
-        evidence_requirements=tuple(ref.source_unit_id for ref in step.source_refs),
-        operation_class=(
-            OperationClass.READ_ONLY
-            if outcome is None
-            or outcome.relation
-            in {
-                SubgoalOutcomeRelation.IS_VISIBLE,
-                SubgoalOutcomeRelation.IS_ABSENT,
-                SubgoalOutcomeRelation.IS_AVAILABLE,
-            }
-            else task_operation
-        ),
-        action_family=_legacy_action_family_for_step(criterion, task_operation),
-        outcome=outcome,
-        interaction=step.interaction,
-    )
-
-
-def _legacy_action_family_for_step(
-    criterion: object,
-    task_operation: OperationClass,
-) -> TaskPlanActionFamily | None:
-    """Preserve generic executable family during StepSpec -> legacy projection."""
-
-    if task_operation != OperationClass.REVERSIBLE_WRITE or not isinstance(criterion, StateCriterion):
-        return None
-    relation = criterion.relation.value
-    subject_tokens = _semantic_tokens(criterion.subject)
-    if relation in {"is_visible", "is_absent", "is_available"}:
-        return None
-    if "slider" in subject_tokens:
-        return TaskPlanActionFamily.PRESS_KEY
-    if subject_tokens.intersection({"checkbox", "button", "submit", "dialog", "radio", "toggle", "link"}):
-        return TaskPlanActionFamily.ACTIVATE
-    if subject_tokens.intersection({"field", "input", "textbox", "textarea", "text", "date"}):
-        return TaskPlanActionFamily.TYPE_TEXT
-    if subject_tokens.intersection({"select", "option", "options", "list", "dropdown"}):
-        return TaskPlanActionFamily.SELECT_OPTION
-    return None
-
-
-def _semantic_tokens(value: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
 def _validate_draft_matches_request(

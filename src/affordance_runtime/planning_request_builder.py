@@ -30,14 +30,8 @@ from affordance_runtime.planning_request import (
 )
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.simplified_runtime_contracts import StepActivityStatus
-from affordance_runtime.simplified_step_projection import (
-    LegacyStepProjectionResult,
-    LegacyStepProjectionStatus,
-    TaskCompletionProjectionStatus,
-    project_state_legacy_task_plan_to_step_view,
-    project_task_completion_criterion,
-)
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_plan_contracts import project_task_plan_views
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
     ConflictStatus,
@@ -84,21 +78,10 @@ class PlanningRequestBuilder:
         if task_spec is None:
             raise ValueError("PlanningRequestBuilder requires a validated TaskSpec")
         before_version = state.version
-        step_projection = project_state_legacy_task_plan_to_step_view(
-            task_spec=task_spec,
-            state=state,
-        )
-        if state.version != before_version:
-            raise ValueError("planning request projection cannot mutate state")
 
-        completion_projection = project_task_completion_criterion(task_spec)
-        task_completion_criterion = (
-            completion_projection.criterion
-            if completion_projection.status == TaskCompletionProjectionStatus.PROJECTED
-            else None
-        )
+        task_completion_criterion = None
         limits = self.limits
-        step_view = _planner_step_view(step_projection, state)
+        step_view = _planner_step_view(task_spec.identity, task_spec.revision, state)
         permitted_action_kinds = _permitted_action_kinds(
             observation,
             allow_finish=self.allow_finish,
@@ -130,7 +113,7 @@ class PlanningRequestBuilder:
                 constraints=tuple(str(item) for item in task_spec.constraints),
                 capabilities=tuple(sorted(set(envelope.capabilities))),
                 task_completion_criterion=task_completion_criterion,
-                task_completion_projection_status=completion_projection.status.value,
+                task_completion_projection_status="typed_task_completion_external",
                 task_summary=freeze_request_mapping(_task_summary(task_spec.model_dump(mode="json"))),
             ),
             step=step_view,
@@ -184,24 +167,24 @@ class PlanningRequestBuilder:
 
 
 def _planner_step_view(
-    projection: LegacyStepProjectionResult,
+    task_spec_identity: str,
+    task_revision: int,
     state: StateKernel,
 ) -> PlannerStepView:
-    if projection.status != LegacyStepProjectionStatus.PROJECTED:
+    if state.task_plan is None or state.task_progress is None:
         return PlannerStepView(
             plan=None,
             progress=None,
             active_step=None,
             activity_status=StepActivityStatus.NO_PLAN,
-            projection_status=_planner_step_projection_status(projection.status),
-            projection_reason=projection.reason,
-            active_step_action_family=_compatibility_active_step_action_family(state),
-            compatibility_active_step_objective=_compatibility_active_step_objective(state),
+            projection_status=PlannerStepProjectionStatus.NO_PLAN,
         )
-    plan = projection.task_plan_view
-    progress = projection.step_progress_view
-    if plan is None or progress is None:
-        raise ValueError("projected legacy step view is incomplete")
+    plan, progress = project_task_plan_views(
+        state.task_plan,
+        task_spec_identity=task_spec_identity,
+        task_revision=task_revision,
+        progress=state.task_progress,
+    )
     active_step = None
     if progress.activity_status == StepActivityStatus.ACTIVE:
         active_step = next(
@@ -209,15 +192,14 @@ def _planner_step_view(
             None,
         )
         if active_step is None:
-            raise ValueError("active step is absent from projected plan")
+            raise ValueError("active step is absent from canonical plan")
     return PlannerStepView(
         plan=plan,
         progress=progress,
         active_step=active_step,
         activity_status=progress.activity_status,
         projection_status=PlannerStepProjectionStatus.PROJECTED,
-        active_step_action_family=_active_step_action_family(active_step)
-        or _compatibility_active_step_action_family(state),
+        active_step_action_family=_active_step_action_family(active_step),
     )
 
 
@@ -280,13 +262,13 @@ def _compatibility_active_step_objective(state: StateKernel) -> str:
 
     plan = state.task_plan
     progress = state.task_progress
-    if plan is None or progress is None or not progress.active_subgoal_id:
+    if plan is None or progress is None or not progress.active_step_id:
         return ""
     return next(
         (
             item.objective
-            for item in plan.subgoals
-            if item.subgoal_id == progress.active_subgoal_id
+            for item in plan.steps
+            if item.step_id == progress.active_step_id
         ),
         "",
     )
@@ -295,25 +277,16 @@ def _compatibility_active_step_objective(state: StateKernel) -> str:
 def _compatibility_active_step_action_family(state: StateKernel) -> str:
     plan = state.task_plan
     progress = state.task_progress
-    if plan is None or progress is None or not progress.active_subgoal_id:
+    if plan is None or progress is None or not progress.active_step_id:
         return ""
     return next(
         (
-            item.action_family.value
-            for item in plan.subgoals
-            if item.subgoal_id == progress.active_subgoal_id and item.action_family is not None
+            ""
+            for item in plan.steps
+            if item.step_id == progress.active_step_id
         ),
         "",
     )
-
-
-def _planner_step_projection_status(
-    status: LegacyStepProjectionStatus,
-) -> PlannerStepProjectionStatus:
-    try:
-        return PlannerStepProjectionStatus(status.value)
-    except ValueError as exc:
-        raise ValueError("unsupported legacy step projection status") from exc
 
 
 def _target_view(item: CanonicalTarget) -> PlannerAffordanceView:

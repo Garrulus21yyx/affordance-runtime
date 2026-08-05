@@ -5,9 +5,16 @@ from affordance_runtime.perception import (
     perception_task_terms,
     route_perception_requirements,
 )
+from affordance_runtime.simplified_runtime_contracts import (
+    CriterionEvidencePolicy,
+    ElementIntent,
+    EvidenceStrength,
+    SourceReference,
+    StateCriterion,
+    StateCriterionRelation,
+    StepSpec,
+)
 from affordance_runtime.task_intake import OperationClass, TaskSpec
-from affordance_runtime.task_planning import SubgoalSpec
-from runtime_test_support import make_interaction
 
 
 def _task(objective: str) -> TaskSpec:
@@ -237,25 +244,36 @@ def test_route_requirements_do_not_widen_authoritative_device_sources() -> None:
     )
 
 
-def test_subgoal_evidence_requirements_drive_perception_even_when_task_is_plain() -> None:
-    subgoal = SubgoalSpec(
-        subgoal_id="inspect-chart",
+def test_step_criterion_evidence_policy_drives_perception_even_when_task_is_plain() -> None:
+    refs = (SourceReference("request", "request:chart"),)
+    step = StepSpec(
+        step_id="inspect-chart",
         objective="Inspect the current chart",
-        interaction=make_interaction('Inspect the current chart'),
-        success_criteria=("the marked point is identified",),
-        evidence_requirements=("visual appearance and spatial position",),
-        operation_class=OperationClass.READ_ONLY,
+        interaction=ElementIntent("Inspect the current chart", refs),
+        completion_criteria=(
+            StateCriterion(
+                criterion_id="criterion:chart-point",
+                source_refs=refs,
+                subject="marked point spatial position",
+                relation=StateCriterionRelation.IS_VISIBLE,
+                evidence_policy=CriterionEvidencePolicy(
+                    EvidenceStrength.INDEPENDENT,
+                    ("visual_appearance", "spatial"),
+                ),
+            ),
+        ),
+        source_refs=refs,
     )
 
     requirements = derive_perception_requirements(
         _task("Review the report"),
-        active_subgoal=subgoal,
+        active_subgoal=step,
     )
 
     assert EvidenceKind.VISUAL_APPEARANCE in requirements.required_properties
     assert EvidenceKind.SPATIAL in requirements.required_properties
     assert {"inspect", "chart", "spatial", "position"}.issubset(
-        perception_task_terms(_task("Review the report"), active_subgoal=subgoal)
+        perception_task_terms(_task("Review the report"), active_subgoal=step)
     )
 
 

@@ -12,23 +12,20 @@ from enum import StrEnum
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureClass
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.simplified_runtime_contracts import StepSpec
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
+from affordance_runtime.task_plan_contracts import (
+    TaskPlanDecisionStatus,
+    TaskPlanIssue,
+)
 from affordance_runtime.task_plan_lifecycle import (
     TaskPlanBudgetLimits,
     TaskPlanLifecycle,
     TaskPlanReplacementDecision,
-    TaskPlanReplacementReason,
     TaskPlanTransition,
 )
-from affordance_runtime.task_planning import (
-    SubgoalOutcomeRelation,
-    SubgoalSpec,
-    TaskPlanValidationIssue,
-    TaskPlanValidationReport,
-    TaskPlanValidationStatus,
-    task_planning_context_summary,
-)
+from affordance_runtime.task_planner import task_planning_context_summary
 from affordance_runtime.unified_observation import UnifiedObservation
 
 
@@ -45,8 +42,8 @@ class TaskPlanFlowFailure:
     error_code: RuntimeErrorCode
     failure_class: FailureClass
     message: str
-    validation_status: TaskPlanValidationStatus | None = None
-    issues: tuple[TaskPlanValidationIssue, ...] = ()
+    validation_status: TaskPlanDecisionStatus | None = None
+    issues: tuple[TaskPlanIssue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,8 +79,8 @@ class TaskPlanTraceProjection:
 class TaskPlanCommitStateView:
     """Post-commit facts projected without granting state mutation authority."""
 
-    active_subgoal: str
-    completed_subgoal_ids: tuple[str, ...] = ()
+    active_step: str
+    completed_step_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,7 +106,7 @@ class TaskPlanCommitPreparation:
         if self.result.kind != TaskPlanFlowKind.INITIAL or transition is None:
             return None
         task_plan = transition.plan
-        report = transition.validation
+        decision = transition.decision
         return TaskPlanTraceProjection(
             "TaskPlanProposed",
             {
@@ -117,11 +114,11 @@ class TaskPlanCommitPreparation:
                 "plan_id": task_plan.plan_id,
                 "plan_version": task_plan.plan_version,
                 "generated_by": task_plan.generated_by.value,
-                "subgoal_count": len(task_plan.subgoals),
+                "step_count": len(task_plan.steps),
                 "supersedes_plan_id": task_plan.supersedes_plan_id,
                 "planning_context": task_planning_context_summary(transition.context),
-                "validation": report.status.value,
-                "issues": [item.model_dump(mode="json") for item in report.issues],
+                "validation": decision.status.value,
+                "issues": [vars(item) for item in decision.issues],
             },
         )
 
@@ -153,7 +150,7 @@ class TaskPlanCommitPreparation:
                 "error_code": failure.error_code.value,
                 "reason": failure.message,
                 "validation": failure.validation_status.value if failure.validation_status is not None else "",
-                "issues": [item.model_dump(mode="json") for item in failure.issues],
+                "issues": [vars(item) for item in failure.issues],
                 "replacement_reason": (
                     replacement.reason.value if replacement is not None and replacement.reason is not None else ""
                 ),
@@ -183,8 +180,8 @@ class TaskPlanCommitPreparation:
                     "supersedes_plan_id": task_plan.supersedes_plan_id,
                     "plan_id": task_plan.plan_id,
                     "plan_version": task_plan.plan_version,
-                    "preserved_subgoal_ids": list(committed.completed_subgoal_ids),
-                    "active_subgoal": committed.active_subgoal,
+                    "preserved_step_ids": list(committed.completed_step_ids),
+                    "active_step": committed.active_step,
                     "planning_context": task_planning_context_summary(self.transition.context),
                 },
             )
@@ -195,17 +192,9 @@ class TaskPlanCommitPreparation:
                 "plan_id": task_plan.plan_id,
                 "plan_version": task_plan.plan_version,
                 "supersedes_plan_id": task_plan.supersedes_plan_id,
-                "active_subgoal": committed.active_subgoal,
+                "active_step": committed.active_step,
             },
         )
-
-
-_CURRENT_STATE_COMPLETABLE_RELATIONS = frozenset(
-    {
-        SubgoalOutcomeRelation.IS_AVAILABLE,
-        SubgoalOutcomeRelation.IS_VISIBLE,
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -231,83 +220,12 @@ class TaskPlanFlow:
         )
         if not replacement.required:
             return TaskPlanFlowResult()
-        if replacement.reason == TaskPlanReplacementReason.ACTIVE_SUBGOAL_OUTCOME_ALREADY_SATISFIED:
-            discarded = self._prepare_current_state_discard(
-                task_spec,
-                state,
-                snapshot,
-                budget,
-                replacement,
-            )
-            if discarded is not None:
-                return discarded
         return self._prepare_replacement(
             task_spec,
             state,
             snapshot,
             budget,
             replacement,
-        )
-
-    def _prepare_current_state_discard(
-        self,
-        task_spec: TaskSpec,
-        state: StateKernel,
-        snapshot: UnifiedObservation,
-        budget: TaskPlanBudgetLimits,
-        replacement: TaskPlanReplacementDecision,
-    ) -> TaskPlanFlowResult | None:
-        assert replacement.reason is not None
-        previous_plan = state.task_plan
-        subgoal = self.lifecycle.active_subgoal_spec(state)
-        if subgoal is None:
-            subgoal = _ready_replacement_subgoal(state, replacement)
-        if (
-            previous_plan is None
-            or subgoal is None
-            or task_spec.obligations
-            or subgoal.subgoal_id != replacement.subgoal_id
-            or subgoal.outcome is None
-            or subgoal.outcome.relation not in _CURRENT_STATE_COMPLETABLE_RELATIONS
-        ):
-            return None
-        remaining = tuple(
-            item for item in previous_plan.subgoals if item.subgoal_id != subgoal.subgoal_id
-        )
-        if not remaining:
-            return None
-        context = self.lifecycle.build_context(
-            task_spec,
-            state,
-            snapshot,
-            budget,
-            reason=replacement.reason.value,
-        )
-        plan = previous_plan.model_copy(
-            update={
-                "plan_id": f"{previous_plan.plan_id}-current-state-discard",
-                "plan_version": previous_plan.plan_version + 1,
-                "supersedes_plan_id": previous_plan.plan_id,
-                "based_on_state_version": state.version,
-                "subgoals": remaining,
-            }
-        )
-        transition = TaskPlanTransition(
-            context=context,
-            plan=plan,
-            validation=self.lifecycle.validator.validate(
-                plan,
-                task_spec,
-                state_version=state.version,
-                previous_plan=previous_plan,
-                planning_context=context,
-            ),
-            previous_plan=previous_plan,
-        )
-        return _validated_result(
-            TaskPlanFlowKind.REPLACEMENT,
-            transition,
-            replacement=replacement,
         )
 
     def _prepare_initial(
@@ -372,25 +290,25 @@ class TaskPlanFlow:
         )
 
 
-def _ready_replacement_subgoal(
+def _ready_replacement_step(
     state: StateKernel,
     replacement: TaskPlanReplacementDecision,
-) -> SubgoalSpec | None:
+) -> StepSpec | None:
     if (
         state.task_plan is None
         or state.task_progress is None
-        or state.task_progress.active_subgoal_id
-        or not replacement.subgoal_id
+        or state.task_progress.active_step_id
+        or not replacement.step_id
     ):
         return None
-    completed = set(state.task_progress.completed_subgoal_ids)
-    failed = set(state.task_progress.failed_subgoal_ids)
+    completed = set(state.task_progress.completed_step_ids)
+    failed = set(state.task_progress.failed_step_ids)
     return next(
         (
             item
-            for item in state.task_plan.subgoals
-            if item.subgoal_id == replacement.subgoal_id
-            and item.subgoal_id not in completed | failed
+            for item in state.task_plan.steps
+            if item.step_id == replacement.step_id
+            and item.step_id not in completed | failed
             and all(dependency in completed for dependency in item.depends_on)
         ),
         None,
@@ -403,19 +321,17 @@ def _validated_result(
     *,
     replacement: TaskPlanReplacementDecision | None = None,
 ) -> TaskPlanFlowResult:
-    report = transition.validation
+    decision = transition.decision
     failure = None
-    if report.status != TaskPlanValidationStatus.ACCEPT and not _current_state_precheck_only(
-        report
-    ):
-        issue_codes = ",".join(dict.fromkeys(item.code for item in report.issues))
+    if decision.status != TaskPlanDecisionStatus.ACCEPTED:
+        issue_codes = ",".join(dict.fromkeys(item.code for item in decision.issues))
         detail = f" [{issue_codes}]" if issue_codes else ""
         failure = TaskPlanFlowFailure(
             error_code=RuntimeErrorCode.PLANNER_PROPOSAL_REJECTED,
             failure_class=FailureClass.VALIDATION,
-            message=f"task plan validation: {report.status.value}{detail}"[:500],
-            validation_status=report.status,
-            issues=report.issues,
+            message=f"task plan validation: {decision.status.value}{detail}"[:500],
+            validation_status=decision.status,
+            issues=decision.issues,
         )
     return TaskPlanFlowResult(
         kind=kind,
@@ -423,16 +339,6 @@ def _validated_result(
         replacement=replacement,
         failure=failure,
     )
-
-
-def _current_state_precheck_only(report: TaskPlanValidationReport) -> bool:
-    return (
-        report.status == TaskPlanValidationStatus.REPAIRABLE
-        and bool(report.issues)
-        and all(item.code == "entry_outcome_already_satisfied" for item in report.issues)
-    )
-
-
 def _invocation_failure(
     exc: Exception,
     *,

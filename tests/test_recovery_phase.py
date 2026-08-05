@@ -11,7 +11,8 @@ from affordance_runtime.recovery_owner_dispatcher import RecoveryOwnerDispatcher
 from affordance_runtime.recovery_phase import RecoveryStage, RecoveryStageInput
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RuntimeStep
-from affordance_runtime.runtime_committer import RuntimeCommitter, runtime_state_snapshot
+from affordance_runtime.runtime_committer import RuntimeCommitter
+from affordance_runtime.runtime_state_projection import runtime_state_snapshot
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag
 

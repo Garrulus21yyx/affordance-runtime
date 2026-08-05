@@ -7,16 +7,104 @@ subgoals, or accept task finish.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
-from affordance_runtime.criteria import criterion_id, evidence_requirement_id
-from affordance_runtime.task_planning import (
+from affordance_runtime.simplified_runtime_contracts import StateCriterion, StateCriterionRelation
+from affordance_runtime.task_plan_contracts import TaskPlan
+from affordance_runtime.task_planner import (
     PlanningAffordanceSummary,
     PlanningEnvironmentSummary,
-    SubgoalOutcomeRelation,
-    TaskPlan,
 )
+
+
+@dataclass(frozen=True)
+class VerifiedStepRecord:
+    plan_id: str
+    step_id: str
+    step_digest: str
+    verified_criterion_ids: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    completed_at_state_version: int
+
+
+@dataclass
+class TaskProgress:
+    """Verified execution facts that survive replacement independently of a plan graph."""
+
+    active_step_id: str = ""
+    verified_steps: list[VerifiedStepRecord] = field(default_factory=list)
+    failed_step_ids: list[str] = field(default_factory=list)
+    facts: dict[str, object] = field(default_factory=dict)
+    bindings: dict[str, object] = field(default_factory=dict)
+    recent_action_outcome_refs: list[str] = field(default_factory=list)
+    durable_evidence_refs: list[str] = field(default_factory=list)
+    action_count_by_step: dict[str, int] = field(default_factory=dict)
+    replan_count: int = 0
+
+    @property
+    def completed_step_ids(self) -> tuple[str, ...]:
+        return tuple(record.step_id for record in self.verified_steps)
+
+    def evidence_for_step(self, step_id: str) -> tuple[str, ...]:
+        record = next(
+            (item for item in reversed(self.verified_steps) if item.step_id == step_id),
+            None,
+        )
+        return record.evidence_refs if record is not None else ()
+
+    def ready_step_ids(self, plan: TaskPlan) -> tuple[str, ...]:
+        completed = set(self.completed_step_ids)
+        unavailable = completed | set(self.failed_step_ids)
+        return tuple(
+            step.step_id
+            for step in plan.steps
+            if step.step_id not in unavailable
+            and set(step.depends_on).issubset(completed)
+        )
+
+    def activate_next(self, plan: TaskPlan) -> str:
+        if self.active_step_id:
+            return self.active_step_id
+        ready = self.ready_step_ids(plan)
+        self.active_step_id = ready[0] if ready else ""
+        return self.active_step_id
+
+    def complete(
+        self,
+        *,
+        plan: TaskPlan,
+        step_id: str,
+        criterion_ids: tuple[str, ...],
+        evidence_refs: tuple[str, ...],
+        state_version: int,
+    ) -> None:
+        import hashlib
+
+        step = plan.step(step_id)
+        if step is None:
+            raise ValueError("unknown TaskPlan step")
+        digest = "sha256:" + hashlib.sha256(repr(step).encode()).hexdigest()
+        self.verified_steps = [item for item in self.verified_steps if item.step_id != step_id]
+        self.verified_steps.append(
+            VerifiedStepRecord(
+                plan_id=plan.plan_id,
+                step_id=step_id,
+                step_digest=digest,
+                verified_criterion_ids=criterion_ids,
+                evidence_refs=tuple(dict.fromkeys(evidence_refs)),
+                completed_at_state_version=state_version,
+            )
+        )
+        if self.active_step_id == step_id:
+            self.active_step_id = ""
+
+    def record_action(self, step_id: str) -> None:
+        self.action_count_by_step[step_id] = self.action_count_by_step.get(step_id, 0) + 1
+
+    def action_budget_exhausted(self, plan: TaskPlan) -> bool:
+        step = plan.step(self.active_step_id)
+        return step is not None and self.action_count_by_step.get(step.step_id, 0) >= step.max_actions
 
 
 @dataclass(frozen=True)
@@ -25,9 +113,9 @@ class TaskPlanProgressStateView:
     plan_version: int
     plan_based_on_state_version: int
     evaluated_at_state_version: int
-    active_subgoal_id: str
-    completed_subgoal_ids: tuple[str, ...]
-    failed_subgoal_ids: tuple[str, ...]
+    active_step_id: str
+    completed_step_ids: tuple[str, ...]
+    failed_step_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -36,17 +124,17 @@ class CurrentStateEvidence:
     page_revision: str
     environment_revision: str
     semantic_target_id: str
-    relation: SubgoalOutcomeRelation
+    relation: StateCriterionRelation
     observed_value: str | bool | int | float | None
     artifact_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class SubgoalCompletionPreparation:
+class StepCompletionPreparation:
     plan_id: str
     plan_version: int
     evaluated_at_state_version: int
-    subgoal_id: str
+    step_id: str
     criterion_ids: tuple[str, ...]
     requirement_ids: tuple[str, ...]
     evidence: tuple[CurrentStateEvidence, ...]
@@ -61,13 +149,13 @@ def current_state_evidence_refs(
     return tuple(_evidence_ref(item) for item in evidence)
 
 
-class CurrentStateSubgoalCompletionEvaluator:
-    """Prepare completion for ready read-only subgoals satisfied now."""
+class CurrentStateStepCompletionEvaluator:
+    """Prepare completion for a ready canonical StepSpec satisfied now."""
 
     _SUPPORTED_RELATIONS = {
-        SubgoalOutcomeRelation.IS_AVAILABLE,
-        SubgoalOutcomeRelation.IS_SELECTED,
-        SubgoalOutcomeRelation.IS_VISIBLE,
+        StateCriterionRelation.IS_AVAILABLE,
+        StateCriterionRelation.IS_SELECTED,
+        StateCriterionRelation.IS_VISIBLE,
     }
 
     def evaluate(
@@ -80,7 +168,7 @@ class CurrentStateSubgoalCompletionEvaluator:
         snapshot_id: str = "",
         page_revision: str = "",
         environment_revision: str = "",
-    ) -> SubgoalCompletionPreparation | None:
+    ) -> StepCompletionPreparation | None:
         if not _identity_current(plan, progress):
             return None
         if (
@@ -95,31 +183,37 @@ class CurrentStateSubgoalCompletionEvaluator:
             environment_revision=environment_revision,
         ):
             return None
-        subgoal = next(
+        step = next(
             (
                 item
-                for item in plan.subgoals
-                if item.subgoal_id == progress.active_subgoal_id
+                for item in plan.steps
+                if item.step_id == progress.active_step_id
             ),
             None,
         )
-        if subgoal is None or subgoal.outcome is None:
+        if step is None:
             return None
-        if subgoal.subgoal_id in progress.completed_subgoal_ids:
+        criterion = next(
+            (item for item in step.completion_criteria if isinstance(item, StateCriterion)),
+            None,
+        )
+        if criterion is None:
             return None
-        if subgoal.subgoal_id in progress.failed_subgoal_ids:
+        if step.step_id in progress.completed_step_ids:
             return None
-        if not set(subgoal.depends_on).issubset(progress.completed_subgoal_ids):
+        if step.step_id in progress.failed_step_ids:
             return None
-        if subgoal.outcome.relation not in self._SUPPORTED_RELATIONS:
+        if not set(step.depends_on).issubset(progress.completed_step_ids):
             return None
-        match = _unique_target(subgoal.outcome.subject, environment.affordances)
+        if criterion.relation not in self._SUPPORTED_RELATIONS:
+            return None
+        match = _unique_target(criterion.subject, environment.affordances)
         if match is None:
             return None
         if not _relation_satisfied(
-            subgoal.outcome.relation,
+            criterion.relation,
             match,
-            expected_value=subgoal.outcome.value,
+            expected_value=("" if criterion.expected_value is None else str(criterion.expected_value)),
         ):
             return None
         evidence = CurrentStateEvidence(
@@ -127,22 +221,16 @@ class CurrentStateSubgoalCompletionEvaluator:
             page_revision=environment.page_revision,
             environment_revision=environment.environment_revision,
             semantic_target_id=match.semantic_target_id,
-            relation=subgoal.outcome.relation,
-            observed_value=_observed_value(subgoal.outcome.relation, match),
+            relation=criterion.relation,
+            observed_value=_observed_value(criterion.relation, match),
         )
-        return SubgoalCompletionPreparation(
+        return StepCompletionPreparation(
             plan_id=plan.plan_id,
             plan_version=plan.plan_version,
             evaluated_at_state_version=progress.evaluated_at_state_version,
-            subgoal_id=subgoal.subgoal_id,
-            criterion_ids=tuple(
-                criterion_id("subgoal", subgoal.subgoal_id, index)
-                for index, _ in enumerate(subgoal.success_criteria)
-            ),
-            requirement_ids=tuple(
-                evidence_requirement_id("subgoal", subgoal.subgoal_id, index)
-                for index, _ in enumerate(subgoal.evidence_requirements)
-            ),
+            step_id=step.step_id,
+            criterion_ids=tuple(item.criterion_id for item in step.completion_criteria),
+            requirement_ids=tuple(ref.source_unit_id for ref in step.source_refs),
             evidence=(evidence,),
             source="current_observation",
         )
@@ -219,19 +307,19 @@ def _unique_target(
 
 
 def _relation_satisfied(
-    relation: SubgoalOutcomeRelation,
+    relation: StateCriterionRelation,
     affordance: PlanningAffordanceSummary,
     *,
     expected_value: str = "",
 ) -> bool:
-    if relation == SubgoalOutcomeRelation.IS_VISIBLE:
+    if relation == StateCriterionRelation.IS_VISIBLE:
         return affordance.current_state.visible is True
-    if relation == SubgoalOutcomeRelation.IS_AVAILABLE:
+    if relation == StateCriterionRelation.IS_AVAILABLE:
         return (
             affordance.current_state.visible is True
             and affordance.current_state.enabled is True
         )
-    if relation == SubgoalOutcomeRelation.IS_SELECTED:
+    if relation == StateCriterionRelation.IS_SELECTED:
         if expected_value:
             return expected_value in affordance.current_state.selected_options
         return (
@@ -242,17 +330,17 @@ def _relation_satisfied(
 
 
 def _observed_value(
-    relation: SubgoalOutcomeRelation,
+    relation: StateCriterionRelation,
     affordance: PlanningAffordanceSummary,
 ) -> str | bool | None:
-    if relation == SubgoalOutcomeRelation.IS_VISIBLE:
+    if relation == StateCriterionRelation.IS_VISIBLE:
         return affordance.current_state.visible
-    if relation == SubgoalOutcomeRelation.IS_AVAILABLE:
+    if relation == StateCriterionRelation.IS_AVAILABLE:
         return (
             affordance.current_state.visible is True
             and affordance.current_state.enabled is True
         )
-    if relation == SubgoalOutcomeRelation.IS_SELECTED:
+    if relation == StateCriterionRelation.IS_SELECTED:
         selected = affordance.current_state.selected_options
         return selected[0] if len(selected) == 1 else affordance.current_state.selected
     return None

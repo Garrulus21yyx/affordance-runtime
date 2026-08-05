@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from affordance_runtime.simplified_runtime_contracts import StateCriterionRelation
 from affordance_runtime.task_intake import (
     OperationClass,
     SourcedTaskClaim,
@@ -20,10 +19,7 @@ from affordance_runtime.task_plan_generators import (
     PricingPlanCandidateGenerator,
     RulePlanCandidateGenerator,
 )
-from affordance_runtime.task_planning import (
-    TaskPlanningBudgetSummary,
-    TaskPlanningContext,
-)
+from affordance_runtime.task_planner import TaskPlanningBudgetSummary, TaskPlanningContext
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
@@ -98,7 +94,7 @@ def _task_with_obligations() -> TaskSpec:
     )
 
 
-def test_rule_task_plan_generator_produces_draft_without_authority_fields() -> None:
+def test_rule_generator_ignores_compatibility_obligation_graph_shape() -> None:
     context = _context(_task_with_obligations())
 
     draft = RulePlanCandidateGenerator().generate(context)
@@ -108,33 +104,9 @@ def test_rule_task_plan_generator_produces_draft_without_authority_fields() -> N
     assert draft.task_spec_identity == context.task_spec.identity
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
-    assert tuple(step.step_id for step in draft.steps) == (
-        "obligation:name",
-        "obligation:submit",
-    )
-    assert draft.steps[1].depends_on == ("obligation:name",)
-    first_criterion = draft.steps[0].completion_criteria[0]
-    assert first_criterion.subject == "name_field"
-    assert first_criterion.relation == StateCriterionRelation.EQUALS
-    assert first_criterion.expected_value == "Alice"
-    assert draft.steps[0].source_refs[0].source_unit_id == "source-unit:name"
-
-
-def test_rule_task_plan_generator_directly_uses_canonical_obligations() -> None:
-    context = _context(_task_with_obligations())
-
-    draft = RulePlanCandidateGenerator().generate(context)
-
-    assert tuple(step.step_id for step in draft.steps) == (
-        "obligation:name",
-        "obligation:submit",
-    )
-    assert all(step.objective for step in draft.steps)
-    source = (SOURCE_ROOT / "task_plan_generators.py").read_text(encoding="utf-8")
-    assert "RuleTaskPlanner" not in source
-    assert "PlanCandidateProjector" not in source
-    assert ".legacy_planner" not in source
-    assert ".projector" not in source
+    assert tuple(step.step_id for step in draft.steps) == ("step:implicit",)
+    assert all(not step.step_id.startswith("obligation:") for step in draft.steps)
+    assert draft.steps[0].objective == context.task_spec.objective
 
 
 def test_synthetic_flat_generator_returns_single_draft_step() -> None:
@@ -195,59 +167,7 @@ def test_draft_generator_router_preserves_rule_and_complex_selection() -> None:
 
     router.generate(context, complex_task=True)
 
-    assert calls == ["rule"]
-
-
-def test_rule_generator_rejects_forbidden_obligation_content() -> None:
-    task = _task_with_obligations().model_copy(
-        update={
-            "source_claims": (
-                SourcedTaskClaim(
-                    claim_id="claim-name",
-                    kind=TaskClaimKind.EFFECT,
-                    statement="use selector #name",
-                    source_ref="request-1",
-                    source_unit_ids=("source-unit:name",),
-                ),
-                SourcedTaskClaim(
-                    claim_id="claim-submit",
-                    kind=TaskClaimKind.EFFECT,
-                    statement="form submitted",
-                    source_ref="request-1",
-                    source_unit_ids=("source-unit:submit",),
-                ),
-            ),
-            "obligations": (
-                TaskObligationSpec(
-                    obligation_id="obligation:name",
-                    kind=TaskObligationKind.EFFECT,
-                    subject="name_field",
-                    relation=TaskObligationRelation.EQUALS,
-                    value_source=TaskObligationValueSource.LITERAL,
-                    expected_value="Alice",
-                    claim_ids=("claim-name",),
-                    evidence_requirements=("field value evidence",),
-                ),
-                TaskObligationSpec(
-                    obligation_id="obligation:submit",
-                    kind=TaskObligationKind.EFFECT,
-                    subject="submit_button",
-                    relation=TaskObligationRelation.IS_COMPLETED,
-                    claim_ids=("claim-submit",),
-                    depends_on=("obligation:name",),
-                    evidence_requirements=("submission evidence",),
-                    terminal=True,
-                ),
-            ),
-        }
-    )
-
-    try:
-        RulePlanCandidateGenerator().generate(_context(task))
-    except ValueError as exc:
-        assert "forbidden implementation detail" in str(exc)
-    else:  # pragma: no cover - defensive assertion
-        raise AssertionError("forbidden selector content was accepted")
+    assert calls == ["complex"]
 
 
 def test_task_plan_generators_do_not_import_runtime_authority_modules() -> None:

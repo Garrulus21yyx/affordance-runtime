@@ -84,7 +84,7 @@ class FailureEnvelope(StrictModel):
     run_id: str = Field(min_length=1)
     task_revision: int = Field(default=1, ge=1)
     plan_version: int = Field(default=0, ge=0)
-    active_subgoal_id: str = ""
+    active_step_id: str = ""
     phase: FailurePhase
     failure_class: FailureClass
     semantic_family_key: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -158,7 +158,7 @@ def make_failure_envelope(
     state_version: int,
     task_revision: int = 1,
     plan_version: int = 0,
-    active_subgoal_id: str = "",
+    active_step_id: str = "",
     observation_epoch_id: str = "",
     snapshot_id: str = "",
     proposal_id: str = "",
@@ -184,7 +184,7 @@ def make_failure_envelope(
     semantic_value = {
         "phase": phase.value,
         "failure_class": failure_class.value,
-        "active_subgoal_id": active_subgoal_id,
+        "active_step_id": active_step_id,
         "expected_effect": _normalize_semantic_text(expected_effect),
         "effect_status": resolved_effect_status.value,
         "progress_fingerprint": progress_fingerprint,
@@ -216,7 +216,7 @@ def make_failure_envelope(
         run_id=run_id,
         task_revision=task_revision,
         plan_version=plan_version,
-        active_subgoal_id=active_subgoal_id,
+        active_step_id=active_step_id,
         phase=phase,
         failure_class=failure_class,
         semantic_family_key=_digest(semantic_value),
