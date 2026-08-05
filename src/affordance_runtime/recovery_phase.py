@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 
+from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.recovery_coordinator import (
     RecoveryCoordinator,
     RecoverySelectionContext,
+)
+from affordance_runtime.recovery_evaluation import (
+    RecoveryActionEvaluator,
+    RecoveryObservationEvaluator,
 )
 from affordance_runtime.recovery_owner_dispatcher import (
     OWNER_DISPATCH_RECOVERY_KINDS,
@@ -27,11 +32,17 @@ from affordance_runtime.recovery_trace_projection import recovery_protocol_proje
 from affordance_runtime.runtime import RuntimeStep
 from affordance_runtime.stage_protocol import (
     LoopDirective,
+    OwnerHandoff,
+    ProgressHandoff,
     RuntimeEvent,
     RuntimeStateSnapshot,
     RuntimeTransition,
     StageResult,
+    StepPlannerHandoff,
+    TaskPlannerHandoff,
     TerminalResult,
+    UserInputRequest,
+    build_failure_owner_handoff,
 )
 
 
@@ -58,11 +69,156 @@ class RecoveryOutput:
 
 
 @dataclass(frozen=True)
+class FailureResolutionOutput:
+    handoff: OwnerHandoff
+
+
+@dataclass(frozen=True)
 class RecoveryStage:
     coordinator: RecoveryCoordinator
     owner_dispatcher: RecoveryOwnerDispatcher
     runtime_profile_digest: str = ""
     loaded_profile_artifact_ids: tuple[str, ...] = ()
+    observation_evaluator: RecoveryObservationEvaluator = field(
+        default_factory=RecoveryObservationEvaluator
+    )
+    action_evaluator: RecoveryActionEvaluator = field(
+        default_factory=RecoveryActionEvaluator
+    )
+
+    @staticmethod
+    def terminal_failure(
+        failure: FailureEnvelope,
+        *,
+        reason_code: str,
+        status: RuntimeStep,
+        error_code: RuntimeErrorCode,
+    ) -> StageResult[FailureResolutionOutput]:
+        terminal = TerminalResult(
+            failure.failure_id,
+            reason_code,
+            status,
+            error_code,
+        )
+        return StageResult(
+            output=FailureResolutionOutput(terminal),
+            transition=RuntimeTransition(
+                phase=status,
+                state_updates={"current_failure": failure},
+            ),
+            failure=failure,
+            terminal=terminal,
+            directive=LoopDirective.TERMINAL,
+        )
+
+    def resolve_failure(
+        self,
+        stage_input: RecoveryStageInput,
+        *,
+        preserve_terminal: bool = False,
+        terminate_all_handoffs: bool = False,
+    ) -> StageResult[RecoveryOutput | FailureResolutionOutput]:
+        """Route one typed failure and return a fully decided transition/handoff."""
+
+        failure = stage_input.failure
+        classification = classify_failure(
+            failure,
+            FailureClassificationFacts(
+                available_action_count=stage_input.available_action_count,
+                user_input_required=stage_input.user_input_required,
+            ),
+        )
+        if classification.owner == FailureOwner.RUNTIME_RECOVERY:
+            result = self.run(stage_input)
+            if result.terminal is None or preserve_terminal:
+                return result
+            return replace(
+                result,
+                terminal=replace(
+                    result.terminal,
+                    error_code=_failure_runtime_error(failure),
+                ),
+            )
+        state = stage_input.state_view
+        handoff = build_failure_owner_handoff(
+            failure,
+            classification.owner,
+            classification.reason_code,
+        )
+        failed_assumption = (
+            f"{failure.phase.value}:{failure.error_code}:{failure.message}"
+        )
+        if (
+            isinstance(handoff, (StepPlannerHandoff, TaskPlannerHandoff))
+            and failed_assumption == state.current_disproved_assumption
+        ):
+            handoff = TerminalResult(
+                failure.failure_id,
+                f"{handoff.reason_code}_owner_handoff_exhausted",
+            )
+        phase: RuntimeStep | None = None
+        replan_delta = 0
+        updates: dict[str, Any] = {
+            "current_failure": failure,
+            "current_recovery_decision": None,
+            "current_recovery_outcome": None,
+        }
+        if isinstance(handoff, (StepPlannerHandoff, TaskPlannerHandoff)):
+            phase = RuntimeStep.OBSERVING
+            replan_delta = 1
+            updates["current_disproved_assumption"] = failed_assumption
+        elif isinstance(handoff, UserInputRequest):
+            phase = RuntimeStep.WAITING_CLARIFICATION
+        elif isinstance(handoff, TerminalResult):
+            phase = handoff.status
+        terminal = _terminal_for_handoff(
+            failure,
+            handoff,
+            state_phase=RuntimeStep(state.phase),
+            preserve_terminal=preserve_terminal,
+            terminate_all_handoffs=terminate_all_handoffs,
+        )
+        events = (
+            RuntimeEvent(
+                "FailureDetected",
+                {
+                    "state": state.phase,
+                    "failure": failure.model_dump(mode="json"),
+                },
+            ),
+            RuntimeEvent(
+                "FailureOwnerRouted",
+                {
+                    "state": state.phase,
+                    "failure_id": failure.failure_id,
+                    "owner": handoff.owner.value,
+                    "reason_code": handoff.reason_code,
+                    "handoff_type": type(handoff).__name__,
+                },
+            ),
+        )
+        return StageResult(
+            output=FailureResolutionOutput(handoff),
+            transition=RuntimeTransition(
+                phase=phase,
+                state_updates=updates,
+                replan_count_delta=replan_delta,
+            ),
+            events=events,
+            failure=failure,
+            terminal=terminal,
+            directive=(
+                LoopDirective.TERMINAL
+                if terminal is not None
+                else LoopDirective.REPEAT_OBSERVATION
+            ),
+        )
+
+    def evaluate_observation(self, **kwargs: Any) -> StageResult[Any] | None:
+        return self.observation_evaluator.evaluate(**kwargs)
+
+    def evaluate_action(self, **kwargs: Any) -> StageResult[Any] | None:
+        return self.action_evaluator.evaluate(**kwargs)
 
     def available_commands(
         self,
@@ -313,6 +469,53 @@ def _result(
         terminal=terminal,
         directive=directive,
     )
+
+
+def _terminal_for_handoff(
+    failure: FailureEnvelope,
+    handoff: OwnerHandoff,
+    *,
+    state_phase: RuntimeStep,
+    preserve_terminal: bool,
+    terminate_all_handoffs: bool,
+) -> TerminalResult | None:
+    if isinstance(handoff, ProgressHandoff) and handoff.reason_code == "progress_credit_invariant":
+        return TerminalResult(
+            handoff.failure_id,
+            handoff.reason_code,
+            RuntimeStep.FAILED,
+            RuntimeErrorCode.PROGRESS_CREDIT_INVARIANT,
+        )
+    if not terminate_all_handoffs and not isinstance(
+        handoff, (TerminalResult, UserInputRequest)
+    ):
+        return None
+    if preserve_terminal and isinstance(handoff, TerminalResult):
+        return handoff
+    status = (
+        RuntimeStep.WAITING_CLARIFICATION
+        if isinstance(handoff, UserInputRequest)
+        else handoff.status
+        if isinstance(handoff, TerminalResult)
+        else state_phase
+    )
+    return TerminalResult(
+        handoff.failure_id,
+        handoff.reason_code,
+        status,
+        _failure_runtime_error(failure),
+    )
+
+
+def _failure_runtime_error(failure: FailureEnvelope) -> RuntimeErrorCode:
+    try:
+        return RuntimeErrorCode(failure.error_code)
+    except ValueError:
+        return {
+            "perception": RuntimeErrorCode.PRECONDITION_FAILED,
+            "planning": RuntimeErrorCode.PLANNER_FAILED,
+            "verification": RuntimeErrorCode.VERIFICATION_FAILED,
+        }.get(failure.phase.value, RuntimeErrorCode.EXECUTION_FAILED)
 
 
 def _fresh_route(state: Any) -> tuple[str, str]:

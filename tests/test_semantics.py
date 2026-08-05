@@ -1,12 +1,11 @@
 from dataclasses import is_dataclass
 
-from affordance_runtime import obligation_attribution, simplified_runtime_contracts, task_intake, task_planning
+from affordance_runtime import obligation_attribution, simplified_runtime_contracts, task_intake
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceSourceKind, EvidenceStrength
 
 
 def test_legacy_relation_names_alias_single_canonical_relation_enum() -> None:
     assert task_intake.TaskObligationRelation is CriterionRelation
-    assert task_planning.SubgoalOutcomeRelation is CriterionRelation
     assert simplified_runtime_contracts.StateCriterionRelation is CriterionRelation
 
 

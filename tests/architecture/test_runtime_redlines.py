@@ -381,6 +381,48 @@ def _case_audit_negative_authority() -> None:
     assert not hasattr(result, "proposal") and not hasattr(result, "task_spec")
 
 
+def _case_p1_recovery_commit_boundaries() -> None:
+    loop_tree = ast.parse((RUNTIME / "runtime_loop_phase.py").read_text(encoding="utf-8"))
+    loop_calls = {
+        node.func.id
+        if isinstance(node.func, ast.Name)
+        else node.func.attr
+        if isinstance(node.func, ast.Attribute)
+        else ""
+        for node in ast.walk(loop_tree)
+        if isinstance(node, ast.Call)
+    }
+    assert loop_calls.isdisjoint(
+        {"classify_failure", "build_failure_owner_handoff", "verify"}
+    )
+
+    committer_tree = ast.parse(
+        (RUNTIME / "runtime_committer.py").read_text(encoding="utf-8")
+    )
+    committer = next(
+        node
+        for node in committer_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RuntimeCommitter"
+    )
+    methods = {
+        node.name for node in committer.body if isinstance(node, ast.FunctionDef)
+    }
+    names = {node.id for node in ast.walk(committer) if isinstance(node, ast.Name)}
+    assert methods.isdisjoint({"commit_failure_owner", "commit_action"})
+    assert names.isdisjoint(
+        {"RecoveryOutcome", "classify_failure", "build_failure_owner_handoff"}
+    )
+    assert not (RUNTIME / "task_planning.py").exists()
+    edge_tree = ast.parse(
+        (RUNTIME / "legacy_task_plan_provider.py").read_text(encoding="utf-8")
+    )
+    assert not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "affordance_runtime.task_planning"
+        for node in ast.walk(edge_tree)
+    )
+
+
 CASES = {
     "P0-01-target-81": _case_target_81,
     "P0-02-state-13": _case_state_13,
@@ -398,6 +440,7 @@ CASES = {
     "P0-14-task-spec-gap": _case_task_spec_gap,
     "P0-15-thin-default-source": _case_default_thin_source,
     "P0-16-audit-negative-authority": _case_audit_negative_authority,
+    "P1-01-recovery-commit-boundaries": _case_p1_recovery_commit_boundaries,
 }
 
 

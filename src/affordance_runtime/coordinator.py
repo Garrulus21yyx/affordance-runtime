@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.execution_phase import ActionStage, ActionStageInput
 from affordance_runtime.perception_phase import PerceptionStage, PerceptionStageInput
 from affordance_runtime.planning_contracts import PlannerProposalResponse
@@ -19,7 +20,7 @@ from affordance_runtime.progress_phase import (
     ProgressStageInput,
 )
 from affordance_runtime.recovery_phase import RecoveryStage
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_committer import RuntimeCommitter
 from affordance_runtime.runtime_loop_phase import RuntimeCommitSession
 from affordance_runtime.runtime_result_phase import (
@@ -96,7 +97,15 @@ class RunCoordinator:
             loop.commit(perception)
             if perception.failure is not None:
                 if not self.action_stage.recovery_enabled:
-                    return loop.fail_observation(perception.failure)
+                    terminal_failure = self.recovery_stage.terminal_failure(
+                        perception.failure,
+                        reason_code="observation_failed",
+                        status=RuntimeStep.FAILED,
+                        error_code=RuntimeErrorCode.PRECONDITION_FAILED,
+                    )
+                    loop.commit(terminal_failure)
+                    assert terminal_failure.terminal is not None
+                    return loop.finish(terminal_failure.terminal)
                 terminal = loop.recover(
                     perception.failure,
                     self.recovery_stage.available_commands(
@@ -116,17 +125,23 @@ class RunCoordinator:
                 if self.progress_stage.task_skill_runtime is not None
                 else None
             )
-            recovered_verification, recovery_terminal = (
-                loop.commit_recovery_observation(
-                    capture,
-                    self.progress_stage.execution_loop,
-                    task_skill_progress=recovery_skill_progress,
-                )
+            recovery_observation = self.recovery_stage.evaluate_observation(
+                state=runtime_state_snapshot(loop.state),
+                snapshot=capture,
+                execution_loop=self.progress_stage.execution_loop,
+                task_skill_progress=recovery_skill_progress,
             )
-            if recovered_verification is not None:
-                loop.latest_verification = recovered_verification
-            if recovery_terminal is not None:
-                return loop.finish(recovery_terminal)
+            if recovery_observation is not None:
+                loop.commit(recovery_observation)
+                if (
+                    recovery_observation.output is not None
+                    and recovery_observation.output.verification is not None
+                ):
+                    loop.latest_verification = (
+                        recovery_observation.output.verification
+                    )
+                if recovery_observation.terminal is not None:
+                    return loop.finish(recovery_observation.terminal)
             progress = self.progress_stage.run(
                 ProgressStageInput(
                     envelope=envelope,
@@ -193,11 +208,15 @@ class RunCoordinator:
                     selection=planning.output.selection,
                 )
             )
-            loop.parent, pending_recovery_failed = self.committer.commit_action(
-                loop.state, loop.trace, loop.parent, action
+            action_recovery = self.recovery_stage.evaluate_action(
+                state=runtime_state_snapshot(loop.state),
+                action_result=action,
             )
-            if pending_recovery_failed and action.failure is not None:
-                return loop.abort_pending_recovery(action.failure)
+            loop.commit(action)
+            if action_recovery is not None:
+                loop.commit(action_recovery)
+                if action_recovery.terminal is not None:
+                    return loop.finish(action_recovery.terminal)
             if action.terminal is not None:
                 return loop.finish(action.terminal)
             if action.directive == LoopDirective.REPEAT_OBSERVATION:

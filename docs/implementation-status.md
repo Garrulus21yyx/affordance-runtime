@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-05
+> **Updated:** 2026-08-06
 > **Target architecture:** [Task Contract-centered authoritative architecture](superpowers/specs/2026-08-05-task-contract-centered-runtime-authoritative-architecture.md)
 > **Active queue:** [Current Implementation Plan](current-implementation-plan.md)
 
@@ -18,9 +18,12 @@ binding coverage. The broader compatibility TaskSpec shape and
 external model-provider wire shape remain for later substitutive slices. P1 is
 now cut over: accepted plans store StepSpec directly, TaskPlanAuthority is the
 single plan admission/version owner, TaskProgress is step/fact/evidence based,
-LoopEvaluator owns typed loop evaluation, perception owns four-state
-continuation, and Coordinator/RuntimeCommitter control-plane responsibilities
-are contained.
+LoopEvaluator owns typed loop evaluation and perception owns four-state
+continuation. P1-C1/P1-C2 closure is complete: RecoveryStage and its pure
+evaluators own classification, handoff and recovery-outcome policy;
+RuntimeCommitSession owns lifecycle only; RuntimeCommitter applies already
+evaluated typed transitions/events/completion. The legacy Runtime planning
+owner was deleted, leaving only a named one-way external provider adapter.
 
 Documentation consolidation does not promote any production capability.
 
@@ -41,8 +44,8 @@ Documentation consolidation does not promote any production capability.
 | Verification | mechanical verifier reports remain evidence providers; pure LoopEvaluator separates action effect, active-step completion, triggered task completion and continuation proposal; disabled verification and receipt-only reports cannot complete a step/task | loop-native typed evaluation with bounded evidence locations | P0-A/P1-E1 complete; P2 provider/policy expansion pending |
 | Task completion | full typed TaskSpec.success closure, declared constraints/effects, authoritative final rechecks and source-bound required outputs are evaluated by the pure TaskCompletionEvaluator; RuntimeCommitter is the sole TaskCompleted writer; latest-report, plan/prose and no-TaskSpec fallbacks are removed | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A complete |
 | Observation continuation | perception owner returns REUSE, AUGMENT_TARGETED, RECAPTURE or WAIT_AND_RECAPTURE from freshness/stability/coverage/conflict; fresh reusable capture is not immediately duplicated | typed continuation proposal outside Coordinator/Committer | P1-E2 complete |
-| Recovery | RecoveryStage/typed dispatcher own availability and domain failure classification; Coordinator follows typed stage results only | typed causes, no generic-string ownership, no blind external retry | P1-C1 complete; later recovery semantics remain |
-| Runtime commit/control | RuntimeCommitSession lifecycle is in runtime_loop_phase; read projections are in runtime_state_projection; RuntimeCommitter only validates expected identity/version and commits typed state/events | orchestration and commit authority separated from domain evaluation | P1-C2 complete |
+| Recovery | RecoveryStage owns typed classification, handoff/exhaustion/error mapping and strategy choice; RecoveryObservationEvaluator and RecoveryActionEvaluator settle typed outcomes; Coordinator and RuntimeCommitSession only follow results | typed causes, no generic-string ownership, no blind external retry | P1-C1 complete |
+| Runtime commit/control | RuntimeCommitSession owns lifecycle, read projections stay separate, and RuntimeCommitter only validates/applies typed transitions/events/completion | orchestration and commit authority separated from domain evaluation | P1-C2 complete |
 | Trace/evaluation | trace, artifacts, benchmark reports and evidence records exist | offline consumers, never synchronous completion authority | retain |
 
 ## 3. Architecture coverage state
@@ -106,7 +109,7 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5 and P1-P1/P2/P3/E1/E2/C1/C2 are complete; the remaining external provider `subgoals` wire adapter is one-way and expires at P3-4; P2 and later slices remain pending |
+| production behavior change | P0-A/B/C/D/E/E5 and all P1 rows are complete; the external provider `subgoals` wire adapter is isolated in `legacy_task_plan_provider.py`, remains one-way and expires at P3-4; P2 has not started |
 
 ## 6. Historical ledger
 

@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from affordance_runtime.progress_phase import (
+from affordance_runtime.progress_evaluation import (
     ActionEffectEvaluationStatus,
     ActiveStepEvaluationStatus,
     PostActionEvaluation,
-    ProgressStage,
+    ProgressEvaluationService,
     TaskCompletionEvaluationStatus,
 )
 from affordance_runtime.stage_protocol import RuntimeEventBuffer
@@ -28,7 +28,7 @@ def test_post_action_evaluation_is_typed_and_projects_one_canonical_event() -> N
         ],
     )
 
-    evaluation = ProgressStage._record_post_action_evaluation(
+    evaluation = ProgressEvaluationService.record_post_action(
         events,
         SimpleNamespace(phase="verifying"),
         report,
