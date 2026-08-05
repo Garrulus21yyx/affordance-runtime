@@ -5,6 +5,7 @@ import pytest
 import affordance_runtime.state_kernel as state_kernel
 from affordance_runtime.contracts import Observation
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
+from runtime_test_support import remember_observation
 
 
 def _signature(action_kind: str, target: str, parameters: dict[str, object]) -> str:
@@ -47,7 +48,10 @@ def test_statekernel_action_dedupe_does_not_expose_legacy_action_progress_list()
 
 def test_progress_guard_uses_typed_recent_action_outcomes() -> None:
     state = StateKernel(task_id="task", goal="Click target")
-    state.remember_observation(Observation("env-2", page_revision="page-1"))
+    remember_observation(
+        state,
+        Observation("env-2", snapshot_id="snapshot-1", page_revision="page-1"),
+    )
     signature = _signature("activate", "target-a", {})
 
     state.record_action_progress(

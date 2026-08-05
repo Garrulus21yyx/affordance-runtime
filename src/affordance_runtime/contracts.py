@@ -31,6 +31,7 @@ class Surface(StrEnum):
     ACCESSIBILITY = "accessibility"
     WOT = "wot"
     API = "api"
+    DEVICE = "device"
 
 
 class RiskLevel(StrEnum):
@@ -460,6 +461,11 @@ class ActionContract:
     backend: str
     environment_revision: str
     locator: dict[str, Any]
+    choice_catalog_id: str = ""
+    choice_catalog_digest: str = ""
+    selected_choice_id: str = ""
+    observation_ref: str = ""
+    route_reason: str = ""
     grounding_candidate: GroundingCandidate | None = None
     scope_authorization: ScopeAuthorization | None = None
     route_plan: RoutePlan | None = None

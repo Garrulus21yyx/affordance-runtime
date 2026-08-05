@@ -8,22 +8,9 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import import_module
 from types import ModuleType
-from typing import Any, Awaitable, cast
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-from affordance_runtime.action_choice import (
-    ActionChoice,
-    ActionChoiceBuilder,
-    ActionChoiceDispatcher,
-    ActionChoiceFailure,
-    ActionChoiceSet,
-    ActionSelection,
-    ActionSelectionValidator,
-    ChoicePlanningRequest,
-)
-from affordance_runtime.active_step_scope import ActiveStepScope
-from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
 from affordance_runtime.decision_constraints import StrictDecisionConstraintBuilder
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort, StructuredModelError
@@ -67,14 +54,9 @@ from affordance_runtime.planning_request import (
     PlanningRequest,
     TargetAdmissionStatus,
 )
-from affordance_runtime.planning_request_builder import (
-    PlanningRequestBuilder,
-    PlanningRequestLimits,
-)
-from affordance_runtime.recovery_protocol import FailureKind
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry
-from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.step_choice_planner import DisplayedChoiceCandidate
 from affordance_runtime.unified_observation import UnifiedObservation
 
 GENERALIST_PLANNER_PROMPT_VERSION = "generalist-planner-strict-v2"
@@ -115,12 +97,6 @@ class GeneralistPlannerProfile(StrEnum):
 
     STRICT_GENERALIST = "strict-generalist"
     HISTORICAL_COMPATIBILITY = "historical-compatibility"
-
-
-class ActionSelectionCandidate(BaseModel):
-    model_config = {"extra": "forbid", "frozen": True}
-
-    choice_id: str = Field(min_length=1)
 
 
 def planner_prompt_version(profile: GeneralistPlannerProfile) -> str:
@@ -282,10 +258,6 @@ class GeneralistLMPlanner:
         default_factory=StrictDecisionConstraintBuilder,
         repr=False,
     )
-    planning_request_builder: PlanningRequestBuilder | None = field(
-        default=None,
-        repr=False,
-    )
     context_builder: PlannerContextBuilder | None = field(
         default=None,
         repr=False,
@@ -318,13 +290,23 @@ class GeneralistLMPlanner:
     async def propose_legacy(
         self,
         envelope: RunRequest,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
+        state: Any,
+        snapshot: Any,
     ) -> _GeneralistDecision:
         if envelope.task_spec is None:
             raise ValueError("GeneralistLMPlanner requires a validated TaskSpec")
-        request = self._planning_request_builder().build(envelope, state, snapshot)
-        return await self._propose_decision(request)
+        from affordance_runtime.planner_compatibility import build_legacy_generalist_request
+
+        request, observation = build_legacy_generalist_request(
+            envelope=envelope,
+            state=state,
+            snapshot=snapshot,
+            limits=self.limits,
+            accepted_knowledge=self.accepted_knowledge,
+            allow_finish=self.allow_finish,
+            max_model_calls=self.max_model_calls,
+        )
+        return await self._propose_decision(request, observation)
 
     async def propose(
         self,
@@ -332,7 +314,14 @@ class GeneralistLMPlanner:
     ) -> PlannerResponse:
         return _planner_response(await self._propose_decision(request))
 
-    async def select(self, request: ChoicePlanningRequest) -> ActionSelection:
+    async def propose_canonical(
+        self,
+        request: PlanningRequest,
+        observation: UnifiedObservation,
+    ) -> PlannerResponse:
+        return _planner_response(await self._propose_decision(request, observation))
+
+    async def select(self, request: ChoicePlanningRequest) -> SelectChoice:
         messages = (
             ModelMessage(
                 role="system",
@@ -347,21 +336,29 @@ class GeneralistLMPlanner:
                 content=json.dumps(
                     {
                         "task_revision": request.task_revision,
-                        "state_version": request.state_version,
-                        "snapshot_id": request.snapshot_id,
+                        "plan_revision": request.plan_revision,
+                        "catalog_id": request.catalog_ref.catalog_id,
+                        "catalog_digest": request.catalog_ref.catalog_digest,
                         "active_step_id": request.active_step_id,
                         "choices": [
                             {
                                 "choice_id": choice.choice_id,
                                 "action_kind": choice.action_kind.value,
                                 "target_id": choice.target_id,
+                                "target_label": choice.target_label,
+                                "target_role": choice.target_role,
                                 "destination_id": choice.destination_id,
-                                "parameters": thaw_json_at_external_boundary(
-                                    choice.parameters
+                                "destination_label": choice.destination_label,
+                                "relevant_current_state": thaw_json_at_external_boundary(
+                                    choice.relevant_current_state
                                 ),
-                                "criterion_ids": list(choice.criterion_ids),
+                                "requirement_refs": list(choice.requirement_refs),
+                                "effect_refs": list(choice.effect_refs),
+                                "conflict_status": choice.conflict_status.value,
+                                "risk": choice.risk,
+                                "generation_reason_codes": list(choice.generation_reason_codes),
                             }
-                            for choice in request.choices
+                            for choice in request.page.choices
                         ],
                     },
                     sort_keys=True,
@@ -372,52 +369,22 @@ class GeneralistLMPlanner:
         self._reserve_model_call()
         candidate = await self.model.generate_structured(
             messages,
-            ActionSelectionCandidate,
+            DisplayedChoiceCandidate,
             self.config.model_copy(update={"max_tokens": min(self.config.max_tokens, 128)}),
         )
-        selection = ActionSelection(
-            choice_id=candidate.choice_id,
-            task_revision=request.task_revision,
-            state_version=request.state_version,
-            snapshot_id=request.snapshot_id,
-            active_step_id=request.active_step_id,
-        )
-        ActionSelectionValidator().validate(
-            selection,
-            ActionChoiceSet(
-                task_revision=request.task_revision,
-                state_version=request.state_version,
-                snapshot_id=request.snapshot_id,
-                active_step_id=request.active_step_id,
-                grounding=request.grounding,
-                choices=request.choices,
-            ),
-        )
-        return selection
+        return SelectChoice(candidate.choice_id, "model_selected_presented_choice")
 
-    async def _propose_decision(self, request: PlanningRequest) -> _GeneralistDecision:
+    async def _propose_decision(
+        self,
+        request: PlanningRequest,
+        observation: UnifiedObservation | None = None,
+    ) -> _GeneralistDecision:
         context = self._context_builder().build(request)
         planner_admission: dict[str, object] = {}
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST:
-            admission_result = self.decision_constraints.apply_admission(
-                context,
-                request.admission,
+            raise RuntimeError(
+                "strict GeneralistLMPlanner consumes ChoicePlanningRequest via select()"
             )
-            context = admission_result.context
-            planner_admission = _planner_admission_payload(
-                admission_result.summary,
-                request.admission,
-            )
-            action_choice_decision = await _runtime_action_choice_decision(
-                request=request,
-                context=context,
-                planner_profile=self.planner_profile,
-                planner_admission=planner_admission,
-                planner=self,
-            )
-            if action_choice_decision is not None:
-                return action_choice_decision
-            raise RuntimeError("strict planner ActionChoice path did not return a decision")
         semantic_compilers = self.semantic_compilers
         if semantic_compilers is None:  # pragma: no cover - normalized in __post_init__
             raise RuntimeError("planner semantic compiler profile was not initialized")
@@ -518,15 +485,7 @@ class GeneralistLMPlanner:
             initial_permitted = _strict_model_action_kinds(initial_permitted)
         initial_permitted = _drop_actions_without_targets(initial_permitted, initial_targets)
         if self.planner_profile == GeneralistPlannerProfile.STRICT_GENERALIST and not initial_permitted:
-            return _action_choice_failure_decision(
-                ActionChoiceFailure(
-                    kind=FailureKind.NO_FEASIBLE_ACTION,
-                    reason_code="no_strict_model_action_choice",
-                ),
-                context=context,
-                planner_profile=self.planner_profile,
-                planner_admission=planner_admission,
-            )
+            raise RuntimeError("strict choice space is Runtime-owned")
         if any(initial_targets.get(item) for item in initial_permitted):
             # A resolved intake draft does not prove that the current page has
             # one requested, safely scoped next action. Strict mode preserves
@@ -649,23 +608,14 @@ class GeneralistLMPlanner:
     def build_context(
         self,
         envelope: RunRequest,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
+        state: Any,
+        snapshot: Any,
     ) -> PlannerContext:
         return build_planner_context(
             envelope,
             state,
             snapshot,
             limits=self.limits,
-            accepted_knowledge=self.accepted_knowledge,
-            allow_finish=self.allow_finish,
-        )
-
-    def _planning_request_builder(self) -> PlanningRequestBuilder:
-        if self.planning_request_builder is not None:
-            return self.planning_request_builder
-        return PlanningRequestBuilder(
-            limits=_request_limits(self.limits, self.max_model_calls),
             accepted_knowledge=self.accepted_knowledge,
             allow_finish=self.allow_finish,
         )
@@ -727,21 +677,6 @@ class GeneralistLMPlanner:
         return before, self.planner_schema_ref()
 
 
-def _request_limits(
-    limits: PlannerLimits,
-    max_model_calls: int | None,
-) -> PlanningRequestLimits:
-    return PlanningRequestLimits(
-        max_steps=limits.max_steps,
-        max_observations=limits.max_observations,
-        max_recoveries=limits.max_recoveries,
-        max_effectful_actions=limits.max_effectful_actions,
-        max_model_calls=max_model_calls or 0,
-        max_affordances=limits.max_affordances,
-        max_artifact_refs=limits.max_artifact_refs,
-    )
-
-
 def _planner_admission_payload(
     summary: PlannerAdmissionSummary,
     admission: PlannerAdmissionView | None,
@@ -776,210 +711,6 @@ def _planner_admission_status(status: TargetAdmissionStatus) -> str:
         TargetAdmissionStatus.UNKNOWN: "unknown",
         TargetAdmissionStatus.UNRESOLVED: "unresolved",
     }[status]
-
-
-async def _runtime_action_choice_decision(
-    *,
-    request: PlanningRequest,
-    context: PlannerContext,
-    planner_profile: GeneralistPlannerProfile,
-    planner_admission: dict[str, object],
-    planner: GeneralistLMPlanner,
-) -> _GeneralistDecision | None:
-    active_step = request.step.active_step
-    if active_step is None:
-        return _action_choice_failure_decision(
-            ActionChoiceFailure(
-                kind=FailureKind.NO_FEASIBLE_ACTION,
-                reason_code="no_active_step_action_choice",
-            ),
-            context=context,
-            planner_profile=planner_profile,
-            planner_admission=planner_admission,
-        )
-    scope = ActiveStepScope.from_active_step(
-        task_revision=request.identity.task_revision,
-        evaluated_at_state_version=request.identity.evaluated_at_state_version,
-        snapshot_id=request.identity.snapshot_id,
-        step=active_step,
-        activity_status=request.step.activity_status,
-    )
-    choice_result = ActionChoiceBuilder().build(
-        task_revision=request.identity.task_revision,
-        state_version=request.identity.evaluated_at_state_version,
-        step=active_step,
-        scope=scope,
-        observation=UnifiedObservation.from_planner_observation(request.observation),
-        capabilities=frozenset(request.task.capabilities),
-    )
-    if isinstance(choice_result, ActionChoiceFailure):
-        return _action_choice_failure_decision(
-            choice_result,
-            context=context,
-            planner_profile=planner_profile,
-            planner_admission=planner_admission,
-            action_choice_count=0,
-        )
-    selection_result = ActionChoiceDispatcher().choose(choice_result, planner=planner)
-    selection = (
-        await cast(Awaitable[ActionSelection], selection_result)
-        if hasattr(selection_result, "__await__")
-        else selection_result
-    )
-    if isinstance(selection, ActionChoiceFailure):
-        return _action_choice_failure_decision(
-            selection,
-            context=context,
-            planner_profile=planner_profile,
-            planner_admission=planner_admission,
-            action_choice_count=_action_choice_count(choice_result),
-        )
-    selected_choice = ActionSelectionValidator().validate(selection, choice_result)
-    producer_id = (
-        "runtime-action-choice"
-        if selection.reason_summary == "runtime_unique_choice"
-        else "runtime-action-choice-selector"
-    )
-    reason = (
-        "runtime_unique_action_choice"
-        if selection.reason_summary == "runtime_unique_choice"
-        else "runtime_selected_action_choice"
-    )
-    return _choice_to_decision(
-        choice=selected_choice,
-        active_step=active_step,
-        context=context,
-        planner_profile=planner_profile,
-        planner_admission=planner_admission,
-        producer_id=producer_id,
-        reason=reason,
-        diagnostics=_action_choice_diagnostics(choice_result, selection),
-    )
-
-
-def _action_choice_failure_decision(
-    failure: ActionChoiceFailure,
-    *,
-    context: PlannerContext,
-    planner_profile: GeneralistPlannerProfile,
-    planner_admission: dict[str, object],
-    action_choice_count: int = 0,
-) -> _GeneralistDecision:
-    return _GeneralistDecision(
-        reason=failure.reason_code,
-        planner_context={
-            "task_revision": context.task_revision,
-            "state_version": context.state_version,
-            "snapshot_id": context.snapshot_id,
-            "affordance_count": len(context.affordances),
-            "planner_profile": planner_profile.value,
-            "action_choice_failure": {
-                "kind": failure.kind.value,
-                "reason_code": failure.reason_code,
-                "owner": failure.owner.value,
-            },
-            **({"planner_admission": planner_admission} if planner_admission else {}),
-        },
-        diagnostics=PlanningTurnDiagnostics(
-            model_stage="action_choice_build",
-            action_choice_count=action_choice_count,
-            selection_source="none",
-        ),
-    )
-
-
-def _choice_to_decision(
-    *,
-    choice: ActionChoice,
-    active_step: Any,
-    context: PlannerContext,
-    planner_profile: GeneralistPlannerProfile,
-    planner_admission: dict[str, object],
-    producer_id: str,
-    reason: str,
-    diagnostics: PlanningTurnDiagnostics,
-) -> _GeneralistDecision:
-    parameters = cast(
-        dict[str, str | int | float | bool | list[str]],
-        thaw_json_at_external_boundary(choice.parameters),
-    )
-    criterion_ids = choice.criterion_ids
-    allowed_source_kinds = tuple(
-        dict.fromkeys(
-            source
-            for criterion in active_step.completion_criteria
-            if getattr(criterion, "criterion_id", "") in criterion_ids
-            for source in getattr(
-                getattr(criterion, "evidence_policy", None),
-                "allowed_source_kinds",
-                (),
-            )
-        )
-    )
-    proposal = PlannerProposal(
-        proposal_id=f"proposal:{choice.choice_id}",
-        based_on_task_revision=choice.task_revision,
-        based_on_state_version=choice.state_version,
-        snapshot_id=choice.snapshot_id,
-        subgoal=context.active_subgoal,
-        action_kind=choice.action_kind,
-        target_affordance_id=choice.target_id,
-        destination_affordance_id=choice.destination_id,
-        parameters=parameters,
-        expected_effects=criterion_ids,
-        evidence_requirements=allowed_source_kinds,
-        reason=reason,
-    )
-    return _GeneralistDecision(
-        proposal=proposal,
-        proposal_provenance=PlannerProposalProvenance(
-            source=PlannerProposalSource.DETERMINISTIC_RULE,
-            producer_id=producer_id,
-            profile_id=planner_profile.value,
-            version=GENERALIST_PLANNER_CONTEXT_POLICY_VERSION,
-            evidence_refs=criterion_ids,
-        ),
-        reason=proposal.reason,
-        planner_context={
-            "task_revision": context.task_revision,
-            "state_version": context.state_version,
-            "snapshot_id": context.snapshot_id,
-            "affordance_count": len(context.affordances),
-            "planner_profile": planner_profile.value,
-            "runtime_action_choice": {
-                "choice_id": choice.choice_id,
-                "active_step_id": choice.active_step_id,
-                "criterion_ids": list(choice.criterion_ids),
-            },
-            **({"planner_admission": planner_admission} if planner_admission else {}),
-        },
-        diagnostics=diagnostics,
-    )
-
-
-def _action_choice_count(choice_set: ActionChoiceSet) -> int:
-    """Return diagnostic cardinality without participating in dispatch."""
-
-    return len(choice_set.choices)
-
-
-def _action_choice_diagnostics(
-    choice_set: ActionChoiceSet,
-    selection: ActionSelection,
-) -> PlanningTurnDiagnostics:
-    selection_source = selection.reason_summary
-    return PlanningTurnDiagnostics(
-        model_stage=(
-            "action_choice_build"
-            if selection_source == "runtime_unique_choice"
-            else "action_choice_selection"
-        ),
-        grounded_target_count=len(
-            {item.target_id for item in choice_set.choices if item.target_id}
-        ),
-        action_choice_count=_action_choice_count(choice_set),
-        selection_source=selection_source,
-    )
 
 
 def _planner_decision(

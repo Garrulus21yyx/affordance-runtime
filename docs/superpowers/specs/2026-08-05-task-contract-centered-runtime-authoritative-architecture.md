@@ -9,6 +9,8 @@
 > **2026-08-05 Active-step 修正：** `ActionChoiceCatalog` 必须从 canonical observation 完整建立后，才允许生成任何 model-facing `ChoicePlanningRequest`；旧的 `PlanningRequest → ActionChoiceSet` 顺序无效。
 > **2026-08-05 Source / Verification 收口：** 默认 intake 采用 `SourceEnvelope + selective SourceAnchor`，旧 SourceLedger clause/claim/obligation coverage 迁入 optional `SemanticAudit`；verification 采用 loop-native typed `LoopEvaluationPhase`，但 `TaskCompletionEvaluator` 与 `RuntimeCommitter` 继续保持逻辑与写权限隔离。
 > **2026-08-05 Semantic Authority / Contract Closure 补充：** 第一轮审查的 requirement identity、dependency、choice presentation 与 output closure 建议继续有效；第二轮审查覆盖其严格 raw-text firewall，最终采用 `single semantic admission, bounded contextual rereading, no downstream authority expansion`。
+> **2026-08-05 Physical Minimality 补充：** 本文中的完整性、authority 与 store 是逻辑合同，不自动要求全量内存物化、独立 class/service/process/database/model call；首期采用 indexed/ref-based state、in-process policy composition、typed trigger 与 risk-derived feature profile。
+> **2026-08-05 Cross-Surface Visibility 补充：** DOM、AX、Visual、SVG、WoT、API 与 Device 是共享 TaskSpec/TaskPlan/Catalog/ActionContract/LoopEvaluator 的 acquisition、grounding、execution 与 evidence surfaces；WoT 显式进入图与 vocabulary，但不形成独立 Agent/Planner/TaskSpec。
 
 ## 0. 权威决议
 
@@ -82,6 +84,9 @@ requested output declared ≠ required output materialized
 8. **只有 durable evidence 跨 epoch。** current facts 留在 canonical observation，动作因果留在 bounded recent ActionOutcome，artifact/resource/transaction/human confirmation 才进入 DurableEvidenceStore。
 9. **只有 RuntimeCommitter 写权威状态。** Planner、LoopEvaluator、EvidenceProvider、RecoveryPolicy 和 Executor 都返回 typed result，不直接修改 StateKernel。
 10. **迁移必须替代旧 owner。** 新 canonical owner 上线时必须有 legacy deletion gate，不维持无限 projector 链。
+11. **逻辑完整不等于全量物化。** full Catalog 与 canonical observation 可以使用 immutable index、lazy/query-backed membership 和 ref-based epoch；逻辑 membership、digest、coverage、conflict 与 rejection semantics 必须稳定。
+12. **逻辑 authority 不等于部署边界。** Authority 可以由 pure function、immutable validator 或同进程 policy composition 实现；只有真实的隔离、并发、规模或法规需求才允许拆成独立 service/store/model call。
+13. **Surface 只提供事实、binding、dispatch 与 evidence。** DOM/AX/Visual/SVG/WoT/API/Device 共享一套任务与动作权威；Planner 选择 semantic action，Runtime 在 ActionContractBuilder 中选择 current backend/binding。
 
 ### 0.2 Active-step 核心不变量
 
@@ -168,6 +173,30 @@ flowchart LR
 
 原始语言可以被受限参考，但 accepted task meaning 只有一份。若下游发现 admitted TaskSpec 缺少必要语义，只能返回 `TaskSpecGap` 或 `ClarificationRequired`；不能静默补写 TaskSpec、StepSpec effect 或 ActionContract。
 
+### 0.5 Physical Minimality 与风险分层
+
+目标架构区分 logical contract 与 physical realization：
+
+```text
+logical completeness    != eager materialization
+logical authority       != class/service/process boundary
+logical evidence layer  != one database per namespace
+replaceable TaskPlan    != replan on every loop
+optional capability     != enabled on every task
+```
+
+首期 Runtime 必须是 modular monolith。TaskSpec/TaskPlan admission、ActionContract gates、LoopEvaluator 与 completion evaluation 可以由同进程 pure collaborator 或固定顺序 policy composition 实现，只要 typed input/output、deny semantics、write boundary 与测试隔离保持不变。
+
+能力按任务合同、风险与实际规模派生，而不是手动削弱正确性的模式开关：
+
+| Feature profile | 默认启用 | 按需增加 |
+|---|---|---|
+| `DIRECT_LOW_RISK` | SourceEnvelope、TaskSpec、canonical observation、direct/single-step plan、small Catalog、ActionContract、mechanical evaluation | 不默认启用 SemanticAudit、paging、ModelVerifier、OpenSemanticResolver 或 durable transaction evidence |
+| `MULTI_STEP` | 上述能力 + rolling TaskPlan、bindings、bounded recent outcomes、typed replan、artifact handoff | 仍不默认启用高风险审计或 model evidence |
+| `HIGH_RISK_MULTI_SOURCE` | 上述能力 + exact material anchors、risk-triggered SemanticAudit、approval、authoritative final recheck、material-conflict handling、必要 durable evidence | 只启用任务实际需要的 provider/sidecar |
+
+Profile 只能决定 optional machinery 是否激活，不能关闭 Task authority、capability、必要 approval、freshness/preflight、required-output closure、uncertain-effect protection 或 RuntimeCommitter single-writer。
+
 ## 1. 唯一权威总图
 
 ```mermaid
@@ -180,7 +209,7 @@ flowchart TB
     TSA -->|"admit"| TS["Immutable TaskSpec<br/>authorization + constraints + forbidden effects + success"]
     TSA -->|"clarify / reject"| STOP1["User or typed failure"]
 
-    ENV["DOM / AX / Visual / SVG / API / Device"] --> CAP["PerceptionSession.capture<br/>PerceptionCapture + SourceCoverage"]
+    ENV["DOM / AX / Visual / SVG / WoT / API / Device"] --> CAP["PerceptionSession.capture<br/>PerceptionCapture + SourceCoverage"]
     CAP --> COB["CanonicalObservationBuilder"]
     COB --> UO["Canonical UnifiedObservation<br/>sole Runtime observation authority"]
     TS --> PRE["Pre-plan Task Completion Check"]
@@ -651,6 +680,16 @@ ordered_as          changed              contains_entity
 
 这是 predicate vocabulary，不是 TaskType enum；禁止产生 `NamePrefixSearchTask`、`PriceRangeTask` 等枚举膨胀。
 
+Vocabulary registration 与首期 evidence-provider coverage 分离。首期 mandatory mechanical baseline 只要求：
+
+```text
+equals / contains / starts_with / ends_with / between
+exists / absent / selected / checked / changed
+AllOf / AnyOf / Not
+```
+
+其余已注册 operator 可以按 provider/场景逐步实现；尚无合格 evaluator/provider 时必须返回 `UNSUPPORTED`，不能退化为 description matcher、任意代码或“机械失败后自动问模型并通过”。已注册但暂不支持的 operator 也不能伪装成 `OpenSemanticCriterion`；开放节点只保存尚未注册但明确且 source-bound 的语义。
+
 ### 5.3 Boolean 与 quantified expression
 
 ```python
@@ -718,10 +757,13 @@ AssuranceLevel:
 
 ```text
 DOM_STATE / ACCESSIBILITY_STATE / VISUAL_STATE
-API_STATE / DEVICE_STATE / NETWORK_TRANSACTION
+SVG_GEOMETRY / WOT_DESCRIPTION / WOT_PROPERTY_STATE
+API_STATE / DEVICE_STATE / WOT_ACTION_RESULT / NETWORK_TRANSACTION
 ARTIFACT_INTEGRITY / FILE_RECEIPT / DOWNLOAD_RECEIPT
 MODEL_SEMANTIC / HUMAN_CONFIRMATION
 ```
+
+WoT 三种 typed role 不可混用：`WOT_DESCRIPTION` 只提供 Thing identity、forms、operations 与 capability/grounding metadata；`WOT_PROPERTY_STATE` 提供带 freshness/resource identity 的 device-state evidence；`WOT_ACTION_RESULT` 是 contract-bound dispatch/causality outcome。Description 或 action receipt 都不能单独满足 state/task completion；high-risk external effect 仍需要 authoritative property/resource/transaction `FINAL_RECHECK` 或明确 human confirmation。
 
 Receipt 证明 executor 报告动作调用结果，不自动证明任何 criterion。Model evidence 默认不具备 AUTHORITATIVE assurance；purchase/send/delete/payment/account-change 等 high-risk external effect 必须 authoritative final recheck 或明确 human confirmation。
 
@@ -844,6 +886,18 @@ CLARIFICATION_REQUIRED(question)
 NO_PLAN_NEEDED(reason)
 ```
 
+### 6.6 TaskPlanner 调用门
+
+TaskPlan 可替换不表示每轮重新生成。Runtime 首先走 deterministic fast path：
+
+```text
+initial task success/output closure already satisfied → no plan
+current active StepSpec remains feasible             → reuse current plan
+one direct deterministic milestone                   → direct/rule plan
+```
+
+只有 `NO_CURRENT_PLAN`、`PLAN_EXHAUSTED_TASK_INCOMPLETE`、`STEP_INFEASIBLE`、`ASSUMPTION_DISPROVED`、`ENVIRONMENT_BOUNDARY_CHANGED` 或显式 policy/budget trigger 才能构造 TaskPlanningRequest 并调用 TaskPlanner。每次请求必须携带 typed `replan_trigger`；普通 loop continuation 不能通过空原因反复生成 DAG。
+
 ## 7. 两个 Planning horizon、完整 Catalog 与封闭选择协议
 
 ### 7.1 TaskPlanningRequest
@@ -881,6 +935,34 @@ class TaskPlanningRequest:
 
 ```python
 @dataclass(frozen=True)
+class CatalogSlice:
+    choices: tuple[ActionChoice, ...]
+    next_cursor: str | None
+
+@dataclass(frozen=True)
+class ChoiceFilter:
+    filter_id: str
+    arguments: FrozenObject
+    schema_version: str
+
+@dataclass(frozen=True)
+class ChoiceRejectionSummary:
+    considered_target_count: int
+    admitted_choice_count: int
+    rejected_count_by_reason: FrozenObject
+
+RejectionIndexRef = str
+
+class CatalogMembership(Protocol):
+    """Immutable, snapshot-bound logical membership."""
+
+    def count(self) -> int: ...
+    def contains(self, choice_id: str) -> bool: ...
+    def get(self, choice_id: str) -> ActionChoice | None: ...
+    def page(self, cursor: str | None, size: int) -> CatalogSlice: ...
+    def query(self, typed_filter: ChoiceFilter) -> CatalogSlice: ...
+
+@dataclass(frozen=True)
 class ActionChoiceCatalog:
     catalog_id: str
     catalog_digest: str
@@ -889,10 +971,11 @@ class ActionChoiceCatalog:
     active_step_id: str
     state_version: int
     observation_ref: ObservationRef
-    choices: tuple[ActionChoice, ...]
+    membership: CatalogMembership
     considered_target_count: int
     admitted_choice_count: int
-    rejections: tuple[ChoiceRejection, ...]
+    rejection_summary: ChoiceRejectionSummary
+    rejection_index_ref: RejectionIndexRef | None
 
 @dataclass(frozen=True)
 class ChoiceRejection:
@@ -902,7 +985,7 @@ class ChoiceRejection:
     evidence_refs: tuple[str, ...] = ()
 ```
 
-Catalog 必须密封 choice IDs，并保存完整 choice membership、输入 identities、counts 与 rejection diagnostics。空 Catalog 不能丢掉“看过什么、拒绝了什么、为什么拒绝”的信息。`ChoiceBuildReport` 可以作为相同 digest 下的独立诊断记录，或由上述 counts/rejections 直接构成；无论物理形式如何，都不得从 model request 反推。
+Catalog 必须密封 choice IDs，并保存完整 logical membership、输入 identities、counts 与 rejection diagnostics。小空间可以 eager materialize；大表格、虚拟列表或组合空间可以使用 immutable lazy/indexed/query-backed membership。所有实现都必须绑定同一 observation/catalog snapshot，提供确定性 `contains/get/page/query`，并使相同 canonical inputs 的 membership、ordering、rejection semantics 与 digest 相同。空 Catalog 不能丢掉“看过什么、拒绝了什么、为什么拒绝”的信息。`ChoiceBuildReport` 可以作为相同 digest 下的独立诊断记录，或由 summary/index 构成；无论物理形式如何，都不得从 model request 反推。
 
 ### 7.3 PlanningStage 的 StepChoiceFlow
 
@@ -1325,7 +1408,8 @@ flowchart LR
     DOM["DOM"] --> CAP["PerceptionCapture<br/>acquisition DTO"]
     AX["Accessibility"] --> CAP
     VIS["Visual / SVG"] --> CAP
-    API["API / WoT"] --> CAP
+    WOT["WoT"] --> CAP
+    API["API"] --> CAP
     DEV["Device"] --> CAP
     CAP --> COB["CanonicalObservationBuilder"]
     COB --> UO["Canonical UnifiedObservation<br/>sole Runtime authority"]
@@ -1385,6 +1469,8 @@ class StateFact:
     assertion_refs: tuple[str, ...]
 ```
 
+`Surface` vocabulary 必须显式包含 `Surface.WOT`。它与 DOM、AX、Visual、SVG、API、Device 一样只是 canonical target 的 source surface；不会取得 task meaning、planning、completion 或 commit authority。
+
 规范要求：
 
 - 不选择 representative surface 作为 Runtime target semantics；DOM、AX、visual、SVG、WoT/API bindings 全部保留。
@@ -1430,6 +1516,21 @@ class SourceCoverage:
 | source confidence 不可比较 | 保留 source-local confidence，不做 max-confidence fusion |
 
 Conflict 与 coverage 都必须从 capture 经 canonical observation、Catalog/rejection report、contract/preflight 一路保真；presentation 可以摘要，但不得改变其 authority status。
+
+### 10.5 Cross-Surface shared authority 与 route
+
+DOM / AX / Visual / SVG / WoT / API / Device use one shared TaskSpec、one current `TaskPlan<StepSpec>`、one logical `ActionChoiceCatalog`、one `ActionContract` admission chain and one `LoopEvaluator`。Surface 只提供 acquisition、grounding、execution 或 evidence 能力，不形成平行任务链。
+
+| Surface | Acquisition / canonical input | Grounding / contract binding | Executor / outcome | Evidence role |
+|---|---|---|---|---|
+| DOM / AX | elements、roles、control state | selector / handle / accessibility relation | DOM executor receipt | current structural state |
+| Visual / SVG | screenshot region、point/bbox、geometry | visual point/bbox/mark or SVG geometry | visual executor receipt | current spatial/visual state |
+| WoT | Thing Description、property/resource state | thing/form/operation/resource binding | WoT executor receipt | fresh device/resource state and contract-bound outcome |
+| API / Device | resource/device snapshot | endpoint/device operation binding | API/device executor receipt | authoritative resource/device state when declared |
+
+Planner selects the semantic action; ActionContractBuilder selects the current backend/binding. 该选择必须基于 current canonical observation、required evidence strength、capability、risk 与 policy，并绑定到新的 contract；Planner 不选择 selector、coordinate、href、method 或 executor。
+
+同一 semantic target 同时存在 DOM、Visual、WoT 或 API bindings 且无 material conflict 时，Catalog 通常只建立一个 backend-neutral semantic choice。若 source state 冲突，必须保留 assertion 与 conflict status；若当前 route 在 dispatch 前失效，只能在 fresh observation epoch 上重新 route 并建立新 contract，不能修改旧 contract 或盲目重复 effectful action。
 
 ## 11. Recovery、Replan 与 Coordinator
 
@@ -1500,6 +1601,18 @@ class ObservationStore(Protocol):
     def get(self, ref: ObservationRef) -> UnifiedObservation: ...
 ```
 
+`UnifiedObservation` 是逻辑 epoch contract，不要求把全部 surface、binding、fact、coverage 与 conflict 反复复制进每个 consumer object。允许的物理表示是 immutable epoch header 加只读索引：
+
+```text
+ObservationEpoch  → identity / version / digest / acquisition policy
+TargetIndex       → target_id → CanonicalTarget
+BindingIndex      → target/action → GroundingCandidate refs
+FactIndex         → target/property → accepted or conflicted fact
+CoverageIndex     → source/scope → SourceCoverage
+```
+
+Runtime collaborator 通过 `ObservationRef` 和受限 read-only index 读取；model-facing projector 只产生 bounded copy。不同物理布局不得改变 canonical target identity、coverage/conflict semantics 或 observation digest。
+
 三类存储边界：
 
 ```text
@@ -1565,6 +1678,8 @@ RuntimeCommitter owns authoritative state transitions
 ```
 
 Planner、Executor、LoopEvaluator 和 EvidenceProvider 都不拥有 state commit 权力；TaskCompletionEvaluator 拥有完成语义求值权，但不拥有提交权。
+
+上述 owner 名称定义责任和否决边界，不规定部署拓扑。单进程 MVP 可以把多个 gate 组合在一个 `ActionAdmissionService` 内按 Task → Capability → Approval → Freshness 的固定顺序执行，也可以用一个轻量 RunLedger 物理承载 fact、binding、recent-outcome 与 durable-evidence namespace；各逻辑结果、生命周期和禁止写权限仍须独立。不得仅因 authority matrix 中有一行就创建独立进程、数据库、队列或模型调用。
 
 ## 13. 端到端示例
 
@@ -1727,10 +1842,10 @@ Audit 不能补充附件中未授权的 recipient，也不能把页面建议联�
 4. **P0-D — regression redlines：**第 81 个目标、state 第 13 字段、artifact/label/context limit、material conflict、multi-binding、未展示 choice 与 effectful truncated page。
 5. **P0-E — thin source correctness：**SourceEnvelope 成为默认 source path；普通任务不再建立/验证 clause/claim/obligation graph。
 6. **P1 — direct plan + loop-native evaluation：**删除 Step/Subgoal/obligation plan shape，引入 LoopEvaluator 与 ObservationContinuation。
-7. **P2 — minimal CriterionPolicy + evidence providers：**2 satisfaction × 3 validity × 3 assurance；current/outcome/durable evidence 分层；mechanical providers 内化。
+7. **P2 — minimal CriterionPolicy + evidence providers：**2 satisfaction × 3 validity × 3 assurance；先实现 mandatory mechanical operator baseline，其他 registered operator 可返回 UNSUPPORTED；current/outcome/durable evidence 分层；mechanical providers 内化。
 8. **P3 — stable TaskSpec v2 + optional SemanticAudit：**TaskSpecAuthority 单一准入，audit 保持 trigger-based veto/clarify-only，selective SourceAnchor 冻结。
-9. **P4 — rolling TaskPlanner + strict StepChoice port：**拆分 TaskPlanFlow/StepChoiceFlow，引入 Catalog paging/typed retrieval 与 pure serializer。
-10. **P5 — bounded stores + legacy deletion：**Fact/Binding、RecentActionOutcome、DurableEvidence、ObservationStore，以及旧 source/completion authority 删除门。
+9. **P4 — rolling TaskPlanner + strict StepChoice port：**拆分 TaskPlanFlow/StepChoiceFlow；先稳定 deterministic narrowing/small ChoicePage，再按需要引入 paging、typed retrieval；TaskPlanner 只由 typed planning trigger 调用。
+10. **P5 — bounded stores + legacy deletion：**使用 ref/index-based ObservationStore 与可组合 RunLedger namespace；Fact/Binding、RecentActionOutcome、DurableEvidence 保持逻辑生命周期隔离，并落实旧 source/completion authority 删除门。
 
 source/plan authority、completion authority 与 observation/choice authority 都是 correctness boundary：分别防止 intake graph 决定执行、错误宣布成功，以及合法动作在进入 ActionContract 安全链前被 presentation 错误删除。
 
@@ -1874,6 +1989,11 @@ foundation
 - 不默认建设独立 verifier service、VerifierPlanner、full EvidenceGraph 或无界 EvidenceIndex。
 - 不把 current observation facts 复制进 durable store，也不让历史 current-state evidence 跨 epoch 自动有效。
 - 不让 CriteriaEvidenceMatcher、EvidenceAdmissionPolicy、ModelVerifier 或 mechanical provider 拥有 composite/root completion semantics。
+- 不把 full Catalog 误解为每轮 eager materialize 所有 choice；允许 deterministic lazy/indexed membership。
+- 不把 canonical observation 复制成每个阶段各自持有的巨型对象；Runtime 使用 epoch ref/read-only index。
+- 不因逻辑 authority、gate 或 evidence namespace 存在就默认创建独立 service/process/database/queue/model call。
+- 不因 TaskPlan 可替换就每轮调用 TaskPlanner；无 typed planning trigger 时复用仍可行计划。
+- 不让 feature profile 关闭任务实际要求的授权、安全、freshness、completion 或 single-writer gate。
 
 ## 17. 架构验收 Gate
 
@@ -1961,6 +2081,25 @@ foundation
 | `OUT-02` | TaskCompleted 要求所有 required outputs materialized，并按声明 source-bound。 |
 | `OUT-03` | Planner prose/summary 不能替代 required structured output。 |
 
+#### Physical Minimality Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `CAT-PHY-01` | full Catalog 表示稳定逻辑 membership；允许 eager/lazy/indexed/query-backed 实现，但 page size、model budget 与物化策略不得改变 membership/order/digest/rejection semantics。 |
+| `OBS-PHY-01` | canonical observation 通过 immutable epoch ref/read-only index 访问；物理布局不得改变 target、binding、coverage、conflict 或 digest。 |
+| `AUTH-PHY-01` | logical owner/gate 不要求独立 class/service/process/database/model call；同进程组合不得合并其 typed deny/write semantics。 |
+| `CRIT-PHY-01` | canonical operator vocabulary 与阶段性 provider coverage 分离；未支持 operator 返回 UNSUPPORTED，不得自由文本兜底或 model-auto-pass。 |
+| `PLAN-PHY-01` | TaskPlanner 只能由 typed planning/replanning trigger 调用；active step 仍可行时复用 current plan。 |
+| `PROFILE-01` | risk-derived profile 只控制 optional machinery，不能禁用任务要求的 authority、approval、freshness、output closure 或 single-writer。 |
+
+#### Cross-Surface Gate
+
+| ID | 阻塞不变量 |
+|---|---|
+| `SURFACE-01` | DOM、AX、Visual、SVG、WoT、API 与 Device 共享同一 TaskSpec、current TaskPlan、logical Catalog、ActionContract admission 与 LoopEvaluator；surface 不拥有平行任务或完成权威。 |
+| `SURFACE-02` | 一个 semantic CanonicalTarget 保留所有 current bindings、source assertions、coverage 与 conflicts；不得选择 representative surface 或以最大 confidence 静默覆盖冲突。 |
+| `SURFACE-03` | Planner selects the semantic action; ActionContractBuilder selects the current backend/binding，并将 route 绑定 current observation、evidence requirement、capability、risk 与 policy。 |
+
 #### Loop-native Verification / Recovery Gate
 
 | ID | 阻塞不变量 |
@@ -2000,6 +2139,9 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - plan exhausted 且 task success inconclusive 时必须 replan/recover/block，不得 completed。
 - payment/delete/send 等 `new_effect` criterion 不能由 pre-existing state 冒充本次完成。
 - post-action observation 在 fresh 时被下一轮复用，在 loading/conflict/timeout 时重捕获。
+- DOM、Visual 与 WoT 同时表示同一无冲突 target 时，Catalog 只产生 backend-neutral semantic choice，具体 route 到 contract 阶段决定。
+- GUI state 与 WoT/API device state 存在 material conflict 时不得自动取最高 confidence；high-risk effect 必须阻断或取得 authoritative recheck。
+- DOM route 在 dispatch 前失效而 visual/WoT route 仍可行时，只能基于 fresh epoch 建立新 contract；旧 approval/contract 不得沿用。
 - action re-ground 或 page revision 变化后旧 approval 不可复用。
 - uncertain external effect 不得自动重试造成重复副作用。
 - `max_model_affordances=80/160`、artifact/label/state summary limit 与 context compaction 变化不得改变同一 canonical inputs 的 Catalog digest。
@@ -2022,6 +2164,11 @@ Runtime catalog construction must not call PlanningRequestBuilder
 - OpenSemanticResolver 只能解析与当前 criterion 精确绑定的 excerpt；unrestricted raw request 或 page text 不能成为授权输入。
 - 改写 ChoicePresentation 的 label/state page budget 不得改变 full Catalog；presented choice 必须保留 requirement/effect/conflict/risk/reason 语义。
 - success root 已满足但 required structured output 未 materialize 或缺少要求的 source binding 时，任务不得完成。
+- eager、lazy 与 indexed Catalog 在相同 canonical inputs 下必须产生相同 count、choice membership/order 与 digest。
+- model page size 或 lazy page cursor 不得成为 Catalog membership 输入；未物化 choice 仍必须可由 sealed ID 确定性 contains/get。
+- ObservationStore 内部从 tuple 改为 indexes 不得改变 canonical observation digest、coverage 或 conflict result。
+- 无 typed replan trigger 的普通 loop continuation 不得调用 TaskPlanner；仍可行 active Step 必须复用。
+- DIRECT_LOW_RISK profile 仍必须执行适用的 Task/Capability/Freshness gates 和完整 completion/output closure。
 
 ### 17.3 治理 Gate
 
@@ -2144,6 +2291,26 @@ Runtime catalog construction must not call PlanningRequestBuilder
 | `ChoicePresentation` 与 `CHOICE-13` | §7.5、§17.1 |
 | required OutputSpec 与 `OUT-01`–`OUT-03` | §4.4、§9.4、§17.1 |
 
+### 18.5 Physical Minimality 补充逐条映射
+
+| Amendment | 权威设计落点 |
+|---|---|
+| logical full Catalog / lazy-indexed realization | §0.5、§7.2、§17.1 |
+| ref/index-based canonical observation | §0.5、§11.4、§17.1 |
+| logical authority vs physical deployment | §0.5、§12、§16、§17.1 |
+| criterion vocabulary vs provider coverage | §5.2、§15、§17.1 |
+| typed TaskPlanner invocation gate | §6.6、§15、§17.1 |
+| risk-derived feature profiles | §0.5、§16、§17.1 |
+
+### 18.6 Cross-Surface Visibility 补充逐条映射
+
+| Amendment | 权威设计落点 |
+|---|---|
+| WoT 显式进入主图、Surface vocabulary 与 source/evidence vocabulary | §3、§9.1、§10.1–§10.3 |
+| DOM / AX / Visual / SVG / WoT / API / Device 共享一条 authority chain | §0.1、§10.5、§17.1 |
+| semantic choice 与 backend/binding route 分离 | §7、§10.4–§10.5、§17.1 |
+| `SURFACE-01`–`SURFACE-03` 可执行不变量 | §17.1–§17.2 |
+
 ## 19. 最终收口
 
 目标 Runtime 的主线最终只允许：
@@ -2156,7 +2323,8 @@ zero or one bounded context_only SourceContextView per allowlisted semantic cons
 one canonical TaskRequirement identity per material user requirement
 one current execution plan
 one canonical observation epoch per current state
-one runtime-owned full action choice catalog per active-step epoch
+one shared cross-surface authority chain for DOM / AX / Visual / SVG / WoT / API / Device
+one runtime-owned logically full action choice catalog per active-step epoch
 zero or one bounded choice page per model call
 one concrete action contract per attempt
 one typed LoopEvaluation per post-action evaluation cycle
@@ -2190,5 +2358,7 @@ UserRequest
 > **Source provenance 默认只做 envelope-level authority binding，细粒度 clause/span 审计按风险启用。**
 
 > **Verification 默认是执行循环内的轻量 typed evaluation，而不是独立平台；只有 completion semantics 与 Planner/Executor 保持逻辑隔离，并且只有 RuntimeCommitter 能提交完成。**
+
+> **逻辑完整与严格 authority 不要求 eager materialization 或 service/store/model-call 碎片化；首期复杂度由 typed trigger、实际规模和任务风险渐进启用。**
 
 Step Planner 不再从页面摘要中发明或恢复动作空间；Runtime 先建立完整合法动作目录，模型只在该目录的受控页面中选择。项目的差异化安全能力——stable TaskSpec、runtime-owned action choices、versioned ActionContract、capability boundary、exact approval binding、fresh preflight、independent completion authority、bounded recovery 与 auditable trace——全部保留。被删除的是 default clause/claim/obligation coverage path、obligation-shaped plan、庞大默认 verifier platform、presentation-derived Runtime semantics、同一语义的重复图、有损 projector 和模糊 completion authority。

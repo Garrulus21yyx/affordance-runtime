@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.benchmarks.browsergym_action_schema import BrowserGymAction
 from affordance_runtime.benchmarks.browsergym_types import BROWSERGYM_BACKEND
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -19,17 +20,18 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.immutable import thaw_json_at_external_boundary
-from affordance_runtime.planning import ContractBuilder, PlannerActionKind, PlannerProposal
+from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.simplified_runtime_contracts import CollectionIntent, RegionIntent, RelationIntent
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_planning import SubgoalOutcomeRelation, SubgoalSpec
 from affordance_runtime.unified_grounding import source_affordance_for_candidate
+from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.visual_contracts import VisualContractBinder
 
 
 @dataclass
-class BrowserGymContractBuilder(ContractBuilder):
+class BrowserGymContractBuilder(ActionContractMaterializer):
     """Attach an externally selected typed BrowserGym action to a Core contract."""
 
     bindings: dict[str, BrowserGymAction] = field(default_factory=dict)
@@ -37,7 +39,7 @@ class BrowserGymContractBuilder(ContractBuilder):
     def _route_verifier_kinds(
         self,
         semantic_target_id: str,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> tuple[str, ...]:
         return tuple(
             dict.fromkeys(
@@ -54,8 +56,9 @@ class BrowserGymContractBuilder(ContractBuilder):
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation: UnifiedObservation | None = None,
     ) -> ActionContract:
-        contract = super().build(proposal, task_spec, state, snapshot)
+        contract = super().build(proposal, task_spec, state, snapshot, observation)
         action = self.bindings.get(proposal.proposal_id)
         if action is None:
             raise ValueError(f"BrowserGym action binding is missing: {proposal.proposal_id}")
@@ -154,7 +157,7 @@ class BrowserGymPointEncoder:
 
 
 @dataclass
-class GeneralistBrowserGymContractBuilder(ContractBuilder):
+class GeneralistBrowserGymContractBuilder(ActionContractMaterializer):
     """Bind the common semantic vocabulary to typed BrowserGym actions."""
 
     gesture_encoder: BrowserGymGestureEncoder = field(default_factory=BrowserGymGestureEncoder)
@@ -167,8 +170,9 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation: UnifiedObservation | None = None,
     ) -> ActionContract:
-        contract = super().build(proposal, task_spec, state, snapshot)
+        contract = super().build(proposal, task_spec, state, snapshot, observation)
         affordance = (
             source_affordance_for_candidate(
                 contract.grounding_candidate,
@@ -282,14 +286,10 @@ class GeneralistBrowserGymContractBuilder(ContractBuilder):
             contract_hash="",
         )
 
-    def _available_executors(self, snapshot: BrowserSnapshot) -> frozenset[str]:
-        del snapshot
-        return frozenset({BROWSERGYM_BACKEND})
-
     def _route_verifier_kinds(
         self,
         semantic_target_id: str,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> tuple[str, ...]:
         return tuple(
             dict.fromkeys(

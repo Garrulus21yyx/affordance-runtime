@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
-from affordance_runtime.verification import VerifierLadder
+from affordance_runtime.verification.mechanical import VerifierLadder
 
 
 def _receipt(**evidence: object) -> ExecutionReceipt:

@@ -19,14 +19,13 @@ from affordance_runtime.active_perception import (
     probe_fingerprint,
     request_for_command,
 )
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.grounding import ActivePerceptionRequest
-from affordance_runtime.perception_session import PerceptionSession
+from affordance_runtime.perception_session import PerceptionCapture, PerceptionSession
 
 
 @dataclass(frozen=True)
 class ActivePerceptionFlowContext:
-    snapshot: BrowserSnapshot
+    snapshot: PerceptionCapture
     run_id: str
     task_revision: int
     plan_version: int
@@ -56,7 +55,7 @@ class ActivePerceptionPreparation:
 
 @dataclass(frozen=True)
 class ActivePerceptionProbeResult:
-    targeted_snapshot: BrowserSnapshot | None
+    targeted_snapshot: PerceptionCapture | None
     receipt: ProbeReceipt
     resolution: PerceptionResolution
 

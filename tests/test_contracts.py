@@ -19,7 +19,7 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.planning_contracts import PlannerDecision
-from affordance_runtime.verification import preflight
+from affordance_runtime.verification.mechanical import preflight
 
 
 def test_action_contract_carries_environment_revision() -> None:

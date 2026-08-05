@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -177,6 +178,10 @@ assert {module_name!r} not in sys.modules
         check=False,
         capture_output=True,
         text=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(SOURCE_ROOT.parent),
+        },
     )
     assert completed.returncode == 0, completed.stderr
 
@@ -195,6 +200,10 @@ assert {module_name!r} in sys.modules
         check=False,
         capture_output=True,
         text=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(SOURCE_ROOT.parent),
+        },
     )
     assert completed.returncode == 0, completed.stderr
 

@@ -41,8 +41,8 @@ from affordance_runtime.task_planning import (
 )
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag
-from affordance_runtime.verification import VerificationReport, VerificationStatus
-from runtime_test_support import make_interaction
+from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus
+from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 
 class _Budget:
@@ -208,7 +208,7 @@ def _state(task_spec: TaskSpec, plan: TaskPlan) -> StateKernel:
     state = StateKernel(task_id=task_spec.task_id, goal=task_spec.objective)
     state.install_task_plan(plan)
     state.activate_next_step()
-    state.remember_observation(_snapshot().observation)
+    remember_observation(state, _snapshot().observation)
     return state
 
 
@@ -234,7 +234,7 @@ def test_current_state_progress_has_no_default_obligation_shadow() -> None:
     committed_parent = commit_current_state_completion(
         task_spec,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         _Budget(),
         trace,
         parent,
@@ -278,7 +278,7 @@ def test_current_state_progress_commits_without_default_obligation_shadow() -> N
     committed_parent = commit_current_state_completion(
         task_spec,
         state,
-        _snapshot(submit_available=True),
+        canonical_observation(_snapshot(submit_available=True)),
         _Budget(),
         trace,
         parent,

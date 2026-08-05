@@ -7,7 +7,9 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Mapping, Protocol
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.generalist_planner import PlannerLimits
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planner_context import PlannerContextBuilder
 from affordance_runtime.planning import PlannerProposal, PlannerProposalProvenance, PlannerProposalSource
 from affordance_runtime.planning_contracts import PlannerProposalResponse, PlannerResponse
@@ -15,6 +17,7 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder, PlanningRequestLimits
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.unified_observation import UnifiedObservation
 
 
 class ParentProposalSource(Protocol):
@@ -29,7 +32,7 @@ class PlanningRequestBuilderPort(Protocol):
         self,
         envelope: RunRequest,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        observation: UnifiedObservation,
     ) -> PlanningRequest: ...
 
 
@@ -66,7 +69,10 @@ class ParentAgentPlannerAdapter:
         state: StateKernel,
         snapshot: BrowserSnapshot,
     ) -> _ParentProposalResult:
-        request = self._planning_request_builder().build(envelope, state, snapshot)
+        observation = CanonicalObservationBuilder().build(
+            PerceptionCapture.from_browser_snapshot(snapshot)
+        )
+        request = self._planning_request_builder().build(envelope, state, observation)
         return await self._propose_result(request)
 
     async def propose(

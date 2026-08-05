@@ -4,12 +4,12 @@ from dataclasses import dataclass
 
 import pytest
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.planning import (
-    ContractBuilder,
     PlannerActionKind,
     PlannerProposal,
     PlannerProposalProvenance,
@@ -26,6 +26,7 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import canonical_observation, remember_observation
 
 MARKUP = (
     "<main>"
@@ -231,7 +232,7 @@ def test_paraphrase_control_authorizes_the_same_semantic_target() -> None:
     snapshot = GovernanceObserver().capture()
     task = _task("Turn notifications on", ("notifications",))
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     target = next(item for item in snapshot.affordance_model.affordances if item.label == "Enable notifications")
     proposal = PlannerProposal(
         proposal_id="matrix-paraphrase",
@@ -242,4 +243,6 @@ def test_paraphrase_control_authorizes_the_same_semantic_target() -> None:
         target_affordance_id=target.id,
     )
 
-    PlannerProposalValidator().validate(proposal, MODEL_PROVENANCE, task, state, snapshot)
+    PlannerProposalValidator().validate(
+        proposal, MODEL_PROVENANCE, task, state, canonical_observation(snapshot)
+    )

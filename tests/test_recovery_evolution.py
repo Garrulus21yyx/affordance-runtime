@@ -14,13 +14,14 @@ from affordance_runtime.recovery_evolution import (
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import canonical_observation, remember_observation
 
 
 def test_recovery_fixture_planner_consumes_canonical_request() -> None:
     snapshot = _snapshot()
     state = StateKernel("recovery-request", "exercise bounded recovery")
     state.transition("observing")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     state.transition("planning")
     task = TaskSpec(
         task_id="recovery-request",
@@ -33,7 +34,9 @@ def test_recovery_fixture_planner_consumes_canonical_request() -> None:
         source_request_ref="recovery-request-source",
     )
 
-    request = PlanningRequestBuilder().build(RunRequest(task_spec=task), state, snapshot)
+    request = PlanningRequestBuilder().build(
+        RunRequest(task_spec=task), state, canonical_observation(snapshot)
+    )
     response = RecoveryFixturePlanner(idempotent=True).propose(request)
 
     assert response.proposal.target_affordance_id == "dom_button_1"

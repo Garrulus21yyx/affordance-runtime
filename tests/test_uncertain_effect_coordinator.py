@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -12,7 +13,6 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -26,6 +26,7 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 @dataclass
@@ -56,7 +57,14 @@ class TimeoutObserver:
             target_fingerprints={
                 item.id: item.target_fingerprint for item in model.affordances
             },
-            metadata={"saved": self.world.saved},
+            metadata={
+                "saved": self.world.saved,
+                "criterion_evaluations": (
+                    {"criterion:saved": "satisfied"}
+                    if self.world.saved
+                    else {}
+                ),
+            },
         )
         return BrowserSnapshot(observation, model)
 
@@ -132,7 +140,12 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
             requirements={
                 "dom_button_1": ContractRequirements(
                     verifier_plan=(
-                        VerifierSpec("observation_metadata", "saved", True),
+                        VerifierSpec(
+                            "observation_metadata",
+                            "saved",
+                            True,
+                            criterion_ids=("criterion:saved",),
+                        ),
                     ),
                     required_capabilities=("settings.write",),
                     risk=RiskLevel.MEDIUM,
@@ -150,6 +163,11 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 targets=("Save",),
                 success_criteria=("saved state is true",),
+                success=SuccessExpression(
+                    expression_id="success:saved",
+                    operator="criterion",
+                    criterion_id="criterion:saved",
+                ),
                 requested_capabilities=("settings.write",),
                 source_request_ref="uncertain-effect-test",
             ),
@@ -160,7 +178,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
     assert result.status == RuntimeStep.DONE
     assert world.saved is True
     assert executor.calls == 1
-    assert planner.calls == 2
+    assert planner.calls == 1
     assert result.state.step_count == 1
     assert result.verification is not None and result.verification.passed
     assert result.state.current_failure is not None

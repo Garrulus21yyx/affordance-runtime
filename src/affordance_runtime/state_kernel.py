@@ -9,15 +9,17 @@ from enum import StrEnum
 from typing import Any, NamedTuple
 
 from affordance_runtime.active_perception import EvidenceGap, PerceptionResolution, ProbePlan, ProbeReceipt
-from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
+from affordance_runtime.contracts import ActionContract, ExecutionReceipt
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.observation_store import ObservationCommit, ObservationRef
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
 from affordance_runtime.task_planning import TaskPlan, TaskProgress
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.contracts import CriterionEvaluation
+from affordance_runtime.verification.mechanical import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "created": {"observing", "aborted"}, "observing": {"planning", "recovering", "failed", "aborted"},
+    "created": {"observing", "aborted"}, "observing": {"planning", "recovering", "done", "failed", "aborted"},
     "planning": {"observing", "preflight", "recovering", "waiting_clarification", "deferred", "done", "failed", "aborted"},
     "waiting_clarification": {"observing", "aborted"}, "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
     "waiting_approval": {"preflight", "aborted"}, "acting": {"verifying", "recovering", "failed"},
@@ -99,7 +101,9 @@ class StateKernel:
     constraints: dict[str, Any] = field(default_factory=dict)
     task_plan: TaskPlan | None = None
     task_progress: TaskProgress | None = None
-    latest_observation: Observation | None = None
+    current_observation_ref: ObservationRef | None = None
+    current_observation_environment_revision: str = ""
+    current_observation_page_revision: str = ""
     last_receipt: ExecutionReceipt | None = None
     current_disproved_assumption: str = ""
     phase: str = "created"
@@ -122,6 +126,9 @@ class StateKernel:
     attempted_recovery_strategy_ids: set[str] = field(default_factory=set)
     effectful_action_count: int = 0
     final_result: dict[str, Any] = field(default_factory=dict)
+    completion_criterion_evaluations: dict[str, CriterionEvaluation] = field(
+        default_factory=dict
+    )
     latest_planner_proposal: dict[str, Any] = field(default_factory=dict)
     recent_action_outcomes: RecentActionOutcomeIndex = field(default_factory=RecentActionOutcomeIndex)
     latest_progress_guard: dict[str, str] | None = None
@@ -129,10 +136,12 @@ class StateKernel:
     current_grounding_fallback: dict[str, dict[str, str]] = field(default_factory=dict)
     version: int = 0
 
-    def remember_observation(self, observation: Observation) -> None:
-        self.latest_observation = observation
+    def remember_observation_commit(self, observation: ObservationCommit) -> None:
+        self.current_observation_ref = observation.ref
+        self.current_observation_environment_revision = observation.environment_revision
+        self.current_observation_page_revision = observation.page_revision
         self.observation_count += 1
-        self.current_snapshot_id = observation.snapshot_id
+        self.current_snapshot_id = observation.ref.epoch_id
         self.version += 1
 
     def record_receipt(self, receipt: ExecutionReceipt) -> None:
@@ -254,10 +263,10 @@ class StateKernel:
         self.version += 1
 
     def current_revision(self) -> str:
-        return self.latest_observation.environment_revision if self.latest_observation else ""
+        return self.current_observation_environment_revision
 
     def current_page_revision(self) -> str:
-        return self.latest_observation.page_revision if self.latest_observation else ""
+        return self.current_observation_page_revision
 
     def constraint_summary(self) -> str:
         return "; ".join(f"{key}={value}" for key, value in sorted(self.constraints.items()))

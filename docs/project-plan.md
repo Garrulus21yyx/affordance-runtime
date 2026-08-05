@@ -41,6 +41,14 @@ The target has four durable authority objects:
 | `ActionContract` | one grounded, gated, expiring action transaction | self-authorization or task completion |
 | `TaskProgress` | verified progress, facts/bindings, recent outcomes, durable evidence refs | duplicate plan or observation graphs |
 
+### Cross-surface sources and backends
+
+DOM, AX, Visual, SVG, WoT, API, and Device are composable sources/backends under
+the same task and transaction authorities. Planner selects a backend-neutral
+semantic action; the Runtime retains every current binding/conflict and
+ActionContractBuilder selects the concrete backend/binding. No surface receives
+its own TaskSpec, plan, completion, or commit chain.
+
 ## 3. Delivery phases
 
 The phase order is normative; status is maintained only in
@@ -51,9 +59,9 @@ The phase order is normative; status is maintained only in
 | Slice | Outcome |
 |---|---|
 | `P0-A` | Task completion comes only from full `TaskSpec.success` evaluation; receipt/latest-report/plan-exhausted fallbacks are removed. |
-| `P0-B` | `PerceptionCapture → CanonicalObservationBuilder` establishes the only current semantic observation authority. |
-| `P0-C` | Runtime builds the full `ActionChoiceCatalog` before any bounded model-facing ChoicePage. |
-| `P0-D` | Regression redlines cover omitted target/state fields, conflicts, multi-binding, truncated pages, and stale approval/contract identity. |
+| `P0-B` | `PerceptionCapture → CanonicalObservationBuilder` establishes the only current semantic observation authority behind immutable epoch refs/indexes for DOM/AX/Visual/SVG/WoT/API/Device. |
+| `P0-C` | Runtime builds the surface-neutral, logically complete `ActionChoiceCatalog` before any bounded model-facing ChoicePage; eager/lazy/indexed realizations preserve membership/order/digest. |
+| `P0-D` | Regression redlines cover omitted target/state fields, conflicts, multi-binding, truncated pages, stale approval/contract identity, and physical-layout invariance. |
 | `P0-E` | Default intake uses lightweight `SourceEnvelope`; clause/claim/obligation coverage moves to optional SemanticAudit. |
 
 ### P1 — Direct plan and loop-native evaluation
@@ -66,6 +74,7 @@ The phase order is normative; status is maintained only in
 ### P2 — Typed criteria and bounded evidence
 
 - closed semantic AST plus restricted open semantic criterion;
+- mandatory mechanical operator baseline; registered unsupported operators fail typed instead of falling back to prose/model approval;
 - minimum `CriterionPolicy`: satisfaction, validity, assurance;
 - current observation, bounded recent ActionOutcome, and small DurableEvidenceStore;
 - mechanical verifiers become internal evidence providers.
@@ -80,12 +89,13 @@ The phase order is normative; status is maintained only in
 ### P4 — Observation-grounded rolling planning
 
 - separate task-planning and active-step choice horizons;
-- deterministic paging/refinement over a Runtime-owned full Catalog;
+- reuse/direct planning fast paths and TaskPlanner calls only on typed triggers;
+- deterministic narrowing first, then staged paging/refinement over a Runtime-owned logical full Catalog;
 - Planner selects only displayed IDs and never invents concrete bindings.
 
 ### P5 — Bounded stores and legacy deletion
 
-- Fact/Binding, observation, recent-outcome, and durable-evidence stores have one owner each;
+- Fact/Binding, observation, recent-outcome, and durable-evidence namespaces keep distinct lifetimes but may share lightweight in-process physical stores;
 - compatibility projectors and alternate completion/progress owners are deleted or isolated;
 - Trace, benchmark, and evolution remain offline consumers.
 
@@ -101,6 +111,8 @@ Every production slice must preserve:
 - typed failure ownership and bounded recovery;
 - one state/trace writer;
 - benchmark neutrality and immutable evidence identity.
+- risk-derived profiles may enable optional machinery but never bypass required gates, output closure, or the single writer;
+- logical authority names do not require independent services, processes, databases, queues, or model calls without measured need.
 
 ## 5. Explicit non-goals
 

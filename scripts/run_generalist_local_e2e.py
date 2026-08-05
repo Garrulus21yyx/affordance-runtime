@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession
@@ -20,7 +21,7 @@ from affordance_runtime.fixtures import EXPORT_SHA256, create_fixture_server
 from affordance_runtime.generalist_planner import GeneralistLMPlanner
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import model_port_from_environment
-from affordance_runtime.planning import ContractBuilder, ContractRequirements
+from affordance_runtime.planning import ContractRequirements
 from affordance_runtime.task_intake import UserRequest
 from affordance_runtime.task_pipeline import GeneralistTaskPipeline
 
@@ -115,7 +116,7 @@ def run(scenario_name: str, artifact_root: Path) -> dict[str, Any]:
                     observer=session,
                     planner=GeneralistLMPlanner(model),
                     executor=router,
-                    contract_builder=ContractBuilder(requirements=scenario.requirements),
+                    contract_builder=ActionContractMaterializer(requirements=scenario.requirements),
                     approval_provider=(
                         ConfiguredApprovalProvider("fixture-user", set(scenario.approval_capabilities))
                         if scenario.approval_capabilities

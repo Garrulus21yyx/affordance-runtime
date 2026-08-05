@@ -5,15 +5,18 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import cast
 
+from affordance_runtime.action_contract_builder import ActionContractBuilder, ActionContractMaterializer
 from affordance_runtime.active_perception_flow import ActivePerceptionFlow
 from affordance_runtime.approval_contracts import ApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
+from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.coordinator import RunBudget, RunCoordinator, RuntimeFeatures
 from affordance_runtime.execution_phase import ActionStage
+from affordance_runtime.observation_store import InMemoryObservationStore
 from affordance_runtime.perception_phase import PerceptionStage
 from affordance_runtime.perception_session import ObservationSource, PerceptionSession
-from affordance_runtime.planning import ContractBuilder, PlannerProposalValidator
+from affordance_runtime.planning import PlannerProposalValidator
 from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.planning_phase import PlanningStage
 from affordance_runtime.progress_phase import ProgressStage
@@ -36,7 +39,7 @@ from affordance_runtime.task_planning import (
     VerifierBackedSubgoalVerifier,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
-from affordance_runtime.verification import VerifierLadder
+from affordance_runtime.verification.mechanical import VerifierLadder
 
 _DEFAULT_TASK_PLANNER = object()
 
@@ -53,7 +56,7 @@ def compose_run_coordinator(
     artifacts: ArtifactStore | None = None,
     budget: RunBudget | None = None,
     features: RuntimeFeatures | None = None,
-    contract_builder: ContractBuilder | None = None,
+    contract_builder: ActionContractBuilder | ActionContractMaterializer | None = None,
     proposal_validator: PlannerProposalValidator | None = None,
     proposal_recovery_policy: ProposalRejectionRecoveryPolicy | None = None,
     task_planner: TaskPlannerPort | None | object = _DEFAULT_TASK_PLANNER,
@@ -75,8 +78,17 @@ def compose_run_coordinator(
     resolved_task_policy = task_policy or TaskConstraintPolicy()
     resolved_calibrator = route_calibrator or RouteCalibrator()
     session = PerceptionSession(observer, artifacts)
+    observation_builder = CanonicalObservationBuilder()
+    observation_store = InMemoryObservationStore()
     active_flow = ActivePerceptionFlow(session)
-    perception = PerceptionStage(session, active_flow, artifacts, resolved_budget)
+    perception = PerceptionStage(
+        session,
+        active_flow,
+        artifacts,
+        resolved_budget,
+        observation_builder,
+        observation_store,
+    )
     execution_loop = ContractExecutionLoop(
         executor=executor,
         verifier=resolved_verifier,
@@ -109,15 +121,30 @@ def compose_run_coordinator(
         ),
         runtime_profile_digest=runtime_profile_digest,
     )
-    if isinstance(contract_builder, ContractBuilder):
-        contract_builder.unified_resolver.router = replace(
-            contract_builder.unified_resolver.router,
+    if contract_builder is None:
+        resolved_contract_builder = ActionContractBuilder(ActionContractMaterializer())
+    elif isinstance(contract_builder, ActionContractMaterializer):
+        resolved_contract_builder = ActionContractBuilder(contract_builder)
+    else:
+        # Explicit external/benchmark adapters remain edge-only inputs. They
+        # are never wrapped as canonical builders or used by the default path.
+        resolved_contract_builder = contract_builder
+    route_owner = (
+        resolved_contract_builder.materializer
+        if isinstance(resolved_contract_builder, ActionContractBuilder)
+        else resolved_contract_builder
+    )
+    if hasattr(route_owner, "unified_resolver"):
+        route_owner.unified_resolver.router = replace(
+            route_owner.unified_resolver.router,
             calibrator=resolved_calibrator,
         )
     action = ActionStage(
-        contract_builder=contract_builder,
+        contract_builder=resolved_contract_builder,
         contract_execution_loop=execution_loop,
         perception_session=session,
+        observation_builder=observation_builder,
+        observation_store=observation_store,
         active_perception_flow=active_flow,
         approval_provider=approval_provider,
         artifacts=artifacts,
@@ -136,6 +163,8 @@ def compose_run_coordinator(
         perception_session=session,
         subgoal_verifier=subgoal_verifier or VerifierBackedSubgoalVerifier(),
         route_calibrator=resolved_calibrator,
+        observation_builder=observation_builder,
+        observation_store=observation_store,
         task_skill_runtime=task_skill_runtime,
         artifacts=artifacts,
         structural_verification_enabled=resolved_features.structural_verification,

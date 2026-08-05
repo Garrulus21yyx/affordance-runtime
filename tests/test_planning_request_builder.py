@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.contracts import Observation
 from affordance_runtime.grounding import (
     DomGroundingPayload,
@@ -14,6 +15,7 @@ from affordance_runtime.grounding import (
 from affordance_runtime.grounding import (
     EvidenceKind as GroundingEvidenceKind,
 )
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
@@ -43,7 +45,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
-from runtime_test_support import make_interaction
+from runtime_test_support import make_interaction, remember_observation
 
 
 def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -105,7 +107,7 @@ def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
         metadata={"visible_text": "x" * 2_100},
     )
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return RunRequest(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
@@ -114,6 +116,12 @@ def _name_interaction() -> ElementIntent:
         "Name",
         (SourceReference("request-source", "unit:enter-name", "claim:enter-name"),),
         role="textbox",
+    )
+
+
+def _canonical(snapshot: BrowserSnapshot):
+    return CanonicalObservationBuilder().build(
+        PerceptionCapture.from_browser_snapshot(snapshot)
     )
 
 
@@ -132,7 +140,7 @@ def test_builder_projects_identity_observation_and_budget_without_mutation() -> 
             max_artifact_refs=1,
         ),
         allow_finish=False,
-    ).build(envelope, state, snapshot)
+    ).build(envelope, state, _canonical(snapshot))
 
     assert request.identity.task_spec_identity == envelope.task_spec.identity
     assert request.identity.task_revision == 1
@@ -146,6 +154,30 @@ def test_builder_projects_identity_observation_and_budget_without_mutation() -> 
     assert request.remaining_budget.steps == 20
     assert "finish" not in request.permitted_action_kinds
     assert state.version == before_version
+
+
+def test_projection_budget_cannot_change_canonical_epoch_or_runtime_membership() -> None:
+    from affordance_runtime.planning_request_builder import (
+        PlanningRequestBuilder,
+        PlanningRequestLimits,
+    )
+
+    envelope, state, snapshot = _fixture()
+    canonical = _canonical(snapshot)
+    runtime_target_ids = tuple(item.target_id for item in canonical.targets)
+    digest = canonical.digest
+
+    narrow = PlanningRequestBuilder(
+        limits=PlanningRequestLimits(max_affordances=1)
+    ).build(envelope, state, canonical)
+    wide = PlanningRequestBuilder(
+        limits=PlanningRequestLimits(max_affordances=80)
+    ).build(envelope, state, canonical)
+
+    assert len(narrow.observation.affordances) == 1
+    assert len(wide.observation.affordances) == len(runtime_target_ids)
+    assert tuple(item.target_id for item in canonical.targets) == runtime_target_ids
+    assert canonical.digest == digest
 
 
 def test_builder_preserves_bounded_semantic_state_before_incidental_keys() -> None:
@@ -167,7 +199,7 @@ def test_builder_preserves_bounded_semantic_state_before_incidental_keys() -> No
     )
     bounded_snapshot = BrowserSnapshot(snapshot.observation, affordance_model)
 
-    request = PlanningRequestBuilder().build(envelope, state, bounded_snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(bounded_snapshot))
     projected_state = dict(request.observation.affordances[0].state)
 
     assert len(projected_state) <= 12
@@ -212,7 +244,7 @@ def test_builder_preserves_multiple_semantic_actions_on_one_unified_target() -> 
         unified_affordances=(unified,),
     )
 
-    request = PlanningRequestBuilder().build(envelope, state, semantic_snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(semantic_snapshot))
 
     assert len(request.observation.affordances) == 1
     assert request.observation.affordances[0].target_id == semantic_target_id
@@ -249,7 +281,7 @@ def test_builder_does_not_activate_ready_legacy_step() -> None:
     )
     before_version = state.version
 
-    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(snapshot))
 
     assert request.step.activity_status == StepActivityStatus.READY_NOT_ACTIVATED
     assert request.step.active_step is None
@@ -294,7 +326,7 @@ def test_builder_projects_active_legacy_step_action_family() -> None:
     )
     state.activate_next_step()
 
-    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(snapshot))
 
     assert request.step.activity_status == StepActivityStatus.ACTIVE
     assert request.step.active_step_action_family == "type_text"
@@ -330,7 +362,7 @@ def test_builder_preserves_invalid_step_projection_instead_of_no_plan() -> None:
         )
     )
 
-    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(snapshot))
 
     assert request.step.projection_status == PlannerStepProjectionStatus.PROJECTION_INVALID
     assert request.step.projection_reason
@@ -455,7 +487,8 @@ def test_builder_does_not_embed_legacy_terminal_admission_without_mutation() -> 
         ),
     )
 
-    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    request = PlanningRequestBuilder().build(envelope, state, _canonical(snapshot))
 
-    assert request.admission is None
+    assert request.admission is not None
+    assert request.admission.target_decisions == ()
     assert state.version == before_version

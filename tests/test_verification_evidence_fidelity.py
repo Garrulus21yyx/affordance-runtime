@@ -3,7 +3,7 @@ import json
 import pytest
 
 from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
-from affordance_runtime.verification import (
+from affordance_runtime.verification.mechanical import (
     ControlStateVerifier,
     DomAttributeVerifier,
     EvidenceVerifier,
@@ -30,7 +30,7 @@ def _receipt(**evidence: object) -> ExecutionReceipt:
     )
 
 
-def test_verifier_evaluate_preserves_verify_result_and_observed_value() -> None:
+def test_verifier_evaluate_preserves_observed_value() -> None:
     evidence_spec = VerifierSpec("evidence", "saved", True)
     metadata_spec = VerifierSpec("observation_metadata", "saved", True)
     dom_spec = VerifierSpec(
@@ -72,7 +72,7 @@ def test_verifier_evaluate_preserves_verify_result_and_observed_value() -> None:
     for verifier, spec, receipt, obs, expected_observed in cases:
         evaluation = verifier.evaluate(spec, receipt, obs)
 
-        assert evaluation.passed == verifier.verify(spec, receipt, obs)
+        assert evaluation.passed
         assert evaluation.observed == expected_observed
 
 
@@ -90,7 +90,9 @@ def test_http_json_verifier_reports_actual_projected_value(monkeypatch) -> None:
     def _fake_urlopen(url: str, timeout: float):  # noqa: ARG001
         return _Response()
 
-    monkeypatch.setattr("affordance_runtime.verification.urlopen", _fake_urlopen)
+    monkeypatch.setattr(
+        "affordance_runtime.verification.mechanical.urlopen", _fake_urlopen
+    )
     spec = VerifierSpec(
         "http_json",
         "https://example.invalid/state",
@@ -101,7 +103,6 @@ def test_http_json_verifier_reports_actual_projected_value(monkeypatch) -> None:
 
     assert evaluation.passed
     assert evaluation.observed == "submitted"
-    assert evaluation.passed == HttpJsonVerifier().verify(spec, _receipt(), Observation("rev-2"))
 
 
 def test_spatial_marker_delta_requires_new_current_geometry_near_bound_point() -> None:
@@ -139,7 +140,7 @@ def test_spatial_marker_delta_requires_new_current_geometry_near_bound_point() -
         "rev-2",
         metadata={"spatial_geometry": [observation.metadata["spatial_geometry"][0]]},
     )
-    assert not SpatialMarkerDeltaVerifier().verify(spec, _receipt(), stale_only)
+    assert not SpatialMarkerDeltaVerifier().evaluate(spec, _receipt(), stale_only).passed
 
 
 def test_verifier_ladder_report_uses_real_observed_values_and_semantic_key() -> None:

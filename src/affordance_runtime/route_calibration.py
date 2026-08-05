@@ -7,7 +7,7 @@ from enum import StrEnum
 from time import time
 
 from affordance_runtime.grounding import GroundingSource
-from affordance_runtime.verification import VerificationReport, VerificationStatus
+from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus
 
 
 class RouteOutcomeStatus(StrEnum):

@@ -40,6 +40,17 @@ evaluation, completion, and commit do not use raw request text. In short:
 single semantic admission, bounded contextual rereading, no downstream
 authority expansion.
 
+The target keeps logical boundaries strict while defaulting to a lightweight
+modular-monolith realization: full Catalog membership may be lazy/indexed,
+canonical observations are ref/index-backed, and optional audit/model machinery
+is enabled by task risk rather than for every run.
+
+DOM, AX, Visual, SVG, WoT, API, and Device are composable observation,
+grounding, execution, and evidence surfaces under this one chain. Planner
+selects a backend-neutral semantic action; ActionContractBuilder selects the
+current backend/binding from the canonical target's retained candidates and
+conflicts.
+
 The target is not implemented as a whole. See
 [Implementation Status](docs/implementation-status.md) for current code truth.
 
@@ -52,7 +63,7 @@ semantics.
 
 The Runtime owns:
 
-- multi-source perception and canonical observation;
+- multi-source DOM/AX/Visual/SVG/WoT/API/Device perception and canonical observation;
 - complete legal action construction before model presentation;
 - versioned ActionContracts and exact target/binding identity;
 - Task authority, capability, approval, freshness, and preflight gates;

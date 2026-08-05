@@ -17,7 +17,6 @@ from affordance_runtime.planner_context import (
 )
 from affordance_runtime.planning_request_builder import (
     PlanningRequestBuilder,
-    PlanningRequestLimits,
 )
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
@@ -28,7 +27,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
-from runtime_test_support import make_interaction
+from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 
 def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -58,7 +57,7 @@ def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
         metadata={"visible_text": "x" * 2_100},
     )
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return RunRequest(task_spec=task, capabilities=["settings.write"]), state, BrowserSnapshot(observation, model)
 
 
@@ -98,30 +97,13 @@ def test_compatibility_function_matches_explicit_builder() -> None:
     assert compatible == direct
 
 
-def test_builder_can_rebuild_provider_context_from_immutable_request() -> None:
-    envelope, state, snapshot = _fixture()
-    limits = PlannerLimits(max_affordances=2, max_artifact_refs=1, max_accepted_knowledge=2)
-    context_builder = PlannerContextBuilder(
-        limits=limits,
-        accepted_knowledge=("old", "current-a", "current-b"),
-        allow_finish=False,
-    )
-
-    legacy_context = context_builder.build(envelope, state, snapshot)
-    request = PlanningRequestBuilder(
-        limits=PlanningRequestLimits(max_affordances=2, max_artifact_refs=1),
-        allow_finish=False,
-    ).build(envelope, state, snapshot)
-    request_context = context_builder.build(request)
-
-    assert request_context.model_dump() == legacy_context.model_dump()
-
-
 def test_planning_request_builder_does_not_expose_legacy_pending_obligations() -> None:
     envelope, state, snapshot = _fixture()
     state.pending_obligations = ["legacy:string-obligation"]  # type: ignore[attr-defined]
 
-    request = PlanningRequestBuilder().build(envelope, state, snapshot)
+    request = PlanningRequestBuilder().build(
+        envelope, state, canonical_observation(snapshot)
+    )
     context = PlannerContextBuilder().build(request)
 
     assert request.pending_evidence_obligations == ()

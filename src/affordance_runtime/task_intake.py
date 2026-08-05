@@ -6,11 +6,11 @@ import hashlib
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import time
-from typing import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.semantics import CriterionRelation
+from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
 
 class StrictModel(BaseModel):
@@ -336,24 +336,6 @@ class SemanticValueConstraint(StrictModel):
         return self
 
 
-class IntentDraft(StrictModel):
-    objective: str = ""
-    entities: tuple[IntentEntity, ...] = ()
-    requested_effects: tuple[RequestedEffect, ...] = ()
-    preferences: tuple[str, ...] = ()
-    desired_outputs: tuple[str, ...] = ()
-    candidate_success_criteria: tuple[str, ...] = ()
-    candidate_evidence_requirements: tuple[str, ...] = ()
-    candidate_constraints: tuple[str, ...] = ()
-    candidate_semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
-    candidate_source_claims: tuple[SourcedTaskClaim, ...] = ()
-    candidate_obligations: tuple[TaskObligationSpec, ...] = ()
-    candidate_forbidden_effects: tuple[str, ...] = ()
-    ambiguities: tuple[IntentAmbiguity, ...] = ()
-    source_map: tuple[FieldProvenance, ...] = ()
-    confidence_by_field: tuple[FieldConfidence, ...] = ()
-    task_structure: TaskStructure = TaskStructure.FLAT
-
 
 class TaskSpec(StrictModel):
     schema_version: str = "1.3"
@@ -368,6 +350,11 @@ class TaskSpec(StrictModel):
     preferences: tuple[str, ...] = ()
     desired_outputs: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
+    success: SuccessExpression | None = None
+    required_outputs: tuple[OutputSpec, ...] = ()
+    constraint_criterion_ids: tuple[str, ...] = ()
+    external_effect_criterion_ids: tuple[str, ...] = ()
+    final_recheck_criterion_ids: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     semantic_value_constraints: tuple[SemanticValueConstraint, ...] = ()
     source_claims: tuple[SourcedTaskClaim, ...] = ()
@@ -377,6 +364,10 @@ class TaskSpec(StrictModel):
     requested_capabilities: tuple[str, ...] = ()
     ambiguity_status: str = "resolved"
     source_request_ref: str = Field(min_length=1)
+    # Canonical intake binds accepted meaning to the thin source envelope.
+    # The graph-shaped compatibility fields above remain only until P3-4.
+    source_envelope_ref: str = ""
+    source_binding_digest: str = ""
     field_provenance: tuple[FieldProvenance, ...] = ()
     created_at_s: float = Field(default_factory=time)
 
@@ -397,13 +388,6 @@ class CompilationIssue(StrictModel):
     detail: str = ""
 
 
-class CompilationResult(StrictModel):
-    status: CompilationStatus
-    request_id: str
-    draft: IntentDraft
-    task_spec: TaskSpec | None = None
-    issues: tuple[CompilationIssue, ...] = ()
-
 
 @dataclass(frozen=True)
 class CompilationPolicy:
@@ -411,214 +395,6 @@ class CompilationPolicy:
     allowed_requested_capabilities: frozenset[str] | None = None
     denied_capabilities: frozenset[str] = frozenset()
     forbidden_effects: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True)
-class IntentDraftValidator:
-    policy: CompilationPolicy = field(default_factory=CompilationPolicy)
-
-    def compile(
-        self,
-        request: UserRequest,
-        draft: IntentDraft,
-        *,
-        revision: int = 1,
-        task_id: str | None = None,
-        require_obligation_graph: bool = False,
-    ) -> CompilationResult:
-        unsupported: list[CompilationIssue] = []
-        if not draft.objective.strip():
-            unsupported.append(CompilationIssue(code="missing_objective", field="objective"))
-        if not draft.requested_effects:
-            unsupported.append(CompilationIssue(code="missing_effect", field="requested_effects"))
-        if not draft.candidate_success_criteria:
-            unsupported.append(CompilationIssue(code="missing_success_criteria", field="candidate_success_criteria"))
-        for index, effect in enumerate(draft.requested_effects):
-            if not _source_ref_authorized(request, effect.source_ref):
-                unsupported.append(
-                    CompilationIssue(
-                        code="unsourced_requested_effect",
-                        field=f"requested_effects[{index}]",
-                        detail=effect.source_ref,
-                    )
-                )
-        for index, entity in enumerate(draft.entities):
-            if not _source_ref_authorized(request, entity.source_ref):
-                unsupported.append(
-                    CompilationIssue(
-                        code="unsourced_intent_entity",
-                        field=f"entities[{index}]",
-                        detail=entity.source_ref,
-                    )
-                )
-        for index, constraint in enumerate(draft.candidate_semantic_value_constraints):
-            if not _source_ref_authorized(request, constraint.source_ref):
-                unsupported.append(
-                    CompilationIssue(
-                        code="unsourced_semantic_value_constraint",
-                        field=f"candidate_semantic_value_constraints[{index}]",
-                        detail=constraint.source_ref,
-                    )
-                )
-        for index, claim in enumerate(draft.candidate_source_claims):
-            if not _source_ref_authorized(request, claim.source_ref):
-                unsupported.append(
-                    CompilationIssue(
-                        code="unsourced_task_claim",
-                        field=f"candidate_source_claims[{index}]",
-                        detail=claim.source_ref,
-                    )
-                )
-        try:
-            _validate_task_obligation_graph(
-                draft.candidate_source_claims,
-                draft.candidate_obligations,
-            )
-        except ValueError as exc:
-            unsupported.append(
-                CompilationIssue(
-                    code="invalid_task_obligation_graph",
-                    field="candidate_obligations",
-                    detail=str(exc),
-                )
-            )
-        if any(issue.code in {"missing_objective", "missing_effect"} for issue in unsupported):
-            return CompilationResult(
-                status=CompilationStatus.UNSUPPORTED,
-                request_id=request.request_id,
-                draft=draft,
-                issues=tuple(unsupported),
-            )
-
-        blocking = [item for item in draft.ambiguities if item.blocking or item.risk == AmbiguityRisk.HIGH]
-        if blocking:
-            return CompilationResult(
-                status=CompilationStatus.NEEDS_CLARIFICATION,
-                request_id=request.request_id,
-                draft=draft,
-                issues=tuple(
-                    CompilationIssue(code="blocking_ambiguity", field=item.field, detail=item.reason)
-                    for item in blocking
-                ),
-            )
-
-        if unsupported:
-            return CompilationResult(
-                status=CompilationStatus.UNSUPPORTED,
-                request_id=request.request_id,
-                draft=draft,
-                issues=tuple(unsupported),
-            )
-
-        conflicts: list[CompilationIssue] = []
-        forbidden = {_normalized(item) for item in self.policy.forbidden_effects}
-        forbidden.update(_normalized(item) for item in draft.candidate_forbidden_effects)
-        for effect in draft.requested_effects:
-            if effect.operation_class not in self.policy.allowed_operations:
-                conflicts.append(
-                    CompilationIssue(
-                        code="operation_denied",
-                        field="requested_effects",
-                        detail=effect.operation_class.value,
-                    )
-                )
-            if effect.capability and effect.capability in self.policy.denied_capabilities:
-                conflicts.append(
-                    CompilationIssue(
-                        code="capability_denied",
-                        field="requested_effects",
-                        detail=effect.capability,
-                    )
-                )
-            if (
-                effect.capability
-                and self.policy.allowed_requested_capabilities is not None
-                and effect.capability not in self.policy.allowed_requested_capabilities
-            ):
-                conflicts.append(
-                    CompilationIssue(
-                        code="capability_not_allowed",
-                        field="requested_effects",
-                        detail=effect.capability,
-                    )
-                )
-            effect_terms = {_normalized(effect.target), _normalized(effect.description)}
-            if forbidden.intersection(effect_terms):
-                conflicts.append(
-                    CompilationIssue(
-                        code="forbidden_effect",
-                        field="requested_effects",
-                        detail=effect.target,
-                    )
-                )
-        if conflicts:
-            return CompilationResult(
-                status=CompilationStatus.POLICY_CONFLICT,
-                request_id=request.request_id,
-                draft=draft,
-                issues=tuple(conflicts),
-            )
-
-        missing_obligation_authority: list[CompilationIssue] = []
-        if require_obligation_graph and not draft.candidate_source_claims:
-            missing_obligation_authority.append(
-                CompilationIssue(
-                    code="missing_source_claims",
-                    field="candidate_source_claims",
-                )
-            )
-        if require_obligation_graph and not draft.candidate_obligations:
-            missing_obligation_authority.append(
-                CompilationIssue(
-                    code="missing_task_obligations",
-                    field="candidate_obligations",
-                )
-            )
-        if missing_obligation_authority:
-            return CompilationResult(
-                status=CompilationStatus.UNSUPPORTED,
-                request_id=request.request_id,
-                draft=draft,
-                issues=tuple(missing_obligation_authority),
-            )
-
-        operation = max(
-            (effect.operation_class for effect in draft.requested_effects),
-            key=operation_class_rank,
-        )
-        task_spec = TaskSpec(
-            task_id=task_id or request.request_id,
-            revision=revision,
-            objective=draft.objective.strip(),
-            operation_class=operation,
-            task_structure=draft.task_structure,
-            targets=_ordered_unique(effect.target for effect in draft.requested_effects),
-            requested_effects=draft.requested_effects,
-            entities=draft.entities,
-            preferences=draft.preferences,
-            desired_outputs=draft.desired_outputs,
-            success_criteria=draft.candidate_success_criteria,
-            constraints=draft.candidate_constraints,
-            semantic_value_constraints=draft.candidate_semantic_value_constraints,
-            source_claims=draft.candidate_source_claims,
-            obligations=draft.candidate_obligations,
-            forbidden_effects=draft.candidate_forbidden_effects,
-            evidence_requirements=draft.candidate_evidence_requirements,
-            requested_capabilities=_ordered_unique(
-                effect.capability for effect in draft.requested_effects if effect.capability
-            ),
-            ambiguity_status="resolved" if not draft.ambiguities else "non_blocking",
-            source_request_ref=request.request_id,
-            field_provenance=draft.source_map,
-        )
-        return CompilationResult(
-            status=CompilationStatus.READY,
-            request_id=request.request_id,
-            draft=draft,
-            task_spec=task_spec,
-        )
-
-
 def _validate_task_obligation_graph(
     claims: tuple[SourcedTaskClaim, ...],
     obligations: tuple[TaskObligationSpec, ...],
@@ -710,22 +486,3 @@ def operation_class_rank(operation: OperationClass) -> int:
         OperationClass.EXTERNAL_SIDE_EFFECT: 3,
         OperationClass.IRREVERSIBLE: 4,
     }[operation]
-
-
-def _normalized(value: str) -> str:
-    return " ".join(value.casefold().split())
-
-
-def _ordered_unique(values: Iterable[object]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(str(item) for item in values if str(item)))
-
-
-def _source_ref_authorized(request: UserRequest, source_ref: str) -> bool:
-    sources = (
-        request.request_id,
-        *request.conversation_refs,
-        *request.attachment_refs,
-        *request.target_refs,
-        *request.profile_context_refs,
-    )
-    return any(source_ref == item or source_ref.startswith(f"{item}:") for item in sources)

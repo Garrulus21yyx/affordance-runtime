@@ -38,7 +38,7 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
     TaskPlanValidationStatus,
 )
-from runtime_test_support import make_interaction
+from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 
 @dataclass(frozen=True)
@@ -212,10 +212,12 @@ def _snapshot() -> BrowserSnapshot:
 def test_lifecycle_prepares_initial_transition_without_mutating_run_state() -> None:
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    state.remember_observation(_snapshot().observation)
+    remember_observation(state, _snapshot().observation)
     lifecycle = TaskPlanLifecycle(FlatFixturePlanner())
 
-    transition = lifecycle.propose_initial(task, state, _snapshot(), Limits())
+    transition = lifecycle.propose_initial(
+        task, state, canonical_observation(_snapshot()), Limits()
+    )
 
     assert transition.validation.status == TaskPlanValidationStatus.ACCEPT
     assert transition.context.environment.affordances[0].label == "Save setting"
@@ -235,12 +237,16 @@ def test_lifecycle_initial_plan_uses_deterministic_authority_admission() -> None
     snapshot = _snapshot()
     first_state = StateKernel(task_id=task.task_id, goal=task.objective)
     second_state = StateKernel(task_id=task.task_id, goal=task.objective)
-    first_state.remember_observation(snapshot.observation)
-    second_state.remember_observation(snapshot.observation)
+    remember_observation(first_state, snapshot.observation)
+    remember_observation(second_state, snapshot.observation)
     lifecycle = TaskPlanLifecycle(CandidateInitialPlanner())
 
-    first = lifecycle.propose_initial(task, first_state, snapshot, Limits())
-    second = lifecycle.propose_initial(task, second_state, snapshot, Limits())
+    first = lifecycle.propose_initial(
+        task, first_state, canonical_observation(snapshot), Limits()
+    )
+    second = lifecycle.propose_initial(
+        task, second_state, canonical_observation(snapshot), Limits()
+    )
 
     assert first.validation.status == TaskPlanValidationStatus.ACCEPT
     assert second.validation.status == TaskPlanValidationStatus.ACCEPT
@@ -287,12 +293,12 @@ def test_lifecycle_projects_bounded_current_state_without_password_value() -> No
         target_fingerprints={item.id: item.target_fingerprint for item in enriched},
     )
     snapshot = BrowserSnapshot(observation, model)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
 
     context = TaskPlanLifecycle.build_context(
         task,
         state,
-        snapshot,
+        canonical_observation(snapshot),
         Limits(),
         reason="initial",
     )
@@ -336,12 +342,12 @@ class UnavailableEntryPlanner:
 def test_lifecycle_resolves_async_planner_and_rejects_invalid_plan_without_installing_it() -> None:
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    state.remember_observation(_snapshot().observation)
+    remember_observation(state, _snapshot().observation)
 
     transition = TaskPlanLifecycle(InvalidAsyncPlanner()).propose_initial(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -354,12 +360,12 @@ def test_lifecycle_resolves_async_planner_and_rejects_invalid_plan_without_insta
 def test_lifecycle_applies_contextual_entry_validation_to_non_llm_planner() -> None:
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    state.remember_observation(_snapshot().observation)
+    remember_observation(state, _snapshot().observation)
 
     transition = TaskPlanLifecycle(UnavailableEntryPlanner()).propose_initial(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -373,7 +379,9 @@ def test_lifecycle_applies_contextual_entry_validation_to_non_llm_planner() -> N
 def _installed_two_step_state(second_family: TaskPlanActionFamily) -> tuple[TaskSpec, StateKernel]:
     task = _task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
-    context = TaskPlanLifecycle.build_context(task, state, _snapshot(), Limits(), reason="initial")
+    context = TaskPlanLifecycle.build_context(
+        task, state, canonical_observation(_snapshot()), Limits(), reason="initial"
+    )
     base = FlatFixturePlanner().plan(context)
     first = base.subgoals[0].model_copy(
         update={
@@ -407,7 +415,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unavailable_family() -> 
     decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -425,7 +433,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     context = TaskPlanLifecycle.build_context(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
         reason="initial",
     )
@@ -458,7 +466,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_satisfied_outcome() -> N
     decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -480,7 +488,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
     context = TaskPlanLifecycle.build_context(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
         reason="initial",
     )
@@ -508,7 +516,7 @@ def test_lifecycle_requests_replacement_for_newly_ready_unsupported_state() -> N
     decision = TaskPlanLifecycle(FlatFixturePlanner()).evaluate_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -527,7 +535,9 @@ def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replannin
     task, state = _installed_two_step_state(TaskPlanActionFamily.ACTIVATE)
     lifecycle = TaskPlanLifecycle(FlatFixturePlanner())
 
-    compatible = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
+    compatible = lifecycle.evaluate_replacement(
+        task, state, canonical_observation(_snapshot()), Limits()
+    )
     empty_snapshot = BrowserSnapshot(
         Observation("environment-empty", snapshot_id="snapshot-empty"),
         DomAdapter().transduce(
@@ -536,10 +546,14 @@ def test_lifecycle_keeps_compatible_or_unobservable_transition_without_replannin
             snapshot_id="snapshot-empty",
         ),
     )
-    unknown = lifecycle.evaluate_replacement(task, state, empty_snapshot, Limits())
+    unknown = lifecycle.evaluate_replacement(
+        task, state, canonical_observation(empty_snapshot), Limits()
+    )
     assert state.activate_next_step() == "setting control is selected"
     state.complete_step("second", ("evidence:second",))
-    completed = lifecycle.evaluate_replacement(task, state, _snapshot(), Limits())
+    completed = lifecycle.evaluate_replacement(
+        task, state, canonical_observation(_snapshot()), Limits()
+    )
 
     assert not compatible.required
     assert not unknown.required
@@ -603,7 +617,7 @@ def test_replacement_carries_forward_exact_completed_spec_without_mutating_state
     transition = TaskPlanLifecycle(ReplacementPlanner()).propose_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
         reason="subgoal_action_budget_exhausted",
     )
@@ -628,8 +642,10 @@ def test_lifecycle_replacement_uses_taskplan_authority_revision_admission() -> N
     task = _obligation_task()
     state = StateKernel(task_id=task.task_id, goal=task.objective)
     snapshot = _snapshot()
-    state.remember_observation(snapshot.observation)
-    context = TaskPlanLifecycle.build_context(task, state, snapshot, Limits(), reason="initial")
+    remember_observation(state, snapshot.observation)
+    context = TaskPlanLifecycle.build_context(
+        task, state, canonical_observation(snapshot), Limits(), reason="initial"
+    )
     previous = PlanningRouter().plan(context)
     state.install_task_plan(previous)
     state.activate_next_step()
@@ -638,7 +654,7 @@ def test_lifecycle_replacement_uses_taskplan_authority_revision_admission() -> N
     transition = TaskPlanLifecycle(CandidateInitialPlanner()).propose_replacement(
         task,
         state,
-        snapshot,
+        canonical_observation(snapshot),
         Limits(),
         reason="subgoal_action_budget_exhausted",
     )
@@ -664,7 +680,7 @@ def test_replacement_discards_model_redefinition_of_completed_spec() -> None:
     ).propose_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
         reason="subgoal_action_budget_exhausted",
     )
@@ -685,7 +701,7 @@ def test_replacement_without_unfinished_work_is_repairable() -> None:
     ).propose_replacement(
         task,
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
         reason="subgoal_action_budget_exhausted",
     )

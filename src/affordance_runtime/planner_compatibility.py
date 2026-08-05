@@ -6,6 +6,8 @@ import inspect
 from typing import Any, Awaitable, Protocol, TypeAlias, cast
 
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planning_contracts import (
     PlannerClarificationResponse,
     PlannerDecision,
@@ -15,7 +17,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.planning_request_builder import PlanningRequestBuilder
+from affordance_runtime.planning_request_builder import PlanningRequestBuilder, PlanningRequestLimits
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 
@@ -37,6 +39,36 @@ class RequestPlannerPort(Protocol):
 
 
 PlannerCompatibilityPort: TypeAlias = RequestPlannerPort | LegacyPlannerPort
+
+
+def build_legacy_generalist_request(
+    *,
+    envelope: RunRequest,
+    state: StateKernel,
+    snapshot: BrowserSnapshot,
+    limits: Any,
+    accepted_knowledge: tuple[str, ...],
+    allow_finish: bool,
+    max_model_calls: int | None,
+) -> tuple[PlanningRequest, Any]:
+    """One-way external adapter for the historical three-argument entrypoint."""
+    observation = CanonicalObservationBuilder().build(
+        PerceptionCapture.from_browser_snapshot(snapshot)
+    )
+    request = PlanningRequestBuilder(
+        limits=PlanningRequestLimits(
+            max_steps=limits.max_steps,
+            max_observations=limits.max_observations,
+            max_recoveries=limits.max_recoveries,
+            max_effectful_actions=limits.max_effectful_actions,
+            max_model_calls=max_model_calls or 0,
+            max_affordances=limits.max_affordances,
+            max_artifact_refs=limits.max_artifact_refs,
+        ),
+        accepted_knowledge=accepted_knowledge,
+        allow_finish=allow_finish,
+    ).build(envelope, state, observation)
+    return request, observation
 
 
 def propose_with_planner_compatibility(
@@ -68,7 +100,10 @@ def propose_with_runtime_projection(
 ) -> PlannerDecision | Awaitable[PlannerDecision]:
     request = None
     if envelope.task_spec is not None:
-        request = PlanningRequestBuilder().build(envelope, state, snapshot)
+        observation = CanonicalObservationBuilder().build(
+            PerceptionCapture.from_browser_snapshot(snapshot)
+        )
+        request = PlanningRequestBuilder().build(envelope, state, observation)
     return propose_with_planner_compatibility(
         planner,
         request=request,

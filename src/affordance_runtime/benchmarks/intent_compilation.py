@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from affordance_runtime.intent_compiler import LLMIntentCompiler
+from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, UserRequest
+from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
 
 
@@ -79,17 +81,17 @@ async def run_intent_compilation_suite(
     for case in cases:
         trace = TraceDag(case.case_id)
         try:
-            result = await compiler.compile(
-                UserRequest(
+            request = UserRequest(
                     request_id=case.case_id,
                     raw_text=case.raw_text,
                     caller_identity="controlled-suite-user",
                     target_refs=("controlled-fixture",),
                     locale="en-US",
                     time_context="2030-01-15T12:00:00Z",
-                ),
-                trace=trace,
-            )
+                )
+            envelope = SourceEnvelopeBuilder().build(request)
+            proposal = await compiler.propose(request, envelope, trace=trace)
+            result = TaskSpecAuthority().admit(request, envelope, proposal)
         except Exception as exc:
             results.append(
                 IntentCompilationCaseResult(

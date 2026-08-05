@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from affordance_runtime.active_perception import (
     EvidenceGap,
@@ -17,6 +17,7 @@ from affordance_runtime.active_perception_flow import (
 )
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import (
     FailureClass,
@@ -26,11 +27,21 @@ from affordance_runtime.failure_envelope import (
 )
 from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.perception_session import PerceptionCaptureRequest, PerceptionSession
+from affordance_runtime.observation_store import (
+    InMemoryObservationStore,
+    ObservationCommit,
+    ObservationRef,
+)
+from affordance_runtime.perception_session import (
+    PerceptionCapture,
+    PerceptionCaptureRequest,
+    PerceptionSession,
+)
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.stage_protocol import RuntimeEvent, RuntimeTransition, StageResult
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_planning import SubgoalSpec
+from affordance_runtime.unified_observation import UnifiedObservation
 
 
 @dataclass(frozen=True)
@@ -57,13 +68,16 @@ class PerceptionStateView:
 class PerceptionStageInput:
     envelope: RunRequest
     state_view: PerceptionStateView
-    initial_snapshot: BrowserSnapshot | None = None
+    initial_snapshot: BrowserSnapshot | PerceptionCapture | None = None
 
 
 @dataclass(frozen=True)
 class ObservationOutput:
-    snapshot: BrowserSnapshot
-    captured_snapshots: tuple[BrowserSnapshot, ...]
+    capture: PerceptionCapture
+    observation: UnifiedObservation
+    observation_ref: ObservationRef
+    captured_captures: tuple[PerceptionCapture, ...]
+    captured_observation_refs: tuple[ObservationRef, ...]
     evidence_gaps: tuple[EvidenceGap, ...] = ()
     active_probe_plan: ProbePlan | None = None
     probe_receipts: tuple[ProbeReceipt, ...] = ()
@@ -77,6 +91,8 @@ class PerceptionStage:
     active_perception_flow: ActivePerceptionFlow
     artifacts: ArtifactStore | None = None
     budget: object | None = None
+    observation_builder: CanonicalObservationBuilder = CanonicalObservationBuilder()
+    observation_store: InMemoryObservationStore = field(default_factory=InMemoryObservationStore)
 
     def run(self, stage_input: PerceptionStageInput) -> StageResult[ObservationOutput]:
         view = stage_input.state_view
@@ -87,7 +103,9 @@ class PerceptionStage:
         )
         state_label = (phase or view.phase).value
         events: list[RuntimeEvent] = []
-        captured: list[BrowserSnapshot] = []
+        captured: list[PerceptionCapture] = []
+        canonical_observations: list[UnifiedObservation] = []
+        observation_refs: list[ObservationRef] = []
         artifact_refs: list[str] = []
         sequence = view.observation_count
 
@@ -130,6 +148,9 @@ class PerceptionStage:
                     failure=failure,
                 )
             captured.append(snapshot)
+            canonical, canonical_ref = self._canonicalize(snapshot)
+            canonical_observations.append(canonical)
+            observation_refs.append(canonical_ref)
             sequence += 1
             observation_ref = self._write_observation(
                 stage_input.envelope.task_id,
@@ -140,7 +161,14 @@ class PerceptionStage:
             events.append(_observation_event(snapshot, observation_ref, state_label))
             events.extend(_source_arbitration_events(snapshot, state_label))
         else:
-            snapshot = stage_input.initial_snapshot
+            snapshot = (
+                stage_input.initial_snapshot
+                if isinstance(stage_input.initial_snapshot, PerceptionCapture)
+                else PerceptionCapture.from_browser_snapshot(stage_input.initial_snapshot)
+            )
+            canonical, canonical_ref = self._canonicalize(snapshot)
+            canonical_observations.append(canonical)
+            observation_refs.append(canonical_ref)
 
         (
             snapshot,
@@ -158,12 +186,19 @@ class PerceptionStage:
             state_label=state_label,
         )
         captured.extend(targeted_snapshots)
+        for targeted in targeted_snapshots:
+            canonical, canonical_ref = self._canonicalize(targeted)
+            canonical_observations.append(canonical)
+            observation_refs.append(canonical_ref)
         events.extend(targeted_events)
         artifact_refs.extend(targeted_artifacts)
         effective_snapshot = captured[-1] if captured else snapshot
         output = ObservationOutput(
-            snapshot=effective_snapshot,
-            captured_snapshots=tuple(captured),
+            capture=effective_snapshot,
+            observation=canonical_observations[-1],
+            observation_ref=observation_refs[-1],
+            captured_captures=tuple(captured),
+            captured_observation_refs=tuple(observation_refs),
             evidence_gaps=gaps,
             active_probe_plan=probe_plan,
             probe_receipts=receipts,
@@ -173,7 +208,14 @@ class PerceptionStage:
         transition = RuntimeTransition(
             phase=phase,
             perception_update=True,
-            observations=tuple(item.observation for item in captured),
+            observation_commits=tuple(
+                ObservationCommit(
+                    ref,
+                    canonical.environment_revision,
+                    canonical.page_revision,
+                )
+                for canonical, ref in zip(canonical_observations, observation_refs, strict=True)
+            ),
             evidence_gaps=gaps,
             active_probe_plan=probe_plan,
             probe_receipts=receipts,
@@ -234,13 +276,13 @@ class PerceptionStage:
     def _fulfill_targeted_perception(
         self,
         stage_input: PerceptionStageInput,
-        snapshot: BrowserSnapshot,
+        snapshot: PerceptionCapture,
         *,
         sequence: int,
         state_label: str,
     ) -> tuple[
-        BrowserSnapshot,
-        tuple[BrowserSnapshot, ...],
+        PerceptionCapture,
+        tuple[PerceptionCapture, ...],
         tuple[RuntimeEvent, ...],
         tuple[str, ...],
         tuple[EvidenceGap, ...],
@@ -250,7 +292,7 @@ class PerceptionStage:
     ]:
         view = stage_input.state_view
         events: list[RuntimeEvent] = []
-        captured: list[BrowserSnapshot] = []
+        captured: list[PerceptionCapture] = []
         artifacts: list[str] = []
         receipts: list[ProbeReceipt] = []
         attempted = set(view.attempted_probe_fingerprints)
@@ -393,7 +435,7 @@ class PerceptionStage:
         self,
         run_id: str,
         sequence: int,
-        snapshot: BrowserSnapshot,
+        snapshot: PerceptionCapture,
     ) -> ArtifactRef | None:
         return (
             self.artifacts.write_observation(run_id, sequence, snapshot.observation)
@@ -401,9 +443,15 @@ class PerceptionStage:
             else None
         )
 
+    def _canonicalize(
+        self, capture: PerceptionCapture
+    ) -> tuple[UnifiedObservation, ObservationRef]:
+        observation = self.observation_builder.build(capture)
+        return observation, self.observation_store.put(observation)
+
 
 def _snapshot_artifact_refs(
-    snapshot: BrowserSnapshot,
+    snapshot: PerceptionCapture,
     observation_ref: ArtifactRef | None,
 ) -> list[str]:
     refs = list(snapshot.observation.artifact_refs)
@@ -411,7 +459,7 @@ def _snapshot_artifact_refs(
 
 
 def _observation_event(
-    snapshot: BrowserSnapshot,
+    snapshot: PerceptionCapture,
     observation_ref: ArtifactRef | None,
     state_label: str,
 ) -> RuntimeEvent:
@@ -429,7 +477,7 @@ def _observation_event(
 
 
 def _source_arbitration_events(
-    snapshot: BrowserSnapshot,
+    snapshot: PerceptionCapture,
     state_label: str,
 ) -> tuple[RuntimeEvent, ...]:
     events: list[RuntimeEvent] = []

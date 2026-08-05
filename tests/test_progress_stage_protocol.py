@@ -8,7 +8,7 @@ from affordance_runtime.progress_phase import (
     TaskCompletionEvaluationStatus,
 )
 from affordance_runtime.stage_protocol import RuntimeEventBuffer
-from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
+from affordance_runtime.verification.mechanical import VerificationEvidence, VerificationReport, VerificationStatus
 
 
 def test_post_action_evaluation_is_typed_and_projects_one_canonical_event() -> None:

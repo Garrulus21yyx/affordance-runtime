@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract
 from affordance_runtime.planning import PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.verification import VerificationReport, VerificationStatus
+from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus
 
 
 def action_progress_signature(
@@ -81,7 +81,7 @@ def semantic_progress_fingerprint(state: StateKernel) -> str:
 
 
 def semantic_target_descriptor(
-    snapshot: BrowserSnapshot,
+    snapshot: UnifiedObservation,
     semantic_target_id: str,
 ) -> dict[str, str] | None:
     if not semantic_target_id:
@@ -89,15 +89,15 @@ def semantic_target_descriptor(
     target = next(
         (
             item
-            for item in snapshot.unified_affordances
-            if item.semantic_target_id == semantic_target_id
+            for item in snapshot.targets
+            if item.target_id == semantic_target_id
         ),
         None,
     )
     if target is None:
         return None
     return {
-        "semantic_target_id": target.semantic_target_id,
+        "semantic_target_id": target.target_id,
         "role": target.role,
         "label": target.label,
     }

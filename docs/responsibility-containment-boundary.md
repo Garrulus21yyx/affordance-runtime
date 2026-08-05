@@ -20,6 +20,14 @@ Coordinator/RuntimeCommitter sequences phases and commits transitions. It must
 not absorb semantic parsing, planning, grounding, verification matching,
 failure-string interpretation, or recovery-command synthesis.
 
+Authority ownership is logical, not a deployment topology. The modular-monolith
+MVP may implement authorities as pure functions, immutable validators, or
+in-process policy composition. Four action gates may share one admission
+service, and fact/binding/outcome/durable namespaces may share one physical
+RunLedger, provided their typed results, deny semantics, lifetimes, and write
+boundaries remain distinct. A matrix row does not justify a new process,
+database, queue, or model call.
+
 ## 2. Authority ownership matrix
 
 | Responsibility | Owner | Forbidden expansion |
@@ -107,6 +115,10 @@ A change touching an authority boundary must identify:
 4. production cutover;
 5. legacy deletion or isolated-adapter gate;
 6. focused tests proving no second authority.
+
+Physical extraction additionally requires measured isolation, concurrency,
+scale, reliability, or regulatory need. Convenience or naming symmetry alone
+is insufficient.
 
 The detailed pre-consolidation containment document is archived at
 [maintained-pre-consolidation/responsibility-containment-boundary.md](archive/superseded-2026-08-05/maintained-pre-consolidation/responsibility-containment-boundary.md).

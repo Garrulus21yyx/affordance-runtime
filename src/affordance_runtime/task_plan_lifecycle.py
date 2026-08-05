@@ -13,7 +13,6 @@ from enum import StrEnum
 from typing import Awaitable, Mapping, Protocol, cast
 
 from affordance_runtime.async_bridge import resolve_awaitable
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.simplified_step_projection import (
     LegacyStepProjectionStatus,
     project_state_legacy_task_plan_to_step_view,
@@ -46,6 +45,7 @@ from affordance_runtime.task_planning import (
     task_plan_entry_state_issue,
     task_plan_entry_state_support_issue,
 )
+from affordance_runtime.unified_observation import UnifiedObservation
 
 
 class TaskPlanBudgetLimits(Protocol):
@@ -113,7 +113,7 @@ class TaskPlanLifecycle:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanTransition:
         context = self.build_context(task_spec, state, snapshot, budget, reason="initial")
@@ -129,7 +129,7 @@ class TaskPlanLifecycle:
                     evaluated_at_state_version=state.version,
                     objective=task_spec.objective,
                     operation_class=task_spec.operation_class,
-                    observation_refs=(snapshot.observation.snapshot_id,),
+                    observation_refs=(snapshot.epoch_id,),
                     remaining_budget_steps=budget.max_steps,
                     task_id=task_spec.task_id,
                 ),
@@ -150,7 +150,7 @@ class TaskPlanLifecycle:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
         *,
         reason: str,
@@ -187,7 +187,7 @@ class TaskPlanLifecycle:
                         affected_step_id=state.task_progress.active_subgoal_id,
                     ),
                     operation_class=task_spec.operation_class,
-                    observation_refs=(snapshot.observation.snapshot_id,),
+                    observation_refs=(snapshot.epoch_id,),
                     remaining_budget_steps=budget.max_steps,
                     task_id=task_spec.task_id,
                 ),
@@ -227,7 +227,7 @@ class TaskPlanLifecycle:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanReplacementDecision:
         """Decide whether the current plan needs replacement without mutation."""
@@ -291,47 +291,23 @@ class TaskPlanLifecycle:
     def build_context(
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
         *,
         reason: str,
     ) -> TaskPlanningContext:
         plan = state.task_plan
         progress = state.task_progress
-        source_affordances = {
-            item.id: item for item in snapshot.affordance_model.affordances
-        }
-        if snapshot.unified_affordances:
-            affordances = tuple(
-                PlanningAffordanceSummary(
-                    semantic_target_id=item.semantic_target_id,
-                    role=item.role,
-                    label=item.label,
-                    supported_actions=tuple(item.supported_actions),
-                    current_state=_planning_affordance_state(
-                        next(
-                            (
-                                source_affordances[candidate.source_affordance_id].state
-                                for candidate in item.grounding_candidates
-                                if candidate.source_affordance_id in source_affordances
-                            ),
-                            {},
-                        )
-                    ),
-                )
-                for item in snapshot.unified_affordances[:64]
+        affordances = tuple(
+            PlanningAffordanceSummary(
+                semantic_target_id=item.target_id,
+                role=item.role,
+                label=item.label,
+                supported_actions=item.supported_actions,
+                current_state=_planning_affordance_state(item.state),
             )
-        else:
-            affordances = tuple(
-                PlanningAffordanceSummary(
-                    semantic_target_id=item.id,
-                    role=item.role,
-                    label=item.label,
-                    supported_actions=(item.action,),
-                    current_state=_planning_affordance_state(item.state),
-                )
-                for item in snapshot.affordance_model.affordances[:64]
-            )
+            for item in snapshot.targets[:64]
+        )
         failures: tuple[TaskPlanningFailureSummary, ...] = ()
         latest = state.latest_verification
         if latest is not None and not latest.passed:
@@ -341,7 +317,7 @@ class TaskPlanLifecycle:
                     error_code=latest.status.value,
                     reason=latest.reason[:500],
                     subgoal_id=progress.active_subgoal_id if progress is not None else "",
-                    environment_revision=snapshot.observation.environment_revision,
+                    environment_revision=snapshot.environment_revision,
                 ),
             )
         elif reason == "subgoal_action_budget_exhausted":
@@ -351,7 +327,7 @@ class TaskPlanLifecycle:
                     error_code="subgoal_action_budget_exhausted",
                     reason="active subgoal exhausted its action budget without matched criteria evidence",
                     subgoal_id=progress.active_subgoal_id if progress is not None else "",
-                    environment_revision=snapshot.observation.environment_revision,
+                    environment_revision=snapshot.environment_revision,
                 ),
             )
         failure = state.current_failure
@@ -382,10 +358,10 @@ class TaskPlanLifecycle:
             current_plan_id=plan.plan_id if plan is not None else "",
             current_plan_version=plan.plan_version if plan is not None else 0,
             environment=PlanningEnvironmentSummary(
-                environment_revision=snapshot.observation.environment_revision,
-                snapshot_id=snapshot.observation.snapshot_id,
-                page_revision=snapshot.observation.page_revision,
-                url=snapshot.observation.url,
+                environment_revision=snapshot.environment_revision,
+                snapshot_id=snapshot.epoch_id,
+                page_revision=snapshot.page_revision,
+                url=str(snapshot.metadata.get("url") or ""),
                 affordances=affordances,
             ),
             active_subgoal_id=progress.active_subgoal_id if progress is not None else "",

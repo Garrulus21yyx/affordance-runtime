@@ -18,7 +18,7 @@ from affordance_runtime.grounding import (
     SourceObservation,
     UnifiedAffordance,
 )
-from affordance_runtime.perception_session import PerceptionSession
+from affordance_runtime.perception_session import PerceptionCapture, PerceptionSession
 from affordance_runtime.unified_grounding import candidate_from_affordance
 
 
@@ -47,7 +47,7 @@ def _snapshot(sequence: int, *, resolved: bool) -> BrowserSnapshot:
             "revision-1",
             snapshot_id=snapshot_id,
             page_revision="page-1",
-            target_fingerprints={candidate.candidate_id: candidate.target_fingerprint},
+            target_fingerprints={candidate.fingerprint_key: candidate.target_fingerprint},
         )
         candidates = (candidate,)
         targets = (
@@ -163,9 +163,13 @@ class TargetedObserver:
         return _snapshot(2, resolved=True)
 
 
+def _capture(snapshot: BrowserSnapshot) -> PerceptionCapture:
+    return PerceptionCapture.from_browser_snapshot(snapshot)
+
+
 def _context(snapshot: BrowserSnapshot) -> ActivePerceptionFlowContext:
     return ActivePerceptionFlowContext(
-        snapshot=snapshot,
+        snapshot=_capture(snapshot),
         run_id="run-1",
         task_revision=1,
         plan_version=0,
@@ -197,7 +201,7 @@ def test_flow_derives_required_evidence_probe_even_when_snapshot_has_reobserve_r
 
     preparation = flow.prepare(
         ActivePerceptionFlowContext(
-            snapshot=_snapshot_with_reobserve_and_spatial_gap(),
+            snapshot=_capture(_snapshot_with_reobserve_and_spatial_gap()),
             run_id="run-1",
             task_revision=1,
             plan_version=0,

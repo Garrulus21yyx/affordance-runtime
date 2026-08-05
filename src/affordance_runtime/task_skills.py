@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, Callable, Iterable, Mapping
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ActionContract, Observation, RiskLevel
 from affordance_runtime.criteria import (
     CriteriaEvidenceMatcher,
@@ -23,7 +22,8 @@ from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.task_skill_progress import TaskSkillRunState
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.mechanical import VerificationReport
 
 _FORBIDDEN_HANDLE_PATTERNS = (
     r"\bxpath\b",
@@ -428,7 +428,7 @@ class IncrementalTaskSkillExecutor:
         bindings: Mapping[str, Any],
         task: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         progress: TaskSkillProgress,
     ) -> SkillStepExposure:
         payload.validate()
@@ -445,7 +445,7 @@ class IncrementalTaskSkillExecutor:
         target_label = _render(step.target_query.label_template, bindings)
         targets = [
             item
-            for item in snapshot.unified_affordances
+            for item in snapshot.targets
             if _normalize(item.role) == _normalize(step.target_query.role)
             and _normalize(item.label) == _normalize(target_label)
             and step.action_kind in item.supported_actions
@@ -459,7 +459,7 @@ class IncrementalTaskSkillExecutor:
             destination_label = _render(step.destination_query.label_template, bindings)
             destinations = [
                 item
-                for item in snapshot.unified_affordances
+                for item in snapshot.targets
                 if _normalize(item.role) == _normalize(step.destination_query.role)
                 and _normalize(item.label) == _normalize(destination_label)
                 and PlannerActionKind.DRAG.value in item.supported_actions
@@ -475,7 +475,7 @@ class IncrementalTaskSkillExecutor:
             proposal_id=f"skill-{payload.skill_id}-{step.step_id}-{state.version}",
             based_on_task_revision=task.revision,
             based_on_state_version=state.version,
-            snapshot_id=snapshot.observation.snapshot_id,
+            snapshot_id=snapshot.epoch_id,
             subgoal=_render(step.objective_template, bindings),
             action_kind=PlannerActionKind(step.action_kind),
             target_affordance_id=targets[0].semantic_target_id,
@@ -508,7 +508,7 @@ class IncrementalTaskSkillExecutor:
 
 
 TaskSkillBindingResolver = Callable[
-    [TaskSkillPayload, TaskSpec, BrowserSnapshot, TaskSkillRunState | None],
+    [TaskSkillPayload, TaskSpec, UnifiedObservation, TaskSkillRunState | None],
     Mapping[str, Any] | None,
 ]
 
@@ -566,7 +566,7 @@ class AcceptedTaskSkillRuntime:
         self,
         task: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> TaskSkillRuntimeDecision:
         active = self.progress_for(state)
         if active is not None:
@@ -710,7 +710,7 @@ class AcceptedTaskSkillRuntime:
         payload: TaskSkillPayload,
         task: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         *,
         newly_activated: bool,
     ) -> TaskSkillRuntimeDecision:
@@ -763,7 +763,7 @@ class AcceptedTaskSkillRuntime:
         self,
         payload: TaskSkillPayload,
         task: TaskSpec,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         progress: TaskSkillRunState | None,
     ) -> Mapping[str, Any] | None:
         if self.binding_resolver is not None:
@@ -1066,7 +1066,7 @@ def _step_binding_names(step: SkillStep) -> frozenset[str]:
 def _default_skill_bindings(
     payload: TaskSkillPayload,
     task: TaskSpec,
-    snapshot: BrowserSnapshot,
+    snapshot: UnifiedObservation,
     progress: TaskSkillRunState | None,
 ) -> Mapping[str, Any] | None:
     bindings = dict(progress.bindings) if progress is not None else {}
@@ -1105,7 +1105,7 @@ def _slot_step_index(name: str) -> int | None:
 
 def _semantic_label_binding(
     task: TaskSpec,
-    snapshot: BrowserSnapshot,
+    snapshot: UnifiedObservation,
     query: SemanticTargetQuery | None,
     *,
     destination: bool,
@@ -1114,7 +1114,7 @@ def _semantic_label_binding(
         return None
     candidates = [
         item.label
-        for item in snapshot.unified_affordances
+        for item in snapshot.targets
         if _normalize(item.role) == _normalize(query.role) and query.action in item.supported_actions
     ]
     target_matches = [

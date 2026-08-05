@@ -35,9 +35,6 @@ class Verifier(Protocol):
         observation: Observation,
     ) -> "VerifierEvaluation": ...
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool: ...
-
-
 class VerificationStatus(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
@@ -108,10 +105,6 @@ class EvidenceVerifier:
         passed = value == spec.expected if spec.strict else bool(value)
         return VerifierEvaluation(passed=passed, observed=value)
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class ObservationMetadataVerifier:
     kind: str = "observation_metadata"
@@ -127,10 +120,6 @@ class ObservationMetadataVerifier:
         passed = value == spec.expected if spec.strict else bool(value)
         return VerifierEvaluation(passed=passed, observed=value)
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class DomContainsVerifier:
     kind: str = "dom_contains"
@@ -145,10 +134,6 @@ class DomContainsVerifier:
         observed = str(spec.expected) in str(observation.metadata.get("html") or "")
         return VerifierEvaluation(passed=observed, observed=observed)
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class DomAbsentVerifier:
     kind: str = "dom_absent"
@@ -162,10 +147,6 @@ class DomAbsentVerifier:
         del receipt
         observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
         return VerifierEvaluation(passed=observed, observed=observed)
-
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
 
 class _DomAttributeParser(HTMLParser):
     def __init__(self, target_attribute: str, target_value: str, observed_attribute: str) -> None:
@@ -209,10 +190,6 @@ class DomAttributeVerifier:
             observed=parser.observed,
         )
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class ControlStateVerifier:
     """Verify a generic post-observation property by an opaque control key."""
@@ -247,10 +224,6 @@ class ControlStateVerifier:
             observed=observed,
         )
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class StateDeltaOrTerminalVerifier:
     """Require a changed state revision or a positive adapter-declared terminal result."""
@@ -281,10 +254,6 @@ class StateDeltaOrTerminalVerifier:
             observation.environment_revision != receipt.started_revision
         )
         return VerifierEvaluation(passed, passed)
-
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
 
 @dataclass
 class SpatialMarkerDeltaVerifier:
@@ -338,10 +307,6 @@ class SpatialMarkerDeltaVerifier:
                 return VerifierEvaluation(True, target_id)
         return VerifierEvaluation(False)
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class HttpJsonVerifier:
     """Strong fixture/API verifier for persisted business effects."""
@@ -370,10 +335,6 @@ class HttpJsonVerifier:
         except Exception:
             return VerifierEvaluation(False)
 
-    def verify(self, spec: VerifierSpec, receipt: ExecutionReceipt, observation: Observation) -> bool:
-        return self.evaluate(spec, receipt, observation).passed
-
-
 @dataclass
 class VerifierLadder:
     """Prefer structural receipts before model or human judgment."""
@@ -391,11 +352,6 @@ class VerifierLadder:
             StateDeltaOrTerminalVerifier(),
         ]
     )
-
-    def verify(self, specs: list[VerifierSpec], receipt: ExecutionReceipt, observation: Observation) -> bool:
-        if not specs:
-            return receipt.success
-        return self.verify_report(specs, receipt, observation).passed
 
     def verify_report(
         self,

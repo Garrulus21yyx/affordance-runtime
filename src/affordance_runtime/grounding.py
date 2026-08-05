@@ -31,6 +31,7 @@ class GroundingSource(StrEnum):
     VISUAL = "visual"
     WOT = "wot"
     API = "api"
+    DEVICE = "device"
 
 
 class AssertionResolutionStatus(StrEnum):

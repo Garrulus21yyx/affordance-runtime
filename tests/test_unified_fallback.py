@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -16,7 +17,6 @@ from affordance_runtime.contracts import (
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource, SourceObservation
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -36,6 +36,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -220,6 +221,11 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Visual Save",),
         success_criteria=("saved state is true",),
+        success=SuccessExpression(
+            expression_id="success:saved",
+            operator="criterion",
+            criterion_id="criterion:saved",
+        ),
         source_request_ref="test",
         requested_capabilities=("settings.write",),
     )
@@ -231,6 +237,7 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
                         "observation_metadata",
                         "saved",
                         True,
+                        criterion_ids=("criterion:saved",),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 ),
@@ -248,7 +255,7 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
-    assert result.result == {"saved": True}
+    assert result.result == {}
     assert dom.calls == 0
     assert world.visual_clicks == 1
     assert result.verification is not None and result.verification.passed
@@ -393,6 +400,11 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
         operation_class=OperationClass.READ_ONLY,
         targets=("Moving target",),
         success_criteria=("saved state is true",),
+        success=SuccessExpression(
+            expression_id="success:saved",
+            operator="criterion",
+            criterion_id="criterion:saved",
+        ),
         source_request_ref="test",
     )
     builder = ContractBuilder(
@@ -403,6 +415,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
                         "observation_metadata",
                         "saved",
                         True,
+                        criterion_ids=("criterion:saved",),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 ),

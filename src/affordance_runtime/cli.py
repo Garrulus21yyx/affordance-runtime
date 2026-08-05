@@ -24,6 +24,8 @@ from affordance_runtime.planners import (
     export_contract_builder,
     extract_pricing,
     pricing_contract_builder,
+    pricing_required_outputs,
+    pricing_success_expression,
     settings_contract_builder,
 )
 from affordance_runtime.planning_contracts import PlannerPort
@@ -416,6 +418,8 @@ def run_scenario(
             operation_class=OperationClass.READ_ONLY,
             targets=("Pro", "Enterprise"),
             success_criteria=("both requested pricing plans are structurally visible",),
+            success=pricing_success_expression(),
+            required_outputs=pricing_required_outputs(),
             evidence_requirements=("post-action DOM evidence for each pricing plan",),
             source_request_ref="reference-cli",
         )
@@ -444,6 +448,10 @@ def run_scenario(
                 "settings": ("notification setting is persisted",),
                 "export": ("approved report file is exported",),
             }[scenario],
+            success=(pricing_success_expression() if scenario == "pricing" else None),
+            required_outputs=(
+                pricing_required_outputs() if scenario == "pricing" else ()
+            ),
             evidence_requirements=("independent post-action evidence",),
             requested_capabilities=tuple(
                 capabilities_override if capabilities_override is not None else capabilities[scenario]
@@ -470,6 +478,10 @@ def run_scenario(
                 "export": ("report",),
             }[scenario],
             success_criteria=("requested scenario result is independently verified",),
+            success=(pricing_success_expression() if scenario == "pricing" else None),
+            required_outputs=(
+                pricing_required_outputs() if scenario == "pricing" else ()
+            ),
             evidence_requirements=("independent post-action evidence",),
             requested_capabilities=tuple(
                 capabilities_override

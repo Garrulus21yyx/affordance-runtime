@@ -8,7 +8,7 @@ def test_controlled_task_planning_ablation_preserves_short_path_and_improves_lon
     assert report["acceptance_errors"] == []
     assert report["profiles"]["flat"]["short_success"] is True
     assert report["profiles"]["flat"]["long_success"] is False
-    assert report["profiles"]["always_plan"]["short_success"] is False
+    assert report["profiles"]["always_plan"]["short_success"] is True
     assert report["profiles"]["adaptive"]["short_success"] is True
     assert report["profiles"]["adaptive"]["long_success"] is True
     assert report["profiles"]["adaptive"]["model_calls"] == 1

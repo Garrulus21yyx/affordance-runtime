@@ -19,14 +19,15 @@ from affordance_runtime.active_perception import (
 from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
-    Observation,
     RuntimeErrorCode,
 )
 from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.observation_store import ObservationCommit
 from affordance_runtime.recovery_protocol import FailureOwner
 from affordance_runtime.runtime import RuntimeStep
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.contracts import TaskCompletionEvaluation
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 class LoopDirective(StrEnum):
@@ -68,10 +69,10 @@ class RuntimeStateSnapshot:
         return dict(self.current_grounding_fallback.get(target_id, {}))
 
     def current_revision(self) -> str:
-        return self.latest_observation.environment_revision if self.latest_observation else ""
+        return self.current_observation_environment_revision
 
     def current_page_revision(self) -> str:
-        return self.latest_observation.page_revision if self.latest_observation else ""
+        return self.current_observation_page_revision
 
     def check_progress_guard(self, signature: str) -> Any | None:
         payload = json.loads(signature)
@@ -186,7 +187,7 @@ class RuntimeTransition:
     phase: RuntimeStep | None = None
     intermediate_phases: tuple[RuntimeStep, ...] = ()
     perception_update: bool = False
-    observations: tuple[Observation, ...] = ()
+    observation_commits: tuple[ObservationCommit, ...] = ()
     evidence_gaps: tuple[EvidenceGap, ...] = ()
     active_probe_plan: ProbePlan | None = None
     probe_receipts: tuple[ProbeReceipt, ...] = ()
@@ -205,6 +206,7 @@ class RuntimeTransition:
     progress_guard: tuple[str, str] | None = None
     clear_recovery_decision: bool = False
     final_result: Mapping[str, Any] | None = None
+    task_completion: TaskCompletionEvaluation | None = None
     state_updates: Mapping[str, Any] | None = None
     version_delta: int = 0
 
@@ -219,7 +221,7 @@ class RuntimeTransition:
             self.version_delta,
         ) < 0:
             raise ValueError("runtime counter deltas must be non-negative")
-        object.__setattr__(self, "observations", tuple(self.observations))
+        object.__setattr__(self, "observation_commits", tuple(self.observation_commits))
         object.__setattr__(self, "evidence_gaps", tuple(self.evidence_gaps))
         object.__setattr__(self, "probe_receipts", tuple(self.probe_receipts))
         object.__setattr__(self, "artifact_refs", tuple(self.artifact_refs))

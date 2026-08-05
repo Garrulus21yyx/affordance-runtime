@@ -13,7 +13,7 @@ from affordance_runtime.criteria import (
     evidence_requirement_id,
     evidence_requirements_from_descriptions,
 )
-from affordance_runtime.verification import (
+from affordance_runtime.verification.mechanical import (
     VerificationEvidence,
     VerificationReport,
     VerificationStatus,

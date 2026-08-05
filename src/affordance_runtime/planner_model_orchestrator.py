@@ -277,7 +277,7 @@ def compatible_target_ids(context: PlannerContext) -> dict[str, list[str]]:
         action_kind: [
             item.id
             for item in context.affordances
-            if item.action in actions
+            if bool(actions.intersection(item.supported_actions or (item.action,)))
             and not (action_kind == "drag" and bool(item.state.get("accepts_drop")))
             and not (
                 action_kind == "activate"

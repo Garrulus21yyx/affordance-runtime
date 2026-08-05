@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -36,7 +37,6 @@ from affordance_runtime.evolution import (
 )
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -48,25 +48,34 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import RecoveryKind
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.verification.contracts import SuccessExpression
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
 
 
-def _snapshot(*, effect_verified: bool = False) -> BrowserSnapshot:
+def _snapshot(*, effect_verified: bool = False, sequence: int = 1) -> BrowserSnapshot:
     revision = "recovery-state-v1"
+    snapshot_id = f"recovery-snapshot-v{sequence}"
     model = DomAdapter().transduce(
         '<button id="save">Save</button>',
         environment_revision=revision,
-        snapshot_id="recovery-snapshot-v1",
+        snapshot_id=snapshot_id,
         page_revision=revision,
     )
     return BrowserSnapshot(
         Observation(
             revision,
-            snapshot_id="recovery-snapshot-v1",
+            snapshot_id=snapshot_id,
             page_revision=revision,
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
-            metadata={"effect_verified": effect_verified},
+            metadata={
+                "effect_verified": effect_verified,
+                "criterion_evaluations": {
+                    "criterion:recovery-effect-verified": (
+                        "satisfied" if effect_verified else "unsatisfied"
+                    )
+                },
+            },
         ),
         model,
     )
@@ -80,9 +89,14 @@ class RecoveryFixtureWorld:
 @dataclass
 class StableRecoveryObserver:
     world: RecoveryFixtureWorld = field(default_factory=RecoveryFixtureWorld)
+    captures: int = 0
 
     def capture(self) -> BrowserSnapshot:
-        return _snapshot(effect_verified=self.world.effect_verified)
+        self.captures += 1
+        return _snapshot(
+            effect_verified=self.world.effect_verified,
+            sequence=self.captures,
+        )
 
 
 @dataclass
@@ -344,7 +358,7 @@ def _run_fixture(
         observer=StableRecoveryObserver(world),
         planner=RecoveryFixturePlanner(idempotent),
         executor=RecoveryFixtureExecutor(mode, world),
-        contract_builder=ContractBuilder(
+        contract_builder=ActionContractMaterializer(
             requirements={
                 "dom_button_1": ContractRequirements(
                     verifier_plan=(
@@ -352,6 +366,9 @@ def _run_fixture(
                             "observation_metadata",
                             "effect_verified",
                             True,
+                            criterion_ids=(
+                                "criterion:recovery-effect-verified",
+                            ),
                             progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                         ),
                     ),
@@ -372,6 +389,11 @@ def _run_fixture(
                 operation_class=OperationClass.REVERSIBLE_WRITE,
                 targets=("Save",),
                 success_criteria=("effect verified",),
+                success=SuccessExpression(
+                    expression_id="success:recovery-effect-verified",
+                    operator="criterion",
+                    criterion_id="criterion:recovery-effect-verified",
+                ),
                 evidence_requirements=("receipt evidence",),
                 source_request_ref="recovery-evolution",
             )

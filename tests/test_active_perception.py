@@ -30,9 +30,13 @@ from affordance_runtime.grounding import (
     SourceObservation,
     UnifiedAffordance,
 )
-from affordance_runtime.perception_session import PerceptionSession
+from affordance_runtime.perception_session import PerceptionCapture, PerceptionSession
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.unified_grounding import candidate_from_affordance
+
+
+def _capture(snapshot: BrowserSnapshot) -> PerceptionCapture:
+    return PerceptionCapture.from_browser_snapshot(snapshot)
 
 
 def _gap() -> EvidenceGap:
@@ -125,7 +129,7 @@ def _visual_snapshot(*, stale: bool = False, orphan: bool = False, conflict: boo
         screenshot_ref="screen.png",
         snapshot_id=snapshot_id,
         page_revision="page-1",
-        target_fingerprints={candidate.candidate_id: candidate.target_fingerprint},
+        target_fingerprints={candidate.fingerprint_key: candidate.target_fingerprint},
     )
     target = UnifiedAffordance(
         candidate.semantic_target_id,
@@ -195,13 +199,15 @@ def test_probe_budget_policy_never_expands_declared_model_cost_or_latency() -> N
 def test_semantic_evidence_requires_current_linked_nonconflicting_candidate() -> None:
     extractor = EvidenceGapExtractor()
 
-    current = extractor.extract(_visual_snapshot(), run_id="run", task_revision=1)
+    current = extractor.extract(_capture(_visual_snapshot()), run_id="run", task_revision=1)
     orphan = extractor.extract(
-        _visual_snapshot(orphan=True), run_id="run", task_revision=1
+        _capture(_visual_snapshot(orphan=True)), run_id="run", task_revision=1
     )
-    stale = extractor.extract(_visual_snapshot(stale=True), run_id="run", task_revision=1)
+    stale = extractor.extract(
+        _capture(_visual_snapshot(stale=True)), run_id="run", task_revision=1
+    )
     conflict = extractor.extract(
-        _visual_snapshot(conflict=True), run_id="run", task_revision=1
+        _capture(_visual_snapshot(conflict=True)), run_id="run", task_revision=1
     )
 
     assert not any(item.required_evidence_kind == EvidenceKind.VISUAL_APPEARANCE for item in current)
@@ -213,7 +219,7 @@ def test_semantic_evidence_requires_current_linked_nonconflicting_candidate() ->
 def test_screenshot_transport_alone_does_not_close_visual_evidence_gap() -> None:
     snapshot = _visual_snapshot(orphan=True)
 
-    gaps = EvidenceGapExtractor().extract(snapshot, run_id="run", task_revision=1)
+    gaps = EvidenceGapExtractor().extract(_capture(snapshot), run_id="run", task_revision=1)
 
     assert snapshot.source_observations[0].artifact_refs == ("screen.png",)
     assert any(item.gap_kind == EvidenceGapKind.VISUAL_PROPERTY_UNKNOWN for item in gaps)
@@ -425,7 +431,7 @@ def test_gap_extractor_derives_missing_visual_requirement_with_task_risk() -> No
     )
 
     gaps = EvidenceGapExtractor().extract(
-        snapshot,
+        _capture(snapshot),
         run_id="run-1",
         task_revision=2,
         plan_version=3,

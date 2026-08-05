@@ -5,6 +5,7 @@ from typing import Callable
 import pytest
 from pydantic import ValidationError
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
@@ -19,7 +20,6 @@ from affordance_runtime.contracts import (
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.grounding import UnifiedAffordance
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -49,7 +49,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
-from runtime_test_support import make_interaction
+from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -506,7 +506,7 @@ def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Set theme")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     spec = TaskSpec(
         task_id="task-1",
         revision=2,
@@ -580,7 +580,7 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
     snapshot = BrowserSession(Page(), lease_ttl_ms=60_000).capture()
     semantic_target = snapshot.unified_affordances[0].semantic_target_id
     state = StateKernel("task-semantic", "Set theme")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     spec = TaskSpec(
         task_id="task-semantic",
         revision=1,
@@ -664,7 +664,7 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
         unified_affordances=(target,),
     )
     state = StateKernel("task-reroute", "Save")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     spec = TaskSpec(
         task_id="task-reroute",
         revision=1,
@@ -744,7 +744,7 @@ def test_core_contract_builder_binds_both_semantic_drag_endpoints() -> None:
     source_id = target_by_label["Source"]
     destination_id = target_by_label["Destination"]
     state = StateKernel("task-drag", "Reorder items")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     spec = TaskSpec(
         task_id="task-drag",
         revision=1,
@@ -806,7 +806,14 @@ def test_point_activate_binds_semantic_svg_target_without_planner_coordinates() 
         ),
         replace(snapshot.affordance_model, affordances=[point], kept_node_count=1),
     )
-    state.remember_observation(point_snapshot.observation)
+    remember_observation(state, point_snapshot.observation)
+    spec = spec.model_copy(
+        update={
+            "objective": "Activate the current SVG point",
+            "targets": (point.label,),
+            "evidence_requirements": ("current spatial SVG evidence",),
+        }
+    )
     proposal = _proposal(
         state,
         action_kind=PlannerActionKind.POINT_ACTIVATE,
@@ -814,7 +821,15 @@ def test_point_activate_binds_semantic_svg_target_without_planner_coordinates() 
         parameters={},
     )
 
-    contract = ContractBuilder().build(proposal, spec, state, point_snapshot)
+    contract = ContractBuilder(
+        requirements={
+            point.id: ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec("observation_metadata", "point_activated", True),
+                )
+            )
+        }
+    ).build(proposal, spec, state, point_snapshot)
 
     assert contract.action == "point_activate"
     assert contract.affordance_id == "svg_circle_1"
@@ -903,7 +918,7 @@ def test_proposal_validator_is_the_source_neutral_prebinding_gate(
             TEST_PROPOSAL_PROVENANCE,
             spec,
             state,
-            snapshot,
+            canonical_observation(snapshot),
         )
 
     assert caught.value.code == code
@@ -917,7 +932,7 @@ def test_proposal_validator_accepts_a_current_semantic_proposal() -> None:
         TEST_PROPOSAL_PROVENANCE,
         spec,
         state,
-        snapshot,
+        canonical_observation(snapshot),
     )
 
 
@@ -935,7 +950,7 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Set theme")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     target_ids = tuple(item.id for item in model.affordances)
     active_target, cross_step_target = target_ids[0], target_ids[1]
     state.install_task_plan(
@@ -1001,7 +1016,7 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
             TEST_PROPOSAL_PROVENANCE,
             spec,
             state,
-            BrowserSnapshot(observation, model),
+            canonical_observation(BrowserSnapshot(observation, model)),
         )
 
     assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
@@ -1022,7 +1037,7 @@ def test_proposal_validator_enforces_active_step_action_family_when_available() 
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Submit")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     active_target = model.affordances[0].id
     state.install_task_plan(
         TaskPlan(
@@ -1072,7 +1087,7 @@ def test_proposal_validator_enforces_active_step_action_family_when_available() 
             TEST_PROPOSAL_PROVENANCE,
             spec,
             state,
-            BrowserSnapshot(observation, model),
+            canonical_observation(BrowserSnapshot(observation, model)),
         )
 
     assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
@@ -1097,7 +1112,7 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Click the 3rd checkbox")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     state.install_task_plan(
         TaskPlan(
             plan_id="plan-checkbox-scope",
@@ -1146,7 +1161,7 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
             TEST_PROPOSAL_PROVENANCE,
             spec,
             state,
-            snapshot,
+            canonical_observation(snapshot),
         )
 
     assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
@@ -1162,7 +1177,7 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
         TEST_PROPOSAL_PROVENANCE,
         spec,
         state,
-        snapshot,
+        canonical_observation(snapshot),
     )
 
 
@@ -1170,7 +1185,9 @@ def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
     spec, state, snapshot = _fixture()
 
     with pytest.raises(ProposalRejected) as caught:
-        PlannerProposalValidator().validate(_proposal(state), None, spec, state, snapshot)
+        PlannerProposalValidator().validate(
+            _proposal(state), None, spec, state, canonical_observation(snapshot)
+        )
 
     assert caught.value.code == ProposalRejectionCode.MISSING_PROVENANCE
 
@@ -1230,7 +1247,7 @@ def test_contract_builder_binds_semantic_key_press_without_surface_parameters() 
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Increase slider")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1", revision=1, objective="Increase slider", operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("slider",), success_criteria=("slider increased",), source_request_ref="test",
@@ -1241,7 +1258,13 @@ def test_contract_builder_binds_semantic_key_press_without_surface_parameters() 
         target_affordance_id="dom_span_1", parameters={"key": "ArrowRight"},
     )
 
-    contract = ContractBuilder().build(proposal, task, state, BrowserSnapshot(observation, model))
+    contract = ContractBuilder(
+        requirements={
+            "dom_span_1": ContractRequirements(
+                verifier_plan=(VerifierSpec("observation_metadata", "slider_value", 1),)
+            )
+        }
+    ).build(proposal, task, state, BrowserSnapshot(observation, model))
 
     assert contract.action == "press"
     assert contract.parameters == {"key": "ArrowRight"}

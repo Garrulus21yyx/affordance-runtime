@@ -21,7 +21,7 @@ from affordance_runtime.grounding import (
 from affordance_runtime.task_intake import OperationClass, StrictModel
 
 if TYPE_CHECKING:
-    from affordance_runtime.browser_session import BrowserSnapshot
+    from affordance_runtime.perception_session import PerceptionCapture
 
 
 class EvidenceGapKind(StrEnum):
@@ -279,7 +279,7 @@ class EvidenceGapExtractor:
 
     def extract(
         self,
-        snapshot: "BrowserSnapshot",
+        snapshot: "PerceptionCapture",
         *,
         run_id: str,
         task_revision: int,
@@ -342,7 +342,7 @@ class EvidenceGapExtractor:
             )
         requirements = snapshot.perception_requirements
         if requirements is not None:
-            if not snapshot.unified_affordances:
+            if not _semantic_targets(snapshot):
                 required_kind = (
                     EvidenceKind.VISUAL_APPEARANCE
                     if EvidenceKind.VISUAL_APPEARANCE in requirements.required_properties
@@ -537,7 +537,7 @@ class ActivePerceptionController:
     def resolve(
         self,
         gaps: tuple[EvidenceGap, ...],
-        snapshot: "BrowserSnapshot",
+        snapshot: "PerceptionCapture",
         *,
         based_on_snapshot_id: str,
         receipts: tuple[ProbeReceipt, ...],
@@ -572,7 +572,7 @@ class ActivePerceptionController:
                 accepted_assertion is not None
                 or (
                     gap.gap_kind == EvidenceGapKind.AMBIGUOUS_TARGET
-                    and bool(snapshot.unified_affordances)
+                    and bool(_semantic_targets(snapshot))
                 )
                 or (
                     gap.entity_key == "task:required-evidence"
@@ -741,7 +741,11 @@ def _preferred_sources(evidence_kind: EvidenceKind) -> tuple[GroundingSource, ..
             GroundingSource.SOM,
             GroundingSource.VISUAL,
         ),
-        EvidenceKind.DEVICE_STATE: (GroundingSource.WOT, GroundingSource.API),
+        EvidenceKind.DEVICE_STATE: (
+            GroundingSource.WOT,
+            GroundingSource.API,
+            GroundingSource.DEVICE,
+        ),
     }[evidence_kind]
 
 
@@ -754,7 +758,9 @@ def _required_evidence_sources(
     return tuple(source for source in ordered if not acceptable_sources or source in acceptable_sources)
 
 
-def _snapshot_has_evidence(snapshot: "BrowserSnapshot", evidence_kind: EvidenceKind) -> bool:
+def _snapshot_has_evidence(
+    snapshot: "PerceptionCapture", evidence_kind: EvidenceKind
+) -> bool:
     minimum_confidence = (
         snapshot.perception_requirements.minimum_confidence
         if snapshot.perception_requirements is not None
@@ -771,7 +777,7 @@ def _snapshot_has_evidence(snapshot: "BrowserSnapshot", evidence_kind: EvidenceK
         and candidate.is_current(snapshot.observation)
         and target.semantic_target_id not in conflicted_entities
         and not target.unresolved_conflicts
-        for target in snapshot.unified_affordances
+        for target in _semantic_targets(snapshot)
         for candidate in target.grounding_candidates
     )
 
@@ -785,7 +791,14 @@ def _source_probe_profile(source: GroundingSource) -> tuple[ProbeKind, int, int,
         GroundingSource.VISUAL: (ProbeKind.GROUND_VISUAL_TARGET, 1_000, 1, 1.0),
         GroundingSource.WOT: (ProbeKind.READ_DEVICE_PROPERTY, 100, 0, 0.0),
         GroundingSource.API: (ProbeKind.QUERY_API_STATE, 100, 0, 0.0),
+        GroundingSource.DEVICE: (ProbeKind.READ_DEVICE_PROPERTY, 100, 0, 0.0),
     }[source]
+
+
+def _semantic_targets(
+    snapshot: "PerceptionCapture",
+) -> tuple[object, ...]:
+    return tuple(snapshot.semantic_targets)
 
 
 def _assertion_sources(gap: EvidenceGap) -> frozenset[GroundingSource]:

@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
+from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
 from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     RiskLevel,
@@ -13,7 +15,6 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.fixtures import EXPORT_SHA256, PRICING_DATA
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -35,9 +36,38 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.task_source_references import task_source_refs
+from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
+
+
+def pricing_success_expression() -> SuccessExpression:
+    return SuccessExpression(
+        expression_id="success:pricing-visible",
+        operator="all_of",
+        children=(
+            SuccessExpression(
+                expression_id="success:pricing-pro-visible",
+                operator="criterion",
+                criterion_id="criterion:pricing-pro-visible",
+            ),
+            SuccessExpression(
+                expression_id="success:pricing-enterprise-visible",
+                operator="criterion",
+                criterion_id="criterion:pricing-enterprise-visible",
+            ),
+        ),
+    )
+
+
+def pricing_required_outputs() -> tuple[OutputSpec, ...]:
+    return (
+        OutputSpec(
+            output_id="plans",
+            materialization_criterion_id="criterion:pricing-enterprise-visible",
+        ),
+    )
 
 
 def extract_pricing(html: str) -> dict[str, dict[str, Any]]:
@@ -63,6 +93,15 @@ def _number_or_text(value: str) -> int | str:
 @dataclass(frozen=True)
 class PricingPlanner:
     """Reveal both pricing cards, then return structured limits with evidence."""
+
+    def select(self, request: ChoicePlanningRequest) -> SelectChoice:
+        expected = "enterprise" if "enterprise" in request.active_step_id.casefold() else "pro"
+        choice = next(
+            item
+            for item in request.page.choices
+            if expected in item.target_label.casefold()
+        )
+        return SelectChoice(choice.choice_id, "match accepted pricing step")
 
     def propose(
         self, request: PlanningRequest
@@ -194,8 +233,8 @@ class ExportPlanner:
         )
 
 
-def pricing_contract_builder() -> ContractBuilder:
-    return ContractBuilder(
+def pricing_contract_builder() -> ActionContractMaterializer:
+    return ActionContractMaterializer(
         requirements={
             "dom_button_1": ContractRequirements(
                 verifier_plan=(
@@ -203,6 +242,7 @@ def pricing_contract_builder() -> ContractBuilder:
                         "dom_contains",
                         "html",
                         'data-plan="pro" data-visible="true"',
+                        criterion_ids=("criterion:pricing-pro-visible",),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 )
@@ -213,6 +253,7 @@ def pricing_contract_builder() -> ContractBuilder:
                         "dom_contains",
                         "html",
                         'data-plan="enterprise" data-visible="true"',
+                        criterion_ids=("criterion:pricing-enterprise-visible",),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),
                 )
@@ -221,8 +262,8 @@ def pricing_contract_builder() -> ContractBuilder:
     )
 
 
-def settings_contract_builder(api_url: str) -> ContractBuilder:
-    return ContractBuilder(
+def settings_contract_builder(api_url: str) -> ActionContractMaterializer:
+    return ActionContractMaterializer(
         requirements={
             "dom_button_1": ContractRequirements(
                 verifier_plan=(VerifierSpec("dom_absent", "html", 'id="blocking-modal"'),)
@@ -244,8 +285,8 @@ def settings_contract_builder(api_url: str) -> ContractBuilder:
     )
 
 
-def export_contract_builder() -> ContractBuilder:
-    return ContractBuilder(
+def export_contract_builder() -> ActionContractMaterializer:
+    return ActionContractMaterializer(
         requirements={
             "dom_button_1": ContractRequirements(
                 verifier_plan=(VerifierSpec("evidence", "sha256", EXPORT_SHA256),),

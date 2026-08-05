@@ -3,8 +3,6 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.adapters.dom import DomAdapter
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.evolution import (
     AcceptedProfileLoader,
@@ -13,7 +11,7 @@ from affordance_runtime.evolution import (
     EvolutionRegistryStore,
     EvolutionStatus,
 )
-from affordance_runtime.grounding import UnifiedAffordance
+from affordance_runtime.grounding import GroundingSource, UnifiedAffordance
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
@@ -31,6 +29,50 @@ from affordance_runtime.task_skills import (
     VerifiedSemanticTrace,
     quarantine_task_skill,
 )
+from affordance_runtime.unified_observation import (
+    ActionSupport,
+    CanonicalTarget,
+    ConflictStatus,
+    Freshness,
+    UnifiedObservation,
+)
+from runtime_test_support import remember_observation
+
+
+def _canonical_skill_observation(
+    observation: Observation,
+    target: UnifiedAffordance,
+) -> UnifiedObservation:
+    binding_id = f"binding:{target.semantic_target_id}"
+    return UnifiedObservation(
+        snapshot_id=observation.snapshot_id,
+        page_revision=observation.page_revision,
+        environment_revision=observation.environment_revision,
+        observed_text="",
+        targets=(
+            CanonicalTarget(
+                target_id=target.semantic_target_id,
+                role=target.role,
+                label=target.label,
+                surfaces=(GroundingSource.DOM,),
+                action_support=tuple(
+                    ActionSupport(action, (binding_id,))
+                    for action in sorted(target.supported_actions)
+                ),
+                state_facts=(),
+                binding_ids=(binding_id,),
+                conflict_status=ConflictStatus.NO_MATERIAL_CONFLICT,
+                conflicts=(),
+                source_assertion_refs=(),
+                freshness=Freshness(
+                    observation.snapshot_id,
+                    observation.environment_revision,
+                    observation.page_revision,
+                    observation.observed_at_s,
+                ),
+            ),
+        ),
+    )
 
 
 def _trace(index: int, variant: str, label: str, value: str) -> VerifiedSemanticTrace:
@@ -158,21 +200,15 @@ def test_rolled_back_artifact_is_absent_from_a_fresh_profile(tmp_path) -> None:
 def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoints_only_verification() -> None:
     payload = _payload()
     observation = Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")
-    model = DomAdapter().transduce(
-        "<main></main>",
-        environment_revision="rev-1",
-        snapshot_id="snap-1",
-        page_revision="page-1",
-    )
     target = UnifiedAffordance(
         "semantic:full-name",
         "textbox",
         "Full name",
         frozenset({"type_text"}),
     )
-    snapshot = BrowserSnapshot(observation, model, unified_affordances=(target,))
+    canonical = _canonical_skill_observation(observation, target)
     state = StateKernel("profile-task", "Set Full name to Margaret")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="profile-task",
         revision=1,
@@ -189,7 +225,7 @@ def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoint
     progress = TaskSkillProgress(payload.skill_id, payload.version)
     executor = IncrementalTaskSkillExecutor()
 
-    exposure = executor.expose_next(payload, bindings, task, state, snapshot, progress)
+    exposure = executor.expose_next(payload, bindings, task, state, canonical, progress)
 
     assert exposure.proposal is not None
     assert exposure.proposal.target_affordance_id == "semantic:full-name"
@@ -208,27 +244,17 @@ def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoint
     assert progress.next_step_index == 1
     assert progress.completed_step_ids == ["step-1"]
     assert progress.evidence == ["artifact:post-state"]
-    assert executor.expose_next(payload, bindings, task, state, snapshot, progress).proposal is None
+    assert executor.expose_next(payload, bindings, task, state, canonical, progress).proposal is None
 
 
 def test_task_skill_mismatch_falls_through_without_losing_verified_progress() -> None:
     payload = _payload()
     observation = Observation("rev-1", snapshot_id="snap-1", page_revision="page-1")
-    model = DomAdapter().transduce(
-        "<main></main>",
-        environment_revision="rev-1",
-        snapshot_id="snap-1",
-        page_revision="page-1",
-    )
-    snapshot = BrowserSnapshot(
-        observation,
-        model,
-        unified_affordances=(
-            UnifiedAffordance("semantic:other", "textbox", "Other", frozenset({"type_text"})),
-        ),
+    target = UnifiedAffordance(
+        "semantic:other", "textbox", "Other", frozenset({"type_text"})
     )
     state = StateKernel("profile-task", "Set Full name")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="profile-task",
         revision=1,
@@ -250,7 +276,7 @@ def test_task_skill_mismatch_falls_through_without_losing_verified_progress() ->
         {"step_1_target_label": "Full name", "step_1_text": "Ada"},
         task,
         state,
-        snapshot,
+        _canonical_skill_observation(observation, target),
         progress,
     )
 

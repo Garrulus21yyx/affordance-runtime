@@ -9,7 +9,17 @@ from typing import Protocol, Sequence
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
-from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
+from affordance_runtime.contracts import Affordance, Observation
+from affordance_runtime.grounding import (
+    ActivePerceptionRequest,
+    AssertionDecision,
+    GroundingCandidate,
+    GroundingSource,
+    PerceptionRequirements,
+    SourceAssertion,
+    SourceObservation,
+    UnifiedAffordance,
+)
 from affordance_runtime.perception import (
     PerceptionEscalation,
     derive_perception_requirements,
@@ -17,10 +27,98 @@ from affordance_runtime.perception import (
 )
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.task_planning import SubgoalSpec
+from affordance_runtime.unified_observation import (
+    CoverageCompleteness,
+    CoverageStatus,
+    SourceCoverage,
+)
+
+
+@dataclass(frozen=True)
+class PerceptionCapture:
+    """One acquisition epoch; never the Runtime semantic authority."""
+
+    observation: Observation
+    affordances: tuple[Affordance, ...] = ()
+    source_observations: tuple[SourceObservation, ...] = ()
+    source_coverage: tuple[SourceCoverage, ...] = ()
+    grounding_candidates: tuple[GroundingCandidate, ...] = ()
+    semantic_targets: tuple[UnifiedAffordance, ...] = ()
+    source_assertions: tuple[SourceAssertion, ...] = ()
+    assertion_decisions: tuple[AssertionDecision, ...] = ()
+    active_perception_requests: tuple[ActivePerceptionRequest, ...] = ()
+    accessibility_tree: object | None = None
+    svg_geometry: object | None = None
+    perception_requirements: PerceptionRequirements | None = None
+    acquisition_payload: object | None = None
+
+    @property
+    def unified_affordances(self) -> tuple[UnifiedAffordance, ...]:
+        """Acquisition-only compatibility name; never canonical authority."""
+
+        return self.semantic_targets
+
+    @property
+    def affordance_model(self) -> object:
+        payload = self.acquisition_payload
+        model = getattr(payload, "affordance_model", None)
+        if model is None:
+            raise AttributeError("capture has no adapter-specific affordance model")
+        return model
+
+    @classmethod
+    def from_browser_snapshot(cls, snapshot: BrowserSnapshot) -> PerceptionCapture:
+        coverage = _derive_source_coverage(snapshot)
+        return cls(
+            observation=snapshot.observation,
+            affordances=tuple(snapshot.affordance_model.affordances),
+            source_observations=tuple(snapshot.source_observations),
+            source_coverage=coverage,
+            grounding_candidates=tuple(snapshot.grounding_candidates),
+            semantic_targets=tuple(snapshot.unified_affordances),
+            source_assertions=tuple(snapshot.source_assertions),
+            assertion_decisions=tuple(snapshot.assertion_decisions),
+            active_perception_requests=tuple(snapshot.active_perception_requests),
+            accessibility_tree=snapshot.accessibility_tree,
+            svg_geometry=snapshot.svg_geometry,
+            perception_requirements=snapshot.perception_requirements,
+            acquisition_payload=snapshot,
+        )
+
+
+def _derive_source_coverage(snapshot: BrowserSnapshot) -> tuple[SourceCoverage, ...]:
+    observed_sources = {item.source for item in snapshot.source_observations}
+    candidate_count = {
+        source: sum(1 for item in snapshot.grounding_candidates if item.source == source)
+        for source in GroundingSource
+    }
+    coverage: list[SourceCoverage] = []
+    for source in GroundingSource:
+        if source in observed_sources or candidate_count[source] > 0:
+            coverage.append(
+                SourceCoverage.complete(
+                    source,
+                    captured_item_count=candidate_count[source],
+                    capture_policy_id="browser-session",
+                )
+            )
+        else:
+            coverage.append(
+                SourceCoverage(
+                    source=source,
+                    capture_policy_id="browser-session",
+                    captured_item_count=0,
+                    truncated=False,
+                    omitted_item_count_estimate=None,
+                    completeness=CoverageCompleteness.UNKNOWN,
+                    status=CoverageStatus.SOURCE_NOT_ACQUIRED,
+                )
+            )
+    return tuple(coverage)
 
 
 class ObservationSource(Protocol):
-    def capture(self) -> BrowserSnapshot: ...
+    def capture(self) -> BrowserSnapshot | PerceptionCapture: ...
 
 
 @dataclass(frozen=True)
@@ -45,10 +143,10 @@ class PerceptionSession:
     def capture(
         self,
         request: PerceptionCaptureRequest,
-    ) -> BrowserSnapshot:
+    ) -> PerceptionCapture:
         envelope = request.envelope
         if not isinstance(self.observer, BrowserSession):
-            return self.observer.capture()
+            return _as_perception_capture(self.observer.capture())
 
         active_subgoal = request.active_subgoal
         escalation = self.perception_escalation(request.failed_sources)
@@ -101,7 +199,7 @@ class PerceptionSession:
             if not screenshot_path.exists():
                 screenshot_path.write_bytes(self.observer.screenshot())
             self.artifacts.register_file(envelope.task_id, screenshot_path, "image/png")
-        return snapshot
+        return PerceptionCapture.from_browser_snapshot(snapshot)
 
     @property
     def supports_targeted_capture(self) -> bool:
@@ -110,15 +208,14 @@ class PerceptionSession:
     def capture_targeted(
         self,
         requests: Sequence[ActivePerceptionRequest],
-    ) -> BrowserSnapshot:
+    ) -> PerceptionCapture:
         capture = getattr(self.observer, "capture_targeted", None)
         if not callable(capture):
             raise TypeError("observation source has no capture_targeted port")
-        snapshot = capture(requests)
-        if inspect.isawaitable(snapshot):
-            snapshot = resolve_awaitable(snapshot)
-        if not isinstance(snapshot, BrowserSnapshot):
-            raise TypeError("capture_targeted must return one coherent BrowserSnapshot")
+        captured = capture(requests)
+        if inspect.isawaitable(captured):
+            captured = resolve_awaitable(captured)
+        snapshot = _as_perception_capture(captured)
         epoch_id = snapshot.observation.snapshot_id
         if not epoch_id:
             raise ValueError("targeted perception requires a non-empty observation epoch")
@@ -140,3 +237,11 @@ class PerceptionSession:
             reason="previous grounding route failed before a verified effect",
             failed_sources=frozenset(failed_sources),
         )
+
+
+def _as_perception_capture(value: object) -> PerceptionCapture:
+    if isinstance(value, PerceptionCapture):
+        return value
+    if isinstance(value, BrowserSnapshot):
+        return PerceptionCapture.from_browser_snapshot(value)
+    raise TypeError("observation source must return PerceptionCapture or BrowserSnapshot")

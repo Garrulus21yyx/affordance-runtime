@@ -24,6 +24,7 @@ from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import canonical_observation, remember_observation
 
 
 def _request_json(url: str, payload: dict[str, object] | None = None) -> dict[str, object]:
@@ -91,25 +92,45 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
     wot = dom.__class__("wot", "", revision, snapshot_id, revision, thing.affordances, 1, 1)
     contracts = []
     for surface, model in (("dom", dom), ("visual", visual), ("wot", wot)):
-        observation = Observation(revision, snapshot_id=snapshot_id)
+        observation = Observation(
+            revision,
+            snapshot_id=snapshot_id,
+            page_revision=model.page_revision,
+            metadata=(
+                {"image_width": 100, "image_height": 100}
+                if surface == "visual"
+                else {}
+            ),
+            target_fingerprints={
+                item.id: item.target_fingerprint for item in model.affordances
+            },
+        )
         task = TaskSpec(
             task_id=f"conformance-{surface}",
             revision=1,
             objective=CONFORMANCE_GOAL,
             operation_class=OperationClass.REVERSIBLE_WRITE,
-            targets=("shared state",),
+            targets=(model.affordances[0].label,),
             success_criteria=("shared state enabled",),
-            evidence_requirements=("oracle evidence",),
+            evidence_requirements=(
+                "visual appearance and oracle evidence"
+                if surface == "visual"
+                else "device property and oracle evidence"
+                if surface == "wot"
+                else "structural text and oracle evidence",
+            ),
             requested_capabilities=(CONFORMANCE_CAPABILITY,),
             source_request_ref="conformance-test",
         )
         state = StateKernel(task.task_id, task.objective)
         state.transition("observing")
-        state.remember_observation(observation)
+        remember_observation(state, observation)
         state.transition("planning")
         snapshot = BrowserSnapshot(observation, model)
         request = PlanningRequestBuilder().build(
-            RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]), state, snapshot
+            RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
+            state,
+            canonical_observation(snapshot),
         )
         response = ConformancePlanner(surface, "http://oracle/state").propose(request)
         contract = ConformanceContractBuilder(
@@ -136,7 +157,7 @@ def test_conformance_planner_consumes_canonical_request() -> None:
     observation = Observation(revision, snapshot_id=snapshot_id, page_revision=model.page_revision)
     state = StateKernel("conformance-request", CONFORMANCE_GOAL)
     state.transition("observing")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     state.transition("planning")
     task = TaskSpec(
         task_id="conformance-request",
@@ -154,7 +175,7 @@ def test_conformance_planner_consumes_canonical_request() -> None:
     request = PlanningRequestBuilder().build(
         RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
         state,
-        snapshot,
+        canonical_observation(snapshot),
     )
     response = ConformancePlanner("dom", "http://oracle/state").propose(request)
     contract = ConformanceContractBuilder(

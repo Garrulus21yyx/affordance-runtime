@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from affordance_runtime.benchmarks.browsergym_action_schema import BrowserGymAction
 
 BROWSERGYM_BACKEND = "browsergym"
+BROWSERGYM_SUCCESS_CRITERION_ID = "criterion:browsergym-official-success"
 
 
 @dataclass(frozen=True)

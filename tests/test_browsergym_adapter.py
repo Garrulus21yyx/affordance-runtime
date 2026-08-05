@@ -84,16 +84,18 @@ from affordance_runtime.model_port import (
     ModelPort,
     ProviderFailureKind,
     ProviderModelError,
+    StructuredOutputError,
 )
 from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import IntentDraft, OperationClass, TaskSpec
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.trace import TraceDag
-from affordance_runtime.verification import VerifierLadder
+from affordance_runtime.verification.mechanical import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
+from runtime_test_support import canonical_observation, remember_observation
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -331,7 +333,7 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
     )
     state = StateKernel("browsergym-request", "Click the target")
     state.transition("observing")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     state.transition("planning")
     task = TaskSpec(
         task_id="browsergym-request",
@@ -361,7 +363,9 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
     )
 
     planning_request = PlanningRequestBuilder().build(
-        RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
+        RunRequest(task_spec=task),
+        state,
+        canonical_observation(BrowserSnapshot(observation, model)),
     )
     decision = BrowserGymPlanner(policy, episode, {}).propose(planning_request)
 
@@ -390,8 +394,9 @@ class GeneralistClickModel:
         config: ModelConfig,
     ) -> T:
         del config
-        if output_schema.__name__ == "LLMIntentDraft":
+        if output_schema.__name__ == "LLMMinimalIntentProposal":
             request = json.loads(messages[-1].content)
+            source_ref = request["source_envelope"]["anchors"][0]["anchor_id"]
             self.calls += 1
             return output_schema.model_validate(
                 {
@@ -400,39 +405,12 @@ class GeneralistClickModel:
                         {
                             "operation_class": "reversible_write",
                             "target": "target",
-                            "source_ref": request["request_id"],
+                            "source_ref": source_ref,
                         }
                     ],
-                    "candidate_success_criteria": ["the target is activated"],
-                    "candidate_evidence_requirements": ["fresh post-action state"],
-                    "candidate_source_claims": [
-                        {
-                            "claim_id": "claim-activate-target",
-                            "kind": "terminal",
-                            "statement": "activate the target",
-                            "source_ref": request["request_id"],
-                        }
-                    ],
-                    "candidate_obligations": [
-                        {
-                            "obligation_id": "obligation-activate-target",
-                            "kind": "effect",
-                            "subject": "target",
-                            "relation": "is_completed",
-                            "claim_ids": ["claim-activate-target"],
-                            "evidence_requirements": ["fresh post-action state"],
-                            "terminal": True,
-                        }
-                    ],
+                    "success_criteria": ["the target is activated"],
+                    "evidence_requirements": ["fresh post-action state"],
                     "task_structure": "flat",
-                }
-            )
-        if output_schema.__name__ == "TaskObligationCoverageReview":
-            self.calls += 1
-            return output_schema.model_validate(
-                {
-                    "status": "complete",
-                    "covered_claim_ids": ["claim-activate-target"],
                 }
             )
         context = json.loads(messages[-1].content)
@@ -463,27 +441,12 @@ class RepairingGeneralistClickModel(GeneralistClickModel):
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        if output_schema.__name__ == "LLMIntentDraft":
+        if output_schema.__name__ == "LLMMinimalIntentProposal":
             self.intake_drafts += 1
             if self.intake_drafts == 1:
-                request = json.loads(messages[-1].content)
                 self.calls += 1
-                return output_schema.model_validate(
-                    {
-                        "objective": request["raw_text"],
-                        "requested_effects": [
-                            {
-                                "operation_class": "reversible_write",
-                                "target": "target",
-                                "source_ref": request["request_id"],
-                            }
-                        ],
-                        "candidate_success_criteria": ["the target is activated"],
-                    }
-                )
-            repair_context = json.loads(messages[-1].content)
-            raw_request = repair_context["raw_request"]
-            messages = (*messages[:-1], ModelMessage(role="user", content=json.dumps(raw_request)))
+                raise StructuredOutputError("invalid proposal schema")
+            messages = (messages[0], messages[1])
         return await super().generate_structured(messages, output_schema, config)
 
 
@@ -499,8 +462,8 @@ class InvalidIntentModel:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        del messages, output_schema, config
-        return cast(T, IntentDraft())
+        del messages, config
+        return output_schema.model_validate({})
 
 
 class UnsupportedPolicy(OneClickPolicy):
@@ -629,16 +592,18 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
     assert result.runtime_status == "done"
     assert result.official_success is True
     assert result.action_families == ["click"]
-    assert model.calls == 2
+    assert model.calls == 1
     assert model.planner_calls == 0
-    assert result.model_call_count == 2
+    assert result.model_call_count == 1
     assert environment.page.default_timeout_ms == 1_500
     trace_rows = [json.loads(line) for line in Path(result.trace_path).read_text().splitlines()]
     events = [row["event_type"] for row in trace_rows]
-    assert "IntentDraftProduced" in events
-    assert "TaskSpecCreated" in events
+    assert "SourceEnvelopeBuilt" in events
+    assert "MinimalIntentProposalProduced" in events
+    assert "TaskSpecAdmissionDecided" in events
     assert "TaskPlanProposed" in events
-    assert "PlannerProposalProduced" in events
+    assert "ActionChoiceCatalogBuilt" in events
+    assert "ActionChoiceSelected" in events
     assert "ContractBuilt" in events
     route = next(row["payload"] for row in trace_rows if row["event_type"] == "RouteSelected")
     assert model.first_target_id == ""
@@ -670,11 +635,11 @@ def test_generalist_intent_rejection_preserves_trace_and_model_attempt(tmp_path:
     )
 
     assert result.runtime_status == "failed"
-    assert result.runtime_error.startswith("ValueError: intent compilation unsupported:")
-    assert result.model_call_count == 2
+    assert result.runtime_error.startswith("ValidationError:")
+    assert result.model_call_count == 1
     assert result.trace_path
     events = [json.loads(line)["event_type"] for line in Path(result.trace_path).read_text().splitlines()]
-    assert events[-2:] == ["IntentCompilationRejected", "BrowserGymEpisodeFailed"]
+    assert events[-2:] == ["MinimalIntentProposalRejected", "BrowserGymEpisodeFailed"]
 
 
 def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Path) -> None:
@@ -696,15 +661,13 @@ def test_browsergym_episode_report_counts_successful_intent_repair(tmp_path: Pat
 
 def test_browsergym_model_stats_counts_repair_model_call_record() -> None:
     nodes = (
-        SimpleNamespace(kind="IntentDraftProduced", payload={"model_call": {"latency_ms": 1}}),
-        SimpleNamespace(kind="IntentDraftRepairProduced", payload={"model_call": {"latency_ms": 2}}),
-        SimpleNamespace(kind="TaskObligationCoverageReviewed", payload={"model_call": {"latency_ms": 3}}),
+        SimpleNamespace(kind="MinimalIntentProposalProduced", payload={"model_call": {"latency_ms": 3}}),
     )
 
     stats = _browsergym_model_stats(nodes, attempted_calls=3)
 
     assert stats["model_call_count"] == 3
-    assert stats["model_call_latency_ms"] == 6.0
+    assert stats["model_call_latency_ms"] == 3.0
 
 
 def test_generalist_browsergym_adapter_binds_native_option_activation_as_select() -> None:
@@ -721,7 +684,7 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Choose Earth")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -769,7 +732,7 @@ def test_generalist_browsergym_adapter_uses_navigation_safe_hash_link_click() ->
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Open Result")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -823,7 +786,7 @@ def test_generalist_browsergym_adapter_uses_current_dom_click_for_collection_con
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Open More for @owner")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -873,7 +836,7 @@ def test_generalist_browsergym_adapter_binds_semantic_drag_to_two_bids() -> None
     source = next(item for item in snapshot.unified_affordances if item.label == "Source")
     destination = next(item for item in snapshot.unified_affordances if item.label == "Destination")
     state = StateKernel("task-1", "Drag Source to Destination")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1427,7 +1390,7 @@ def test_generalist_browsergym_adapter_binds_screenshot_only_target_without_expo
         (200, 100),
     )
     state = StateKernel("task-1", "Click the visual target")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1726,7 +1689,7 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Increase slider")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1786,13 +1749,13 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Scroll to top")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
         objective="Scroll to top",
         operation_class=OperationClass.READ_ONLY,
-        targets=("textarea",),
+        targets=(scroll_region.label,),
         success_criteria=("textarea at top",),
         source_request_ref="test",
     )
@@ -1846,7 +1809,7 @@ def test_generalist_browsergym_text_contract_verifies_post_observation_value() -
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Enter Myron")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1899,7 +1862,7 @@ def test_generalist_browsergym_search_contract_uses_keyboard_events() -> None:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Search for Ryann")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1941,7 +1904,7 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Enter 02/04/2012 as the date")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -1989,7 +1952,7 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Enter 11:10 AM as the time")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -2042,7 +2005,7 @@ def test_generalist_browsergym_click_requires_state_delta_or_positive_terminal_o
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = StateKernel("task-1", "Click target")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id="task-1",
         revision=1,
@@ -2571,8 +2534,11 @@ def test_browsergym_report_counts_early_policy_stop_as_runtime_failure(tmp_path:
     )
     assert result.policy_stopped is True
     assert report["runtime_failure_count"] == 1
-    assert report["runtime_error_counts"] == {"done": 1}
-    assert report["acceptance_errors"] == ["policy stopped: click-button:seed-4"]
+    assert report["runtime_error_counts"] == {"execution_failed": 1}
+    assert report["acceptance_errors"] == [
+        "runtime failure: click-button:seed-4:execution_failed",
+        "policy stopped: click-button:seed-4",
+    ]
 
 
 def test_browsergym_generalist_episode_checkpoints_are_atomic_and_reject_foreign_cases(tmp_path: Path) -> None:
@@ -2649,8 +2615,8 @@ def test_browsergym_checkpoint_metadata_binds_selected_matrix(tmp_path: Path) ->
 def test_browsergym_checkpoint_identity_binds_distinct_intent_repair_prompt() -> None:
     identity = _intent_compiler_checkpoint_identity()
 
-    assert identity["intent_compiler_model_config"]["prompt_version"] == "intent-compiler-v8"
-    assert identity["intent_draft_repair_model_config"]["prompt_version"] == "intent-draft-repair-v3"
+    assert identity["intent_compiler_model_config"]["prompt_version"] == "minimal-intent-proposal-v1"
+    assert identity["intent_draft_repair_model_config"]["prompt_version"] == "minimal-intent-proposal-repair-v1"
     assert identity["intent_compiler_schema_sha256"] == identity["intent_draft_repair_schema_sha256"]
 
 

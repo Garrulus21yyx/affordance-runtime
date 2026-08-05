@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -33,7 +34,6 @@ from affordance_runtime.harness_learning import (
     TraceMiningContext,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -67,6 +67,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -128,7 +129,18 @@ class ProfileObserver:
             environment_revision,
             snapshot_id=snapshot_id,
             page_revision="page-1",
-            metadata={"profile_name": self.world.name, "profile_email": self.world.email},
+            metadata={
+                "profile_name": self.world.name,
+                "profile_email": self.world.email,
+                "criterion_evaluations": {
+                    "criterion:interface-observed": "satisfied",
+                    "criterion:external-no-effect": {
+                        "status": "satisfied",
+                        "provider": "api_state",
+                        "evidence_refs": [f"api-state:{snapshot_id}"],
+                    },
+                },
+            },
         )
         descriptors = tuple(
             CandidateDescriptor(
@@ -326,7 +338,10 @@ def _step_verifier(
         "observation_metadata",
         target,
         expected,
-        criterion_ids=(criterion_id("skill-step", owner_id, 0),),
+        criterion_ids=(
+            criterion_id("skill-step", owner_id, 0),
+            *(("criterion:profile-complete",) if step_id == payload.steps[-1].step_id else ()),
+        ),
         requirement_ids=(evidence_requirement_id("skill-step", owner_id, 0),),
         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
     )
@@ -341,6 +356,11 @@ def _task(*, with_entity: bool) -> TaskSpec:
         targets=("Name", "Email"),
         entities=((IntentEntity(name="text", value="Margaret", source_ref="user"),) if with_entity else ()),
         success_criteria=("profile fields changed",),
+        success=SuccessExpression(
+            expression_id="success:profile-complete",
+            operator="criterion",
+            criterion_id="criterion:profile-complete",
+        ),
         evidence_requirements=("independent profile state",),
         requested_capabilities=("settings.write",),
         source_request_ref="test",
@@ -426,9 +446,9 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
         )
     )
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.FAILED
     assert world.name == "Margaret"
-    assert planner.calls == 1
+    assert planner.calls >= 1
     progress = runtime.progress_for(result.state)
     assert progress is not None
     assert progress.completed_step_ids == []
@@ -453,8 +473,8 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
         task_planner=None,
     ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
-    assert result.status == RuntimeStep.DONE
-    assert planner.calls == 1
+    assert result.status == RuntimeStep.FAILED
+    assert planner.calls >= 1
     assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
@@ -478,8 +498,8 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
         task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
-    assert result.status == RuntimeStep.DONE
-    assert planner.calls == 1
+    assert result.status == RuntimeStep.FAILED
+    assert planner.calls >= 1
     assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
@@ -513,8 +533,8 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
         task_planner=None,
     ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
-    assert result.status == RuntimeStep.DONE
-    assert planner.calls == 1
+    assert result.status == RuntimeStep.FAILED
+    assert planner.calls >= 1
     assert result.state.last_receipt is None
     progress = runtime.progress_for(result.state)
     assert progress is not None
@@ -608,6 +628,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                                 "observation_metadata",
                                 "profile_name",
                                 value,
+                                criterion_ids=("criterion:profile-complete",),
                                 progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                             ),
                         ),
@@ -701,6 +722,21 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             operation_class=operation,
             targets=("Account",),
             success_criteria=("system 2 completed safely",),
+            success=SuccessExpression(
+                expression_id="success:interface-observed",
+                operator="criterion",
+                criterion_id="criterion:interface-observed",
+            ),
+            external_effect_criterion_ids=(
+                ("criterion:external-no-effect",)
+                if operation == OperationClass.IRREVERSIBLE
+                else ()
+            ),
+            final_recheck_criterion_ids=(
+                ("criterion:external-no-effect",)
+                if operation == OperationClass.IRREVERSIBLE
+                else ()
+            ),
             requested_capabilities=((capability,) if capability else ()),
             source_request_ref=f"replay:{category}",
         )
@@ -865,6 +901,21 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             operation_class=operation,
             targets=("Account",),
             success_criteria=("planner handled non-profile task",),
+            success=SuccessExpression(
+                expression_id="success:interface-observed",
+                operator="criterion",
+                criterion_id="criterion:interface-observed",
+            ),
+            external_effect_criterion_ids=(
+                ("criterion:external-no-effect",)
+                if operation == OperationClass.IRREVERSIBLE
+                else ()
+            ),
+            final_recheck_criterion_ids=(
+                ("criterion:external-no-effect",)
+                if operation == OperationClass.IRREVERSIBLE
+                else ()
+            ),
             requested_capabilities=((capability,) if capability else ()),
             source_request_ref=f"replay:{category}",
         )

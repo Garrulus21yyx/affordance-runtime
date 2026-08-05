@@ -1,22 +1,27 @@
-"""Runtime-owned action choice construction for active-step execution.
-
-This module is intentionally pure. It builds bounded semantic action choices
-from the current active step and immutable observation, but it does not call a
-Planner, construct an ActionContract, choose a backend, mutate StateKernel, or
-write trace.
-"""
+"""Logical full Runtime action catalog and realization strategies."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
-from enum import StrEnum
-from typing import Awaitable, Protocol, TypeAlias, cast
+from dataclasses import dataclass
+from typing import Callable, Mapping, Protocol, TypeAlias
 
 from affordance_runtime.active_step_scope import ActiveStepScope
-from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
+from affordance_runtime.choice_contracts import (
+    ActionChoice,
+    ActionChoiceFailure,
+    CatalogRef,
+    CatalogSlice,
+    ChoiceBuildReport,
+    ChoiceConflictStatus,
+    ChoiceRejection,
+    ChoiceRole,
+    ChoiceSource,
+)
+from affordance_runtime.grounding import GroundingCandidate
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.interaction_grounding import (
     GroundingResult,
     GroundingRole,
@@ -37,291 +42,363 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepSpec,
 )
 from affordance_runtime.unified_observation import (
+    CanonicalTarget,
     UnifiedObservation,
     UnifiedObservationTarget,
 )
 
-
-class ChoiceSource(StrEnum):
-    RUNTIME = "runtime"
-
-
-class ChoiceRole(StrEnum):
-    DIRECT = "direct"
-    ENABLING = "enabling"
-    INFORMATION = "information"
-
-
-FrozenJsonObject: TypeAlias = FrozenDict
-ActionChoiceBuildResult: TypeAlias = "ActionChoiceSet | ActionChoiceFailure"
+CanonicalChoiceTarget: TypeAlias = CanonicalTarget | UnifiedObservationTarget
 
 
 @dataclass(frozen=True)
-class ActionChoice:
-    choice_id: str
-    task_revision: int
-    state_version: int
-    snapshot_id: str
-    active_step_id: str
-    action_kind: PlannerActionKind
-    target_id: str = ""
-    destination_id: str = ""
-    parameters: FrozenJsonObject = field(default_factory=lambda: FrozenDict({}))
-    criterion_ids: tuple[str, ...] = ()
-    role: ChoiceRole = ChoiceRole.DIRECT
-    source: ChoiceSource = ChoiceSource.RUNTIME
-
-    def __init__(
-        self,
-        *,
-        choice_id: str,
-        task_revision: int,
-        state_version: int,
-        snapshot_id: str,
-        active_step_id: str,
-        action_kind: PlannerActionKind,
-        target_id: str = "",
-        destination_id: str = "",
-        parameters: dict[str, object] | FrozenJsonObject | None = None,
-        criterion_ids: tuple[str, ...] = (),
-        role: ChoiceRole = ChoiceRole.DIRECT,
-        source: ChoiceSource = ChoiceSource.RUNTIME,
-    ) -> None:
-        object.__setattr__(self, "choice_id", choice_id)
-        object.__setattr__(self, "task_revision", task_revision)
-        object.__setattr__(self, "state_version", state_version)
-        object.__setattr__(self, "snapshot_id", snapshot_id)
-        object.__setattr__(self, "active_step_id", active_step_id)
-        object.__setattr__(self, "action_kind", action_kind)
-        object.__setattr__(self, "target_id", target_id)
-        object.__setattr__(self, "destination_id", destination_id)
-        object.__setattr__(
-            self,
-            "parameters",
-            parameters if isinstance(parameters, FrozenDict) else FrozenDict(parameters or {}),
-        )
-        object.__setattr__(self, "criterion_ids", tuple(criterion_ids))
-        object.__setattr__(self, "role", role)
-        object.__setattr__(self, "source", source)
-        self.__post_init__()
-
-    def __post_init__(self) -> None:
-        _require_nonblank("choice_id", self.choice_id)
-        if self.task_revision < 1:
-            raise ValueError("task revision must be positive")
-        if self.state_version < 0:
-            raise ValueError("state version cannot be negative")
-        _require_nonblank("snapshot_id", self.snapshot_id)
-        _require_nonblank("active_step_id", self.active_step_id)
-        if not isinstance(self.action_kind, PlannerActionKind):
-            raise ValueError("unsupported action kind")
-        if self.target_id:
-            _require_nonblank("target_id", self.target_id)
-        if self.destination_id:
-            _require_nonblank("destination_id", self.destination_id)
-        if not isinstance(self.parameters, FrozenDict):
-            raise ValueError("choice parameters must be deeply immutable")
-        _require_tuple("criterion_ids", self.criterion_ids)
-        _require_unique_nonblank("criterion ids", self.criterion_ids)
-        if not isinstance(self.role, ChoiceRole):
-            raise ValueError("unsupported choice role")
-        if not isinstance(self.source, ChoiceSource):
-            raise ValueError("unsupported choice source")
-
-
-@dataclass(frozen=True)
-class ActionChoiceSet:
-    task_revision: int
-    state_version: int
-    snapshot_id: str
-    active_step_id: str
+class _GeneratedChoiceSet:
     grounding: GroundingResult
     choices: tuple[ActionChoice, ...]
 
-    def __post_init__(self) -> None:
-        if self.task_revision < 1:
-            raise ValueError("task revision must be positive")
-        if self.state_version < 0:
-            raise ValueError("state version cannot be negative")
-        _require_nonblank("snapshot_id", self.snapshot_id)
-        _require_nonblank("active_step_id", self.active_step_id)
-        if self.grounding.status != GroundingStatus.RESOLVED:
-            raise ValueError("action choice set requires resolved grounding")
-        _require_tuple("choices", self.choices)
-        if not self.choices:
-            raise ValueError("action choice set cannot be empty")
-        choice_ids = tuple(item.choice_id for item in self.choices)
-        _require_unique_nonblank("choice ids", choice_ids)
-        for choice in self.choices:
-            if choice.task_revision != self.task_revision:
-                raise ValueError("choice task revision mismatch")
-            if choice.state_version != self.state_version:
-                raise ValueError("choice state version mismatch")
-            if choice.snapshot_id != self.snapshot_id:
-                raise ValueError("choice snapshot mismatch")
-            if choice.active_step_id != self.active_step_id:
-                raise ValueError("choice active step mismatch")
+
+ActionChoiceBuildResult: TypeAlias = _GeneratedChoiceSet | ActionChoiceFailure
+
+
+class CatalogMembership(Protocol):
+    def count(self) -> int: ...
+    def contains(self, choice_id: str) -> bool: ...
+    def get(self, choice_id: str) -> ActionChoice | None: ...
+    def page(self, cursor: str | None, size: int) -> CatalogSlice: ...
+
+
+class _Membership:
+    def __init__(self, choices: tuple[ActionChoice, ...]) -> None:
+        self._choices = choices
+        self._index = {choice.choice_id: choice for choice in choices}
+
+    def count(self) -> int:
+        return len(self._choices)
+
+    def contains(self, choice_id: str) -> bool:
+        return choice_id in self._index
+
+    def get(self, choice_id: str) -> ActionChoice | None:
+        return self._index.get(choice_id)
+
+    def page(self, cursor: str | None, size: int) -> CatalogSlice:
+        if size < 1:
+            raise ValueError("catalog page size must be positive")
+        offset = int(cursor or 0)
+        values = self._choices[offset : offset + size]
+        following = offset + len(values)
+        return CatalogSlice(values, str(following) if following < len(self._choices) else None)
+
+
+class _LazyMembership(_Membership):
+    def __init__(self, factory: Callable[[], tuple[ActionChoice, ...]]) -> None:
+        self._factory = factory
+        self._loaded: _Membership | None = None
+
+    def _value(self) -> _Membership:
+        if self._loaded is None:
+            self._loaded = _Membership(self._factory())
+        return self._loaded
+
+    def count(self) -> int:
+        return self._value().count()
+
+    def contains(self, choice_id: str) -> bool:
+        return self._value().contains(choice_id)
+
+    def get(self, choice_id: str) -> ActionChoice | None:
+        return self._value().get(choice_id)
+
+    def page(self, cursor: str | None, size: int) -> CatalogSlice:
+        return self._value().page(cursor, size)
 
 
 @dataclass(frozen=True)
-class ActionChoiceFailure:
-    kind: FailureKind
-    reason_code: str
-    owner: FailureOwner = FailureOwner.RUNTIME_RECOVERY
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.kind, FailureKind):
-            raise ValueError("unsupported failure kind")
-        _require_nonblank("reason_code", self.reason_code)
-        if not isinstance(self.owner, FailureOwner):
-            raise ValueError("unsupported failure owner")
-
-
-@dataclass(frozen=True)
-class ActionSelection:
-    choice_id: str
+class ActionChoiceCatalog:
+    catalog_id: str
+    catalog_digest: str
     task_revision: int
+    plan_revision: int
     state_version: int
-    snapshot_id: str
+    observation_ref: str
     active_step_id: str
-    reason_summary: str = ""
-
-    def __post_init__(self) -> None:
-        _require_nonblank("choice_id", self.choice_id)
-        if self.task_revision < 1:
-            raise ValueError("task revision must be positive")
-        if self.state_version < 0:
-            raise ValueError("state version cannot be negative")
-        _require_nonblank("snapshot_id", self.snapshot_id)
-        _require_nonblank("active_step_id", self.active_step_id)
-        if self.reason_summary:
-            _require_nonblank("reason_summary", self.reason_summary)
-
-
-@dataclass(frozen=True)
-class ChoicePlanningRequest:
-    task_revision: int
-    state_version: int
-    snapshot_id: str
-    active_step_id: str
-    grounding: GroundingResult
-    choices: tuple[ActionChoice, ...]
+    membership: CatalogMembership
+    build_report: ChoiceBuildReport
 
     @classmethod
-    def from_choice_set(cls, choices: ActionChoiceSet) -> "ChoicePlanningRequest":
-        return cls(
-            task_revision=choices.task_revision,
-            state_version=choices.state_version,
-            snapshot_id=choices.snapshot_id,
-            active_step_id=choices.active_step_id,
-            grounding=choices.grounding,
-            choices=choices.choices,
-        )
-
-    def __post_init__(self) -> None:
-        if self.task_revision < 1:
-            raise ValueError("task revision must be positive")
-        if self.state_version < 0:
-            raise ValueError("state version cannot be negative")
-        _require_nonblank("snapshot_id", self.snapshot_id)
-        _require_nonblank("active_step_id", self.active_step_id)
-        _require_tuple("choices", self.choices)
-        if len(self.choices) < 2:
-            raise ValueError("choice planning request requires multiple choices")
-        for choice in self.choices:
-            if choice.task_revision != self.task_revision:
-                raise ValueError("choice request task revision mismatch")
-            if choice.state_version != self.state_version:
-                raise ValueError("choice request state version mismatch")
-            if choice.snapshot_id != self.snapshot_id:
-                raise ValueError("choice request snapshot mismatch")
-            if choice.active_step_id != self.active_step_id:
-                raise ValueError("choice request active step mismatch")
-
-
-class StepChoicePlannerPort(Protocol):
-    def select(
-        self,
-        request: ChoicePlanningRequest,
-    ) -> ActionSelection | Awaitable[ActionSelection]: ...
-
-
-class ActionSelectionValidator:
-    def validate(
-        self,
-        selection: ActionSelection,
-        choices: ActionChoiceSet,
-    ) -> ActionChoice:
-        if selection.task_revision != choices.task_revision:
-            raise ValueError("stale action selection task revision")
-        if selection.state_version != choices.state_version:
-            raise ValueError("stale action selection state version")
-        if selection.snapshot_id != choices.snapshot_id:
-            raise ValueError("stale action selection snapshot")
-        if selection.active_step_id != choices.active_step_id:
-            raise ValueError("stale action selection active step")
-        by_id = {choice.choice_id: choice for choice in choices.choices}
-        choice = by_id.get(selection.choice_id)
-        if choice is None:
-            raise ValueError("unknown choice_id")
-        return choice
-
-
-class ActionChoiceDispatcher:
-    def choose(
-        self,
-        result: ActionChoiceBuildResult,
+    def from_choices(
+        cls,
         *,
-        planner: StepChoicePlannerPort,
-    ) -> ActionSelection | ActionChoiceFailure | Awaitable[ActionSelection | ActionChoiceFailure]:
+        task_revision: int,
+        plan_revision: int,
+        state_version: int,
+        observation_ref: str,
+        active_step_id: str,
+        choices: tuple[ActionChoice, ...],
+        build_report: ChoiceBuildReport | None = None,
+        realization: str = "eager",
+    ) -> "ActionChoiceCatalog":
+        ordered = tuple(sorted(choices, key=lambda item: item.choice_id))
+        if len({item.choice_id for item in ordered}) != len(ordered):
+            raise ValueError("catalog choice IDs must be unique")
+        payload = {
+            "task_revision": task_revision,
+            "plan_revision": plan_revision,
+            "state_version": state_version,
+            "observation_ref": observation_ref,
+            "active_step_id": active_step_id,
+            "choices": [
+                {
+                    "choice_id": item.choice_id,
+                    "action_kind": item.action_kind.value,
+                    "target_id": item.target_id,
+                    "destination_id": item.destination_id,
+                    "parameters": to_json_compatible(item.parameters),
+                    "criteria": item.criterion_ids,
+                    "requirements": item.requirement_refs,
+                    "effects": item.effect_refs,
+                }
+                for item in ordered
+            ],
+            "rejections": [
+                (item.target_id, item.action_kind.value if item.action_kind else None, item.reason_code)
+                for item in (build_report.rejections if build_report else ())
+            ],
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if realization == "lazy":
+            membership: CatalogMembership = _LazyMembership(lambda: ordered)
+        elif realization in {"eager", "indexed"}:
+            membership = _Membership(ordered)
+        else:
+            raise ValueError("unsupported catalog realization")
+        report = build_report or ChoiceBuildReport(0, len(ordered))
+        return cls(
+            f"catalog:{digest}", digest, task_revision, plan_revision, state_version,
+            observation_ref, active_step_id, membership, report,
+        )
+
+    @property
+    def ref(self) -> CatalogRef:
+        return CatalogRef(self.catalog_id, self.catalog_digest, self.observation_ref)
+
+    @property
+    def count(self) -> int:
+        return self.membership.count()
+
+    def contains(self, choice_id: str) -> bool:
+        return self.membership.contains(choice_id)
+
+    def get(self, choice_id: str) -> ActionChoice | None:
+        return self.membership.get(choice_id)
+
+    def page(self, cursor: str | None, size: int) -> CatalogSlice:
+        return self.membership.page(cursor, size)
+
+
+class ActionChoiceCatalogBuilder:
+    """Build one logical Catalog from canonical Runtime inputs.
+
+    The active-step semantic generator is deliberately invoked before any
+    presentation projection. Its output is immediately sealed as Catalog
+    membership; page/provider policy is not accepted by this API.
+    """
+
+    def build(
+        self,
+        *,
+        task_revision: int,
+        task_spec: object | None = None,
+        plan_revision: int,
+        state_version: int,
+        step: object,
+        scope: object,
+        observation: object,
+        capabilities: frozenset[str] = frozenset(),
+        realization: str = "eager",
+    ) -> ActionChoiceCatalog | ActionChoiceFailure:
+        result = _SemanticChoiceGenerator().build(
+            task_revision=task_revision,
+            state_version=state_version,
+            step=step,
+            scope=scope,
+            observation=observation,
+            capabilities=capabilities,
+        )
         if isinstance(result, ActionChoiceFailure):
-            return result
-        if len(result.choices) == 1:
-            choice = result.choices[0]
-            return ActionSelection(
-                choice_id=choice.choice_id,
-                task_revision=choice.task_revision,
-                state_version=choice.state_version,
-                snapshot_id=choice.snapshot_id,
-                active_step_id=choice.active_step_id,
-                reason_summary="runtime_unique_choice",
+            fallback = _deterministic_semantic_choices(
+                task_revision=task_revision,
+                state_version=state_version,
+                step=step,
+                observation=observation,
+                task_spec=task_spec,
             )
-        request = ChoicePlanningRequest.from_choice_set(result)
-        selection = planner.select(request)
-        if hasattr(selection, "__await__"):
-            return _await_validated_selection(cast(Awaitable[ActionSelection], selection), result)
-        try:
-            ActionSelectionValidator().validate(selection, result)
-        except ValueError:
+            if not fallback:
+                return ActionChoiceFailure(result.kind, result.reason_code, result.owner)
+            report = ChoiceBuildReport(len(observation.targets), len(fallback))
+            return ActionChoiceCatalog.from_choices(
+                task_revision=task_revision,
+                plan_revision=plan_revision,
+                state_version=state_version,
+                observation_ref=observation.epoch_id,
+                active_step_id=step.step_id,
+                choices=fallback,
+                build_report=report,
+                realization=realization,
+            )
+        by_target = {item.target_id: item for item in observation.targets}
+        choices: list[ActionChoice] = []
+        rejections: list[ChoiceRejection] = []
+        for choice in result.choices:
+            target = by_target.get(choice.target_id)
+            conflict = getattr(getattr(target, "conflict_status", None), "value", "")
+            if conflict in {"material_conflict", "inconclusive"}:
+                rejections.append(
+                    ChoiceRejection(
+                        choice.target_id,
+                        choice.action_kind,
+                        "MATERIAL_SOURCE_CONFLICT",
+                        tuple(getattr(target, "source_assertion_refs", ())),
+                    )
+                )
+                continue
+            choices.append(
+                ActionChoice(
+                    choice_id=choice.choice_id,
+                    task_revision=choice.task_revision,
+                    state_version=choice.state_version,
+                    snapshot_id=choice.snapshot_id,
+                    active_step_id=choice.active_step_id,
+                    action_kind=choice.action_kind,
+                    target_id=choice.target_id,
+                    target_label=getattr(target, "label", "") or choice.target_id,
+                    target_role=getattr(target, "role", "") or "semantic_target",
+                    relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
+                    destination_id=choice.destination_id,
+                    parameters=choice.parameters,
+                    criterion_ids=choice.criterion_ids,
+                    effect_refs=choice.criterion_ids,
+                    evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
+                    conflict_status=ChoiceConflictStatus.CLEAR,
+                )
+            )
+        report = ChoiceBuildReport(len(observation.targets), len(choices), tuple(rejections))
+        if not choices:
             return ActionChoiceFailure(
-                kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
-                reason_code="invalid_action_choice_selection",
+                FailureKind.NO_FEASIBLE_ACTION,
+                "no_feasible_action_choice",
             )
-        return selection
-
-
-async def _await_validated_selection(
-    selection: Awaitable[ActionSelection],
-    choices: ActionChoiceSet,
-) -> ActionSelection | ActionChoiceFailure:
-    try:
-        resolved = await selection
-    except ValueError:
-        return ActionChoiceFailure(
-            kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
-            reason_code="invalid_action_choice_selection",
+        return ActionChoiceCatalog.from_choices(
+            task_revision=task_revision,
+            plan_revision=plan_revision,
+            state_version=state_version,
+            observation_ref=observation.epoch_id,
+            active_step_id=step.step_id,
+            choices=tuple(choices),
+            build_report=report,
+            realization=realization,
         )
-    try:
-        ActionSelectionValidator().validate(resolved, choices)
-    except ValueError:
-        return ActionChoiceFailure(
-            kind=FailureKind.MODEL_DEFERRAL_WITH_ACTION_SPACE,
-            reason_code="invalid_action_choice_selection",
+
+
+def _deterministic_semantic_choices(
+    *, task_revision: int, state_version: int, step: object, observation: object, task_spec: object | None = None
+) -> tuple[ActionChoice, ...]:
+    """Narrow a legacy abstract active-step target without model assistance."""
+
+    criteria = tuple(getattr(step, "completion_criteria", ()))
+    criterion_ids = tuple(
+        value for item in criteria if (value := getattr(item, "criterion_id", ""))
+    )
+    values: list[ActionChoice] = []
+    for target in observation.targets:
+        conflict = getattr(getattr(target, "conflict_status", None), "value", "")
+        if conflict in {"material_conflict", "inconclusive"}:
+            continue
+        supported = set(target.supported_actions)
+        action = next(
+            (
+                kind
+                for kind, aliases in (
+                    (PlannerActionKind.ACTIVATE, {"activate", "click", "invoke", "write_property"}),
+                    (PlannerActionKind.TYPE_TEXT, {"fill", "type", "type_text"}),
+                    (PlannerActionKind.SELECT_OPTION, {"select", "select_option"}),
+                    (PlannerActionKind.PRESS_KEY, {"press", "press_key"}),
+                    (PlannerActionKind.POINT_ACTIVATE, {"point_activate"}),
+                )
+                if supported.intersection(aliases)
+            ),
+            None,
         )
-    return resolved
+        if action is None:
+            continue
+        payload = (
+            task_revision,
+            state_version,
+            observation.epoch_id,
+            step.step_id,
+            action.value,
+            target.target_id,
+            criterion_ids,
+        )
+        digest = hashlib.sha256(repr(payload).encode()).hexdigest()
+        values.append(
+            ActionChoice(
+                choice_id=f"choice:{digest}",
+                task_revision=task_revision,
+                state_version=state_version,
+                snapshot_id=observation.epoch_id,
+                active_step_id=step.step_id,
+                action_kind=action,
+                target_id=target.target_id,
+                target_label=getattr(target, "label", "") or target.target_id,
+                target_role=getattr(target, "role", "") or "semantic_target",
+                relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
+                criterion_ids=criterion_ids,
+                effect_refs=criterion_ids,
+                evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
+                generation_reason_codes=("deterministic_active_step_narrowing",),
+            )
+        )
+    authority_text = [str(getattr(step, "objective", ""))]
+    criterion_ids = {getattr(item, "criterion_id", "") for item in criteria}
+    obligations = {
+        getattr(item, "obligation_id", ""): item
+        for item in getattr(task_spec, "obligations", ())
+    }
+    claims = {
+        getattr(item, "claim_id", ""): item
+        for item in getattr(task_spec, "source_claims", ())
+    }
+    for criterion_id in criterion_ids:
+        obligation = obligations.get(criterion_id)
+        if obligation is None:
+            continue
+        authority_text.extend(
+            str(getattr(claims.get(claim_id), "statement", ""))
+            for claim_id in getattr(obligation, "claim_ids", ())
+        )
+    objective_tokens = set(re.findall(r"[a-z0-9]+", " ".join(authority_text).casefold()))
+    objective_matches = tuple(
+        choice
+        for choice in values
+        if set(re.findall(r"[a-z0-9]+", choice.target_label.casefold())).intersection(objective_tokens)
+    )
+    # A unique semantic label authorized by the active step is deterministic;
+    # otherwise preserve the logically full set for normal N-choice handling.
+    return objective_matches if len(objective_matches) == 1 else tuple(values)
 
 
-class ActionChoiceBuilder:
+_PRESENTABLE_STATE_KEYS = frozenset(
+    {"enabled", "visible", "checked", "selected", "expanded", "value", "current_value", "input_type", "min", "max", "step"}
+)
+
+
+def _semantic_presentation_state(state: object) -> dict[str, object]:
+    if not isinstance(state, Mapping):
+        return {}
+    return {key: value for key, value in state.items() if key in _PRESENTABLE_STATE_KEYS}
+class _SemanticChoiceGenerator:
     def build(
         self,
         *,
@@ -354,7 +431,10 @@ class ActionChoiceBuilder:
         targets = {item.target_id: item for item in observation.targets}
         grounding = InteractionGrounder().ground(
             step.interaction,
-            tuple(_grounding_target(item) for item in observation.targets),
+            tuple(
+                _grounding_target(item, observation.bindings)
+                for item in observation.targets
+            ),
             capabilities=capabilities,
         )
         if grounding.status != GroundingStatus.RESOLVED:
@@ -502,14 +582,7 @@ class ActionChoiceBuilder:
                 kind=FailureKind.NO_FEASIBLE_ACTION,
                 reason_code="no_feasible_action_choice",
             )
-        return ActionChoiceSet(
-            task_revision=task_revision,
-            state_version=state_version,
-            snapshot_id=observation.snapshot_id,
-            active_step_id=step.step_id,
-            grounding=grounding,
-            choices=tuple(choices),
-        )
+        return _GeneratedChoiceSet(grounding=grounding, choices=tuple(choices))
 
 
 def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice]:
@@ -561,7 +634,7 @@ def _choice_for_criterion(
     snapshot_id: str,
     step_id: str,
     criterion: StateCriterion,
-    target: UnifiedObservationTarget,
+    target: CanonicalChoiceTarget,
 ) -> ActionChoice | None:
     if target.state.get("enabled") is False or target.state.get("visible") is False:
         return None
@@ -655,20 +728,47 @@ def _choice_for_criterion(
     return None
 
 
-def _grounding_target(target: UnifiedObservationTarget) -> GroundingTarget:
+def _grounding_target(
+    target: CanonicalChoiceTarget,
+    bindings: tuple[GroundingCandidate, ...] = (),
+) -> GroundingTarget:
+    if isinstance(target, CanonicalTarget):
+        surface = target.surfaces[0].value if len(target.surfaces) == 1 else "multi_surface"
+        target_bindings = tuple(
+            item for item in bindings if item.semantic_target_id == target.target_id
+        )
+        # A semantic target with several valid bindings has no representative
+        # surface or winning confidence. Routing belongs to contract building.
+        confidence = None
+        source_refs = tuple(
+            dict.fromkeys(
+                (
+                    *target.source_assertion_refs,
+                    *(
+                        ref
+                        for item in target_bindings
+                        for ref in item.evidence_refs
+                    ),
+                )
+            )
+        )
+    else:
+        surface = target.surface
+        confidence = target.confidence
+        source_refs = target.source_refs
     return GroundingTarget(
         target_id=target.target_id,
         role=target.role,
         label=target.label,
         supported_actions=target.supported_actions,
         state=target.state,
-        surface=target.surface,
-        confidence=target.confidence,
-        source_refs=target.source_refs,
+        surface=surface,
+        confidence=confidence,
+        source_refs=source_refs,
     )
 
 
-def _exact_transfer_value(target: UnifiedObservationTarget) -> str | None:
+def _exact_transfer_value(target: CanonicalChoiceTarget) -> str | None:
     if target.state.get("input_type") == "password":
         return None
     if "control_value_prefix" in target.state or "control_value_suffix" in target.state:

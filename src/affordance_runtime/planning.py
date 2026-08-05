@@ -11,41 +11,31 @@ from pydantic_core import PydanticCustomError
 
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.collection_window import (
-    resolve_global_ordinal_constraint,
-    snapshot_collection_affordances,
-)
 from affordance_runtime.contracts import (
-    ActionContract,
     Affordance,
     Condition,
-    GestureBindingError,
-    GestureContractBinder,
     ProgressEvidenceScope,
     RiskLevel,
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.grounding import GroundingCandidate, RoutePlan, UnifiedAffordance
+from affordance_runtime.grounding import RoutePlan
 from affordance_runtime.interaction_grounding import (
     GroundingStatus,
     GroundingTarget,
     InteractionGrounder,
 )
 from affordance_runtime.perception import derive_perception_requirements, route_perception_requirements
-from affordance_runtime.routing import CostAwareRouter
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.scope_authorization import (
-    ProposalScopeDecision,
     ProposalScopeEvaluator,
     ScopeRejectionKind,
-    ScopeRejectionReason,
-    authorize_observed_value_transfer,
 )
 from affordance_runtime.simplified_runtime_contracts import RelationIntent, StepActivityStatus
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner, source_affordance_for_candidate
-from affordance_runtime.visual_contracts import VisualContractBinder
+from affordance_runtime.unified_observation import CanonicalTarget, UnifiedObservation
 
 
 class PlannerActionKind(StrEnum):
@@ -72,7 +62,6 @@ class PlannerProposalSource(StrEnum):
     ACCEPTED_SKILL = "accepted_skill"
     RECOVERY = "recovery"
     EXTERNAL_POLICY = "external_policy"
-    RUNTIME_TERMINAL = "runtime_terminal"
 
 
 class PlannerProposalProvenance(BaseModel):
@@ -334,6 +323,108 @@ def _snapshot_grounding_targets(
     )
 
 
+def _canonical_active_step_scope(
+    state: StateKernel,
+    observation: UnifiedObservation,
+) -> ActiveStepScope | None:
+    if state.task_plan is None or state.task_progress is None:
+        return None
+    active_step_id = state.task_progress.active_subgoal_id
+    if not active_step_id:
+        return None
+    subgoal = next(
+        (
+            item
+            for item in state.task_plan.subgoals
+            if item.subgoal_id == active_step_id
+        ),
+        None,
+    )
+    if subgoal is None:
+        return None
+    grounding = InteractionGrounder().ground(
+        subgoal.interaction,
+        tuple(
+            GroundingTarget(
+                target_id=item.target_id,
+                role=item.role,
+                label=item.label,
+                supported_actions=item.supported_actions,
+                state=item.state,
+            )
+            for item in observation.targets
+        ),
+    )
+    if grounding.status != GroundingStatus.RESOLVED:
+        return None
+    permitted_targets = grounding.targets
+    if (
+        isinstance(subgoal.interaction, RelationIntent)
+        and subgoal.interaction.relation == "value_transfer"
+    ):
+        permitted_targets = grounding.destinations
+    return ActiveStepScope(
+        task_revision=state.task_plan.task_revision,
+        evaluated_at_state_version=state.version,
+        snapshot_id=observation.epoch_id,
+        activity_status=StepActivityStatus.ACTIVE,
+        active_step_id=active_step_id,
+        permitted_target_ids=tuple(item.target_id for item in permitted_targets),
+        permitted_destination_ids=tuple(
+            item.target_id for item in grounding.destinations
+        ),
+        permitted_action_kinds=(
+            (subgoal.action_family.value,)
+            if subgoal.action_family is not None
+            else ()
+        ),
+    )
+
+
+def _canonical_active_value_transfer_source_target(
+    state: StateKernel,
+    observation: UnifiedObservation,
+    destination_target_id: str,
+) -> str | None:
+    if state.task_plan is None or state.task_progress is None:
+        return None
+    active = next(
+        (
+            item
+            for item in state.task_plan.subgoals
+            if item.subgoal_id == state.task_progress.active_subgoal_id
+        ),
+        None,
+    )
+    if (
+        active is None
+        or not isinstance(active.interaction, RelationIntent)
+        or active.interaction.relation != "value_transfer"
+    ):
+        return None
+    grounding = InteractionGrounder().ground(
+        active.interaction,
+        tuple(
+            GroundingTarget(
+                target_id=item.target_id,
+                role=item.role,
+                label=item.label,
+                supported_actions=item.supported_actions,
+                state=item.state,
+            )
+            for item in observation.targets
+        ),
+    )
+    if (
+        grounding.status != GroundingStatus.RESOLVED
+        or len(grounding.targets) != 1
+        or tuple(item.target_id for item in grounding.destinations)
+        != (destination_target_id,)
+    ):
+        return None
+    return grounding.targets[0].target_id
+
+
 def _active_value_transfer_source_target(
     state: StateKernel,
     snapshot: BrowserSnapshot,
@@ -390,7 +481,7 @@ class PlannerProposalValidator:
         provenance: PlannerProposalProvenance | None,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> None:
         if provenance is None:
             raise ProposalRejected(ProposalRejectionCode.MISSING_PROVENANCE)
@@ -398,7 +489,7 @@ class PlannerProposalValidator:
             raise ProposalRejected(ProposalRejectionCode.STALE_TASK_REVISION)
         if proposal.based_on_state_version != state.version:
             raise ProposalRejected(ProposalRejectionCode.STALE_STATE_VERSION)
-        if proposal.snapshot_id != snapshot.observation.snapshot_id:
+        if proposal.snapshot_id != snapshot.epoch_id:
             raise ProposalRejected(ProposalRejectionCode.STALE_SNAPSHOT)
 
         if proposal.action_kind not in _TARGET_ACTIONS:
@@ -438,9 +529,9 @@ class PlannerProposalValidator:
     def _validate_active_step_scope(
         proposal: PlannerProposal,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> bool:
-        scope = _active_step_scope(state, snapshot)
+        scope = _canonical_active_step_scope(state, snapshot)
         if scope is None:
             return False
         decision = scope.evaluate(proposal)
@@ -456,15 +547,12 @@ class PlannerProposalValidator:
     def _validate_task_scope(
         proposal: PlannerProposal,
         task_spec: TaskSpec,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
     ) -> None:
         """Reject current but unauthorized semantic targets before binding."""
 
-        label, role = _semantic_target_label_role(proposal.target_affordance_id, snapshot)
-        ordinal_constraint = resolve_global_ordinal_constraint(
-            objective=task_spec.objective,
-            targets=task_spec.targets,
-            affordances=snapshot_collection_affordances(snapshot),
+        label, role = _canonical_target_label_role(
+            proposal.target_affordance_id, snapshot
         )
         decision = ProposalScopeEvaluator().evaluate(
             action_kind=proposal.action_kind.value,
@@ -474,9 +562,9 @@ class PlannerProposalValidator:
             parameters=proposal.parameters,
             objective=task_spec.objective,
             targets=task_spec.targets,
-            unified_affordances=snapshot.unified_affordances,
-            observation=snapshot.observation,
-            ordinal_constraint=ordinal_constraint,
+            unified_affordances=tuple(snapshot.targets),
+            observation=snapshot,
+            bindings=snapshot.bindings,
         )
         if decision.authorized:
             return
@@ -495,12 +583,12 @@ class PlannerProposalValidator:
     def _validate_target(
         semantic_target_id: str,
         action: PlannerActionKind,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         *,
         destination: bool = False,
     ) -> None:
         unified = next(
-            (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
+            (item for item in snapshot.targets if item.target_id == semantic_target_id),
             None,
         )
         if unified is not None:
@@ -514,17 +602,7 @@ class PlannerProposalValidator:
                 ProposalRejectionCode.UNSUPPORTED_ACTION,
                 f"{action.value} cannot bind {semantic_target_id}",
             )
-        affordance = next(
-            (item for item in snapshot.affordance_model.affordances if item.id == semantic_target_id),
-            None,
-        )
-        if affordance is None:
-            raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, semantic_target_id)
-        if not destination and not _action_compatible(action, affordance.action):
-            raise ProposalRejected(
-                ProposalRejectionCode.UNSUPPORTED_ACTION,
-                f"{action.value} cannot bind {affordance.action}",
-            )
+        raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, semantic_target_id)
 
 
 def _semantic_target_label_role(
@@ -542,6 +620,17 @@ def _semantic_target_label_role(
         None,
     )
     return (affordance.label, affordance.role) if affordance is not None else ("", "")
+
+
+def _canonical_target_label_role(
+    semantic_target_id: str,
+    observation: UnifiedObservation,
+) -> tuple[str, str]:
+    target = next(
+        (item for item in observation.targets if item.target_id == semantic_target_id),
+        None,
+    )
+    return (target.label, target.role) if target is not None else ("", "")
 
 
 @dataclass(frozen=True)
@@ -741,7 +830,7 @@ def resolve_task_plan_progress_target(
 
 @dataclass(frozen=True)
 class UnifiedTargetResolution:
-    target: UnifiedAffordance
+    target: CanonicalTarget
     route: RoutePlan
     source_affordance: Affordance
 
@@ -759,13 +848,14 @@ class UnifiedTargetResolver:
         action: PlannerActionKind,
         task_spec: TaskSpec,
         subgoal: str,
-        snapshot: BrowserSnapshot,
+        snapshot: BrowserSnapshot | PerceptionCapture,
+        observation: UnifiedObservation,
         available_executors: frozenset[str],
         verifier_kinds: tuple[str, ...],
         excluded_candidate_ids: frozenset[str] = frozenset(),
     ) -> UnifiedTargetResolution:
         target = next(
-            (item for item in snapshot.unified_affordances if item.semantic_target_id == semantic_target_id),
+            (item for item in observation.targets if item.target_id == semantic_target_id),
             None,
         )
         if target is None:
@@ -782,12 +872,16 @@ class UnifiedTargetResolver:
                 target_role=target.role,
                 target_label=target.label,
                 target_context=subgoal,
-                target_evidence=frozenset(
-                    evidence for candidate in target.grounding_candidates for evidence in candidate.evidence_kinds
+            target_evidence=frozenset(
+                    evidence
+                    for candidate in observation.bindings
+                    if candidate.semantic_target_id == target.target_id
+                    for evidence in candidate.evidence_kinds
                 ),
             ),
-            observation=snapshot.observation,
+            observation=observation,
             available_executors=available_executors,
+            bindings=observation.bindings,
             verifier_kinds=verifier_kinds,
             excluded_candidate_ids=excluded_candidate_ids,
             environment_scope=str(
@@ -801,409 +895,6 @@ class UnifiedTargetResolver:
             snapshot.affordance_model.affordances,
         )
         return UnifiedTargetResolution(target, route, source)
-
-
-@dataclass
-class ContractBuilder:
-    router: CostAwareRouter = field(default_factory=CostAwareRouter)
-    gesture_binder: GestureContractBinder = field(default_factory=GestureContractBinder)
-    visual_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
-    unified_resolver: UnifiedTargetResolver = field(default_factory=UnifiedTargetResolver)
-    requirements: Mapping[str, ContractRequirements] = field(default_factory=dict)
-
-    def build(
-        self,
-        proposal: PlannerProposal,
-        task_spec: TaskSpec,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-    ) -> ActionContract:
-        if proposal.based_on_task_revision != task_spec.revision:
-            raise ProposalRejected(ProposalRejectionCode.STALE_TASK_REVISION)
-        if proposal.based_on_state_version != state.version:
-            raise ProposalRejected(ProposalRejectionCode.STALE_STATE_VERSION)
-        if proposal.snapshot_id != snapshot.observation.snapshot_id:
-            raise ProposalRejected(ProposalRejectionCode.STALE_SNAPSHOT)
-        source_resolution = self._resolve_unified_target(
-            proposal.target_affordance_id,
-            action=proposal.action_kind,
-            proposal=proposal,
-            task_spec=task_spec,
-            snapshot=snapshot,
-            excluded_candidate_ids=state.excluded_candidates_for(proposal.target_affordance_id),
-        )
-        affordance = (
-            source_resolution.source_affordance
-            if source_resolution is not None
-            else self._legacy_affordance(proposal.target_affordance_id, snapshot)
-        )
-        if affordance is None:
-            raise ProposalRejected(
-                ProposalRejectionCode.MISSING_TARGET,
-                proposal.target_affordance_id,
-            )
-        if not _action_compatible(proposal.action_kind, affordance.action):
-            raise ProposalRejected(
-                ProposalRejectionCode.UNSUPPORTED_ACTION,
-                f"{proposal.action_kind.value} cannot bind {affordance.action}",
-            )
-        destination: Affordance | None = None
-        destination_resolution: UnifiedTargetResolution | None = None
-        gesture_binding = None
-        if proposal.action_kind == PlannerActionKind.DRAG:
-            selected_executor = (
-                source_resolution.route.selected_candidate.compatible_executor if source_resolution is not None else ""
-            )
-            destination_resolution = self._resolve_unified_target(
-                proposal.destination_affordance_id,
-                action=proposal.action_kind,
-                proposal=proposal,
-                task_spec=task_spec,
-                snapshot=snapshot,
-                available_executors=(frozenset({selected_executor}) if selected_executor else None),
-                excluded_candidate_ids=state.excluded_candidates_for(proposal.destination_affordance_id),
-                verifier_kinds=self._route_verifier_kinds(
-                    proposal.target_affordance_id,
-                    snapshot,
-                ),
-            )
-            destination = (
-                destination_resolution.source_affordance
-                if destination_resolution is not None
-                else self._legacy_affordance(proposal.destination_affordance_id, snapshot)
-            )
-            if destination is None:
-                raise ProposalRejected(ProposalRejectionCode.MISSING_TARGET, proposal.destination_affordance_id)
-        if source_resolution is not None:
-            selected_backend = source_resolution.route.selected_candidate.compatible_executor
-        else:
-            backend_names = set(affordance.backend_candidates)
-            if destination is not None:
-                backend_names.intersection_update(destination.backend_candidates)
-            candidates = {name: affordance for name in affordance.backend_candidates if name in backend_names}
-            route = self.router.route(candidates)
-            if route.selected_backend is None:
-                raise ProposalRejected(ProposalRejectionCode.NO_BACKEND, affordance.id)
-            selected_backend = route.selected_backend
-
-        contract_requirements = self.requirements.get(
-            proposal.target_affordance_id,
-            self.requirements.get(affordance.id, ContractRequirements()),
-        )
-        required_capabilities = tuple(
-            dict.fromkeys(
-                [
-                    *contract_requirements.required_capabilities,
-                    *task_spec.requested_capabilities,
-                ]
-            )
-        )
-        parameters = _contract_parameters(proposal)
-        if source_resolution is not None and proposal.action_kind == PlannerActionKind.POINT_ACTIVATE:
-            candidate = source_resolution.route.selected_candidate
-            lineage = state.fallback_lineage_for(source_resolution.target.semantic_target_id)
-            try:
-                contract = self.visual_binder.bind_point_activate(
-                    source_resolution.route,
-                    snapshot.observation,
-                    intent=proposal.subgoal or task_spec.objective,
-                    verifier_plan=contract_requirements.verifier_plan,
-                    required_capabilities=required_capabilities,
-                    supersedes_contract_id=lineage.get("supersedes_contract_id", ""),
-                    source_contract_id=lineage.get("source_contract_id", ""),
-                    fallback_reason=lineage.get("fallback_reason", ""),
-                )
-            except ValueError as exc:
-                raise ProposalRejected(
-                    ProposalRejectionCode.STALE_SNAPSHOT,
-                    str(exc),
-                ) from exc
-            contract = replace(
-                contract,
-                expected_effects=list(contract_requirements.expected_effects),
-                contract_hash="",
-            )
-        else:
-            contract = ActionContract.from_affordance(
-                affordance,
-                intent=proposal.subgoal or task_spec.objective,
-                backend=selected_backend,
-                expected_effects=list(contract_requirements.expected_effects),
-                verifier_plan=list(contract_requirements.verifier_plan),
-                required_capabilities=list(required_capabilities),
-                parameters=parameters,
-            )
-            if source_resolution is not None:
-                candidate = source_resolution.route.selected_candidate
-                lineage = state.fallback_lineage_for(source_resolution.target.semantic_target_id)
-                contract = replace(
-                    contract,
-                    id=(f"contract_{candidate.candidate_id.replace(':', '_')}_{candidate.observation_epoch_id}"),
-                    affordance_id=source_resolution.target.semantic_target_id,
-                    backend=candidate.compatible_executor,
-                    grounding_candidate=candidate,
-                    route_plan=source_resolution.route,
-                    snapshot_id=candidate.observation_epoch_id,
-                    page_revision=candidate.page_revision,
-                    target_fingerprint=candidate.target_fingerprint,
-                    target_fingerprint_key=candidate.fingerprint_key or candidate.candidate_id,
-                    expires_at_s=candidate.expires_at_s,
-                    supersedes_contract_id=lineage.get("supersedes_contract_id", ""),
-                    source_contract_id=lineage.get("source_contract_id", ""),
-                    fallback_reason=lineage.get("fallback_reason", ""),
-                    contract_hash="",
-                )
-        if destination is not None:
-            try:
-                source_candidate = source_resolution.route.selected_candidate if source_resolution is not None else None
-                destination_candidate = (
-                    destination_resolution.route.selected_candidate if destination_resolution is not None else None
-                )
-                gesture_binding = self.gesture_binder.bind(
-                    replace(affordance, backend_candidates=[selected_backend]),
-                    replace(destination, backend_candidates=[selected_backend]),
-                    selected_route=selected_backend,
-                    observation=snapshot.observation,
-                    source_semantic_target_id=(
-                        source_resolution.target.semantic_target_id if source_resolution is not None else affordance.id
-                    ),
-                    source_candidate_id=(
-                        source_candidate.candidate_id if source_candidate is not None else affordance.id
-                    ),
-                    source_fingerprint_key=(
-                        source_candidate.fingerprint_key or source_candidate.candidate_id
-                        if source_candidate is not None
-                        else affordance.id
-                    ),
-                    destination_semantic_target_id=(
-                        destination_resolution.target.semantic_target_id
-                        if destination_resolution is not None
-                        else destination.id
-                    ),
-                    destination_candidate_id=(
-                        destination_candidate.candidate_id if destination_candidate is not None else destination.id
-                    ),
-                    destination_fingerprint_key=(
-                        destination_candidate.fingerprint_key or destination_candidate.candidate_id
-                        if destination_candidate is not None
-                        else destination.id
-                    ),
-                )
-            except GestureBindingError as exc:
-                rejection_code = (
-                    ProposalRejectionCode.NO_BACKEND
-                    if exc.code == RuntimeErrorCode.BACKEND_UNAVAILABLE
-                    else ProposalRejectionCode.STALE_SNAPSHOT
-                    if exc.code
-                    in {
-                        RuntimeErrorCode.STALE_OBSERVATION,
-                        RuntimeErrorCode.STALE_PAGE_REVISION,
-                        RuntimeErrorCode.SNAPSHOT_MISMATCH,
-                        RuntimeErrorCode.TARGET_FINGERPRINT_MISMATCH,
-                        RuntimeErrorCode.LEASE_EXPIRED,
-                    }
-                    else ProposalRejectionCode.UNSUPPORTED_ACTION
-                )
-                raise ProposalRejected(rejection_code, exc.detail) from exc
-            contract = replace(contract, gesture_binding=gesture_binding, contract_hash="")
-        risk = contract_requirements.risk or _max_risk(
-            _max_risk(affordance.risk, destination.risk) if destination is not None else affordance.risk,
-            _operation_risk(task_spec.operation_class),
-        )
-        idempotency_key = contract_requirements.idempotency_key
-        if not idempotency_key and proposal.action_kind in {
-            PlannerActionKind.TYPE_TEXT,
-            PlannerActionKind.SELECT_OPTION,
-        }:
-            idempotency_key = (
-                f"task:{task_spec.task_id}:revision:{task_spec.revision}:"
-                f"target:{affordance.id}:parameters:{sorted(parameters.items())}"
-            )
-        scope_authorization = None
-        if contract.grounding_candidate is not None and source_resolution is not None:
-            ordinal_constraint = resolve_global_ordinal_constraint(
-                objective=task_spec.objective,
-                targets=task_spec.targets,
-                affordances=snapshot_collection_affordances(snapshot),
-            )
-            scope_decision = self._value_transfer_scope_decision(
-                proposal,
-                state,
-                snapshot,
-                contract.grounding_candidate,
-            )
-            if scope_decision is None:
-                scope_decision = ProposalScopeEvaluator().evaluate(
-                    action_kind=proposal.action_kind.value,
-                    target_id=proposal.target_affordance_id,
-                    target_label=source_resolution.target.label,
-                    target_role=source_resolution.target.role,
-                    parameters=proposal.parameters,
-                    objective=task_spec.objective,
-                    targets=task_spec.targets,
-                    unified_affordances=snapshot.unified_affordances,
-                    observation=snapshot.observation,
-                    selected_candidate=contract.grounding_candidate,
-                    ordinal_constraint=ordinal_constraint,
-                )
-            if not scope_decision.authorized:
-                rejection = (
-                    ProposalRejectionCode.UNREQUESTED_EFFECT
-                    if scope_decision.rejection == ScopeRejectionKind.UNREQUESTED_EFFECT
-                    else ProposalRejectionCode.TARGET_OUT_OF_SCOPE
-                )
-                raise ProposalRejected(
-                    rejection,
-                    scope_decision.detail,
-                    reason_code=(
-                        scope_decision.reason.value
-                        if scope_decision.reason is not None
-                        else ""
-                    ),
-                )
-            scope_authorization = scope_decision.authorization
-        return replace(
-            contract,
-            scope_authorization=scope_authorization,
-            risk=risk,
-            idempotency_key=idempotency_key,
-            compensation=contract_requirements.compensation,
-            timeout_ms=contract_requirements.timeout_ms,
-            contract_hash="",
-        )
-
-    @staticmethod
-    def _value_transfer_scope_decision(
-        proposal: PlannerProposal,
-        state: StateKernel,
-        snapshot: BrowserSnapshot,
-        destination_candidate: GroundingCandidate,
-    ) -> ProposalScopeDecision | None:
-        source_target_id = _active_value_transfer_source_target(
-            state,
-            snapshot,
-            proposal.target_affordance_id,
-        )
-        if source_target_id is None:
-            return None
-        source_target = next(
-            (
-                item
-                for item in snapshot.unified_affordances
-                if item.semantic_target_id == source_target_id
-            ),
-            None,
-        )
-        source_by_id = {
-            item.id: item for item in snapshot.affordance_model.affordances
-        }
-        safe_sources: list[tuple[GroundingCandidate, str]] = []
-        if source_target is not None:
-            for candidate in source_target.grounding_candidates:
-                affordance = source_by_id.get(candidate.source_affordance_id)
-                value = _exact_transfer_source_value(
-                    affordance.state if affordance is not None else {}
-                )
-                if candidate.is_current(snapshot.observation) and value is not None:
-                    safe_sources.append((candidate, value))
-        if not safe_sources:
-            return ProposalScopeDecision(
-                False,
-                ScopeRejectionKind.TARGET_OUT_OF_SCOPE,
-                proposal.target_affordance_id,
-                ScopeRejectionReason.SEMANTIC_VALUE_NOT_AUTHORIZED,
-            )
-        source_candidate, observed_value = min(
-            safe_sources,
-            key=lambda item: item[0].candidate_id,
-        )
-        return authorize_observed_value_transfer(
-            source_candidate=source_candidate,
-            destination_candidate=destination_candidate,
-            observation=snapshot.observation,
-            observed_value=observed_value,
-            parameter_value=proposal.parameters.get("text"),
-        )
-
-    def _resolve_unified_target(
-        self,
-        semantic_target_id: str,
-        *,
-        action: PlannerActionKind,
-        proposal: PlannerProposal,
-        task_spec: TaskSpec,
-        snapshot: BrowserSnapshot,
-        available_executors: frozenset[str] | None = None,
-        verifier_kinds: tuple[str, ...] | None = None,
-        excluded_candidate_ids: frozenset[str] = frozenset(),
-    ) -> UnifiedTargetResolution | None:
-        if not any(item.semantic_target_id == semantic_target_id for item in snapshot.unified_affordances):
-            return None
-        try:
-            return self.unified_resolver.resolve(
-                semantic_target_id,
-                action=action,
-                task_spec=task_spec,
-                subgoal=proposal.subgoal,
-                snapshot=snapshot,
-                available_executors=(
-                    available_executors if available_executors is not None else self._available_executors(snapshot)
-                ),
-                verifier_kinds=(
-                    verifier_kinds
-                    if verifier_kinds is not None
-                    else self._route_verifier_kinds(semantic_target_id, snapshot)
-                ),
-                excluded_candidate_ids=excluded_candidate_ids,
-            )
-        except ValueError as exc:
-            raise ProposalRejected(ProposalRejectionCode.NO_BACKEND, str(exc)) from exc
-
-    def _available_executors(self, snapshot: BrowserSnapshot) -> frozenset[str]:
-        return frozenset(
-            candidate.compatible_executor
-            for target in snapshot.unified_affordances
-            for candidate in target.grounding_candidates
-        )
-
-    def _route_verifier_kinds(
-        self,
-        semantic_target_id: str,
-        snapshot: BrowserSnapshot,
-    ) -> tuple[str, ...]:
-        requirements = self.requirements.get(semantic_target_id)
-        if requirements is None:
-            target = next(
-                (
-                    item
-                    for item in snapshot.unified_affordances
-                    if item.semantic_target_id == semantic_target_id
-                ),
-                None,
-            )
-            source_ids = (
-                tuple(
-                    candidate.source_affordance_id
-                    for candidate in target.grounding_candidates
-                )
-                if target is not None
-                else ()
-            )
-            requirements = next(
-                (self.requirements[item] for item in source_ids if item in self.requirements),
-                ContractRequirements(),
-            )
-        return tuple(spec.kind for spec in requirements.verifier_plan)
-
-    @staticmethod
-    def _legacy_affordance(
-        affordance_id: str,
-        snapshot: BrowserSnapshot,
-    ) -> Affordance | None:
-        return next(
-            (item for item in snapshot.affordance_model.affordances if item.id == affordance_id),
-            None,
-        )
 
 
 def _action_compatible(kind: PlannerActionKind, affordance_action: str) -> bool:

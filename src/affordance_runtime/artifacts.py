@@ -11,7 +11,7 @@ from typing import Any
 from affordance_runtime.contracts import ExecutionReceipt, Observation
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.trace import JsonlTraceWriter, TraceDag
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 def _safe_run_id(run_id: str) -> str:

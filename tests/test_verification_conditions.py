@@ -1,5 +1,5 @@
 from affordance_runtime.contracts import ActionContract, Condition, Observation, RuntimeErrorCode
-from affordance_runtime.verification import evaluate_condition, evaluate_conditions, preflight
+from affordance_runtime.verification.mechanical import evaluate_condition, evaluate_conditions, preflight
 
 
 def test_condition_evaluator_supports_paths_comparisons_and_params() -> None:

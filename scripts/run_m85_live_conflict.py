@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import VerifierSpec
 from affordance_runtime.coordinator import RunCoordinator, RuntimeFeatures
@@ -23,7 +24,6 @@ from affordance_runtime.grounding import (
     SourceObservation,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -243,7 +243,7 @@ def _run_profile(browser: Any, profile: str, *, adaptive: bool) -> dict[str, Any
             observer,
             planner,
             DomExecutor(page),
-            contract_builder=ContractBuilder(
+            contract_builder=ActionContractMaterializer(
                 requirements={
                     target_id: ContractRequirements(
                         verifier_plan=(

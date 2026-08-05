@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, replace
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -19,9 +20,9 @@ from affordance_runtime.grounding import (
     PerceptionRequirements,
     SourceAssertion,
     SourceObservation,
+    UnifiedAffordance,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -36,6 +37,8 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.unified_grounding import candidate_from_affordance
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 def _snapshot(sequence: int, *, conflict: bool = False) -> BrowserSnapshot:
@@ -53,6 +56,21 @@ def _snapshot(sequence: int, *, conflict: bool = False) -> BrowserSnapshot:
         page_revision="page-1",
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
+    candidate = replace(
+        candidate_from_affordance(
+            model.affordances[0],
+            observation,
+            semantic_target_id=model.affordances[0].id,
+        ),
+        verifier_strength=1,
+    )
+    target = UnifiedAffordance(
+        model.affordances[0].id,
+        model.affordances[0].role,
+        model.affordances[0].label,
+        frozenset({model.affordances[0].action}),
+        grounding_candidates=(candidate,),
+    )
     source_observations = (
         SourceObservation(
             GroundingSource.DOM,
@@ -63,7 +81,13 @@ def _snapshot(sequence: int, *, conflict: bool = False) -> BrowserSnapshot:
         ),
     )
     if not conflict:
-        return BrowserSnapshot(observation, model, source_observations=source_observations)
+        return BrowserSnapshot(
+            observation,
+            model,
+            source_observations=source_observations,
+            grounding_candidates=(candidate,),
+            unified_affordances=(target,),
+        )
     assertions = (
         SourceAssertion(
             f"dom:{sequence}:visible:true",
@@ -100,6 +124,8 @@ def _snapshot(sequence: int, *, conflict: bool = False) -> BrowserSnapshot:
         observation,
         model,
         source_observations=source_observations,
+        grounding_candidates=(candidate,),
+        unified_affordances=(target,),
         source_assertions=assertions,
         assertion_decisions=arbitration.decisions,
         active_perception_requests=arbitration.active_perception_requests,
@@ -114,6 +140,11 @@ def _task() -> TaskSpec:
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Save",),
         success_criteria=("setting is saved",),
+        success=SuccessExpression(
+            expression_id="success:effect-present",
+            operator="criterion",
+            criterion_id="criterion:effect-present",
+        ),
         evidence_requirements=("fresh saved-state evidence",),
         source_request_ref="request-1",
     )
@@ -121,7 +152,14 @@ def _task() -> TaskSpec:
 
 def _contract_builder(*, verify_effect: bool = False) -> ContractBuilder:
     verifier_plan = (
-        (VerifierSpec("observation_metadata", "effect_present", True),)
+        (
+            VerifierSpec(
+                "observation_metadata",
+                "effect_present",
+                True,
+                criterion_ids=("criterion:effect-present",),
+            ),
+        )
         if verify_effect
         else ()
     )
@@ -208,6 +246,14 @@ def _resolved_snapshot(sequence: int) -> BrowserSnapshot:
     )
     return replace(
         snapshot,
+        observation=replace(
+            snapshot.observation,
+            metadata={
+                "criterion_evaluations": {
+                    "criterion:effect-present": "satisfied",
+                }
+            },
+        ),
         source_assertions=(assertion,),
         assertion_decisions=arbitration.decisions,
     )
@@ -305,7 +351,7 @@ def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> N
     )
 
     events = [node.kind for node in result.trace.nodes]
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.FAILED
     assert observer.targeted_captures == 0
     assert "EvidenceGapDetected" in events
     assert "TargetedPerceptionBudgetExhausted" in events
@@ -354,7 +400,7 @@ def test_material_preflight_conflict_surviving_probe_blocks_effectful_execution(
         observer=observer,
         planner=OneContractPlanner(),
         executor=executor,
-        contract_builder=_contract_builder(),
+        contract_builder=_contract_builder(verify_effect=True),
         task_planner=None,
         budget=RunBudget(max_active_perception_observations=1),
     ).run_sync(RunRequest(task_spec=_task()))
@@ -424,7 +470,21 @@ class RecoveryInspectionObserver:
 
     def capture(self) -> BrowserSnapshot:
         self.captures += 1
-        return _snapshot(self.captures, conflict=self.captures == 3)
+        snapshot = _snapshot(self.captures, conflict=self.captures == 3)
+        if self.targeted_captures:
+            snapshot = replace(
+                snapshot,
+                observation=replace(
+                    snapshot.observation,
+                    metadata={
+                        "effect_present": True,
+                        "criterion_evaluations": {
+                            "criterion:effect-present": "satisfied",
+                        },
+                    },
+                ),
+            )
+        return snapshot
 
     def capture_targeted(self, requests: object) -> BrowserSnapshot:
         assert isinstance(requests, tuple) and len(requests) == 1

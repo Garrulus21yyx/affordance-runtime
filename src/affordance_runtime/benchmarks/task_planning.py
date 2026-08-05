@@ -8,12 +8,13 @@ runtime-ablation harness, not a claim about a remote model's capability.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
 
 from pydantic import BaseModel
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -21,7 +22,7 @@ from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Obser
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
-    ContractBuilder,
+    ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
     PlannerProposalProvenance,
@@ -49,6 +50,7 @@ from affordance_runtime.task_planning import (
     TaskPlannerPort,
     TaskPlanningContext,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 T = TypeVar("T", bound=BaseModel)
 ABLATION_PROFILES = ("flat", "always_plan", "adaptive")
@@ -71,21 +73,29 @@ class TaskPlanningAblationRun:
 @dataclass
 class _StageEnvironment:
     stage: int = 0
+    capture_sequence: int = 0
     backend: str = "controlled-stage"
 
     def capture(self) -> BrowserSnapshot:
+        self.capture_sequence += 1
+        snapshot_id = f"stage-snapshot-{self.stage}-{self.capture_sequence}"
         model = DomAdapter().transduce(
             "<button id='advance'>Advance</button>",
             environment_revision=f"stage-{self.stage}",
-            snapshot_id=f"stage-snapshot-{self.stage}",
+            snapshot_id=snapshot_id,
             page_revision=f"stage-page-{self.stage}",
         )
         observation = Observation(
             environment_revision=f"stage-{self.stage}",
-            snapshot_id=f"stage-snapshot-{self.stage}",
+            snapshot_id=snapshot_id,
             page_revision=f"stage-page-{self.stage}",
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
-            metadata={"stage": self.stage},
+            metadata={
+                "stage": self.stage,
+                "criterion_evaluations": {
+                    f"criterion:stage-{self.stage}": "satisfied",
+                },
+            },
         )
         return BrowserSnapshot(observation, model)
 
@@ -122,18 +132,16 @@ class _StageActionPlanner:
         )
 
 
-class _StageContractBuilder(ContractBuilder):
-    def build(self, proposal, task_spec, state, snapshot):
-        contract = super().build(proposal, task_spec, state, snapshot)
+class _StageContractBuilder(ActionContractMaterializer):
+    def build(self, proposal, task_spec, state, snapshot, observation=None):
         next_stage = int(snapshot.observation.metadata["stage"]) + 1
         active_id = (
             state.task_progress.active_subgoal_id
             if state.task_progress
             else "subgoal-1"
         )
-        return replace(
-            contract,
-            verifier_plan=[
+        self.requirements[proposal.target_affordance_id] = ContractRequirements(
+            verifier_plan=(
                 VerifierSpec(
                     "observation_metadata",
                     "stage",
@@ -142,10 +150,10 @@ class _StageContractBuilder(ContractBuilder):
                     requirement_ids=(
                         evidence_requirement_id("subgoal", active_id, 0),
                     ),
-                )
-            ],
-            contract_hash="",
+                ),
+            )
         )
+        return super().build(proposal, task_spec, state, snapshot, observation)
 
 
 @dataclass
@@ -266,6 +274,11 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         operation_class=OperationClass.READ_ONLY,
         targets=("advance",),
         success_criteria=(f"stage equals {target_stage}",),
+        success=SuccessExpression(
+            expression_id=f"success:stage-{target_stage}",
+            operator="criterion",
+            criterion_id=f"criterion:stage-{target_stage}",
+        ),
         evidence_requirements=("stage observation",),
         source_request_ref="task-planning-ablation",
         source_claims=flat_claims if use_canonical_flat_plan else (),

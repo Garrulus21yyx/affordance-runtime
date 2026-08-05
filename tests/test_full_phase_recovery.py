@@ -1,14 +1,15 @@
 import asyncio
 from dataclasses import dataclass
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.choice_contracts import AskUser, ChoicePlanningRequest
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.failure_envelope import FailurePhase
 from affordance_runtime.model_port import ProviderFailureKind, ProviderModelError
 from affordance_runtime.planning import (
-    ContractBuilder,
     PlannerActionKind,
     PlannerProposal,
     PlannerProposalProvenance,
@@ -28,13 +29,13 @@ from affordance_runtime.recovery_owner_dispatcher import (
 )
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
 from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.source_envelope import SourceEnvelope
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
-    CompilationIssue,
-    CompilationResult,
     CompilationStatus,
-    IntentDraft,
+    IntentAmbiguity,
     OperationClass,
+    RequestedEffect,
     TaskSpec,
     UserRequest,
 )
@@ -46,10 +47,12 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.task_skills import TaskSkillRuntimeDecision
+from affordance_runtime.task_spec_authority import MinimalIntentProposal
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import make_interaction
 
 
-def _snapshot(sequence: int) -> BrowserSnapshot:
+def _snapshot(sequence: int, *, completion: bool = False) -> BrowserSnapshot:
     revision = f"revision-{sequence}"
     snapshot_id = f"snapshot-{sequence}"
     model = DomAdapter().transduce(
@@ -66,6 +69,15 @@ def _snapshot(sequence: int) -> BrowserSnapshot:
             target_fingerprints={
                 item.id: item.target_fingerprint for item in model.affordances
             },
+            metadata=(
+                {
+                    "criterion_evaluations": {
+                        "criterion:planner-safe-result": "satisfied",
+                    }
+                }
+                if completion
+                else {}
+            ),
         ),
         model,
     )
@@ -79,7 +91,7 @@ class FlakyObserver:
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("temporary observation transport failure")
-        return _snapshot(self.calls)
+        return _snapshot(self.calls, completion=self.calls >= 3)
 
 
 class StableObserver:
@@ -88,7 +100,7 @@ class StableObserver:
 
     def capture(self) -> BrowserSnapshot:
         self.calls += 1
-        return _snapshot(self.calls)
+        return _snapshot(self.calls, completion=self.calls >= 3)
 
 
 class DonePlanner:
@@ -212,6 +224,10 @@ class ProviderSwitchOwner:
 
 
 class ClarifyPlanner:
+    def select(self, request: ChoicePlanningRequest) -> AskUser:
+        del request
+        return AskUser("Which account should be inspected?")
+
     def propose(self, request: PlanningRequest) -> PlannerProposalResponse:
         return PlannerProposalResponse(
             proposal=PlannerProposal(
@@ -258,8 +274,9 @@ class RejectBindingBuilder(ContractBuilder):
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation=None,
     ) -> ActionContract:
-        del proposal, task_spec, state, snapshot
+        del proposal, task_spec, state, snapshot, observation
         raise ProposalRejected(
             ProposalRejectionCode.NO_BACKEND,
             "no current route can bind the semantic target",
@@ -329,29 +346,43 @@ def _simple_envelope(task_id: str, objective: str) -> RunRequest:
             operation_class=OperationClass.READ_ONLY,
             targets=("current interface",),
             success_criteria=("planner produced a safe result",),
+            success=SuccessExpression(
+                expression_id="success:planner-safe-result",
+                operator="criterion",
+                criterion_id="criterion:planner-safe-result",
+            ),
             source_request_ref="full-phase-recovery-test",
         )
     )
 
 
 class StaticClarificationCompiler:
-    async def compile(
+    model = None
+
+    async def propose(
         self,
         request: UserRequest,
+        envelope: SourceEnvelope,
         *,
-        task_id: str,
         trace: object,
-    ) -> CompilationResult:
-        del request, trace
-        return CompilationResult(
-            status=CompilationStatus.NEEDS_CLARIFICATION,
-            request_id=task_id,
-            draft=IntentDraft(objective="Inspect an account"),
-            issues=(
-                CompilationIssue(
-                    code="blocking_ambiguity",
+        parent: object,
+    ) -> MinimalIntentProposal:
+        del request, trace, parent
+        return MinimalIntentProposal(
+            objective="Inspect an account",
+            requested_effects=(
+                RequestedEffect(
+                    operation_class=OperationClass.READ_ONLY,
+                    target="account",
+                    source_ref=envelope.whole_request_anchor.anchor_id,
+                ),
+            ),
+            success_criteria=("account is inspected",),
+            ambiguities=(
+                IntentAmbiguity(
                     field="account",
-                    detail="which account should be inspected",
+                    reason="which account should be inspected",
+                    blocking=True,
                 ),
             ),
         )
@@ -549,14 +580,19 @@ def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
         task_planner=task_planner,
     ).run_sync(RunRequest(task_spec=_task_spec()))
 
-    assert result.status == RuntimeStep.WAITING_CLARIFICATION
+    assert result.status == RuntimeStep.ABORTED
     assert task_planner.calls == 2
     assert result.state.task_plan is not None
     assert result.state.current_failure is not None
-    assert result.state.current_failure.phase == FailurePhase.TASK_PLANNING
+    assert any(
+        node.kind == "FailureDetected"
+        and node.payload.get("failure", {}).get("phase") == FailurePhase.TASK_PLANNING.value
+        for node in result.trace.nodes
+    )
     assert result.state.current_recovery_decision is None
     events = [node.kind for node in result.trace.nodes]
     assert events.index("FailureOwnerRouted") < events.index("TaskPlanAccepted")
+    assert "ActionChoiceSelected" in events
 
 
 def test_intake_clarification_uses_same_recovery_coordinator_without_run_state() -> None:

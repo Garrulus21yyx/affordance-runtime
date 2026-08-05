@@ -4,8 +4,10 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
+from affordance_runtime.choice_contracts import ChoicePlanningRequest, SelectChoice
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
     ActionContract,
@@ -17,7 +19,6 @@ from affordance_runtime.contracts import (
 from affordance_runtime.intent_compiler import LLMIntentCompiler
 from affordance_runtime.model_port import FallbackModelPort, ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -62,6 +63,11 @@ class MultiStageObserver:
             metadata={
                 "discovered": self.world.discovered,
                 "confirmed": self.world.confirmed,
+                "criterion_evaluations": {
+                    "criterion:confirmed": (
+                        "satisfied" if self.world.confirmed else "unsatisfied"
+                    )
+                },
             },
         )
         return BrowserSnapshot(observation, model)
@@ -92,6 +98,11 @@ class MultiStageExecutor:
 
 
 class MultiStageActionPlanner:
+    def select(self, request: ChoicePlanningRequest) -> SelectChoice:
+        label = {"discover": "Discover", "confirm": "Confirm"}[request.active_step_id]
+        choice = next(item for item in request.page.choices if item.target_label == label)
+        return SelectChoice(choice.choice_id, "match accepted active step")
+
     def propose(
         self,
         request: PlanningRequest,
@@ -138,9 +149,11 @@ class MultiStageIntentAndPlanModel:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        del messages, config
+        del config
         self.calls += 1
-        if output_schema.__name__ == "LLMIntentDraft":
+        if output_schema.__name__ == "LLMMinimalIntentProposal":
+            request = __import__("json").loads(messages[-1].content)
+            source_ref = request["source_envelope"]["anchors"][0]["anchor_id"]
             return output_schema.model_validate(
                 {
                     "objective": "Discover the current state, then confirm it",
@@ -148,54 +161,17 @@ class MultiStageIntentAndPlanModel:
                         {
                             "operation_class": "read_only",
                             "target": "current state",
-                            "source_ref": "multi-stage-request",
+                            "source_ref": source_ref,
                         }
                     ],
-                    "candidate_success_criteria": ["the current state is confirmed"],
-                    "candidate_evidence_requirements": ["fresh state observations"],
-                    "candidate_source_claims": [
-                        {
-                            "claim_id": "claim-discover",
-                            "kind": "dependency",
-                            "statement": "discover the current state",
-                            "source_ref": "multi-stage-request",
-                        },
-                        {
-                            "claim_id": "claim-confirm",
-                            "kind": "terminal",
-                            "statement": "confirm the discovered state",
-                            "source_ref": "multi-stage-request",
-                        },
-                    ],
-                    "candidate_obligations": [
-                        {
-                            "obligation_id": "obligation-discover",
-                            "kind": "predicate",
-                            "subject": "current state",
-                            "relation": "is_available",
-                            "value_source": "observation",
-                            "claim_ids": ["claim-discover"],
-                            "evidence_requirements": ["fresh discovered-state observation"],
-                        },
-                        {
-                            "obligation_id": "obligation-confirm",
-                            "kind": "effect",
-                            "subject": "discovered state",
-                            "relation": "is_completed",
-                            "claim_ids": ["claim-confirm"],
-                            "depends_on": ["obligation-discover"],
-                            "evidence_requirements": ["fresh confirmed-state observation"],
-                            "terminal": True,
-                        },
-                    ],
+                    "success_criteria": ["the current state is confirmed"],
+                    "success": {
+                        "expression_id": "success:confirmed",
+                        "operator": "criterion",
+                        "criterion_id": "criterion:confirmed",
+                    },
+                    "evidence_requirements": ["fresh state observations"],
                     "task_structure": "multi_stage",
-                }
-            )
-        if output_schema.__name__ == "TaskObligationCoverageReview":
-            return output_schema.model_validate(
-                {
-                    "status": "complete",
-                    "covered_claim_ids": ["claim-discover", "claim-confirm"],
                 }
             )
         if output_schema.__name__ == "TaskPlanProviderEnvelope":
@@ -278,10 +254,10 @@ def test_raw_multi_stage_request_uses_common_router_and_verified_serial_subgoals
     assert world == MultiStageWorld(discovered=True, confirmed=True)
     assert model.calls == 2
     task_plan = next(node for node in result.trace.nodes if node.kind == "TaskPlanProposed")
-    assert task_plan.payload["generated_by"] == "rule"
+    assert task_plan.payload["generated_by"] == "llm"
     completed = [node.payload["subgoal_id"] for node in result.trace.nodes if node.kind == "SubgoalCompleted"]
     assert len(completed) == 2
-    assert all(identifier.startswith("obligation:") for identifier in completed)
+    assert completed == ["discover", "confirm"]
     assert result.coordinator is not None
     progress = result.coordinator.state.task_progress
     assert progress is not None

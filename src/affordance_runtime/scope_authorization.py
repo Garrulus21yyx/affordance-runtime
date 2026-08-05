@@ -12,6 +12,10 @@ from typing import Any, Mapping
 from affordance_runtime.collection_window import OrdinalRouteConstraint, OrdinalRouteKind
 from affordance_runtime.contracts import Observation, ScopeAuthorization, ScopeRelationKind
 from affordance_runtime.grounding import GroundingCandidate, UnifiedAffordance
+from affordance_runtime.unified_observation import CanonicalTarget, UnifiedObservation
+
+ScopeTarget = UnifiedAffordance | CanonicalTarget
+ScopeObservation = Observation | UnifiedObservation
 
 
 class ScopeRejectionKind(StrEnum):
@@ -106,8 +110,9 @@ class ProposalScopeEvaluator:
         parameters: Mapping[str, Any],
         objective: str,
         targets: tuple[str, ...],
-        unified_affordances: tuple[UnifiedAffordance, ...],
-        observation: Observation,
+        unified_affordances: tuple[ScopeTarget, ...],
+        observation: ScopeObservation,
+        bindings: tuple[GroundingCandidate, ...] = (),
         selected_candidate: GroundingCandidate | None = None,
         ordinal_constraint: OrdinalRouteConstraint | None = None,
     ) -> ProposalScopeDecision:
@@ -122,10 +127,12 @@ class ProposalScopeEvaluator:
                 else ScopeRelationKind.GLOBAL_ORDINAL_COLLECTION_ITEM
             )
             target = next(
-                (item for item in unified_affordances if item.semantic_target_id == target_id),
+                (item for item in unified_affordances if _target_id(item) == target_id),
                 None,
             )
-            candidates = self._candidate_pool(target, observation, selected_candidate)
+            candidates = self._candidate_pool(
+                target, observation, selected_candidate, bindings
+            )
             if candidates:
                 return ProposalScopeDecision(
                     True,
@@ -155,10 +162,12 @@ class ProposalScopeEvaluator:
             return ProposalScopeDecision(True)
 
         target = next(
-            (item for item in unified_affordances if item.semantic_target_id == target_id),
+            (item for item in unified_affordances if _target_id(item) == target_id),
             None,
         )
-        candidates = self._candidate_pool(target, observation, selected_candidate)
+        candidates = self._candidate_pool(
+            target, observation, selected_candidate, bindings
+        )
         for candidate in candidates:
             relation = self._relational_match(
                 action_kind=action_kind,
@@ -193,19 +202,25 @@ class ProposalScopeEvaluator:
 
     @staticmethod
     def _candidate_pool(
-        target: UnifiedAffordance | None,
-        observation: Observation,
+        target: ScopeTarget | None,
+        observation: ScopeObservation,
         selected_candidate: GroundingCandidate | None,
+        bindings: tuple[GroundingCandidate, ...],
     ) -> tuple[GroundingCandidate, ...]:
         if selected_candidate is not None:
             return (selected_candidate,) if selected_candidate.is_current(observation) else ()
         if target is None:
             return ()
-        return tuple(
-            candidate
-            for candidate in target.grounding_candidates
-            if candidate.is_current(observation)
+        candidates = (
+            target.grounding_candidates
+            if isinstance(target, UnifiedAffordance)
+            else tuple(
+                item
+                for item in bindings
+                if item.semantic_target_id == target.target_id
+            )
         )
+        return tuple(candidate for candidate in candidates if candidate.is_current(observation))
 
     def _relational_match(
         self,
@@ -216,7 +231,7 @@ class ProposalScopeEvaluator:
         targets: tuple[str, ...],
         authorized_text: str,
         target_tokens: set[str],
-        unified_affordances: tuple[UnifiedAffordance, ...],
+        unified_affordances: tuple[ScopeTarget, ...],
         candidate: GroundingCandidate,
     ) -> ScopeRelationKind | None:
         if self._semantic_values_are_authorized(action_kind, parameters, authorized_text):
@@ -245,7 +260,6 @@ class ProposalScopeEvaluator:
         ):
             return ScopeRelationKind.ENTITY_PROPERTY
         return None
-
     @staticmethod
     def _semantic_values_are_authorized(
         action_kind: str,
@@ -270,11 +284,19 @@ class ProposalScopeEvaluator:
         )
 
 
+def _target_id(target: ScopeTarget) -> str:
+    return (
+        target.semantic_target_id
+        if isinstance(target, UnifiedAffordance)
+        else target.target_id
+    )
+
+
 def authorize_observed_value_transfer(
     *,
     source_candidate: GroundingCandidate,
     destination_candidate: GroundingCandidate,
-    observation: Observation,
+    observation: ScopeObservation,
     observed_value: str,
     parameter_value: object,
 ) -> ProposalScopeDecision:

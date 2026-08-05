@@ -19,12 +19,33 @@ for Runtime grounding, Catalog construction, binding, preflight, and typed
 evaluation. PlannerObservationView and ChoicePage are bounded projections and
 cannot be converted back into Runtime authority.
 
+`UnifiedObservation` is a logical epoch contract, not a requirement to copy one
+giant frozen tuple into every consumer. The physical MVP may store an immutable
+epoch header plus Target, Binding, Fact, and Coverage indexes behind an
+`ObservationRef`. Runtime collaborators receive restricted read-only index
+access; model projectors receive bounded copies. Layout changes cannot alter
+canonical identity, coverage/conflict semantics, or digest.
+
 ## 2. Acquisition and coverage
 
 PerceptionCapture records what each source actually acquired, including source
 identity, freshness, limits, errors, and coverage. Canonical targets retain
 available source surfaces, action supports/bindings, typed state facts, source
 assertions, confidence, and explicit conflict state.
+
+DOM, AX, Visual, SVG, WoT, API, and Device are composable surfaces within the
+same canonical epoch, not parallel agent chains. One semantic CanonicalTarget
+retains all current bindings, assertions, coverage, and conflicts. When several
+bindings support the same action without material conflict, the Catalog exposes
+one backend-neutral semantic choice; ActionContractBuilder selects the current
+backend/binding later.
+
+WoT roles are deliberately distinct. WOT_DESCRIPTION is capability and
+grounding metadata; it describes Thing identity, forms, operations, and action
+support but is not current device-state evidence. WOT_PROPERTY_STATE is fresh
+device-state evidence with resource/version identity and coverage. WoT capture
+must report the same freshness, truncation, absence, and conflict semantics as
+other sources.
 
 These cases are distinct:
 
@@ -83,6 +104,9 @@ Recovery is budgeted and side-effect-aware. A command may inspect, wait,
 targeted-perceive, replan, rebuild, request approval/clarification, or terminate.
 It cannot mutate TaskSpec, reuse stale approval, silently relocate an old
 ActionContract, or automatically repeat an uncertain non-idempotent effect.
+Cross-surface rerouting follows the same rule: a failed DOM, visual, or WoT
+binding requires a fresh epoch and a rebuilt contract; Runtime never patches the
+old contract to point at another backend.
 
 ## 7. Progress and trace
 

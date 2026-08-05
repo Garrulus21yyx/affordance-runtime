@@ -5,6 +5,7 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.async_bridge import resolve_awaitable
@@ -31,8 +32,9 @@ from affordance_runtime.model_port import (
     ProviderFailureKind,
     ProviderModelError,
 )
+from affordance_runtime.observation_store import ObservationCommit, ObservationRef
+from affordance_runtime.perception_session import PerceptionCapture
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -55,9 +57,7 @@ from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import (
-    IntentDraft,
     OperationClass,
-    RequestedEffect,
     SourcedTaskClaim,
     TaskClaimKind,
     TaskObligationKind,
@@ -78,7 +78,8 @@ from affordance_runtime.task_planning import (
     TaskPlanSource,
 )
 from affordance_runtime.trace import TraceDag
-from runtime_test_support import make_interaction
+from affordance_runtime.verification.contracts import SuccessExpression
+from runtime_test_support import canonical_observation, make_interaction
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -92,9 +93,14 @@ def _resolve_planner_decision(value: object) -> PlannerDecision:
     return resolved
 
 
-def _snapshot(sequence: int, *, saved: bool = False) -> BrowserSnapshot:
+def _snapshot(
+    sequence: int,
+    *,
+    saved: bool = False,
+    snapshot_id: str | None = None,
+) -> BrowserSnapshot:
     environment_revision = f"environment-{sequence}"
-    snapshot_id = f"snapshot-{sequence}"
+    snapshot_id = snapshot_id or f"snapshot-{sequence}"
     model = DomAdapter().transduce(
         "<main><button id='save'>Save</button></main>",
         environment_revision=environment_revision,
@@ -106,7 +112,14 @@ def _snapshot(sequence: int, *, saved: bool = False) -> BrowserSnapshot:
         snapshot_id=snapshot_id,
         page_revision=f"page-{sequence}",
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
-        metadata={"saved": saved},
+        metadata={
+            "saved": saved,
+            "criterion_evaluations": {
+                "criterion:task-success": (
+                    "satisfied" if saved and sequence >= 3 else "unsatisfied"
+                )
+            },
+        },
     )
     return BrowserSnapshot(observation, model)
 
@@ -115,8 +128,8 @@ class FakeObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _snapshot(1),
-            _snapshot(1),
-            _snapshot(1),
+            _snapshot(1, snapshot_id="snapshot-1-preflight"),
+            _snapshot(1, snapshot_id="snapshot-1-targeted"),
             _snapshot(2, saved=True),
             _snapshot(3, saved=True),
         ]
@@ -155,16 +168,20 @@ class FakeExecutor:
 
 
 def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> None:
-    result = asyncio.run(
-        compose_run_coordinator(
-            observer=FakeObserver(),
-            planner=SavePlanner(),
-            executor=FakeExecutor(),
-            contract_builder=_metadata_builder("saved"),
-            artifacts=ArtifactStore(tmp_path / "artifacts"),
-            task_planner=SingleStageTaskPlanner(),
-        ).run(_semantic_envelope("run-1"))
+    coordinator = compose_run_coordinator(
+        observer=FakeObserver(),
+        planner=SavePlanner(),
+        executor=FakeExecutor(),
+        contract_builder=_metadata_builder("saved"),
+        artifacts=ArtifactStore(tmp_path / "artifacts"),
+        task_planner=SingleStageTaskPlanner(),
     )
+    assert (
+        coordinator.perception_stage.observation_store
+        is coordinator.action_stage.observation_store
+        is coordinator.progress_stage.observation_store
+    )
+    result = asyncio.run(coordinator.run(_semantic_envelope("run-1")))
 
     assert result.status == RuntimeStep.DONE
     assert result.result == {
@@ -172,15 +189,31 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
         "completed_subgoal_ids": ["subgoal-1"],
     }
     assert result.verification is not None and result.verification.passed
-    assert result.state.observation_count == 4
+    assert result.state.observation_count == 5
     event_types = [node.kind for node in result.trace.nodes]
-    assert event_types.count("PlanningTurnEvaluated") == 1
+    captured_epoch_ids = [
+        str(node.payload["snapshot_id"])
+        for node in result.trace.nodes
+        if node.kind
+        in {
+            "ObservationCaptured",
+            "TargetedPerceptionCaptured",
+            "PreflightObservationCaptured",
+            "PostActionObservationCaptured",
+        }
+        and "snapshot_id" in node.payload
+    ]
+    assert len(captured_epoch_ids) == len(set(captured_epoch_ids))
+    assert event_types.count("PlanningTurnEvaluated") == 0
+    assert event_types.count("ActionChoiceCatalogBuilt") == 1
     assert "ActionCompleted" not in event_types
     assert event_types.count("ActionOutcomeRecorded") == 1
     assert event_types.count("PostActionEvaluated") == 1
     assert event_types.index("PostActionObservationCaptured") < event_types.index("ActionOutcomeRecorded")
     outcome = next(node for node in result.trace.nodes if node.kind == "ActionOutcomeRecorded")
-    assert outcome.payload["contract_id"] == "contract_dom_button_1"
+    assert str(outcome.payload["contract_id"]).startswith(
+        "contract_candidate_dom_dom_button_1_"
+    )
     assert outcome.payload["status"] == "verified_effect"
     assert outcome.payload["receipt_success"] is True
     assert outcome.payload["verification_status"] == "passed"
@@ -190,7 +223,7 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     )
     assert evaluated.payload["action_effect_status"] == "passed"
     assert evaluated.payload["active_step_status"] == "completed"
-    assert evaluated.payload["task_completion_status"] == "completed"
+    assert evaluated.payload["task_completion_status"] == "incomplete"
     assert evaluated.payload["progress_committed"] is True
     assert (tmp_path / "artifacts/run-1/events.jsonl").exists()
     assert (tmp_path / "artifacts/run-1/run.json").exists()
@@ -372,8 +405,8 @@ class DriftingObserver:
             _snapshot(1),
             _snapshot(2),  # injected drift between planning and preflight
             _snapshot(3),
-            _snapshot(3),
-            _snapshot(3),
+            _snapshot(3, snapshot_id="snapshot-3-preflight"),
+            _snapshot(3, snapshot_id="snapshot-3-targeted"),
             _snapshot(4, saved=True),
             _snapshot(5, saved=True),
             _snapshot(6, saved=True),
@@ -407,20 +440,24 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
 
 
 class StableObserver:
+    def __init__(self) -> None:
+        self.capture_count = 0
+
     def capture(self) -> BrowserSnapshot:
-        return _snapshot(1)
+        self.capture_count += 1
+        return _snapshot(1, snapshot_id=f"snapshot-stable-{self.capture_count}")
 
 
 class TwoStageObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _snapshot(1),
-            _snapshot(1),
-            _snapshot(1),
+            _snapshot(1, snapshot_id="snapshot-1-preflight"),
+            _snapshot(1, snapshot_id="snapshot-1-targeted"),
             _snapshot(2, saved=True),
-            _snapshot(2, saved=True),
-            _snapshot(2, saved=True),
-            _snapshot(2, saved=True),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-preflight"),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-targeted"),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-followup"),
             _snapshot(3, saved=True),
         ]
 
@@ -432,11 +469,11 @@ class ReplanObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _snapshot(1),
-            _snapshot(1),
-            _snapshot(1),
+            _snapshot(1, snapshot_id="snapshot-1-preflight"),
+            _snapshot(1, snapshot_id="snapshot-1-targeted"),
             _snapshot(2),
-            _snapshot(2),
-            _snapshot(2),
+            _snapshot(2, snapshot_id="snapshot-2-preflight"),
+            _snapshot(2, snapshot_id="snapshot-2-targeted"),
             _snapshot(3, saved=True),
         ]
 
@@ -635,6 +672,11 @@ class CurrentStateReadOnlyPlanner:
             return PlannerDoneResponse(
                 result={"completed_active_subgoal": "submit-button-available"}
             )
+        target = next(
+            item
+            for item in request.observation.affordances
+            if {"type", "type_text"} & set(item.supported_actions)
+        )
         return PlannerProposalResponse(
             proposal=PlannerProposal(
                 proposal_id="change-text-field",
@@ -643,7 +685,7 @@ class CurrentStateReadOnlyPlanner:
                 snapshot_id=request.identity.snapshot_id,
                 subgoal=request.step.compatibility_active_step_objective,
                 action_kind=PlannerActionKind.TYPE_TEXT,
-                target_affordance_id=request.observation.affordances[0].target_id,
+                target_affordance_id=target.target_id,
                 parameters={"text": "changed"},
             ),
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
@@ -690,12 +732,22 @@ class CurrentStateReadOnlyObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _current_state_read_only_snapshot(1, text_changed=False),
-            _current_state_read_only_snapshot(1, text_changed=False),
-            _current_state_read_only_snapshot(1, text_changed=False),
+            _current_state_read_only_snapshot(
+                1, text_changed=False, snapshot_id="snapshot-read-only-1-preflight"
+            ),
+            _current_state_read_only_snapshot(
+                1, text_changed=False, snapshot_id="snapshot-read-only-1-targeted"
+            ),
             _current_state_read_only_snapshot(2, text_changed=True),
-            _current_state_read_only_snapshot(2, text_changed=True),
-            _current_state_read_only_snapshot(2, text_changed=True),
-            _current_state_read_only_snapshot(2, text_changed=True),
+            _current_state_read_only_snapshot(
+                2, text_changed=True, snapshot_id="snapshot-read-only-2-preflight"
+            ),
+            _current_state_read_only_snapshot(
+                2, text_changed=True, snapshot_id="snapshot-read-only-2-targeted"
+            ),
+            _current_state_read_only_snapshot(
+                2, text_changed=True, snapshot_id="snapshot-read-only-2-followup"
+            ),
         ]
 
     def capture(self) -> BrowserSnapshot:
@@ -706,9 +758,10 @@ def _current_state_read_only_snapshot(
     sequence: int,
     *,
     text_changed: bool,
+    snapshot_id: str | None = None,
 ) -> BrowserSnapshot:
     environment_revision = f"environment-read-only-{sequence}"
-    snapshot_id = f"snapshot-read-only-{sequence}"
+    snapshot_id = snapshot_id or f"snapshot-read-only-{sequence}"
     model = DomAdapter().transduce(
         """
         <main>
@@ -725,7 +778,15 @@ def _current_state_read_only_snapshot(
         snapshot_id=snapshot_id,
         page_revision=f"page-read-only-{sequence}",
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
-        metadata={"text_changed": text_changed},
+        metadata={
+            "text_changed": text_changed,
+            "criterion_evaluations": {
+                "criterion:submit-available": "satisfied",
+                "criterion:text-changed": (
+                    "satisfied" if text_changed else "unsatisfied"
+                ),
+            },
+        },
     )
     return BrowserSnapshot(observation, model)
 
@@ -750,6 +811,22 @@ def _current_state_read_only_task() -> TaskSpec:
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("text field", "submit button"),
         success_criteria=("text field has changed", "submit button is available"),
+        success=SuccessExpression(
+            expression_id="success:current-state-read-only",
+            operator="all_of",
+            children=(
+                SuccessExpression(
+                    expression_id="success:text-changed",
+                    operator="criterion",
+                    criterion_id="criterion:text-changed",
+                ),
+                SuccessExpression(
+                    expression_id="success:submit-available",
+                    operator="criterion",
+                    criterion_id="criterion:submit-available",
+                ),
+            ),
+        ),
         evidence_requirements=("post-text evidence", "current submit button observation"),
         requested_capabilities=("text.write",),
         source_request_ref="current-state-read-only-request",
@@ -794,6 +871,11 @@ def _current_state_availability_task() -> TaskSpec:
         operation_class=OperationClass.READ_ONLY,
         targets=("submit button",),
         success_criteria=("submit button is available",),
+        success=SuccessExpression(
+            expression_id="success:submit-available",
+            operator="criterion",
+            criterion_id="criterion:submit-available",
+        ),
         evidence_requirements=("current submit button observation",),
         requested_capabilities=(),
         source_request_ref="current-state-availability-request",
@@ -834,7 +916,7 @@ def test_coordinator_advances_serial_task_plan_only_after_verifier_evidence() ->
     assert all(node.payload["criterion_evidence_links"] for node in completed)
 
 
-def test_coordinator_completes_current_state_read_only_subgoal_without_replanning() -> None:
+def test_coordinator_completion_root_does_not_wait_for_plan_exhaustion() -> None:
     result = compose_run_coordinator(
         observer=CurrentStateReadOnlyObserver(),
         planner=CurrentStateReadOnlyPlanner(),
@@ -856,18 +938,11 @@ def test_coordinator_completes_current_state_read_only_subgoal_without_replannin
     assert result.state.task_plan is not None
     assert result.state.task_plan.plan_id == "plan-current-read-only"
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == [
-        "text-field-changed",
-        "submit-button-available",
-    ]
+    assert result.state.task_progress.completed_subgoal_ids == ["text-field-changed"]
     events = [node.kind for node in result.trace.nodes]
     assert "TaskReplanned" not in events
-    current_state_completion = next(
-        node
-        for node in result.trace.nodes
-        if node.kind == "SubgoalCompletedFromCurrentObservation"
-    )
-    assert current_state_completion.payload["subgoal_id"] == "submit-button-available"
+    assert "SubgoalCompletedFromCurrentObservation" not in events
+    assert events.index("TaskCompletionEvaluated") < events.index("TaskCompleted")
 
 
 def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() -> None:
@@ -879,19 +954,17 @@ def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() 
     ).run_sync(RunRequest(task_spec=_current_state_availability_task()))
 
     assert result.status == RuntimeStep.DONE
-    assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_subgoal_ids == [
-        "submit-button-available"
-    ]
+    assert result.state.task_plan is None
+    assert result.state.task_progress is None
     events = [node.kind for node in result.trace.nodes]
+    assert events.index("TaskCompletionEvaluated") < events.index("TaskCompleted")
+    assert "TaskPlanAccepted" not in events
+    assert "PlannerContextBuilt" not in events
     assert "PlannerProposalRejected" not in events
     assert "FailureDetected" not in events
     assert "RecoveryStrategySelected" not in events
     assert "TaskPlanRejected" not in events
     assert "TaskReplanned" not in events
-    assert events.index("TaskPlanAccepted") < events.index(
-        "SubgoalCompletedFromCurrentObservation"
-    )
 
 
 def test_coordinator_commits_typed_task_plan_flow_replacement_reason() -> None:
@@ -1012,17 +1085,21 @@ class EvidencePreservingObserver:
     def __init__(self) -> None:
         self.snapshots = [
             _snapshot(1, saved=True),
-            _snapshot(1, saved=True),
+            _snapshot(1, saved=True, snapshot_id="snapshot-1-planning"),
+            _snapshot(1, saved=True, snapshot_id="snapshot-1-preflight"),
             _snapshot(2, saved=True),
-            _snapshot(2, saved=True),
-            _snapshot(2, saved=True),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-planning"),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-preflight"),
+            _snapshot(2, saved=True, snapshot_id="snapshot-2-targeted"),
             _snapshot(3, saved=True),
-            _snapshot(3, saved=True),
-            _snapshot(3, saved=True),
+            _snapshot(3, saved=True, snapshot_id="snapshot-3-planning"),
+            _snapshot(3, saved=True, snapshot_id="snapshot-3-preflight"),
+            _snapshot(3, saved=True, snapshot_id="snapshot-3-targeted"),
             _snapshot(4, saved=True),
-            _snapshot(4, saved=True),
-            _snapshot(4, saved=True),
-            _snapshot(4, saved=True),
+            _snapshot(4, saved=True, snapshot_id="snapshot-4-planning"),
+            _snapshot(4, saved=True, snapshot_id="snapshot-4-preflight"),
+            _snapshot(4, saved=True, snapshot_id="snapshot-4-targeted"),
+            _snapshot(4, saved=True, snapshot_id="snapshot-4-followup"),
         ]
 
     def capture(self) -> BrowserSnapshot:
@@ -1092,11 +1169,25 @@ class EvidenceAwareContractBuilder(ContractBuilder):
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation=None,
     ) -> ActionContract:
-        contract = super().build(proposal, task_spec, state, snapshot)
         active_id = state.task_progress.active_subgoal_id if state.task_progress else ""
         plan_version = state.task_plan.plan_version if state.task_plan else 0
         bound_id = active_id if active_id == "discover" or plan_version >= 2 else "unrelated"
+        self.requirements = {
+            **self.requirements,
+            proposal.target_affordance_id: ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec(
+                        "observation_metadata",
+                        "saved",
+                        True,
+                        criterion_ids=(criterion_id("subgoal", bound_id, 0),),
+                    ),
+                )
+            ),
+        }
+        contract = super().build(proposal, task_spec, state, snapshot, observation)
         return replace(
             contract,
             verifier_plan=[
@@ -1104,7 +1195,19 @@ class EvidenceAwareContractBuilder(ContractBuilder):
                     "observation_metadata",
                     "saved",
                     True,
-                    criterion_ids=(criterion_id("subgoal", bound_id, 0),),
+                    criterion_ids=(
+                        criterion_id("subgoal", bound_id, 0),
+                        *(
+                            ("criterion:task-success",)
+                            if active_id == "apply" and plan_version >= 2
+                            else ()
+                        ),
+                        *(
+                            ("criterion:apply-success",)
+                            if active_id == "apply" and plan_version >= 2
+                            else ()
+                        ),
+                    ),
                     requirement_ids=(
                         evidence_requirement_id("subgoal", bound_id, 0),
                     ),
@@ -1116,13 +1219,22 @@ class EvidenceAwareContractBuilder(ContractBuilder):
 
 def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() -> None:
     task_planner = EvidenceAwareTaskPlanner()
+    task = _semantic_task().model_copy(
+        update={
+            "success": SuccessExpression(
+                expression_id="success:apply",
+                operator="criterion",
+                criterion_id="criterion:apply-success",
+            )
+        }
+    )
     result = compose_run_coordinator(
         observer=EvidencePreservingObserver(),
         planner=EvidenceAwareActionPlanner(),
         executor=FakeExecutor(),
         contract_builder=EvidenceAwareContractBuilder(),
         task_planner=task_planner,
-    ).run_sync(_semantic_envelope())
+    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_plan is not None
@@ -1173,9 +1285,12 @@ def test_coordinator_groups_repeated_failure_and_aborts_loop() -> None:
             executor=AlwaysFailExecutor(),
             contract_builder=ContractBuilder(
                 requirements={
-                    "dom_button_1": ContractRequirements(
-                        idempotency_key="repeat-save:1",
-                    )
+                        "dom_button_1": ContractRequirements(
+                            idempotency_key="repeat-save:1",
+                            verifier_plan=(
+                                VerifierSpec("observation_metadata", "saved", True),
+                            ),
+                        )
                 }
             ),
             task_planner=SingleStageTaskPlanner(),
@@ -1259,6 +1374,11 @@ def _semantic_task() -> TaskSpec:
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("settings",),
         success_criteria=("settings are saved",),
+        success=SuccessExpression(
+            expression_id="success:settings-saved",
+            operator="criterion",
+            criterion_id="criterion:task-success",
+        ),
         evidence_requirements=("saved observation",),
         requested_capabilities=("settings.write",),
         source_request_ref="semantic-request",
@@ -1325,7 +1445,9 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
                                 "observation_metadata",
                                 "saved",
                                 True,
-                                criterion_ids=(criterion_id("subgoal", "subgoal-1", 0),),
+                                criterion_ids=(
+                                    criterion_id("subgoal", "subgoal-1", 0),
+                                ),
                                 requirement_ids=(
                                     evidence_requirement_id("subgoal", "subgoal-1", 0),
                                 ),
@@ -1347,19 +1469,25 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
         "completed_subgoal_ids": ["subgoal-1"],
     }
     events = [node.kind for node in result.trace.nodes]
-    assert events.count("PlannerProposalProduced") == 1
+    assert events.count("PlannerProposalProduced") == 0
+    assert events.count("ActionChoiceSelected") == 1
     assert result.state.latest_planner_proposal
-    assert result.state.latest_planner_proposal["provenance"]["producer_id"] == "coordinator-test-planner"
-    produced = next(node for node in result.trace.nodes if node.kind == "PlannerProposalProduced")
-    assert produced.payload["provenance"]["source"] == "deterministic_rule"
+    assert result.state.latest_planner_proposal["selection_id"].startswith("choice:")
     contract_event = next(node for node in result.trace.nodes if node.kind == "ContractBuilt")
-    assert contract_event.payload["proposal_id"] == "proposal-save"
+    assert contract_event.payload["proposal_id"] == ""
+    assert contract_event.payload["choice_id"].startswith("choice:")
 
 
 def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target() -> None:
     snapshot = _snapshot(1)
     state = StateKernel("generic-progress", "Record the Save control outcome")
-    state.remember_observation(snapshot.observation)
+    state.remember_observation_commit(
+        ObservationCommit(
+            ObservationRef(snapshot.observation.snapshot_id, "sha256:test-snapshot"),
+            snapshot.observation.environment_revision,
+            snapshot.observation.page_revision,
+        )
+    )
     state.install_task_plan(
         TaskPlan(
             plan_id="plan-generic-progress",
@@ -1420,6 +1548,7 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
         ),
         task_planner=None,
     )
+    capture = PerceptionCapture.from_browser_snapshot(snapshot)
 
     bound = coordinator.action_stage._bind(
         ActionStageInput(
@@ -1431,7 +1560,8 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
                 proposal=proposal,
                 proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             ),
-            snapshot=snapshot,
+            capture=capture,
+            observation=canonical_observation(snapshot),
             state_view=runtime_state_snapshot(state),
             remaining_budgets=RemainingRecoveryBudgets(),
         )
@@ -1471,7 +1601,8 @@ def test_action_stage_binds_terminal_verifier_to_explicit_active_progress_target
                 proposal=repeated_proposal,
                 proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             ),
-            snapshot=snapshot,
+            capture=capture,
+            observation=canonical_observation(snapshot),
             state_view=runtime_state_snapshot(state),
             remaining_budgets=RemainingRecoveryBudgets(),
         )
@@ -1508,9 +1639,15 @@ class RepeatingSemanticPlanner:
 class StableSavedObserver:
     def __init__(self, *, saved: bool) -> None:
         self.saved = saved
+        self.capture_count = 0
 
     def capture(self) -> BrowserSnapshot:
-        return _snapshot(1, saved=self.saved)
+        self.capture_count += 1
+        return _snapshot(
+            1,
+            saved=self.saved,
+            snapshot_id=f"snapshot-stable-saved-{self.capture_count}",
+        )
 
 
 @dataclass
@@ -1544,7 +1681,7 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
         task_planner=None,
     ).run_sync(RunRequest(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status != RuntimeStep.DONE
     assert executor.calls == 1
     assert result.state.latest_progress_guard is not None
     assert result.state.latest_progress_guard["reason"] == "effect_already_satisfied"
@@ -1580,7 +1717,9 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_pa
 
 def test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied() -> None:
     state = StateKernel("slider", "move slider several steps")
-    state.remember_observation(Observation("rev-2"))
+    state.remember_observation_commit(
+        ObservationCommit(ObservationRef("epoch-rev-2", "sha256:test"), "rev-2", "rev-2")
+    )
     signature = json.dumps(
         {"action_kind": "press_key", "target": "slider", "parameters": {"key": "ArrowRight"}},
         sort_keys=True,
@@ -1598,7 +1737,9 @@ def test_progress_guard_allows_repeated_verified_delta_until_effect_is_satisfied
 
 def test_progress_guard_blocks_an_alternating_return_to_a_satisfied_effect() -> None:
     state = StateKernel("task-1", "Select controls")
-    state.remember_observation(Observation("rev-3", page_revision="page-1"))
+    state.remember_observation_commit(
+        ObservationCommit(ObservationRef("epoch-rev-3", "sha256:test"), "rev-3", "page-1")
+    )
     checkbox_a = json.dumps(
         {"action_kind": "activate", "target": "checkbox-a", "parameters": {}},
         sort_keys=True,
@@ -1643,47 +1784,43 @@ class _PipelineIntentModel:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        del messages, config
-        if output_schema.__name__ == "TaskObligationCoverageReview":
-            return output_schema.model_validate(
-                {
-                    "status": "complete",
-                    "covered_claim_ids": ["claim-save-settings"],
-                }
-            )
+        del config
+        request_payload = json.loads(messages[-1].content)
+        source_ref = request_payload["source_envelope"]["anchors"][0]["anchor_id"]
         return output_schema.model_validate(
-            IntentDraft(
-                objective="Save settings",
-                requested_effects=(
-                    RequestedEffect(
-                        operation_class=OperationClass.REVERSIBLE_WRITE,
-                        target="settings",
-                        capability="settings.write",
-                        source_ref="pipeline-run",
-                    ),
-                ),
-                candidate_success_criteria=("settings are saved",),
-                candidate_evidence_requirements=("saved observation",),
-                candidate_source_claims=(
-                    SourcedTaskClaim(
-                        claim_id="claim-save-settings",
-                        kind=TaskClaimKind.TERMINAL,
-                        statement="save settings",
-                        source_ref="pipeline-run",
-                    ),
-                ),
-                candidate_obligations=(
-                    TaskObligationSpec(
-                        obligation_id="obligation-save-settings",
-                        kind=TaskObligationKind.EFFECT,
-                        subject="settings",
-                        relation=TaskObligationRelation.IS_COMPLETED,
-                        claim_ids=("claim-save-settings",),
-                        evidence_requirements=("saved observation",),
-                        terminal=True,
-                    ),
-                ),
-            ).model_dump()
+            {
+                "objective": "Save settings",
+                "requested_effects": [
+                    {
+                        "operation_class": "reversible_write",
+                        "target": "settings",
+                        "capability": "settings.write",
+                        "source_ref": source_ref,
+                    }
+                ],
+                "success_criteria": ["settings are saved"],
+                "success": SuccessExpression(
+                    expression_id="success:pipeline-save",
+                    operator="criterion",
+                    criterion_id="criterion:task-success",
+                ).model_dump(mode="json"),
+                "evidence_requirements": ["saved observation"],
+            }
+        )
+
+
+class _PipelineObserver(FakeObserver):
+    def capture(self) -> BrowserSnapshot:
+        snapshot = super().capture()
+        metadata = dict(snapshot.observation.metadata)
+        metadata["criterion_evaluations"] = {
+            "criterion:task-success": (
+                "satisfied" if metadata.get("saved") is True else "unsatisfied"
+            )
+        }
+        return replace(
+            snapshot,
+            observation=replace(snapshot.observation, metadata=metadata),
         )
 
 
@@ -1691,7 +1828,7 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
     pipeline = GeneralistTaskPipeline(
         compiler=LLMIntentCompiler(_PipelineIntentModel()),
         coordinator=compose_run_coordinator(
-            observer=FakeObserver(),
+            observer=_PipelineObserver(),
             planner=ActiveSubgoalSavePlanner(),
             executor=FakeExecutor(),
             contract_builder=_metadata_builder("saved"),
@@ -1705,13 +1842,14 @@ def test_raw_request_pipeline_preserves_compiler_to_contract_lineage() -> None:
     assert result.coordinator is not None
     assert [node.kind for node in result.trace.nodes][:6] == [
         "UserRequestReceived",
-        "SourceLedgerBuilt",
-        "IntentDraftProduced",
-        "TaskObligationCoverageReviewed",
-        "TaskSpecCreated",
+        "SourceEnvelopeBuilt",
+        "MinimalIntentProposalProduced",
+        "SemanticAuditEvaluated",
+        "TaskSpecAdmissionDecided",
         "TaskCreated",
     ]
-    assert "PlannerProposalProduced" in [node.kind for node in result.trace.nodes]
+    assert "ActionChoiceCatalogBuilt" in [node.kind for node in result.trace.nodes]
+    assert "ActionChoiceSelected" in [node.kind for node in result.trace.nodes]
     assert "ContractBuilt" in [node.kind for node in result.trace.nodes]
 
 

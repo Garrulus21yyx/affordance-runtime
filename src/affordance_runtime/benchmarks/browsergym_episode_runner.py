@@ -28,6 +28,7 @@ from affordance_runtime.benchmarks.browsergym_encoder import (
 from affordance_runtime.benchmarks.browsergym_observer import BrowserGymObserver
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
+    BROWSERGYM_SUCCESS_CRITERION_ID,
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
     BrowserGymEpisodeState,
@@ -79,10 +80,15 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
+from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
 from affordance_runtime.task_planning import LLMTaskPlanner, PlanningRouter
+from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
+from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -216,6 +222,16 @@ class BrowserGymGeneralistPlanner:
         if terminal is not None:
             return terminal
         return self._planner.propose(request)
+
+    def propose_canonical(
+        self,
+        request: PlanningRequest,
+        observation: UnifiedObservation,
+    ) -> PlannerResponse | Any:
+        terminal = _browsergym_terminal_response(self.episode)
+        if terminal is not None:
+            return terminal
+        return self._planner.propose_canonical(request, observation)
 
 
 def _browsergym_terminal_response(
@@ -530,6 +546,11 @@ def run_browsergym_episode(
         operation_class=OperationClass.READ_ONLY,
         targets=(task_id,),
         success_criteria=("official BrowserGym environment terminates with positive reward",),
+        success=SuccessExpression(
+            expression_id="success:browsergym-official-grade",
+            operator="criterion",
+            criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
+        ),
         evidence_requirements=("official reward and termination",),
         source_request_ref=f"browsergym:{task_id}:seed:{seed}",
     )
@@ -660,22 +681,60 @@ def run_browsergym_generalist_episode(
         intent_call_attempted = True
         episode_phase = "intent_compilation"
         intent_compiler = LLMIntentCompiler(model)
-        compilation = resolve_awaitable(
-            intent_compiler.compile(
-                UserRequest(
-                    request_id=run_id,
-                    raw_text=goal,
-                    channel="browser-runtime",
-                ),
-                task_id=run_id,
-                trace=intake_trace,
-            )
+        user_request = UserRequest(
+            request_id=run_id,
+            raw_text=goal,
+            channel="browser-runtime",
+        )
+        envelope = SourceEnvelopeBuilder().build(user_request)
+        parent = intake_trace.add(
+            "SourceEnvelopeBuilt",
+            {
+                "source_envelope_ref": envelope.identity,
+                "source_binding_digest": envelope.binding_digest,
+                "content_digest": envelope.content_digest,
+                "content_length": envelope.content_length,
+            },
+        )
+        proposal = resolve_awaitable(
+            intent_compiler.propose(user_request, envelope, trace=intake_trace, parent=parent)
+        )
+        audit = SemanticAudit().evaluate(envelope, proposal)
+        parent = intake_trace.add(
+            "SemanticAuditEvaluated",
+            audit.model_dump(mode="json"),
+            parents=[intake_trace.nodes[-1].id],
+        )
+        if audit.status != SemanticAuditStatus.PASS:
+            raise ValueError(f"semantic audit {audit.status.value}: {','.join(audit.issue_codes)}")
+        compilation = TaskSpecAuthority().admit(
+            user_request,
+            envelope,
+            proposal,
+            task_id=run_id,
+        )
+        intake_trace.add(
+            "TaskSpecAdmissionDecided",
+            {
+                "status": compilation.status.value,
+                "authority": "TaskSpecAuthority",
+                "task_spec_identity": compilation.task_spec.identity if compilation.task_spec else "",
+            },
+            parents=[parent.id],
         )
         if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
             issue_codes = ",".join(item.code for item in compilation.issues)
             raise ValueError(f"intent compilation {compilation.status.value}: {issue_codes}")
         episode_phase = "runtime"
-        task_spec = compilation.task_spec
+        task_spec = compilation.task_spec.model_copy(
+            update={
+                "success": SuccessExpression(
+                    expression_id="success:browsergym-official-grade",
+                    operator="criterion",
+                    criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
+                )
+            }
+        )
         perception_requirements = derive_perception_requirements(task_spec)
         planner_limits = PlannerLimits(
             max_steps=max_steps,
@@ -1019,9 +1078,7 @@ def _browsergym_model_stats(nodes: Sequence[Any], attempted_calls: int) -> dict[
         for node in nodes
         if node.kind
         in {
-            "IntentDraftProduced",
-            "IntentDraftRepairProduced",
-            "TaskObligationCoverageReviewed",
+            "MinimalIntentProposalProduced",
             "PlannerProposalProduced",
         }
         and isinstance(node.payload.get("model_call"), Mapping)

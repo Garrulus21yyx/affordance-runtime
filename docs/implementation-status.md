@@ -10,9 +10,10 @@
 The Task Contract-centered target is **not implemented as a whole**. Current
 production code contains substantial ActionContract, approval, preflight,
 execution, observation, verification, recovery, trace, planner-request, and
-Coordinator-containment foundations. It also retains legacy source, TaskSpec,
-TaskPlan/Subgoal/PlanProgress, action-choice, and completion paths that the new
-evolution plan explicitly replaces.
+Coordinator-containment foundations. P0-A completion authority, P0-B canonical
+observation authority, and P0-C Runtime-owned action space are cut over. It
+still retains legacy source, broader TaskSpec shape, and
+TaskPlan/Subgoal/PlanProgress paths that later slices explicitly replace.
 
 Documentation consolidation does not promote any production capability.
 
@@ -22,14 +23,15 @@ Documentation consolidation does not promote any production capability.
 |---|---|---|---|
 | Source intake | heavy SourceLedger/clause/claim/obligation compatibility remains on default paths | lightweight SourceEnvelope + selective SourceAnchor; optional SemanticAudit | pending cutover |
 | Semantic authority | raw-language read/write boundaries are not yet represented by the target SourceContextView/TaskSpecGap contracts across production modules | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | pending cutover |
-| Task contract | TaskSpec still carries extraction-era execution/provenance fields and lacks canonical TaskRequirement/output closure shape | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | pending cutover |
+| Task contract | TaskSpec now carries the narrow typed success expression, required outputs, constraints, external effects and final-recheck references needed by P0-A; the broader extraction-era shape remains | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P0-A narrow closure fields implemented; P3 contract cutover pending |
 | Task planning | legacy Step/Subgoal projections and obligation-shaped routing remain | observation-grounded replaceable TaskPlan<StepSpec> | pending cutover |
-| Observation | UnifiedObservation foundation exists; presentation-derived paths remain | capture-built canonical observation is sole Runtime authority | pending cutover |
-| Action choice | typed ActionChoice foundations exist; ownership/order and presentation semantics still have compatibility paths | full Runtime Catalog before bounded semantic ChoicePage | pending cutover |
-| ActionContract and gates | versioning, authorization, capability, approval, preflight and stale checks have substantive foundations | retain and bind to canonical observation/catalog identity | retain + harden |
+| Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
+| Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings and ActionContractBuilder selects the current route | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C complete; P1–P2 pending |
+| Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; bounded ChoicePage and displayed-ID validation are separate owners | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C complete |
+| ActionContract and gates | selected choice, Catalog digest, canonical observation and current binding are sealed into ActionContract; ordered Task/Capability/Approval/Freshness admission is in-process and typed | retain and bind to canonical observation/catalog identity | P0-C complete; later policy matrix refinement pending |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
-| Verification | mechanical verifiers and typed reports exist; legacy Boolean/latest-report/fallback surfaces remain | loop-native typed evaluation with bounded evidence locations | pending cutover |
-| Task completion | centralized success commit foundations exist; full TaskSpec.success plus required-output closure is not the sole default authority | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A pending |
+| Verification | mechanical verifier reports remain evidence providers; disabled verification is INCONCLUSIVE and receipt-only reports cannot complete a task; loop-wide evidence policy remains incomplete | loop-native typed evaluation with bounded evidence locations | P0-A completion cutover complete; P1/P2 evidence cutover pending |
+| Task completion | full typed TaskSpec.success closure, declared constraints/effects, authoritative final rechecks and source-bound required outputs are evaluated by the pure TaskCompletionEvaluator; RuntimeCommitter is the sole TaskCompleted writer; latest-report, plan/prose and no-TaskSpec fallbacks are removed | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A complete |
 | Recovery | typed owner/router and bounded recovery foundations exist | typed causes, no generic-string ownership, no blind external retry | retain + refine |
 | Trace/evaluation | trace, artifacts, benchmark reports and evidence records exist | offline consumers, never synchronous completion authority | retain |
 
@@ -38,6 +40,9 @@ Documentation consolidation does not promote any production capability.
 ```yaml
 authoritative_target: current_not_implemented_as_a_whole
 active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_page
+cross_surface_foundations: existing_not_canonical_cutover
+cross_surface_target: DOM_AX_Visual_SVG_WoT_API_Device
+cross_surface_cutover: P0-B_P0-C_complete_P1_P2_pending
 source_target: SourceEnvelope_plus_selective_SourceAnchor
 semantic_audit: risk_triggered_veto_or_clarify_only
 semantic_authority_boundary: target_not_implemented
@@ -45,10 +50,16 @@ semantic_context_visibility: bounded_context_only_allowlist
 execution_raw_text_input: prohibited_target_not_cut_over
 requirement_identity: target_not_implemented
 dependency_model: typed_value_refs_plus_StepSpec_depends_on
-choice_presentation_contract: target_not_implemented
+choice_presentation_contract: canonical_P0_C_cutover_complete
+catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
+observation_indexed_epoch: canonical_P0_B_cutover_complete
+authority_in_process_composition: shared_in_process_observation_store_complete
+criterion_provider_phasing: target_not_implemented
+typed_task_planner_trigger: target_not_implemented
+risk_derived_feature_profiles: target_not_implemented
 verification_shape: loop_native_typed_evaluation
-task_completion_semantics: TaskCompletionEvaluator
-required_output_closure: target_not_implemented
+task_completion_semantics: canonical_P0_A_cutover_complete
+required_output_closure: narrow_typed_P0_A_complete_full_P3_contract_pending
 task_completion_commit: RuntimeCommitter_only
 evidence_locations: current_observation_plus_bounded_recent_ActionOutcome_plus_small_DurableEvidenceStore
 source_invariants: SOU-01_through_SOU-12
@@ -60,6 +71,8 @@ requirement_invariants: REQ-01_through_REQ-05
 dependency_invariants: DEP-01_through_DEP-03
 choice_invariants: CHOICE-13
 output_invariants: OUT-01_through_OUT-03
+physical_minimality_invariants: CAT-PHY-01_OBS-PHY-01_AUTH-PHY-01_CRIT-PHY-01_PLAN-PHY-01_PROFILE-01
+cross_surface_invariants: SURFACE-01_through_SURFACE-03
 ```
 
 ## 4. Evidence and promotion
@@ -81,7 +94,7 @@ output_invariants: OUT-01_through_OUT-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change from this documentation slice | none |
+| production behavior change | P0-A completion, P0-B canonical observation, P0-C Runtime action-space, P0-E thin-source/single-admission, and P0-D compact redlines are complete; P1 and later slices remain pending |
 
 ## 6. Historical ledger
 

@@ -28,7 +28,7 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
-from runtime_test_support import make_interaction
+from runtime_test_support import canonical_observation, make_interaction, remember_observation
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ def _snapshot() -> BrowserSnapshot:
 
 def _state() -> StateKernel:
     state = StateKernel(task_id=_task().task_id, goal=_task().objective)
-    state.remember_observation(_snapshot().observation)
+    remember_observation(state, _snapshot().observation)
     return state
 
 
@@ -127,7 +127,7 @@ def test_flow_prepares_accepted_initial_plan_without_mutating_state() -> None:
     result = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -142,7 +142,7 @@ def test_commit_preparation_projects_initial_trace_without_state_mutation() -> N
     result = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         _state(),
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
     preparation = TaskPlanCommitPreparation(result)
@@ -199,7 +199,7 @@ def test_flow_preserves_initial_validation_issues_without_mutating_state() -> No
     result = TaskPlanFlow(TaskPlanLifecycle(InvalidPlanner())).prepare(
         _task(),
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -218,7 +218,7 @@ def test_flow_treats_already_satisfied_entry_as_progress_precheck_not_plan_failu
     result = TaskPlanFlow(TaskPlanLifecycle(AlreadySatisfiedEntryPlanner())).prepare(
         _task(),
         state,
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -236,7 +236,7 @@ def test_commit_preparation_projects_failure_and_normalizes_commit_exception() -
     invalid = TaskPlanFlow(TaskPlanLifecycle(InvalidPlanner())).prepare(
         _task(),
         _state(),
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
     rejection = TaskPlanCommitPreparation(invalid).failure_projection(state_phase="observing")
@@ -246,7 +246,7 @@ def test_commit_preparation_projects_failure_and_normalizes_commit_exception() -
     accepted = TaskPlanFlow(TaskPlanLifecycle(FlatFixturePlanner())).prepare(
         _task(),
         _state(),
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
     normalized = TaskPlanCommitPreparation(accepted).with_commit_failure(RuntimeError("state changed"))
@@ -264,7 +264,7 @@ def test_flow_types_initial_invocation_failure() -> None:
     result = TaskPlanFlow(TaskPlanLifecycle(ExplodingPlanner())).prepare(
         _task(),
         _state(),
-        _snapshot(),
+        canonical_observation(_snapshot()),
         Limits(),
     )
 
@@ -358,7 +358,7 @@ def test_flow_preserves_replacement_reason_and_validation_issue() -> None:
     state = _state_requiring_replacement()
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.IS_CHECKED))
-    ).prepare(_task(), state, _snapshot(), Limits())
+    ).prepare(_task(), state, canonical_observation(_snapshot()), Limits())
 
     assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.replacement is not None
@@ -421,7 +421,7 @@ def test_flow_discards_current_state_satisfied_read_only_subgoal_without_replann
 
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.HAS_CHANGED))
-    ).prepare(_task(), state, _snapshot(), Limits())
+    ).prepare(_task(), state, canonical_observation(_snapshot()), Limits())
 
     assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.accepted
@@ -479,7 +479,7 @@ def test_flow_discards_ready_current_state_satisfied_read_only_subgoal_when_acti
 
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.IS_AVAILABLE))
-    ).prepare(_task(), state, _snapshot(), Limits())
+    ).prepare(_task(), state, canonical_observation(_snapshot()), Limits())
 
     assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.accepted
@@ -494,7 +494,7 @@ def test_flow_prepares_valid_replacement_without_committing_it() -> None:
     state = _state_requiring_replacement()
     result = TaskPlanFlow(
         TaskPlanLifecycle(ReplacementPlanner(SubgoalOutcomeRelation.HAS_CHANGED))
-    ).prepare(_task(), state, _snapshot(), Limits())
+    ).prepare(_task(), state, canonical_observation(_snapshot()), Limits())
 
     assert result.kind == TaskPlanFlowKind.REPLACEMENT
     assert result.accepted

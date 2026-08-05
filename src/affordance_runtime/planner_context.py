@@ -27,6 +27,7 @@ class AffordanceSummary(BaseModel):
     role: str
     label: str
     action: str
+    supported_actions: tuple[str, ...] = ()
     confidence: float
     state: dict[str, Any]
 
@@ -199,7 +200,15 @@ class PlannerContextBuilder:
                     surface=item.surface,
                     role=item.role,
                     label=item.label,
-                    action=item.supported_actions[0] if item.supported_actions else "",
+                    action=next(
+                        (
+                            action
+                            for action in item.supported_actions
+                            if action != "focus"
+                        ),
+                        item.supported_actions[0] if item.supported_actions else "",
+                    ),
+                    supported_actions=item.supported_actions,
                     confidence=item.confidence if item.confidence is not None else 0.0,
                     state={key: thaw_request_value(value) for key, value in item.state},
                 )

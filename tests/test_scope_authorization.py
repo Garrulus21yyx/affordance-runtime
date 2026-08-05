@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.collection_window import OrdinalRouteConstraint, OrdinalRouteKind
 from affordance_runtime.contracts import Observation, ScopeRelationKind, VerifierSpec
@@ -16,7 +17,6 @@ from affordance_runtime.grounding import (
     UnifiedAffordance,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -34,6 +34,7 @@ from affordance_runtime.scope_authorization import (
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import canonical_observation, remember_observation
 
 PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -291,7 +292,7 @@ def test_unique_value_control_authorization_is_bound_into_contract_hash() -> Non
     snapshot = BrowserSession(_Page('<label>Tags<input id="tags"></label>')).capture()  # type: ignore[arg-type]
     target = snapshot.unified_affordances[0]
     state = StateKernel("autocomplete", "Enter Com")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     proposal = PlannerProposal(
         proposal_id="autocomplete-proposal",
         based_on_task_revision=1,
@@ -302,7 +303,13 @@ def test_unique_value_control_authorization_is_bound_into_contract_hash() -> Non
         parameters={"text": "Com"},
     )
 
-    PlannerProposalValidator().validate(proposal, PROVENANCE, _autocomplete_task(), state, snapshot)
+    PlannerProposalValidator().validate(
+        proposal,
+        PROVENANCE,
+        _autocomplete_task(),
+        state,
+        canonical_observation(snapshot),
+    )
     contract = ContractBuilder(
         requirements={
             target.semantic_target_id: ContractRequirements(
@@ -326,7 +333,7 @@ def test_value_does_not_authorize_an_arbitrary_control_or_mixed_option_list() ->
     ).capture()
     tags = next(item for item in snapshot.unified_affordances if item.label == "Tags")
     state = StateKernel("autocomplete", "Enter Com")
-    state.remember_observation(snapshot.observation)
+    remember_observation(state, snapshot.observation)
     proposal = PlannerProposal(
         proposal_id="ambiguous-control",
         based_on_task_revision=1,
@@ -338,7 +345,13 @@ def test_value_does_not_authorize_an_arbitrary_control_or_mixed_option_list() ->
     )
 
     with pytest.raises(ProposalRejected) as caught:
-        PlannerProposalValidator().validate(proposal, PROVENANCE, _autocomplete_task(), state, snapshot)
+        PlannerProposalValidator().validate(
+            proposal,
+            PROVENANCE,
+            _autocomplete_task(),
+            state,
+            canonical_observation(snapshot),
+        )
 
     assert caught.value.code == ProposalRejectionCode.TARGET_OUT_OF_SCOPE
     assert caught.value.reason_code == ScopeRejectionReason.RELATIONAL_EVIDENCE_NOT_PROVEN

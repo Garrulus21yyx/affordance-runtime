@@ -1,10 +1,11 @@
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Sequence, TypeVar
 
 from pydantic import BaseModel
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
@@ -16,13 +17,13 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     RiskLevel,
+    Surface,
     VerifierSpec,
 )
 from affordance_runtime.executors import VisualExecutor, WotExecutor
 from affordance_runtime.generalist_planner import GeneralistLMPlanner, GeneralistPlannerProfile
 from affordance_runtime.model_port import ModelCallRecord, ModelConfig, ModelMessage
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -36,6 +37,7 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.verification.contracts import SuccessExpression
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -50,6 +52,11 @@ class StaticObserver:
             snapshot_id=snapshot_id,
             page_revision=page_revision,
             target_fingerprints={affordance.id: affordance.target_fingerprint},
+            metadata=(
+                {"image_width": 100, "image_height": 100}
+                if affordance.surface.value == "visual"
+                else {}
+            ),
         )
         model = PageAffordanceModel("surface", "", revision, snapshot_id, page_revision, [affordance], 1, 1)
         self.snapshot = BrowserSnapshot(observation, model)
@@ -150,6 +157,11 @@ def _surface_task(
             operation_class=OperationClass.READ_ONLY,
             targets=(target or objective,),
             success_criteria=("action verified",),
+            success=SuccessExpression(
+                expression_id="success:action-verified",
+                operator="criterion",
+                criterion_id="criterion:action-verified",
+            ),
             source_request_ref="cross-surface-test",
         )
     )
@@ -164,13 +176,25 @@ def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             StaticObserver(affordance),
-            OneActionPlanner(VerifierSpec("evidence", "action", "visual_click")),
+            OneActionPlanner(
+                VerifierSpec(
+                    "evidence",
+                    "action",
+                    "visual_click",
+                    criterion_ids=("criterion:action-verified",),
+                )
+            ),
             VisualExecutor(Pointer()),
             contract_builder=ContractBuilder(
                 requirements={
                     affordance.id: ContractRequirements(
                         verifier_plan=(
-                            VerifierSpec("evidence", "action", "visual_click"),
+                            VerifierSpec(
+                                "evidence",
+                                "action",
+                                "visual_click",
+                                criterion_ids=("criterion:action-verified",),
+                            ),
                         )
                     )
                 }
@@ -179,8 +203,9 @@ def test_visual_affordance_uses_task_coordinator_contract_trace_path() -> None:
         ).run(_surface_task("visual-run", "click visual target"))
     )
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.FAILED
     assert result.result == {"surface": "visual"}
+    assert "TaskCompleted" not in [node.kind for node in result.trace.nodes]
     assert "PostActionEvaluated" in [node.kind for node in result.trace.nodes]
 
 
@@ -199,12 +224,26 @@ def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:
     result = asyncio.run(
         compose_run_coordinator(
             StaticObserver(affordance),
-            OneActionPlanner(VerifierSpec("evidence", "status", 200)),
+            OneActionPlanner(
+                VerifierSpec(
+                    "evidence",
+                    "status",
+                    200,
+                    criterion_ids=("criterion:action-verified",),
+                )
+            ),
             WotExecutor(send=send),
             contract_builder=ContractBuilder(
                 requirements={
                     affordance.id: ContractRequirements(
-                        verifier_plan=(VerifierSpec("evidence", "status", 200),),
+                        verifier_plan=(
+                            VerifierSpec(
+                                "evidence",
+                                "status",
+                                200,
+                                criterion_ids=("criterion:action-verified",),
+                            ),
+                        ),
                         idempotency_key="fixture-wot-action",
                     )
                 }
@@ -219,8 +258,9 @@ def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:
         )
     )
 
-    assert result.status == RuntimeStep.DONE
+    assert result.status == RuntimeStep.FAILED
     assert result.result == {"surface": "wot"}
+    assert "TaskCompleted" not in [node.kind for node in result.trace.nodes]
 
 
 def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> None:
@@ -242,6 +282,10 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
     model = GeneralistSurfaceModel()
 
     def run(affordance: Affordance, executor: Any, verifier: VerifierSpec) -> RuntimeStep:
+        verifier = replace(
+            verifier,
+            criterion_ids=("criterion:shared-state-enabled",),
+        )
         task = TaskSpec(
             task_id=f"generalist-{affordance.surface.value}",
             revision=1,
@@ -249,7 +293,19 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
             operation_class=OperationClass.REVERSIBLE_WRITE,
             targets=("shared-state",),
             success_criteria=("shared state enabled",),
+            success=SuccessExpression(
+                expression_id="success:shared-state-enabled",
+                operator="criterion",
+                criterion_id="criterion:shared-state-enabled",
+            ),
             requested_capabilities=("shared.write",),
+            evidence_requirements=(
+                "visual appearance"
+                if affordance.surface == Surface.VISUAL
+                else "device property"
+                if affordance.surface == Surface.WOT
+                else "structural text",
+            ),
             source_request_ref="surface-test",
         )
         requirements = ContractRequirements(
@@ -278,9 +334,9 @@ def test_same_generalist_planner_port_binds_dom_visual_and_wot_affordances() -> 
         validated = next(node for node in result.trace.nodes if node.kind == "PlannerProposalValidated")
         assert validated.payload["provenance"]["profile_id"] == "historical-compatibility"
         assert "semantic_compiler" not in validated.payload
-        assert result.status == RuntimeStep.DONE, result.error_code
+        assert result.status == RuntimeStep.FAILED, result.error_code
         return result.status
 
-    assert run(dom, EvidenceExecutor("dom", {"action": "dom_click"}), VerifierSpec("evidence", "action", "dom_click")) == RuntimeStep.DONE
-    assert run(visual, VisualExecutor(Pointer()), VerifierSpec("evidence", "action", "visual_click")) == RuntimeStep.DONE
-    assert run(wot, WotExecutor(send=lambda *args, **kwargs: (200, {})), VerifierSpec("evidence", "status", 200)) == RuntimeStep.DONE
+    assert run(dom, EvidenceExecutor("dom", {"action": "dom_click"}), VerifierSpec("evidence", "action", "dom_click")) == RuntimeStep.FAILED
+    assert run(visual, VisualExecutor(Pointer()), VerifierSpec("evidence", "action", "visual_click")) == RuntimeStep.FAILED
+    assert run(wot, WotExecutor(send=lambda *args, **kwargs: (200, {})), VerifierSpec("evidence", "status", 200)) == RuntimeStep.FAILED

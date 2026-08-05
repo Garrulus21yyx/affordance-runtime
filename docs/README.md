@@ -30,10 +30,22 @@ does not add a stage or authority to the production chain. TaskSpecAuthority is
 the only accepted-meaning writer; execution and completion paths remain
 raw-text-free.
 
+Read the architecture in layers: §0 freezes the core laws and amendments;
+contract/authority sections define normative semantics; migration and Gate
+sections define rollout and verification. Logical Catalog/observation
+completeness may use lazy indexes and refs, and logical authorities default to
+in-process composition rather than one service/store per name.
+
+DOM, AX, Visual, SVG, WoT, API, and Device are composable surfaces within that
+single chain: one canonical target retains their current bindings/conflicts,
+Planner selects the semantic action, and ActionContractBuilder selects the
+current backend/binding. This is an explicit surface vocabulary clarification,
+not an additional authority or production-completion claim.
+
 ## 2. Current implementation truth and work
 
 - [Project Plan](project-plan.md): durable P0–P5 product roadmap.
-- [Current Implementation Plan](current-implementation-plan.md): active and next queue only.
+- [Current Implementation Plan](current-implementation-plan.md): granular P0–P5 cutover table, module/deletion ownership, Anti-God-File rules, and minimal test policy.
 - [Implementation Status](implementation-status.md): factual current-vs-target state.
 
 Target authority does not imply implementation. Status/history does not redefine

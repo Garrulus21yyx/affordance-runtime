@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -8,7 +9,6 @@ from affordance_runtime.contracts import Observation, ProgressEvidenceScope, Ver
 from affordance_runtime.executors import ExecutorRouter, WotExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -28,6 +28,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -173,6 +174,11 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Power",),
         success_criteria=("device power is true",),
+        success=SuccessExpression(
+            expression_id="success:device-power",
+            operator="criterion",
+            criterion_id="criterion:device-power",
+        ),
         evidence_requirements=("authoritative device state",),
         requested_capabilities=("device.write",),
         source_request_ref="test",
@@ -189,6 +195,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
                             "observation_metadata",
                             "power",
                             True,
+                            criterion_ids=("criterion:device-power",),
                             progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                         ),
                     ),

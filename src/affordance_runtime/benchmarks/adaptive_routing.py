@@ -14,6 +14,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
@@ -43,7 +44,6 @@ from affordance_runtime.evolution import (
 from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource, SourceObservation
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -70,6 +70,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 ABLATION_PROFILES = (
     "dom_only",
@@ -180,7 +181,15 @@ class _AblationObserver:
             screenshot_ref=f"screen-{sequence}.png",
             snapshot_id=snapshot_id,
             page_revision=page_revision,
-            metadata={"saved": self.world.saved, "viewport_size": [640, 480]},
+            metadata={
+                "saved": self.world.saved,
+                "viewport_size": [640, 480],
+                "criterion_evaluations": {
+                    "criterion:ablation-saved": (
+                        "satisfied" if self.world.saved else "unsatisfied"
+                    )
+                },
+            },
         )
         sources = self._sources()
         affordances = {"dom": dom, "visual": visual}
@@ -195,7 +204,7 @@ class _AblationObserver:
                 image_size=(640, 480) if source == "visual" else None,
             )
             if self.case_id == "stale_candidates":
-                candidate = replace(candidate, observation_epoch_id="stale-observation")
+                candidate = replace(candidate, expires_at_s=1.0)
             candidates.append(candidate)
         target = SemanticEntityResolver().resolve(
             CandidateDescriptor("button", "Save", "click", "main", item) for item in candidates
@@ -391,6 +400,11 @@ def run_adaptive_routing_case(
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Save",),
         success_criteria=("saved state is true",),
+        success=SuccessExpression(
+            expression_id="success:ablation-saved",
+            operator="criterion",
+            criterion_id="criterion:ablation-saved",
+        ),
         evidence_requirements=(
             ("visual appearance and saved state",)
             if visual_primary or profile_forces_visual or case_id == "dom_failure_fallback"
@@ -401,7 +415,7 @@ def run_adaptive_routing_case(
     )
     accepted_skill = _accepted_save_skill() if profile == "adaptive_plus_task_skill" else None
     skill_owner_id = skill_step_owner_id("profile.save", "1.0.0", "step-1")
-    builder = ContractBuilder(
+    builder = ActionContractMaterializer(
         requirements={
             observer.semantic_target_id: ContractRequirements(
                 verifier_plan=(
@@ -409,7 +423,10 @@ def run_adaptive_routing_case(
                         "observation_metadata",
                         "saved",
                         True,
-                        criterion_ids=(criterion_id("skill-step", skill_owner_id, 0),),
+                        criterion_ids=(
+                            criterion_id("skill-step", skill_owner_id, 0),
+                            "criterion:ablation-saved",
+                        ),
                         requirement_ids=(evidence_requirement_id("skill-step", skill_owner_id, 0),),
                         progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                     ),

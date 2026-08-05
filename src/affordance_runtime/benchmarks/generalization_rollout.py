@@ -12,6 +12,7 @@ from typing import Any, Sequence, TypeVar
 
 from pydantic import BaseModel
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.adapters.wot import WotAdapter
 from affordance_runtime.artifacts import ArtifactStore
@@ -63,7 +64,6 @@ from affordance_runtime.model_port import (
     ProviderModelError,
 )
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -90,6 +90,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -124,7 +125,15 @@ class _SurfaceWorld:
             revision,
             snapshot_id=snapshot_id,
             page_revision="surface-page-v1",
-            metadata={"saved": self.saved, "viewport_size": [640, 480]},
+            metadata={
+                "saved": self.saved,
+                "viewport_size": [640, 480],
+                "criterion_evaluations": {
+                    "criterion:surface-saved": (
+                        "satisfied" if self.saved else "unsatisfied"
+                    )
+                },
+            },
             artifact_refs=[f"fixture:{self.surface.value}:{self.sequence}"],
         )
         candidate = (
@@ -342,17 +351,21 @@ class _DisclosureWorld:
     expanded: bool = False
     submitted: bool = False
     effects: int = 0
+    capture_sequence: int = 0
+    provider_recovered: bool = False
     backend: str = "dom"
 
     def capture(self) -> BrowserSnapshot:
+        self.capture_sequence += 1
         revision = f"expanded:{self.expanded}:submitted:{self.submitted}"
+        snapshot_id = f"disclosure-{self.capture_sequence}"
         model = DomAdapter().transduce(
             (
                 f'<h3 role="tab" aria-expanded="{str(self.expanded).lower()}" '
                 'aria-controls="panel">Section</h3><button>Submit</button>'
             ),
             environment_revision=revision,
-            snapshot_id=f"disclosure-{self.effects}",
+            snapshot_id=snapshot_id,
             page_revision="disclosure-v1",
             ttl_ms=60_000,
         )
@@ -361,7 +374,18 @@ class _DisclosureWorld:
             snapshot_id=model.snapshot_id,
             page_revision=model.page_revision,
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
-            metadata={"expanded": self.expanded, "submitted": self.submitted},
+            metadata={
+                "expanded": self.expanded,
+                "submitted": self.submitted,
+                "criterion_evaluations": {
+                    "criterion:disclosure-expanded": (
+                        "satisfied" if self.expanded else "unsatisfied"
+                    ),
+                    "criterion:provider-recovered": (
+                        "satisfied" if self.provider_recovered else "unsatisfied"
+                    ),
+                },
+            },
         )
         return BrowserSnapshot(observation, model)
 
@@ -418,12 +442,14 @@ class _ProviderFailOncePlanner:
 
 @dataclass
 class _ProviderSwitchOwner:
+    world: _DisclosureWorld
     owner_id: str = "g5-provider-registry"
     target_ref: str = "fixture-provider-b"
     calls: int = 0
 
     def execute(self, decision: RecoveryDecision) -> RecoveryOwnerResult:
         self.calls += 1
+        self.world.provider_recovered = True
         return RecoveryOwnerResult(
             owner_id=self.owner_id,
             kind=decision.kind,
@@ -668,6 +694,11 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
             else "saved",
         ),
         success_criteria=("saved state is true",),
+        success=SuccessExpression(
+            expression_id="success:surface-saved",
+            operator="criterion",
+            criterion_id="criterion:surface-saved",
+        ),
         evidence_requirements=("independent saved metadata",),
         source_request_ref=f"g5-rollout:{revision}",
     )
@@ -675,7 +706,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
         observer=world,
         planner=planner,
         executor=world,
-        contract_builder=ContractBuilder(
+        contract_builder=ActionContractMaterializer(
             requirements={
                 target_id: ContractRequirements(
                     verifier_plan=(
@@ -722,7 +753,12 @@ def _run_compatibility_pair(
             objective="Expand the section below.",
             operation_class=OperationClass.REVERSIBLE_WRITE,
             targets=("Section",),
-            success_criteria=("expanded state is true",),
+        success_criteria=("expanded state is true",),
+        success=SuccessExpression(
+            expression_id="success:disclosure-expanded",
+            operator="criterion",
+            criterion_id="criterion:disclosure-expanded",
+        ),
             evidence_requirements=("expanded metadata",),
             source_request_ref=f"g5-rollout:{revision}",
         )
@@ -730,7 +766,7 @@ def _run_compatibility_pair(
             observer=world,
             planner=planner,
             executor=world,
-            contract_builder=ContractBuilder(
+            contract_builder=ActionContractMaterializer(
                 requirements={
                     "dom_h3_1": ContractRequirements(
                         verifier_plan=(
@@ -765,7 +801,7 @@ def _run_compatibility_pair(
 def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCase:
     world = _DisclosureWorld()
     planner = _ProviderFailOncePlanner()
-    owner = _ProviderSwitchOwner()
+    owner = _ProviderSwitchOwner(world)
     task = TaskSpec(
         task_id="g5-provider-recovery",
         revision=1,
@@ -773,6 +809,11 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         operation_class=OperationClass.READ_ONLY,
         targets=(),
         success_criteria=("provider recovery is recorded",),
+        success=SuccessExpression(
+            expression_id="success:provider-recovered",
+            operator="criterion",
+            criterion_id="criterion:provider-recovered",
+        ),
         evidence_requirements=("owning-port recovery receipt",),
         source_request_ref=f"g5-rollout:{revision}",
     )

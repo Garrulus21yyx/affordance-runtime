@@ -42,8 +42,8 @@ from affordance_runtime.task_planning import (
     TaskPlanActionFamily,
     TaskPlanSource,
 )
-from affordance_runtime.verification import VerifierLadder, VerifierSpec
-from runtime_test_support import make_interaction
+from affordance_runtime.verification.mechanical import VerifierLadder, VerifierSpec
+from runtime_test_support import make_interaction, remember_observation
 
 
 def _affordance(
@@ -740,7 +740,7 @@ def test_generalist_builder_wires_exact_typed_value_scope() -> None:
         target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
     )
     state = _active_typed_outcome_state()
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     task = TaskSpec(
         task_id=state.task_id,
         revision=1,

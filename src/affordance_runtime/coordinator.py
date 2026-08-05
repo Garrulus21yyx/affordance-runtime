@@ -137,7 +137,9 @@ class RunCoordinator:
                     return terminal
                 continue
             assert perception.output is not None
-            snapshot = perception.output.snapshot
+            capture = perception.output.capture
+            observation = perception.output.observation
+            observation_ref = perception.output.observation_ref
             recovery_skill_progress = (
                 task_skill_progress(self.progress_stage.task_skill_runtime, loop.state)
                 if self.progress_stage.task_skill_runtime is not None
@@ -148,7 +150,7 @@ class RunCoordinator:
                     loop.state,
                     loop.trace,
                     loop.parent,
-                    snapshot,
+                    capture,
                     self.progress_stage.execution_loop,
                     task_skill_progress=recovery_skill_progress,
                 )
@@ -160,20 +162,25 @@ class RunCoordinator:
             progress = self.progress_stage.run(
                 ProgressStageInput(
                     envelope=envelope,
-                    snapshot=snapshot,
+                    capture=capture,
+                    observation=observation,
                     state_view=runtime_state_snapshot(loop.state),
                     budget=loop.budget,
                     remaining_budgets=loop.remaining_budgets,
                 )
             )
             loop.commit(progress)
+            if progress.terminal is not None:
+                return loop.finish(progress.terminal)
             if progress.directive == LoopDirective.REPEAT_OBSERVATION:
                 continue
             loop.enter_planning()
             planning = self.planning_stage.run(
                 PlanningStageInput(
                     envelope=envelope,
-                    snapshot=snapshot,
+                    capture=capture,
+                    observation=observation,
+                    observation_ref=observation_ref,
                     state_view=runtime_state_snapshot(loop.state),
                     budget=loop.budget,
                     latest_verification=loop.latest_verification,
@@ -183,6 +190,8 @@ class RunCoordinator:
             loop.commit(planning)
             if planning.terminal is not None:
                 return loop.finish(planning.terminal)
+            if planning.directive == LoopDirective.REPEAT_OBSERVATION:
+                continue
             if planning.failure is not None:
                 terminal = loop.recover(
                     planning.failure,
@@ -198,16 +207,22 @@ class RunCoordinator:
                 continue
             decision = planning.output.response
             skill_step_id = planning.output.skill_step_id
-            if not isinstance(decision, PlannerProposalResponse):
+            if (
+                not isinstance(decision, PlannerProposalResponse)
+                and (planning.output.selection is None or planning.output.catalog is None)
+            ):
                 raise RuntimeError("planning stage returned no actionable proposal")
             action = self.action_stage.run(
                 ActionStageInput(
                     envelope=envelope,
                     decision=decision,
-                    snapshot=snapshot,
+                    capture=capture,
+                    observation=observation,
                     state_view=runtime_state_snapshot(loop.state),
                     remaining_budgets=loop.remaining_budgets,
                     skill_step_id=skill_step_id,
+                    catalog=planning.output.catalog,
+                    selection=planning.output.selection,
                 )
             )
             loop.parent, pending_recovery_failed = self.committer.commit_action(
@@ -236,7 +251,8 @@ class RunCoordinator:
             progress = self.progress_stage.run(
                 ProgressStageInput(
                     envelope=envelope,
-                    snapshot=snapshot,
+                    capture=capture,
+                    observation=observation,
                     state_view=runtime_state_snapshot(loop.state),
                     budget=loop.budget,
                     remaining_budgets=loop.remaining_budgets,

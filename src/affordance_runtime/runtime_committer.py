@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol, TypeVar
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureEnvelope, RemainingRecoveryBudgets
 from affordance_runtime.grounding import GroundingSource
@@ -17,7 +16,7 @@ from affordance_runtime.perception_phase import (
     PerceptionStateView,
     _source_arbitration_events,
 )
-from affordance_runtime.perception_session import PerceptionCaptureRequest
+from affordance_runtime.perception_session import PerceptionCapture, PerceptionCaptureRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
 from affordance_runtime.stage_protocol import (
@@ -37,7 +36,8 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass
 from affordance_runtime.task_plan_lifecycle import TaskPlanLifecycle
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.contracts import TaskCompletionEvaluation
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 class RuntimeBudgetView(Protocol):
@@ -366,6 +366,14 @@ class RuntimeCommitter:
         if result.failure is not None:
             state.current_failure = result.failure
         transition = result.transition
+        if (
+            transition is not None
+            and transition.phase == RuntimeStep.DONE
+            and transition.task_completion is None
+        ):
+            raise ValueError(
+                "terminal success state and result require typed task completion"
+            )
         if transition is not None:
             if transition.state_updates is not None:
                 for name, value in transition.state_updates.items():
@@ -375,8 +383,8 @@ class RuntimeCommitter:
                     self._commit_phase(state, intermediate)
             if transition.phase is not None and state.phase != transition.phase.value:
                 self._commit_phase(state, transition.phase)
-            for observation in transition.observations:
-                state.remember_observation(observation)
+            for observation in transition.observation_commits:
+                state.remember_observation_commit(observation)
             if transition.perception_update:
                 state.evidence_gaps = transition.evidence_gaps
                 state.active_probe_plan = transition.active_probe_plan
@@ -417,7 +425,35 @@ class RuntimeCommitter:
             trace.artifact_index.extend(
                 path for path in transition.artifact_refs if path
             )
-        return self.commit_events(trace, parent, result.events)
+        parent = self.commit_events(trace, parent, result.events)
+        if transition is not None and transition.task_completion is not None:
+            parent = self.commit_task_completion(
+                state,
+                trace,
+                parent,
+                transition.task_completion,
+            )
+        return parent
+
+    @staticmethod
+    def commit_task_completion(
+        state: StateKernel,
+        trace: TraceDag,
+        parent: TraceNode,
+        completion: TaskCompletionEvaluation,
+    ) -> TraceNode:
+        """Commit one already-evaluated typed completion transition/event."""
+
+        if not completion.completed:
+            raise ValueError("task completion evaluation is not satisfied")
+        state.final_result = dict(completion.result_payload)
+        if state.phase != RuntimeStep.DONE.value:
+            state.transition(RuntimeStep.DONE.value)
+        return trace.add(
+            "TaskCompleted",
+            {"state": state.phase, "result": state.final_result},
+            parents=[parent.id],
+        )
 
     def commit_action(
         self,
@@ -546,7 +582,7 @@ class RuntimeCommitter:
         state: StateKernel,
         trace: TraceDag,
         parent: TraceNode,
-        snapshot: BrowserSnapshot,
+        snapshot: PerceptionCapture,
         execution_loop: Any,
         task_skill_progress: object | None = None,
     ) -> tuple[Any | None, TerminalResult | None, TraceNode]:
@@ -606,6 +642,8 @@ class RuntimeCommitter:
         events: tuple[RuntimeEvent, ...],
     ) -> TraceNode:
         for event in events:
+            if event.kind == "TaskCompleted":
+                raise ValueError("TaskCompleted may only be emitted from typed completion commit")
             parent = trace.add(event.kind, dict(event.payload), parents=[parent.id])
         return parent
 
@@ -613,7 +651,7 @@ class RuntimeCommitter:
         self,
         trace: TraceDag,
         parent: TraceNode,
-        snapshot: BrowserSnapshot,
+        snapshot: PerceptionCapture,
         state_label: str,
     ) -> TraceNode:
         return self.commit_events(
@@ -687,12 +725,6 @@ def runtime_state_snapshot(state: StateKernel) -> RuntimeStateSnapshot:
     )
 
 
-def project_working_observation(state: StateKernel, observation: Any) -> None:
-    """Apply an observation to a detached stage working copy."""
-
-    state.remember_observation(observation)
-
-
 def project_working_phase(state: StateKernel, phase: RuntimeStep) -> None:
     """Apply a phase transition to a detached stage working copy."""
 
@@ -723,12 +755,12 @@ def commit_targeted_perception(
     state: StateKernel,
     trace: TraceDag,
     parent: TraceNode,
-    snapshot: BrowserSnapshot,
+    snapshot: PerceptionCapture,
     *,
     stage: PerceptionStage,
     committer: RuntimeCommitter,
     budget: RuntimeBudgetView,
-) -> tuple[BrowserSnapshot, TraceNode]:
+) -> tuple[PerceptionCapture, TraceNode]:
     result = stage.run(
         PerceptionStageInput(
             envelope=envelope,
@@ -738,7 +770,7 @@ def commit_targeted_perception(
     )
     parent = committer.commit(state, trace, parent, result)
     return (
-        result.output.snapshot if result.output is not None else snapshot,
+        result.output.capture if result.output is not None else snapshot,
         parent,
     )
 

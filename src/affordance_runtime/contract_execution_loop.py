@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, replace
 
+from affordance_runtime.action_admission import ActionAdmissionService
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
 from affordance_runtime.runtime import Executor, RunRequest
@@ -20,7 +21,7 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.simplified_runtime_contracts import (
     VerificationStatus as CanonicalVerificationStatus,
 )
-from affordance_runtime.verification import VerificationReport, VerificationStatus, VerifierLadder, preflight
+from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus, VerifierLadder, preflight
 
 
 @dataclass(frozen=True)
@@ -73,11 +74,18 @@ class ContractExecutionLoop:
         preflight_enabled: bool,
     ) -> ContractCheck:
         gate = self.effective_gate(envelope)
-        error = self.task_policy.check(contract, envelope.constraints)
-        if error is None and capability_gate_enabled:
-            error = gate.check(contract)
-        if error is None and preflight_enabled:
-            error = preflight(contract, observation)
+        result = ActionAdmissionService(self.task_policy).evaluate(
+            contract,
+            constraints=envelope.constraints,
+            capability_gate=(gate if capability_gate_enabled else CapabilityGate(
+                granted_capabilities=set(contract.required_capabilities),
+                approval_required_risks=set(),
+                approval_required_capabilities=set(),
+            )),
+            observation=observation,
+            check_freshness=preflight_enabled,
+        )
+        error = result.error
         return ContractCheck(gate=gate, error=error)
 
     def revalidate(
@@ -148,7 +156,7 @@ class ContractExecutionLoop:
     ) -> VerificationReport:
         if structural_verification_enabled:
             return self.verifier.verify_report(contract.verifier_plan, receipt, observation)
-        return VerificationReport(VerificationStatus.PASSED, reason=disabled_reason)
+        return VerificationReport(VerificationStatus.INCONCLUSIVE, reason=disabled_reason)
 
     def record_action_outcome(
         self,
@@ -260,8 +268,6 @@ def _verification_evidence_refs(verification: VerificationReport) -> tuple[str, 
     refs: list[str] = []
     for index, evidence in enumerate(verification.evidence):
         refs.append(evidence.evidence_id or evidence.source or f"verification:evidence:{index}")
-    if not refs and verification.passed:
-        refs.append("verification:structural-disabled")
     return tuple(dict.fromkeys(refs))
 
 

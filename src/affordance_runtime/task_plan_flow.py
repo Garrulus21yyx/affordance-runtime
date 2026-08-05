@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.failure_envelope import FailureClass
 from affordance_runtime.immutable import freeze_json
@@ -30,6 +29,7 @@ from affordance_runtime.task_planning import (
     TaskPlanValidationStatus,
     task_planning_context_summary,
 )
+from affordance_runtime.unified_observation import UnifiedObservation
 
 
 class TaskPlanFlowKind(StrEnum):
@@ -218,7 +218,7 @@ class TaskPlanFlow:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanFlowResult:
         if state.task_plan is None:
@@ -253,7 +253,7 @@ class TaskPlanFlow:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
         replacement: TaskPlanReplacementDecision,
     ) -> TaskPlanFlowResult | None:
@@ -314,7 +314,7 @@ class TaskPlanFlow:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
     ) -> TaskPlanFlowResult:
         try:
@@ -335,7 +335,7 @@ class TaskPlanFlow:
         self,
         task_spec: TaskSpec,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        snapshot: UnifiedObservation,
         budget: TaskPlanBudgetLimits,
         replacement: TaskPlanReplacementDecision,
     ) -> TaskPlanFlowResult:

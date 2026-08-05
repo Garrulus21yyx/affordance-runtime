@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
+    BROWSERGYM_SUCCESS_CRITERION_ID,
     BrowserGymEpisodeState,
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
@@ -101,6 +102,27 @@ class BrowserGymObserver:
                 "task_info": json_safe(self.episode.info.get("task_info", {})),
                 "capture_attempt": capture_attempt,
                 "capture_mode": capture_mode,
+            },
+            "criterion_evaluations": {
+                **(
+                    snapshot.observation.metadata.get("criterion_evaluations", {})
+                    if isinstance(
+                        snapshot.observation.metadata.get("criterion_evaluations"),
+                        dict,
+                    )
+                    else {}
+                ),
+                BROWSERGYM_SUCCESS_CRITERION_ID: {
+                    "status": (
+                        "satisfied"
+                        if self.episode.terminated and self.episode.reward > 0
+                        else "unsatisfied"
+                    ),
+                    "provider": "external_evaluator",
+                    "evidence_refs": [
+                        f"browsergym:official-grade:{self.episode.task_id}"
+                    ],
+                },
             },
         }
         observation = replace(snapshot.observation, metadata=metadata)

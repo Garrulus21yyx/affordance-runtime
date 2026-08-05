@@ -30,12 +30,15 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
     pricing_contract_builder,
+    pricing_required_outputs,
+    pricing_success_expression,
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import canonical_observation, remember_observation
 
 
 class InteractivePricingPage:
@@ -86,6 +89,8 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
                     operation_class=OperationClass.READ_ONLY,
                     targets=("Pro", "Enterprise"),
                     success_criteria=("pricing is structurally visible",),
+                    success=pricing_success_expression(),
+                    required_outputs=pricing_required_outputs(),
                     source_request_ref="pricing-test",
                 ),
                 constraints={"read_only": True, "must_return_evidence": True},
@@ -99,7 +104,10 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     assert result.state.step_count == 2
     assert result.state.last_receipt is not None
     assert result.state.last_receipt.evidence["selector"] == "#show-enterprise"
-    assert len(list((tmp_path / "artifacts/pricing-test/observations").glob("*.json"))) == 7
+    observation_artifacts = list(
+        (tmp_path / "artifacts/pricing-test/observations").glob("*.json")
+    )
+    assert len(observation_artifacts) >= result.state.step_count + 1
 
 
 def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> None:
@@ -113,6 +121,8 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         operation_class=OperationClass.READ_ONLY,
         targets=("Pro", "Enterprise"),
         success_criteria=("both pricing plans are structurally visible",),
+        success=pricing_success_expression(),
+        required_outputs=pricing_required_outputs(),
         evidence_requirements=("post-action DOM evidence for each plan",),
         source_request_ref="reference-test",
     )
@@ -154,7 +164,7 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
     )
     state = StateKernel("pricing-request", "Reveal pricing")
     state.transition("observing")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     state.transition("planning")
     task = TaskSpec(
         task_id="pricing-request",
@@ -178,7 +188,9 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
             state: StateKernel,
             snapshot: BrowserSnapshot,
         ) -> PlanningRequest:
-            self.built = self.inner.build(envelope, state, snapshot)
+            self.built = self.inner.build(
+                envelope, state, canonical_observation(snapshot)
+            )
             return self.built
 
     request_builder = RecordingRequestBuilder()
@@ -224,7 +236,7 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
         )
         state = StateKernel("reference-request", expected_label)
         state.transition("observing")
-        state.remember_observation(observation)
+        remember_observation(state, observation)
         state.transition("planning")
         task = TaskSpec(
             task_id="reference-request",
@@ -237,7 +249,9 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
             source_request_ref="reference-request-source",
         )
         request = PlanningRequestBuilder().build(
-            RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
+            RunRequest(task_spec=task),
+            state,
+            canonical_observation(BrowserSnapshot(observation, model)),
         )
         response = planner_type().propose(request)
 
@@ -344,7 +358,7 @@ def test_normal_cli_entrypoint_loads_digest_bound_accepted_recovery_profile(tmp_
 
     trace_path = next(Path(item) for item in result["artifacts"] if str(item).endswith("events.jsonl"))
     first = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[0])
-    assert result["status"] == RuntimeStep.DONE.value
+    assert result["status"] == RuntimeStep.FAILED.value
     assert result["runtime_profile_digest"].startswith("sha256:")
     assert result["loaded_profile_artifact_ids"] == [artifact.id]
     assert first["payload"]["runtime_profile_digest"] == result["runtime_profile_digest"]

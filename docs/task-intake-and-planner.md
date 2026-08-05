@@ -110,9 +110,15 @@ TaskPlanAuthority validates identity, dependencies, criterion fidelity,
 observation/state basis, canonical requirement/effect traceability,
 authorization compatibility, and digest. Semantic value dependencies use typed
 Input/Binding/Value refs; execution ordering uses only `StepSpec.depends_on`.
-The accepted
-TaskPlan stores `StepSpec` directly and can be replaced without changing
+The accepted TaskPlan stores `StepSpec` directly and can be replaced without changing
 TaskSpec. It is a Milestone Graph, never an intake obligation graph.
+
+Replaceable does not mean replan every loop. Runtime reuses a still-feasible
+active plan and may install a direct deterministic milestone without a model
+call. Task Planner is called only for a typed `NO_CURRENT_PLAN`,
+`PLAN_EXHAUSTED_TASK_INCOMPLETE`, `STEP_INFEASIBLE`, `ASSUMPTION_DISPROVED`,
+`ENVIRONMENT_BOUNDARY_CHANGED`, or explicit policy/budget trigger. Every model
+TaskPlanningRequest carries that trigger.
 
 ## 7. Active-step choice horizon
 
@@ -120,6 +126,12 @@ For the active step, Runtime first builds the complete legal
 `ActionChoiceCatalog` from TaskSpec/TaskPlan/progress/current canonical
 observation/effective capability/policy. Model presentation limits are not
 Catalog inputs.
+
+Complete means logically complete, not necessarily eagerly materialized. Small
+Catalogs may hold every ActionChoice directly; large Catalogs may use immutable
+lazy/indexed/query-backed membership. `count`, `contains`, `get`, deterministic
+page/query results, rejection semantics, and digest must remain identical for
+the same canonical inputs regardless of materialization or model page size.
 
 ```text
 0 choices → typed deterministic failure owner

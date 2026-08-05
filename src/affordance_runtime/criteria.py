@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Iterable
 
 from affordance_runtime.contracts import Observation
-from affordance_runtime.verification import VerificationEvidence, VerificationReport
+from affordance_runtime.verification.mechanical import VerificationEvidence, VerificationReport
 
 
 class EvidenceStrength(StrEnum):

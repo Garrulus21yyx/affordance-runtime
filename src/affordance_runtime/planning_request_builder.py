@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-from affordance_runtime.browser_session import BrowserSnapshot
-from affordance_runtime.contracts import Affordance
+from affordance_runtime.grounding import GroundingSource
 from affordance_runtime.interaction_grounding import (
     GroundingStatus,
     GroundingTarget,
@@ -39,6 +38,12 @@ from affordance_runtime.simplified_step_projection import (
     project_task_completion_criterion,
 )
 from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.unified_observation import (
+    CanonicalTarget,
+    ConflictStatus,
+    FactStatus,
+    UnifiedObservation,
+)
 
 _EFFECTFUL_ACTION_KINDS = {
     "activate",
@@ -73,7 +78,7 @@ class PlanningRequestBuilder:
         self,
         envelope: RunRequest,
         state: StateKernel,
-        snapshot: BrowserSnapshot,
+        observation: UnifiedObservation,
     ) -> PlanningRequest:
         task_spec = envelope.task_spec
         if task_spec is None:
@@ -95,7 +100,7 @@ class PlanningRequestBuilder:
         limits = self.limits
         step_view = _planner_step_view(step_projection, state)
         permitted_action_kinds = _permitted_action_kinds(
-            snapshot,
+            observation,
             allow_finish=self.allow_finish,
         )
         if not step_view.permits_effectful_actions:
@@ -107,16 +112,16 @@ class PlanningRequestBuilder:
         admission = _active_step_admission(
             task_revision=task_spec.revision,
             step_view=step_view,
-            snapshot=snapshot,
+            observation=observation,
         )
         request = PlanningRequest(
             identity=PlanningRequestIdentity(
                 task_spec_identity=task_spec.identity,
                 task_revision=task_spec.revision,
                 evaluated_at_state_version=state.version,
-                snapshot_id=snapshot.observation.snapshot_id,
-                page_revision=snapshot.observation.page_revision,
-                environment_revision=snapshot.observation.environment_revision,
+                snapshot_id=observation.epoch_id,
+                page_revision=observation.page_revision,
+                environment_revision=observation.environment_revision,
             ),
             task=PlannerTaskView(
                 task_spec_identity=task_spec.identity,
@@ -130,14 +135,14 @@ class PlanningRequestBuilder:
             ),
             step=step_view,
             observation=PlannerObservationView(
-                snapshot_id=snapshot.observation.snapshot_id,
-                page_revision=snapshot.observation.page_revision,
-                environment_revision=snapshot.observation.environment_revision,
-                observed_text=str(snapshot.observation.metadata.get("visible_text") or "")[:2_000],
+                snapshot_id=observation.epoch_id,
+                page_revision=observation.page_revision,
+                environment_revision=observation.environment_revision,
+                observed_text=observation.observed_text[:2_000],
                 affordances=tuple(
-                    _affordance_view(item)
-                    for item in _bounded_affordances(
-                        _planner_affordance_inventory(snapshot),
+                    _target_view(item)
+                    for item in _bounded_targets(
+                        list(observation.targets),
                         task_spec.objective,
                         task_spec.targets,
                         limits.max_affordances,
@@ -145,7 +150,7 @@ class PlanningRequestBuilder:
                 ),
                 artifact_refs=tuple(
                     _opaque_artifact_ref(item)
-                    for item in snapshot.observation.artifact_refs[-limits.max_artifact_refs :]
+                    for item in observation.artifact_refs[-limits.max_artifact_refs :]
                 ),
             ),
             recent_outcomes=_recent_outcomes(state),
@@ -220,20 +225,20 @@ def _active_step_admission(
     *,
     task_revision: int,
     step_view: PlannerStepView,
-    snapshot: BrowserSnapshot,
+    observation: UnifiedObservation,
 ) -> PlannerAdmissionView | None:
     active_step = step_view.active_step
     if active_step is None or step_view.activity_status != StepActivityStatus.ACTIVE:
         return None
-    inventory = _planner_affordance_inventory(snapshot)
+    inventory = list(observation.targets)
     grounding = InteractionGrounder().ground(
         active_step.interaction,
         tuple(
             GroundingTarget(
-                target_id=item.id,
+                target_id=item.target_id,
                 role=item.role,
                 label=item.label,
-                supported_actions=_affordance_supported_actions(item),
+                supported_actions=item.supported_actions,
                 state=item.state,
             )
             for item in inventory
@@ -244,7 +249,7 @@ def _active_step_admission(
     allowed = frozenset(
         item.target_id for item in (*grounding.targets, *grounding.destinations)
     )
-    current_target_ids = tuple(dict.fromkeys(item.id for item in inventory))
+    current_target_ids = tuple(dict.fromkeys(item.target_id for item in inventory))
     decisions = tuple(
         TargetAdmissionDecision(
             target_id=target_id,
@@ -259,12 +264,12 @@ def _active_step_admission(
         return PlannerAdmissionView(
             source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
             task_revision=task_revision,
-            snapshot_id=snapshot.observation.snapshot_id,
+            snapshot_id=observation.epoch_id,
         )
     return PlannerAdmissionView(
         source=PlannerAdmissionSource.ACTIVE_STEP_SCOPE,
         task_revision=task_revision,
-        snapshot_id=snapshot.observation.snapshot_id,
+        snapshot_id=observation.epoch_id,
         target_decisions=decisions,
         excluded_target_ids=tuple(item.target_id for item in decisions),
     )
@@ -311,80 +316,46 @@ def _planner_step_projection_status(
         raise ValueError("unsupported legacy step projection status") from exc
 
 
-def _affordance_view(item: Affordance) -> PlannerAffordanceView:
+def _target_view(item: CanonicalTarget) -> PlannerAffordanceView:
+    accepted_state = {
+        fact.property_name: fact.value
+        for fact in item.state_facts
+        if fact.status == FactStatus.ACCEPTED
+    }
     return PlannerAffordanceView(
-        target_id=item.id,
-        surface=item.surface.value,
+        target_id=item.target_id,
+        surface=(
+            _presentation_surface(item.surfaces[0])
+            if len(item.surfaces) == 1
+            else "multi_surface"
+        ),
         role=item.role,
         label=_bounded_text(item.label, 240),
-        supported_actions=_affordance_supported_actions(item),
-        state=_compact_affordance_state(item.state),
-        confidence=item.confidence,
-        conflict_codes=(),
-        source_refs=tuple(str(ref) for ref in item.evidence),
+        supported_actions=item.supported_actions,
+        state=_compact_target_state(accepted_state),
+        confidence=None,
+        conflict_codes=(
+            (item.conflict_status.value,)
+            if item.conflict_status
+            in {ConflictStatus.MATERIAL_CONFLICT, ConflictStatus.INCONCLUSIVE}
+            else ()
+        ),
+        source_refs=item.source_assertion_refs,
     )
 
 
-def _planner_affordance_inventory(snapshot: BrowserSnapshot) -> list[Affordance]:
-    if not snapshot.unified_affordances:
-        return [
-            item
-            for item in snapshot.affordance_model.affordances
-            if item.state.get("visible") is not False
-        ]
-    source_by_id = {item.id: item for item in snapshot.affordance_model.affordances}
-    inventory: list[Affordance] = []
-    for target in snapshot.unified_affordances:
-        representative = next(
-            (
-                source_by_id[candidate.source_affordance_id]
-                for candidate in target.grounding_candidates
-                if candidate.source_affordance_id in source_by_id
-            ),
-            None,
-        )
-        if representative is None or representative.state.get("visible") is False:
-            continue
-        actions = sorted(target.supported_actions)
-        if not actions:
-            continue
-        inventory.append(
-            replace(
-                representative,
-                id=target.semantic_target_id,
-                role=target.role,
-                label=target.label,
-                action=actions[0],
-                locator={},
-                backend_candidates=[],
-                confidence=max(item.confidence for item in target.grounding_candidates),
-                state={
-                    **representative.state,
-                    "grounding_source_count": len(target.grounding_candidates),
-                    "semantic_supported_actions": tuple(actions),
-                },
-            )
-        )
-    return inventory
+def _presentation_surface(source: GroundingSource) -> str:
+    return "visual" if source == GroundingSource.SOM else source.value
 
 
-def _affordance_supported_actions(item: Affordance) -> tuple[str, ...]:
-    semantic_actions = item.state.get("semantic_supported_actions")
-    if isinstance(semantic_actions, (tuple, list)) and all(
-        isinstance(action, str) and action for action in semantic_actions
-    ):
-        return tuple(dict.fromkeys(semantic_actions))
-    return (item.action,)
-
-
-def _bounded_affordances(
-    affordances: list[Affordance],
+def _bounded_targets(
+    targets_to_bound: list[CanonicalTarget],
     objective: str,
     targets: tuple[str, ...],
     limit: int,
-) -> list[Affordance]:
-    if len(affordances) <= limit:
-        return affordances
+) -> list[CanonicalTarget]:
+    if len(targets_to_bound) <= limit:
+        return targets_to_bound
     terms = {
         word.casefold()
         for text in (objective, *targets)
@@ -392,23 +363,24 @@ def _bounded_affordances(
         if len(word) >= 3
     }
 
-    def relevance_text(item: Affordance) -> str:
+    def relevance_text(item: CanonicalTarget) -> str:
         return f"{item.label} {item.role} {item.state}".casefold()
 
     ranked = sorted(
-        enumerate(affordances),
+        enumerate(targets_to_bound),
         key=lambda pair: (
             -sum(term in relevance_text(pair[1]) for term in terms),
-            -pair[1].confidence,
             pair[0],
         ),
     )
     selected_indexes = {index for index, _item in ranked[: max(1, limit)]}
-    return [item for index, item in enumerate(affordances) if index in selected_indexes]
+    return [
+        item for index, item in enumerate(targets_to_bound) if index in selected_indexes
+    ]
 
 
-def _compact_affordance_state(value: dict[str, object]) -> dict[str, object]:
-    """Mirror legacy PlannerContext state bounds before freezing request input."""
+def _compact_target_state(value: dict[str, object]) -> dict[str, object]:
+    """Bound accepted canonical facts without reconstructing acquisition objects."""
 
     compact: dict[str, object] = {}
     semantic_priority = (
@@ -452,7 +424,7 @@ def _compact_affordance_state(value: dict[str, object]) -> dict[str, object]:
 
 
 def _permitted_action_kinds(
-    snapshot: BrowserSnapshot,
+    observation: UnifiedObservation,
     *,
     allow_finish: bool,
 ) -> tuple[str, ...]:
@@ -478,12 +450,15 @@ def _permitted_action_kinds(
     permitted = {"ask_user"}
     if allow_finish:
         permitted.add("finish")
+    canonical_actions = {
+        action
+        for target in observation.targets
+        for action in target.supported_actions
+    }
     permitted.update(
-        action_map[item.action]
-        for item in _planner_affordance_inventory(snapshot)
-        if item.action in action_map
+        action_map[action] for action in canonical_actions if action in action_map
     )
-    if any(item.action in {"fill", "type", "type_text"} for item in _planner_affordance_inventory(snapshot)):
+    if canonical_actions & {"fill", "type", "type_text"}:
         permitted.add("focus")
     return tuple(sorted(permitted))
 

@@ -20,11 +20,14 @@ from affordance_runtime.grounding import (
     RouteGateResult,
     RoutePlan,
     RouteScore,
+    SvgGroundingPayload,
+    SvgTransform,
     UnifiedAffordance,
     VisualGroundingPayload,
     WoTGroundingPayload,
 )
 from affordance_runtime.route_calibration import RouteCalibrator, RouteScope
+from affordance_runtime.unified_observation import CanonicalTarget, ConflictStatus, UnifiedObservation
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,13 @@ def candidate_from_affordance(
 
     candidate_id = f"candidate:{affordance.surface.value}:{affordance.id}"
     source: GroundingSource
-    payload: DomGroundingPayload | VisualGroundingPayload | WoTGroundingPayload | ApiGroundingPayload
+    payload: (
+        DomGroundingPayload
+        | SvgGroundingPayload
+        | VisualGroundingPayload
+        | WoTGroundingPayload
+        | ApiGroundingPayload
+    )
     evidence_kinds: frozenset[EvidenceKind]
     if affordance.surface in {Surface.DOM, Surface.ACCESSIBILITY}:
         source = GroundingSource.DOM if affordance.surface == Surface.DOM else GroundingSource.ACCESSIBILITY
@@ -64,6 +73,34 @@ def candidate_from_affordance(
             # binding even when raw coordinates are not exposed to the planner.
             evidence.add(EvidenceKind.SPATIAL)
         evidence_kinds = frozenset(evidence)
+    elif affordance.surface == Surface.SVG:
+        bbox = _optional_box(affordance.locator.get("bbox"))
+        if bbox is None:
+            raise ValueError("SVG candidate typing requires current viewport geometry")
+        source = GroundingSource.SVG
+        payload = SvgGroundingPayload(
+            element_id=str(
+                affordance.locator.get("element_id")
+                or affordance.locator.get("backend_handle")
+                or affordance.id
+            ),
+            tag=str(affordance.locator.get("tag") or affordance.role),
+            view_box=_optional_box(affordance.locator.get("view_box")) or bbox,
+            geometry_bbox_xywh=(
+                _optional_box(affordance.locator.get("geometry_bbox")) or bbox
+            ),
+            viewport_bbox_xywh=bbox,
+            transform=SvgTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            backend_handle=str(affordance.locator.get("backend_handle") or ""),
+        )
+        evidence_kinds = frozenset(
+            {
+                EvidenceKind.SPATIAL,
+                EvidenceKind.STRUCTURAL,
+                EvidenceKind.VISUAL_APPEARANCE,
+                *({EvidenceKind.TEXTUAL} if affordance.label.strip() else set()),
+            }
+        )
     elif affordance.surface == Surface.VISUAL:
         if image_size is None:
             raise ValueError("visual candidate typing requires current image dimensions")
@@ -90,8 +127,12 @@ def candidate_from_affordance(
             operation=str(affordance.locator.get("operation") or affordance.action),
         )
         evidence_kinds = frozenset({EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL})
-    elif affordance.surface == Surface.API:
-        source = GroundingSource.API
+    elif affordance.surface in {Surface.API, Surface.DEVICE}:
+        source = (
+            GroundingSource.API
+            if affordance.surface == Surface.API
+            else GroundingSource.DEVICE
+        )
         payload = ApiGroundingPayload(
             operation_id=str(affordance.locator.get("operation_id") or affordance.action),
             resource_id=str(affordance.locator.get("resource_id") or ""),
@@ -124,7 +165,7 @@ def candidate_from_affordance(
         environment_revision=observation.environment_revision,
         page_revision=observation.page_revision,
         target_fingerprint=affordance.target_fingerprint,
-        fingerprint_key=candidate_id,
+        fingerprint_key=affordance.id,
         supported_actions=_semantic_actions(affordance.action),
         evidence_kinds=evidence_kinds,
         source_affordance_id=affordance.id,
@@ -254,18 +295,35 @@ class UnifiedRoutePlanner:
 
     def plan(
         self,
-        target: UnifiedAffordance,
+        target: UnifiedAffordance | CanonicalTarget,
         *,
         action: str,
         requirements: PerceptionRequirements,
-        observation: Observation,
+        observation: Observation | UnifiedObservation,
         available_executors: frozenset[str],
+        bindings: tuple[GroundingCandidate, ...] = (),
         verifier_kinds: tuple[str, ...] = (),
         excluded_candidate_ids: frozenset[str] = frozenset(),
         environment_scope: str = "generic",
     ) -> RoutePlan:
-        if target.unresolved_conflicts:
+        if (
+            isinstance(target, UnifiedAffordance)
+            and target.unresolved_conflicts
+        ) or (
+            isinstance(target, CanonicalTarget)
+            and target.conflict_status
+            in {ConflictStatus.MATERIAL_CONFLICT, ConflictStatus.INCONCLUSIVE}
+        ):
             raise ValueError("cannot route a target with unresolved material conflicts")
+        candidates = (
+            target.grounding_candidates
+            if isinstance(target, UnifiedAffordance)
+            else tuple(
+                item
+                for item in bindings
+                if item.semantic_target_id == target.target_id
+            )
+        )
         gates = tuple(
             self._gate(
                 item,
@@ -276,10 +334,10 @@ class UnifiedRoutePlanner:
                 verifier_available=bool(verifier_kinds),
                 excluded=item.candidate_id in excluded_candidate_ids,
             )
-            for item in target.grounding_candidates
+            for item in candidates
         )
         viable_ids = {item.candidate_id for item in gates if item.passed}
-        viable = [item for item in target.grounding_candidates if item.candidate_id in viable_ids]
+        viable = [item for item in candidates if item.candidate_id in viable_ids]
         if not viable:
             reasons = "; ".join(f"{item.candidate_id}: {', '.join(item.reasons)}" for item in gates)
             raise ValueError(f"no viable grounding route: {reasons}")
@@ -314,7 +372,7 @@ class UnifiedRoutePlanner:
         *,
         action: str,
         requirements: PerceptionRequirements,
-        observation: Observation,
+        observation: Observation | UnifiedObservation,
         available_executors: frozenset[str],
         verifier_available: bool,
         excluded: bool,

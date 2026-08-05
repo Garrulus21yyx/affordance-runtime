@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
@@ -18,7 +17,8 @@ from affordance_runtime.task_plan_progress import (
 from affordance_runtime.task_planning import SubgoalVerifierPort
 from affordance_runtime.task_skill_progress import TaskSkillRunState
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.unified_observation import UnifiedObservation
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ class TaskSkillTerminalProgressCommit:
 def prepare_current_state_subgoal_completion(
     task_spec: TaskSpec | None,
     state: StateKernel,
-    snapshot: BrowserSnapshot,
+    snapshot: UnifiedObservation,
     budget: TaskPlanBudgetLimits,
     *,
     evaluator: CurrentStateSubgoalCompletionEvaluator | None = None,
@@ -143,7 +143,7 @@ def prepare_current_state_subgoal_completion(
 def commit_current_state_completion(
     task_spec: TaskSpec | None,
     state: StateKernel,
-    snapshot: BrowserSnapshot,
+    snapshot: UnifiedObservation,
     budget: TaskPlanBudgetLimits,
     trace: TraceDag,
     parent: TraceNode,

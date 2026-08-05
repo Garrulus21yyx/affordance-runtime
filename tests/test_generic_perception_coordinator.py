@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
@@ -16,7 +17,6 @@ from affordance_runtime.executors import ExecutorRouter, VisualExecutor
 from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
 from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -32,6 +32,7 @@ from affordance_runtime.route_calibration import RouteOutcomeStatus
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.visual_grounding import VisualRegion
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
@@ -136,6 +137,7 @@ class VerifiedVisualContractBuilder:
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation=None,
     ):
         requirements = ContractRequirements(
             verifier_plan=(
@@ -143,12 +145,13 @@ class VerifiedVisualContractBuilder:
                     "dom_contains",
                     "page",
                     "activated",
+                    criterion_ids=("criterion:activated",),
                     progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                 ),
             )
         )
         return ContractBuilder(requirements={proposal.target_affordance_id: requirements}).build(
-            proposal, task_spec, state, snapshot
+            proposal, task_spec, state, snapshot, observation
         )
 
 
@@ -179,6 +182,11 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         operation_class=OperationClass.READ_ONLY,
         targets=("blue canvas control",),
         success_criteria=("the page reports activated",),
+        success=SuccessExpression(
+            expression_id="success:activated",
+            operator="criterion",
+            criterion_id="criterion:activated",
+        ),
         evidence_requirements=("visual appearance and post-action page state",),
         source_request_ref="test-request",
     )
@@ -194,7 +202,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     result = coordinator.run_sync(RunRequest(task_spec=task))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
-    assert result.result == {"activated": True}
+    assert result.result == {}
     assert pointer.clicks == [(400, 300)]
     assert len(proposer.requests) >= 2
     assert all(request.instruction == "Activate the blue visual canvas control" for request in proposer.requests)
@@ -312,6 +320,7 @@ class VerifiedSaveContractBuilder:
         task_spec: TaskSpec,
         state: StateKernel,
         snapshot: BrowserSnapshot,
+        observation=None,
     ):
         requirements = ContractRequirements(
             verifier_plan=(
@@ -319,13 +328,14 @@ class VerifiedSaveContractBuilder:
                     "dom_contains",
                     "page",
                     "saved",
+                    criterion_ids=("criterion:saved",),
                     progress_scope=ProgressEvidenceScope.ACTIVE_SUBGOAL,
                 ),
             ),
             idempotency_key="generic-settings-save-v1",
         )
         return ContractBuilder(requirements={proposal.target_affordance_id: requirements}).build(
-            proposal, task_spec, state, snapshot
+            proposal, task_spec, state, snapshot, observation
         )
 
 
@@ -347,6 +357,11 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
         operation_class=OperationClass.REVERSIBLE_WRITE,
         targets=("Save changes",),
         success_criteria=("the page reports saved",),
+        success=SuccessExpression(
+            expression_id="success:saved",
+            operator="criterion",
+            criterion_id="criterion:saved",
+        ),
         evidence_requirements=("current page state",),
         requested_capabilities=("settings.write",),
         source_request_ref="test-request",
@@ -362,7 +377,7 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
     ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
-    assert result.result == {"saved": True}
+    assert result.result == {}
     assert dom.calls == 1
     assert pointer.clicks == [(400, 300)]
     assert proposer.requests
@@ -453,8 +468,9 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
         task_planner=None,
     ).run_sync(RunRequest(task_spec=task))
 
-    assert result.status == RuntimeStep.DONE
-    assert result.result["status"] == "inconclusive"
+    assert result.status == RuntimeStep.FAILED
+    assert result.result == {"status": "inconclusive", "reason": "source conflict"}
+    assert "TaskCompleted" not in [node.kind for node in result.trace.nodes]
     events = [node.kind for node in result.trace.nodes]
     assert events.count("TargetedPerceptionCaptured") == 1
     assert "TargetedPerceptionBudgetExhausted" in events

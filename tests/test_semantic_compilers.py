@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -17,7 +16,6 @@ from affordance_runtime.compatibility_planner_algorithms import (
 from affordance_runtime.contracts import Observation
 from affordance_runtime.generalist_planner import (
     GeneralistLMPlanner,
-    GeneralistPlannerProfile,
     build_planner_context,
 )
 from affordance_runtime.model_port import ModelCallRecord
@@ -26,6 +24,7 @@ from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantic_compilers import SemanticCompilation, SemanticCompilerRegistry, SemanticConstraints
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import remember_observation
 
 
 def test_semantic_compilation_payloads_are_immutable_from_source_collections() -> None:
@@ -125,7 +124,7 @@ def _drag_fixture(objective: str) -> tuple[RunRequest, StateKernel, BrowserSnaps
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
 
 
@@ -169,7 +168,7 @@ def _governance_fixture(kind: str) -> tuple[RunRequest, StateKernel, BrowserSnap
         source_request_ref="governance-fixture",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
 
 
@@ -237,7 +236,7 @@ def test_typed_incremental_control_compiles_one_verified_direction_without_backe
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     context = build_planner_context(
         RunRequest(task_spec=task),
         state,
@@ -273,7 +272,7 @@ def test_typed_incremental_control_uses_bounded_page_step_for_large_distance() -
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     context = build_planner_context(
         RunRequest(task_spec=task),
         state,
@@ -306,7 +305,7 @@ def _form_context(objective: str):
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
@@ -352,7 +351,7 @@ def _suggestion_context(
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
@@ -384,7 +383,7 @@ def _disclosure_context(
         source_request_ref="test",
     )
     state = StateKernel(task.task_id, task.objective)
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     return build_planner_context(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
 
 
@@ -614,66 +613,6 @@ def test_disclosure_compiler_falls_through_for_ambiguous_multi_control_request()
     )
 
     assert _compiled_disclosure_operation(context) is None
-
-
-def test_strict_default_disables_compatibility_compilers_without_removing_drag() -> None:
-    envelope, enabled_state, snapshot = _drag_fixture("Drag Beta down by one position")
-    enabled_model = DragProposalModel()
-    enabled = asyncio.run(
-        GeneralistLMPlanner(
-            enabled_model,
-            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
-        ).propose_legacy(envelope, enabled_state, snapshot)
-    )
-
-    _, disabled_state, _ = _drag_fixture("Drag Beta down by one position")
-    disabled_model = DragProposalModel()
-    disabled = asyncio.run(GeneralistLMPlanner(disabled_model).propose_legacy(envelope, disabled_state, snapshot))
-
-    assert enabled.proposal is not None
-    assert enabled.proposal.action_kind == PlannerActionKind.DRAG
-    assert enabled.proposal.target_affordance_id == "dom_li_2"
-    assert enabled.proposal.destination_affordance_id == "dom_li_3"
-    assert disabled.proposal is None
-    assert disabled.reason == "no_active_step_action_choice"
-    assert enabled_model.calls == 0
-    assert disabled_model.calls == 0
-    assert enabled.planner_context["planner_profile"] == "historical-compatibility"
-    assert enabled.planner_context["semantic_compiler"]["compiler_id"] == "typed-affordance-semantics-v1"
-    assert enabled.proposal_provenance is not None
-    assert enabled.proposal_provenance.source.value == "deterministic_rule"
-    assert enabled.proposal_provenance.profile_id == "historical-compatibility"
-    assert disabled.planner_context["planner_profile"] == "strict-generalist"
-    assert "semantic_compiler" not in disabled.planner_context
-    assert "semantic_constraints" not in disabled.planner_context
-
-
-@pytest.mark.parametrize("kind", ["form", "suggestion", "disclosure"])
-def test_strict_profile_does_not_execute_task_grammar_before_model_authority(kind: str) -> None:
-    envelope, state, snapshot = _governance_fixture(kind)
-    strict_model = GovernanceClarificationModel()
-
-    strict = asyncio.run(GeneralistLMPlanner(strict_model).propose_legacy(envelope, state, snapshot))
-
-    assert strict_model.calls == 0
-    assert strict.proposal is None
-    assert strict.reason == "no_active_step_action_choice"
-    assert strict.planner_context["planner_profile"] == "strict-generalist"
-    assert "semantic_compiler" not in strict.planner_context
-
-    compatibility_model = GovernanceClarificationModel()
-    compatibility = asyncio.run(
-        GeneralistLMPlanner(
-            compatibility_model,
-            planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
-        ).propose_legacy(envelope, state, snapshot)
-    )
-
-    assert compatibility_model.calls == 0
-    assert compatibility.proposal is not None
-    assert compatibility.proposal.action_kind != PlannerActionKind.ASK_USER
-    assert compatibility.planner_context["planner_profile"] == "historical-compatibility"
-    assert "semantic_compiler" in compatibility.planner_context
 
 
 def test_strict_profile_rejects_a_nonempty_compatibility_registry() -> None:

@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import (
     Affordance,
@@ -23,7 +24,6 @@ from affordance_runtime.coordinator import RunCoordinator
 from affordance_runtime.executors import VisualExecutor
 from affordance_runtime.grounding import GroundingSource, SourceObservation
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -195,7 +195,7 @@ def run_live_visual_drag(chromium_executable: str | None = None) -> dict[str, An
                 observer,
                 planner,
                 VisualExecutor(session),
-                contract_builder=ContractBuilder(
+                contract_builder=ActionContractMaterializer(
                     requirements={
                         source_id: ContractRequirements(
                             verifier_plan=(

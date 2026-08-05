@@ -27,6 +27,20 @@ Target design and implementation truth are deliberately separate. A target
 contract is not implemented merely because it is authoritative. A current code
 fact does not redefine the target merely because compatibility still exists.
 
+Within the authoritative architecture, readers use the fixed semantic layers:
+
+```text
+§0 architecture laws and current amendments
+→ normative contracts and authority matrix
+→ migration/deletion gates
+→ acceptance invariants and source mappings
+```
+
+Schema examples, migration tables, tests, and historical mappings do not mean
+every named logical owner requires a class, service, store, queue, or model
+call. This internal layering avoids creating a third authority merely to make a
+large specification easier to search.
+
 ## 2. Lifecycle classes
 
 | Lifecycle | Use | May define current semantics? |

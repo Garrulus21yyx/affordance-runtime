@@ -10,7 +10,7 @@ from affordance_runtime.contracts import RuntimeErrorCode
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 class PhaseTerminalView(Protocol):

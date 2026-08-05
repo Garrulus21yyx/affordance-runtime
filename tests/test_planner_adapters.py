@@ -16,6 +16,8 @@ from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.unified_observation import UnifiedObservation
+from runtime_test_support import remember_observation
 
 
 def _inputs() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -27,7 +29,7 @@ def _inputs() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
     observation = Observation("rev-1", snapshot_id="snapshot-1", page_revision=model.page_revision)
     state = StateKernel("task-1", "Save")
     state.transition("observing")
-    state.remember_observation(observation)
+    remember_observation(state, observation)
     state.transition("planning")
     spec = TaskSpec(
         task_id="task-1",
@@ -102,7 +104,7 @@ def test_parent_adapter_uses_immutable_request_context_path() -> None:
             self,
             envelope: RunRequest,
             state: StateKernel,
-            snapshot: BrowserSnapshot,
+            snapshot: UnifiedObservation,
         ) -> PlanningRequest:
             self.built = self.inner.build(envelope, state, snapshot)
             return self.built

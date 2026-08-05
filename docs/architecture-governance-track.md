@@ -38,6 +38,13 @@ commit remain raw-text-free.
 No change may create simultaneous progress, plan-admission, observation,
 choice-space, completion, or commit authorities.
 
+Logical authority does not require a physical service boundary. The default is
+an in-process modular monolith; extraction into a service/store/queue/model call
+requires measured isolation, scale, concurrency, reliability, or regulatory
+need. Catalog/observation completeness may use immutable indexes and refs, but
+physical realization cannot change logical membership, coverage, conflict,
+digest, deny, or write semantics.
+
 ## 3. Substitutive migration rule
 
 Every authority migration names:

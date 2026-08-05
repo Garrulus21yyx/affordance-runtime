@@ -13,7 +13,7 @@ from affordance_runtime.contract_execution_loop import ContractExecutionLoop
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation
 from affordance_runtime.simplified_runtime_contracts import ActionOutcome, ExecutionAttempt
 from affordance_runtime.trace import TraceDag, TraceNode
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 @dataclass(frozen=True)

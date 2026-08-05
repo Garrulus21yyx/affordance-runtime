@@ -58,7 +58,7 @@ from affordance_runtime.task_planning import (
     task_planner_model_config,
     task_spec_planning_summary,
 )
-from affordance_runtime.verification import VerificationEvidence, VerificationReport, VerificationStatus
+from affordance_runtime.verification.mechanical import VerificationEvidence, VerificationReport, VerificationStatus
 from runtime_test_support import make_interaction
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
@@ -335,9 +335,12 @@ def test_obligation_compiler_leaves_ambiguous_current_affordance_family_unresolv
     assert plan.subgoals[0].action_family is None
 
 
-def test_simple_router_rejects_flat_task_without_canonical_obligations() -> None:
-    with pytest.raises(ValueError, match="requires canonical obligations"):
-        PlanningRouter().plan(_context())
+def test_simple_router_plans_flat_accepted_task_without_compatibility_graph() -> None:
+    plan = PlanningRouter().plan(_context())
+
+    assert isinstance(plan, TaskPlan)
+    assert len(plan.subgoals) == 1
+    assert plan.subgoals[0].objective == _context().task_spec.objective
 
 
 def test_obligation_outcome_compiler_preserves_dependency_and_dynamic_value_identity() -> None:
@@ -617,30 +620,8 @@ def test_task_planning_summary_preserves_effect_and_value_authority_without_sour
     assert summary["semantic_value_constraints"] == [
         {"relation": "exact", "value": "dark", "target": "theme"}
     ]
-    assert summary["source_claims"] == [
-        {
-            "claim_id": "claim:theme-value",
-            "kind": "value",
-            "statement": "theme must equal dark",
-            "required": True,
-        }
-    ]
-    assert summary["obligations"] == [
-        {
-            "obligation_id": "obligation:theme-value",
-            "kind": "predicate",
-            "subject": "theme",
-            "relation": "equals",
-            "value_source": "literal",
-            "expected_value": "dark",
-            "value_obligation_id": "",
-            "claim_ids": ["claim:theme-value"],
-            "depends_on": [],
-            "evidence_requirements": ["settings API confirms dark"],
-            "blocking": True,
-            "terminal": True,
-        }
-    ]
+    assert "source_claims" not in summary
+    assert "obligations" not in summary
     assert "request-1" not in str(summary)
 
 

@@ -12,7 +12,7 @@ from affordance_runtime.contracts import (
 )
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
-from affordance_runtime.verification import VerifierLadder
+from affordance_runtime.verification.mechanical import VerificationStatus, VerifierLadder
 
 
 @dataclass
@@ -199,5 +199,6 @@ def test_download_binding_is_artifact_scoped_and_disabled_verification_is_explic
     )
 
     assert bound.parameters["destination_dir"].endswith("download-run/downloads")
-    assert report.passed
+    assert report.status == VerificationStatus.INCONCLUSIVE
+    assert report.evidence == ()
     assert report.reason == "disabled by explicit test profile"

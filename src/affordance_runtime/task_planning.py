@@ -38,7 +38,7 @@ from affordance_runtime.task_intake import (
     operation_class_rank,
 )
 from affordance_runtime.task_source_references import obligation_source_refs, obligation_value_source, task_source_refs
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.mechanical import VerificationReport
 
 _FORBIDDEN_PLAN_CONTENT = re.compile(
     r"(?:"
@@ -1521,10 +1521,44 @@ class PlanningRouter:
         if context.task_spec.obligations:
             return self.obligation_compiler.compile(context)
         if context.task_spec.task_structure != TaskStructure.MULTI_STAGE:
-            raise ValueError("flat task planning requires canonical obligations")
+            return _plan_flat_accepted_task(context)
         if self.complex_planner is None:
             raise ValueError("complex task requires an LLMTaskPlanner or accepted task planner")
         return self.complex_planner.plan(context)
+
+
+def _plan_flat_accepted_task(context: TaskPlanningContext) -> TaskPlan:
+    """Project one admitted flat outcome without graph-shaped intake semantics."""
+
+    task_spec = context.task_spec
+    target = task_spec.targets[0] if task_spec.targets else task_spec.objective
+    relation = (
+        StateCriterionRelation.IS_VISIBLE
+        if task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+        else StateCriterionRelation.IS_COMPLETED
+    )
+    refs = task_source_refs(task_spec)
+    outcome = SubgoalOutcome(subject=target, relation=SubgoalOutcomeRelation(relation))
+    return TaskPlan(
+        plan_id=f"plan-{uuid4().hex}",
+        task_id=task_spec.task_id,
+        task_revision=task_spec.revision,
+        plan_version=context.current_plan_version + 1,
+        supersedes_plan_id=context.current_plan_id,
+        based_on_state_version=context.state_version,
+        generated_by=TaskPlanSource.RULE,
+        subgoals=(
+            SubgoalSpec(
+                subgoal_id="subgoal:accepted-outcome",
+                objective=task_spec.objective,
+                interaction=interaction_for_state(target, relation, "", refs),
+                success_criteria=task_spec.success_criteria,
+                evidence_requirements=task_spec.evidence_requirements,
+                operation_class=task_spec.operation_class,
+                outcome=outcome,
+            ),
+        ),
+    )
 
 
 def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
@@ -1558,32 +1592,6 @@ def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
                 "target": item.target,
             }
             for item in task_spec.semantic_value_constraints
-        ],
-        "source_claims": [
-            {
-                "claim_id": item.claim_id,
-                "kind": item.kind.value,
-                "statement": item.statement,
-                "required": item.required,
-            }
-            for item in task_spec.source_claims
-        ],
-        "obligations": [
-            {
-                "obligation_id": item.obligation_id,
-                "kind": item.kind.value,
-                "subject": item.subject,
-                "relation": item.relation.value,
-                "value_source": item.value_source.value,
-                "expected_value": item.expected_value,
-                "value_obligation_id": item.value_obligation_id,
-                "claim_ids": list(item.claim_ids),
-                "depends_on": list(item.depends_on),
-                "evidence_requirements": list(item.evidence_requirements),
-                "blocking": item.blocking,
-                "terminal": item.terminal,
-            }
-            for item in task_spec.obligations
         ],
         "forbidden_effects": list(task_spec.forbidden_effects),
         "evidence_requirements": list(task_spec.evidence_requirements),

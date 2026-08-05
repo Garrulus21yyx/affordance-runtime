@@ -17,7 +17,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
-from affordance_runtime.verification import (
+from affordance_runtime.verification.mechanical import (
     VerificationEvidence,
     VerificationReport,
     VerificationStatus,

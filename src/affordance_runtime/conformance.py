@@ -10,6 +10,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from affordance_runtime.action_contract_builder import ActionContractMaterializer
 from affordance_runtime.adapters.dom import PageAffordanceModel
 from affordance_runtime.adapters.som import SomAdapter
 from affordance_runtime.adapters.wot import WotAdapter
@@ -28,7 +29,6 @@ from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter, VisualExecutor, WotExecutor
 from affordance_runtime.immutable import FrozenSequence
 from affordance_runtime.planning import (
-    ContractBuilder,
     ContractRequirements,
     PlannerActionKind,
     PlannerProposal,
@@ -107,11 +107,11 @@ class ConformancePlanner:
 
 
 @dataclass
-class ConformanceContractBuilder(ContractBuilder):
+class ConformanceContractBuilder(ActionContractMaterializer):
     surface: str = "dom"
     oracle_state_url: str = ""
 
-    def build(self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot) -> ActionContract:
+    def build(self, proposal: PlannerProposal, task_spec: TaskSpec, state: Any, snapshot: BrowserSnapshot, observation=None) -> ActionContract:
         self.requirements = {
             **self.requirements,
             proposal.target_affordance_id: ContractRequirements(
@@ -128,7 +128,7 @@ class ConformanceContractBuilder(ContractBuilder):
                 compensation="reset shared conformance state",
             ),
         }
-        contract = super().build(proposal, task_spec, state, snapshot)
+        contract = super().build(proposal, task_spec, state, snapshot, observation)
         return replace(
             contract,
             parameters={"payload": True} if self.surface == "wot" else contract.parameters,

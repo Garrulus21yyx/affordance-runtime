@@ -8,7 +8,7 @@
 ```text
 capture canonical observation
 → trigger task-completion precheck when required
-→ plan/replan current TaskPlan
+→ reuse/direct-plan/replan current TaskPlan through typed planning gate
 → activate StepSpec
 → build full Runtime ActionChoiceCatalog
 → select directly or through bounded ChoicePage
@@ -52,6 +52,11 @@ resolution discovers missing admitted meaning, the loop routes TaskSpecGap or
 clarification; it does not continue to action construction with inferred
 authority.
 
+Task planning has a deterministic reuse/direct fast path. A still-feasible
+active Step continues without a Task Planner call; a model plan request exists
+only when a typed planning/replanning trigger is committed. Replaceable planning
+therefore does not mean regenerating a DAG every loop.
+
 ## 4. Live feedback
 
 Feedback consists of committed typed facts:
@@ -81,6 +86,14 @@ Coordinator invokes owners, receives typed results, commits transitions/events,
 and chooses the next phase. Algorithms remain in their domain owners. Generic
 exception text may be logged but cannot select a recovery owner or synthesize a
 command.
+
+## 7. Risk-derived feature profiles
+
+`DIRECT_LOW_RISK`, `MULTI_STEP`, and `HIGH_RISK_MULTI_SOURCE` progressively
+enable optional audit, paging/refinement, open semantics, model evidence, and
+durable transaction evidence. Profiles are derived from TaskSpec risk and
+actual scale; they cannot disable required Task/Capability/Approval/Freshness
+gates, uncertain-effect protection, output closure, or single-writer commit.
 
 The previous detailed orchestration document is archived at
 [maintained-pre-consolidation/orchestration-and-feedback.md](archive/superseded-2026-08-05/maintained-pre-consolidation/orchestration-and-feedback.md).

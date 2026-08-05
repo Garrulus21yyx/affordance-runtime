@@ -9,7 +9,7 @@ from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import ExecutionReceipt
 from affordance_runtime.trace import TraceDag
-from affordance_runtime.verification import VerificationReport
+from affordance_runtime.verification.mechanical import VerificationReport
 
 
 @dataclass(frozen=True)

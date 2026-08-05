@@ -27,11 +27,13 @@ from affordance_runtime.simplified_runtime_contracts import (
 )
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
+    OperationClass,
     SourcedTaskClaim,
     TaskObligationSpec,
     TaskSpec,
 )
 from affordance_runtime.task_planning import PlanProgress, SubgoalSpec, TaskPlan
+from affordance_runtime.task_source_references import task_source_refs
 
 
 class LegacyStepProjectionStatus(StrEnum):
@@ -161,12 +163,6 @@ def project_legacy_task_plan_to_step_view(
 
     obligation_by_id = {item.obligation_id: item for item in task_spec.obligations}
     claims_by_id = {item.claim_id: item for item in task_spec.source_claims}
-    if not obligation_by_id:
-        return LegacyStepProjectionResult(
-            status=LegacyStepProjectionStatus.NO_PLAN,
-            evaluated_at_state_version=evaluated_at_state_version,
-            reason="TaskSpec has no canonical obligations for exact step projection",
-        )
     progress_error = _validate_legacy_progress_ids(plan=plan, progress=progress)
     if progress_error:
         return LegacyStepProjectionResult(
@@ -177,7 +173,7 @@ def project_legacy_task_plan_to_step_view(
     steps: list[StepSpec] = []
     for subgoal in plan.subgoals:
         obligation = obligation_by_id.get(subgoal.subgoal_id)
-        if obligation is None:
+        if obligation is None and obligation_by_id:
             return LegacyStepProjectionResult(
                 status=LegacyStepProjectionStatus.PROJECTION_INVALID,
                 evaluated_at_state_version=evaluated_at_state_version,
@@ -186,15 +182,19 @@ def project_legacy_task_plan_to_step_view(
                     "exact obligation id"
                 ),
             )
-        criterion = _criterion_from_subgoal_and_obligation(
-            subgoal=subgoal,
-            obligation=obligation,
-            claims_by_id=claims_by_id,
+        criterion = (
+            _criterion_from_subgoal_and_obligation(
+                subgoal=subgoal,
+                obligation=obligation,
+                claims_by_id=claims_by_id,
+            )
+            if obligation is not None
+            else _criterion_from_accepted_subgoal(subgoal, task_spec)
         )
         if criterion is None:
             status = (
                 LegacyStepProjectionStatus.UNSUPPORTED_EVIDENCE_POLICY
-                if not obligation.typed_evidence_requirements
+                if obligation is not None and not obligation.typed_evidence_requirements
                 else LegacyStepProjectionStatus.PROJECTION_INVALID
             )
             return LegacyStepProjectionResult(
@@ -269,6 +269,57 @@ def project_legacy_task_plan_to_step_view(
         task_plan_view=task_plan_view,
         step_progress_view=step_progress_view,
     )
+
+
+def _criterion_from_accepted_subgoal(
+    subgoal: SubgoalSpec,
+    task_spec: TaskSpec,
+) -> Criterion | None:
+    """Project accepted TaskPlan outcome without consulting compatibility graphs."""
+
+    if subgoal.outcome is None:
+        subject = _interaction_subject(subgoal)
+        relation = (
+            StateCriterionRelation.IS_VISIBLE
+            if subgoal.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
+            else StateCriterionRelation.IS_COMPLETED
+        )
+        expected_value = None
+    else:
+        subject = subgoal.outcome.subject
+        relation = StateCriterionRelation(subgoal.outcome.relation)
+        expected_value = subgoal.outcome.value or None
+    source_refs = task_source_refs(task_spec)
+    policy = CriterionEvidencePolicy(
+        minimum_strength=EvidenceStrength.INDEPENDENT,
+        allowed_source_kinds=("dom_state", "visual_state", "api_state", "device_state"),
+    )
+    values = {
+        "criterion_id": f"criterion:{subgoal.subgoal_id}",
+        "subject": subject,
+        "relation": relation,
+        "expected_value": expected_value,
+        "evidence_policy": policy,
+        "source_refs": source_refs,
+    }
+    if relation == StateCriterionRelation.IS_ABSENT:
+        return AbsenceCriterion(**values)
+    if relation in {StateCriterionRelation.IS_VISIBLE, StateCriterionRelation.IS_AVAILABLE}:
+        return PresenceCriterion(**values)
+    return StateCriterion(**values)
+
+
+def _interaction_subject(subgoal: SubgoalSpec) -> str:
+    interaction = subgoal.interaction
+    if hasattr(interaction, "target"):
+        return str(interaction.target)
+    if hasattr(interaction, "collection"):
+        return str(interaction.collection.target)
+    if hasattr(interaction, "source"):
+        return str(interaction.source.target)
+    if hasattr(interaction, "region"):
+        return str(interaction.region)
+    return subgoal.objective
 
 
 def _criterion_from_subgoal_and_obligation(

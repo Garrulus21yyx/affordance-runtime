@@ -79,16 +79,12 @@ from affordance_runtime.generalist_planner import (
     planner_prompt_version,
 )
 from affordance_runtime.intent_compiler import (
-    LLMIntentDraft,
+    LLMMinimalIntentProposal,
     intent_compiler_model_config,
     intent_draft_repair_model_config,
 )
 from affordance_runtime.model_port import ModelPort
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
-from affordance_runtime.task_obligation_coverage import (
-    TaskObligationCoverageReview,
-    task_obligation_coverage_model_config,
-)
 from affordance_runtime.task_planning import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
@@ -338,10 +334,6 @@ def run_browsergym_miniwob_generalist_suite(
             planner_profile=planner_profile,
         ).model_dump(mode="json"),
         **_intent_compiler_checkpoint_identity(),
-        "task_obligation_coverage_model_config": task_obligation_coverage_model_config().model_dump(
-            mode="json"
-        ),
-        "task_obligation_coverage_schema_sha256": _task_obligation_coverage_schema_sha256(),
         "task_planner_prompt_version": TASK_PLANNER_PROMPT_VERSION,
         "task_planner_model_config": task_planner_model_config().model_dump(mode="json"),
         "task_planner_schema_sha256": _task_planner_schema_sha256(),
@@ -514,7 +506,7 @@ def _planner_schema_sha256() -> str:
 
 
 def _intent_compiler_schema_sha256() -> str:
-    payload = LLMIntentDraft.model_json_schema()
+    payload = LLMMinimalIntentProposal.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
@@ -531,12 +523,6 @@ def _intent_compiler_checkpoint_identity() -> dict[str, Any]:
         ),
         "intent_draft_repair_schema_sha256": schema_sha256,
     }
-
-
-def _task_obligation_coverage_schema_sha256() -> str:
-    payload = TaskObligationCoverageReview.model_json_schema()
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _task_planner_schema_sha256() -> str:

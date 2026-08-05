@@ -52,14 +52,27 @@ it.
 
 ## 5. Providers and admission
 
-DOM, AX, visual, control-state, API, artifact, network, external, and optional
-model/human providers extract evidence with source, freshness, assurance, and
-observed value metadata. Typed predicate evaluators own operators.
+DOM, AX, visual/SVG, WoT property state, API/device, artifact, network,
+external, and optional model/human providers extract evidence with source,
+freshness, assurance, and observed value metadata. Typed predicate evaluators
+own operators.
+
+WOT_ACTION_RESULT is a contract-bound receipt/outcome that records dispatch
+and, when qualified, recent causal evidence. It cannot complete a criterion or
+task by itself. A state-holds criterion still needs fresh
+`WOT_PROPERTY_STATE`/API/device evidence, and a high-risk external effect still
+needs the declared authoritative `FINAL_RECHECK` or human confirmation.
 
 EvidenceAdmissionPolicy decides whether an evidence record is usable for one
 typed criterion ID. It does not own AllOf/AnyOf/root completion semantics.
 ModelVerifier provides evidence only; model-only evidence cannot complete
 high-risk external effects.
+
+The canonical operator vocabulary and phase-specific provider coverage are
+separate. The first mechanical baseline covers equals, contains, prefix/suffix,
+between, exists/absent, selected/checked, changed, and Boolean composition.
+Registered operators without a qualified provider return `UNSUPPORTED`; they
+do not fall back to description matching or automatic model approval.
 
 ## 6. Task completion
 
