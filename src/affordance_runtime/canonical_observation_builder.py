@@ -45,6 +45,15 @@ def _single_typed_value(values: Iterable[str]) -> str:
     return next(iter(known)) if len(known) == 1 else ""
 
 
+def _maximum_resource_sensitivity(values: Iterable[str]) -> str:
+    ranks = {"low": 0, "moderate": 1, "high": 2, "critical": 3}
+    known = [str(value).casefold() for value in values if str(value).strip()]
+    if not known:
+        return ""
+    normalized = [value if value in ranks else "critical" for value in known]
+    return max(normalized, key=ranks.__getitem__)
+
+
 @dataclass(frozen=True)
 class CanonicalObservationBuilder:
     """Own canonical fusion without consulting any presentation policy."""
@@ -260,7 +269,7 @@ def _canonical_target(
             reversibility=_single_typed_value(
                 candidate.reversibility for candidate in candidates if action in candidate.supported_actions
             ),
-            resource_sensitivity=_single_typed_value(
+            resource_sensitivity=_maximum_resource_sensitivity(
                 candidate.resource_sensitivity
                 for candidate in candidates
                 if action in candidate.supported_actions

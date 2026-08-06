@@ -41,6 +41,15 @@ class RiskLevel(StrEnum):
     IRREVERSIBLE = "irreversible"
 
 
+def risk_level_rank(value: RiskLevel) -> int:
+    return {
+        RiskLevel.LOW: 0,
+        RiskLevel.MEDIUM: 1,
+        RiskLevel.HIGH: 2,
+        RiskLevel.IRREVERSIBLE: 3,
+    }[value]
+
+
 class ProgressEvidenceScope(StrEnum):
     """Owner-declared scope for materializing task-progress evidence links."""
 
@@ -524,6 +533,9 @@ class ActionContract:
         object.__setattr__(self, "verifier_plan", FrozenSequence(self.verifier_plan))
         object.__setattr__(self, "required_capabilities", freeze_json(self.required_capabilities))
         object.__setattr__(self, "fallback_backends", freeze_json(self.fallback_backends))
+        proof_risk = getattr(self.action_authority_proof, "risk", None)
+        if isinstance(proof_risk, RiskLevel) and risk_level_rank(self.risk) < risk_level_rank(proof_risk):
+            raise ValueError("ActionContract risk cannot be lower than sealed route authority risk")
         if not self.page_revision:
             object.__setattr__(self, "page_revision", self.environment_revision)
         computed_hash = self.compute_hash()

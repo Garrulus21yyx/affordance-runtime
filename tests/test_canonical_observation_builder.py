@@ -46,6 +46,7 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
             target_fingerprint="dom-lamp",
             supported_actions=frozenset({"activate"}),
             evidence_kinds=frozenset(),
+            resource_sensitivity="low",
         ),
         GroundingCandidate(
             candidate_id="candidate:wot:lamp",
@@ -61,6 +62,7 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
             target_fingerprint="wot-lamp",
             supported_actions=frozenset({"activate"}),
             evidence_kinds=frozenset(),
+            resource_sensitivity="high",
         ),
     )
     assertions = (
@@ -136,6 +138,7 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
     target = view.targets.get("semantic:lamp")
     assert target is not None
     assert target.surfaces == (GroundingSource.DOM, GroundingSource.WOT)
+    assert target.action_support[0].resource_sensitivity == "high"
     assert view.bindings.for_target("semantic:lamp") == tuple(
         sorted(candidates, key=lambda item: item.candidate_id)
     )

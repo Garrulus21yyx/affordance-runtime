@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.action_admission import ActionAdmissionService, AdmissionGate
 from affordance_runtime.action_choice_authority import authorize_choice
 from affordance_runtime.action_choice_builder import ActionChoiceCatalogBuilder
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
@@ -11,7 +12,7 @@ from affordance_runtime.action_contract_builder import ActionContractBuilder
 from affordance_runtime.action_selection import ActionSelection
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import ActionChoice, ActionChoiceFailure
-from affordance_runtime.contracts import ActionContract, RiskLevel
+from affordance_runtime.contracts import ActionContract, Observation, RiskLevel, RuntimeErrorCode
 from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.effect_authority_contracts import (
     AuthorityStatus,
@@ -19,7 +20,9 @@ from affordance_runtime.effect_authority_contracts import (
     EffectClass,
     ResourceScopeRef,
 )
+from affordance_runtime.grounding import DomGroundingPayload, GroundingCandidate, GroundingSource
 from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     SourceReference,
@@ -717,3 +720,133 @@ def test_choice_and_action_contract_preserve_exact_authority_refs() -> None:
     assert contract.requirement_refs == ("requirement:effect:1",)
     assert contract.effect_authorization_refs == ("requirement:effect:1",)
     assert contract.effectful
+
+
+def test_actual_binding_risk_escalation_requires_approval() -> None:
+    task = _effect_task("A")
+    step = _effect_step("A")
+    candidate = GroundingCandidate(
+        candidate_id="candidate:high-risk",
+        semantic_target_id="target:delete:a",
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(selector="#delete-a"),
+        compatible_executor="browser",
+        observation_epoch_id="snapshot:route-risk",
+        environment_revision="env:route-risk",
+        page_revision="page:route-risk",
+        target_fingerprint="",
+        supported_actions=frozenset({"activate"}),
+        evidence_kinds=frozenset(),
+        operation_ref="resource.update@v1",
+        effect_class=EffectClass.UPDATE.value,
+        externality="local",
+        reversibility="reversible",
+        resource_sensitivity="high",
+        authority_source_assurance=AssuranceLevel.STRUCTURAL.value,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="snapshot:route-risk",
+        page_revision="page:route-risk",
+        environment_revision="env:route-risk",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:delete:a",
+                surface="dom",
+                role="button",
+                label="Delete A",
+                supported_actions=("activate",),
+                state={"enabled": True},
+                operation_ref="resource.update@v1",
+                effect_class=EffectClass.UPDATE.value,
+                externality="local",
+                reversibility="reversible",
+                resource_sensitivity="moderate",
+                source_assurance=AssuranceLevel.STRUCTURAL,
+            ),
+        ),
+        bindings=(candidate,),
+    )
+    choice = ActionChoice(
+        choice_id="choice:route-risk",
+        task_revision=1,
+        state_version=0,
+        snapshot_id=observation.epoch_id,
+        active_step_id=step.step_id,
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_id="target:delete:a",
+        requirement_refs=("requirement:effect:1",),
+        effect_refs=("requirement:effect:1",),
+    )
+    catalog_proof = authorize_choice(choice, step, task, observation)
+    assert catalog_proof.risk == RiskLevel.MEDIUM
+    choice = replace(
+        choice,
+        action_authority_proof=catalog_proof,
+        risk=catalog_proof.risk.value,
+    )
+    catalog = ActionChoiceCatalog.from_choices(
+        task_revision=1,
+        plan_revision=1,
+        state_version=0,
+        observation_ref=observation.epoch_id,
+        active_step_id=step.step_id,
+        choices=(choice,),
+    )
+    selection = ActionSelection(
+        choice.choice_id,
+        catalog.ref,
+        1,
+        1,
+        0,
+        observation.epoch_id,
+        step.step_id,
+    )
+
+    class HighRiskRouteMaterializer:
+        def build(self, proposal, task_spec, state, capture, current_observation):  # type: ignore[no-untyped-def]
+            del proposal, task_spec, state, capture, current_observation
+            return ActionContract(
+                id="contract:route-risk",
+                intent="Delete A",
+                affordance_id="target:delete:a",
+                action="activate",
+                backend="dom",
+                environment_revision="env:route-risk",
+                snapshot_id="snapshot:route-risk",
+                page_revision="page:route-risk",
+                locator={"selector": "#delete-a"},
+                grounding_candidate=candidate,
+            )
+
+    contract = ActionContractBuilder(HighRiskRouteMaterializer()).build(  # type: ignore[arg-type]
+        selection,
+        catalog,
+        task,
+        StateKernel(task.task_id, task.objective),
+        None,  # type: ignore[arg-type]
+        observation,
+    )
+
+    assert contract.action_authority_proof.risk == RiskLevel.HIGH
+    assert contract.risk == RiskLevel.HIGH
+    with pytest.raises(ValueError, match="cannot be lower"):
+        replace(contract, risk=RiskLevel.MEDIUM, contract_hash="")
+    admission = ActionAdmissionService(TaskConstraintPolicy()).evaluate(
+        contract,
+        constraints={},
+        capability_gate=CapabilityGate(),
+        observation=Observation(
+            "env:route-risk",
+            snapshot_id="snapshot:route-risk",
+            page_revision="page:route-risk",
+        ),
+        task_spec=task,
+        canonical_observation=observation,
+    )
+    assert tuple(item.gate for item in admission.policy_results) == (
+        AdmissionGate.TASK_AUTHORITY,
+        AdmissionGate.CAPABILITY,
+        AdmissionGate.APPROVAL,
+    )
+    assert admission.error == RuntimeErrorCode.APPROVAL_REQUIRED

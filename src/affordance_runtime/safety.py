@@ -8,7 +8,13 @@ from urllib.parse import urlsplit
 
 from affordance_runtime.action_choice_authority import contract_matches_task_authority
 from affordance_runtime.action_effect_classifier import classify_action
-from affordance_runtime.contracts import ActionContract, ApprovalToken, RiskLevel, RuntimeErrorCode
+from affordance_runtime.contracts import (
+    ActionContract,
+    ApprovalToken,
+    RiskLevel,
+    RuntimeErrorCode,
+    risk_level_rank,
+)
 from affordance_runtime.effect_authority_contracts import ActionAuthorityProof, EffectClass
 from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_observation import UnifiedObservation
@@ -30,7 +36,8 @@ class CapabilityGate:
         ]
         if missing:
             return RuntimeErrorCode.CAPABILITY_DENIED
-        requires_approval = contract.risk in self.approval_required_risks or bool(
+        effective_risk = _effective_contract_risk(contract)
+        requires_approval = effective_risk in self.approval_required_risks or bool(
             set(contract.required_capabilities) & self.approval_required_capabilities
         )
         if requires_approval:
@@ -46,13 +53,21 @@ class CapabilityGate:
         error = self.check(contract)
         if error is not None:
             return error
-        requires_approval = contract.risk in self.approval_required_risks or bool(
+        effective_risk = _effective_contract_risk(contract)
+        requires_approval = effective_risk in self.approval_required_risks or bool(
             set(contract.required_capabilities) & self.approval_required_capabilities
         )
         if requires_approval and contract.id not in self.approved_contract_ids:
             token = next(item for item in self.approval_tokens.values() if item.matches(contract))
             token.consume()
         return None
+
+
+def _effective_contract_risk(contract: ActionContract) -> RiskLevel:
+    proof_risk = getattr(contract.action_authority_proof, "risk", contract.risk)
+    if isinstance(proof_risk, RiskLevel) and risk_level_rank(proof_risk) > risk_level_rank(contract.risk):
+        return proof_risk
+    return contract.risk
 
 
 @dataclass(frozen=True)

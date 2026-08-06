@@ -19,7 +19,6 @@ from affordance_runtime.contracts import (
     Affordance,
     GestureBindingError,
     GestureContractBinder,
-    RiskLevel,
     RuntimeErrorCode,
 )
 from affordance_runtime.grounding import GroundingCandidate
@@ -565,7 +564,7 @@ class ActionContractBuilder:
             choice_role=choice.role.value,
             action_authority_proof=proof,
             runtime_effect_signature=runtime_signature,
-            risk=RiskLevel(choice.risk),
+            risk=proof.risk,
             route_reason=route_reason,
             contract_hash="",
         )
