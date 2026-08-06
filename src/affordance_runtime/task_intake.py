@@ -155,6 +155,8 @@ class TaskSemanticPayload(StrictModel):
 
     kind: Literal["effect", "entity", "constraint", "preference", "output"]
     subject: str = Field(min_length=1, max_length=480)
+    target_identity: str = Field(default="", max_length=480)
+    destination_identity: str = Field(default="", max_length=480)
     relation: str = Field(default="", max_length=120)
     value: str = Field(default="", max_length=2_000)
     operation_class: OperationClass | None = None
@@ -286,6 +288,8 @@ class TaskSpec(StrictModel):
         for label, refs, predicate in role_checks:
             if any(not predicate(by_id[ref]) for ref in refs):
                 raise ValueError(f"{label} refs must name requirements with the matching semantic role")
+        if any(not by_id[ref].payload.target_identity.strip() for ref in self.allowed_effect_refs):
+            raise ValueError("allowed effect requirements require an exact target identity")
         role_ref_sets = [set(refs) for _, refs, _ in role_checks]
         if any(left & right for index, left in enumerate(role_ref_sets) for right in role_ref_sets[index + 1 :]):
             raise ValueError("task semantic role refs must be mutually exclusive")
@@ -512,6 +516,7 @@ def canonical_effect_requirements(
             payload=TaskSemanticPayload(
                 kind="effect",
                 subject=str(subject),
+                target_identity=str(subject),
                 operation_class=operation_class,
                 capability=capability,
             ),

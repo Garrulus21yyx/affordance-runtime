@@ -23,6 +23,7 @@ from affordance_runtime.task_intake import (
     RequestedEffect,
     SemanticValueConstraint,
     StrictModel,
+    TaskInteractionRelationKind,
     TaskRequirement,
     TaskRiskPolicy,
     TaskSemanticPayload,
@@ -402,6 +403,13 @@ def _canonical_requirements(
             payload=TaskSemanticPayload(
                 kind="effect",
                 subject=effect.target,
+                target_identity=effect.target,
+                destination_identity=(
+                    effect.interaction_relation.destination
+                    if effect.interaction_relation is not None
+                    and effect.interaction_relation.kind == TaskInteractionRelationKind.DRAG_TO
+                    else ""
+                ),
                 relation="requested_effect",
                 value=effect.description,
                 operation_class=effect.operation_class,

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+from affordance_runtime.action_choice_authority import authorize_choice
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog, ActionChoiceCatalogBuilder
 from affordance_runtime.action_contract_builder import ActionContractBuilder
 from affordance_runtime.action_selection import ActionSelection
 from affordance_runtime.active_step_scope import ActiveStepScope
-from affordance_runtime.choice_contracts import ActionChoiceFailure
-from affordance_runtime.contracts import ActionContract
+from affordance_runtime.choice_contracts import ActionChoice, ActionChoiceFailure
+from affordance_runtime.contracts import ActionContract, RiskLevel
 from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.simplified_runtime_contracts import (
@@ -19,6 +22,8 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
@@ -158,6 +163,42 @@ def test_choice_serializer_projects_only_the_displayed_page_without_runtime_hand
         assert forbidden not in encoded
 
 
+def test_choice_presentation_uses_runtime_authority_risk_and_destination() -> None:
+    from affordance_runtime.choice_presentation import ChoicePresentationProjector
+
+    choice = ActionChoice(
+        choice_id="choice:risk",
+        task_revision=1,
+        state_version=0,
+        snapshot_id="snapshot:risk",
+        active_step_id="step:risk",
+        action_kind=PlannerActionKind.DRAG,
+        target_id="target:source",
+        target_label="Source",
+        destination_id="target:destination",
+        destination_label="Approved",
+        requirement_refs=("requirement:risk",),
+        effect_refs=("requirement:risk",),
+        effectful=True,
+        risk="high",
+        authorization_scope_digest="sha256:authority",
+    )
+    catalog = ActionChoiceCatalog.from_choices(
+        task_revision=1,
+        plan_revision=1,
+        state_version=0,
+        observation_ref="snapshot:risk",
+        active_step_id="step:risk",
+        choices=(choice,),
+    )
+
+    presented = ChoicePresentationProjector().project(catalog).choices[0]
+
+    assert presented.risk == "high"
+    assert presented.destination_label == "Approved"
+    assert presented.effect_refs == ("requirement:risk",)
+
+
 def _effect_task(subject: str) -> TaskSpec:
     return TaskSpec(
         task_id="task:catalog-authority",
@@ -222,9 +263,9 @@ def _delete_observation(target: str) -> UnifiedObservation:
 
 
 def test_catalog_rejects_concrete_target_outside_exact_effect_authority() -> None:
-    task = _effect_task("A")
-    step = _effect_step("B")
-    observation = _delete_observation("B")
+    task = _effect_task("Alice")
+    step = _effect_step("Bob")
+    observation = _delete_observation("Bob")
     scope = ActiveStepScope.from_active_step(
         task_revision=task.revision,
         evaluated_at_state_version=0,
@@ -245,6 +286,345 @@ def test_catalog_rejects_concrete_target_outside_exact_effect_authority() -> Non
 
     assert isinstance(result, ActionChoiceFailure)
     assert result.reason_code == "no_feasible_action_choice"
+
+
+def test_catalog_derives_effect_and_risk_instead_of_trusting_planner_flags() -> None:
+    task = _effect_task("Alice")
+    step = replace(_effect_step("Alice"), effect_authorization_refs=(), effectful=False)
+    observation = _delete_observation("Alice")
+    result = ActionChoiceCatalogBuilder().build(
+        task_revision=1,
+        task_spec=task,
+        plan_revision=1,
+        state_version=0,
+        step=step,
+        scope=ActiveStepScope.from_active_step(
+            task_revision=1,
+            evaluated_at_state_version=0,
+            snapshot_id=observation.epoch_id,
+            step=step,
+            activity_status=StepActivityStatus.ACTIVE,
+        ),
+        observation=observation,
+    )
+
+    assert not isinstance(result, ActionChoiceFailure)
+    choice = result.page(None, 1).choices[0]
+    assert choice.effect_refs == ("requirement:effect:1",)
+    assert choice.effectful
+    assert choice.risk == "medium"
+    assert choice.authorization_scope_digest.startswith("sha256:")
+
+
+def test_catalog_rejects_planner_declared_read_only_destructive_target() -> None:
+    task = TaskSpec(
+        task_id="task:navigation-authority",
+        revision=1,
+        objective="Open settings",
+        operation_class=OperationClass.NAVIGATION,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:open-settings",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Open settings",
+                    target_identity="Open settings",
+                    operation_class=OperationClass.NAVIGATION,
+                ),
+                source_anchor_refs=("request:navigation",),
+            ),
+        ),
+        allowed_effect_refs=("requirement:open-settings",),
+        success=SuccessExpression(
+            expression_id="success:settings-open",
+            operator="criterion",
+            criterion_id="criterion:settings-open",
+            requirement_refs=("requirement:open-settings",),
+        ),
+        source_request_ref="request:navigation",
+    )
+    source = SourceReference("request:navigation", "request:navigation:whole")
+    step = StepSpec(
+        step_id="step:delete-account",
+        objective="Delete account",
+        interaction=ElementIntent("Delete account", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:settings-open",
+                SubjectExpr("semantic_target", "Delete account"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=("requirement:open-settings",),
+        effect_authorization_refs=(),
+        effectful=False,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="snapshot:navigation",
+        page_revision="page:navigation",
+        environment_revision="env:navigation",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:delete-account",
+                surface="dom",
+                role="button",
+                label="Delete account",
+                supported_actions=("activate",),
+                state={"enabled": True},
+                risk=RiskLevel.IRREVERSIBLE,
+            ),
+        ),
+    )
+    scope = ActiveStepScope.from_active_step(
+        task_revision=1,
+        evaluated_at_state_version=0,
+        snapshot_id=observation.epoch_id,
+        step=step,
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    result = ActionChoiceCatalogBuilder().build(
+        task_revision=1,
+        task_spec=task,
+        plan_revision=1,
+        state_version=0,
+        step=step,
+        scope=scope,
+        observation=observation,
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+
+
+def test_catalog_rejects_observed_action_risk_above_admitted_operation_class() -> None:
+    task = TaskSpec(
+        task_id="task:read-account",
+        revision=1,
+        objective="Inspect account control",
+        operation_class=OperationClass.READ_ONLY,
+        requirements=canonical_effect_requirements(
+            ("Account control",), OperationClass.READ_ONLY, "request:read-account", ()
+        ),
+        allowed_effect_refs=("requirement:effect:1",),
+        success=SuccessExpression(
+            expression_id="success:read-account",
+            operator="criterion",
+            criterion_id="criterion:read-account",
+            requirement_refs=("requirement:effect:1",),
+        ),
+        source_request_ref="request:read-account",
+    )
+    source = SourceReference("request:read-account", "request:read-account:whole")
+    step = StepSpec(
+        step_id="step:account",
+        objective="Inspect account control",
+        interaction=ElementIntent("Account control", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:read-account",
+                SubjectExpr("semantic_target", "Account control"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=("requirement:effect:1",),
+        effect_authorization_refs=("requirement:effect:1",),
+        effectful=False,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="snapshot:account",
+        page_revision="page:account",
+        environment_revision="env:account",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:account",
+                surface="dom",
+                role="button",
+                label="Account control",
+                supported_actions=("activate",),
+                state={},
+                risk=RiskLevel.IRREVERSIBLE,
+            ),
+        ),
+    )
+    result = ActionChoiceCatalogBuilder().build(
+        task_revision=1,
+        task_spec=task,
+        plan_revision=1,
+        state_version=0,
+        step=step,
+        scope=ActiveStepScope.from_active_step(
+            task_revision=1,
+            evaluated_at_state_version=0,
+            snapshot_id=observation.epoch_id,
+            step=step,
+            activity_status=StepActivityStatus.ACTIVE,
+        ),
+        observation=observation,
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+
+
+def test_non_english_target_identity_is_exact_without_keyword_fallback() -> None:
+    task = _effect_task("unused").model_copy(
+        update={
+            "objective": "删除爱丽丝",
+            "requirements": (
+                TaskRequirement(
+                    requirement_id="requirement:effect:1",
+                    payload=TaskSemanticPayload(
+                        kind="effect",
+                        subject="爱丽丝",
+                        target_identity="爱丽丝",
+                        operation_class=OperationClass.REVERSIBLE_WRITE,
+                    ),
+                    source_anchor_refs=("request:catalog-authority",),
+                ),
+            ),
+        }
+    )
+    source = SourceReference("request:catalog-authority", "request:catalog-authority:whole")
+    step = StepSpec(
+        step_id="step:delete",
+        objective="删除鲍勃",
+        interaction=ElementIntent("鲍勃", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:deleted",
+                SubjectExpr("semantic_target", "鲍勃"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=("requirement:effect:1",),
+        effect_authorization_refs=("requirement:effect:1",),
+        effectful=True,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="snapshot:delete",
+        page_revision="page:delete",
+        environment_revision="env:delete",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:bob",
+                surface="dom",
+                role="button",
+                label="鲍勃",
+                supported_actions=("activate",),
+                state={},
+            ),
+        ),
+    )
+    result = ActionChoiceCatalogBuilder().build(
+        task_revision=1,
+        task_spec=task,
+        plan_revision=1,
+        state_version=0,
+        step=step,
+        scope=ActiveStepScope.from_active_step(
+            task_revision=1,
+            evaluated_at_state_version=0,
+            snapshot_id="snapshot:delete",
+            step=step,
+            activity_status=StepActivityStatus.ACTIVE,
+        ),
+        observation=observation,
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+
+
+def test_drag_destination_must_match_typed_effect_scope() -> None:
+    task = TaskSpec(
+        task_id="task:drag",
+        revision=1,
+        objective="Move Alice to Approved",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:drag",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Alice",
+                    target_identity="Alice",
+                    destination_identity="Approved",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                source_anchor_refs=("request:drag",),
+            ),
+        ),
+        allowed_effect_refs=("requirement:drag",),
+        success=SuccessExpression(
+            expression_id="success:drag",
+            operator="criterion",
+            criterion_id="criterion:drag",
+            requirement_refs=("requirement:drag",),
+        ),
+        source_request_ref="request:drag",
+    )
+    source = SourceReference("request:drag", "request:drag:whole")
+    step = StepSpec(
+        step_id="step:drag",
+        objective="Move Alice",
+        interaction=ElementIntent("Alice", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:drag",
+                SubjectExpr("semantic_target", "Alice"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=("requirement:drag",),
+        effect_authorization_refs=("requirement:drag",),
+        effectful=True,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="snapshot:drag",
+        page_revision="page:drag",
+        environment_revision="env:drag",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:alice",
+                surface="dom",
+                role="item",
+                label="Alice",
+                supported_actions=("drag",),
+                state={},
+            ),
+            UnifiedObservationTarget(
+                target_id="target:rejected",
+                surface="dom",
+                role="region",
+                label="Rejected",
+                supported_actions=("drag",),
+                state={},
+            ),
+        ),
+    )
+    choice = ActionChoice(
+        choice_id="choice:drag",
+        task_revision=1,
+        state_version=0,
+        snapshot_id="snapshot:drag",
+        active_step_id=step.step_id,
+        action_kind=PlannerActionKind.DRAG,
+        target_id="target:alice",
+        destination_id="target:rejected",
+        requirement_refs=("requirement:drag",),
+    )
+
+    assert not authorize_choice(choice, step, task, observation).authorized
 
 
 def test_choice_and_action_contract_preserve_exact_authority_refs() -> None:

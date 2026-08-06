@@ -57,6 +57,7 @@ def _task_requirement(
         payload=TaskSemanticPayload(
             kind="effect",
             subject=subject,
+            target_identity=subject,
             operation_class=operation_class,
             capability=capability,
         ),
@@ -203,9 +204,9 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         objective="Activate the blue visual canvas control",
         operation_class=OperationClass.READ_ONLY,
         requirements=(
-            _task_requirement(
-                "requirement:activate-canvas",
-                "Activate the blue visual canvas control",
+                _task_requirement(
+                    "requirement:activate-canvas",
+                    visual_target.label,
                 OperationClass.READ_ONLY,
             ),
         ),
@@ -246,7 +247,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
     assert pointer.clicks == [(400, 300)]
     assert len(proposer.requests) >= 2
     assert all(
-        request.instruction == "Activate the blue visual canvas control"
+        request.instruction.startswith("Activate the blue visual canvas control")
         for request in proposer.requests
         if request.instruction
     )

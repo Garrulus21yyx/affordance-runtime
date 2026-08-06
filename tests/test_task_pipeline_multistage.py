@@ -162,12 +162,12 @@ class MultiStageIntentAndPlanModel:
                     "requested_effects": [
                         {
                             "operation_class": "read_only",
-                            "target": "current state",
+                            "target": "Discover",
                             "source_ref": source_ref,
                         },
                         {
                             "operation_class": "read_only",
-                            "target": "confirmed state",
+                            "target": "Confirm",
                             "source_ref": source_ref,
                         },
                     ],

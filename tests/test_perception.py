@@ -35,6 +35,7 @@ def _task(objective: str) -> TaskSpec:
                 payload=TaskSemanticPayload(
                     kind="effect",
                     subject=objective,
+                    target_identity=objective,
                     operation_class=OperationClass.READ_ONLY,
                 ),
                 source_anchor_refs=("test:whole_request",),
@@ -120,6 +121,7 @@ def test_hyphenated_task_target_contributes_visual_component_terms() -> None:
                 payload=TaskSemanticPayload(
                     kind="effect",
                     subject="Click on a small black 8 click-shape",
+                    target_identity="Click on a small black 8 click-shape",
                     operation_class=OperationClass.READ_ONLY,
                 ),
                 source_anchor_refs=("test:whole_request",),
@@ -154,6 +156,7 @@ def test_ascending_number_sequence_accepts_structured_or_visual_spatial_observat
                 payload=TaskSemanticPayload(
                     kind="effect",
                     subject="Click on the numbers in ascending order",
+                    target_identity="Click on the numbers in ascending order",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                 ),
                 source_anchor_refs=("test:whole_request",),
@@ -189,6 +192,7 @@ def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_ap
                 payload=TaskSemanticPayload(
                     kind="effect",
                     subject="Click the letters in descending order",
+                    target_identity="Click the letters in descending order",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                 ),
                 source_anchor_refs=("test:whole_request",),

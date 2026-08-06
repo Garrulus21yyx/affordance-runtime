@@ -206,6 +206,7 @@ def test_taskspec_rejects_inconsistent_operation_capability_and_risk_aggregates(
         payload=TaskSemanticPayload(
             kind="effect",
             subject="settings",
+            target_identity="settings",
             operation_class=OperationClass.REVERSIBLE_WRITE,
             capability="settings.write",
         ),

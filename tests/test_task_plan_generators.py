@@ -45,6 +45,7 @@ def _requirement(identifier: str, subject: str, operation: OperationClass) -> Ta
         payload=TaskSemanticPayload(
             kind="effect",
             subject=subject,
+            target_identity=subject,
             operation_class=operation,
         ),
         source_anchor_refs=(f"anchor:{identifier}",),

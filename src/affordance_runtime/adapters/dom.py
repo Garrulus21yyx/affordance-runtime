@@ -16,6 +16,16 @@ from typing import Any
 from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
 from affordance_runtime.immutable import FrozenSequence
 
+
+def _authored_risk(attributes: dict[str, str]) -> RiskLevel:
+    """Accept only an explicit typed source declaration; labels grant no risk semantics."""
+
+    raw = attributes.get("data-runtime-risk", "").strip().casefold()
+    try:
+        return RiskLevel(raw) if raw else RiskLevel.LOW
+    except ValueError:
+        return RiskLevel.IRREVERSIBLE
+
 _INTERACTIVE_TAGS = frozenset(["a", "button", "input", "select", "textarea", "label", "form", "option"])
 _STRIP_TAGS = frozenset(["script", "style", "meta", "link", "noscript", "head", "svg"])
 _VOID_STRIP_TAGS = frozenset(["meta", "link"])
@@ -1005,7 +1015,7 @@ class DomAdapter:
                             else {}
                         ),
                     },
-                    risk=RiskLevel.LOW,
+                    risk=_authored_risk(attr),
                     evidence=[url] if url else [],
                 )
             )

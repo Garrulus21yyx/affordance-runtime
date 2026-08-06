@@ -293,7 +293,8 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
                 requirement_id="requirement:advance-stage",
                 payload=TaskSemanticPayload(
                     kind="effect",
-                    subject=f"Advance until stage {target_stage}",
+                    subject="Advance",
+                    target_identity="Advance",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                 ),
                 source_anchor_refs=("task-planning-ablation:advance",),

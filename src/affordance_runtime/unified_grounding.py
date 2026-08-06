@@ -167,6 +167,7 @@ def candidate_from_affordance(
         target_fingerprint=affordance.target_fingerprint,
         fingerprint_key=affordance.id,
         supported_actions=_semantic_actions(affordance.action),
+        risk=affordance.risk,
         evidence_kinds=evidence_kinds,
         source_affordance_id=affordance.id,
         confidence=affordance.confidence,

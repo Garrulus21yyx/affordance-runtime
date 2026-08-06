@@ -14,6 +14,7 @@ from affordance_runtime.contracts import (
     ExecutionReceipt,
     Observation,
     RiskLevel,
+    RuntimeErrorCode,
     VerifierSpec,
 )
 from affordance_runtime.executors import VisualExecutor, WotExecutor
@@ -169,7 +170,8 @@ def test_wot_affordance_uses_task_coordinator_contract_trace_path() -> None:
         )
     )
 
-    assert result.status == RuntimeStep.FAILED
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.PLANNER_FAILED
     assert result.result == {}
     assert "TaskCompleted" not in [node.kind for node in result.trace.nodes]
 

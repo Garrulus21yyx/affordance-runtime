@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from affordance_runtime.action_choice_authority import contract_matches_task_authority
 from affordance_runtime.contracts import ActionContract, ApprovalToken, RiskLevel, RuntimeErrorCode
 from affordance_runtime.task_intake import TaskSpec
 
@@ -62,14 +63,19 @@ class TaskConstraintPolicy:
         task_spec: TaskSpec | None = None,
     ) -> RuntimeErrorCode | None:
         if task_spec is not None and contract.selected_choice_id:
-            known_requirements = {item.requirement_id for item in task_spec.requirements}
-            if not contract.requirement_refs or set(contract.requirement_refs) - known_requirements:
-                return RuntimeErrorCode.POLICY_DENIED
-            if set(contract.effect_authorization_refs) - set(task_spec.allowed_effect_refs):
-                return RuntimeErrorCode.POLICY_DENIED
-            if set(contract.effect_authorization_refs) - set(contract.requirement_refs):
-                return RuntimeErrorCode.POLICY_DENIED
-            if contract.effectful and not contract.effect_authorization_refs:
+            if not contract_matches_task_authority(
+                task_spec=task_spec,
+                requirement_refs=contract.requirement_refs,
+                effect_refs=contract.effect_authorization_refs,
+                target_identity=contract.authorized_target_identity,
+                destination_identity=contract.authorized_destination_identity,
+                action_kind=contract.authorized_action_kind,
+                choice_role=contract.choice_role,
+                parameters=contract.authorized_parameters,
+                effectful=contract.effectful,
+                risk=contract.risk,
+                scope_digest=contract.authorization_scope_digest,
+            ):
                 return RuntimeErrorCode.POLICY_DENIED
         effectful = (
             bool(contract.required_capabilities)

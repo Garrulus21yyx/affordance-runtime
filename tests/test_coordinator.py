@@ -660,7 +660,7 @@ class TwoStageTaskPlanner:
                     StateCriterion(
                         criterion_id=f"criterion:{step_id}",
                         source_refs=refs,
-                        subject="settings",
+                        subject="Save",
                         relation=StateCriterionRelation.IS_COMPLETED,
                         evidence_policy=CriterionEvidencePolicy(EvidenceStrength.INDEPENDENT, ("dom_state",)),
                     ),
@@ -852,6 +852,7 @@ def _current_state_availability_task() -> TaskSpec:
                 payload=TaskSemanticPayload(
                     kind="effect",
                     subject="submit button",
+                    target_identity="Submit",
                     operation_class=OperationClass.READ_ONLY,
                 ),
                 source_anchor_refs=("current-state-availability-request:whole_request",),
@@ -955,7 +956,7 @@ class ReplanningTaskPlanner:
                         StateCriterion(
                             criterion_id="criterion:write",
                             source_refs=refs,
-                            subject="settings",
+                            subject="Save",
                             relation=StateCriterionRelation.IS_COMPLETED,
                             evidence_policy=CriterionEvidencePolicy(EvidenceStrength.INDEPENDENT, ("dom_state",)),
                         ),
@@ -1060,7 +1061,7 @@ class EvidenceAwareTaskPlanner:
                 StateCriterion(
                     criterion_id="criterion:apply",
                     source_refs=refs,
-                    subject="settings",
+                    subject="Save",
                     relation=StateCriterionRelation.IS_COMPLETED,
                     evidence_policy=CriterionEvidencePolicy(EvidenceStrength.INDEPENDENT, ("dom_state",)),
                 ),
@@ -1294,7 +1295,8 @@ def _semantic_task() -> TaskSpec:
                 requirement_id="requirement:test",
                 payload=TaskSemanticPayload(
                     kind="effect",
-                    subject="settings",
+                    subject="Save",
+                    target_identity="Save",
                     operation_class=OperationClass.REVERSIBLE_WRITE,
                     capability="settings.write",
                 ),
@@ -1566,7 +1568,7 @@ class _PipelineIntentModel:
                 "requested_effects": [
                     {
                         "operation_class": "reversible_write",
-                        "target": "settings",
+                        "target": "Save",
                         "capability": "settings.write",
                         "source_ref": source_ref,
                     }

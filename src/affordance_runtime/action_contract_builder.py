@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
-from affordance_runtime.action_choice_authority import requires_relational_scope_check
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
@@ -19,6 +18,7 @@ from affordance_runtime.contracts import (
     Affordance,
     GestureBindingError,
     GestureContractBinder,
+    RiskLevel,
     RuntimeErrorCode,
 )
 from affordance_runtime.grounding import GroundingCandidate
@@ -304,8 +304,7 @@ class ActionContractMaterializer:
             if (
                 scope_decision is None
                 and getattr(proposal, "selection_id", "")
-                and getattr(proposal, "effectful", False)
-                and not requires_relational_scope_check(source_resolution.target.label, scope_terms)
+                and getattr(proposal, "authorization_scope_digest", "")
             ):
                 scope_decision = ProposalScopeDecision(True)
             if scope_decision is None:
@@ -486,6 +485,10 @@ class _SelectedSemanticAction:
     requirement_refs: tuple[str, ...]
     effect_authorization_refs: tuple[str, ...]
     effectful: bool
+    authorized_target_identity: str
+    authorized_destination_identity: str
+    authorization_scope_digest: str
+    choice_role: str
 
 
 @dataclass
@@ -543,6 +546,10 @@ class ActionContractBuilder:
             requirement_refs=choice.requirement_refs,
             effect_authorization_refs=choice.effect_refs,
             effectful=choice.effectful,
+            authorized_target_identity=choice.target_label,
+            authorized_destination_identity=choice.destination_label,
+            authorization_scope_digest=choice.authorization_scope_digest,
+            choice_role=choice.role.value,
         )
         contract = self.materializer.build(
             semantic_action,
@@ -566,6 +573,13 @@ class ActionContractBuilder:
             requirement_refs=choice.requirement_refs,
             effect_authorization_refs=choice.effect_refs,
             effectful=choice.effectful,
+            authorized_target_identity=choice.target_label,
+            authorized_destination_identity=choice.destination_label,
+            authorized_parameters=dict(choice.parameters),
+            authorized_action_kind=choice.action_kind.value,
+            choice_role=choice.role.value,
+            authorization_scope_digest=choice.authorization_scope_digest,
+            risk=RiskLevel(choice.risk),
             route_reason=route_reason,
             contract_hash="",
         )

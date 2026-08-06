@@ -92,5 +92,7 @@ def test_registered_api_final_recheck_is_authoritative_but_http_json_is_only_str
     assert report.passed
     assert report.evidence[0].source == "api_state"
     assert report.evidence[0].strength == "authoritative"
+    assert report.evidence[0].observed == expected["contains"]
+    assert report.evidence[0].observed is not True
     assert strong.passed
     assert strong.evidence[0].strength == "strong"

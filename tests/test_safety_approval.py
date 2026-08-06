@@ -2,6 +2,13 @@ from time import time
 
 from affordance_runtime.contracts import ActionContract, ApprovalToken, RiskLevel, RuntimeErrorCode
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 def _high_risk_contract() -> ActionContract:
@@ -110,3 +117,43 @@ def test_first_requested_effect_does_not_require_a_retry_mechanism() -> None:
     )
 
     assert TaskConstraintPolicy().check(contract, {}) is None
+
+
+def test_task_gate_rejects_planner_derived_effectful_false_without_runtime_scope_proof() -> None:
+    task = TaskSpec(
+        task_id="task:delete",
+        revision=1,
+        objective="Delete account",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=canonical_effect_requirements(
+            ("Delete account",),
+            OperationClass.REVERSIBLE_WRITE,
+            "request:delete",
+            (),
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Delete account",)),
+        success=SuccessExpression(
+            expression_id="success:delete",
+            operator="criterion",
+            criterion_id="criterion:delete",
+            requirement_refs=("requirement:effect:1",),
+        ),
+        source_request_ref="request:delete",
+    )
+    contract = ActionContract(
+        id="contract:delete",
+        intent="Delete account",
+        affordance_id="target:delete",
+        action="activate",
+        backend="dom",
+        environment_revision="env:delete",
+        locator={"selector": "#delete"},
+        selected_choice_id="choice:delete",
+        requirement_refs=("requirement:effect:1",),
+        effect_authorization_refs=("requirement:effect:1",),
+        effectful=False,
+        risk=RiskLevel.LOW,
+        authorized_target_identity="Delete account",
+    )
+
+    assert TaskConstraintPolicy().check(contract, {}, task) == RuntimeErrorCode.POLICY_DENIED

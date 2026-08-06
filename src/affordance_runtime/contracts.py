@@ -468,6 +468,12 @@ class ActionContract:
     requirement_refs: tuple[str, ...] = ()
     effect_authorization_refs: tuple[str, ...] = ()
     effectful: bool = False
+    authorized_target_identity: str = ""
+    authorized_destination_identity: str = ""
+    authorized_parameters: dict[str, Any] = field(default_factory=dict)
+    authorized_action_kind: str = ""
+    choice_role: str = ""
+    authorization_scope_digest: str = ""
     route_reason: str = ""
     grounding_candidate: GroundingCandidate | None = None
     scope_authorization: ScopeAuthorization | None = None
@@ -500,6 +506,7 @@ class ActionContract:
     def __post_init__(self) -> None:
         object.__setattr__(self, "locator", freeze_json(self.locator))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        object.__setattr__(self, "authorized_parameters", freeze_json(self.authorized_parameters))
         object.__setattr__(self, "requirement_refs", tuple(self.requirement_refs))
         object.__setattr__(self, "effect_authorization_refs", tuple(self.effect_authorization_refs))
         if any(not item.strip() for item in (*self.requirement_refs, *self.effect_authorization_refs)):

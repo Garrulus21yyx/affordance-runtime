@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from affordance_runtime.action_admission import ActionAdmissionService
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, RuntimeErrorCode
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.runtime import Executor, RunRequest
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.simplified_runtime_contracts import (
@@ -268,6 +269,8 @@ def _canonical_state_deltas(
         after_value = evidence.observed
         if isinstance(after_value, Mapping) and field:
             after_value = after_value.get(field)
+        elif isinstance(after_value, Mapping):
+            after_value = json.dumps(to_json_compatible(after_value), sort_keys=True, separators=(",", ":"))
         if not isinstance(after_value, (str, bool, int, float, type(None))):
             continue
         relation = (

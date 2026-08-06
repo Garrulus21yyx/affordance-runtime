@@ -7,7 +7,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 
-from affordance_runtime.contracts import Affordance
+from affordance_runtime.contracts import Affordance, RiskLevel
 from affordance_runtime.grounding import (
     AssertionDecision,
     AssertionResolutionStatus,
@@ -28,6 +28,15 @@ from affordance_runtime.unified_observation import (
     StateFact,
     UnifiedObservation,
 )
+
+
+def _risk_rank(value: RiskLevel) -> int:
+    return {
+        RiskLevel.LOW: 0,
+        RiskLevel.MEDIUM: 1,
+        RiskLevel.HIGH: 2,
+        RiskLevel.IRREVERSIBLE: 3,
+    }[value]
 
 
 @dataclass(frozen=True)
@@ -225,7 +234,15 @@ def _canonical_target(
         for action in sorted(candidate.supported_actions):
             candidate_ids_by_action[action].append(candidate.candidate_id)
     action_support = tuple(
-        ActionSupport(action, tuple(candidate_ids_by_action[action]))
+        ActionSupport(
+            action,
+            tuple(candidate_ids_by_action[action]),
+            max(
+                (candidate.risk for candidate in candidates if action in candidate.supported_actions),
+                key=_risk_rank,
+                default=RiskLevel.LOW,
+            ),
+        )
         for action in sorted(candidate_ids_by_action)
     )
     facts, conflicts = _facts_and_conflicts(

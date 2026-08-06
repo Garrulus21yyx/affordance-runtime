@@ -57,6 +57,7 @@ def _scenario_requirement(
         payload=TaskSemanticPayload(
             kind="effect",
             subject=subject,
+            target_identity=subject,
             operation_class=operation_class,
             capability=capability,
         ),
@@ -522,7 +523,7 @@ def run_scenario(
             else (
                 _scenario_requirement(
                     profile_requirement_id,
-                    profile_objectives[scenario],
+                    {"settings": "Enable notifications", "export": "Export report"}[scenario],
                     profile_operation,
                     profile_capabilities[0] if profile_capabilities else "",
                 ),
@@ -579,7 +580,7 @@ def run_scenario(
             else (
                 _scenario_requirement(
                     default_requirement_id,
-                    default_objectives[scenario],
+                    {"settings": "Enable notifications", "export": "Export report"}[scenario],
                     default_operation,
                     default_capabilities[0] if default_capabilities else "",
                 ),

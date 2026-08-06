@@ -87,6 +87,7 @@ def _requirement(
         payload=TaskSemanticPayload(
             kind="effect",
             subject=subject,
+            target_identity=subject,
             operation_class=operation_class,
         ),
         source_anchor_refs=(f"source:{requirement_id}",),

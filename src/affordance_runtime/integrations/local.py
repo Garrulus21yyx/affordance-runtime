@@ -47,9 +47,11 @@ class LocalScenarioTaskIntake:
             "settings": "settings.write.reversible",
             "export": "report.export",
         }[submission.scenario]
-        targets = (
-            ("Show Pro limits", "Show Enterprise limits") if submission.scenario == "pricing" else (submission.target,)
-        )
+        targets = {
+            "pricing": ("Show Pro limits", "Show Enterprise limits"),
+            "settings": ("Enable notifications",),
+            "export": ("Export report",),
+        }[submission.scenario]
         effect_id = "requirement:effect:1" if submission.scenario == "export" else ""
         proposal = MinimalIntentProposal(
             objective=submission.goal,

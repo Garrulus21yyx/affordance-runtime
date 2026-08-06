@@ -365,9 +365,11 @@ class AuthoritativeApiFinalRecheckVerifier:
             expected_member = spec.expected.get("contains")
             if expected_member is not None:
                 passed = isinstance(value, (list, tuple)) and expected_member in value
+                observed = next((item for item in value if item == expected_member), value) if passed else value
             else:
                 passed = value == spec.expected.get("value")
-            return VerifierEvaluation(passed=passed, observed=passed)
+                observed = value
+            return VerifierEvaluation(passed=passed, observed=observed)
         except Exception:
             return VerifierEvaluation(False)
 

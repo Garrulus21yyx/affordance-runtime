@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol, TypeAlias
 
-from affordance_runtime.action_choice_authority import choice_matches_task_authority
+from affordance_runtime.action_choice_authority import authorize_choice
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import (
     ActionChoice,
@@ -50,7 +50,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     RelationIntent,
     StepSpec,
 )
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import TaskSpec
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
     UnifiedObservation,
@@ -161,12 +161,17 @@ class ActionChoiceCatalog:
                     "choice_id": item.choice_id,
                     "action_kind": item.action_kind.value,
                     "target_id": item.target_id,
+                    "target_label": item.target_label,
                     "destination_id": item.destination_id,
+                    "destination_label": item.destination_label,
                     "parameters": to_json_compatible(item.parameters),
                     "criteria": item.criterion_ids,
                     "requirements": item.requirement_refs,
                     "effects": item.effect_refs,
                     "effectful": item.effectful,
+                    "risk": item.risk,
+                    "role": item.role.value,
+                    "authorization_scope_digest": item.authorization_scope_digest,
                 }
                 for item in ordered
             ],
@@ -279,20 +284,7 @@ class ActionChoiceCatalogBuilder:
                     )
                 )
                 continue
-            choice_effectful = bool(
-                step.effectful
-                or step.effect_authorization_refs
-                or (
-                    task_spec.operation_class
-                    in {
-                        OperationClass.REVERSIBLE_WRITE,
-                        OperationClass.EXTERNAL_SIDE_EFFECT,
-                        OperationClass.IRREVERSIBLE,
-                    }
-                    and choice.role == ChoiceRole.DIRECT
-                )
-            )
-            admitted_choice = ActionChoice(
+            candidate_choice = ActionChoice(
                 choice_id=choice.choice_id,
                 task_revision=choice.task_revision,
                 state_version=choice.state_version,
@@ -307,21 +299,33 @@ class ActionChoiceCatalogBuilder:
                 parameters=choice.parameters,
                 criterion_ids=choice.criterion_ids,
                 requirement_refs=step.requirement_refs,
-                effect_refs=step.effect_authorization_refs,
-                effectful=choice_effectful,
+                effect_refs=(),
+                effectful=False,
                 evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
                 conflict_status=ChoiceConflictStatus.CLEAR,
             )
-            if not choice_matches_task_authority(admitted_choice, step, task_spec, observation):
+            authority = authorize_choice(candidate_choice, step, task_spec, observation)
+            if not authority.authorized:
                 rejections.append(
                     ChoiceRejection(
                         choice.target_id,
                         choice.action_kind,
-                        "TASK_EFFECT_TARGET_MISMATCH",
+                        authority.reason_code,
                     )
                 )
                 continue
-            choices.append(admitted_choice)
+            choices.append(
+                ActionChoice(
+                    **{
+                        **candidate_choice.__dict__,
+                        "destination_label": authority.destination_identity,
+                        "effect_refs": authority.effect_refs,
+                        "effectful": authority.effectful,
+                        "risk": authority.risk.value,
+                        "authorization_scope_digest": authority.scope_digest,
+                    }
+                )
+            )
         report = ChoiceBuildReport(len(observation.targets), len(choices), tuple(rejections))
         if not choices:
             return ActionChoiceFailure(
@@ -393,37 +397,30 @@ def _deterministic_semantic_choices(
                 relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
                 criterion_ids=criterion_ids,
                 requirement_refs=step.requirement_refs,
-                effect_refs=step.effect_authorization_refs,
-                effectful=bool(
-                    step.effectful
-                    or step.effect_authorization_refs
-                    or task_spec.operation_class
-                    in {
-                        OperationClass.REVERSIBLE_WRITE,
-                        OperationClass.EXTERNAL_SIDE_EFFECT,
-                        OperationClass.IRREVERSIBLE,
-                    }
-                ),
+                effect_refs=(),
+                effectful=False,
                 evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
                 generation_reason_codes=("deterministic_active_step_narrowing",),
             )
         )
-    values = [choice for choice in values if choice_matches_task_authority(choice, step, task_spec, observation)]
-    requirement_by_id = {item.requirement_id: item for item in task_spec.requirements}
-    authority_text = [
-        requirement_by_id[requirement_id].payload.subject
-        for requirement_id in step.requirement_refs
-        if requirement_id in requirement_by_id
-    ]
-    objective_tokens = set(re.findall(r"[a-z0-9]+", " ".join(authority_text).casefold()))
-    objective_matches = tuple(
-        choice
-        for choice in values
-        if set(re.findall(r"[a-z0-9]+", choice.target_label.casefold())).intersection(objective_tokens)
-    )
-    # A unique semantic label authorized by the active step is deterministic;
-    # otherwise preserve the logically full set for normal N-choice handling.
-    return objective_matches if len(objective_matches) == 1 else tuple(values)
+    admitted: list[ActionChoice] = []
+    for choice in values:
+        authority = authorize_choice(choice, step, task_spec, observation)
+        if not authority.authorized:
+            continue
+        admitted.append(
+            ActionChoice(
+                **{
+                    **choice.__dict__,
+                    "destination_label": authority.destination_identity,
+                    "effect_refs": authority.effect_refs,
+                    "effectful": authority.effectful,
+                    "risk": authority.risk.value,
+                    "authorization_scope_digest": authority.scope_digest,
+                }
+            )
+        )
+    return tuple(admitted)
 
 
 _PRESENTABLE_STATE_KEYS = frozenset(

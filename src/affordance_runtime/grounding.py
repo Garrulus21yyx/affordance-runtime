@@ -274,6 +274,7 @@ class GroundingCandidate:
     verifier_strength: int = 0
     evidence_refs: tuple[str, ...] = ()
     scope_evidence: CandidateScopeEvidence | None = None
+    risk: RiskLevel = RiskLevel.LOW
 
     def __post_init__(self) -> None:
         if not self.candidate_id or not self.semantic_target_id:

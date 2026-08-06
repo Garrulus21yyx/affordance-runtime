@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping
 
+from affordance_runtime.contracts import RiskLevel
 from affordance_runtime.grounding import GroundingCandidate, GroundingSource
 from affordance_runtime.immutable import FrozenDict, freeze_json
 
@@ -111,6 +112,7 @@ class Freshness:
 class ActionSupport:
     action_kind: str
     candidate_ids: tuple[str, ...]
+    risk: RiskLevel = RiskLevel.LOW
 
     def __post_init__(self) -> None:
         if not self.action_kind.strip() or not self.candidate_ids:
@@ -203,6 +205,7 @@ class UnifiedObservationTarget:
     confidence: float | None = None
     conflict_codes: tuple[str, ...] = ()
     source_refs: tuple[str, ...] = ()
+    risk: RiskLevel = RiskLevel.LOW
 
     def __init__(
         self,
@@ -216,6 +219,7 @@ class UnifiedObservationTarget:
         confidence: float | None = None,
         conflict_codes: tuple[str, ...] = (),
         source_refs: tuple[str, ...] = (),
+        risk: RiskLevel = RiskLevel.LOW,
     ) -> None:
         object.__setattr__(self, "target_id", target_id)
         object.__setattr__(self, "surface", surface)
@@ -226,6 +230,7 @@ class UnifiedObservationTarget:
         object.__setattr__(self, "confidence", confidence)
         object.__setattr__(self, "conflict_codes", tuple(conflict_codes))
         object.__setattr__(self, "source_refs", tuple(source_refs))
+        object.__setattr__(self, "risk", risk)
         if not target_id.strip() or not surface.strip() or not role.strip():
             raise ValueError("direct canonical target identity is required")
         if confidence is not None and not 0 <= confidence <= 1:

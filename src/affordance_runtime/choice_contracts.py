@@ -42,6 +42,7 @@ class ActionChoice:
     target_role: str = "semantic_target"
     relevant_current_state: FrozenJsonObject = field(default_factory=lambda: FrozenDict({}))
     destination_id: str = ""
+    destination_label: str = ""
     parameters: FrozenJsonObject = field(default_factory=lambda: FrozenDict({}))
     criterion_ids: tuple[str, ...] = ()
     requirement_refs: tuple[str, ...] = ()
@@ -50,6 +51,7 @@ class ActionChoice:
     evidence_refs: tuple[str, ...] = ()
     conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR
     risk: str = "low"
+    authorization_scope_digest: str = ""
     generation_reason_codes: tuple[str, ...] = ("runtime_semantic_admission",)
     role: ChoiceRole = ChoiceRole.DIRECT
     source: ChoiceSource = ChoiceSource.RUNTIME
@@ -68,6 +70,7 @@ class ActionChoice:
         target_role: str = "semantic_target",
         relevant_current_state: dict[str, object] | FrozenJsonObject | None = None,
         destination_id: str = "",
+        destination_label: str = "",
         parameters: dict[str, object] | FrozenJsonObject | None = None,
         criterion_ids: tuple[str, ...] = (),
         requirement_refs: tuple[str, ...] = (),
@@ -76,6 +79,7 @@ class ActionChoice:
         evidence_refs: tuple[str, ...] = (),
         conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR,
         risk: str = "low",
+        authorization_scope_digest: str = "",
         generation_reason_codes: tuple[str, ...] = ("runtime_semantic_admission",),
         role: ChoiceRole = ChoiceRole.DIRECT,
         source: ChoiceSource = ChoiceSource.RUNTIME,
@@ -94,6 +98,7 @@ class ActionChoice:
             if isinstance(relevant_current_state, FrozenDict)
             else FrozenDict(relevant_current_state or {}),
             "destination_id": destination_id,
+            "destination_label": destination_label,
             "parameters": parameters if isinstance(parameters, FrozenDict) else FrozenDict(parameters or {}),
             "criterion_ids": tuple(criterion_ids),
             "requirement_refs": tuple(requirement_refs),
@@ -102,6 +107,7 @@ class ActionChoice:
             "evidence_refs": tuple(evidence_refs),
             "conflict_status": conflict_status,
             "risk": risk,
+            "authorization_scope_digest": authorization_scope_digest,
             "generation_reason_codes": tuple(generation_reason_codes),
             "role": role,
             "source": source,
