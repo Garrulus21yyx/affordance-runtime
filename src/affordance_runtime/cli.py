@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
+from affordance_runtime.approval_contracts import ApprovalProvider, ConfiguredApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
 from affordance_runtime.benchmarks.local import run_local_benchmark
 from affordance_runtime.browser_session import BrowserSession
@@ -17,6 +17,7 @@ from affordance_runtime.effect_authority_contracts import EffectClass
 from affordance_runtime.evolution_replay import build_evolution_report
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import serve_fixture
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.planners import (
     PricingTaskPlanner,
     export_contract_builder,
@@ -455,6 +456,7 @@ def run_scenario(
     task_planning: bool = False,
     accepted_profile: Path | None = None,
     admitted_task: AdmittedTaskSpec | None = None,
+    approval_provider_override: ApprovalProvider | None = None,
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
@@ -463,7 +465,7 @@ def run_scenario(
         "settings": ["settings.write.reversible"],
         "export": ["report.export"],
     }
-    approval_provider = (
+    approval_provider = approval_provider_override or (
         ConfiguredApprovalProvider(approval_approver, {"report.export"}) if scenario == "export" and approve else None
     )
     if task_planning and scenario != "pricing":
@@ -675,12 +677,21 @@ def run_scenario(
                 capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
             )
         )
+    pending_approval = next(
+        (
+            to_json_compatible(node.payload)
+            for node in reversed(result.trace.nodes)
+            if node.kind == "HumanApprovalRequested"
+        ),
+        None,
+    )
     return {
         "run_id": result.run_id,
         "status": result.status.value,
         "result": result.result,
         "error_code": result.error_code.value if result.error_code else None,
         "artifacts": [item.path for item in result.artifacts],
+        "pending_approval": pending_approval,
         "runtime_profile_digest": loaded_profile.profile_digest if loaded_profile is not None else "",
         "loaded_profile_artifact_ids": list(loaded_profile.artifact_ids) if loaded_profile is not None else [],
     }

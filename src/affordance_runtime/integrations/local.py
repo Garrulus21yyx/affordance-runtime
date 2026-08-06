@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Event, RLock, Thread
 
 from affordance_runtime.cli import _scenario_success, run_scenario
+from affordance_runtime.contracts import ActionContract, ApprovalToken
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
+    PendingApprovalRequest,
     TaskExecution,
     TaskRequest,
     UserTaskSubmission,
@@ -107,34 +110,141 @@ class LocalScenarioTaskIntake:
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class LocalScenarioTaskRunner:
     artifact_root: Path
     headless: bool = True
+    _sessions: dict[str, "_PendingLocalRun"] = field(default_factory=dict, init=False)
+    _lock: RLock = field(default_factory=RLock, init=False)
 
     def __call__(self, request: TaskRequest, approval: ApprovalGrant | None) -> TaskExecution:
-        approved = bool(approval and approval.current() and approval.capability in request.capabilities)
+        with self._lock:
+            session = self._sessions.get(request.run_id)
+            if session is None and approval is None:
+                session = _PendingLocalRun(self, request)
+                self._sessions[request.run_id] = session
+                session.start()
+        if session is not None:
+            if approval is not None:
+                session.submit(approval)
+            execution = session.wait_for_boundary()
+            if session.completed.is_set():
+                with self._lock:
+                    self._sessions.pop(request.run_id, None)
+            return execution
+        # The service process lost the paused H1 continuation. Rebuilding is
+        # allowed only with the exact grant as provider; H2 cannot consume it.
+        assert approval is not None
+        return self._run_once(request, approval)
+
+    def cancel(self, run_id: str) -> None:
+        with self._lock:
+            session = self._sessions.pop(run_id, None)
+        if session is not None:
+            session.cancel()
+
+    def _run_once(self, request: TaskRequest, approval: ApprovalGrant | None) -> TaskExecution:
         value = run_scenario(
             request.scenario,
             request.target,
             self.artifact_root,
             headless=self.headless,
-            approve=approved,
+            approval_provider_override=approval,
             run_id=request.run_id,
             approval_approver=approval.approver if approval else "",
             constraints_override=request.constraints,
             capabilities_override=request.capabilities,
             admitted_task=request.admitted_task,
         )
-        raw_artifacts = value.get("artifacts")
-        artifacts = [str(item) for item in raw_artifacts] if isinstance(raw_artifacts, list) else []
-        raw_result = value.get("result")
-        result = dict(raw_result) if isinstance(raw_result, dict) else {}
-        return TaskExecution(
-            status=str(value["status"]),
-            result=result,
-            error_code=str(value["error_code"]) if value.get("error_code") else None,
-            artifacts=artifacts,
-            trace_path=next((path for path in artifacts if path.endswith("events.jsonl")), ""),
-            required_capability="report.export" if value["status"] == "waiting_approval" else "",
-        )
+        return _task_execution(request, value)
+
+
+@dataclass
+class _PendingLocalRun:
+    owner: LocalScenarioTaskRunner
+    request: TaskRequest
+    pending: PendingApprovalRequest | None = None
+    grant: ApprovalGrant | None = None
+    value: dict[str, object] | None = None
+    error: BaseException | None = None
+    pending_ready: Event = field(default_factory=Event)
+    grant_ready: Event = field(default_factory=Event)
+    completed: Event = field(default_factory=Event)
+
+    def start(self) -> None:
+        Thread(target=self._run, name=f"runtime-{self.request.run_id}", daemon=True).start()
+
+    def approve(self, contract: ActionContract) -> ApprovalToken | None:
+        self.pending = PendingApprovalRequest.from_contract(contract)
+        self.pending_ready.set()
+        remaining = max(0.0, self.pending.expires_at_s - self.pending.issued_at_s)
+        if not self.grant_ready.wait(timeout=remaining):
+            return None
+        return self.grant.approve(contract) if self.grant is not None else None
+
+    def submit(self, grant: ApprovalGrant) -> None:
+        if self.pending is None or grant.approval_request_id != self.pending.approval_request_id:
+            raise ValueError("approval does not match the paused local contract")
+        self.grant = grant
+        self.grant_ready.set()
+
+    def cancel(self) -> None:
+        self.grant = None
+        self.grant_ready.set()
+
+    def wait_for_boundary(self) -> TaskExecution:
+        while not self.pending_ready.wait(timeout=0.05):
+            if self.completed.is_set():
+                return self._completed_execution()
+        if self.completed.is_set():
+            return self._completed_execution()
+        if not self.grant_ready.is_set():
+            assert self.pending is not None
+            return TaskExecution("waiting_approval", pending_approval=self.pending)
+        self.completed.wait()
+        return self._completed_execution()
+
+    def _completed_execution(self) -> TaskExecution:
+        if self.error is not None:
+            raise RuntimeError("local scenario worker failed") from self.error
+        assert self.value is not None
+        return _task_execution(self.request, self.value)
+
+    def _run(self) -> None:
+        try:
+            self.value = run_scenario(
+                self.request.scenario,
+                self.request.target,
+                self.owner.artifact_root,
+                headless=self.owner.headless,
+                approval_provider_override=self,
+                run_id=self.request.run_id,
+                constraints_override=self.request.constraints,
+                capabilities_override=self.request.capabilities,
+                admitted_task=self.request.admitted_task,
+            )
+        except BaseException as exc:
+            self.error = exc
+        finally:
+            self.completed.set()
+
+
+def _task_execution(request: TaskRequest, value: dict[str, object]) -> TaskExecution:
+    raw_artifacts = value.get("artifacts")
+    artifacts = [str(item) for item in raw_artifacts] if isinstance(raw_artifacts, list) else []
+    raw_result = value.get("result")
+    result = dict(raw_result) if isinstance(raw_result, dict) else {}
+    raw_pending = value.get("pending_approval")
+    pending = (
+        PendingApprovalRequest.from_runtime_event(request.run_id, raw_pending)
+        if isinstance(raw_pending, dict) and value["status"] == "waiting_approval"
+        else None
+    )
+    return TaskExecution(
+        status=str(value["status"]),
+        result=result,
+        error_code=str(value["error_code"]) if value.get("error_code") else None,
+        artifacts=artifacts,
+        trace_path=next((path for path in artifacts if path.endswith("events.jsonl")), ""),
+        pending_approval=pending,
+    )

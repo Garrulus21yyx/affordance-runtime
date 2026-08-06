@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
@@ -11,6 +12,8 @@ from threading import RLock
 from time import time
 from typing import Any, Callable
 
+from affordance_runtime.approval_contracts import present_approval
+from affordance_runtime.contracts import ActionContract, ApprovalToken
 from affordance_runtime.immutable import FrozenSequence, freeze_json, to_json_compatible
 from affordance_runtime.task_intake import TaskSpec, task_effect_targets
 from affordance_runtime.task_spec_authority import AdmittedTaskSpec
@@ -86,16 +89,180 @@ class UserTaskSubmission:
         object.__setattr__(self, "capabilities", FrozenSequence(self.capabilities))
 
 
+def _approval_digest(value: object) -> str:
+    encoded = json.dumps(
+        to_json_compatible(value), sort_keys=True, separators=(",", ":"), default=str
+    ).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True)
-class ApprovalGrant:
+class PendingApprovalRequest:
     run_id: str
-    capability: str
-    approver: str
+    approval_request_id: str
+    contract_hash: str
+    snapshot_id: str
+    page_revision: str
+    environment_revision: str
+    operation_ref: str
+    resource_ref: str
+    destination_ref: str
+    material_parameters: dict[str, Any]
+    risk: str
+    reversibility: str
+    required_capabilities: tuple[str, ...]
+    presentation_digest: str
     issued_at_s: float
     expires_at_s: float
 
     def current(self) -> bool:
-        return bool(self.approver) and time() <= self.expires_at_s
+        return time() <= self.expires_at_s
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "material_parameters", freeze_json(self.material_parameters))
+        object.__setattr__(self, "required_capabilities", tuple(self.required_capabilities))
+        if not all(
+            value.strip()
+            for value in (
+                self.run_id,
+                self.approval_request_id,
+                self.contract_hash,
+                self.snapshot_id,
+                self.page_revision,
+                self.environment_revision,
+                self.operation_ref,
+                self.resource_ref,
+                self.risk,
+                self.reversibility,
+                self.presentation_digest,
+            )
+        ):
+            raise ValueError("pending approval requires an exact contract presentation")
+        if not self.required_capabilities or any(not item.strip() for item in self.required_capabilities):
+            raise ValueError("pending approval requires exact capabilities")
+
+    @classmethod
+    def from_runtime_event(
+        cls,
+        run_id: str,
+        payload: dict[str, Any],
+        *,
+        ttl_s: float = 60.0,
+    ) -> "PendingApprovalRequest":
+        presentation = payload.get("approval_presentation")
+        if not isinstance(presentation, dict):
+            raise ValueError("approval event is missing typed presentation")
+        issued_at = time()
+        presentation_digest = _approval_digest(presentation)
+        identity_payload = {
+            "run_id": run_id,
+            "contract_hash": payload.get("contract_hash"),
+            "snapshot_id": payload.get("snapshot_id"),
+            "page_revision": payload.get("page_revision"),
+            "environment_revision": payload.get("environment_revision"),
+            "presentation_digest": presentation_digest,
+        }
+        return cls(
+            run_id=run_id,
+            approval_request_id="approval-request:" + _approval_digest(identity_payload).removeprefix("sha256:"),
+            contract_hash=str(payload.get("contract_hash") or ""),
+            snapshot_id=str(payload.get("snapshot_id") or ""),
+            page_revision=str(payload.get("page_revision") or ""),
+            environment_revision=str(payload.get("environment_revision") or ""),
+            operation_ref=str(presentation.get("operation_ref") or ""),
+            resource_ref=str(presentation.get("resource_ref") or ""),
+            destination_ref=str(presentation.get("destination_ref") or ""),
+            material_parameters=dict(presentation.get("material_parameters") or {}),
+            risk=str(presentation.get("runtime_risk") or ""),
+            reversibility=str(presentation.get("reversibility") or ""),
+            required_capabilities=tuple(str(item) for item in payload.get("required_capabilities") or ()),
+            presentation_digest=presentation_digest,
+            issued_at_s=issued_at,
+            expires_at_s=issued_at + ttl_s,
+        )
+
+    @classmethod
+    def from_contract(cls, contract: ActionContract, *, ttl_s: float = 60.0) -> "PendingApprovalRequest":
+        return cls.from_runtime_event(
+            contract.run_id,
+            {
+                "contract_hash": contract.contract_hash,
+                "snapshot_id": contract.snapshot_id,
+                "page_revision": contract.page_revision,
+                "environment_revision": contract.environment_revision,
+                "required_capabilities": tuple(contract.required_capabilities),
+                "approval_presentation": asdict(present_approval(contract)),
+            },
+            ttl_s=ttl_s,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return to_json_compatible(asdict(self))
+
+
+@dataclass(frozen=True)
+class ApprovalGrant:
+    request: PendingApprovalRequest
+    approver: str
+    issued_at_s: float
+    expires_at_s: float
+
+    @property
+    def run_id(self) -> str:
+        return self.request.run_id
+
+    @property
+    def approval_request_id(self) -> str:
+        return self.request.approval_request_id
+
+    def current(self) -> bool:
+        return bool(self.approver) and time() <= min(self.expires_at_s, self.request.expires_at_s)
+
+    def approve(self, contract: ActionContract) -> ApprovalToken | None:
+        """Issue an internal token only for the exact externally approved contract."""
+
+        if not self.current():
+            return None
+        presentation = present_approval(contract)
+        if (
+            contract.run_id != self.request.run_id
+            or contract.contract_hash != self.request.contract_hash
+            or contract.snapshot_id != self.request.snapshot_id
+            or contract.page_revision != self.request.page_revision
+            or contract.environment_revision != self.request.environment_revision
+            or _approval_digest(asdict(presentation)) != self.request.presentation_digest
+        ):
+            return None
+        capability = next(
+            (
+                item
+                for item in contract.required_capabilities
+                if item in self.request.required_capabilities
+            ),
+            "",
+        )
+        if not capability:
+            return None
+        return ApprovalToken(
+            token_id=f"approval-token:{self.approval_request_id}",
+            run_id=contract.run_id,
+            contract_hash=contract.contract_hash,
+            snapshot_id=contract.snapshot_id,
+            page_revision=contract.page_revision,
+            environment_revision=contract.environment_revision,
+            capability=capability,
+            approver=self.approver,
+            issued_at_s=self.issued_at_s,
+            expires_at_s=self.expires_at_s,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "approval_request_id": self.approval_request_id,
+            "approver": self.approver,
+            "issued_at_s": self.issued_at_s,
+            "expires_at_s": self.expires_at_s,
+        }
 
 
 @dataclass(frozen=True)
@@ -105,11 +272,13 @@ class TaskExecution:
     error_code: str | None = None
     artifacts: list[str] = field(default_factory=list)
     trace_path: str = ""
-    required_capability: str = ""
+    pending_approval: PendingApprovalRequest | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "result", freeze_json(self.result))
         object.__setattr__(self, "artifacts", FrozenSequence(self.artifacts))
+        if self.status == "waiting_approval" and self.pending_approval is None:
+            raise ValueError("waiting approval requires an exact PendingApprovalRequest")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,7 +287,7 @@ class TaskExecution:
             "error_code": self.error_code,
             "artifacts": to_json_compatible(self.artifacts),
             "trace_path": self.trace_path,
-            "required_capability": self.required_capability,
+            "pending_approval": self.pending_approval.to_dict() if self.pending_approval else None,
         }
 
 
@@ -140,7 +309,7 @@ class RunView:
             "request": self.request.to_dict(),
             "status": self.status.value,
             "execution": self.execution.to_dict() if self.execution else None,
-            "approval": asdict(self.approval) if self.approval else None,
+            "approval": self.approval.to_dict() if self.approval else None,
             "created_at_s": self.created_at_s,
             "updated_at_s": self.updated_at_s,
         }
@@ -184,6 +353,8 @@ class TaskRuntimeService:
                 "waiting_approval": ServiceRunStatus.WAITING_APPROVAL,
                 "waiting_clarification": ServiceRunStatus.WAITING_CLARIFICATION,
             }.get(execution.status, ServiceRunStatus.FAILED)
+            if execution.status == "waiting_approval":
+                view.approval = None
             view.updated_at_s = time()
             return view
 
@@ -232,19 +403,25 @@ class TaskRuntimeService:
         self,
         run_id: str,
         *,
-        capability: str,
+        approval_request_id: str,
         approver: str,
+        contract_hash: str = "",
         ttl_s: float = 60.0,
         execute: bool = True,
     ) -> RunView:
         with self._lock:
             view = self._get(run_id)
-            if view.status not in {ServiceRunStatus.QUEUED, ServiceRunStatus.WAITING_APPROVAL}:
+            if view.status != ServiceRunStatus.WAITING_APPROVAL:
                 raise ValueError(f"run cannot be approved in status {view.status.value}")
-            if capability not in view.request.capabilities:
-                raise ValueError(f"capability is outside task scope: {capability}")
+            pending = view.execution.pending_approval if view.execution is not None else None
+            if pending is None or not pending.current():
+                raise ValueError("run has no current exact approval request")
+            if approval_request_id != pending.approval_request_id:
+                raise ValueError("approval request does not match the pending contract")
+            if contract_hash and contract_hash != pending.contract_hash:
+                raise ValueError("approval contract hash does not match the pending contract")
             issued_at = time()
-            view.approval = ApprovalGrant(run_id, capability, approver, issued_at, issued_at + ttl_s)
+            view.approval = ApprovalGrant(pending, approver, issued_at, min(issued_at + ttl_s, pending.expires_at_s))
             view.updated_at_s = issued_at
         return self.execute(run_id) if execute else view
 
@@ -252,15 +429,17 @@ class TaskRuntimeService:
         self,
         run_id: str,
         *,
-        capability: str,
+        approval_request_id: str,
         approver: str,
+        contract_hash: str = "",
         ttl_s: float = 60.0,
     ) -> RunView:
         return await asyncio.to_thread(
             self.approve,
             run_id,
-            capability=capability,
+            approval_request_id=approval_request_id,
             approver=approver,
+            contract_hash=contract_hash,
             ttl_s=ttl_s,
         )
 
@@ -271,7 +450,10 @@ class TaskRuntimeService:
                 raise ValueError(f"terminal run cannot be cancelled: {view.status.value}")
             view.status = ServiceRunStatus.CANCELLED
             view.updated_at_s = time()
-            return view
+        cancel_runner = getattr(self.runner, "cancel", None)
+        if callable(cancel_runner):
+            cancel_runner(run_id)
+        return view
 
     def get_run(self, run_id: str) -> RunView:
         with self._lock:
@@ -332,8 +514,9 @@ class TaskToolAdapter:
         if tool == "gui_approve_task":
             return self.service.approve(
                 str(arguments["run_id"]),
-                capability=str(arguments["capability"]),
+                approval_request_id=str(arguments["approval_request_id"]),
                 approver=str(arguments["approver"]),
+                contract_hash=str(arguments.get("contract_hash") or ""),
             ).to_dict()
         if tool == "gui_cancel_task":
             return self.service.cancel(str(arguments["run_id"])).to_dict()
@@ -350,8 +533,9 @@ class TaskToolAdapter:
             return (
                 await self.service.approve_async(
                     str(arguments["run_id"]),
-                    capability=str(arguments["capability"]),
+                    approval_request_id=str(arguments["approval_request_id"]),
                     approver=str(arguments["approver"]),
+                    contract_hash=str(arguments.get("contract_hash") or ""),
                 )
             ).to_dict()
         return self.call(tool, arguments)

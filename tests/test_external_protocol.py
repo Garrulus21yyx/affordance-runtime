@@ -56,6 +56,11 @@ def test_external_json_rpc_exposes_only_task_level_operations() -> None:
     assert "gui_revise_task" not in names
     submit_schema = next(item["input_schema"] for item in responses[1]["result"] if item["name"] == "gui_submit_task")
     assert "task_spec" not in submit_schema["properties"]
+    approval_schema = next(
+        item["input_schema"] for item in responses[1]["result"] if item["name"] == "gui_approve_task"
+    )
+    assert approval_schema["required"] == ["run_id", "approval_request_id", "approver"]
+    assert "capability" not in approval_schema["properties"]
     assert responses[2]["result"]["request"]["task_spec"]["objective"] == "extract"
     assert responses[3]["result"]["status"] == "success"
     assert responses[4]["error"]["type"] == "KeyError"

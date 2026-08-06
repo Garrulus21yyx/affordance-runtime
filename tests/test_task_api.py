@@ -1,12 +1,20 @@
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
+from time import time
 
 import pytest
 
-from affordance_runtime.integrations.local import LocalScenarioTaskIntake
+from affordance_runtime.approval_contracts import ApprovalPresentation
+from affordance_runtime.contracts import ActionContract, RiskLevel
+from affordance_runtime.immutable import FrozenDict
+from affordance_runtime.integrations import local as local_integration
+from affordance_runtime.integrations import task_api as task_api_module
+from affordance_runtime.integrations.local import LocalScenarioTaskIntake, LocalScenarioTaskRunner
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
+    PendingApprovalRequest,
     RunView,
     ServiceRunStatus,
     TaskExecution,
@@ -25,7 +33,35 @@ from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSp
 from affordance_runtime.verification.contracts import SuccessExpression
 
 
-def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> None:
+def _pending(run_id: str, contract_hash: str) -> PendingApprovalRequest:
+    return PendingApprovalRequest.from_runtime_event(
+        run_id,
+        {
+            "contract_hash": contract_hash,
+            "snapshot_id": f"snapshot:{contract_hash}",
+            "page_revision": f"page:{contract_hash}",
+            "environment_revision": f"environment:{contract_hash}",
+            "required_capabilities": ("report.export",),
+            "approval_presentation": {
+                "contract_hash": contract_hash,
+                "operation_ref": "external.commit@v1",
+                "resource_ref": "report:quarterly",
+                "destination_ref": "download:report",
+                "material_parameters": {"format": "csv"},
+                "effect_class": "invoke",
+                "externality": "external_system",
+                "reversibility": "irreversible",
+                "backend": "dom",
+                "source_refs": ("source:report",),
+                "source_assurance": "authoritative",
+                "runtime_risk": "high",
+                "uncertainty_codes": (),
+            },
+        },
+    )
+
+
+def test_task_api_rebuilt_contract_requires_a_new_exact_approval(tmp_path: Path) -> None:
     trace = tmp_path / "events.jsonl"
     evidence = tmp_path / "receipt.json"
     trace.write_text(json.dumps({"event_type": "TaskCompleted"}) + "\n")
@@ -33,7 +69,9 @@ def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> Non
 
     def runner(request: TaskRequest, approval: ApprovalGrant | None) -> TaskExecution:
         if request.scenario == "export" and approval is None:
-            return TaskExecution("waiting_approval", required_capability="report.export")
+            return TaskExecution("waiting_approval", pending_approval=_pending(request.run_id, "contract:H1"))
+        if approval is not None and approval.request.contract_hash == "contract:H1":
+            return TaskExecution("waiting_approval", pending_approval=_pending(request.run_id, "contract:H2"))
         return TaskExecution(
             "done",
             {"ok": True},
@@ -55,16 +93,119 @@ def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> Non
     )
 
     assert adapter.call("gui_execute_task", {"run_id": "run-1"})["status"] == "waiting_approval"
-    approved = adapter.call(
+    first_pending = adapter.call("gui_get_run", {"run_id": "run-1"})["execution"]["pending_approval"]
+    rebuilt = adapter.call(
         "gui_approve_task",
-        {"run_id": "run-1", "capability": "report.export", "approver": "user-1"},
+        {
+            "run_id": "run-1",
+            "approval_request_id": first_pending["approval_request_id"],
+            "contract_hash": first_pending["contract_hash"],
+            "approver": "user-1",
+        },
     )
 
+    assert rebuilt["status"] == "waiting_approval"
+    second_pending = rebuilt["execution"]["pending_approval"]
+    assert second_pending["contract_hash"] == "contract:H2"
+    assert second_pending["approval_request_id"] != first_pending["approval_request_id"]
+    approved = adapter.call(
+        "gui_approve_task",
+        {
+            "run_id": "run-1",
+            "approval_request_id": second_pending["approval_request_id"],
+            "approver": "user-1",
+        },
+    )
     assert approved["status"] == "success"
     assert adapter.call("gui_get_result", {"run_id": "run-1"}) == {"ok": True}
     assert adapter.call("gui_get_evidence", {"run_id": "run-1"}) == [str(evidence)]
     assert adapter.call("gui_get_trace", {"run_id": "run-1"}) == [{"event_type": "TaskCompleted"}]
     assert all(name not in adapter.tool_names for name in ("gui_click", "gui_type", "gui_observe"))
+
+
+def test_local_task_api_resumes_the_exact_paused_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = ActionContract(
+        id="contract:H1",
+        run_id="exact-export",
+        intent="export report",
+        affordance_id="export-button",
+        action="click",
+        backend="dom",
+        environment_revision="environment:H1",
+        snapshot_id="snapshot:H1",
+        page_revision="page:H1",
+        locator={"selector": "#export"},
+        required_capabilities=["report.export"],
+        risk=RiskLevel.HIGH,
+    )
+    presentation = ApprovalPresentation(
+        contract.contract_hash,
+        "external.commit@v1",
+        "report:quarterly",
+        "download:report",
+        FrozenDict({"format": "csv"}),
+        "invoke",
+        "external_system",
+        "irreversible",
+        "dom",
+        ("source:report",),
+        "authoritative",
+        "high",
+        (),
+    )
+    monkeypatch.setattr(task_api_module, "present_approval", lambda value: presentation)
+
+    def paused_run_scenario(*args, approval_provider_override=None, **kwargs):
+        del args, kwargs
+        token = approval_provider_override.approve(contract)
+        return {
+            "status": "done" if token is not None else "waiting_approval",
+            "result": {"contract_hash": contract.contract_hash} if token is not None else {},
+            "error_code": None,
+            "artifacts": [],
+            "pending_approval": None,
+        }
+
+    monkeypatch.setattr(local_integration, "run_scenario", paused_run_scenario)
+    service = TaskRuntimeService(
+        LocalScenarioTaskRunner(tmp_path / "artifacts"),
+        intake=LocalScenarioTaskIntake(),
+    )
+    service.submit_user(
+        UserTaskSubmission(
+            "exact-export",
+            "export",
+            "Export the report",
+            "http://fixture/reports",
+            capabilities=["report.export"],
+        )
+    )
+    waiting = service.execute("exact-export")
+    assert waiting.execution is not None
+    pending = waiting.execution.pending_approval
+    assert pending is not None
+    issued_at = time()
+    stale_grant = ApprovalGrant(pending, "user-1", issued_at, issued_at + 30)
+    rebuilt = replace(
+        contract,
+        id="contract:H2",
+        snapshot_id="snapshot:H2",
+        contract_hash="",
+    )
+    assert stale_grant.approve(rebuilt) is None
+
+    approved = service.approve(
+        "exact-export",
+        approval_request_id=pending.approval_request_id,
+        contract_hash=pending.contract_hash,
+        approver="user-1",
+    )
+
+    assert approved.status == ServiceRunStatus.SUCCESS
+    assert approved.approval is not None
+    assert approved.approval.request.contract_hash == pending.contract_hash
 
 
 def test_task_request_payloads_are_immutable_from_source_collections() -> None:
@@ -115,19 +256,19 @@ def test_task_execution_payloads_are_immutable_from_source_collections() -> None
         "error_code": None,
         "artifacts": ["trace.jsonl"],
         "trace_path": "",
-        "required_capability": "",
+        "pending_approval": None,
     }
 
 
-def test_task_api_cancel_and_capability_scope() -> None:
+def test_task_api_cancel_and_rejects_approval_without_pending_contract() -> None:
     intake = LocalScenarioTaskIntake()
     service = TaskRuntimeService(lambda request, approval: TaskExecution("done"), intake=intake)
     service.submit_user(UserTaskSubmission("run-2", "pricing", "extract", "http://fixture"))
 
     try:
-        service.approve("run-2", capability="report.export", approver="user")
+        service.approve("run-2", approval_request_id="approval-request:missing", approver="user")
     except ValueError as exc:
-        assert "outside task scope" in str(exc)
+        assert "cannot be approved" in str(exc)
     else:
         raise AssertionError("out-of-scope approval should fail")
 

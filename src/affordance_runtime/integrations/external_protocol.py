@@ -14,7 +14,7 @@ from affordance_runtime.fixtures import create_fixture_server
 from affordance_runtime.integrations.local import LocalScenarioTaskIntake, LocalScenarioTaskRunner
 from affordance_runtime.integrations.task_api import TaskRuntimeService, TaskToolAdapter
 
-PROTOCOL_VERSION = "affordance-task-rpc/1.0"
+PROTOCOL_VERSION = "affordance-task-rpc/1.1"
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "gui_submit_task": {
@@ -31,10 +31,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "gui_execute_task": {"required": ["run_id"], "properties": {"run_id": {"type": "string"}}},
     "gui_get_run": {"required": ["run_id"], "properties": {"run_id": {"type": "string"}}},
     "gui_approve_task": {
-        "required": ["run_id", "capability", "approver"],
+        "required": ["run_id", "approval_request_id", "approver"],
         "properties": {
             "run_id": {"type": "string"},
-            "capability": {"type": "string"},
+            "approval_request_id": {"type": "string"},
+            "contract_hash": {"type": "string"},
             "approver": {"type": "string"},
         },
     },

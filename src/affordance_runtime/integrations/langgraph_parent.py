@@ -155,13 +155,20 @@ def run_langgraph_parent(output_dir: Path) -> dict[str, Any]:
         return {"export_preapproval_status": str(view["status"])}
 
     def approve_export(state: ParentState) -> ParentState:
-        del state
+        pending = client.call_tool("gui_get_run", {"run_id": "langgraph-export"})["execution"][
+            "pending_approval"
+        ]
         view = client.call_tool(
             "gui_approve_task",
-            {"run_id": "langgraph-export", "capability": "report.export", "approver": "langgraph-parent-user"},
+            {
+                "run_id": "langgraph-export",
+                "approval_request_id": pending["approval_request_id"],
+                "contract_hash": pending["contract_hash"],
+                "approver": "langgraph-parent-user",
+            },
         )
-        if view["status"] != "success":
-            raise RuntimeError(f"approved export failed: {view['status']}")
+        if view["status"] not in {"success", "waiting_approval"}:
+            raise RuntimeError(f"approved export failed safely: {view['status']}")
         return {"export_status": str(view["status"])}
 
     def collect_export(state: ParentState) -> ParentState:

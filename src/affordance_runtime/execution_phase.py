@@ -479,6 +479,7 @@ class ActionStage:
                     snapshot_id=contract.snapshot_id,
                     page_revision=contract.page_revision,
                     environment_revision=contract.environment_revision,
+                    required_capabilities=tuple(contract.required_capabilities),
                     approval_presentation=asdict(approval_presentation),
                 )
             )

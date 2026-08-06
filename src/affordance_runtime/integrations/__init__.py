@@ -2,6 +2,7 @@
 
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
+    PendingApprovalRequest,
     RunView,
     TaskExecution,
     TaskRequest,
@@ -11,6 +12,7 @@ from affordance_runtime.integrations.task_api import (
 
 __all__ = [
     "ApprovalGrant",
+    "PendingApprovalRequest",
     "RunView",
     "TaskExecution",
     "TaskRequest",
