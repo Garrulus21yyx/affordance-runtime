@@ -114,9 +114,7 @@ class ContractExecutionLoop:
         canonical_observation: UnifiedObservation | None = None,
     ) -> RuntimeErrorCode | None:
         error = (
-            self.task_policy.check(
-                contract, envelope.constraints, envelope.task_spec, canonical_observation
-            )
+            self.task_policy.check(contract, envelope.constraints, envelope.task_spec, canonical_observation)
             if include_policy
             else None
         )
@@ -165,6 +163,14 @@ class ContractExecutionLoop:
             surface_kind=(
                 contract.grounding_candidate.source.value if contract.grounding_candidate is not None else ""
             ),
+            transaction_identity=_stable_id(
+                "transaction",
+                {
+                    "contract_hash": contract.contract_hash,
+                    "idempotency_key": contract.idempotency_key,
+                },
+            ),
+            idempotency_identity=contract.idempotency_key,
         )
 
     def verify(

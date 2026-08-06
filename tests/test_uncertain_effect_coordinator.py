@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.action_contract_builder import ActionContractMaterializer as ContractBuilder
 from affordance_runtime.adapters.dom import DomAdapter
+from affordance_runtime.approval_contracts import ConfiguredApprovalProvider
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import (
@@ -12,7 +13,12 @@ from affordance_runtime.contracts import (
     RuntimeErrorCode,
     VerifierSpec,
 )
-from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
+from affordance_runtime.effect_authority_contracts import (
+    EffectAuthorizationScope,
+    EffectClass,
+    Externality,
+    ResourceScopeRef,
+)
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -52,7 +58,7 @@ class TimeoutObserver:
         snapshot_id = f"timeout-snapshot-{self.sequence}"
         model = DomAdapter().transduce(
             '<button id="save" data-runtime-operation="resource.update@v1" '
-            'data-runtime-effect-class="update" data-runtime-externality="local" '
+            'data-runtime-effect-class="update" data-runtime-externality="external_system" '
             'data-runtime-reversibility="reversible" data-runtime-source-assurance="structural" '
             'data-runtime-risk="medium">Save</button>',
             environment_revision=revision,
@@ -162,6 +168,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 )
             }
         ),
+        approval_provider=ConfiguredApprovalProvider("test-user", {"settings.write"}),
     ).run_sync(
         legacy_run_request(
             task_spec=TaskSpec(
@@ -169,26 +176,27 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                 revision=1,
                 objective="Save exactly once",
                 operation_class=OperationClass.REVERSIBLE_WRITE,
-                    requirements=(
-                        TaskRequirement(
-                            requirement_id="requirement:effect:1",
-                            payload=TaskSemanticPayload(
-                                kind="effect",
-                                subject="Save",
-                                target_identity="dom_button_1",
-                                operation_class=OperationClass.REVERSIBLE_WRITE,
-                                capability="settings.write",
-                                effect_authorization_scope=EffectAuthorizationScope(
-                                    requirement_ref="requirement:effect:1",
-                                    operation_constraint="resource.update@v1",
-                                    resource_scope=ResourceScopeRef("dom_button_1"),
-                                    effect_class=EffectClass.UPDATE,
-                                    required_capabilities=frozenset({"settings.write"}),
-                                ),
+                requirements=(
+                    TaskRequirement(
+                        requirement_id="requirement:effect:1",
+                        payload=TaskSemanticPayload(
+                            kind="effect",
+                            subject="Save",
+                            target_identity="dom_button_1",
+                            operation_class=OperationClass.REVERSIBLE_WRITE,
+                            capability="settings.write",
+                            effect_authorization_scope=EffectAuthorizationScope(
+                                requirement_ref="requirement:effect:1",
+                                operation_constraint="resource.update@v1",
+                                resource_scope=ResourceScopeRef("dom_button_1"),
+                                effect_class=EffectClass.UPDATE,
+                                externality=Externality.EXTERNAL_SYSTEM,
+                                required_capabilities=frozenset({"settings.write"}),
                             ),
-                            source_anchor_refs=("uncertain-effect-test",),
                         ),
+                        source_anchor_refs=("uncertain-effect-test",),
                     ),
+                ),
                 allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
                 success=SuccessExpression(
                     expression_id="success:saved",
@@ -222,5 +230,9 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
         for node in result.trace.nodes
     )
     events = [node.kind for node in result.trace.nodes]
+    assert events.index("ExecutionAttemptIssued") < events.index("FailureDetected")
+    assert "UncertainExternalEffectRecorded" in events
+    assert result.state.current_execution_attempt is not None
+    assert result.state.uncertain_external_effects == ()
     assert "RecoveryStateInspected" in events
     assert events.index("RecoveryStateInspected") < events.index("TaskCompleted")

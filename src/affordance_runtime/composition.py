@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import cast
 
-from affordance_runtime.action_contract_builder import ActionContractBuilder, ActionContractMaterializer
+from affordance_runtime.action_contract_builder import (
+    ActionContractBuilder,
+    ActionContractMaterializer,
+    CanonicalRouteMaterializer,
+)
 from affordance_runtime.active_perception_flow import ActivePerceptionFlow
 from affordance_runtime.approval_contracts import ApprovalProvider
 from affordance_runtime.artifacts import ArtifactStore
@@ -103,7 +107,7 @@ def compose_run_coordinator(
         task_skill_runtime=task_skill_runtime,
     )
     if contract_builder is None:
-        resolved_contract_builder = ActionContractBuilder(ActionContractMaterializer())
+        resolved_contract_builder = ActionContractBuilder(CanonicalRouteMaterializer())
     elif isinstance(contract_builder, ActionContractMaterializer):
         resolved_contract_builder = ActionContractBuilder(contract_builder)
     else:

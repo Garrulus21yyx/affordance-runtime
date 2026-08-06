@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from affordance_runtime.contracts import RuntimeErrorCode
+from affordance_runtime.failure_envelope import EffectStatus
 from affordance_runtime.recovery_protocol import RecoveryKind, RecoveryOutcome, RuntimePhase
 from affordance_runtime.runtime import RuntimeStep
-from affordance_runtime.runtime_evidence import verification_confirms_effect_absent
+from affordance_runtime.runtime_evidence import effect_settlement_status
+from affordance_runtime.simplified_runtime_contracts import EffectSettlementStatus
 from affordance_runtime.stage_protocol import (
     LoopDirective,
     RuntimeEvent,
@@ -60,9 +62,7 @@ class RecoveryObservationEvaluator:
             contract = state.current_contract
             receipt = state.last_receipt
             if contract is None or receipt is None:
-                raise ValueError(
-                    "post-state recovery inspection requires contract and receipt lineage"
-                )
+                raise ValueError("post-state recovery inspection requires contract and receipt lineage")
             verification = execution_loop.verify(
                 contract,
                 receipt,
@@ -82,12 +82,37 @@ class RecoveryObservationEvaluator:
                     },
                 )
             )
+            current_attempt = state.current_execution_attempt
+            unresolved_attempt_ids = {item.attempt.attempt_id for item in state.uncertain_external_effects}
+            settlement = (
+                effect_settlement_status(verification, contract, current_attempt)
+                if current_attempt is not None and current_attempt.attempt_id in unresolved_attempt_ids
+                else EffectSettlementStatus.STILL_UNCERTAIN
+            )
+            absence_confirmed = settlement == EffectSettlementStatus.CONFIRMED_NOT_OCCURRED
+            effect_settled = bool(
+                settlement
+                in {
+                    EffectSettlementStatus.CONFIRMED_OCCURRED,
+                    EffectSettlementStatus.CONFIRMED_NOT_OCCURRED,
+                }
+            )
             skill_fallthrough = bool(
-                verification_confirms_effect_absent(verification)
+                absence_confirmed
                 and task_skill_progress is not None
                 and not getattr(task_skill_progress, "active", True)
             )
-            failed = not verification.passed and not skill_fallthrough
+            failed = not verification.passed and not absence_confirmed and not skill_fallthrough
+            if effect_settled:
+                updates["uncertain_external_effects"] = tuple(
+                    item
+                    for item in state.uncertain_external_effects
+                    if current_attempt is None or item.attempt.attempt_id != current_attempt.attempt_id
+                )
+            if absence_confirmed:
+                updates["current_failure"] = failure.model_copy(
+                    update={"effect_status": EffectStatus.CONFIRMED_NOT_OCCURRED},
+                )
         outcome = RecoveryOutcome(
             decision_id=decision.decision_id,
             failure_id=failure.failure_id,
@@ -95,9 +120,7 @@ class RecoveryObservationEvaluator:
             changed_dimensions=decision.changed_dimensions,
             next_phase=RuntimePhase.ABORTED if failed else decision.reentry_phase,
             artifact_refs=() if failed else tuple(snapshot.observation.artifact_refs),
-            observation_refs=(
-                () if failed else (snapshot.observation.snapshot_id,)
-            ),
+            observation_refs=(() if failed else (snapshot.observation.snapshot_id,)),
             error_code="verification_failed" if failed else "",
         )
         updates["current_recovery_outcome"] = outcome
@@ -111,10 +134,7 @@ class RecoveryObservationEvaluator:
                     "RecoveryAborted",
                     {
                         "state": state.phase,
-                        "reason": (
-                            "post-state inspection did not establish a safe changed "
-                            "effect status"
-                        ),
+                        "reason": ("post-state inspection did not establish a safe changed effect status"),
                     },
                 )
             )
@@ -131,11 +151,7 @@ class RecoveryObservationEvaluator:
             transition=RuntimeTransition(phase=phase, state_updates=updates),
             events=tuple(events),
             terminal=terminal,
-            directive=(
-                LoopDirective.TERMINAL
-                if terminal is not None
-                else LoopDirective.NEXT_STAGE
-            ),
+            directive=(LoopDirective.TERMINAL if terminal is not None else LoopDirective.NEXT_STAGE),
         )
 
 
@@ -167,9 +183,7 @@ class RecoveryActionEvaluator:
         }:
             outcome = _binding_outcome(decision, failure, output.contract)
         elif (
-            output is not None
-            and decision.kind == RecoveryKind.RETRY_IDEMPOTENT
-            and action_result.failure is not None
+            output is not None and decision.kind == RecoveryKind.RETRY_IDEMPOTENT and action_result.failure is not None
         ):
             outcome = _execution_outcome(
                 decision,
@@ -211,40 +225,24 @@ class RecoveryActionEvaluator:
             output=RecoveryActionSettlement(outcome),
             transition=RuntimeTransition(
                 phase=phase,
-                intermediate_phases=(
-                    (RuntimeStep.RECOVERING,)
-                    if phase == RuntimeStep.ABORTED
-                    else ()
-                ),
+                intermediate_phases=((RuntimeStep.RECOVERING,) if phase == RuntimeStep.ABORTED else ()),
                 state_updates={"current_recovery_outcome": outcome},
                 clear_recovery_decision=clear_decision,
             ),
             events=tuple(events),
             terminal=terminal,
-            directive=(
-                LoopDirective.TERMINAL
-                if terminal is not None
-                else LoopDirective.NEXT_STAGE
-            ),
+            directive=(LoopDirective.TERMINAL if terminal is not None else LoopDirective.NEXT_STAGE),
         )
 
 
 def _binding_outcome(decision: Any, failure: Any, contract: Any) -> RecoveryOutcome:
-    candidate_id = (
-        contract.grounding_candidate.candidate_id
-        if contract.grounding_candidate is not None
-        else ""
-    )
+    candidate_id = contract.grounding_candidate.candidate_id if contract.grounding_candidate is not None else ""
     route_matches = bool(
         decision.kind == RecoveryKind.REGROUND
         or (decision.candidate_id and candidate_id == decision.candidate_id)
         or (decision.route_ref and contract.backend == decision.route_ref)
     )
-    if (
-        not contract.snapshot_id
-        or contract.snapshot_id == failure.snapshot_id
-        or not route_matches
-    ):
+    if not contract.snapshot_id or contract.snapshot_id == failure.snapshot_id or not route_matches:
         return _failed_outcome(decision, failure, "planner_proposal_rejected")
     return RecoveryOutcome(
         decision_id=decision.decision_id,
@@ -268,9 +266,7 @@ def _execution_outcome(
         success=receipt.success,
         changed_dimensions=decision.changed_dimensions,
         next_phase=decision.reentry_phase,
-        artifact_refs=tuple(
-            item for item in receipt.evidence.values() if isinstance(item, str)
-        ),
+        artifact_refs=tuple(item for item in receipt.evidence.values() if isinstance(item, str)),
         observation_refs=(observation.snapshot_id,) if observation.snapshot_id else (),
         error_code=(
             ""
@@ -302,9 +298,7 @@ def _outcome_event(state_phase: str, outcome: RecoveryOutcome) -> RuntimeEvent:
                 "decision_id": outcome.decision_id,
                 "failure_id": outcome.failure_id,
                 "success": outcome.success,
-                "changed_dimensions": [
-                    item.value for item in outcome.changed_dimensions
-                ],
+                "changed_dimensions": [item.value for item in outcome.changed_dimensions],
                 "next_phase": outcome.next_phase.value,
                 "artifact_refs": list(outcome.artifact_refs),
                 "observation_refs": list(outcome.observation_refs),

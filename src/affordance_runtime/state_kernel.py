@@ -14,6 +14,10 @@ from affordance_runtime.failure_envelope import FailureEnvelope
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.observation_store import ObservationCommit, ObservationRef
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
+from affordance_runtime.simplified_runtime_contracts import (
+    ExecutionAttempt,
+    UncertainExternalEffect,
+)
 from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.task_plan_progress import TaskProgress
 from affordance_runtime.verification.mechanical import VerificationReport
@@ -147,6 +151,8 @@ class StateKernel:
     phase: str = "created"
     current_snapshot_id: str = ""
     current_contract: ActionContract | None = None
+    current_execution_attempt: ExecutionAttempt | None = None
+    uncertain_external_effects: tuple[UncertainExternalEffect, ...] = ()
     latest_verification: VerificationReport | None = None
     step_count: int = 0
     observation_count: int = 0

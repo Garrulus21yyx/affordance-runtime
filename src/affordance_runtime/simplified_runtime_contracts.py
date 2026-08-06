@@ -628,6 +628,8 @@ class ExecutionAttempt:
     pre_observation: ObservationIdentity
     active_step_id: str = ""
     surface_kind: str = ""
+    transaction_identity: str = ""
+    idempotency_identity: str = ""
 
     def __post_init__(self) -> None:
         _require_nonblank("attempt_id", self.attempt_id)
@@ -641,6 +643,28 @@ class ExecutionAttempt:
             _require_nonblank("active_step_id", self.active_step_id)
         if self.surface_kind:
             _require_nonblank("surface_kind", self.surface_kind)
+
+
+class EffectSettlementStatus(StrEnum):
+    CONFIRMED_OCCURRED = "confirmed_occurred"
+    CONFIRMED_NOT_OCCURRED = "confirmed_not_occurred"
+    STILL_UNCERTAIN = "still_uncertain"
+
+
+@dataclass(frozen=True)
+class UncertainExternalEffect:
+    attempt: ExecutionAttempt
+    status: EffectSettlementStatus = EffectSettlementStatus.STILL_UNCERTAIN
+    evidence_refs: tuple[str, ...] = ()
+    assurance: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        if self.status != EffectSettlementStatus.STILL_UNCERTAIN and not self.evidence_refs:
+            raise ValueError("settled external effect requires evidence refs")
+
+    def __str__(self) -> str:
+        return self.attempt.attempt_id
 
 
 @dataclass(frozen=True)

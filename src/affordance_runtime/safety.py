@@ -144,7 +144,7 @@ class TaskConstraintPolicy:
                 canonical_observation,
                 target_id=signature.target_ref,
                 destination_id=signature.destination_ref or "",
-                action_kind=contract.action,
+                action_kind=signature.action_kind,
                 parameters=signature.parameter_values,
                 candidate=candidate,
                 destination_candidate=destination_candidate,

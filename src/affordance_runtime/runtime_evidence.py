@@ -8,8 +8,12 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING, Any
 
-from affordance_runtime.contracts import ActionContract
+from affordance_runtime.contracts import ActionContract, RiskLevel
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.simplified_runtime_contracts import (
+    EffectSettlementStatus,
+    ExecutionAttempt,
+)
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
@@ -62,11 +66,53 @@ def verification_satisfies_effect(report: VerificationReport) -> bool:
     )
 
 
-def verification_confirms_effect_absent(report: VerificationReport) -> bool:
+def verification_confirms_effect_absent(
+    report: VerificationReport,
+    contract: ActionContract | None = None,
+    attempt: ExecutionAttempt | None = None,
+) -> bool:
+    required_strength = (
+        "authoritative"
+        if contract is not None and contract.risk in {RiskLevel.HIGH, RiskLevel.IRREVERSIBLE}
+        else "strong"
+    )
+    admitted_strengths = {"authoritative"} if required_strength == "authoritative" else {"strong", "authoritative"}
+    high_risk = required_strength == "authoritative"
     return (
         report.status == VerificationStatus.FAILED
         and bool(report.evidence)
-        and any(not item.passed and item.strength == "strong" for item in report.evidence)
+        and any(
+            not item.passed
+            and item.strength in admitted_strengths
+            and (not high_risk or _evidence_binds_attempt(item, attempt))
+            for item in report.evidence
+        )
+    )
+
+
+def effect_settlement_status(
+    report: VerificationReport,
+    contract: ActionContract,
+    attempt: ExecutionAttempt,
+) -> EffectSettlementStatus:
+    if report.passed:
+        return EffectSettlementStatus.CONFIRMED_OCCURRED
+    if verification_confirms_effect_absent(report, contract, attempt):
+        return EffectSettlementStatus.CONFIRMED_NOT_OCCURRED
+    return EffectSettlementStatus.STILL_UNCERTAIN
+
+
+def _evidence_binds_attempt(item: object, attempt: ExecutionAttempt | None) -> bool:
+    if attempt is None:
+        return False
+    admitted = {
+        attempt.attempt_id,
+        attempt.transaction_identity,
+        attempt.idempotency_identity,
+        attempt.contract_hash,
+    } - {""}
+    return any(
+        str(getattr(item, field, "")) in admitted for field in ("semantic_evidence_key", "evidence_id", "target")
     )
 
 

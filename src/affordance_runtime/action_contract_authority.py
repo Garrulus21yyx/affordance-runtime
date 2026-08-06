@@ -36,7 +36,7 @@ def rebuild_contract_authority(
         observation,
         target_id=choice.target_id,
         destination_id=choice.destination_id,
-        action_kind=contract.action,
+        action_kind=choice.action_kind.value,
         parameters=choice.parameters,
         candidate=candidate,
         destination_candidate=destination_candidate,

@@ -84,8 +84,8 @@ Documentation consolidation does not promote any production capability.
 
 ### 1.1 P4-G redline closure
 
-The four negative probes that blocked the interim `8b91944` implementation now
-close at the typed authority boundary:
+The original four negative probes and the final epoch/binding/uncertain-effect
+audit now close at the typed authority boundary:
 
 | Probe | Current result | Closure owner |
 |---|---|---|
@@ -93,6 +93,12 @@ close at the typed authority boundary:
 | admitted `recipient=Alice, amount=100` + swapped concrete fields | DENY | named parameter authorization |
 | uninstrumented DOM `Delete account` button | UNPROVEN | Runtime classification and source-assurance policy |
 | valid Alice choice but actual affordance/locator targets Bob | DENY | route-specific signature plus Task Gate reauthorization |
+| source/destination candidate semantic identity mismatch | DENY before signature sealing | classifier, builder and Task Gate exact endpoint checks |
+| destination DELETE/operation mismatch hidden by source UPDATE | UNPROVEN/DENY | dual-endpoint effect/operation reducer |
+| truncated action-bound source coverage or unsafe enabling action | UNPROVEN/DENY | shared fail-closed coverage/conflict/assurance/risk/capability gates |
+| fresh preflight epoch changes route classification | old contract discarded; rebuilt contract denied before dispatch | epoch-strict preflight rebuild |
+| timeout/ambiguous external dispatch | typed attempt retained and completion blocked until settlement | Runtime-owned unresolved-effect state |
+| strong or unbound authoritative high-risk absence evidence | rejected | attempt/transaction-bound authoritative settlement |
 | approval followed by a changed observation epoch | token rejected; contract must be rebuilt and reapproved | snapshot/page/environment-bound approval plus full Task/Freshness revalidation |
 | public approval of H1 followed by a rebuilt H2 | H1 grant cannot issue an H2 token; a new pending request is returned | typed external pending request plus paused-run continuation |
 | medium Catalog choice followed by a high-risk actual binding | final contract is HIGH and admission stops at APPROVAL_REQUIRED | route-specific proof risk plus contract/gate non-downgrade invariant |
@@ -119,9 +125,9 @@ or test-specific action-enum fallback remains on the canonical path.
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
 | Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route, and causal step evidence retains its actual subject/value/source/assurance | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1 plus P2 canonical step-completion cutover complete |
-| Action choice | Runtime builds the logical Catalog before model projection and StepChoiceFlow owns deterministic 0/1/N/hidden-ID behavior. Catalog reads source and destination `ActionSupport`; one shared ordering and dual-endpoint reducer conservatively combine externality, reversibility, conflict, asserted risk, sensitivity and assurance. Visual/SOM without explicit assurance is WEAK; tri-state subsumption rejects scope expansion | `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ALLOW/DENY/UNPROVEN`; Catalog admits ALLOW only; Text/VLM is raise-only | P0-C/P4/P4-G complete |
-| ActionContract and gates | selected choice, exact source/destination candidates and the route-specific proof are sealed into the contract hash. Final risk cannot be lower than the proof; independent Task Gate reproduces the same dual-endpoint signature including destination conflict and source-kind assurance. CapabilityGate and exact-contract approval consume that conservative result | route-specific Runtime signature + versioned proof + exact source/destination bindings in contract hash; independent Task Gate reauthorization | P0-C/P4-G complete |
-| Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
+| Action choice | Runtime builds the logical Catalog before model projection and StepChoiceFlow owns deterministic 0/1/N/hidden-ID behavior. Catalog reads exact source/destination action bindings and truthful per-source coverage; one dual-endpoint reducer combines effect/operation, externality, reversibility, conflict, asserted risk, sensitivity and assurance. Visual/SOM without explicit assurance is WEAK; direct and closed enabling paths share fail-closed gates | `EffectAuthorizationScope ⊒ RuntimeEffectSignature → ALLOW/DENY/UNPROVEN`; Catalog admits ALLOW only; Text/VLM is raise-only | P0-C/P4/P4-G complete |
+| ActionContract and gates | selected choice and exact source/destination candidates are identity-checked and sealed with the route proof. Every fresh preflight epoch rebuilds route signature/proof/contract before strict Task/freshness admission; changed classification cannot execute the old contract. CapabilityGate and exact-contract approval consume the rebuilt conservative result | route-specific Runtime signature + versioned proof + exact bindings/epoch in contract hash; independent Task Gate reauthorization | P0-C/P4-G complete |
+| Execution | backend-neutral execution and typed receipts exist; `ExecutionAttempt` is committed before dispatch and ambiguous external outcomes enter Runtime-owned unresolved state with typed three-state settlement | Executor proves dispatch only; high-risk absence requires authoritative evidence bound to attempt/transaction/contract identity | P4-G complete; persistence remains P5 |
 | Verification | `LoopEvaluator` feeds canonical observation, current contract, bounded lossless recent outcomes, durable evidence, latest final-recheck identity and resource versions directly to `PredicateEvaluator`; resource versions are derived from canonical target/fact content; Task completion uses the same Runtime-owned context and is recomputed without a CriterionEvaluation cache; observation metadata cannot assert causal lineage, durable admission, final-recheck authority or resource versions; action effect and TaskSpec completion retain their earlier owners | loop-native typed step evaluation with bounded evidence locations | P2 mandatory runtime closure complete; P2-6 deferred and P2-7 resolver demand-gated |
 | Criterion contracts | canonical immutable Predicate/AllOf/AnyOf/Not/OpenSemantic AST and orthogonal satisfaction/validity/assurance policy are implemented; strict `StepSpec` accepts only canonical `CriterionExpr`, while legacy providers/benchmarks canonicalize at ingress; unresolved OpenSemantic routes to a typed clarification gap | one typed criterion vocabulary independent of provider coverage | P2-1/P2-2 core complete; P2-7 full resolver demand-driven |
 | Evidence providers | shared mechanical contract groups structural DOM/AX/Visual/SVG, resource API/WoT/Device/transaction and artifact/file/materialization facts; unknown surfaces are not treated as DOM and bare artifact refs are not integrity proofs | focused fact providers feeding pure predicate evaluation | P2-5 complete; P2-6 model/human expansion deferred |
@@ -223,7 +229,7 @@ TaskSpec or a missing admitted task.
 P4-G moved semantic generation and typed authority into focused builder,
 generation-support and policy modules; `action_choice_catalog.py` now retains
 membership/digest/query ownership. Remaining production containment debt is
-separately queued at `P5-4`: `execution_phase.py` is currently 1,142 lines and strict
+separately queued at `P5-4`: `execution_phase.py` is currently 1,316 lines and strict
 `browsergym_episode_runner.py` is 1,082 lines after legacy extraction; both must
 be split by responsibility without changing P4's completed planning boundary.
 

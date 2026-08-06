@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
-from affordance_runtime.action_contract_builder import ActionContractBuilder
+from affordance_runtime.action_contract_builder import (
+    ActionContractBuilder,
+    ActionContractMaterializer,
+    CanonicalRouteMaterializer,
+)
 from affordance_runtime.action_selection import (
     ActionSelectionError,
     ActionSelectionValidator,
@@ -315,6 +319,12 @@ def _case_contract_identity() -> None:
             None,  # type: ignore[arg-type]
             observation,
         )
+
+
+def test_default_contract_builder_does_not_load_legacy_materializer() -> None:
+    route_owner = ActionContractBuilder().materializer
+    assert isinstance(route_owner, CanonicalRouteMaterializer)
+    assert not isinstance(route_owner, ActionContractMaterializer)
 
 
 def _case_raw_text_read_set() -> None:

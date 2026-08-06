@@ -50,14 +50,8 @@ class RuntimeCommitter:
         if result.failure is not None:
             state.current_failure = result.failure
         transition = result.transition
-        if (
-            transition is not None
-            and transition.phase == RuntimeStep.DONE
-            and transition.task_completion is None
-        ):
-            raise ValueError(
-                "terminal success state and result require typed task completion"
-            )
+        if transition is not None and transition.phase == RuntimeStep.DONE and transition.task_completion is None:
+            raise ValueError("terminal success state and result require typed task completion")
         if transition is not None:
             if transition.state_updates is not None:
                 for name, value in transition.state_updates.items():
@@ -89,6 +83,8 @@ class RuntimeCommitter:
                 state.record_planner_proposal(dict(transition.planner_proposal))
             if transition.current_contract is not None:
                 state.current_contract = transition.current_contract
+            if transition.execution_attempt is not None:
+                state.current_execution_attempt = transition.execution_attempt
             if transition.receipt is not None:
                 state.record_receipt(transition.receipt)
             state.step_count += transition.step_count_delta
@@ -106,9 +102,7 @@ class RuntimeCommitter:
                 state.current_recovery_decision = None
             if transition.final_result is not None:
                 state.final_result = dict(transition.final_result)
-            trace.artifact_index.extend(
-                path for path in transition.artifact_refs if path
-            )
+            trace.artifact_index.extend(path for path in transition.artifact_refs if path)
         parent = self.commit_events(trace, parent, result.events)
         if transition is not None and transition.task_completion is not None:
             parent = self.commit_task_completion(
@@ -150,10 +144,14 @@ class RuntimeCommitter:
             state.transition(RuntimeStep.PREFLIGHT.value)
         if state.phase == RuntimeStep.PREFLIGHT.value and target == RuntimeStep.VERIFYING:
             state.transition(RuntimeStep.ACTING.value)
-        if state.phase in {
-            RuntimeStep.ACTING.value,
-            RuntimeStep.VERIFYING.value,
-        } and target == RuntimeStep.ABORTED:
+        if (
+            state.phase
+            in {
+                RuntimeStep.ACTING.value,
+                RuntimeStep.VERIFYING.value,
+            }
+            and target == RuntimeStep.ABORTED
+        ):
             state.transition(RuntimeStep.RECOVERING.value)
         if state.phase != target.value:
             state.transition(target.value)

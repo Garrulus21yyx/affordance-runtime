@@ -57,6 +57,8 @@ def classify_action(
     candidate: GroundingCandidate | None = None,
     destination_candidate: GroundingCandidate | None = None,
 ) -> RuntimeEffectSignature:
+    _validate_candidate_identity(candidate, target_id, "source")
+    _validate_candidate_identity(destination_candidate, destination_id, "destination")
     target = next((item for item in observation.targets if item.target_id == target_id), None)
     destination = next((item for item in observation.targets if item.target_id == destination_id), None)
     selected = candidate
@@ -164,6 +166,23 @@ def classify_action(
                 reversibility,
                 _optional_enum(Reversibility, destination_support.reversibility),
             )
+        effect_class, operation_ref = _reduce_endpoint_effect_operation(
+            effect_class,
+            operation_ref,
+            _optional_enum(
+                EffectClass,
+                (
+                    destination_support.effect_class
+                    if destination_support is not None
+                    else getattr(destination, "effect_class", "")
+                ),
+            ),
+            _optional_text(
+                destination_support.operation_ref
+                if destination_support is not None
+                else getattr(destination, "operation_ref", "")
+            ),
+        )
 
     if destination_candidate is not None:
         assertion_refs = _merge_refs(assertion_refs, destination_candidate.evidence_refs)
@@ -182,6 +201,12 @@ def classify_action(
         reversibility = _less_reversible(
             reversibility,
             _optional_enum(Reversibility, destination_candidate.reversibility),
+        )
+        effect_class, operation_ref = _reduce_endpoint_effect_operation(
+            effect_class,
+            operation_ref,
+            _optional_enum(EffectClass, destination_candidate.effect_class),
+            _optional_text(destination_candidate.operation_ref) or _candidate_operation(destination_candidate),
         )
 
     interaction = _INTERACTION_POLICY.get(normalized_action)
@@ -223,7 +248,15 @@ def classify_action(
         reversibility=reversibility,
         assurance=assurance,
         conflict_status=conflict or ConflictStatus.INCONCLUSIVE.value,
-        coverage_complete=target is not None and (not destination_id or destination is not None),
+        coverage_complete=_coverage_complete(
+            observation,
+            target,
+            destination,
+            candidate,
+            destination_candidate,
+            action_kind=normalized_action,
+            destination_required=bool(destination_id),
+        ),
         candidate_binding_digest=_binding_digest(selected, destination_candidate, target_id, destination_id),
         source_refs=assertion_refs,
         backend_operation=operation_ref or "",
@@ -408,6 +441,81 @@ def _more_severe_conflict(current: str, candidate: str) -> str:
 
 def _merge_refs(*groups: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(ref for group in groups for ref in group))
+
+
+def _validate_candidate_identity(
+    candidate: GroundingCandidate | None,
+    expected_target_id: str,
+    endpoint: str,
+) -> None:
+    if candidate is not None and candidate.semantic_target_id != expected_target_id:
+        raise ValueError(f"{endpoint} candidate semantic identity does not match requested target")
+
+
+def _reduce_endpoint_effect_operation(
+    effect_class: EffectClass | None,
+    operation_ref: str | None,
+    endpoint_effect: EffectClass | None,
+    endpoint_operation: str | None,
+) -> tuple[EffectClass | None, str | None]:
+    if endpoint_effect is not None and effect_class is not None and endpoint_effect != effect_class:
+        effect_class = EffectClass.UNKNOWN
+    elif effect_class is None:
+        effect_class = endpoint_effect
+    if endpoint_operation and operation_ref and endpoint_operation != operation_ref:
+        operation_ref = None
+    elif operation_ref is None:
+        operation_ref = endpoint_operation
+    return effect_class, operation_ref
+
+
+def _coverage_complete(
+    observation: UnifiedObservation,
+    target: object | None,
+    destination: object | None,
+    candidate: GroundingCandidate | None,
+    destination_candidate: GroundingCandidate | None,
+    *,
+    action_kind: str,
+    destination_required: bool,
+) -> bool:
+    if target is None or (destination_required and destination is None):
+        return False
+    if not observation.source_coverage:
+        return True
+    sources: set[GroundingSource] = set()
+    for endpoint_candidate in (candidate, destination_candidate):
+        if endpoint_candidate is not None:
+            sources.add(endpoint_candidate.source)
+    bindings = {item.candidate_id: item for item in observation.bindings}
+    for endpoint_index, endpoint in enumerate((target, destination)):
+        if endpoint is None:
+            continue
+        support = _action_support(endpoint, action_kind, destination=endpoint_index == 1)
+        support_sources = {
+            bindings[candidate_id].source
+            for candidate_id in getattr(support, "candidate_ids", ())
+            if candidate_id in bindings
+        }
+        if support_sources:
+            sources.update(support_sources)
+            continue
+        surfaces = getattr(endpoint, "surfaces", ())
+        if not surfaces:
+            surface = getattr(endpoint, "surface", "")
+            try:
+                surfaces = (GroundingSource(surface),) if surface else ()
+            except ValueError:
+                surfaces = ()
+        sources.update(item for item in surfaces if isinstance(item, GroundingSource))
+    coverage = {item.source: item for item in observation.source_coverage}
+    return bool(sources) and all(
+        source in coverage
+        and coverage[source].completeness.value == "complete"
+        and not coverage[source].truncated
+        and coverage[source].status.value == "observed"
+        for source in sources
+    )
 
 
 def _binding_digest(candidate, destination_candidate, target_id: str, destination_id: str) -> str:

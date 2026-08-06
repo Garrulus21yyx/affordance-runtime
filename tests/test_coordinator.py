@@ -113,14 +113,18 @@ def _snapshot(
     *,
     saved: bool = False,
     snapshot_id: str | None = None,
+    operation_ref: str = "resource.update@v1",
+    effect_class: str = "update",
+    externality: str = "local",
+    reversibility: str = "reversible",
 ) -> BrowserSnapshot:
     environment_revision = f"environment-{sequence}"
     snapshot_id = snapshot_id or f"snapshot-{sequence}"
     model = DomAdapter().transduce(
         (
-            "<main><button id='save' data-runtime-operation='resource.update@v1' "
-            "data-runtime-effect-class='update' data-runtime-externality='local' "
-            "data-runtime-reversibility='reversible' "
+            f"<main><button id='save' data-runtime-operation='{operation_ref}' "
+            f"data-runtime-effect-class='{effect_class}' data-runtime-externality='{externality}' "
+            f"data-runtime-reversibility='{reversibility}' "
             "data-runtime-source-assurance='structural' "
             "data-runtime-risk='medium'>Save</button></main>"
         ),
@@ -443,7 +447,7 @@ class DriftingObserver:
             _snapshot(1),
             _snapshot(2),  # injected drift between planning and preflight
             _snapshot(3),
-            _snapshot(3, snapshot_id="snapshot-3-preflight"),
+            _snapshot(3, saved=True, snapshot_id="snapshot-3-preflight"),
             _snapshot(3, snapshot_id="snapshot-3-targeted"),
             _snapshot(4, saved=True),
             _snapshot(5, saved=True),
@@ -467,11 +471,46 @@ def test_coordinator_reobserves_drift_before_execution() -> None:
 
     assert result.status == RuntimeStep.DONE
     assert result.state.step_count == 1
-    assert result.state.recovery_count == 1
-    assert "EnvironmentDriftDetected" in [node.kind for node in result.trace.nodes]
-    assert result.state.current_failure is not None
-    assert result.state.current_failure.phase.value == "preflight"
-    assert "RecoveryOutcomeRecorded" in [node.kind for node in result.trace.nodes]
+    assert result.state.recovery_count == 0
+    assert "ContractRebuiltAtPreflight" in [node.kind for node in result.trace.nodes]
+
+
+def test_preflight_effect_change_invalidates_old_contract_without_dispatch() -> None:
+    class EffectDriftObserver:
+        def __init__(self) -> None:
+            self.snapshots = [
+                _snapshot(1),
+                _snapshot(2),
+                _snapshot(
+                    3,
+                    operation_ref="resource.delete@v1",
+                    effect_class="delete",
+                    externality="external_system",
+                    reversibility="irreversible",
+                ),
+            ]
+
+        def capture(self) -> BrowserSnapshot:
+            return self.snapshots.pop(0)
+
+    class RecordingExecutor(FakeExecutor):
+        calls = 0
+
+        def execute(self, contract: ActionContract, observation: Observation) -> ExecutionReceipt:
+            self.calls += 1
+            return super().execute(contract, observation)
+
+    executor = RecordingExecutor()
+    result = compose_run_coordinator(
+        observer=EffectDriftObserver(),
+        executor=executor,
+        contract_builder=_metadata_builder("saved"),
+        task_planner=SingleStageTaskPlanner(),
+    ).run_sync(_semantic_envelope("preflight-effect-drift"))
+
+    assert result.status == RuntimeStep.ABORTED
+    assert result.error_code == RuntimeErrorCode.POLICY_DENIED
+    assert executor.calls == 0
 
 
 class StableObserver:

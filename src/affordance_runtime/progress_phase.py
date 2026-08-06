@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
-from affordance_runtime.action_outcome_flow import record_contract_action_outcome_trace
+from affordance_runtime.action_outcome_flow import record_action_outcome_trace
 from affordance_runtime.active_perception import ObservationContinuationPolicy
 from affordance_runtime.artifacts import ArtifactRef, ArtifactStore
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
@@ -40,7 +40,7 @@ from affordance_runtime.runtime_evidence import (
     verification_satisfies_effect,
 )
 from affordance_runtime.runtime_state_projection import project_working_phase
-from affordance_runtime.simplified_runtime_contracts import ActionOutcome
+from affordance_runtime.simplified_runtime_contracts import ActionOutcome, ExecutionAttempt
 from affordance_runtime.source_context import TaskSpecGap
 from affordance_runtime.stage_protocol import (
     LoopDirective,
@@ -74,6 +74,7 @@ class ProgressActionInput:
     receipt: ExecutionReceipt
     execution_observation: Observation
     action_signature: str
+    execution_attempt: ExecutionAttempt
     skill_step_id: str = ""
 
 
@@ -243,18 +244,16 @@ class ProgressStage:
                 *repaired.observation_commits,
             )
         state.latest_verification = report
-        outcome_commit = record_contract_action_outcome_trace(
-            self.execution_loop,
-            cast(Any, events),
-            cast(Any, events.root()),
-            action.contract,
-            action.execution_observation,
-            stage_input.state_view.version,
-            action.receipt,
-            report,
-            post_snapshot.observation,
-            action.skill_step_id or action.contract.affordance_id,
-            state.phase,
+        outcome_commit = record_action_outcome_trace(
+            execution_loop=self.execution_loop,
+            trace=cast(Any, events),
+            parent=cast(Any, events.root()),
+            attempt=action.execution_attempt,
+            receipt=action.receipt,
+            verification=report,
+            post_observation=post_snapshot.observation,
+            step_id=action.skill_step_id or action.contract.affordance_id,
+            state_phase=state.phase,
         )
         if state.task_progress is not None:
             state.task_progress.record_action_outcome(outcome_commit.outcome)

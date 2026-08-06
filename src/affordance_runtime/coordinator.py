@@ -229,6 +229,7 @@ class RunCoordinator:
                         receipt=action.output.receipt,
                         execution_observation=action.output.execution_snapshot.observation,
                         action_signature=action.output.action_signature,
+                        execution_attempt=action.output.execution_attempt,
                         skill_step_id=skill_step_id,
                     ),
                 )

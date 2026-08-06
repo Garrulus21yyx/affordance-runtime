@@ -26,6 +26,7 @@ from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.observation_store import ObservationCommit
 from affordance_runtime.recovery_protocol import FailureOwner
 from affordance_runtime.runtime import RuntimeStep
+from affordance_runtime.simplified_runtime_contracts import ExecutionAttempt
 from affordance_runtime.verification.contracts import TaskCompletionEvaluation
 from affordance_runtime.verification.mechanical import VerificationReport
 
@@ -110,10 +111,7 @@ class RuntimeStateSnapshot:
         )
         if previous.effect_satisfied and same_page:
             return "effect_already_satisfied"
-        if (
-            not previous.verification_passed
-            and previous.post_environment_revision == current_revision
-        ):
+        if not previous.verification_passed and previous.post_environment_revision == current_revision:
             return "no_progress_repeat"
         return None
 
@@ -198,6 +196,7 @@ class RuntimeTransition:
     task_plan_transition: Any | None = None
     planner_proposal: Mapping[str, Any] | None = None
     current_contract: ActionContract | None = None
+    execution_attempt: ExecutionAttempt | None = None
     receipt: ExecutionReceipt | None = None
     step_count_delta: int = 0
     subgoal_action_count_delta: int = 0
@@ -213,13 +212,16 @@ class RuntimeTransition:
     def __post_init__(self) -> None:
         if self.active_perception_count_delta < 0:
             raise ValueError("active perception count delta must be non-negative")
-        if min(
-            self.step_count_delta,
-            self.subgoal_action_count_delta,
-            self.effectful_action_count_delta,
-            self.replan_count_delta,
-            self.version_delta,
-        ) < 0:
+        if (
+            min(
+                self.step_count_delta,
+                self.subgoal_action_count_delta,
+                self.effectful_action_count_delta,
+                self.replan_count_delta,
+                self.version_delta,
+            )
+            < 0
+        ):
             raise ValueError("runtime counter deltas must be non-negative")
         object.__setattr__(self, "observation_commits", tuple(self.observation_commits))
         object.__setattr__(self, "evidence_gaps", tuple(self.evidence_gaps))
@@ -268,13 +270,7 @@ class UserInputRequest:
     owner: FailureOwner = field(default=FailureOwner.USER, init=False)
 
 
-OwnerHandoff: TypeAlias = (
-    ProgressHandoff
-    | StepPlannerHandoff
-    | TaskPlannerHandoff
-    | UserInputRequest
-    | TerminalResult
-)
+OwnerHandoff: TypeAlias = ProgressHandoff | StepPlannerHandoff | TaskPlannerHandoff | UserInputRequest | TerminalResult
 
 
 def build_failure_owner_handoff(

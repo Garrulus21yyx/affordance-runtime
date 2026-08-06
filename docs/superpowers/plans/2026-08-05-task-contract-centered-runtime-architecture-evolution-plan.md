@@ -1301,6 +1301,6 @@ Runtime candidate construction -X-> PlanningRequestBuilder
 | 合入 Risk-proportionate Material Binding 纠偏 | DONE | `MaterialBindingKind`、effect-specific field coverage、`MAT-01`–`MAT-07`；exact span 不再是直接明确指令的通用门禁 |
 | 合入 Concrete Effect Authority / High-risk Governance 目标与实施门 | DONE (IMPLEMENTED) | `AUTHZ-01`–`AUTHZ-10`、`HRA-01`–`HRA-03`、P4-G1–G6；typed production closure 已 cut over |
 | 生成权威总图和细节板块 | DONE | 派生权威架构文档，含总图、九个板块、合同、迁移、门禁与逐条映射 |
-| 完整性、链接和事实状态自检 | DONE | P4-G final review：`912 passed`，Ruff 与 `git diff --check` 通过；focused authority/high-risk redline matrix 全绿 |
+| 完整性、链接和事实状态自检 | DONE | P4-G final review：`930 passed`，Ruff 与 `git diff --check` 通过；epoch/binding/coverage/enabling/uncertain-effect redline matrix 全绿 |
 
 验证使用仓库记录的 dedicated Python 3.12 环境，避免默认 `uv run` 同时求解 BrowserGym Playwright 1.44 与 web extra Playwright 1.61.0 的已知可选依赖冲突。最终结果以本次变更完成前的 fresh verification 输出为准。

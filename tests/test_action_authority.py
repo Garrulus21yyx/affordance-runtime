@@ -29,6 +29,7 @@ from affordance_runtime.effect_authority_contracts import (
     ParameterAuthorization,
     ResourceScopeRef,
     Reversibility,
+    RuntimeRiskTier,
 )
 from affordance_runtime.grounding import DomGroundingPayload, GroundingCandidate, GroundingSource
 from affordance_runtime.high_risk_effect_policy import HIGH_RISK_EFFECT_POLICIES, policy_for_effect
@@ -40,7 +41,10 @@ from affordance_runtime.unified_observation import (
     ActionSupport,
     CanonicalTarget,
     ConflictStatus,
+    CoverageCompleteness,
+    CoverageStatus,
     Freshness,
+    SourceCoverage,
     UnifiedObservation,
     UnifiedObservationTarget,
 )
@@ -194,6 +198,27 @@ def _choice(ref: str, target_id: str, action: PlannerActionKind, parameters=None
         parameters=parameters or {},
         requirement_refs=(ref,),
         role=role,
+    )
+
+
+def _binding(candidate_id: str, target_id: str, *, operation_ref: str = "resource.move@v1"):
+    return GroundingCandidate(
+        candidate_id=candidate_id,
+        semantic_target_id=target_id,
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(selector=f"#{candidate_id}"),
+        compatible_executor="browser",
+        observation_epoch_id="observation:authority",
+        environment_revision="environment:authority",
+        page_revision="page:authority",
+        target_fingerprint="",
+        supported_actions=frozenset({"activate", "drag"}),
+        evidence_kinds=frozenset(),
+        operation_ref=operation_ref,
+        effect_class=EffectClass.UPDATE.value,
+        externality=Externality.LOCAL.value,
+        reversibility=Reversibility.REVERSIBLE.value,
+        authority_source_assurance=AssuranceLevel.STRUCTURAL.value,
     )
 
 
@@ -867,3 +892,205 @@ def test_enabling_type_cannot_disclose_data() -> None:
         ),
     )
     assert proof.status == AuthorityStatus.DENY
+
+
+@pytest.mark.parametrize("endpoint", ["source", "destination"])
+def test_actual_candidate_identity_must_match_requested_endpoint(endpoint: str) -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:source",
+                surface="dom",
+                role="item",
+                label="Source",
+                supported_actions=("drag",),
+                state={},
+            ),
+            UnifiedObservationTarget(
+                target_id="resource:destination",
+                surface="dom",
+                role="region",
+                label="Destination",
+                supported_actions=("drag",),
+                state={},
+            ),
+        ),
+    )
+    kwargs = {
+        "candidate": _binding("candidate:wrong-source", "resource:other") if endpoint == "source" else None,
+        "destination_candidate": (
+            _binding("candidate:wrong-destination", "resource:other") if endpoint == "destination" else None
+        ),
+    }
+    with pytest.raises(ValueError, match=f"{endpoint} candidate semantic identity"):
+        classify_action(
+            observation,
+            target_id="resource:source",
+            destination_id="resource:destination",
+            action_kind="drag",
+            parameters={},
+            **kwargs,
+        )
+
+
+def test_destination_delete_cannot_be_hidden_by_source_update() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:move",
+        operation_constraint="resource.move@v1",
+        resource_scope=ResourceScopeRef("resource:source"),
+        destination_scope=ResourceScopeRef("resource:destination"),
+        effect_class=EffectClass.UPDATE,
+        externality=Externality.LOCAL,
+        reversibility=Reversibility.REVERSIBLE,
+        minimum_source_assurance=AssuranceLevel.STRUCTURAL,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:source",
+                surface="dom",
+                role="item",
+                label="Source",
+                supported_actions=("drag",),
+                state={},
+                operation_ref="resource.move@v1",
+                effect_class=EffectClass.UPDATE.value,
+                source_assurance=AssuranceLevel.STRUCTURAL,
+                externality=Externality.LOCAL.value,
+                reversibility=Reversibility.REVERSIBLE.value,
+            ),
+            UnifiedObservationTarget(
+                target_id="resource:destination",
+                surface="dom",
+                role="region",
+                label="Destination",
+                supported_actions=("drag",),
+                state={},
+                operation_ref="resource.delete@v1",
+                effect_class=EffectClass.DELETE.value,
+                source_assurance=AssuranceLevel.STRUCTURAL,
+                externality=Externality.LOCAL.value,
+                reversibility=Reversibility.IRREVERSIBLE.value,
+            ),
+        ),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:source",
+        destination_id="resource:destination",
+        action_kind="drag",
+        parameters={},
+    )
+    proof = authorize_runtime_signature(
+        task_spec=_task(scope, OperationClass.REVERSIBLE_WRITE),
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+    )
+
+    assert signature.effect_class == EffectClass.UNKNOWN
+    assert signature.operation_ref is None
+    assert proof.status != AuthorityStatus.ALLOW
+
+
+@pytest.mark.parametrize("defect", ["coverage", "conflict", "critical_risk"])
+def test_enabling_policy_reuses_fail_closed_common_gates(defect: str) -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:control",
+                surface="dom",
+                role="control",
+                label="Control",
+                supported_actions=("focus",),
+                state={},
+                source_assurance=AssuranceLevel.STRUCTURAL,
+            ),
+        ),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:control",
+        action_kind="focus",
+        parameters={},
+    )
+    if defect == "coverage":
+        signature = replace(signature, coverage_complete=False)
+    elif defect == "conflict":
+        signature = replace(signature, conflict_status=ConflictStatus.MATERIAL_CONFLICT.value)
+    else:
+        signature = replace(
+            signature,
+            risk_vector=replace(
+                signature.risk_vector,
+                effect_class=RuntimeRiskTier.CRITICAL,
+            ),
+        )
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:read",
+        operation_constraint="resource.read@v1",
+        resource_scope=ResourceScopeRef("resource:control"),
+        effect_class=EffectClass.READ,
+    )
+    proof = authorize_runtime_signature(
+        task_spec=_task(scope, OperationClass.READ_ONLY),
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+        choice_role=ChoiceRole.ENABLING,
+    )
+    assert proof.status != AuthorityStatus.ALLOW
+
+
+def test_truncated_relevant_source_coverage_is_not_complete() -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:control",
+                surface="dom",
+                role="control",
+                label="Control",
+                supported_actions=("activate",),
+                state={},
+                operation_ref="resource.update@v1",
+                effect_class=EffectClass.UPDATE.value,
+                source_assurance=AssuranceLevel.STRUCTURAL,
+                externality=Externality.LOCAL.value,
+                reversibility=Reversibility.REVERSIBLE.value,
+            ),
+        ),
+        source_coverage=(
+            SourceCoverage(
+                source=GroundingSource.DOM,
+                capture_policy_id="bounded-dom",
+                captured_item_count=1,
+                truncated=True,
+                omitted_item_count_estimate=100,
+                completeness=CoverageCompleteness.BOUNDED,
+                status=CoverageStatus.ACQUISITION_TRUNCATED,
+            ),
+        ),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:control",
+        action_kind="activate",
+        parameters={},
+    )
+    assert not signature.coverage_complete

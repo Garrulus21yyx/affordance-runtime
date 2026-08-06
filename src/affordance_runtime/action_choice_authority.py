@@ -217,8 +217,15 @@ def _authorize_enabling(
 ) -> ActionAuthorityProof:
     if not set(requirement_refs).issubset({item.requirement_id for item in task_spec.requirements}):
         return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_REQUIREMENT_TRACE_MISSING",))
+    common_status = _enabling_common_status(signature)
+    if common_status is not None:
+        return _proof(task_spec, signature, common_status[0], common_status[1])
     if signature.effect_class == EffectClass.INTERACTION_ONLY:
-        if signature.externality != Externality.LOCAL or signature.reversibility != Reversibility.REVERSIBLE:
+        if (
+            signature.action_kind not in {"focus", "hover", "scroll", "wait", "observe"}
+            or signature.externality != Externality.LOCAL
+            or signature.reversibility != Reversibility.REVERSIBLE
+        ):
             return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_EFFECT_POLICY_FAILED",))
         return _proof(
             task_spec,
@@ -247,6 +254,28 @@ def _authorize_enabling(
         )
     status = AuthorityStatus.UNPROVEN if signature.effect_class in {None, EffectClass.UNKNOWN} else AuthorityStatus.DENY
     return _proof(task_spec, signature, status, ("ENABLING_EFFECT_POLICY_FAILED",))
+
+
+def _enabling_common_status(
+    signature: RuntimeEffectSignature,
+) -> tuple[AuthorityStatus, tuple[str, ...]] | None:
+    unknown: list[str] = []
+    denied: list[str] = []
+    if not signature.coverage_complete:
+        unknown.append("COVERAGE_INSUFFICIENT")
+    if signature.conflict_status in {"material_conflict", "inconclusive"}:
+        unknown.append("MATERIAL_SOURCE_CONFLICT")
+    if _assurance_rank(signature.assurance) < _assurance_rank(AssuranceLevel.STRUCTURAL):
+        unknown.append("INSUFFICIENT_SOURCE_ASSURANCE")
+    if signature.runtime_risk.value == "critical":
+        unknown.append("ENABLING_RISK_UNPROVEN")
+    if signature.risk_vector is not None and signature.risk_vector.capability.value != "low":
+        denied.append("ENABLING_CAPABILITY_NOT_ALLOWED")
+    if denied:
+        return AuthorityStatus.DENY, tuple(denied)
+    if unknown:
+        return AuthorityStatus.UNPROVEN, tuple(unknown)
+    return None
 
 
 def _hard_constraints(scope, signature, task_spec):

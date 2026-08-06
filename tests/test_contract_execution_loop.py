@@ -7,13 +7,22 @@ from affordance_runtime.contracts import (
     ActionContract,
     ExecutionReceipt,
     Observation,
+    RiskLevel,
     RuntimeErrorCode,
     VerifierSpec,
 )
 from affordance_runtime.runtime import legacy_run_request
-from affordance_runtime.runtime_evidence import RecentActionOutcomeEvidence
+from affordance_runtime.runtime_evidence import (
+    RecentActionOutcomeEvidence,
+    verification_confirms_effect_absent,
+)
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
-from affordance_runtime.verification.mechanical import VerificationStatus, VerifierLadder
+from affordance_runtime.verification.mechanical import (
+    VerificationEvidence,
+    VerificationReport,
+    VerificationStatus,
+    VerifierLadder,
+)
 
 
 @dataclass
@@ -163,6 +172,45 @@ def test_contract_loop_default_execution_does_not_expose_attribution_sidecar() -
     loop = _loop()
 
     assert not hasattr(loop, "bind_action_execution")
+
+
+def test_high_risk_absence_requires_authoritative_attempt_bound_evidence() -> None:
+    contract = replace(_contract(), risk=RiskLevel.HIGH, contract_hash="")
+    attempt = _loop().build_execution_attempt(
+        contract,
+        _observation(),
+        issued_at_state_version=1,
+        active_step_id="step:settlement",
+    )
+    structural = VerificationReport(
+        VerificationStatus.FAILED,
+        [
+            VerificationEvidence(
+                "api_state",
+                "transaction:settlement",
+                False,
+                "api",
+                strength="strong",
+            )
+        ],
+    )
+    authoritative = VerificationReport(
+        VerificationStatus.FAILED,
+        [
+            VerificationEvidence(
+                "api_state",
+                "transaction:settlement",
+                False,
+                "api",
+                strength="authoritative",
+                semantic_evidence_key=attempt.transaction_identity,
+            )
+        ],
+    )
+
+    assert not verification_confirms_effect_absent(structural, contract)
+    assert not verification_confirms_effect_absent(authoritative, contract)
+    assert verification_confirms_effect_absent(authoritative, contract, attempt)
 
 
 def test_policy_capability_and_freshness_fail_closed_before_execution() -> None:

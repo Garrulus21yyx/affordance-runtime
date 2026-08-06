@@ -53,7 +53,9 @@ from affordance_runtime.visual_contracts import VisualContractBinder
 
 
 @dataclass
-class ActionContractMaterializer:
+class CanonicalRouteMaterializer:
+    """Materialize one admitted semantic selection onto a concrete backend route."""
+
     router: CostAwareRouter = field(default_factory=CostAwareRouter)
     gesture_binder: GestureContractBinder = field(default_factory=GestureContractBinder)
     visual_binder: VisualContractBinder = field(default_factory=VisualContractBinder)
@@ -467,6 +469,10 @@ class ActionContractMaterializer:
         )
 
 
+class ActionContractMaterializer(CanonicalRouteMaterializer):
+    """Compatibility edge for proposal-based callers; not used by default composition."""
+
+
 @dataclass(frozen=True)
 class _SelectedSemanticAction:
     selection_id: str
@@ -492,8 +498,8 @@ class ActionContractBuilder:
     all current canonical candidates; no presentation field is consulted.
     """
 
-    materializer: ActionContractMaterializer = field(
-        default_factory=ActionContractMaterializer,
+    materializer: CanonicalRouteMaterializer = field(
+        default_factory=CanonicalRouteMaterializer,
         repr=False,
     )
 

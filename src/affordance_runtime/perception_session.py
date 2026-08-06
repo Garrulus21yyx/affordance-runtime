@@ -88,10 +88,15 @@ class PerceptionCapture:
 
 def _derive_source_coverage(snapshot: BrowserSnapshot) -> tuple[SourceCoverage, ...]:
     observed_sources = {item.source for item in snapshot.source_observations}
-    candidate_count = {
-        source: sum(1 for item in snapshot.grounding_candidates if item.source == source)
-        for source in GroundingSource
-    }
+    nested_candidates = tuple(
+        candidate for target in snapshot.unified_affordances for candidate in target.grounding_candidates
+    )
+    candidates = (*snapshot.grounding_candidates, *nested_candidates)
+    affordance_sources = tuple(_affordance_grounding_source(item) for item in snapshot.affordance_model.affordances)
+    observed_sources.update(affordance_sources)
+    candidate_count = {source: sum(1 for item in candidates if item.source == source) for source in GroundingSource}
+    for source in affordance_sources:
+        candidate_count[source] += 1
     coverage: list[SourceCoverage] = []
     for source in GroundingSource:
         if source in observed_sources or candidate_count[source] > 0:
@@ -115,6 +120,12 @@ def _derive_source_coverage(snapshot: BrowserSnapshot) -> tuple[SourceCoverage, 
                 )
             )
     return tuple(coverage)
+
+
+def _affordance_grounding_source(affordance: Affordance) -> GroundingSource:
+    if affordance.surface.value == "visual" and affordance.locator.get("mark_id"):
+        return GroundingSource.SOM
+    return GroundingSource(affordance.surface.value)
 
 
 class ObservationSource(Protocol):
@@ -162,9 +173,7 @@ class PerceptionSession:
         screenshot_path = None
         if self.artifacts is not None:
             screenshot_path = (
-                self.artifacts.run_dir(envelope.task_id)
-                / "screenshots"
-                / f"screenshot_{request.sequence:04d}.png"
+                self.artifacts.run_dir(envelope.task_id) / "screenshots" / f"screenshot_{request.sequence:04d}.png"
             )
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         snapshot = self.observer.capture(
@@ -184,9 +193,7 @@ class PerceptionSession:
                         item
                         for item in (
                             envelope.task_spec.objective,
-                            active_subgoal.objective
-                            if isinstance(active_subgoal, StepSpec)
-                            else active_subgoal or "",
+                            active_subgoal.objective if isinstance(active_subgoal, StepSpec) else active_subgoal or "",
                         )
                         if item
                     )
