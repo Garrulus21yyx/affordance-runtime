@@ -465,6 +465,9 @@ class ActionContract:
     choice_catalog_digest: str = ""
     selected_choice_id: str = ""
     observation_ref: str = ""
+    requirement_refs: tuple[str, ...] = ()
+    effect_authorization_refs: tuple[str, ...] = ()
+    effectful: bool = False
     route_reason: str = ""
     grounding_candidate: GroundingCandidate | None = None
     scope_authorization: ScopeAuthorization | None = None
@@ -497,6 +500,16 @@ class ActionContract:
     def __post_init__(self) -> None:
         object.__setattr__(self, "locator", freeze_json(self.locator))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        object.__setattr__(self, "requirement_refs", tuple(self.requirement_refs))
+        object.__setattr__(self, "effect_authorization_refs", tuple(self.effect_authorization_refs))
+        if any(not item.strip() for item in (*self.requirement_refs, *self.effect_authorization_refs)):
+            raise ValueError("ActionContract authority refs must be nonblank")
+        if len(set(self.requirement_refs)) != len(self.requirement_refs):
+            raise ValueError("ActionContract requirement refs must be unique")
+        if len(set(self.effect_authorization_refs)) != len(self.effect_authorization_refs):
+            raise ValueError("ActionContract effect authorization refs must be unique")
+        if self.effectful and not self.effect_authorization_refs:
+            raise ValueError("effectful ActionContract requires effect authorization refs")
         object.__setattr__(self, "preconditions", FrozenSequence(self.preconditions))
         object.__setattr__(self, "expected_effects", FrozenSequence(self.expected_effects))
         object.__setattr__(self, "verifier_plan", FrozenSequence(self.verifier_plan))

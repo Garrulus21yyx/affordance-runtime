@@ -1841,7 +1841,7 @@ Audit 不能补充附件中未授权的 recipient，也不能把页面建议联�
 
 “确保通知已开启”使用 `STATE_HOLDS + CURRENT_OBSERVATION + STRUCTURAL`，初始 observation 已开启时可以无动作完成。“把通知从关闭切换到开启”使用 `ACTION_CAUSED`，必须具有 disabled → enabled 的 pre/post observation 和 toggle ActionContract-bound ActionOutcome。
 
-“发送邮件”使用 `ACTION_CAUSED + FINAL_RECHECK + AUTHORITATIVE`；页面 toast 或 ModelVerifier 判断只能做 weak/structural evidence，不能替代 transaction/resource confirmation。
+“发送邮件”使用两个 distinct success leaves：`ACTION_CAUSED + RECENT_ACTION + causal_lineage_required` 证明本次 ActionContract 造成过发送效果，`STATE_HOLDS + FINAL_RECHECK + AUTHORITATIVE` 证明最新 transaction/resource state；页面 toast 或 ModelVerifier 判断只能做 weak/structural evidence，不能替代 transaction/resource confirmation。
 
 ## 14. 保留、替换与删除
 

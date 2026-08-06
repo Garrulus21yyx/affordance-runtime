@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
+from affordance_runtime.action_choice_authority import requires_relational_scope_check
 from affordance_runtime.action_choice_catalog import ActionChoiceCatalog
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
@@ -142,7 +143,7 @@ class ActionContractMaterializer:
 
         contract_requirements = self.requirements.get(
             proposal.target_affordance_id,
-            self.requirements.get(affordance.id, ContractRequirements()),
+            self.requirements.get(affordance.id, self.requirements.get("*", ContractRequirements())),
         )
         required_capabilities = tuple(
             dict.fromkeys(
@@ -274,12 +275,21 @@ class ActionContractMaterializer:
                 f"target:{affordance.id}:parameters:{sorted(parameters.items())}"
             )
         scope_authorization = None
-        if (
-            contract.grounding_candidate is not None
-            and source_resolution is not None
-            and not getattr(proposal, "selection_id", "")
-        ):
-            scope_terms = task_semantic_scope_terms(task_spec)
+        if contract.grounding_candidate is not None and source_resolution is not None:
+            authority_refs = tuple(
+                getattr(proposal, "effect_authorization_refs", ()) or getattr(proposal, "requirement_refs", ())
+            )
+            requirement_by_id = {item.requirement_id: item for item in task_spec.requirements}
+            scope_terms = tuple(
+                value
+                for requirement_id in authority_refs
+                if requirement_id in requirement_by_id
+                for value in (
+                    requirement_by_id[requirement_id].payload.subject,
+                    requirement_by_id[requirement_id].payload.value,
+                )
+                if value.strip()
+            ) or task_semantic_scope_terms(task_spec)
             ordinal_constraint = resolve_global_ordinal_constraint(
                 objective="",
                 targets=scope_terms,
@@ -291,6 +301,13 @@ class ActionContractMaterializer:
                 canonical,
                 contract.grounding_candidate,
             )
+            if (
+                scope_decision is None
+                and getattr(proposal, "selection_id", "")
+                and getattr(proposal, "effectful", False)
+                and not requires_relational_scope_check(source_resolution.target.label, scope_terms)
+            ):
+                scope_decision = ProposalScopeDecision(True)
             if scope_decision is None:
                 scope_decision = ProposalScopeEvaluator().evaluate(
                     action_kind=proposal.action_kind.value,
@@ -440,7 +457,7 @@ class ActionContractMaterializer:
             )
             requirements = next(
                 (self.requirements[item] for item in source_ids if item in self.requirements),
-                ContractRequirements(),
+                self.requirements.get("*", ContractRequirements()),
             )
         return tuple(spec.kind for spec in requirements.verifier_plan)
 
@@ -466,6 +483,9 @@ class _SelectedSemanticAction:
     target_affordance_id: str
     destination_affordance_id: str
     parameters: dict[str, Any]
+    requirement_refs: tuple[str, ...]
+    effect_authorization_refs: tuple[str, ...]
+    effectful: bool
 
 
 @dataclass
@@ -520,6 +540,9 @@ class ActionContractBuilder:
             target_affordance_id=choice.target_id,
             destination_affordance_id=choice.destination_id,
             parameters=dict(choice.parameters),
+            requirement_refs=choice.requirement_refs,
+            effect_authorization_refs=choice.effect_refs,
+            effectful=choice.effectful,
         )
         contract = self.materializer.build(
             semantic_action,
@@ -540,6 +563,9 @@ class ActionContractBuilder:
             choice_catalog_digest=catalog.catalog_digest,
             selected_choice_id=selection.choice_id,
             observation_ref=observation.epoch_id,
+            requirement_refs=choice.requirement_refs,
+            effect_authorization_refs=choice.effect_refs,
+            effectful=choice.effectful,
             route_reason=route_reason,
             contract_hash="",
         )

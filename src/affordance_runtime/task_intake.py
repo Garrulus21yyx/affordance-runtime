@@ -380,9 +380,11 @@ class TaskSpec(StrictModel):
             for criterion_id in self.external_effect_criterion_ids:
                 policy = policies.get(criterion_id)
                 if policy is None or (
-                    policy.satisfaction != SatisfactionMode.ACTION_CAUSED or not policy.causal_lineage_required
+                    policy.satisfaction != SatisfactionMode.ACTION_CAUSED
+                    or policy.validity != EvidenceValidityMode.RECENT_ACTION
+                    or not policy.causal_lineage_required
                 ):
-                    raise ValueError("external-effect criterion requires ACTION_CAUSED causal policy")
+                    raise ValueError("external-effect criterion requires ACTION_CAUSED RECENT_ACTION causal policy")
             for criterion_id in self.final_recheck_criterion_ids:
                 policy = policies.get(criterion_id)
                 if policy is None or (

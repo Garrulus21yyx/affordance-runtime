@@ -2,7 +2,29 @@ from __future__ import annotations
 
 import pytest
 
+from affordance_runtime.action_choice_catalog import ActionChoiceCatalog, ActionChoiceCatalogBuilder
+from affordance_runtime.action_contract_builder import ActionContractBuilder
+from affordance_runtime.action_selection import ActionSelection
+from affordance_runtime.active_step_scope import ActiveStepScope
+from affordance_runtime.choice_contracts import ActionChoiceFailure
+from affordance_runtime.contracts import ActionContract
+from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.simplified_runtime_contracts import (
+    ElementIntent,
+    SourceReference,
+    StepActivityStatus,
+    StepSpec,
+)
+from affordance_runtime.state_kernel import StateKernel
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
+)
+from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
+from affordance_runtime.verification.contracts import CriterionPolicy, SuccessExpression
 
 
 def _choices():
@@ -134,3 +156,151 @@ def test_choice_serializer_projects_only_the_displayed_page_without_runtime_hand
     encoded = repr(payload).casefold()
     for forbidden in ("selector", "coordinate", "backend", "locator", "approval"):
         assert forbidden not in encoded
+
+
+def _effect_task(subject: str) -> TaskSpec:
+    return TaskSpec(
+        task_id="task:catalog-authority",
+        revision=1,
+        objective=f"Delete {subject}",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=canonical_effect_requirements(
+            (f"Delete {subject}",),
+            OperationClass.REVERSIBLE_WRITE,
+            "request:catalog-authority",
+            (),
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs((f"Delete {subject}",)),
+        success=SuccessExpression(
+            expression_id="success:catalog-authority",
+            operator="criterion",
+            criterion_id="criterion:deleted",
+            requirement_refs=("requirement:effect:1",),
+        ),
+        source_request_ref="request:catalog-authority",
+    )
+
+
+def _effect_step(target: str):
+    source = SourceReference("request:catalog-authority", "request:catalog-authority:whole")
+    return StepSpec(
+        step_id="step:delete",
+        objective=f"Delete {target}",
+        interaction=ElementIntent(f"Delete {target}", (source,)),
+        completion_criteria=(
+            PredicateExpr(
+                "criterion:deleted",
+                SubjectExpr("semantic_target", f"Delete {target}"),
+                PredicateOperator.CHANGED,
+                CriterionPolicy(),
+            ),
+        ),
+        source_refs=(source,),
+        requirement_refs=("requirement:effect:1",),
+        effect_authorization_refs=("requirement:effect:1",),
+        effectful=True,
+    )
+
+
+def _delete_observation(target: str) -> UnifiedObservation:
+    return UnifiedObservation(
+        snapshot_id="snapshot:delete",
+        page_revision="page:delete",
+        environment_revision="env:delete",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id=f"target:delete:{target.casefold()}",
+                surface="dom",
+                role="button",
+                label=f"Delete {target}",
+                supported_actions=("activate",),
+                state={"enabled": True, "visible": True},
+            ),
+        ),
+    )
+
+
+def test_catalog_rejects_concrete_target_outside_exact_effect_authority() -> None:
+    task = _effect_task("A")
+    step = _effect_step("B")
+    observation = _delete_observation("B")
+    scope = ActiveStepScope.from_active_step(
+        task_revision=task.revision,
+        evaluated_at_state_version=0,
+        snapshot_id=observation.epoch_id,
+        step=step,
+        activity_status=StepActivityStatus.ACTIVE,
+    )
+
+    result = ActionChoiceCatalogBuilder().build(
+        task_revision=task.revision,
+        task_spec=task,
+        plan_revision=1,
+        state_version=0,
+        step=step,
+        scope=scope,
+        observation=observation,
+    )
+
+    assert isinstance(result, ActionChoiceFailure)
+    assert result.reason_code == "no_feasible_action_choice"
+
+
+def test_choice_and_action_contract_preserve_exact_authority_refs() -> None:
+    task = _effect_task("A")
+    choice = _choices()[0].__class__(
+        choice_id="choice:authorized",
+        task_revision=1,
+        state_version=0,
+        snapshot_id="snapshot:delete",
+        active_step_id="step:delete",
+        action_kind=PlannerActionKind.ACTIVATE,
+        target_id="target:delete:a",
+        requirement_refs=("requirement:effect:1",),
+        effect_refs=("requirement:effect:1",),
+        effectful=True,
+    )
+    catalog = ActionChoiceCatalog.from_choices(
+        task_revision=1,
+        plan_revision=1,
+        state_version=0,
+        observation_ref="snapshot:delete",
+        active_step_id="step:delete",
+        choices=(choice,),
+    )
+    selection = ActionSelection(
+        choice_id=choice.choice_id,
+        catalog_ref=catalog.ref,
+        task_revision=1,
+        plan_revision=1,
+        state_version=0,
+        observation_ref="snapshot:delete",
+        active_step_id="step:delete",
+    )
+
+    class StubMaterializer:
+        def build(self, proposal, task_spec, state, capture, observation):  # type: ignore[no-untyped-def]
+            del proposal, task_spec, state, capture, observation
+            return ActionContract(
+                id="contract:authorized",
+                intent="Delete A",
+                affordance_id="target:delete:a",
+                action="activate",
+                backend="dom",
+                environment_revision="env:delete",
+                locator={"selector": "#delete-a"},
+            )
+
+    contract = ActionContractBuilder(StubMaterializer()).build(  # type: ignore[arg-type]
+        selection,
+        catalog,
+        task,
+        StateKernel(task.task_id, task.objective),
+        None,  # type: ignore[arg-type]
+        _delete_observation("A"),
+    )
+
+    assert contract.requirement_refs == ("requirement:effect:1",)
+    assert contract.effect_authorization_refs == ("requirement:effect:1",)
+    assert contract.effectful

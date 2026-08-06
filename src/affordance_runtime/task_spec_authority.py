@@ -546,7 +546,11 @@ def _canonical_binding_issues(
             )
     for criterion_id in proposal.external_effect_criterion_ids:
         policy = success_policies.get(criterion_id)
-        if policy is not None and (policy.satisfaction.value != "action_caused" or not policy.causal_lineage_required):
+        if policy is not None and (
+            policy.satisfaction.value != "action_caused"
+            or policy.validity.value != "recent_action"
+            or not policy.causal_lineage_required
+        ):
             issues.append(CompilationIssue(code="external_effect_policy_invalid", field=criterion_id))
     for criterion_id in proposal.final_recheck_criterion_ids:
         policy = success_policies.get(criterion_id)

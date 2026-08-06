@@ -80,12 +80,17 @@ class ContractExecutionLoop:
         result = ActionAdmissionService(self.task_policy).evaluate(
             contract,
             constraints=envelope.constraints,
-            capability_gate=(gate if capability_gate_enabled else CapabilityGate(
-                granted_capabilities=set(contract.required_capabilities),
-                approval_required_risks=set(),
-                approval_required_capabilities=set(),
-            )),
+            capability_gate=(
+                gate
+                if capability_gate_enabled
+                else CapabilityGate(
+                    granted_capabilities=set(contract.required_capabilities),
+                    approval_required_risks=set(),
+                    approval_required_capabilities=set(),
+                )
+            ),
             observation=observation,
+            task_spec=envelope.task_spec,
             check_freshness=preflight_enabled,
         )
         error = result.error
@@ -103,7 +108,7 @@ class ContractExecutionLoop:
         require_snapshot_identity: bool = True,
         require_environment_revision: bool = True,
     ) -> RuntimeErrorCode | None:
-        error = self.task_policy.check(contract, envelope.constraints) if include_policy else None
+        error = self.task_policy.check(contract, envelope.constraints, envelope.task_spec) if include_policy else None
         if error is None and capability_gate_enabled:
             error = gate.check(contract)
         if error is None:
@@ -147,9 +152,7 @@ class ContractExecutionLoop:
             pre_observation=_observation_identity(observation),
             active_step_id=active_step_id,
             surface_kind=(
-                contract.grounding_candidate.source.value
-                if contract.grounding_candidate is not None
-                else ""
+                contract.grounding_candidate.source.value if contract.grounding_candidate is not None else ""
             ),
         )
 
@@ -283,14 +286,8 @@ def _canonical_state_deltas(
                 before_value=before_value,
                 after_value=after_value,
                 evidence_refs=(evidence.evidence_id,),
-                source_kind=_causal_source_kind(
-                    evidence.source, receipt.backend, attempt.surface_kind
-                ),
-                assurance=(
-                    "authoritative"
-                    if evidence.strength == "authoritative"
-                    else "structural"
-                ),
+                source_kind=_causal_source_kind(evidence.source, receipt.backend, attempt.surface_kind),
+                assurance=("authoritative" if evidence.strength == "authoritative" else "structural"),
                 criterion_ids=evidence.criterion_ids,
             )
         )

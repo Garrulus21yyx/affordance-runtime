@@ -619,7 +619,7 @@ def run_scenario(
             contract_builder={
                 "pricing": pricing_contract_builder(),
                 "settings": settings_contract_builder(target.rsplit("/", 1)[0] + "/api/state"),
-                "export": export_contract_builder(),
+                "export": export_contract_builder(target.rsplit("/", 1)[0] + "/api/state"),
             }[scenario],
             artifacts=ArtifactStore(artifact_root),
             approval_provider=approval_provider,

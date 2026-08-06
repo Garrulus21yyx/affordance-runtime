@@ -160,7 +160,7 @@ def test_task_plan_authority_enforces_requirement_and_effect_traceability() -> N
         objective="Apply the admitted change",
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
-        allowed_requirement_ids=("requirement:test",),
+        allowed_requirement_ids=("requirement:test", "effect:apply"),
         allowed_effect_ids=("effect:apply",),
     )
     read_only = _step("step:discover")
@@ -186,6 +186,7 @@ def test_task_plan_authority_enforces_requirement_and_effect_traceability() -> N
         completion_criteria=(_criterion("criterion:apply"),),
         source_refs=(_source(),),
         effectful=True,
+        requirement_refs=("requirement:test", "effect:apply"),
         effect_authorization_refs=("effect:apply",),
     )
     assert TaskPlanAuthority().admit_initial(request, _candidate(authorized)).status == TaskPlanDecisionStatus.ACCEPTED

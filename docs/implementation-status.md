@@ -44,7 +44,12 @@ into Runtime success criteria. High-risk admission requires distinct
 allowed-effect-bound external ACTION_CAUSED/RECENT_ACTION and authoritative
 FINAL_RECHECK success leaves. Invalid canonical construction becomes a typed
 admission issue, and Runtime accepts final-recheck identity only when source,
-strength and assurance are authoritative. P1 is
+strength and assurance are authoritative.
+The strict Catalog copies the active StepSpec's exact requirement/effect refs,
+rejects concrete effect targets outside those refs before presentation, and
+ActionContract plus the Task Authority gate preserve and revalidate that
+lineage. A Runtime-registered API final-recheck provider closes the approved
+reference export path; ordinary strong HTTP evidence remains non-authoritative. P1 is
 now cut over: accepted plans store StepSpec directly, TaskPlanAuthority is the
 single plan admission/version owner, TaskProgress is step/fact/evidence based,
 LoopEvaluator owns typed loop evaluation and perception owns four-state
@@ -113,7 +118,7 @@ execution_raw_text_input: prohibited_target_not_cut_over
 requirement_identity: canonical_TaskRequirement_and_StepSpec_traceability_complete
 dependency_model: typed_value_refs_plus_StepSpec_depends_on
 choice_presentation_contract: canonical_P0_C_cutover_complete
-catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
+catalog_physical_minimality: logical_full_membership_P0_C_complete_physical_lazy_indexed_deferred_P5_4
 observation_indexed_epoch: canonical_P0_B_cutover_complete
 authority_in_process_composition: shared_in_process_observation_store_complete
 criterion_provider_phasing: P2_step_P2_1_through_P2_5_complete_P2_6_deferred_P2_7_resolver_pending

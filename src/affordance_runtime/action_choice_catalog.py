@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol, TypeAlias
 
+from affordance_runtime.action_choice_authority import choice_matches_task_authority
 from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import (
     ActionChoice,
@@ -49,6 +50,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     RelationIntent,
     StepSpec,
 )
+from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.unified_observation import (
     CanonicalTarget,
     UnifiedObservation,
@@ -164,6 +166,7 @@ class ActionChoiceCatalog:
                     "criteria": item.criterion_ids,
                     "requirements": item.requirement_refs,
                     "effects": item.effect_refs,
+                    "effectful": item.effectful,
                 }
                 for item in ordered
             ],
@@ -172,9 +175,7 @@ class ActionChoiceCatalog:
                 for item in (build_report.rejections if build_report else ())
             ],
         }
-        digest = hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if realization == "lazy":
             membership: CatalogMembership = _LazyMembership(lambda: ordered)
         elif realization in {"eager", "indexed"}:
@@ -183,8 +184,15 @@ class ActionChoiceCatalog:
             raise ValueError("unsupported catalog realization")
         report = build_report or ChoiceBuildReport(0, len(ordered))
         return cls(
-            f"catalog:{digest}", digest, task_revision, plan_revision, state_version,
-            observation_ref, active_step_id, membership, report,
+            f"catalog:{digest}",
+            digest,
+            task_revision,
+            plan_revision,
+            state_version,
+            observation_ref,
+            active_step_id,
+            membership,
+            report,
         )
 
     @property
@@ -217,7 +225,7 @@ class ActionChoiceCatalogBuilder:
         self,
         *,
         task_revision: int,
-        task_spec: object | None = None,
+        task_spec: TaskSpec,
         plan_revision: int,
         state_version: int,
         step: object,
@@ -271,26 +279,49 @@ class ActionChoiceCatalogBuilder:
                     )
                 )
                 continue
-            choices.append(
-                ActionChoice(
-                    choice_id=choice.choice_id,
-                    task_revision=choice.task_revision,
-                    state_version=choice.state_version,
-                    snapshot_id=choice.snapshot_id,
-                    active_step_id=choice.active_step_id,
-                    action_kind=choice.action_kind,
-                    target_id=choice.target_id,
-                    target_label=getattr(target, "label", "") or choice.target_id,
-                    target_role=getattr(target, "role", "") or "semantic_target",
-                    relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
-                    destination_id=choice.destination_id,
-                    parameters=choice.parameters,
-                    criterion_ids=choice.criterion_ids,
-                    effect_refs=choice.criterion_ids,
-                    evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
-                    conflict_status=ChoiceConflictStatus.CLEAR,
+            choice_effectful = bool(
+                step.effectful
+                or step.effect_authorization_refs
+                or (
+                    task_spec.operation_class
+                    in {
+                        OperationClass.REVERSIBLE_WRITE,
+                        OperationClass.EXTERNAL_SIDE_EFFECT,
+                        OperationClass.IRREVERSIBLE,
+                    }
+                    and choice.role == ChoiceRole.DIRECT
                 )
             )
+            admitted_choice = ActionChoice(
+                choice_id=choice.choice_id,
+                task_revision=choice.task_revision,
+                state_version=choice.state_version,
+                snapshot_id=choice.snapshot_id,
+                active_step_id=choice.active_step_id,
+                action_kind=choice.action_kind,
+                target_id=choice.target_id,
+                target_label=getattr(target, "label", "") or choice.target_id,
+                target_role=getattr(target, "role", "") or "semantic_target",
+                relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
+                destination_id=choice.destination_id,
+                parameters=choice.parameters,
+                criterion_ids=choice.criterion_ids,
+                requirement_refs=step.requirement_refs,
+                effect_refs=step.effect_authorization_refs,
+                effectful=choice_effectful,
+                evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
+                conflict_status=ChoiceConflictStatus.CLEAR,
+            )
+            if not choice_matches_task_authority(admitted_choice, step, task_spec, observation):
+                rejections.append(
+                    ChoiceRejection(
+                        choice.target_id,
+                        choice.action_kind,
+                        "TASK_EFFECT_TARGET_MISMATCH",
+                    )
+                )
+                continue
+            choices.append(admitted_choice)
         report = ChoiceBuildReport(len(observation.targets), len(choices), tuple(rejections))
         if not choices:
             return ActionChoiceFailure(
@@ -310,14 +341,12 @@ class ActionChoiceCatalogBuilder:
 
 
 def _deterministic_semantic_choices(
-    *, task_revision: int, state_version: int, step: object, observation: object, task_spec: object | None = None
+    *, task_revision: int, state_version: int, step: StepSpec, observation: UnifiedObservation, task_spec: TaskSpec
 ) -> tuple[ActionChoice, ...]:
     """Narrow a legacy abstract active-step target without model assistance."""
 
     criteria = tuple(getattr(step, "completion_criteria", ()))
-    criterion_ids = tuple(
-        value for item in criteria if (value := getattr(item, "criterion_id", ""))
-    )
+    criterion_ids = tuple(value for item in criteria if (value := getattr(item, "criterion_id", "")))
     values: list[ActionChoice] = []
     for target in observation.targets:
         conflict = getattr(getattr(target, "conflict_status", None), "value", "")
@@ -363,14 +392,24 @@ def _deterministic_semantic_choices(
                 target_role=getattr(target, "role", "") or "semantic_target",
                 relevant_current_state=_semantic_presentation_state(getattr(target, "state", {})),
                 criterion_ids=criterion_ids,
-                effect_refs=criterion_ids,
+                requirement_refs=step.requirement_refs,
+                effect_refs=step.effect_authorization_refs,
+                effectful=bool(
+                    step.effectful
+                    or step.effect_authorization_refs
+                    or task_spec.operation_class
+                    in {
+                        OperationClass.REVERSIBLE_WRITE,
+                        OperationClass.EXTERNAL_SIDE_EFFECT,
+                        OperationClass.IRREVERSIBLE,
+                    }
+                ),
                 evidence_refs=tuple(getattr(target, "source_assertion_refs", ())),
                 generation_reason_codes=("deterministic_active_step_narrowing",),
             )
         )
-    requirement_by_id = {
-        item.requirement_id: item for item in task_spec.requirements
-    }
+    values = [choice for choice in values if choice_matches_task_authority(choice, step, task_spec, observation)]
+    requirement_by_id = {item.requirement_id: item for item in task_spec.requirements}
     authority_text = [
         requirement_by_id[requirement_id].payload.subject
         for requirement_id in step.requirement_refs
@@ -388,7 +427,19 @@ def _deterministic_semantic_choices(
 
 
 _PRESENTABLE_STATE_KEYS = frozenset(
-    {"enabled", "visible", "checked", "selected", "expanded", "value", "current_value", "input_type", "min", "max", "step"}
+    {
+        "enabled",
+        "visible",
+        "checked",
+        "selected",
+        "expanded",
+        "value",
+        "current_value",
+        "input_type",
+        "min",
+        "max",
+        "step",
+    }
 )
 
 
@@ -396,6 +447,8 @@ def _semantic_presentation_state(state: object) -> dict[str, object]:
     if not isinstance(state, Mapping):
         return {}
     return {key: value for key, value in state.items() if key in _PRESENTABLE_STATE_KEYS}
+
+
 class _SemanticChoiceGenerator:
     def build(
         self,
@@ -429,10 +482,7 @@ class _SemanticChoiceGenerator:
         targets = {item.target_id: item for item in observation.targets}
         grounding = InteractionGrounder().ground(
             step.interaction,
-            tuple(
-                _grounding_target(item, observation.bindings)
-                for item in observation.targets
-            ),
+            tuple(_grounding_target(item, observation.bindings) for item in observation.targets),
             capabilities=capabilities,
         )
         if grounding.status != GroundingStatus.RESOLVED:
@@ -447,11 +497,7 @@ class _SemanticChoiceGenerator:
             )
         choices: list[ActionChoice] = []
         criterion_ids = canonical_criterion_ids(step.completion_criteria)
-        criteria = tuple(
-            item
-            for expression in step.completion_criteria
-            for item in _action_criteria(expression)
-        )
+        criteria = tuple(item for expression in step.completion_criteria for item in _action_criteria(expression))
         if grounding.role == GroundingRole.ENABLING:
             target = targets.get(grounding.targets[0].target_id)
             enabler = step.interaction.enabler if isinstance(step.interaction, ElementIntent) else None
@@ -539,10 +585,7 @@ class _SemanticChoiceGenerator:
                         criterion_ids=criterion_ids,
                     )
                 )
-        elif (
-            isinstance(step.interaction, ElementIntent)
-            and step.interaction.operation != ElementOperationKind.AUTO
-        ):
+        elif isinstance(step.interaction, ElementIntent) and step.interaction.operation != ElementOperationKind.AUTO:
             target = targets.get(grounding.targets[0].target_id)
             if target is not None:
                 choice = _element_operation_choice(
@@ -558,11 +601,7 @@ class _SemanticChoiceGenerator:
                 if choice is not None:
                     choices.append(choice)
         else:
-            grounded_targets = tuple(
-                targets[item.target_id]
-                for item in grounding.targets
-                if item.target_id in targets
-            )
+            grounded_targets = tuple(targets[item.target_id] for item in grounding.targets if item.target_id in targets)
             for criterion in criteria:
                 for target in grounded_targets:
                     choice = _choice_for_criterion(
@@ -615,11 +654,7 @@ def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice
             destination_id=members[0].destination_id,
             parameters=dict(members[0].parameters),
             criterion_ids=tuple(
-                dict.fromkeys(
-                    criterion_id
-                    for member in members
-                    for criterion_id in member.criterion_ids
-                )
+                dict.fromkeys(criterion_id for member in members for criterion_id in member.criterion_ids)
             ),
             role=members[0].role,
         )
@@ -762,9 +797,7 @@ def _grounding_target(
 ) -> GroundingTarget:
     if isinstance(target, CanonicalTarget):
         surface = target.surfaces[0].value if len(target.surfaces) == 1 else "multi_surface"
-        target_bindings = tuple(
-            item for item in bindings if item.semantic_target_id == target.target_id
-        )
+        target_bindings = tuple(item for item in bindings if item.semantic_target_id == target.target_id)
         # A semantic target with several valid bindings has no representative
         # surface or winning confidence. Routing belongs to contract building.
         confidence = None
@@ -772,11 +805,7 @@ def _grounding_target(
             dict.fromkeys(
                 (
                     *target.source_assertion_refs,
-                    *(
-                        ref
-                        for item in target_bindings
-                        for ref in item.evidence_refs
-                    ),
+                    *(ref for item in target_bindings for ref in item.evidence_refs),
                 )
             )
         )
@@ -826,13 +855,7 @@ def _element_operation_choice(
         parameters = {}
     else:
         action_kind = PlannerActionKind.PRESS_KEY
-        parameters = {
-            "key": (
-                "PageDown"
-                if intent.operation == ElementOperationKind.SCROLL_FORWARD
-                else "PageUp"
-            )
-        }
+        parameters = {"key": ("PageDown" if intent.operation == ElementOperationKind.SCROLL_FORWARD else "PageUp")}
     if not _supports(target, action_kind):
         return None
     return _make_choice(
@@ -906,10 +929,7 @@ def _selected_choice(
     if not _supports(target, PlannerActionKind.SELECT_OPTION):
         return None
     selected_value = _selected_value(target)
-    if (
-        selected_value is not None
-        and criterion.expected_value.strip().casefold() == selected_value.strip().casefold()
-    ):
+    if selected_value is not None and criterion.expected_value.strip().casefold() == selected_value.strip().casefold():
         return None
     return _make_choice(
         task_revision=task_revision,
@@ -1004,9 +1024,7 @@ def _make_choice(
         "role": role.value,
         "source": ChoiceSource.RUNTIME.value,
     }
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     return ActionChoice(
         choice_id=f"choice:{digest}",
         task_revision=task_revision,

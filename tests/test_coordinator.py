@@ -534,6 +534,9 @@ class SingleStageTaskPlanner:
                         ),
                     ),
                     source_refs=refs,
+                    requirement_refs=("requirement:test",),
+                    effect_authorization_refs=("requirement:test",),
+                    effectful=True,
                 ),
             ),
             source_refs=refs,
@@ -570,6 +573,8 @@ class FinalRecheckTaskPlanner:
                     ),
                     refs,
                     tuple(item.requirement_id for item in context.task_spec.requirements),
+                    effect_authorization_refs=tuple(context.task_spec.allowed_effect_refs),
+                    effectful=True,
                 ),
             ),
             source_refs=refs,
@@ -662,6 +667,9 @@ class TwoStageTaskPlanner:
                 ),
                 source_refs=refs,
                 depends_on=depends_on,
+                requirement_refs=("requirement:test",),
+                effect_authorization_refs=("requirement:test",),
+                effectful=True,
             )
 
         return PlanCandidate(
@@ -953,6 +961,9 @@ class ReplanningTaskPlanner:
                         ),
                     ),
                     source_refs=refs,
+                    requirement_refs=("requirement:test",),
+                    effect_authorization_refs=("requirement:test",),
+                    effectful=True,
                     max_actions=2 if context.failures else 1,
                 ),
             ),
@@ -1034,6 +1045,9 @@ class EvidenceAwareTaskPlanner:
                 ),
             ),
             source_refs=refs,
+            requirement_refs=("requirement:test",),
+            effect_authorization_refs=("requirement:test",),
+            effectful=True,
         )
         apply = legacy_step_spec(
             step_id="apply",
@@ -1052,6 +1066,9 @@ class EvidenceAwareTaskPlanner:
                 ),
             ),
             source_refs=refs,
+            requirement_refs=("requirement:test",),
+            effect_authorization_refs=("requirement:test",),
+            effectful=True,
             max_actions=1,
         )
         return PlanCandidate(

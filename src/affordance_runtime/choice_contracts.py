@@ -46,6 +46,7 @@ class ActionChoice:
     criterion_ids: tuple[str, ...] = ()
     requirement_refs: tuple[str, ...] = ()
     effect_refs: tuple[str, ...] = ()
+    effectful: bool = False
     evidence_refs: tuple[str, ...] = ()
     conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR
     risk: str = "low"
@@ -71,6 +72,7 @@ class ActionChoice:
         criterion_ids: tuple[str, ...] = (),
         requirement_refs: tuple[str, ...] = (),
         effect_refs: tuple[str, ...] = (),
+        effectful: bool = False,
         evidence_refs: tuple[str, ...] = (),
         conflict_status: ChoiceConflictStatus = ChoiceConflictStatus.CLEAR,
         risk: str = "low",
@@ -96,6 +98,7 @@ class ActionChoice:
             "criterion_ids": tuple(criterion_ids),
             "requirement_refs": tuple(requirement_refs),
             "effect_refs": tuple(effect_refs),
+            "effectful": effectful,
             "evidence_refs": tuple(evidence_refs),
             "conflict_status": conflict_status,
             "risk": risk,

@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from affordance_runtime.contracts import ActionContract, ApprovalToken, RiskLevel, RuntimeErrorCode
+from affordance_runtime.task_intake import TaskSpec
 
 
 @dataclass
@@ -20,7 +21,9 @@ class CapabilityGate:
     approved_contract_ids: set[str] = field(default_factory=set)
 
     def check(self, contract: ActionContract) -> RuntimeErrorCode | None:
-        missing = [capability for capability in contract.required_capabilities if capability not in self.granted_capabilities]
+        missing = [
+            capability for capability in contract.required_capabilities if capability not in self.granted_capabilities
+        ]
         if missing:
             return RuntimeErrorCode.CAPABILITY_DENIED
         requires_approval = contract.risk in self.approval_required_risks or bool(
@@ -52,21 +55,39 @@ class CapabilityGate:
 class TaskConstraintPolicy:
     """Enforce task authority independently from planner/page suggestions."""
 
-    def check(self, contract: ActionContract, constraints: dict[str, Any]) -> RuntimeErrorCode | None:
-        effectful = bool(contract.required_capabilities) or contract.risk != RiskLevel.LOW or contract.action in {
-            "download",
-            "write_property",
-            "invoke",
-        }
+    def check(
+        self,
+        contract: ActionContract,
+        constraints: dict[str, Any],
+        task_spec: TaskSpec | None = None,
+    ) -> RuntimeErrorCode | None:
+        if task_spec is not None and contract.selected_choice_id:
+            known_requirements = {item.requirement_id for item in task_spec.requirements}
+            if not contract.requirement_refs or set(contract.requirement_refs) - known_requirements:
+                return RuntimeErrorCode.POLICY_DENIED
+            if set(contract.effect_authorization_refs) - set(task_spec.allowed_effect_refs):
+                return RuntimeErrorCode.POLICY_DENIED
+            if set(contract.effect_authorization_refs) - set(contract.requirement_refs):
+                return RuntimeErrorCode.POLICY_DENIED
+            if contract.effectful and not contract.effect_authorization_refs:
+                return RuntimeErrorCode.POLICY_DENIED
+        effectful = (
+            bool(contract.required_capabilities)
+            or contract.risk != RiskLevel.LOW
+            or contract.action
+            in {
+                "download",
+                "write_property",
+                "invoke",
+            }
+        )
         if constraints.get("read_only") and effectful:
             return RuntimeErrorCode.POLICY_DENIED
         # Idempotency and compensation constrain recovery after an attempted
         # effect; their absence does not revoke authority for the first,
         # explicitly requested execution.  The SAR-8 recovery policy fails
         # closed rather than retrying a non-idempotent contract blindly.
-        text = " ".join(
-            [contract.intent, contract.action, *contract.required_capabilities]
-        ).lower()
+        text = " ".join([contract.intent, contract.action, *contract.required_capabilities]).lower()
         forbidden = {
             "no_purchase": ("purchase", "payment", "checkout", "pay"),
             "no_delete": ("delete", "remove", "destroy"),
@@ -78,10 +99,7 @@ class TaskConstraintPolicy:
         allowed_domains = constraints.get("allowed_domains")
         if allowed_domains:
             target_url = str(
-                contract.parameters.get("url")
-                or contract.locator.get("url")
-                or contract.locator.get("href")
-                or ""
+                contract.parameters.get("url") or contract.locator.get("url") or contract.locator.get("href") or ""
             )
             hostname = urlsplit(target_url).hostname if target_url else None
             if hostname and hostname not in set(str(item) for item in allowed_domains):

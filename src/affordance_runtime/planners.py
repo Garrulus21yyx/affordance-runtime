@@ -264,11 +264,23 @@ def settings_contract_builder(api_url: str) -> ActionContractMaterializer:
     )
 
 
-def export_contract_builder() -> ActionContractMaterializer:
+def export_contract_builder(api_url: str) -> ActionContractMaterializer:
     return ActionContractMaterializer(
         requirements={
-            "dom_button_1": ContractRequirements(
-                verifier_plan=(VerifierSpec("evidence", "sha256", EXPORT_SHA256),),
+            "*": ContractRequirements(
+                verifier_plan=(
+                    VerifierSpec("evidence", "sha256", EXPORT_SHA256),
+                    VerifierSpec(
+                        "api_final_recheck",
+                        api_url,
+                        {
+                            "path": "audit_log",
+                            "contains": {"effect": "report.export", "sha256": EXPORT_SHA256},
+                        },
+                        criterion_ids=("criterion:export-effect", "criterion:export-final"),
+                        requirement_ids=("requirement:effect:1",),
+                    ),
+                ),
                 required_capabilities=("report.export",),
                 risk=RiskLevel.HIGH,
                 idempotency_key="report-export",

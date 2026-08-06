@@ -470,6 +470,30 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
     }
     assert incomplete.task_spec is None
 
+    invalid_external_policy = proposal.model_copy(
+        update={
+            "success": proposal.success.model_copy(
+                update={
+                    "children": (
+                        proposal.success.children[0].model_copy(
+                            update={
+                                "policy": CriterionPolicy(
+                                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                                    validity=EvidenceValidityMode.CURRENT_OBSERVATION,
+                                    causal_lineage_required=True,
+                                )
+                            }
+                        ),
+                        proposal.success.children[1],
+                    )
+                }
+            )
+        }
+    )
+    invalid_policy_result = TaskSpecAuthority().admit(request, envelope, invalid_external_policy)
+    assert invalid_policy_result.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert {item.code for item in invalid_policy_result.issues} == {"external_effect_policy_invalid"}
+
     result = TaskSpecAuthority().admit(request, envelope, proposal)
 
     assert result.status == CompilationStatus.READY

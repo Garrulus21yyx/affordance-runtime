@@ -35,6 +35,7 @@ class Verifier(Protocol):
         observation: Observation,
     ) -> "VerifierEvaluation": ...
 
+
 class VerificationStatus(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
@@ -105,6 +106,7 @@ class EvidenceVerifier:
         passed = value == spec.expected if spec.strict else bool(value)
         return VerifierEvaluation(passed=passed, observed=value)
 
+
 @dataclass
 class ObservationMetadataVerifier:
     kind: str = "observation_metadata"
@@ -120,6 +122,7 @@ class ObservationMetadataVerifier:
         passed = value == spec.expected if spec.strict else bool(value)
         return VerifierEvaluation(passed=passed, observed=value)
 
+
 @dataclass
 class DomContainsVerifier:
     kind: str = "dom_contains"
@@ -134,6 +137,7 @@ class DomContainsVerifier:
         observed = str(spec.expected) in str(observation.metadata.get("html") or "")
         return VerifierEvaluation(passed=observed, observed=observed)
 
+
 @dataclass
 class DomAbsentVerifier:
     kind: str = "dom_absent"
@@ -147,6 +151,7 @@ class DomAbsentVerifier:
         del receipt
         observed = str(spec.expected) not in str(observation.metadata.get("html") or "")
         return VerifierEvaluation(passed=observed, observed=observed)
+
 
 class _DomAttributeParser(HTMLParser):
     def __init__(self, target_attribute: str, target_value: str, observed_attribute: str) -> None:
@@ -190,6 +195,7 @@ class DomAttributeVerifier:
             observed=parser.observed,
         )
 
+
 @dataclass
 class ControlStateVerifier:
     """Verify a generic post-observation property by an opaque control key."""
@@ -215,14 +221,14 @@ class ControlStateVerifier:
         observed = state.get(field_name)
         if "changed_from" in spec.expected:
             return VerifierEvaluation(
-                passed=observed not in {None, ""}
-                and observed != spec.expected.get("changed_from"),
+                passed=observed not in {None, ""} and observed != spec.expected.get("changed_from"),
                 observed=observed,
             )
         return VerifierEvaluation(
             passed=observed == spec.expected.get("value"),
             observed=observed,
         )
+
 
 @dataclass
 class StateDeltaOrTerminalVerifier:
@@ -255,6 +261,7 @@ class StateDeltaOrTerminalVerifier:
         )
         return VerifierEvaluation(passed, passed)
 
+
 @dataclass
 class SpatialMarkerDeltaVerifier:
     """Verify new current spatial geometry at a bound semantic point."""
@@ -280,11 +287,7 @@ class SpatialMarkerDeltaVerifier:
             return VerifierEvaluation(False)
         if tolerance <= 0:
             return VerifierEvaluation(False)
-        excluded = {
-            str(item)
-            for item in spec.expected.get("excluded_target_ids", ())
-            if str(item)
-        }
+        excluded = {str(item) for item in spec.expected.get("excluded_target_ids", ()) if str(item)}
         geometries = observation.metadata.get("spatial_geometry")
         if not isinstance(geometries, (list, tuple)):
             return VerifierEvaluation(False)
@@ -306,6 +309,7 @@ class SpatialMarkerDeltaVerifier:
             if abs(center_x - point_x) <= tolerance and abs(center_y - point_y) <= tolerance:
                 return VerifierEvaluation(True, target_id)
         return VerifierEvaluation(False)
+
 
 @dataclass
 class HttpJsonVerifier:
@@ -335,6 +339,39 @@ class HttpJsonVerifier:
         except Exception:
             return VerifierEvaluation(False)
 
+
+@dataclass
+class AuthoritativeApiFinalRecheckVerifier:
+    """Runtime-registered business-state recheck; never inferred from a spec name."""
+
+    kind: str = "api_final_recheck"
+    authoritative_final_recheck: bool = True
+
+    def evaluate(
+        self,
+        spec: VerifierSpec,
+        receipt: ExecutionReceipt,
+        observation: Observation,
+    ) -> VerifierEvaluation:
+        del receipt, observation
+        if not isinstance(spec.expected, Mapping):
+            return VerifierEvaluation(False)
+        try:
+            with urlopen(spec.target, timeout=2.0) as response:  # noqa: S310 - URL is capability/policy constrained
+                value: Any = json.loads(response.read())
+            for part in str(spec.expected.get("path") or "").split("."):
+                if part:
+                    value = value[part]
+            expected_member = spec.expected.get("contains")
+            if expected_member is not None:
+                passed = isinstance(value, (list, tuple)) and expected_member in value
+            else:
+                passed = value == spec.expected.get("value")
+            return VerifierEvaluation(passed=passed, observed=passed)
+        except Exception:
+            return VerifierEvaluation(False)
+
+
 @dataclass
 class VerifierLadder:
     """Prefer structural receipts before model or human judgment."""
@@ -343,6 +380,7 @@ class VerifierLadder:
         default_factory=lambda: [
             EvidenceVerifier(),
             HttpJsonVerifier(),
+            AuthoritativeApiFinalRecheckVerifier(),
             ObservationMetadataVerifier(),
             DomContainsVerifier(),
             DomAbsentVerifier(),
@@ -377,9 +415,11 @@ class VerifierLadder:
                 continue
             evaluation = verifier.evaluate(spec, receipt, observation)
             passed = evaluation.passed
+            authoritative_final_recheck = bool(
+                passed and getattr(verifier, "authoritative_final_recheck", False) is True
+            )
             adapter_terminal_success = (
-                spec.kind == "state_delta_or_terminal"
-                and receipt.evidence.get("terminal_success") is True
+                spec.kind == "state_delta_or_terminal" and receipt.evidence.get("terminal_success") is True
             )
             terminal_progress = (
                 spec.progress_scope == ProgressEvidenceScope.TASK_TERMINAL
@@ -392,7 +432,9 @@ class VerifierLadder:
                     target=spec.target,
                     passed=passed,
                     source=(
-                        "external_evaluator"
+                        "api_state"
+                        if authoritative_final_recheck
+                        else "external_evaluator"
                         if adapter_terminal_success or terminal_progress
                         else "execution_receipt"
                         if spec.kind == "evidence"
@@ -408,21 +450,21 @@ class VerifierLadder:
                     ),
                     criterion_ids=(
                         spec.criterion_ids
-                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL
-                        or terminal_progress
+                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL or terminal_progress
                         else ()
                     ),
                     requirement_ids=(
                         spec.requirement_ids
-                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL
-                        or terminal_progress
+                        if spec.progress_scope != ProgressEvidenceScope.TASK_TERMINAL or terminal_progress
                         else ()
                     ),
                     environment_revision=observation.environment_revision,
                     snapshot_id=observation.snapshot_id,
                     observed_at_s=observation.observed_at_s,
                     strength=(
-                        "weak"
+                        "authoritative"
+                        if authoritative_final_recheck
+                        else "weak"
                         if spec.kind in {"evidence", "state_delta_or_terminal"}
                         and not (adapter_terminal_success or terminal_progress)
                         else "strong"

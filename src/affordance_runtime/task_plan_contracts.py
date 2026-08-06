@@ -426,13 +426,21 @@ class TaskPlanAuthority:
                         f"step {step.step_id} is not traceable to admitted requirements",
                     )
                 )
-            if step.effectful and (
-                not step.effect_authorization_refs or set(step.effect_authorization_refs) - allowed_effects
-            ):
+            invalid_effect_authorization = step.effectful and (
+                not step.effect_authorization_refs or bool(set(step.effect_authorization_refs) - allowed_effects)
+            )
+            if invalid_effect_authorization:
                 issues.append(
                     TaskPlanIssue(
                         "effect_authorization_invalid",
                         f"step {step.step_id} lacks admitted effect authorization",
+                    )
+                )
+            if not invalid_effect_authorization and set(step.effect_authorization_refs) - set(step.requirement_refs):
+                issues.append(
+                    TaskPlanIssue(
+                        "effect_authorization_trace_invalid",
+                        f"step {step.step_id} effect authorization is not part of its requirement trace",
                     )
                 )
         return tuple(issues)
