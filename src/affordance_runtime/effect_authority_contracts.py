@@ -119,6 +119,7 @@ class RuntimeRiskVector:
     externality: RuntimeRiskTier
     reversibility: RuntimeRiskTier
     resource_sensitivity: RuntimeRiskTier
+    asserted_source: RuntimeRiskTier
     material_parameters: RuntimeRiskTier
     capability: RuntimeRiskTier
     source_uncertainty: RuntimeRiskTier

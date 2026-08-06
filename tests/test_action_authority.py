@@ -2,11 +2,22 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.action_choice_authority import authorize_choice, contract_matches_task_authority
+from affordance_runtime.action_choice_authority import (
+    authorize_choice,
+    authorize_runtime_signature,
+    contract_matches_task_authority,
+)
 from affordance_runtime.action_effect_classifier import classify_action
 from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.choice_contracts import ActionChoice, ChoiceRole
-from affordance_runtime.contracts import RiskLevel
+from affordance_runtime.contracts import (
+    ActionContract,
+    AffordanceLease,
+    GestureBinding,
+    GestureTargetBinding,
+    RiskLevel,
+    RuntimeErrorCode,
+)
 from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.effect_authority_contracts import (
     AuthorityStatus,
@@ -17,8 +28,10 @@ from affordance_runtime.effect_authority_contracts import (
     ResourceScopeRef,
     Reversibility,
 )
+from affordance_runtime.grounding import DomGroundingPayload, GroundingCandidate, GroundingSource
 from affordance_runtime.high_risk_effect_policy import HIGH_RISK_EFFECT_POLICIES, policy_for_effect
 from affordance_runtime.planning import PlannerActionKind
+from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference, StepSpec
 from affordance_runtime.task_intake import OperationClass, TaskRequirement, TaskSemanticPayload, TaskSpec
 from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
@@ -255,7 +268,12 @@ def test_named_parameter_swap_is_denied() -> None:
         minimum_source_assurance=AssuranceLevel.AUTHORITATIVE,
     )
     proof = authorize_choice(
-        _choice(signature.requirement_ref, "account:alice", PlannerActionKind.ACTIVATE, {"recipient": "100", "amount": "Alice"}),
+        _choice(
+            signature.requirement_ref,
+            "account:alice",
+            PlannerActionKind.ACTIVATE,
+            {"recipient": "100", "amount": "Alice"},
+        ),
         _step(signature.requirement_ref),
         _task(signature, OperationClass.REVERSIBLE_WRITE),
         _observation(
@@ -299,6 +317,205 @@ def test_uninstrumented_dom_control_has_unknown_risk() -> None:
     )
     assert descriptor.effect_class is None
     assert descriptor.runtime_risk.value == "critical"
+
+
+def test_asserted_target_risk_is_a_raise_only_approval_floor() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:read-sensitive",
+        operation_constraint="resource.read@v1",
+        resource_scope=ResourceScopeRef("resource:sensitive"),
+        effect_class=EffectClass.READ,
+        minimum_source_assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    task = _task(scope, OperationClass.READ_ONLY)
+    observation = _observation(
+        target_id="resource:sensitive",
+        operation_ref="resource.read@v1",
+        effect_class=EffectClass.READ,
+        risk=RiskLevel.HIGH,
+        assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:sensitive",
+        action_kind="activate",
+        parameters={},
+    )
+    proof = authorize_runtime_signature(
+        task_spec=task,
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+    )
+    contract = ActionContract(
+        id="contract:sensitive-read",
+        intent="Read sensitive resource",
+        affordance_id="resource:sensitive",
+        action="activate",
+        backend="dom",
+        environment_revision="environment:authority",
+        locator={},
+        runtime_effect_signature=signature,
+        action_authority_proof=proof,
+        requirement_refs=(scope.requirement_ref,),
+        selected_choice_id="choice:sensitive-read",
+        risk=proof.risk,
+    )
+
+    assert signature.runtime_risk.value == "high"
+    assert proof.status == AuthorityStatus.ALLOW
+    assert proof.risk == RiskLevel.HIGH
+    assert CapabilityGate().check(contract) == RuntimeErrorCode.APPROVAL_REQUIRED
+
+
+def test_destination_binding_is_in_route_risk_assurance_and_task_gate_rebuild() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:move",
+        operation_constraint="resource.move@v1",
+        resource_scope=ResourceScopeRef("resource:source"),
+        destination_scope=ResourceScopeRef("resource:destination"),
+        effect_class=EffectClass.UPDATE,
+        externality=Externality.EXTERNAL_SYSTEM,
+        reversibility=Reversibility.COMPENSATABLE,
+        minimum_source_assurance=AssuranceLevel.WEAK,
+    )
+    task = _task(scope, OperationClass.REVERSIBLE_WRITE)
+    source_candidate = GroundingCandidate(
+        candidate_id="candidate:source",
+        semantic_target_id="resource:source",
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(selector="#source"),
+        compatible_executor="browser",
+        observation_epoch_id="observation:authority",
+        environment_revision="environment:authority",
+        page_revision="page:authority",
+        target_fingerprint="",
+        supported_actions=frozenset({"drag"}),
+        evidence_kinds=frozenset(),
+        evidence_refs=("assertion:source",),
+        operation_ref="resource.move@v1",
+        effect_class=EffectClass.UPDATE.value,
+        externality=Externality.LOCAL.value,
+        reversibility=Reversibility.REVERSIBLE.value,
+        resource_sensitivity="moderate",
+        authority_source_assurance=AssuranceLevel.AUTHORITATIVE.value,
+    )
+    destination_candidate = GroundingCandidate(
+        candidate_id="candidate:destination",
+        semantic_target_id="resource:destination",
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(selector="#destination"),
+        compatible_executor="browser",
+        observation_epoch_id="observation:authority",
+        environment_revision="environment:authority",
+        page_revision="page:authority",
+        target_fingerprint="",
+        supported_actions=frozenset({"drag"}),
+        evidence_kinds=frozenset(),
+        evidence_refs=("assertion:destination",),
+        risk=RiskLevel.HIGH,
+        risk_asserted=True,
+        externality=Externality.EXTERNAL_SYSTEM.value,
+        reversibility=Reversibility.COMPENSATABLE.value,
+        resource_sensitivity="high",
+        authority_source_assurance=AssuranceLevel.WEAK.value,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:source",
+                surface="dom",
+                role="item",
+                label="Source",
+                supported_actions=("drag",),
+                state={},
+            ),
+            UnifiedObservationTarget(
+                target_id="resource:destination",
+                surface="dom",
+                role="region",
+                label="Destination",
+                supported_actions=("drag",),
+                state={},
+            ),
+        ),
+        bindings=(source_candidate, destination_candidate),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:source",
+        destination_id="resource:destination",
+        action_kind="drag",
+        parameters={},
+        candidate=source_candidate,
+        destination_candidate=destination_candidate,
+    )
+    proof = authorize_runtime_signature(
+        task_spec=task,
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+    )
+    lease = AffordanceLease.issue(
+        environment_revision="environment:authority",
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+    )
+    contract = ActionContract(
+        id="contract:move",
+        intent="Move resource",
+        affordance_id="resource:source",
+        action="drag",
+        backend="browser",
+        environment_revision="environment:authority",
+        locator={},
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        grounding_candidate=source_candidate,
+        gesture_binding=GestureBinding(
+            source=GestureTargetBinding(
+                "resource:source",
+                "candidate:source",
+                {},
+                "observation:authority",
+                "page:authority",
+                "",
+                "candidate:source",
+                lease,
+            ),
+            destination=GestureTargetBinding(
+                "resource:destination",
+                "candidate:destination",
+                {},
+                "observation:authority",
+                "page:authority",
+                "",
+                "candidate:destination",
+                lease,
+            ),
+            selected_route="browser",
+        ),
+        runtime_effect_signature=signature,
+        action_authority_proof=proof,
+        requirement_refs=(scope.requirement_ref,),
+        effect_authorization_refs=(scope.requirement_ref,),
+        selected_choice_id="choice:move",
+        choice_role=ChoiceRole.DIRECT.value,
+        risk=proof.risk,
+    )
+    rebuilt = TaskConstraintPolicy().evaluate_authority(contract, task, observation)
+
+    assert signature.runtime_risk.value == "high"
+    assert signature.assurance == AssuranceLevel.WEAK
+    assert signature.externality == Externality.EXTERNAL_SYSTEM
+    assert signature.reversibility == Reversibility.COMPENSATABLE
+    assert signature.source_refs == ("assertion:source", "assertion:destination")
+    assert rebuilt.status == AuthorityStatus.ALLOW, rebuilt.reason_codes
+    assert rebuilt.proof_digest == proof.proof_digest
 
 
 def test_task_gate_rebuilds_from_wrong_actual_binding() -> None:

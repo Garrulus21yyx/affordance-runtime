@@ -67,43 +67,43 @@ def classify_action(
     assurance = AssuranceLevel.WEAK
     assertion_refs: tuple[str, ...] = ()
     resource_sensitivity = RuntimeRiskTier.LOW
+    asserted_risk = RuntimeRiskTier.LOW
 
     if target is not None:
         assertion_refs = tuple(getattr(target, "source_assertion_refs", getattr(target, "source_refs", ())))
+        asserted_risk = _higher_risk(asserted_risk, _asserted_risk(target))
         operation_ref = _optional_text(getattr(target, "operation_ref", ""))
         effect_class = _optional_enum(EffectClass, getattr(target, "effect_class", ""))
         externality = _optional_enum(Externality, getattr(target, "externality", ""))
         reversibility = _optional_enum(Reversibility, getattr(target, "reversibility", ""))
-        assurance = _optional_enum(
-            AssuranceLevel, getattr(target, "source_assurance", "")
-        ) or assurance
-        resource_sensitivity = _optional_enum(
-            RuntimeRiskTier, getattr(target, "resource_sensitivity", "")
-        ) or resource_sensitivity
+        assurance = _optional_enum(AssuranceLevel, getattr(target, "source_assurance", "")) or assurance
+        resource_sensitivity = (
+            _optional_enum(RuntimeRiskTier, getattr(target, "resource_sensitivity", "")) or resource_sensitivity
+        )
         support = next(
             (item for item in getattr(target, "action_support", ()) if item.action_kind == normalized_action),
             None,
         )
+        if support is not None:
+            asserted_risk = _higher_risk(asserted_risk, _asserted_risk(support))
         if support is not None and selected is None:
             resource_ref = _optional_text(support.resource_ref) or resource_ref
             operation_ref = operation_ref or _optional_text(support.operation_ref)
             effect_class = effect_class or _optional_enum(EffectClass, support.effect_class)
             externality = externality or _optional_enum(Externality, support.externality)
             reversibility = reversibility or _optional_enum(Reversibility, support.reversibility)
-            resource_sensitivity = _optional_enum(
-                RuntimeRiskTier, support.resource_sensitivity
-            ) or resource_sensitivity
+            resource_sensitivity = _optional_enum(RuntimeRiskTier, support.resource_sensitivity) or resource_sensitivity
             assurance = _optional_enum(AssuranceLevel, support.source_assurance) or assurance
 
     if selected is not None:
+        assertion_refs = _merge_refs(assertion_refs, selected.evidence_refs)
+        asserted_risk = _higher_risk(asserted_risk, _asserted_risk(selected))
         resource_ref = _candidate_resource_ref(selected) or resource_ref
         operation_ref = operation_ref or _optional_text(selected.operation_ref) or _candidate_operation(selected)
         effect_class = effect_class or _optional_enum(EffectClass, selected.effect_class)
         externality = externality or _optional_enum(Externality, selected.externality)
         reversibility = reversibility or _optional_enum(Reversibility, selected.reversibility)
-        resource_sensitivity = _optional_enum(
-            RuntimeRiskTier, selected.resource_sensitivity
-        ) or resource_sensitivity
+        resource_sensitivity = _optional_enum(RuntimeRiskTier, selected.resource_sensitivity) or resource_sensitivity
         asserted_assurance = _optional_enum(AssuranceLevel, selected.authority_source_assurance)
         if asserted_assurance is not None:
             assurance = asserted_assurance
@@ -117,6 +117,47 @@ def classify_action(
                 effect_class = effect_class or typed[0]
                 externality = externality or typed[1]
                 reversibility = reversibility or typed[2]
+
+    if destination is not None:
+        assertion_refs = _merge_refs(
+            assertion_refs,
+            tuple(getattr(destination, "source_assertion_refs", getattr(destination, "source_refs", ()))),
+        )
+        asserted_risk = _higher_risk(asserted_risk, _asserted_risk(destination))
+        resource_sensitivity = _higher_risk(
+            resource_sensitivity,
+            _optional_enum(RuntimeRiskTier, getattr(destination, "resource_sensitivity", "")),
+        )
+        destination_assurance = _optional_enum(AssuranceLevel, getattr(destination, "source_assurance", ""))
+        if destination_assurance is not None:
+            assurance = min(assurance, destination_assurance, key=_assurance_rank)
+        externality = _more_external(
+            externality,
+            _optional_enum(Externality, getattr(destination, "externality", "")),
+        )
+        reversibility = _less_reversible(
+            reversibility,
+            _optional_enum(Reversibility, getattr(destination, "reversibility", "")),
+        )
+
+    if destination_candidate is not None:
+        assertion_refs = _merge_refs(assertion_refs, destination_candidate.evidence_refs)
+        asserted_risk = _higher_risk(asserted_risk, _asserted_risk(destination_candidate))
+        resource_sensitivity = _higher_risk(
+            resource_sensitivity,
+            _optional_enum(RuntimeRiskTier, destination_candidate.resource_sensitivity),
+        )
+        destination_assurance = _candidate_assurance(destination_candidate)
+        if destination_assurance is not None:
+            assurance = min(assurance, destination_assurance, key=_assurance_rank)
+        externality = _more_external(
+            externality,
+            _optional_enum(Externality, destination_candidate.externality),
+        )
+        reversibility = _less_reversible(
+            reversibility,
+            _optional_enum(Reversibility, destination_candidate.reversibility),
+        )
 
     interaction = _INTERACTION_POLICY.get(normalized_action)
     structured = _STRUCTURED_ACTION_POLICY.get(normalized_action)
@@ -140,6 +181,7 @@ def classify_action(
         externality=externality,
         reversibility=reversibility,
         resource_sensitivity=resource_sensitivity,
+        asserted_source=asserted_risk,
         parameters=parameters,
         assurance=assurance,
         conflict_status=conflict,
@@ -172,6 +214,7 @@ def _risk_vector(
     externality: Externality | None,
     reversibility: Reversibility | None,
     resource_sensitivity: RuntimeRiskTier,
+    asserted_source: RuntimeRiskTier,
     parameters: object,
     assurance: AssuranceLevel,
     conflict_status: str,
@@ -218,10 +261,21 @@ def _risk_vector(
         externality=externality_risk,
         reversibility=reversibility_risk,
         resource_sensitivity=resource_sensitivity,
+        asserted_source=asserted_source,
         material_parameters=material,
         capability=RuntimeRiskTier.MODERATE if capability_asserted else RuntimeRiskTier.LOW,
-        source_uncertainty=(RuntimeRiskTier.LOW if assurance == AssuranceLevel.AUTHORITATIVE else RuntimeRiskTier.MODERATE if assurance == AssuranceLevel.STRUCTURAL else RuntimeRiskTier.HIGH),
-        conflict=(RuntimeRiskTier.CRITICAL if conflict_status in {"material_conflict", "inconclusive"} else RuntimeRiskTier.LOW),
+        source_uncertainty=(
+            RuntimeRiskTier.LOW
+            if assurance == AssuranceLevel.AUTHORITATIVE
+            else RuntimeRiskTier.MODERATE
+            if assurance == AssuranceLevel.STRUCTURAL
+            else RuntimeRiskTier.HIGH
+        ),
+        conflict=(
+            RuntimeRiskTier.CRITICAL
+            if conflict_status in {"material_conflict", "inconclusive"}
+            else RuntimeRiskTier.LOW
+        ),
     )
 
 
@@ -236,6 +290,78 @@ def _candidate_operation(candidate: GroundingCandidate) -> str | None:
 def _candidate_resource_ref(candidate: GroundingCandidate) -> str | None:
     backend_handle = _optional_text(getattr(candidate.payload, "backend_handle", ""))
     return backend_handle or candidate.semantic_target_id or None
+
+
+def _asserted_risk(value: object) -> RuntimeRiskTier | None:
+    if not bool(getattr(value, "risk_asserted", False)):
+        return None
+    raw = getattr(value, "risk", "")
+    text = raw.value if hasattr(raw, "value") else str(raw)
+    return {
+        "low": RuntimeRiskTier.LOW,
+        "medium": RuntimeRiskTier.MODERATE,
+        "moderate": RuntimeRiskTier.MODERATE,
+        "high": RuntimeRiskTier.HIGH,
+        "irreversible": RuntimeRiskTier.CRITICAL,
+        "critical": RuntimeRiskTier.CRITICAL,
+    }.get(text.casefold())
+
+
+def _higher_risk(current: RuntimeRiskTier, candidate: RuntimeRiskTier | None) -> RuntimeRiskTier:
+    if candidate is None:
+        return current
+    rank = {
+        RuntimeRiskTier.LOW: 0,
+        RuntimeRiskTier.MODERATE: 1,
+        RuntimeRiskTier.HIGH: 2,
+        RuntimeRiskTier.CRITICAL: 3,
+    }
+    return max((current, candidate), key=rank.__getitem__)
+
+
+def _candidate_assurance(candidate: GroundingCandidate) -> AssuranceLevel | None:
+    asserted = _optional_enum(AssuranceLevel, candidate.authority_source_assurance)
+    if asserted is not None:
+        return asserted
+    if candidate.source in {GroundingSource.API, GroundingSource.WOT, GroundingSource.DEVICE}:
+        return AssuranceLevel.STRUCTURAL
+    if candidate.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.SVG}:
+        return AssuranceLevel.STRUCTURAL
+    return None
+
+
+def _more_external(current: Externality | None, candidate: Externality | None) -> Externality | None:
+    if candidate is None:
+        return current
+    if current is None:
+        return candidate
+    rank = {
+        Externality.LOCAL: 0,
+        Externality.SAME_ORIGIN: 1,
+        Externality.CROSS_ORIGIN: 2,
+        Externality.EXTERNAL_SYSTEM: 2,
+        Externality.PHYSICAL_WORLD: 3,
+        Externality.UNKNOWN: 4,
+    }
+    return max((current, candidate), key=rank.__getitem__)
+
+
+def _less_reversible(current: Reversibility | None, candidate: Reversibility | None) -> Reversibility | None:
+    if candidate is None:
+        return current
+    if current is None:
+        return candidate
+    rank = {
+        Reversibility.REVERSIBLE: 0,
+        Reversibility.COMPENSATABLE: 1,
+        Reversibility.IRREVERSIBLE: 2,
+        Reversibility.UNKNOWN: 3,
+    }
+    return max((current, candidate), key=rank.__getitem__)
+
+
+def _merge_refs(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(ref for group in groups for ref in group))
 
 
 def _binding_digest(candidate, destination_candidate, target_id: str, destination_id: str) -> str:

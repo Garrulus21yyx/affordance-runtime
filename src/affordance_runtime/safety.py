@@ -87,8 +87,7 @@ class TaskConstraintPolicy:
                 return RuntimeErrorCode.POLICY_DENIED
         signature = contract.runtime_effect_signature
         effectful = (
-            signature.effect_class
-            not in {EffectClass.READ, EffectClass.NAVIGATE, EffectClass.INTERACTION_ONLY}
+            signature.effect_class not in {EffectClass.READ, EffectClass.NAVIGATE, EffectClass.INTERACTION_ONLY}
             if signature is not None
             else bool(contract.required_capabilities)
             or contract.risk != RiskLevel.LOW
@@ -102,19 +101,12 @@ class TaskConstraintPolicy:
             "no_external_message": frozenset({EffectClass.SEND, EffectClass.SHARE}),
         }
         for constraint, effect_classes in forbidden.items():
-            if (
-                constraints.get(constraint)
-                and signature is not None
-                and signature.effect_class in effect_classes
-            ):
+            if constraints.get(constraint) and signature is not None and signature.effect_class in effect_classes:
                 return RuntimeErrorCode.POLICY_DENIED
         allowed_domains = constraints.get("allowed_domains")
         if allowed_domains:
             target_url = str(
-                contract.parameters.get("url")
-                or contract.locator.get("url")
-                or contract.locator.get("href")
-                or ""
+                contract.parameters.get("url") or contract.locator.get("url") or contract.locator.get("href") or ""
             )
             hostname = urlsplit(target_url).hostname if target_url else None
             if hostname and hostname not in set(str(item) for item in allowed_domains):
@@ -138,6 +130,16 @@ class TaskConstraintPolicy:
                 ),
                 None,
             )
+            destination_candidate = None
+            if contract.gesture_binding is not None:
+                destination_candidate = next(
+                    (
+                        item
+                        for item in canonical_observation.bindings
+                        if item.candidate_id == contract.gesture_binding.destination.candidate_id
+                    ),
+                    None,
+                )
             signature = classify_action(
                 canonical_observation,
                 target_id=signature.target_ref,
@@ -145,6 +147,7 @@ class TaskConstraintPolicy:
                 action_kind=contract.action,
                 parameters=signature.parameter_values,
                 candidate=candidate,
+                destination_candidate=destination_candidate,
             )
         return contract_matches_task_authority(
             task_spec=task_spec,

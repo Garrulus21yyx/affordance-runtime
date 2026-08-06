@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from affordance_runtime.action_effect_classifier import classify_action
 from affordance_runtime.canonical_observation_builder import CanonicalObservationBuilder
-from affordance_runtime.contracts import Observation
+from affordance_runtime.contracts import Observation, RiskLevel
 from affordance_runtime.grounding import (
     AssertionDecision,
     AssertionResolutionStatus,
@@ -52,9 +53,7 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
             candidate_id="candidate:wot:lamp",
             semantic_target_id="semantic:lamp",
             source=GroundingSource.WOT,
-            payload=WoTGroundingPayload(
-                thing_id="thing:lamp", form_index=0, operation="toggle"
-            ),
+            payload=WoTGroundingPayload(thing_id="thing:lamp", form_index=0, operation="toggle"),
             compatible_executor="wot",
             observation_epoch_id="capture-1",
             environment_revision="env-1",
@@ -62,6 +61,8 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
             target_fingerprint="wot-lamp",
             supported_actions=frozenset({"activate"}),
             evidence_kinds=frozenset(),
+            risk=RiskLevel.HIGH,
+            risk_asserted=True,
             resource_sensitivity="high",
         ),
     )
@@ -138,10 +139,18 @@ def test_builder_retains_multibinding_conflict_and_coverage_deterministically(
     target = view.targets.get("semantic:lamp")
     assert target is not None
     assert target.surfaces == (GroundingSource.DOM, GroundingSource.WOT)
+    assert target.action_support[0].risk == RiskLevel.HIGH
+    assert target.action_support[0].risk_asserted
     assert target.action_support[0].resource_sensitivity == "high"
-    assert view.bindings.for_target("semantic:lamp") == tuple(
-        sorted(candidates, key=lambda item: item.candidate_id)
+    signature = classify_action(
+        canonical,
+        target_id="semantic:lamp",
+        action_kind="activate",
+        parameters={},
     )
+    assert signature.risk_vector is not None
+    assert signature.risk_vector.asserted_source.value == "high"
+    assert view.bindings.for_target("semantic:lamp") == tuple(sorted(candidates, key=lambda item: item.candidate_id))
     assert target.conflict_status == ConflictStatus.MATERIAL_CONFLICT
     fact = view.facts.get("semantic:lamp", "checked")
     assert fact is not None and fact.status == FactStatus.CONFLICTED
