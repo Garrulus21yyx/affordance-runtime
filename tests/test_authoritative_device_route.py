@@ -186,6 +186,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
             expression_id="success:device-power",
             operator="criterion",
             criterion_id="criterion:device-power",
+            requirement_refs=("requirement:effect:1",),
         ),
         evidence_requirements=("authoritative device state",),
         capability_ceiling=("device.write",),

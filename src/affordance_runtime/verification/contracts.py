@@ -113,9 +113,7 @@ class PredicateEvidenceContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence", tuple(self.evidence))
-        object.__setattr__(
-            self, "current_resource_versions", tuple(self.current_resource_versions)
-        )
+        object.__setattr__(self, "current_resource_versions", tuple(self.current_resource_versions))
 
 
 class SuccessExpression(_FrozenModel):
@@ -124,6 +122,7 @@ class SuccessExpression(_FrozenModel):
     expression_id: str = Field(min_length=1)
     operator: Literal["criterion", "all_of", "any_of", "not"]
     criterion_id: str = ""
+    requirement_refs: tuple[str, ...] = ()
     children: tuple[SuccessExpression, ...] = ()
 
     @model_validator(mode="after")
@@ -131,11 +130,17 @@ class SuccessExpression(_FrozenModel):
         if self.operator == "criterion":
             if not self.criterion_id:
                 raise ValueError("criterion expression requires criterion_id")
+            if not self.requirement_refs:
+                raise ValueError("criterion expression requires exact requirement_refs")
+            if len(self.requirement_refs) != len(set(self.requirement_refs)):
+                raise ValueError("criterion expression requirement_refs must be unique")
             if self.children:
                 raise ValueError("criterion expression cannot have children")
             return self
         if self.criterion_id:
             raise ValueError("composite expression cannot carry criterion_id")
+        if self.requirement_refs:
+            raise ValueError("composite expression cannot carry requirement_refs")
         if self.operator == "not":
             if len(self.children) != 1:
                 raise ValueError("not expression requires exactly one child")

@@ -21,6 +21,7 @@ from affordance_runtime.planners import (
     export_contract_builder,
     extract_pricing,
     pricing_contract_builder,
+    pricing_output_requirement,
     pricing_required_outputs,
     pricing_success_expression,
     settings_contract_builder,
@@ -31,14 +32,18 @@ from affordance_runtime.task_intake import (
     TaskRequirement,
     TaskSemanticPayload,
     TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
 )
 from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 def _scenario_requirement(
     requirement_id: str,
     subject: str,
     operation_class: OperationClass,
+    capability: str = "",
 ) -> TaskRequirement:
     return TaskRequirement(
         requirement_id=requirement_id,
@@ -46,8 +51,18 @@ def _scenario_requirement(
             kind="effect",
             subject=subject,
             operation_class=operation_class,
+            capability=capability,
         ),
         source_anchor_refs=(f"reference-cli:{requirement_id}",),
+    )
+
+
+def _scenario_success(requirement_id: str, scenario: str) -> SuccessExpression:
+    return SuccessExpression(
+        expression_id=f"success:{scenario}",
+        operator="criterion",
+        criterion_id=f"criterion:{scenario}",
+        requirement_refs=(requirement_id,),
     )
 
 
@@ -429,12 +444,15 @@ def run_scenario(
             objective="Reveal Pro and Enterprise plan limits with structural evidence.",
             operation_class=OperationClass.READ_ONLY,
             requirements=(
-                _scenario_requirement(
-                    "requirement:reveal-pricing",
-                    "Reveal Pro and Enterprise plan limits with structural evidence",
+                *canonical_effect_requirements(
+                    ("Show Pro limits", "Show Enterprise limits"),
                     OperationClass.READ_ONLY,
+                    "reference-cli",
+                    (),
                 ),
+                pricing_output_requirement("reference-cli"),
             ),
+            allowed_effect_refs=canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits")),
             success=pricing_success_expression(),
             required_outputs=pricing_required_outputs(),
             evidence_requirements=("post-action DOM evidence for each pricing plan",),
@@ -452,25 +470,48 @@ def run_scenario(
             "export": OperationClass.EXTERNAL_SIDE_EFFECT,
         }[scenario]
         profile_requirement_id = f"requirement:{scenario}"
+        profile_capabilities = tuple(
+            capabilities_override if capabilities_override is not None else capabilities[scenario]
+        )
+        profile_requirements = (
+            (
+                *canonical_effect_requirements(
+                    ("Show Pro limits", "Show Enterprise limits"),
+                    OperationClass.READ_ONLY,
+                    "reference-cli-accepted-profile",
+                    (),
+                ),
+                pricing_output_requirement("reference-cli-accepted-profile"),
+            )
+            if scenario == "pricing"
+            else (
+                _scenario_requirement(
+                    profile_requirement_id,
+                    profile_objectives[scenario],
+                    profile_operation,
+                    profile_capabilities[0] if profile_capabilities else "",
+                ),
+            )
+        )
         task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
             objective=profile_objectives[scenario],
             operation_class=profile_operation,
-            requirements=(
-                _scenario_requirement(
-                    profile_requirement_id,
-                    profile_objectives[scenario],
-                    profile_operation,
-                ),
+            requirements=profile_requirements,
+            allowed_effect_refs=(
+                canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits"))
+                if scenario == "pricing"
+                else (profile_requirement_id,)
             ),
-            allowed_effect_refs=(() if profile_operation == OperationClass.READ_ONLY else (profile_requirement_id,)),
-            success=(pricing_success_expression() if scenario == "pricing" else None),
+            success=(
+                pricing_success_expression()
+                if scenario == "pricing"
+                else _scenario_success(profile_requirement_id, scenario)
+            ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
-            capability_ceiling=tuple(
-                capabilities_override if capabilities_override is not None else capabilities[scenario]
-            ),
+            capability_ceiling=profile_capabilities,
             source_request_ref="reference-cli-accepted-profile",
         )
     if task_spec is None:
@@ -485,25 +526,48 @@ def run_scenario(
             "export": OperationClass.EXTERNAL_SIDE_EFFECT,
         }[scenario]
         default_requirement_id = f"requirement:{scenario}"
+        default_capabilities = tuple(
+            capabilities_override if capabilities_override is not None else capabilities[scenario]
+        )
+        default_requirements = (
+            (
+                *canonical_effect_requirements(
+                    ("Show Pro limits", "Show Enterprise limits"),
+                    OperationClass.READ_ONLY,
+                    "reference-cli",
+                    (),
+                ),
+                pricing_output_requirement("reference-cli"),
+            )
+            if scenario == "pricing"
+            else (
+                _scenario_requirement(
+                    default_requirement_id,
+                    default_objectives[scenario],
+                    default_operation,
+                    default_capabilities[0] if default_capabilities else "",
+                ),
+            )
+        )
         task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
             objective=default_objectives[scenario],
             operation_class=default_operation,
-            requirements=(
-                _scenario_requirement(
-                    default_requirement_id,
-                    default_objectives[scenario],
-                    default_operation,
-                ),
+            requirements=default_requirements,
+            allowed_effect_refs=(
+                canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits"))
+                if scenario == "pricing"
+                else (default_requirement_id,)
             ),
-            allowed_effect_refs=(() if default_operation == OperationClass.READ_ONLY else (default_requirement_id,)),
-            success=(pricing_success_expression() if scenario == "pricing" else None),
+            success=(
+                pricing_success_expression()
+                if scenario == "pricing"
+                else _scenario_success(default_requirement_id, scenario)
+            ),
             required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
-            capability_ceiling=tuple(
-                capabilities_override if capabilities_override is not None else capabilities[scenario]
-            ),
+            capability_ceiling=default_capabilities,
             source_request_ref="reference-cli",
         )
     runtime_features = (

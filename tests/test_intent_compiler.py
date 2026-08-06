@@ -39,7 +39,12 @@ class ProposalModel:
                         "source_ref": anchor_id,
                     }
                 ],
-                "success_criteria": ["settings are visible"],
+                "success": {
+                    "expression_id": "success:settings",
+                    "operator": "criterion",
+                    "criterion_id": "criterion:settings-visible",
+                    "requirement_refs": ["requirement:effect:1"],
+                },
             }
         )
 

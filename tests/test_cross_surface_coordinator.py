@@ -90,6 +90,7 @@ def _surface_task(task_id: str, objective: str, *, target: str | None = None) ->
                 expression_id="success:action-verified",
                 operator="criterion",
                 criterion_id="criterion:action-verified",
+                requirement_refs=("requirement:effect:1",),
             ),
             source_request_ref="cross-surface-test",
         )
@@ -217,6 +218,7 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                 expression_id="success:shared-state-enabled",
                 operator="criterion",
                 criterion_id="criterion:shared-state-enabled",
+                requirement_refs=("requirement:effect:1",),
             ),
             capability_ceiling=("shared.write",),
             evidence_requirements=(

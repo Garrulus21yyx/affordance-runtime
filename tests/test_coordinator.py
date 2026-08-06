@@ -844,6 +844,7 @@ def _current_state_availability_task() -> TaskSpec:
             expression_id="success:submit-available",
             operator="criterion",
             criterion_id="criterion:submit-available",
+            requirement_refs=("requirement:submit-available",),
         ),
         evidence_requirements=("current submit button observation",),
         capability_ceiling=(),
@@ -1121,6 +1122,7 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
                 expression_id="success:apply",
                 operator="criterion",
                 criterion_id="criterion:apply-success",
+                requirement_refs=("requirement:test",),
             )
         }
     )
@@ -1279,6 +1281,7 @@ def _semantic_task() -> TaskSpec:
             expression_id="success:settings-saved",
             operator="criterion",
             criterion_id="criterion:task-success",
+            requirement_refs=("requirement:test",),
         ),
         evidence_requirements=("saved observation",),
         source_request_ref="semantic-request",
@@ -1543,11 +1546,11 @@ class _PipelineIntentModel:
                         "source_ref": source_ref,
                     }
                 ],
-                "success_criteria": ["settings are saved"],
                 "success": SuccessExpression(
                     expression_id="success:pipeline-save",
                     operator="criterion",
                     criterion_id="criterion:task-success",
+                    requirement_refs=("requirement:effect:1",),
                 ).model_dump(mode="json"),
                 "evidence_requirements": ["saved observation"],
             }

@@ -409,6 +409,7 @@ def run_adaptive_routing_case(
             expression_id="success:ablation-saved",
             operator="criterion",
             criterion_id="criterion:ablation-saved",
+            requirement_refs=("requirement:effect:1",),
         ),
         evidence_requirements=(
             ("visual appearance and saved state",)

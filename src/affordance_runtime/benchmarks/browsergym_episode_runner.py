@@ -577,6 +577,7 @@ def run_browsergym_episode(
             expression_id="success:browsergym-official-grade",
             operator="criterion",
             criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
+            requirement_refs=("requirement:effect:1",),
         ),
         evidence_requirements=("official reward and termination",),
         source_request_ref=f"browsergym:{task_id}:seed:{seed}",
@@ -753,6 +754,7 @@ def run_browsergym_generalist_episode(
                     expression_id="success:browsergym-official-grade",
                     operator="criterion",
                     criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
+                    requirement_refs=compilation.task_spec.allowed_effect_refs,
                 )
             }
         )

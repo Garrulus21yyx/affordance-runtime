@@ -234,7 +234,7 @@ class TaskSpec(StrictModel):
     forbidden_effect_refs: tuple[str, ...] = ()
     capability_ceiling: tuple[str, ...] = ()
     risk_policy: TaskRiskPolicy | None = None
-    success: SuccessExpression | None = None
+    success: SuccessExpression
     required_outputs: tuple[OutputSpec, ...] = ()
     criterion_source_bindings: tuple[CriterionSourceBinding, ...] = ()
     constraint_criterion_ids: tuple[str, ...] = ()
@@ -253,6 +253,7 @@ class TaskSpec(StrictModel):
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("task requirement ids must be unique")
         known = set(requirement_ids)
+        by_id = {item.requirement_id: item for item in self.requirements}
         for label, refs in (
             ("allowed effect", self.allowed_effect_refs),
             ("hard constraint", self.hard_constraint_refs),
@@ -263,6 +264,26 @@ class TaskSpec(StrictModel):
                 raise ValueError(f"{label} refs must be unique")
             if set(refs) - known:
                 raise ValueError(f"{label} refs must name admitted requirements")
+        role_checks = (
+            (
+                "allowed effect",
+                self.allowed_effect_refs,
+                lambda item: item.payload.kind == "effect" and item.payload.relation != "forbidden",
+            ),
+            (
+                "forbidden effect",
+                self.forbidden_effect_refs,
+                lambda item: item.payload.kind == "effect" and item.payload.relation == "forbidden",
+            ),
+            ("hard constraint", self.hard_constraint_refs, lambda item: item.payload.kind == "constraint"),
+            ("preference", self.preference_refs, lambda item: item.payload.kind == "preference"),
+        )
+        for label, refs, predicate in role_checks:
+            if any(not predicate(by_id[ref]) for ref in refs):
+                raise ValueError(f"{label} refs must name requirements with the matching semantic role")
+        role_ref_sets = [set(refs) for _, refs, _ in role_checks]
+        if any(left & right for index, left in enumerate(role_ref_sets) for right in role_ref_sets[index + 1 :]):
+            raise ValueError("task semantic role refs must be mutually exclusive")
         binding_ids = tuple(item.binding_id for item in self.inputs)
         if len(binding_ids) != len(set(binding_ids)):
             raise ValueError("task input binding ids must be unique")
@@ -270,6 +291,15 @@ class TaskSpec(StrictModel):
             raise ValueError("task input binding must name an admitted requirement")
         if any(output.requirement_ref and output.requirement_ref not in known for output in self.required_outputs):
             raise ValueError("required output must name an admitted requirement")
+        output_refs = tuple(output.requirement_ref for output in self.required_outputs)
+        if any(not ref for ref in output_refs) or len(output_refs) != len(set(output_refs)):
+            raise ValueError("required outputs must have unique canonical requirement refs")
+        canonical_output_refs = {item.requirement_id for item in self.requirements if item.payload.kind == "output"}
+        if set(output_refs) != canonical_output_refs:
+            raise ValueError("every canonical output requirement must have exactly one required OutputSpec")
+        success_bindings = success_criterion_requirement_bindings(self.success)
+        if any(set(refs) - known for refs in success_bindings.values()):
+            raise ValueError("success criterion requirement refs must name admitted requirements")
         criterion_ids = tuple(item.criterion_id for item in self.criterion_source_bindings)
         if len(criterion_ids) != len(set(criterion_ids)):
             raise ValueError("criterion source binding ids must be unique")
@@ -278,12 +308,53 @@ class TaskSpec(StrictModel):
             for binding in self.criterion_source_bindings
         ):
             raise ValueError("criterion source binding must name admitted requirements")
+        if set(criterion_ids) & set(success_bindings):
+            raise ValueError("success criterion source identity is owned by its exact leaf requirement_refs")
+        allowed_requirements = tuple(by_id[ref] for ref in self.allowed_effect_refs)
+        expected_operation = max(
+            (item.payload.operation_class or OperationClass.READ_ONLY for item in allowed_requirements),
+            key=operation_class_rank,
+            default=OperationClass.READ_ONLY,
+        )
+        if self.operation_class != expected_operation:
+            raise ValueError("TaskSpec operation_class must equal the maximum allowed effect operation class")
+        expected_capabilities = tuple(
+            dict.fromkeys(item.payload.capability for item in allowed_requirements if item.payload.capability)
+        )
+        if self.capability_ceiling != expected_capabilities:
+            raise ValueError("TaskSpec capability_ceiling must equal canonical effect capabilities")
+        if self.risk_policy is not None:
+            if self.risk_policy.maximum_operation_class != self.operation_class:
+                raise ValueError("TaskSpec risk policy operation class must match canonical effects")
+            high_risk = self.operation_class in {
+                OperationClass.EXTERNAL_SIDE_EFFECT,
+                OperationClass.IRREVERSIBLE,
+            }
+            if high_risk and not self.risk_policy.approval_required:
+                raise ValueError("TaskSpec approval policy cannot weaken canonical effect risk")
+            if high_risk and not self.risk_policy.authoritative_final_recheck_required:
+                raise ValueError("TaskSpec final recheck policy cannot weaken canonical effect risk")
         return self
 
     @property
     def identity(self) -> str:
         payload = self.model_dump_json(exclude={"created_at_s"})
         return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
+def success_criterion_requirement_bindings(expression: SuccessExpression) -> dict[str, tuple[str, ...]]:
+    """Return the exact admitted requirement refs declared by every success leaf."""
+
+    if expression.operator == "criterion":
+        return {expression.criterion_id: expression.requirement_refs}
+    rows: dict[str, tuple[str, ...]] = {}
+    for child in expression.children:
+        for criterion_id, refs in success_criterion_requirement_bindings(child).items():
+            previous = rows.get(criterion_id)
+            if previous is not None and previous != refs:
+                raise ValueError("success criterion identity cannot bind different requirements")
+            rows[criterion_id] = refs
+    return rows
 
 
 class CompilationIssue(StrictModel):

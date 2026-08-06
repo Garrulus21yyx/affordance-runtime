@@ -37,6 +37,8 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
     RequestedEffect,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     UserRequest,
     canonical_effect_requirement_refs,
@@ -98,16 +100,25 @@ def _completion_task() -> TaskSpec:
         revision=1,
         objective="save record",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(("record",), OperationClass.REVERSIBLE_WRITE, "request:redline", ()),
+        requirements=(
+            *canonical_effect_requirements(("record",), OperationClass.REVERSIBLE_WRITE, "request:redline", ()),
+            TaskRequirement(
+                requirement_id="requirement:output:1",
+                payload=TaskSemanticPayload(kind="output", subject="record"),
+                source_anchor_refs=("request:redline",),
+            ),
+        ),
         allowed_effect_refs=canonical_effect_requirement_refs(("record",)),
         success=SuccessExpression(
             expression_id="success:root",
             operator="criterion",
             criterion_id="criterion:saved",
+            requirement_refs=("requirement:effect:1", "requirement:output:1"),
         ),
         required_outputs=(
             OutputSpec(
                 output_id="record",
+                requirement_ref="requirement:output:1",
                 materialization_criterion_id="criterion:output",
                 source_binding_requirement=("source:any",),
             ),
@@ -375,7 +386,12 @@ def _case_default_thin_source() -> None:
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
         ),
-        success_criteria=("settings visible",),
+        success=SuccessExpression(
+            expression_id="success:settings",
+            operator="criterion",
+            criterion_id="criterion:settings-visible",
+            requirement_refs=("requirement:effect:1",),
+        ),
     )
     result = TaskSpecAuthority().admit(request, envelope, proposal)
     assert result.task_spec is not None
@@ -426,7 +442,12 @@ def _case_audit_negative_authority() -> None:
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
         ),
-        success_criteria=("settings visible",),
+        success=SuccessExpression(
+            expression_id="success:settings",
+            operator="criterion",
+            criterion_id="criterion:settings-visible",
+            requirement_refs=("requirement:effect:1",),
+        ),
     )
     result = SemanticAudit().evaluate(envelope, proposal, material_conflicts=("recipient",))
     assert set(SemanticAuditStatus) == {

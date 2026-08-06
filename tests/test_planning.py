@@ -54,6 +54,7 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import (
     canonical_observation,
     legacy_step_spec,
@@ -519,6 +520,12 @@ def _fixture() -> tuple[TaskSpec, StateKernel, BrowserSnapshot]:
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("theme",)),
         capability_ceiling=("settings.write",),
+        success=SuccessExpression(
+            expression_id="success:theme",
+            operator="criterion",
+            criterion_id="criterion:theme",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="request-1",
         created_at_s=time.time(),
     )
@@ -592,6 +599,12 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
         operation_class=OperationClass.REVERSIBLE_WRITE,
         requirements=canonical_effect_requirements(("theme",), OperationClass.REVERSIBLE_WRITE, "request-semantic", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("theme",)),
+        success=SuccessExpression(
+            expression_id="success:theme",
+            operator="criterion",
+            criterion_id="criterion:theme",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="request-semantic",
     )
     proposal = PlannerProposal(
@@ -673,6 +686,12 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("Save",), OperationClass.READ_ONLY, "request-reroute", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
+        success=SuccessExpression(
+            expression_id="success:save",
+            operator="criterion",
+            criterion_id="criterion:save",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="request-reroute",
     )
     builder = ContractBuilder(
@@ -754,6 +773,12 @@ def test_core_contract_builder_binds_both_semantic_drag_endpoints() -> None:
             ("Source", "Destination"), OperationClass.READ_ONLY, "request-drag", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Source", "Destination")),
+        success=SuccessExpression(
+            expression_id="success:drag",
+            operator="criterion",
+            criterion_id="criterion:drag",
+            requirement_refs=("requirement:effect:1", "requirement:effect:2"),
+        ),
         source_request_ref="request-drag",
     )
     proposal = PlannerProposal(
@@ -988,6 +1013,12 @@ def test_proposal_validator_enforces_exact_active_step_scope_when_available() ->
             ("theme", "submit"), OperationClass.REVERSIBLE_WRITE, "request-1", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("theme", "submit")),
+        success=SuccessExpression(
+            expression_id="success:theme-submit",
+            operator="criterion",
+            criterion_id="criterion:theme-submit",
+            requirement_refs=("requirement:effect:1", "requirement:effect:2"),
+        ),
         source_request_ref="request-1",
     )
     proposal = _proposal(
@@ -1058,6 +1089,12 @@ def test_proposal_validator_resolves_checkbox_ordinal_active_step_scope() -> Non
             ("checkbox_3_state",), OperationClass.REVERSIBLE_WRITE, "request-1", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("checkbox_3_state",)),
+        success=SuccessExpression(
+            expression_id="success:checkbox",
+            operator="criterion",
+            criterion_id="criterion:checkbox",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="request-1",
     )
     snapshot = BrowserSnapshot(observation, model)
@@ -1165,6 +1202,12 @@ def test_contract_builder_binds_semantic_key_press_without_surface_parameters() 
         operation_class=OperationClass.REVERSIBLE_WRITE,
         requirements=canonical_effect_requirements(("slider",), OperationClass.REVERSIBLE_WRITE, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("slider",)),
+        success=SuccessExpression(
+            expression_id="success:slider",
+            operator="criterion",
+            criterion_id="criterion:slider",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

@@ -41,6 +41,7 @@ from affordance_runtime.unified_observation import (
     Freshness,
     UnifiedObservation,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import remember_observation
 
 
@@ -220,6 +221,12 @@ def test_incremental_task_skill_exposes_one_current_semantic_step_and_checkpoint
         operation_class=OperationClass.REVERSIBLE_WRITE,
         requirements=canonical_effect_requirements(("Full name",), OperationClass.REVERSIBLE_WRITE, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Full name",)),
+        success=SuccessExpression(
+            expression_id="success:full-name",
+            operator="criterion",
+            criterion_id="criterion:full-name",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="test",
     )
     bindings = {
@@ -264,6 +271,12 @@ def test_task_skill_mismatch_falls_through_without_losing_verified_progress() ->
         operation_class=OperationClass.REVERSIBLE_WRITE,
         requirements=canonical_effect_requirements(("Full name",), OperationClass.REVERSIBLE_WRITE, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Full name",)),
+        success=SuccessExpression(
+            expression_id="success:full-name",
+            operator="criterion",
+            criterion_id="criterion:full-name",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="test",
     )
     progress = TaskSkillProgress(

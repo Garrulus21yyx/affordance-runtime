@@ -19,6 +19,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import canonical_observation, remember_observation
 
 
@@ -37,6 +38,12 @@ def test_recovery_fixture_planner_consumes_canonical_request() -> None:
             ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-request-source", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
+        success=SuccessExpression(
+            expression_id="success:save",
+            operator="criterion",
+            criterion_id="criterion:save",
+            requirement_refs=("requirement:effect:1",),
+        ),
         evidence_requirements=("receipt evidence",),
         source_request_ref="recovery-request-source",
     )

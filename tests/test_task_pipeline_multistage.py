@@ -168,11 +168,11 @@ class MultiStageIntentAndPlanModel:
                             "source_ref": source_ref,
                         },
                     ],
-                    "success_criteria": ["the current state is confirmed"],
                     "success": {
                         "expression_id": "success:confirmed",
                         "operator": "criterion",
                         "criterion_id": "criterion:confirmed",
+                        "requirement_refs": ["requirement:effect:2"],
                     },
                     "evidence_requirements": ["fresh state observations"],
                 }

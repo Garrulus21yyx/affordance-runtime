@@ -16,7 +16,9 @@ single semantic admission are cut over. P0-E5 also replaces the flawed
 "any material exact anchor" shortcut with effect-specific typed material
 binding coverage. P3 is now cut over: TaskSpec v2 owns flat admitted
 requirements, stable input bindings, authorization/constraint/preference refs,
-risk policy and source-bound outputs; StepSpec traceability is enforced and the
+risk policy and source-bound outputs. A typed success root is mandatory, each
+criterion leaf cites exact admitted requirement IDs, and every requested output
+enters completion through one required OutputSpec; StepSpec traceability is enforced and the
 legacy claim/obligation owners and task-plan provider adapter are deleted. P4
 is also cut over: rolling task planning and closed step choice are separate
 typed flows, strict providers receive only bounded typed requests, pure
@@ -56,8 +58,8 @@ Documentation consolidation does not promote any production capability.
 | Area | Current implementation truth | Target | Status |
 |---|---|---|---|
 | Source intake | default path is SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpecAuthority; default SourceLedger/claim/obligation owners are deleted | lightweight SourceEnvelope + risk-proportionate MaterialBinding/selective SourceAnchor; optional SemanticAudit | P0-E complete |
-| Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers require each requested anchor to belong to the requested admitted requirement, criterion, effect or input binding and return the TaskSpec binding digest; execution consumers are denied source context | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E/P3 complete |
-| Task contract | TaskSpec v2 carries flat typed requirements, stable input bindings, authorization/constraint/preference/forbidden refs, capability ceiling, risk policy and source-bound outputs; each material output has its own canonical requirement identity; parallel legacy semantic fields and readers are absent | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P3 complete |
+| Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers derive each success criterion's exact requirement refs from its typed leaf and expose only associated anchors; Task API ingress additionally requires the authority-issued TaskSpec identity digest; execution consumers are denied source context | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E/P3 complete |
+| Task contract | TaskSpec v2 carries flat typed requirements, stable input bindings, role-checked authorization/constraint/preference/forbidden refs, capability ceiling, risk policy and source-bound outputs; typed success is mandatory, string success/desired-output proposal fields are forbidden, and every output requirement has exactly one required OutputSpec | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P3 complete |
 | Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; TaskPlanningRequest → PlanProposal is typed and rolling triggers distinguish initial, reuse, exhausted, infeasible, assumption, environment and task-revision cases; default composition and PlanningStage contain no legacy Planner proposal fallback | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 plus P4 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
@@ -139,11 +141,13 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core (P2-1..P2-5), P3 and P4 are complete; TaskSpec v2 and StepSpec requirement/effect traceability are canonical, rolling task planning and strict closed step choice are cut over, and legacy internal planner signatures are deleted; P2-6 and the full P2-7 resolver remain demand-driven extensions; P5 is not started |
 
 The remaining planner compatibility debt is explicit and bounded:
-`generalist_planner.py`, `compatibility_planner_algorithms.py`, and their
-one-way `planner_context.py` projection serve only the historical generalization
-comparison in `benchmarks/generalization_rollout.py::_run_compatibility_pair`.
-They are not imported by strict/default planner construction and expire at
-`P5-3` after that consumer migrates.
+`generalist_planner.py`, `compatibility_planner_algorithms.py`, their one-way
+`planner_context.py` projection, the public `BrowserGymGeneralistPlanner`, the
+non-strict BrowserGym benchmark façade/episode path, and the corresponding CLI
+benchmark command remain compatibility consumers. The historical generalization
+comparison is an additional consumer. None is imported by strict/default Runtime
+composition or the strict BrowserGym path; the full consumer inventory expires
+at `P5-3`.
 
 ## 6. Historical ledger
 

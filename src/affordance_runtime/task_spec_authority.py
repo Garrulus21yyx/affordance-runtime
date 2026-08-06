@@ -29,6 +29,7 @@ from affordance_runtime.task_intake import (
     TaskStructure,
     UserRequest,
     operation_class_rank,
+    success_criterion_requirement_bindings,
 )
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
@@ -40,9 +41,7 @@ class MinimalIntentProposal(StrictModel):
     requested_effects: tuple[RequestedEffect, ...] = Field(min_length=1)
     entities: tuple[IntentEntity, ...] = ()
     preferences: tuple[str, ...] = ()
-    desired_outputs: tuple[str, ...] = ()
-    success_criteria: tuple[str, ...] = Field(min_length=1)
-    success: SuccessExpression | None = None
+    success: SuccessExpression
     required_outputs: tuple[OutputSpec, ...] = ()
     constraint_criterion_ids: tuple[str, ...] = ()
     external_effect_criterion_ids: tuple[str, ...] = ()
@@ -61,6 +60,7 @@ class TaskSpecAdmissionResult(StrictModel):
     request_id: str
     proposal: MinimalIntentProposal
     task_spec: TaskSpec | None = None
+    admission_digest: str = ""
     issues: tuple[CompilationIssue, ...] = ()
 
     @property
@@ -122,6 +122,8 @@ class TaskSpecAuthority:
                 "material_binding_missing",
                 "material_binding_conflict",
                 "material_binding_provenance_insufficient",
+                "success_requirement_ref_not_admitted",
+                "criterion_requirement_binding_missing",
             }
             if any(item.code in policy_codes for item in issues):
                 status = CompilationStatus.POLICY_CONFLICT
@@ -146,6 +148,14 @@ class TaskSpecAuthority:
         )
         requirements = _canonical_requirements(proposal, effects, envelope)
         requirement_ids = {item.requirement_id for item in requirements}
+        canonical_issues = _canonical_binding_issues(proposal, requirements, effects)
+        if canonical_issues:
+            return TaskSpecAdmissionResult(
+                status=CompilationStatus.NEEDS_CLARIFICATION,
+                request_id=request.request_id,
+                proposal=proposal,
+                issues=canonical_issues,
+            )
         inputs = tuple(InputBinding.from_material(item) for item in proposal.material_bindings)
         outputs = tuple(
             output.model_copy(
@@ -208,6 +218,7 @@ class TaskSpecAuthority:
             request_id=request.request_id,
             proposal=proposal,
             task_spec=task_spec,
+            admission_digest=task_spec.identity,
         )
 
     def _validate(
@@ -367,14 +378,6 @@ def _canonical_requirements(
         )
         for index, output in enumerate(proposal.required_outputs, start=1)
     )
-    rows.extend(
-        TaskRequirement(
-            requirement_id=f"requirement:desired-output:{index}",
-            payload=TaskSemanticPayload(kind="output", subject=value),
-            source_anchor_refs=(whole,),
-        )
-        for index, value in enumerate(proposal.desired_outputs, start=1)
-    )
     return tuple(rows)
 
 
@@ -383,13 +386,8 @@ def _criterion_source_bindings(
     requirements: tuple[TaskRequirement, ...],
     outputs: tuple[OutputSpec, ...],
 ) -> tuple[CriterionSourceBinding, ...]:
-    requirement_ids = tuple(item.requirement_id for item in requirements)
-    effect_refs = tuple(
-        item.requirement_id
-        for item in requirements
-        if item.payload.kind == "effect" and item.payload.relation != "forbidden"
-    )
     constraint_refs = tuple(item.requirement_id for item in requirements if item.payload.kind == "constraint")
+    success_bindings = success_criterion_requirement_bindings(proposal.success)
     rows: dict[str, list[str]] = {}
 
     def bind(criterion_id: str, refs: tuple[str, ...]) -> None:
@@ -399,22 +397,51 @@ def _criterion_source_bindings(
         bucket.extend(ref for ref in refs if ref not in bucket)
 
     for index, criterion_id in enumerate(proposal.constraint_criterion_ids):
-        bind(criterion_id, (constraint_refs[index],) if index < len(constraint_refs) else constraint_refs)
+        if index < len(constraint_refs):
+            bind(criterion_id, (constraint_refs[index],))
     for criterion_id in (*proposal.external_effect_criterion_ids, *proposal.final_recheck_criterion_ids):
-        bind(criterion_id, effect_refs)
+        bind(criterion_id, success_bindings.get(criterion_id, ()))
     for output in outputs:
-        bind(output.materialization_criterion_id, (output.requirement_ref,))
-    for criterion_id in _success_criterion_ids(proposal.success):
-        bind(criterion_id, requirement_ids)
+        if output.materialization_criterion_id not in success_bindings:
+            bind(output.materialization_criterion_id, (output.requirement_ref,))
     return tuple(
         CriterionSourceBinding(criterion_id=criterion_id, requirement_refs=tuple(refs))
         for criterion_id, refs in rows.items()
     )
 
 
-def _success_criterion_ids(expression: SuccessExpression | None) -> tuple[str, ...]:
-    if expression is None:
-        return ()
-    if expression.operator == "criterion":
-        return (expression.criterion_id,)
-    return tuple(criterion_id for child in expression.children for criterion_id in _success_criterion_ids(child))
+def _canonical_binding_issues(
+    proposal: MinimalIntentProposal,
+    requirements: tuple[TaskRequirement, ...],
+    effects: tuple[RequestedEffect, ...],
+) -> tuple[CompilationIssue, ...]:
+    known = {item.requirement_id for item in requirements}
+    effect_refs = {item.effect_id for item in effects}
+    success_bindings = success_criterion_requirement_bindings(proposal.success)
+    issues: list[CompilationIssue] = []
+    for criterion_id, refs in success_bindings.items():
+        for ref in set(refs) - known:
+            issues.append(
+                CompilationIssue(
+                    code="success_requirement_ref_not_admitted",
+                    field=criterion_id,
+                    detail=ref,
+                )
+            )
+    for criterion_id in (*proposal.external_effect_criterion_ids, *proposal.final_recheck_criterion_ids):
+        refs = success_bindings.get(criterion_id, ())
+        if not refs or (criterion_id in proposal.external_effect_criterion_ids and set(refs) - effect_refs):
+            issues.append(
+                CompilationIssue(
+                    code="criterion_requirement_binding_missing",
+                    field=criterion_id,
+                )
+            )
+    if len(proposal.constraint_criterion_ids) > len(proposal.constraints):
+        issues.append(
+            CompilationIssue(
+                code="criterion_requirement_binding_missing",
+                field="constraint_criterion_ids",
+            )
+        )
+    return tuple(issues)

@@ -226,6 +226,7 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
             expression_id="success:saved",
             operator="criterion",
             criterion_id="criterion:saved",
+            requirement_refs=("requirement:effect:1",),
         ),
         source_request_ref="test",
         capability_ceiling=("settings.write",),
@@ -391,6 +392,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
             expression_id="success:saved",
             operator="criterion",
             criterion_id="criterion:saved",
+            requirement_refs=("requirement:effect:1",),
         ),
         source_request_ref="test",
     )

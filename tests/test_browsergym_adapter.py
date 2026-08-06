@@ -97,11 +97,21 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.trace import TraceDag
+from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.verification.mechanical import VerifierLadder
 from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 from runtime_test_support import canonical_observation, remember_observation
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _task_success(*requirement_refs: str) -> SuccessExpression:
+    return SuccessExpression(
+        expression_id="success:test-task",
+        operator="criterion",
+        criterion_id="criterion:test-task",
+        requirement_refs=requirement_refs,
+    )
 
 
 def test_browsergym_projects_runtime_owned_failure_event_without_reclassification() -> None:
@@ -348,6 +358,7 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
             ("target",), OperationClass.REVERSIBLE_WRITE, "browsergym-request-source", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("target",)),
+        success=_task_success("requirement:effect:1"),
         evidence_requirements=("browsergym evidence",),
         source_request_ref="browsergym-request-source",
     )
@@ -414,7 +425,12 @@ class GeneralistClickModel:
                             "source_ref": source_ref,
                         }
                     ],
-                    "success_criteria": ["the target is activated"],
+                    "success": {
+                        "expression_id": "success:target-activated",
+                        "operator": "criterion",
+                        "criterion_id": "criterion:target-activated",
+                        "requirement_refs": ["requirement:effect:1"],
+                    },
                     "evidence_requirements": ["fresh post-action state"],
                     "task_structure": "flat",
                 }
@@ -670,6 +686,7 @@ def test_generalist_browsergym_adapter_binds_native_option_activation_as_select(
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("select",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("select",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -718,6 +735,7 @@ def test_generalist_browsergym_adapter_uses_navigation_safe_hash_link_click() ->
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("result",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("result",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -772,6 +790,7 @@ def test_generalist_browsergym_adapter_uses_current_dom_click_for_collection_con
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("@owner", "More"), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("@owner", "More")),
+        success=_task_success("requirement:effect:1", "requirement:effect:2"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -822,6 +841,7 @@ def test_generalist_browsergym_adapter_binds_semantic_drag_to_two_bids() -> None
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("Source", "Destination"), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Source", "Destination")),
+        success=_task_success("requirement:effect:1", "requirement:effect:2"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1368,6 +1388,7 @@ def test_generalist_browsergym_adapter_binds_screenshot_only_target_without_expo
             ("Current screenshot visual target",), OperationClass.READ_ONLY, "test", ()
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Current screenshot visual target",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1667,6 +1688,7 @@ def test_generalist_browsergym_adapter_binds_semantic_key_press() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("slider",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("slider",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1727,6 +1749,7 @@ def test_generalist_browsergym_scroll_press_verifies_scroll_top_delta() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements((scroll_region.label,), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs((scroll_region.label,)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1787,6 +1810,7 @@ def test_generalist_browsergym_text_contract_verifies_post_observation_value() -
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("text",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("text",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1840,6 +1864,7 @@ def test_generalist_browsergym_search_contract_uses_keyboard_events() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("search",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("search",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1882,6 +1907,7 @@ def test_generalist_browsergym_date_contract_uses_native_iso_value() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("date",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("date",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1930,6 +1956,7 @@ def test_generalist_browsergym_time_contract_uses_native_24_hour_value() -> None
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("time",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("time",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(
@@ -1983,6 +2010,7 @@ def test_generalist_browsergym_click_requires_state_delta_or_positive_terminal_o
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("target",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("target",)),
+        success=_task_success("requirement:effect:1"),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

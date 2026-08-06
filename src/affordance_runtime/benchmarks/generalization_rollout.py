@@ -708,6 +708,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
             expression_id="success:surface-saved",
             operator="criterion",
             criterion_id="criterion:surface-saved",
+            requirement_refs=("requirement:effect:1",),
         ),
         evidence_requirements=("independent saved metadata",),
         source_request_ref=f"g5-rollout:{revision}",
@@ -766,6 +767,7 @@ def _run_compatibility_pair(
                 expression_id="success:disclosure-expanded",
                 operator="criterion",
                 criterion_id="criterion:disclosure-expanded",
+                requirement_refs=("requirement:effect:1",),
             ),
             evidence_requirements=("expanded metadata",),
             source_request_ref=f"g5-rollout:{revision}",
@@ -813,10 +815,15 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         revision=1,
         objective="Recover provider capacity without dispatching an effect",
         operation_class=OperationClass.READ_ONLY,
+        requirements=canonical_effect_requirements(
+            ("provider capacity",), OperationClass.READ_ONLY, f"g5-rollout:{revision}", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("provider capacity",)),
         success=SuccessExpression(
             expression_id="success:provider-recovered",
             operator="criterion",
             criterion_id="criterion:provider-recovered",
+            requirement_refs=("requirement:effect:1",),
         ),
         evidence_requirements=("owning-port recovery receipt",),
         source_request_ref=f"g5-rollout:{revision}",

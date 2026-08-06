@@ -19,6 +19,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> None:
@@ -158,7 +159,14 @@ def _task_spec(revision: int, *, objective: str = "Update settings") -> TaskSpec
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
         capability_ceiling=("settings.write",),
+        success=SuccessExpression(
+            expression_id="success:settings",
+            operator="criterion",
+            criterion_id="criterion:settings",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="request-clarify",
+        created_at_s=1.0,
     )
 
 
@@ -178,6 +186,7 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
             "target": "settings",
             "capabilities": ["settings.write"],
             "task_spec": _task_spec(1).model_dump(mode="json"),
+            "task_spec_admission_digest": _task_spec(1).identity,
         },
     )
     assert submitted["request"]["task_spec"]["revision"] == 1
@@ -186,13 +195,18 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
     with pytest.raises(ValueError, match="must increase"):
         adapter.call(
             "gui_revise_task",
-            {"run_id": "clarify-run", "task_spec": _task_spec(1).model_dump(mode="json")},
+            {
+                "run_id": "clarify-run",
+                "task_spec": _task_spec(1).model_dump(mode="json"),
+                "task_spec_admission_digest": _task_spec(1).identity,
+            },
         )
     revised = adapter.call(
         "gui_revise_task",
         {
             "run_id": "clarify-run",
             "task_spec": _task_spec(2, objective="Update the personal settings profile").model_dump(mode="json"),
+            "task_spec_admission_digest": _task_spec(2, objective="Update the personal settings profile").identity,
         },
     )
     assert revised["status"] == "queued"
@@ -207,9 +221,19 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
         goal="Update settings",
         target="settings",
         task_spec=_task_spec(1),
+        task_spec_admission_digest=_task_spec(1).identity,
     )
 
     assert request.capabilities == []
+
+    with pytest.raises(ValueError, match="TaskSpecAuthority admission digest"):
+        TaskRequest(
+            run_id="clarify-run",
+            scenario="settings",
+            goal="Update settings",
+            target="settings",
+            task_spec=_task_spec(1).model_dump(mode="json"),
+        )
 
     with pytest.raises(ValueError, match="grants exceed"):
         TaskRequest(
@@ -219,4 +243,5 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
             target="settings",
             capabilities=["admin.superuser"],
             task_spec=_task_spec(1),
+            task_spec_admission_digest=_task_spec(1).identity,
         )

@@ -30,6 +30,7 @@ from affordance_runtime.planners import (
     SettingsPlanner,
     extract_pricing,
     pricing_contract_builder,
+    pricing_output_requirement,
     pricing_required_outputs,
     pricing_success_expression,
 )
@@ -42,7 +43,10 @@ from affordance_runtime.task_intake import (
     TaskRequirement,
     TaskSemanticPayload,
     TaskSpec,
+    canonical_effect_requirement_refs,
+    canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import canonical_observation, remember_observation
 
 
@@ -107,7 +111,18 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
                     revision=1,
                     objective="extract pricing",
                     operation_class=OperationClass.READ_ONLY,
-                    requirements=(_requirement("requirement:extract-pricing", "Extract Pro and Enterprise pricing"),),
+                    requirements=(
+                        *canonical_effect_requirements(
+                            ("Show Pro limits", "Show Enterprise limits"),
+                            OperationClass.READ_ONLY,
+                            "pricing-test",
+                            (),
+                        ),
+                        pricing_output_requirement("pricing-test"),
+                    ),
+                    allowed_effect_refs=canonical_effect_requirement_refs(
+                        ("Show Pro limits", "Show Enterprise limits")
+                    ),
                     success=pricing_success_expression(),
                     required_outputs=pricing_required_outputs(),
                     source_request_ref="pricing-test",
@@ -138,11 +153,15 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         objective="Reveal Pro and Enterprise plan limits with structural evidence.",
         operation_class=OperationClass.READ_ONLY,
         requirements=(
-            _requirement(
-                "requirement:reveal-pricing",
-                "Reveal Pro and Enterprise plan limits with structural evidence",
+            *canonical_effect_requirements(
+                ("Show Pro limits", "Show Enterprise limits"),
+                OperationClass.READ_ONLY,
+                "reference-test",
+                (),
             ),
+            pricing_output_requirement("reference-test"),
         ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("Show Pro limits", "Show Enterprise limits")),
         success=pricing_success_expression(),
         required_outputs=pricing_required_outputs(),
         evidence_requirements=("post-action DOM evidence for each plan",),
@@ -193,6 +212,12 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
         objective="Reveal pricing",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:reveal-pricing", "Reveal Pro and Enterprise pricing"),),
+        success=SuccessExpression(
+            expression_id="success:reveal-pricing",
+            operator="criterion",
+            criterion_id="criterion:reveal-pricing",
+            requirement_refs=("requirement:reveal-pricing",),
+        ),
         evidence_requirements=("structural pricing evidence",),
         source_request_ref="pricing-request-source",
     )
@@ -267,6 +292,12 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
                 ),
             ),
             allowed_effect_refs=("requirement:reference-action",),
+            success=SuccessExpression(
+                expression_id="success:reference-action",
+                operator="criterion",
+                criterion_id="criterion:reference-action",
+                requirement_refs=("requirement:reference-action",),
+            ),
             evidence_requirements=(f"{expected_label} evidence",),
             source_request_ref="reference-request-source",
         )

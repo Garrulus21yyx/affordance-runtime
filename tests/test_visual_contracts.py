@@ -26,6 +26,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.verification.mechanical import preflight
 from affordance_runtime.visual_contracts import VisualContractBinder
 from runtime_test_support import remember_observation
@@ -189,6 +190,12 @@ def test_browsergym_point_route_uses_unified_candidate_before_backend_encoding()
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("Blue point",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Blue point",)),
+        success=SuccessExpression(
+            expression_id="success:blue-point",
+            operator="criterion",
+            criterion_id="criterion:blue-point",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

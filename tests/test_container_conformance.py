@@ -29,6 +29,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import canonical_observation, remember_observation
 
 
@@ -112,6 +113,12 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
                 (CONFORMANCE_CAPABILITY,),
             ),
             allowed_effect_refs=canonical_effect_requirement_refs((model.affordances[0].label,)),
+            success=SuccessExpression(
+                expression_id="success:conformance",
+                operator="criterion",
+                criterion_id="criterion:conformance",
+                requirement_refs=("requirement:effect:1",),
+            ),
             evidence_requirements=(
                 "visual appearance and oracle evidence"
                 if surface == "visual"
@@ -171,6 +178,12 @@ def test_conformance_planner_consumes_canonical_request() -> None:
             (CONFORMANCE_CAPABILITY,),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("Enable shared state",)),
+        success=SuccessExpression(
+            expression_id="success:conformance",
+            operator="criterion",
+            criterion_id="criterion:conformance",
+            requirement_refs=("requirement:effect:1",),
+        ),
         evidence_requirements=("oracle evidence",),
         capability_ceiling=(CONFORMANCE_CAPABILITY,),
         source_request_ref="conformance-request-source",

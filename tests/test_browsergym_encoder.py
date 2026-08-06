@@ -47,6 +47,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
+from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.verification.mechanical import VerifierLadder, VerifierSpec
 from runtime_test_support import legacy_step_spec, make_interaction, remember_observation
 
@@ -755,6 +756,12 @@ def test_generalist_builder_wires_exact_typed_value_scope() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("Search",), OperationClass.READ_ONLY, "test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Search",)),
+        success=SuccessExpression(
+            expression_id="success:search",
+            operator="criterion",
+            criterion_id="criterion:search",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="test",
     )
     proposal = PlannerProposal(

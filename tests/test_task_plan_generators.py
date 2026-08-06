@@ -16,6 +16,7 @@ from affordance_runtime.task_plan_generators import (
     RulePlanProposalGenerator,
 )
 from affordance_runtime.task_planner import TaskPlanningBudgetSummary, TaskPlanningRequest
+from affordance_runtime.verification.contracts import SuccessExpression
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "affordance_runtime"
 
@@ -61,8 +62,13 @@ def _task_with_requirements() -> TaskSpec:
             _requirement("effect:submit", "submit_button", OperationClass.REVERSIBLE_WRITE),
         ),
         allowed_effect_refs=("effect:name", "effect:submit"),
+        success=SuccessExpression(
+            expression_id="success:form",
+            operator="criterion",
+            criterion_id="criterion:form",
+            requirement_refs=("effect:name", "effect:submit"),
+        ),
         evidence_requirements=("field value evidence", "submission evidence"),
-        capability_ceiling=("form.write",),
         source_request_ref="request-1",
     )
 
@@ -90,6 +96,12 @@ def test_synthetic_flat_generator_returns_single_draft_step() -> None:
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:account", "account", OperationClass.READ_ONLY),),
         allowed_effect_refs=("requirement:account",),
+        success=SuccessExpression(
+            expression_id="success:account",
+            operator="criterion",
+            criterion_id="criterion:account",
+            requirement_refs=("requirement:account",),
+        ),
         evidence_requirements=("DOM state evidence",),
         source_request_ref="request-1",
     )
@@ -108,6 +120,12 @@ def test_pricing_task_plan_generator_returns_draft_not_accepted_plan() -> None:
         objective="Reveal pricing limits",
         operation_class=OperationClass.READ_ONLY,
         requirements=(_requirement("requirement:pricing", "pricing", OperationClass.READ_ONLY),),
+        success=SuccessExpression(
+            expression_id="success:pricing",
+            operator="criterion",
+            criterion_id="criterion:pricing",
+            requirement_refs=("requirement:pricing",),
+        ),
         evidence_requirements=("DOM state evidence",),
         source_request_ref="request-1",
     )

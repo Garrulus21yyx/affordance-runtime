@@ -352,12 +352,13 @@ def _task(
     value: str = "Margaret",
     task_id: str = "profile-task",
     source_ref: str = "test",
+    capability: str = "settings.write",
 ) -> TaskSpec:
     requirements = canonical_effect_requirements(
         ("Name", "Email"),
         OperationClass.REVERSIBLE_WRITE,
         source_ref,
-        ("settings.write",),
+        (capability,) if capability else (),
     )
     requirements = (
         *requirements,
@@ -407,9 +408,10 @@ def _task(
             expression_id="success:profile-complete",
             operator="criterion",
             criterion_id="criterion:profile-complete",
+            requirement_refs=("requirement:effect:1", "requirement:effect:2"),
         ),
         evidence_requirements=("independent profile state",),
-        capability_ceiling=("settings.write",),
+        capability_ceiling=((capability,) if capability else ()),
         source_request_ref="test",
     )
 
@@ -525,7 +527,7 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
     world = ProfileWorld()
     observer = ProfileObserver(world)
     planner = CountingSystem2Planner()
-    task = _task(with_entity=True).model_copy(update={"capability_ceiling": ()})
+    task = _task(with_entity=True, capability="")
 
     runtime = _accepted_runtime(_payload())
     result = compose_run_coordinator(
@@ -746,6 +748,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 expression_id="success:interface-observed",
                 operator="criterion",
                 criterion_id="criterion:interface-observed",
+                requirement_refs=("requirement:effect:1",),
             ),
             external_effect_criterion_ids=(
                 ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()
@@ -917,6 +920,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 expression_id="success:interface-observed",
                 operator="criterion",
                 criterion_id="criterion:interface-observed",
+                requirement_refs=("requirement:effect:1",),
             ),
             external_effect_criterion_ids=(
                 ("criterion:external-no-effect",) if operation == OperationClass.IRREVERSIBLE else ()

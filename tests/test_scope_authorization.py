@@ -39,6 +39,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import canonical_observation, remember_observation
 
 PROVENANCE = PlannerProposalProvenance(
@@ -289,6 +290,12 @@ def _autocomplete_task() -> TaskSpec:
         operation_class=OperationClass.READ_ONLY,
         requirements=canonical_effect_requirements(("Com",), OperationClass.READ_ONLY, "scope-test", ()),
         allowed_effect_refs=canonical_effect_requirement_refs(("Com",)),
+        success=SuccessExpression(
+            expression_id="success:autocomplete",
+            operator="criterion",
+            criterion_id="criterion:autocomplete",
+            requirement_refs=("requirement:effect:1",),
+        ),
         source_request_ref="scope-test",
     )
 

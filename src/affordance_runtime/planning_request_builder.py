@@ -518,17 +518,18 @@ def _active_step_action_family(active_step: object) -> str:
 def _task_summary(task_spec: dict[str, object]) -> dict[str, object]:
     keys = (
         "revision",
-        "objective",
         "operation_class",
-        "task_structure",
-        "targets",
-        "entities",
-        "success_criteria",
-        "constraints",
+        "requirements",
+        "inputs",
+        "allowed_effect_refs",
+        "hard_constraint_refs",
+        "preference_refs",
+        "forbidden_effect_refs",
+        "capability_ceiling",
+        "risk_policy",
+        "success",
+        "required_outputs",
         "semantic_value_constraints",
-        "forbidden_effects",
         "evidence_requirements",
-        "requested_capabilities",
-        "ambiguity_status",
     )
     return {key: task_spec[key] for key in keys if key in task_spec}

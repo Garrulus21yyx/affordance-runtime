@@ -4,6 +4,8 @@ import pytest
 
 from affordance_runtime.task_intake import (
     OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
@@ -23,6 +25,7 @@ def _leaf(criterion_id: str) -> SuccessExpression:
         expression_id=f"expr:{criterion_id}",
         operator="criterion",
         criterion_id=criterion_id,
+        requirement_refs=("requirement:effect:1",),
     )
 
 
@@ -37,12 +40,20 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
         revision=1,
         objective="save settings",
         operation_class=OperationClass.REVERSIBLE_WRITE,
-        requirements=canonical_effect_requirements(("settings",), OperationClass.REVERSIBLE_WRITE, "request:save", ()),
+        requirements=(
+            *canonical_effect_requirements(("settings",), OperationClass.REVERSIBLE_WRITE, "request:save", ()),
+            TaskRequirement(
+                requirement_id="requirement:output:1",
+                payload=TaskSemanticPayload(kind="output", subject="saved_record"),
+                source_anchor_refs=("request:save",),
+            ),
+        ),
         allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
         success=success,
         required_outputs=(
             OutputSpec(
                 output_id="saved_record",
+                requirement_ref="requirement:output:1",
                 materialization_criterion_id="criterion:output",
                 source_binding_requirement=("source:any",),
             ),
@@ -192,8 +203,13 @@ def test_task_completion_requires_full_typed_closure(
         revision=1,
         objective="save settings",
         operation_class=OperationClass.EXTERNAL_SIDE_EFFECT,
-        requirements=canonical_effect_requirements(
-            ("settings",), OperationClass.EXTERNAL_SIDE_EFFECT, "request:save", ()
+        requirements=(
+            *canonical_effect_requirements(("settings",), OperationClass.EXTERNAL_SIDE_EFFECT, "request:save", ()),
+            TaskRequirement(
+                requirement_id="requirement:output:1",
+                payload=TaskSemanticPayload(kind="output", subject="saved_record"),
+                source_anchor_refs=("request:save",),
+            ),
         ),
         allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
         success=SuccessExpression(
@@ -207,6 +223,7 @@ def test_task_completion_requires_full_typed_closure(
         required_outputs=(
             OutputSpec(
                 output_id="saved_record",
+                requirement_ref="requirement:output:1",
                 materialization_criterion_id="criterion:output",
             ),
         ),

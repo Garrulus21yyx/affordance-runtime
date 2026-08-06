@@ -9,9 +9,11 @@ from affordance_runtime.source_context import SourceContextConsumer, SourceConte
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, RequestedEffect, UserRequest
 from affordance_runtime.task_spec_authority import MinimalIntentProposal, TaskSpecAuthority
+from affordance_runtime.verification.contracts import SuccessExpression
 
 
 def _proposal(envelope, operation=OperationClass.READ_ONLY):
+    effect_ref = "effect:settings" if operation == OperationClass.IRREVERSIBLE else "requirement:effect:1"
     return MinimalIntentProposal(
         objective="Inspect settings",
         requested_effects=(
@@ -25,7 +27,12 @@ def _proposal(envelope, operation=OperationClass.READ_ONLY):
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
         ),
-        success_criteria=("settings are visible",),
+        success=SuccessExpression(
+            expression_id="success:settings-visible",
+            operator="criterion",
+            criterion_id="criterion:settings-visible",
+            requirement_refs=(effect_ref,),
+        ),
     )
 
 
@@ -120,7 +127,24 @@ def test_source_context_rejects_anchor_from_an_unrequested_requirement() -> None
                 source_ref=beta_anchor.anchor_id,
             ),
         ),
-        success_criteria=("alpha opened", "beta inspected"),
+        success=SuccessExpression(
+            expression_id="success:alpha-and-beta",
+            operator="all_of",
+            children=(
+                SuccessExpression(
+                    expression_id="success:alpha",
+                    operator="criterion",
+                    criterion_id="criterion:alpha-opened",
+                    requirement_refs=("effect:alpha",),
+                ),
+                SuccessExpression(
+                    expression_id="success:beta",
+                    operator="criterion",
+                    criterion_id="criterion:beta-inspected",
+                    requirement_refs=("effect:beta",),
+                ),
+            ),
+        ),
     )
     admitted = TaskSpecAuthority().admit(request, envelope, proposal)
     assert admitted.task_spec is not None
@@ -133,4 +157,14 @@ def test_source_context_rejects_anchor_from_an_unrequested_requirement() -> None
             consumer=SourceContextConsumer.TASK_PLANNER,
             anchor_ids=(beta_anchor.anchor_id,),
             requirement_ids=("effect:alpha",),
+        )
+
+    with pytest.raises(PermissionError, match="not bound"):
+        SourceContextProjector().project(
+            request,
+            envelope,
+            admitted.task_spec,
+            consumer=SourceContextConsumer.TASK_PLANNER,
+            anchor_ids=(beta_anchor.anchor_id,),
+            criterion_ids=("criterion:alpha-opened",),
         )

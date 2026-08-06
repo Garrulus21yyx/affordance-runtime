@@ -163,6 +163,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
                     expression_id="success:saved",
                     operator="criterion",
                     criterion_id="criterion:saved",
+                    requirement_refs=("requirement:effect:1",),
                 ),
                 capability_ceiling=("settings.write",),
                 source_request_ref="uncertain-effect-test",

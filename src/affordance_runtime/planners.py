@@ -27,6 +27,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
+from affordance_runtime.task_intake import TaskRequirement, TaskSemanticPayload
 from affordance_runtime.task_planner import TaskPlanningNoPlan, TaskPlanningRequest
 from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
 
@@ -43,11 +44,13 @@ def pricing_success_expression() -> SuccessExpression:
                 expression_id="success:pricing-pro-visible",
                 operator="criterion",
                 criterion_id="criterion:pricing-pro-visible",
+                requirement_refs=("requirement:effect:1",),
             ),
             SuccessExpression(
                 expression_id="success:pricing-enterprise-visible",
                 operator="criterion",
                 criterion_id="criterion:pricing-enterprise-visible",
+                requirement_refs=("requirement:effect:2", "requirement:output:1"),
             ),
         ),
     )
@@ -57,8 +60,22 @@ def pricing_required_outputs() -> tuple[OutputSpec, ...]:
     return (
         OutputSpec(
             output_id="plans",
+            requirement_ref="requirement:output:1",
             materialization_criterion_id="criterion:pricing-enterprise-visible",
         ),
+    )
+
+
+def pricing_output_requirement(source_anchor_ref: str) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id="requirement:output:1",
+        payload=TaskSemanticPayload(
+            kind="output",
+            subject="plans",
+            relation="materialized_by",
+            value="criterion:pricing-enterprise-visible",
+        ),
+        source_anchor_refs=(source_anchor_ref,),
     )
 
 

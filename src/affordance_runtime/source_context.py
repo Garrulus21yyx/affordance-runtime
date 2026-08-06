@@ -7,7 +7,12 @@ from enum import StrEnum
 from pydantic import Field
 
 from affordance_runtime.source_envelope import SourceEnvelope
-from affordance_runtime.task_intake import StrictModel, TaskSpec, UserRequest
+from affordance_runtime.task_intake import (
+    StrictModel,
+    TaskSpec,
+    UserRequest,
+    success_criterion_requirement_bindings,
+)
 
 
 class SourceContextConsumer(StrEnum):
@@ -80,7 +85,10 @@ class SourceContextProjector:
             input_binding_ids,
             {item.binding_id for item in task_spec.inputs},
         )
-        admitted_criterion_ids = {item.criterion_id for item in task_spec.criterion_source_bindings}
+        admitted_criterion_ids = {
+            *success_criterion_requirement_bindings(task_spec.success),
+            *(item.criterion_id for item in task_spec.criterion_source_bindings),
+        }
         _require_subset("criterion", criterion_ids, admitted_criterion_ids)
         if not any((requirement_ids, criterion_ids, effect_authorization_ids, input_binding_ids)):
             raise ValueError("source context requires an admitted semantic identity")
@@ -152,6 +160,7 @@ def _semantic_anchor_ids(
 ) -> set[str]:
     requested_requirements = set(requirement_ids) | set(effect_authorization_ids)
     criterion_bindings = {item.criterion_id: item.requirement_refs for item in task_spec.criterion_source_bindings}
+    criterion_bindings.update(success_criterion_requirement_bindings(task_spec.success))
     for criterion_id in criterion_ids:
         requested_requirements.update(criterion_bindings[criterion_id])
     allowed = {

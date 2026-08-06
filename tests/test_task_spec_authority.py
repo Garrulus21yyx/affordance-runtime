@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from affordance_runtime.material_contracts import (
     MaterialBinding,
@@ -11,18 +12,125 @@ from affordance_runtime.task_intake import (
     CompilationStatus,
     OperationClass,
     RequestedEffect,
+    TaskRequirement,
+    TaskRiskPolicy,
+    TaskSemanticPayload,
+    TaskSpec,
     UserRequest,
 )
 from affordance_runtime.task_spec_authority import (
     MinimalIntentProposal,
     TaskSpecAuthority,
 )
-from affordance_runtime.verification.contracts import OutputSpec
+from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
+
+
+def _success(requirement_ref: str, criterion_id: str = "criterion:task-complete") -> SuccessExpression:
+    return SuccessExpression(
+        expression_id=f"success:{criterion_id}",
+        operator="criterion",
+        criterion_id=criterion_id,
+        requirement_refs=(requirement_ref,),
+    )
 
 
 def _request_and_envelope():
     request = UserRequest(request_id="authority-request", raw_text="Open account settings")
     return request, SourceEnvelopeBuilder().build(request)
+
+
+def test_minimal_proposal_requires_typed_success_and_has_no_string_semantic_fallbacks() -> None:
+    request, envelope = _request_and_envelope()
+    base = {
+        "objective": "Open account settings",
+        "requested_effects": (
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="account settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+    }
+
+    with pytest.raises(ValidationError, match="success"):
+        MinimalIntentProposal.model_validate(base)
+    with pytest.raises(ValidationError, match="success_criteria"):
+        MinimalIntentProposal.model_validate({**base, "success_criteria": ("visible",)})
+    with pytest.raises(ValidationError, match="desired_outputs"):
+        MinimalIntentProposal.model_validate(
+            {**base, "success": _success("requirement:effect:1"), "desired_outputs": ("settings URL",)}
+        )
+
+
+def test_taskspec_rejects_semantic_role_mismatch_and_orphan_output_requirement() -> None:
+    output_requirement = TaskRequirement(
+        requirement_id="requirement:output:1",
+        payload=TaskSemanticPayload(kind="output", subject="settings URL"),
+        source_anchor_refs=("authority-request:whole_request",),
+    )
+    success = _success("requirement:output:1")
+
+    for role_field in (
+        "allowed_effect_refs",
+        "forbidden_effect_refs",
+        "hard_constraint_refs",
+        "preference_refs",
+    ):
+        with pytest.raises(ValidationError, match="matching semantic role"):
+            TaskSpec(
+                task_id=f"role-mismatch:{role_field}",
+                revision=1,
+                objective="return settings URL",
+                operation_class=OperationClass.READ_ONLY,
+                requirements=(output_requirement,),
+                success=success,
+                source_request_ref="authority-request",
+                **{role_field: ("requirement:output:1",)},
+            )
+    with pytest.raises(ValidationError, match="exactly one required OutputSpec"):
+        TaskSpec(
+            task_id="orphan-output",
+            revision=1,
+            objective="return settings URL",
+            operation_class=OperationClass.READ_ONLY,
+            requirements=(output_requirement,),
+            success=success,
+            source_request_ref="authority-request",
+        )
+
+
+def test_taskspec_rejects_inconsistent_operation_capability_and_risk_aggregates() -> None:
+    requirement = TaskRequirement(
+        requirement_id="requirement:effect:1",
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject="settings",
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            capability="settings.write",
+        ),
+        source_anchor_refs=("authority-request:whole_request",),
+    )
+    base = {
+        "task_id": "aggregate-mismatch",
+        "revision": 1,
+        "objective": "update settings",
+        "requirements": (requirement,),
+        "allowed_effect_refs": (requirement.requirement_id,),
+        "success": _success(requirement.requirement_id),
+        "source_request_ref": "authority-request",
+    }
+
+    with pytest.raises(ValidationError, match="operation_class"):
+        TaskSpec(operation_class=OperationClass.READ_ONLY, capability_ceiling=("settings.write",), **base)
+    with pytest.raises(ValidationError, match="capability_ceiling"):
+        TaskSpec(operation_class=OperationClass.REVERSIBLE_WRITE, capability_ceiling=(), **base)
+    with pytest.raises(ValidationError, match="risk policy"):
+        TaskSpec(
+            operation_class=OperationClass.REVERSIBLE_WRITE,
+            capability_ceiling=("settings.write",),
+            risk_policy=TaskRiskPolicy(maximum_operation_class=OperationClass.READ_ONLY),
+            **base,
+        )
 
 
 def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
@@ -36,7 +144,7 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
         ),
-        success_criteria=("account settings are visible",),
+        success=_success("requirement:effect:1"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -48,6 +156,28 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
     assert not hasattr(result.task_spec, "source_claims")
     assert not hasattr(result.task_spec, "obligations")
     assert result.task_spec.requirements[0].requirement_id == "requirement:effect:1"
+    assert result.admission_digest == result.task_spec.identity
+
+
+def test_authority_clarifies_success_leaf_with_unadmitted_requirement_ref() -> None:
+    request, envelope = _request_and_envelope()
+    proposal = MinimalIntentProposal(
+        objective="Open account settings",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="account settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+        success=_success("requirement:invented"),
+    )
+
+    result = TaskSpecAuthority().admit(request, envelope, proposal)
+
+    assert result.status == CompilationStatus.NEEDS_CLARIFICATION
+    assert result.task_spec is None
+    assert {issue.code for issue in result.issues} == {"success_requirement_ref_not_admitted"}
 
 
 @pytest.mark.parametrize("operation", [OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE])
@@ -68,7 +198,7 @@ def test_authority_rejects_effect_without_user_source_anchor(operation) -> None:
                 source_ref="observation:invented-authority",
             ),
         ),
-        success_criteria=("message is sent",),
+        success=_success("effect:unauthorized"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -107,7 +237,7 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         objective=request.raw_text,
         requested_effects=(effect,),
         material_bindings=bindings,
-        success_criteria=("message is sent",),
+        success=_success("effect:send"),
         required_outputs=(
             OutputSpec(
                 output_id="send-receipt",
@@ -155,7 +285,7 @@ def test_material_effect_kind_cannot_downgrade_the_operation_class() -> None:
                 source_ref=envelope.whole_request_anchor.anchor_id,
             ),
         ),
-        success_criteria=("message is sent",),
+        success=_success("effect:send"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -191,7 +321,7 @@ def test_indirect_attachment_recipient_without_exact_or_typed_binding_clarifies(
                 binding_kind=MaterialBindingKind.DIRECT_USER_EXPLICIT,
             ),
         ),
-        success_criteria=("message is sent",),
+        success=_success("effect:send"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -238,7 +368,7 @@ def test_payment_amount_anchor_cannot_substitute_for_missing_payee_or_account() 
                 binding_kind=MaterialBindingKind.DIRECT_USER_EXPLICIT,
             ),
         ),
-        success_criteria=("payment is committed",),
+        success=_success("effect:payment"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
@@ -276,7 +406,7 @@ def test_page_source_cannot_create_material_authorization() -> None:
                 binding_kind=MaterialBindingKind.TYPED_EXTERNAL,
             ),
         ),
-        success_criteria=("message is sent",),
+        success=_success("effect:send"),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)

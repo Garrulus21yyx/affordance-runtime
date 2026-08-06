@@ -301,6 +301,7 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
             expression_id=f"success:stage-{target_stage}",
             operator="criterion",
             criterion_id=f"criterion:stage-{target_stage}",
+            requirement_refs=("requirement:advance-stage",),
         ),
         evidence_requirements=("stage observation",),
         source_request_ref="task-planning-ablation",

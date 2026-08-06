@@ -19,6 +19,7 @@ from affordance_runtime.task_intake import (
     TaskSemanticPayload,
     TaskSpec,
 )
+from affordance_runtime.verification.contracts import SuccessExpression
 from runtime_test_support import legacy_step_spec
 
 
@@ -38,6 +39,13 @@ def _task(objective: str) -> TaskSpec:
                 ),
                 source_anchor_refs=("test:whole_request",),
             ),
+        ),
+        allowed_effect_refs=("requirement:test",),
+        success=SuccessExpression(
+            expression_id="success:test",
+            operator="criterion",
+            criterion_id="criterion:test",
+            requirement_refs=("requirement:test",),
         ),
         source_request_ref="test",
     )
@@ -117,6 +125,13 @@ def test_hyphenated_task_target_contributes_visual_component_terms() -> None:
                 source_anchor_refs=("test:whole_request",),
             ),
         ),
+        allowed_effect_refs=("requirement:test",),
+        success=SuccessExpression(
+            expression_id="success:test",
+            operator="criterion",
+            criterion_id="criterion:test",
+            requirement_refs=("requirement:test",),
+        ),
         source_request_ref="test",
     )
 
@@ -143,6 +158,13 @@ def test_ascending_number_sequence_accepts_structured_or_visual_spatial_observat
                 ),
                 source_anchor_refs=("test:whole_request",),
             ),
+        ),
+        allowed_effect_refs=("requirement:test",),
+        success=SuccessExpression(
+            expression_id="success:test",
+            operator="criterion",
+            criterion_id="criterion:test",
+            requirement_refs=("requirement:test",),
         ),
         source_request_ref="test",
     )
@@ -171,6 +193,13 @@ def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_ap
                 ),
                 source_anchor_refs=("test:whole_request",),
             ),
+        ),
+        allowed_effect_refs=("requirement:test",),
+        success=SuccessExpression(
+            expression_id="success:test",
+            operator="criterion",
+            criterion_id="criterion:test",
+            requirement_refs=("requirement:test",),
         ),
         source_request_ref="test",
     )
