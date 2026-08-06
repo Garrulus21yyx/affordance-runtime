@@ -229,7 +229,8 @@ def test_strict_browsergym_path_does_not_construct_generalist_planner() -> None:
     assert "StrictTaskPlanner(" in strict_path
     assert "StrictStepChoicePlanner(" in strict_path
     assert "compilation.task_spec.model_copy" not in strict_path
-    assert strict_path.index("proposal = proposal.model_copy") < strict_path.index("TaskSpecAuthority().admit")
+    assert "success:browsergym-official-grade" not in strict_path
+    assert "BROWSERGYM_SUCCESS_CRITERION_ID" not in strict_path
 
 
 def test_historical_profile_loads_quarantined_compatibility_algorithms() -> None:

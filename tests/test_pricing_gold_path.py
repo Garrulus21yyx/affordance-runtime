@@ -36,7 +36,7 @@ from affordance_runtime.planners import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RunRequest, RuntimeStep, legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -105,7 +105,7 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
             task_planner=PricingTaskPlanner(),
             artifacts=ArtifactStore(tmp_path / "artifacts"),
         ).run(
-            RunRequest(
+            legacy_run_request(
                 task_spec=TaskSpec(
                     task_id="pricing-test",
                     revision=1,
@@ -172,7 +172,7 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         executor=router,
         contract_builder=pricing_contract_builder(),
         task_planner=PricingTaskPlanner(),
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(legacy_run_request(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_progress is not None
@@ -236,7 +236,7 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
             return self.built
 
     request_builder = RecordingRequestBuilder()
-    request = request_builder.build(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
+    request = request_builder.build(legacy_run_request(task_spec=task), state, BrowserSnapshot(observation, model))
     response = PricingPlanner().propose(request)
 
     assert request_builder.built is request
@@ -300,7 +300,7 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
             source_request_ref="reference-request-source",
         )
         request = PlanningRequestBuilder().build(
-            RunRequest(task_spec=task),
+            legacy_run_request(task_spec=task),
             state,
             canonical_observation(BrowserSnapshot(observation, model)),
         )

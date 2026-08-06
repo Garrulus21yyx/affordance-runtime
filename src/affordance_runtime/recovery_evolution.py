@@ -53,6 +53,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
@@ -76,7 +77,10 @@ def _snapshot(*, effect_verified: bool = False, sequence: int = 1) -> BrowserSna
             metadata={
                 "effect_verified": effect_verified,
                 "criterion_evaluations": {
-                    "criterion:recovery-effect-verified": ("satisfied" if effect_verified else "unsatisfied")
+                    "criterion:recovery-effect-verified": {
+                        "status": "satisfied" if effect_verified else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:recovery-effect"],
+                    }
                 },
             },
         ),
@@ -380,22 +384,24 @@ def _run_fixture(
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
     ).run_sync(
         RunRequest(
-            task_spec=TaskSpec(
-                task_id=task_id,
-                revision=1,
-                objective="exercise recovery cascade",
-                operation_class=OperationClass.REVERSIBLE_WRITE,
-                requirements=canonical_effect_requirements(
-                    ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
+            admitted_task=admit_legacy_task_spec(
+                TaskSpec(
+                    task_id=task_id,
+                    revision=1,
+                    objective="exercise recovery cascade",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    requirements=canonical_effect_requirements(
+                        ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
+                    ),
+                    allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
+                    success=SuccessExpression(
+                        expression_id="success:recovery-effect-verified",
+                        operator="criterion",
+                        criterion_id="criterion:recovery-effect-verified",
+                        requirement_refs=("requirement:effect:1",),
+                    ),
+                    source_request_ref="recovery-evolution",
                 ),
-                allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
-                success=SuccessExpression(
-                    expression_id="success:recovery-effect-verified",
-                    operator="criterion",
-                    criterion_id="criterion:recovery-effect-verified",
-                    requirement_refs=("requirement:effect:1",),
-                ),
-                source_request_ref="recovery-evolution",
             )
         )
     )

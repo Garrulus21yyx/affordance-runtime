@@ -11,7 +11,7 @@ from affordance_runtime.recovery_evolution import (
     _snapshot,
     run_recovery_cascade_evolution,
 )
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -47,7 +47,7 @@ def test_recovery_fixture_planner_consumes_canonical_request() -> None:
         source_request_ref="recovery-request-source",
     )
 
-    request = PlanningRequestBuilder().build(RunRequest(task_spec=task), state, canonical_observation(snapshot))
+    request = PlanningRequestBuilder().build(legacy_run_request(task_spec=task), state, canonical_observation(snapshot))
     response = RecoveryFixturePlanner(idempotent=True).propose(request)
 
     assert response.proposal.target_affordance_id == "dom_button_1"

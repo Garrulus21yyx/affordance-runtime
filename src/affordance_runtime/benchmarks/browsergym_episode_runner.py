@@ -29,6 +29,7 @@ from affordance_runtime.benchmarks.browsergym_observer import BrowserGymObserver
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
     BROWSERGYM_SUCCESS_CRITERION_ID,
+    BrowserGymBenchmarkRuntimeProfile,
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
     BrowserGymEpisodeState,
@@ -96,10 +97,11 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
-from affordance_runtime.task_spec_authority import TaskSpecAuthority
+from affordance_runtime.task_spec_authority import TaskSpecAuthority, admit_legacy_task_spec
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -583,7 +585,14 @@ def run_browsergym_episode(
     )
     try:
         result = compose_run_coordinator(
-            observer=BrowserGymObserver(session, episode, artifact_root / "screenshots" / run_id),
+            observer=BrowserGymObserver(
+                session,
+                episode,
+                artifact_root / "screenshots" / run_id,
+                benchmark_runtime_profile=BrowserGymBenchmarkRuntimeProfile(
+                    tuple(TaskCompletionEvaluator.success_criterion_ids(task_spec))
+                ),
+            ),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
             budget=RunBudget(
@@ -594,7 +603,12 @@ def run_browsergym_episode(
                 max_effectful_actions=max_steps + 1,
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
-        ).run_sync(RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]))
+        ).run_sync(
+            RunRequest(
+                admitted_task=admit_legacy_task_spec(task_spec),
+                capabilities=[SPATIAL_POINT_CAPABILITY],
+            )
+        )
         planner_error = next(
             (
                 str(node.payload.get("reason") or "")
@@ -720,20 +734,6 @@ def run_browsergym_generalist_episode(
             },
         )
         proposal = resolve_awaitable(intent_compiler.propose(user_request, envelope, trace=intake_trace, parent=parent))
-        admitted_effect_refs = tuple(
-            effect.effect_id or f"requirement:effect:{index}"
-            for index, effect in enumerate(proposal.requested_effects, start=1)
-        )
-        proposal = proposal.model_copy(
-            update={
-                "success": SuccessExpression(
-                    expression_id="success:browsergym-official-grade",
-                    operator="criterion",
-                    criterion_id=BROWSERGYM_SUCCESS_CRITERION_ID,
-                    requirement_refs=admitted_effect_refs,
-                )
-            }
-        )
         audit = SemanticAudit().evaluate(envelope, proposal)
         parent = intake_trace.add(
             "SemanticAuditEvaluated",
@@ -757,7 +757,11 @@ def run_browsergym_generalist_episode(
             },
             parents=[parent.id],
         )
-        if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
+        if (
+            compilation.status != CompilationStatus.READY
+            or compilation.task_spec is None
+            or compilation.admitted_task is None
+        ):
             issue_codes = ",".join(item.code for item in compilation.issues)
             raise ValueError(f"intent compilation {compilation.status.value}: {issue_codes}")
         episode_phase = "runtime"
@@ -783,6 +787,9 @@ def run_browsergym_generalist_episode(
                 artifact_root / "screenshots" / run_id,
                 perception_requirements=perception_requirements,
                 task_terms=perception_task_terms(task_spec),
+                benchmark_runtime_profile=BrowserGymBenchmarkRuntimeProfile(
+                    tuple(TaskCompletionEvaluator.success_criterion_ids(task_spec))
+                ),
             ),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
@@ -798,7 +805,7 @@ def run_browsergym_generalist_episode(
             step_choice_planner=choice_planner,
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model),
         ).run_sync(
-            RunRequest(task_spec=task_spec, capabilities=[SPATIAL_POINT_CAPABILITY]),
+            RunRequest(admitted_task=compilation.admitted_task, capabilities=[SPATIAL_POINT_CAPABILITY]),
             intake_trace,
         )
         planner_error = next(

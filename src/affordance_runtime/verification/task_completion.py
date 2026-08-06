@@ -13,6 +13,7 @@ from affordance_runtime.verification.contracts import (
     OutputMaterializationEvaluation,
     SuccessExpression,
     TaskCompletionEvaluation,
+    criterion_policy_digest,
 )
 
 _INCONCLUSIVE_PRECEDENCE = (
@@ -42,6 +43,10 @@ class TaskCompletionEvaluator:
                 *(output.materialization_criterion_id for output in task_spec.required_outputs),
             )
         )
+
+    @staticmethod
+    def success_criterion_ids(task_spec: TaskSpec) -> frozenset[str]:
+        return _expression_criterion_ids(task_spec.success)
 
     def evaluate(
         self,
@@ -167,7 +172,12 @@ def _evaluate_expression(
     results: Mapping[str, CriterionEvaluation],
 ) -> CriterionStatus:
     if expression.operator == "criterion":
-        return _status_for(expression.criterion_id, results)
+        result = results.get(expression.criterion_id)
+        assert expression.policy is not None
+        expected_policy = criterion_policy_digest(expression.criterion_id, expression.policy)
+        if result is None or result.policy_digest != expected_policy:
+            return CriterionStatus.UNKNOWN
+        return result.status
     child_statuses = tuple(_evaluate_expression(child, results) for child in expression.children)
     if expression.operator == "all_of":
         return _all_of_status(child_statuses)

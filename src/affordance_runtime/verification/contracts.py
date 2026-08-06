@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -73,6 +75,17 @@ class CriterionPolicy:
         object.__setattr__(self, "allowed_source_kinds", tuple(self.allowed_source_kinds))
         if self.satisfaction == SatisfactionMode.ACTION_CAUSED and not self.causal_lineage_required:
             raise ValueError("ACTION_CAUSED policy requires causal lineage")
+
+
+def criterion_policy_digest(criterion_id: str, policy: CriterionPolicy) -> str:
+    """Bind one evaluation to the exact admitted criterion identity and policy."""
+
+    payload = json.dumps(
+        {"criterion_id": criterion_id, "policy": asdict(policy)},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -195,6 +208,7 @@ class CriterionEvaluation:
     evaluated_at_observation_ref: str = ""
     reason_code: str = ""
     authoritative_final_recheck: bool = False
+    policy_digest: str = ""
 
     def __post_init__(self) -> None:
         if not self.criterion_id:

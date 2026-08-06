@@ -20,7 +20,7 @@ from affordance_runtime.executors import VisualExecutor, WotExecutor
 from affordance_runtime.planning import (
     ContractRequirements,
 )
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RunRequest, RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
@@ -75,7 +75,7 @@ class EvidenceExecutor:
 
 
 def _surface_task(task_id: str, objective: str, *, target: str | None = None) -> RunRequest:
-    return RunRequest(
+    return legacy_run_request(
         task_spec=TaskSpec(
             task_id=task_id,
             revision=1,
@@ -234,7 +234,7 @@ def test_same_canonical_choice_flow_binds_dom_visual_and_wot_affordances() -> No
                 StaticObserver(affordance),
                 executor,
                 contract_builder=ContractBuilder(requirements={affordance.id: requirements}),
-            ).run(RunRequest(task_spec=task, capabilities=["shared.write"]))
+            ).run(legacy_run_request(task_spec=task, capabilities=["shared.write"]))
         )
         events = [node.kind for node in result.trace.nodes]
         assert "ActionChoiceCatalogBuilt" in events

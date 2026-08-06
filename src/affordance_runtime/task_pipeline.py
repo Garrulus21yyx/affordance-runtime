@@ -87,18 +87,21 @@ class GeneralistTaskPipeline:
         return self._run_compiled(compilation, trace)
 
     def _run_compiled(self, compilation: TaskSpecAdmissionResult, trace: TraceDag) -> TaskPipelineResult:
-        if compilation.status != CompilationStatus.READY or compilation.task_spec is None:
+        if (
+            compilation.status != CompilationStatus.READY
+            or compilation.task_spec is None
+            or compilation.admitted_task is None
+        ):
             self._trace_intake_recovery(compilation, trace)
             return TaskPipelineResult(
                 status=compilation.status.value,
                 compilation=compilation,
                 trace=trace,
             )
-        task_spec = compilation.task_spec
         coordinator = self.coordinator
         coordinator_result = coordinator.run_sync(
             RunRequest(
-                task_spec=task_spec,
+                admitted_task=compilation.admitted_task,
                 constraints=dict(self.constraints),
                 # Caller grants are independent inputs. ContractBuilder and
                 # CapabilityGate intersect them with the concrete action's

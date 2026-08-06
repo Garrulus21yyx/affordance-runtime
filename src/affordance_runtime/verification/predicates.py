@@ -19,6 +19,7 @@ from affordance_runtime.criteria import (
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionEvaluation,
+    CriterionPolicy,
     CriterionStatus,
     EvidenceValidityMode,
     PredicateEvidence,
@@ -37,9 +38,7 @@ class EvidenceProvider(Protocol):
 class PredicateEvaluator:
     providers: tuple[EvidenceProvider, ...] = field(default_factory=lambda: _providers())
 
-    def evaluate(
-        self, expression: CriterionExpr, context: PredicateEvidenceContext
-    ) -> CriterionEvaluation:
+    def evaluate(self, expression: CriterionExpr, context: PredicateEvidenceContext) -> CriterionEvaluation:
         if isinstance(expression, PredicateExpr):
             return self._predicate(expression, context)
         if isinstance(expression, OpenSemanticCriterion):
@@ -65,37 +64,25 @@ class PredicateEvaluator:
             return _composite(expression.criterion_id, status, children, "any_of")
         raise TypeError(f"unsupported criterion expression: {type(expression).__name__}")
 
-    def _predicate(
-        self, predicate: PredicateExpr, context: PredicateEvidenceContext
-    ) -> CriterionEvaluation:
+    def _predicate(self, predicate: PredicateExpr, context: PredicateEvidenceContext) -> CriterionEvaluation:
         if predicate.operator not in MECHANICAL_BASELINE_OPERATORS:
             return CriterionEvaluation(
                 predicate.criterion_id,
                 CriterionStatus.UNSUPPORTED,
                 reason_code="registered_operator_has_no_mechanical_coverage",
             )
-        provided = tuple(
-            item
-            for provider in self.providers
-            for item in provider.evidence_for(predicate, context)
-        )
+        provided = tuple(item for provider in self.providers for item in provider.evidence_for(predicate, context))
         causal = tuple(
             item
             for item in context.evidence
             if predicate.policy.satisfaction == SatisfactionMode.ACTION_CAUSED
             and predicate.criterion_id in item.effect_criterion_ids
         )
-        evidence = tuple(
-            {item.evidence_ref: item for item in (*provided, *causal)}.values()
-        )
+        evidence = tuple({item.evidence_ref: item for item in (*provided, *causal)}.values())
         allowed = tuple(item for item in evidence if _admitted(item, predicate, context))
         if any(item.conflict for item in evidence) or _material_value_conflict(allowed):
             return _evaluation(predicate, CriterionStatus.CONFLICT, allowed, "material_evidence_conflict")
-        stale = tuple(
-            item
-            for item in evidence
-            if _is_stale_current_evidence(item, predicate, context)
-        )
+        stale = tuple(item for item in evidence if _is_stale_current_evidence(item, predicate, context))
         if not allowed:
             return _evaluation(
                 predicate,
@@ -122,7 +109,23 @@ def _admitted(
     predicate: PredicateExpr,
     context: PredicateEvidenceContext,
 ) -> bool:
-    policy = predicate.policy
+    return evidence_admitted_by_policy(
+        evidence,
+        predicate.policy,
+        context,
+        criterion_id=predicate.criterion_id,
+    )
+
+
+def evidence_admitted_by_policy(
+    evidence: PredicateEvidence,
+    policy: CriterionPolicy,
+    context: PredicateEvidenceContext,
+    *,
+    criterion_id: str,
+) -> bool:
+    """Shared evidence-policy gate for predicate and task-success evaluation."""
+
     if policy.allowed_source_kinds and evidence.source_kind not in policy.allowed_source_kinds:
         return False
     assurance_rank = {
@@ -147,8 +150,7 @@ def _admitted(
             return False
         versions = dict(context.current_resource_versions)
         if evidence.subject_ref in versions and (
-            not evidence.resource_version
-            or evidence.resource_version != versions[evidence.subject_ref]
+            not evidence.resource_version or evidence.resource_version != versions[evidence.subject_ref]
         ):
             return False
     if policy.satisfaction == SatisfactionMode.ACTION_CAUSED:
@@ -158,7 +160,7 @@ def _admitted(
             and evidence.receipt_ref
             and evidence.pre_observation_ref
             and evidence.post_observation_ref
-            and predicate.criterion_id in evidence.effect_criterion_ids
+            and criterion_id in evidence.effect_criterion_ids
             and evidence.post_observation_ref == context.current_observation_ref
         ):
             return False
@@ -180,12 +182,8 @@ def _is_stale_current_evidence(
         policy.validity == EvidenceValidityMode.CURRENT_OBSERVATION
         and evidence.observation_ref
         and evidence.observation_ref != context.current_observation_ref
-        and (
-            not policy.allowed_source_kinds
-            or evidence.source_kind in policy.allowed_source_kinds
-        )
-        and assurance_rank[evidence.assurance]
-        >= assurance_rank[policy.minimum_assurance]
+        and (not policy.allowed_source_kinds or evidence.source_kind in policy.allowed_source_kinds)
+        and assurance_rank[evidence.assurance] >= assurance_rank[policy.minimum_assurance]
     )
 
 
@@ -231,13 +229,9 @@ def _evaluation(
         status,
         observed_value=tuple(item.observed_value for item in evidence),
         evidence_refs=tuple(dict.fromkeys(item.evidence_ref for item in evidence)),
-        evaluated_at_observation_ref=(
-            evidence[0].observation_ref if evidence else ""
-        ),
+        evaluated_at_observation_ref=(evidence[0].observation_ref if evidence else ""),
         reason_code=reason,
-        authoritative_final_recheck=any(
-            item.authoritative_final_recheck for item in evidence
-        ),
+        authoritative_final_recheck=any(item.authoritative_final_recheck for item in evidence),
     )
 
 
@@ -251,9 +245,7 @@ def _composite(
         criterion_id,
         status,
         observed_value=tuple((item.criterion_id, item.status.value) for item in children),
-        evidence_refs=tuple(
-            dict.fromkeys(ref for item in children for ref in item.evidence_refs)
-        ),
+        evidence_refs=tuple(dict.fromkeys(ref for item in children for ref in item.evidence_refs)),
         reason_code=f"composite_{operator}",
     )
 

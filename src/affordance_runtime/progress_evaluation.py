@@ -72,34 +72,28 @@ class ProgressEvaluationService:
         if task_spec is None:
             return None
         typed_task_spec = cast(Any, task_spec)
-        admitted = admit_completion_evidence(observation=observation, report=report)
+        admitted = admit_completion_evidence(
+            task_spec=typed_task_spec,
+            observation=observation,
+            report=report,
+        )
         retained = getattr(state, "completion_criterion_evaluations", {})
         relevant_ids = TaskCompletionEvaluator.criterion_ids(typed_task_spec)
         final_recheck_ids = frozenset(typed_task_spec.final_recheck_criterion_ids)
         for evaluation in admitted:
-            if (
-                evaluation.criterion_id in relevant_ids
-                and evaluation.criterion_id not in final_recheck_ids
-            ):
+            if evaluation.criterion_id in relevant_ids and evaluation.criterion_id not in final_recheck_ids:
                 retained[evaluation.criterion_id] = evaluation
         current_index = {item.criterion_id: item for item in admitted}
         criterion_results = tuple(
-            current_index.get(criterion_id, evaluation)
-            for criterion_id, evaluation in retained.items()
-        ) + tuple(
-            evaluation
-            for criterion_id, evaluation in current_index.items()
-            if criterion_id not in retained
-        )
+            current_index.get(criterion_id, evaluation) for criterion_id, evaluation in retained.items()
+        ) + tuple(evaluation for criterion_id, evaluation in current_index.items() if criterion_id not in retained)
         return TaskCompletionEvaluator().evaluate(
             task_spec=typed_task_spec,
             criterion_results=criterion_results,
             result_payload=result,
             output_source_bindings=output_source_bindings(observation),
             uncertain_external_effects=tuple(
-                str(item)
-                for item in getattr(state, "uncertain_external_effects", ())
-                if str(item)
+                str(item) for item in getattr(state, "uncertain_external_effects", ()) if str(item)
             ),
         )
 
@@ -118,9 +112,7 @@ class ProgressEvaluationService:
                 "missing_required_outputs": list(evaluation.missing_required_outputs),
                 "missing_rechecks": list(evaluation.missing_rechecks),
                 "constraint_violations": list(evaluation.constraint_violations),
-                "uncertain_external_effects": list(
-                    evaluation.uncertain_external_effects
-                ),
+                "uncertain_external_effects": list(evaluation.uncertain_external_effects),
             },
         )
 
@@ -137,25 +129,13 @@ class ProgressEvaluationService:
         liveness_decision: str,
     ) -> PostActionEvaluation:
         criterion_ids = tuple(
-            dict.fromkeys(
-                criterion_id
-                for evidence in report.evidence
-                for criterion_id in evidence.criterion_ids
-            )
+            dict.fromkeys(criterion_id for evidence in report.evidence for criterion_id in evidence.criterion_ids)
         )
         requirement_ids = tuple(
-            dict.fromkeys(
-                requirement_id
-                for evidence in report.evidence
-                for requirement_id in evidence.requirement_ids
-            )
+            dict.fromkeys(requirement_id for evidence in report.evidence for requirement_id in evidence.requirement_ids)
         )
         evidence_refs = tuple(
-            dict.fromkeys(
-                evidence.evidence_id
-                for evidence in report.evidence
-                if evidence.evidence_id
-            )
+            dict.fromkeys(evidence.evidence_id for evidence in report.evidence if evidence.evidence_id)
         )
         evaluation = PostActionEvaluation(
             contract_id=contract_id,
@@ -210,18 +190,10 @@ class ProgressEvaluationService:
             message=report.reason or RuntimeErrorCode.VERIFICATION_FAILED.value,
             state_version=state.version,
             task_revision=(
-                plan.task_revision
-                if plan is not None
-                else task_spec.revision
-                if task_spec is not None
-                else 1
+                plan.task_revision if plan is not None else task_spec.revision if task_spec is not None else 1
             ),
             plan_version=plan.plan_version if plan is not None else 0,
-            active_step_id=(
-                state.task_progress.active_step_id
-                if state.task_progress is not None
-                else ""
-            ),
+            active_step_id=(state.task_progress.active_step_id if state.task_progress is not None else ""),
             observation_epoch_id=state.current_snapshot_id,
             snapshot_id=state.current_snapshot_id,
             contract=action.contract,
@@ -229,14 +201,8 @@ class ProgressEvaluationService:
             expected_effect=action.contract.intent,
             evidence_refs=((verification_ref.path,) if verification_ref else ()),
             verification_ref=verification_ref.path if verification_ref else "",
-            attempted_strategy_ids=tuple(
-                sorted(state.attempted_recovery_strategy_ids)
-            ),
-            rejected_assumptions=(
-                (state.current_disproved_assumption,)
-                if state.current_disproved_assumption
-                else ()
-            ),
+            attempted_strategy_ids=tuple(sorted(state.attempted_recovery_strategy_ids)),
+            rejected_assumptions=((state.current_disproved_assumption,) if state.current_disproved_assumption else ()),
             remaining_budgets=remaining_budgets,
             progress_fingerprint=semantic_progress_fingerprint(state),
         )

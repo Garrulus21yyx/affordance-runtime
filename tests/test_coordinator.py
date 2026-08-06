@@ -54,7 +54,7 @@ from affordance_runtime.planning_contracts import (
     PlannerUnsupportedResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RunRequest, RuntimeStep, legacy_run_request
 from affordance_runtime.simplified_runtime_contracts import (
     CriterionEvidencePolicy,
     ElementIntent,
@@ -125,7 +125,10 @@ def _snapshot(
         metadata={
             "saved": saved,
             "criterion_evaluations": {
-                "criterion:task-success": ("satisfied" if saved and sequence >= 3 else "unsatisfied")
+                "criterion:task-success": {
+                    "status": "satisfied" if saved and sequence >= 3 else "unsatisfied",
+                    "evidence_refs": [f"observation:{snapshot_id}:task-success"],
+                }
             },
         },
     )
@@ -815,8 +818,14 @@ def _current_state_read_only_snapshot(
         metadata={
             "text_changed": text_changed,
             "criterion_evaluations": {
-                "criterion:submit-available": "satisfied",
-                "criterion:text-changed": ("satisfied" if text_changed else "unsatisfied"),
+                "criterion:submit-available": {
+                    "status": "satisfied",
+                    "evidence_refs": [f"observation:{snapshot_id}:submit-available"],
+                },
+                "criterion:text-changed": {
+                    "status": "satisfied" if text_changed else "unsatisfied",
+                    "evidence_refs": [f"observation:{snapshot_id}:text-changed"],
+                },
             },
         },
     )
@@ -878,7 +887,7 @@ def test_coordinator_prechecks_initial_already_satisfied_step_before_planning() 
         observer=CurrentStateReadOnlyObserver(),
         executor=FakeExecutor(),
         task_planner=InitialAlreadySatisfiedTaskPlanner(),
-    ).run_sync(RunRequest(task_spec=_current_state_availability_task()))
+    ).run_sync(legacy_run_request(task_spec=_current_state_availability_task()))
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_plan is None
@@ -1131,7 +1140,7 @@ def test_replan_uses_verified_evidence_and_preserves_progress_across_versions() 
         executor=FakeExecutor(),
         contract_builder=EvidenceAwareContractBuilder(),
         task_planner=task_planner,
-    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_plan is not None
@@ -1289,7 +1298,7 @@ def _semantic_task() -> TaskSpec:
 
 def _semantic_envelope(task_id: str = "semantic-run") -> RunRequest:
     task = _semantic_task().model_copy(update={"task_id": task_id})
-    return RunRequest(task_spec=task, capabilities=["settings.write"])
+    return legacy_run_request(task_spec=task, capabilities=["settings.write"])
 
 
 def _activate_first(
@@ -1357,7 +1366,7 @@ def test_coordinator_awaits_semantic_planner_and_builds_contract() -> None:
                 }
             ),
             task_planner=SingleStageTaskPlanner(),
-        ).run(RunRequest(task_spec=task, capabilities=["settings.write"]))
+        ).run(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
     )
 
     assert result.status == RuntimeStep.DONE
@@ -1432,7 +1441,7 @@ def test_progress_guard_blocks_already_verified_semantic_action() -> None:
         observer=StableSavedObserver(saved=True),
         executor=executor,
         contract_builder=_semantic_guard_builder(),
-    ).run_sync(RunRequest(task_spec=_semantic_task(), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
     assert result.status != RuntimeStep.DONE
     assert executor.calls == 1
@@ -1449,7 +1458,7 @@ def test_failed_effect_is_not_repeated_without_a_validated_recovery_delta(tmp_pa
         executor=executor,
         contract_builder=_semantic_guard_builder(),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-    ).run_sync(RunRequest(task_spec=_semantic_task(), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_semantic_task(), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.ABORTED
     assert result.error_code == RuntimeErrorCode.PRECONDITION_FAILED
@@ -1560,7 +1569,10 @@ class _PipelineObserver(FakeObserver):
         snapshot = super().capture()
         metadata = dict(snapshot.observation.metadata)
         metadata["criterion_evaluations"] = {
-            "criterion:task-success": ("satisfied" if metadata.get("saved") is True else "unsatisfied")
+            "criterion:task-success": {
+                "status": "satisfied" if metadata.get("saved") is True else "unsatisfied",
+                "evidence_refs": [f"observation:{snapshot.observation.snapshot_id}:task-success"],
+            }
         }
         return replace(
             snapshot,

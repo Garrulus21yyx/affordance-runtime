@@ -65,7 +65,10 @@ class MultiStageObserver:
                 "discovered": self.world.discovered,
                 "confirmed": self.world.confirmed,
                 "criterion_evaluations": {
-                    "criterion:confirmed": ("satisfied" if self.world.confirmed else "unsatisfied")
+                    "criterion:confirmed": {
+                        "status": "satisfied" if self.world.confirmed else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:confirmed"],
+                    }
                 },
             },
         )

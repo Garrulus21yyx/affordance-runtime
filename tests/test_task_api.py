@@ -149,7 +149,7 @@ def test_task_adapter_async_execution_keeps_event_loop_interface() -> None:
     assert value["status"] == "success"
 
 
-def _admitted_task(revision: int, *, objective: str = "Update settings"):
+def _admitted_task(revision: int, *, objective: str = "Update settings", previous=None):
     request = UserRequest(request_id="request-clarify", raw_text=objective)
     envelope = SourceEnvelopeBuilder().build(request)
     result = TaskSpecAuthority().admit(
@@ -174,6 +174,7 @@ def _admitted_task(revision: int, *, objective: str = "Update settings"):
         ),
         revision=revision,
         task_id="clarify-run",
+        previous_admitted_task=previous,
     )
     assert result.task_spec is not None
     return result
@@ -185,44 +186,35 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
             "waiting_clarification" if request.task_spec and request.task_spec.revision == 1 else "done"
         )
     )
-    adapter = TaskToolAdapter(service)
     initial = _admitted_task(1)
-    submitted = adapter.call(
-        "gui_submit_task",
-        {
-            "run_id": "clarify-run",
-            "scenario": "settings",
-            "goal": "Update settings",
-            "target": "settings",
-            "capabilities": ["settings.write"],
-            "task_spec": initial.task_spec.model_dump(mode="json"),
-            "task_spec_admission_receipt": initial.admission_receipt,
-        },
+    assert initial.admitted_task is not None
+    submitted = service.submit(
+        TaskRequest(
+            run_id="clarify-run",
+            scenario="settings",
+            goal="Update settings",
+            target="settings",
+            capabilities=["settings.write"],
+            admitted_task=initial.admitted_task,
+        )
     )
-    assert submitted["request"]["task_spec"]["revision"] == 1
-    assert adapter.call("gui_execute_task", {"run_id": "clarify-run"})["status"] == "waiting_clarification"
+    assert submitted.request.task_spec is not None
+    assert submitted.request.task_spec.revision == 1
+    assert service.execute("clarify-run").status == ServiceRunStatus.WAITING_CLARIFICATION
 
     with pytest.raises(ValueError, match="must increase"):
-        adapter.call(
-            "gui_revise_task",
-            {
-                "run_id": "clarify-run",
-                "task_spec": initial.task_spec.model_dump(mode="json"),
-                "task_spec_admission_receipt": initial.admission_receipt,
-            },
-        )
-    revised_admission = _admitted_task(2, objective="Update the personal settings profile")
-    revised = adapter.call(
-        "gui_revise_task",
-        {
-            "run_id": "clarify-run",
-            "task_spec": revised_admission.task_spec.model_dump(mode="json"),
-            "task_spec_admission_receipt": revised_admission.admission_receipt,
-        },
+        service.revise_task("clarify-run", initial.admitted_task)
+    revised_admission = _admitted_task(
+        2,
+        objective="Update the personal settings profile",
+        previous=initial.admitted_task,
     )
-    assert revised["status"] == "queued"
-    assert revised["request"]["task_spec"]["revision"] == 2
-    assert adapter.call("gui_execute_task", {"run_id": "clarify-run"})["status"] == "success"
+    assert revised_admission.admitted_task is not None
+    revised = service.revise_task("clarify-run", revised_admission.admitted_task)
+    assert revised.status == ServiceRunStatus.QUEUED
+    assert revised.request.task_spec is not None
+    assert revised.request.task_spec.revision == 2
+    assert service.execute("clarify-run").status == ServiceRunStatus.SUCCESS
 
 
 def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
@@ -232,20 +224,18 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
         scenario="settings",
         goal="Update settings",
         target="settings",
-        task_spec=admission.task_spec,
-        task_spec_admission_receipt=admission.admission_receipt,
+        admitted_task=admission.admitted_task,
     )
 
     assert request.capabilities == []
 
-    with pytest.raises(ValueError, match="TaskSpecAuthority admission receipt"):
+    with pytest.raises(TypeError):
         TaskRequest(
             run_id="clarify-run",
             scenario="settings",
             goal="Update settings",
             target="settings",
-            task_spec=admission.task_spec.model_dump(mode="json"),
-            task_spec_admission_receipt=admission.task_spec.identity,
+            task_spec=admission.task_spec,  # type: ignore[call-arg]
         )
 
     with pytest.raises(ValueError, match="grants exceed"):
@@ -255,6 +245,22 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
             goal="Update settings",
             target="settings",
             capabilities=["admin.superuser"],
-            task_spec=admission.task_spec,
-            task_spec_admission_receipt=admission.admission_receipt,
+            admitted_task=admission.admitted_task,
+        )
+
+
+def test_json_tool_adapter_cannot_inject_a_canonical_taskspec() -> None:
+    admission = _admitted_task(1)
+    adapter = TaskToolAdapter(TaskRuntimeService(lambda request, approval: TaskExecution("done")))
+
+    with pytest.raises(TypeError):
+        adapter.call(
+            "gui_submit_task",
+            {
+                "run_id": "clarify-run",
+                "scenario": "settings",
+                "goal": "Update settings",
+                "target": "settings",
+                "task_spec": admission.task_spec.model_dump(mode="json"),
+            },
         )

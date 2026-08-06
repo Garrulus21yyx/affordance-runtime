@@ -88,7 +88,7 @@ from affordance_runtime.model_port import (
 from affordance_runtime.perception import GenericPerceptionOrchestrator
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -379,7 +379,7 @@ def test_browsergym_policy_planner_projects_request_without_changing_policy_requ
     )
 
     planning_request = PlanningRequestBuilder().build(
-        RunRequest(task_spec=task),
+        legacy_run_request(task_spec=task),
         state,
         canonical_observation(BrowserSnapshot(observation, model)),
     )

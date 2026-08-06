@@ -89,6 +89,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -133,7 +134,12 @@ class _SurfaceWorld:
             metadata={
                 "saved": self.saved,
                 "viewport_size": [640, 480],
-                "criterion_evaluations": {"criterion:surface-saved": ("satisfied" if self.saved else "unsatisfied")},
+                "criterion_evaluations": {
+                    "criterion:surface-saved": {
+                        "status": "satisfied" if self.saved else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:surface-saved"],
+                    }
+                },
             },
             artifact_refs=[f"fixture:{self.surface.value}:{self.sequence}"],
         )
@@ -379,8 +385,14 @@ class _DisclosureWorld:
                 "expanded": self.expanded,
                 "submitted": self.submitted,
                 "criterion_evaluations": {
-                    "criterion:disclosure-expanded": ("satisfied" if self.expanded else "unsatisfied"),
-                    "criterion:provider-recovered": ("satisfied" if self.provider_recovered else "unsatisfied"),
+                    "criterion:disclosure-expanded": {
+                        "status": "satisfied" if self.expanded else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:disclosure-expanded"],
+                    },
+                    "criterion:provider-recovered": {
+                        "status": "satisfied" if self.provider_recovered else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:provider-recovered"],
+                    },
                 },
             },
         )
@@ -730,7 +742,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
             }
         ),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
     _write_case_manifest(output_dir, result, revision)
     return _ExecutedCase(
         result,
@@ -788,7 +800,7 @@ def _run_compatibility_pair(
                 }
             ),
             artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-        ).run_sync(RunRequest(task_spec=task))
+        ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
         _write_case_manifest(output_dir, result, revision)
         task_success = result.status == RuntimeStep.DONE and world.expanded
         outcomes.append(
@@ -830,7 +842,7 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         executor=world,
         recovery_owner_dispatcher=RecoveryOwnerDispatcher({RecoveryKind.SWITCH_PROVIDER: owner}),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
     _write_case_manifest(output_dir, result, revision)
     recovery_success = any(
         node.kind == "RecoveryOutcomeRecorded" and bool(node.payload.get("outcome", {}).get("success"))

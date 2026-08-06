@@ -20,7 +20,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
@@ -210,7 +210,7 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
                 )
             }
         ),
-    ).run_sync(RunRequest(task_spec=task, capabilities=["device.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["device.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert world.power is True

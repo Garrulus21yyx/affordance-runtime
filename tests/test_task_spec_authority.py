@@ -7,6 +7,7 @@ from affordance_runtime.material_contracts import (
     MaterialEffectKind,
     MaterialField,
 )
+from affordance_runtime.runtime import RunRequest
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder, SourceKind
 from affordance_runtime.task_intake import (
     CompilationStatus,
@@ -21,6 +22,7 @@ from affordance_runtime.task_intake import (
     UserRequest,
 )
 from affordance_runtime.task_spec_authority import (
+    AdmittedTaskSpec,
     MinimalIntentProposal,
     TaskSpecAuthority,
 )
@@ -232,8 +234,38 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
     assert not hasattr(result.task_spec, "source_claims")
     assert not hasattr(result.task_spec, "obligations")
     assert result.task_spec.requirements[0].requirement_id == "requirement:effect:1"
-    assert result.admission_receipt.startswith("task-admission:v1:")
-    assert result.admission_receipt != result.task_spec.identity
+    assert result.admitted_task is not None
+    assert result.admitted_task.task_spec is result.task_spec
+    assert result.admitted_task.admission_id.startswith("task-admission:v2:")
+
+    with pytest.raises(TypeError):
+        RunRequest(task_spec=result.task_spec)  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="only be issued"):
+        AdmittedTaskSpec(result.task_spec, "forged", envelope.identity)
+
+
+def test_admitted_task_capability_is_not_evicted_by_unrelated_admissions() -> None:
+    request, envelope = _request_and_envelope()
+    proposal = MinimalIntentProposal(
+        objective="Open account settings",
+        requested_effects=(
+            RequestedEffect(
+                operation_class=OperationClass.NAVIGATION,
+                target="account settings",
+                source_ref=envelope.whole_request_anchor.anchor_id,
+            ),
+        ),
+        success=_success("requirement:effect:1"),
+    )
+    authority = TaskSpecAuthority()
+    first = authority.admit(request, envelope, proposal)
+    assert first.admitted_task is not None
+
+    for _ in range(1_025):
+        assert authority.admit(request, envelope, proposal).admitted_task is not None
+
+    runtime_request = RunRequest(admitted_task=first.admitted_task)
+    assert runtime_request.task_spec is first.task_spec
 
 
 def test_authority_clarifies_success_leaf_with_unadmitted_requirement_ref() -> None:

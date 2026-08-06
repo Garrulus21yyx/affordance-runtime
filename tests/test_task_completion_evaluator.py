@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+from affordance_runtime.contracts import Observation
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskRequirement,
@@ -11,13 +14,19 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
     CriterionEvaluation,
+    CriterionPolicy,
     CriterionStatus,
+    EvidenceValidityMode,
     OutputSpec,
+    SatisfactionMode,
     SuccessExpression,
     TaskCompletionEvaluation,
+    criterion_policy_digest,
 )
 from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
+from affordance_runtime.verification_report_adapter import admit_completion_evidence
 
 
 def _leaf(criterion_id: str) -> SuccessExpression:
@@ -26,6 +35,24 @@ def _leaf(criterion_id: str) -> SuccessExpression:
         operator="criterion",
         criterion_id=criterion_id,
         requirement_refs=("requirement:effect:1",),
+    )
+
+
+def _bind_success_evaluations(
+    task: TaskSpec,
+    evaluations: tuple[CriterionEvaluation, ...],
+) -> tuple[CriterionEvaluation, ...]:
+    policies = {child.criterion_id: child.policy for child in task.success.children if child.operator == "criterion"}
+    if task.success.operator == "criterion":
+        policies[task.success.criterion_id] = task.success.policy
+    return tuple(
+        replace(
+            evaluation,
+            policy_digest=criterion_policy_digest(evaluation.criterion_id, policies[evaluation.criterion_id]),
+        )
+        if evaluation.criterion_id in policies and policies[evaluation.criterion_id] is not None
+        else evaluation
+        for evaluation in evaluations
     )
 
 
@@ -232,7 +259,7 @@ def test_task_completion_requires_full_typed_closure(
 
     evaluation = TaskCompletionEvaluator().evaluate(
         task_spec=task,
-        criterion_results=criterion_results,
+        criterion_results=_bind_success_evaluations(task, criterion_results),
         result_payload=result_payload,
         output_source_bindings=source_bindings,
         uncertain_external_effects=uncertain,
@@ -269,3 +296,81 @@ def test_high_risk_completion_requires_declared_effect_and_authoritative_recheck
     assert evaluation.status == CriterionStatus.UNKNOWN
     assert evaluation.uncertain_external_effects == ("task_spec:external_effect_evaluation_required",)
     assert evaluation.missing_rechecks == ("task_spec:authoritative_final_recheck_required",)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    (
+        CriterionPolicy(
+            satisfaction=SatisfactionMode.ACTION_CAUSED,
+            causal_lineage_required=True,
+        ),
+        CriterionPolicy(validity=EvidenceValidityMode.FINAL_RECHECK),
+        CriterionPolicy(minimum_assurance=AssuranceLevel.AUTHORITATIVE),
+    ),
+)
+def test_success_policy_rejects_unbound_satisfied_observation(policy: CriterionPolicy) -> None:
+    task = TaskSpec(
+        task_id="task:policy-bound",
+        revision=1,
+        objective="perform policy-bound effect",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=canonical_effect_requirements(
+            ("settings",), OperationClass.REVERSIBLE_WRITE, "request:policy", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
+        success=SuccessExpression(
+            expression_id="success:policy-bound",
+            operator="criterion",
+            criterion_id="criterion:policy-bound",
+            requirement_refs=("requirement:effect:1",),
+            policy=policy,
+        ),
+        source_request_ref="request:policy",
+    )
+    observation = Observation(
+        "revision:1",
+        snapshot_id="snapshot:1",
+        metadata={
+            "criterion_evaluations": {
+                "criterion:policy-bound": {
+                    "status": "satisfied",
+                    "evidence_refs": ["evidence:unbound"],
+                    "source_kind": "dom_state",
+                    "assurance": "structural",
+                }
+            }
+        },
+    )
+
+    admitted = admit_completion_evidence(task_spec=task, observation=observation)
+    evaluation = TaskCompletionEvaluator().evaluate(
+        task_spec=task,
+        criterion_results=admitted,
+        result_payload={},
+    )
+
+    assert evaluation.status == CriterionStatus.UNKNOWN
+
+
+def test_same_id_satisfied_result_without_policy_binding_is_unknown() -> None:
+    task = TaskSpec(
+        task_id="task:unbound-result",
+        revision=1,
+        objective="save",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=canonical_effect_requirements(
+            ("settings",), OperationClass.REVERSIBLE_WRITE, "request:unbound", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
+        success=_leaf("criterion:saved"),
+        source_request_ref="request:unbound",
+    )
+
+    evaluation = TaskCompletionEvaluator().evaluate(
+        task_spec=task,
+        criterion_results=(CriterionEvaluation("criterion:saved", CriterionStatus.SATISFIED),),
+        result_payload={},
+    )
+
+    assert evaluation.status == CriterionStatus.UNKNOWN

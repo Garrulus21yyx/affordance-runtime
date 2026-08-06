@@ -21,7 +21,7 @@ from affordance_runtime.conformance import (
 from affordance_runtime.contracts import ACTION_CONTRACT_SCHEMA_VERSION, Observation
 from affordance_runtime.fixtures import LOCAL_SAAS_FIXTURE_VERSION, create_fixture_server
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -128,7 +128,7 @@ def test_conformance_planner_preserves_shared_contract_envelope() -> None:
         state.transition("planning")
         snapshot = BrowserSnapshot(observation, model)
         request = PlanningRequestBuilder().build(
-            RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
+            legacy_run_request(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
             state,
             canonical_observation(snapshot),
         )
@@ -183,7 +183,7 @@ def test_conformance_planner_consumes_canonical_request() -> None:
 
     snapshot = BrowserSnapshot(observation, model)
     request = PlanningRequestBuilder().build(
-        RunRequest(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
+        legacy_run_request(task_spec=task, capabilities=[CONFORMANCE_CAPABILITY]),
         state,
         canonical_observation(snapshot),
     )

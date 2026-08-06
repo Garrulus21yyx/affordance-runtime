@@ -24,7 +24,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
@@ -62,7 +62,16 @@ class TimeoutObserver:
             target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
             metadata={
                 "saved": self.world.saved,
-                "criterion_evaluations": ({"criterion:saved": "satisfied"} if self.world.saved else {}),
+                "criterion_evaluations": (
+                    {
+                        "criterion:saved": {
+                            "status": "satisfied",
+                            "evidence_refs": [f"observation:{snapshot_id}:saved"],
+                        }
+                    }
+                    if self.world.saved
+                    else {}
+                ),
             },
         )
         return BrowserSnapshot(observation, model)
@@ -149,7 +158,7 @@ def test_timeout_after_dispatch_inspects_state_and_never_blindly_duplicates_effe
             }
         ),
     ).run_sync(
-        RunRequest(
+        legacy_run_request(
             task_spec=TaskSpec(
                 task_id="uncertain-effect",
                 revision=1,

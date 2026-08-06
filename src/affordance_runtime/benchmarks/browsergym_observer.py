@@ -11,6 +11,7 @@ from typing import Any, Sequence
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
     BROWSERGYM_SUCCESS_CRITERION_ID,
+    BrowserGymBenchmarkRuntimeProfile,
     BrowserGymEpisodeState,
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
@@ -33,6 +34,7 @@ class BrowserGymObserver:
     screenshot_dir: Path
     perception_requirements: PerceptionRequirements | None = None
     task_terms: tuple[str, ...] = ()
+    benchmark_runtime_profile: BrowserGymBenchmarkRuntimeProfile | None = None
     sequence: int = 0
     lease_ttl_ms: int = 120_000
     max_capture_attempts: int = 2
@@ -103,27 +105,33 @@ class BrowserGymObserver:
                 "capture_attempt": capture_attempt,
                 "capture_mode": capture_mode,
             },
-            "criterion_evaluations": {
-                **(
-                    snapshot.observation.metadata.get("criterion_evaluations", {})
-                    if isinstance(
-                        snapshot.observation.metadata.get("criterion_evaluations"),
-                        dict,
-                    )
-                    else {}
-                ),
+            # Official reward is benchmark scoring evidence, never Runtime
+            # TaskSpec completion evidence.
+            "benchmark_evaluations": {
                 BROWSERGYM_SUCCESS_CRITERION_ID: {
-                    "status": (
-                        "satisfied"
-                        if self.episode.terminated and self.episode.reward > 0
-                        else "unsatisfied"
-                    ),
+                    "status": ("satisfied" if self.episode.terminated and self.episode.reward > 0 else "unsatisfied"),
                     "provider": "external_evaluator",
-                    "evidence_refs": [
-                        f"browsergym:official-grade:{self.episode.task_id}"
-                    ],
+                    "evidence_refs": [f"browsergym:official-grade:{self.episode.task_id}"],
                 },
             },
+            **(
+                {
+                    "criterion_evaluations": {
+                        criterion_id: {
+                            "status": (
+                                "satisfied" if self.episode.terminated and self.episode.reward > 0 else "unsatisfied"
+                            ),
+                            "provider": "external_evaluator",
+                            "source_kind": "api_state",
+                            "assurance": "authoritative",
+                            "evidence_refs": [f"browsergym:official-grade:{self.episode.task_id}"],
+                        }
+                        for criterion_id in self.benchmark_runtime_profile.success_criterion_ids
+                    }
+                }
+                if self.benchmark_runtime_profile is not None
+                else {}
+            ),
         }
         observation = replace(snapshot.observation, metadata=metadata)
         return replace(snapshot, observation=observation)
@@ -135,9 +143,7 @@ class BrowserGymObserver:
         ]
         boxes = self.session.bounding_boxes_for_selectors(
             {
-                str(item.locator.get("backend_handle") or ""): str(
-                    item.locator.get("selector") or ""
-                )
+                str(item.locator.get("backend_handle") or ""): str(item.locator.get("selector") or "")
                 for item in gesture_affordances
                 if item.locator.get("backend_handle") and item.locator.get("selector")
             }
@@ -145,8 +151,7 @@ class BrowserGymObserver:
         if not boxes:
             return snapshot
         sortable_position = {
-            item.id: (index, len(drag_affordances))
-            for index, item in enumerate(drag_affordances, start=1)
+            item.id: (index, len(drag_affordances)) for index, item in enumerate(drag_affordances, start=1)
         }
         areas = {
             item.id: boxes[str(item.locator.get("backend_handle") or "")][2]
@@ -183,9 +188,7 @@ class BrowserGymObserver:
             if box is None:
                 affordances.append(item)
                 continue
-            fingerprint = "sha256:" + hashlib.sha256(
-                f"{item.target_fingerprint}\0{box}".encode("utf-8")
-            ).hexdigest()
+            fingerprint = "sha256:" + hashlib.sha256(f"{item.target_fingerprint}\0{box}".encode("utf-8")).hexdigest()
             affordances.append(
                 replace(
                     item,
@@ -193,11 +196,7 @@ class BrowserGymObserver:
                         **item.locator,
                         "bbox": list(box),
                         "coordinate_space": "viewport_pixels",
-                        **(
-                            {"relation_geometry": "relative_size"}
-                            if relative_sizes.get(item.id)
-                            else {}
-                        ),
+                        **({"relation_geometry": "relative_size"} if relative_sizes.get(item.id) else {}),
                         **(
                             {
                                 "sortable_index": sortable_position[item.id][0],
@@ -217,11 +216,7 @@ class BrowserGymObserver:
                             if item.id in sortable_position
                             else {}
                         ),
-                        **(
-                            {"relative_size": relative_sizes[item.id]}
-                            if relative_sizes.get(item.id)
-                            else {}
-                        ),
+                        **({"relative_size": relative_sizes[item.id]} if relative_sizes.get(item.id) else {}),
                         **({"inside_largest": True} if item.id in inside_largest else {}),
                     },
                     lease=replace(item.lease, target_fingerprint=fingerprint),
@@ -251,9 +246,7 @@ def visual_fallback_affordance(snapshot: BrowserSnapshot) -> Affordance | None:
         screenshot_digest = "artifact-unavailable"
     fingerprint = (
         "sha256:"
-        + hashlib.sha256(
-            f"{snapshot.observation.page_revision}\0{screenshot_digest}".encode("utf-8")
-        ).hexdigest()
+        + hashlib.sha256(f"{snapshot.observation.page_revision}\0{screenshot_digest}".encode("utf-8")).hexdigest()
     )
     return Affordance(
         id="visual_current_screenshot",

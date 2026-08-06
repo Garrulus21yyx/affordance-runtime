@@ -34,7 +34,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.source_assertions import SourceAssertionArbiter
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -255,7 +255,10 @@ def _resolved_snapshot(sequence: int) -> BrowserSnapshot:
             snapshot.observation,
             metadata={
                 "criterion_evaluations": {
-                    "criterion:effect-present": "satisfied",
+                    "criterion:effect-present": {
+                        "status": "satisfied",
+                        "evidence_refs": [f"observation:{snapshot.observation.snapshot_id}:effect-present"],
+                    },
                 }
             },
         ),
@@ -266,9 +269,11 @@ def _resolved_snapshot(sequence: int) -> BrowserSnapshot:
 
 class ResolvingConflictObserver:
     targeted_captures = 0
+    captures = 0
 
     def capture(self) -> BrowserSnapshot:
-        return _snapshot(1, conflict=True)
+        self.captures += 1
+        return _snapshot(self.captures, conflict=True)
 
     def capture_targeted(self, requests: object) -> BrowserSnapshot:
         assert isinstance(requests, tuple) and len(requests) == 1
@@ -343,7 +348,7 @@ def test_coordinator_rejects_visual_probe_without_model_or_cost_authority() -> N
         observer=observer,
         executor=RecordingExecutor(),
     ).run_sync(
-        RunRequest(
+        legacy_run_request(
             task_spec=_task().model_copy(
                 update={
                     "task_id": "zero-budget",
@@ -370,7 +375,7 @@ def test_targeted_probe_resolves_injected_conflict_in_a_new_epoch() -> None:
         observer=observer,
         executor=RecordingExecutor(),
     ).run_sync(
-        RunRequest(
+        legacy_run_request(
             task_spec=_task().model_copy(
                 update={
                     "task_id": "resolve-conflict",
@@ -402,7 +407,7 @@ def test_material_conflict_surviving_probe_blocks_effectful_execution() -> None:
         executor=executor,
         contract_builder=_contract_builder(verify_effect=True),
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(RunRequest(task_spec=_task()))
+    ).run_sync(legacy_run_request(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.ABORTED
@@ -446,7 +451,7 @@ def test_inconclusive_verification_probes_fresh_evidence_without_repeating_effec
         executor=executor,
         contract_builder=_contract_builder(),
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(RunRequest(task_spec=_task()))
+    ).run_sync(legacy_run_request(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.ABORTED
@@ -476,7 +481,10 @@ class RecoveryInspectionObserver:
                     metadata={
                         "effect_present": True,
                         "criterion_evaluations": {
-                            "criterion:effect-present": "satisfied",
+                            "criterion:effect-present": {
+                                "status": "satisfied",
+                                "evidence_refs": [f"observation:{snapshot.observation.snapshot_id}:effect-present"],
+                            },
                         },
                     },
                 ),
@@ -491,7 +499,10 @@ class RecoveryInspectionObserver:
             snapshot,
             observation=replace(
                 snapshot.observation,
-                metadata={"effect_present": True},
+                metadata={
+                    **snapshot.observation.metadata,
+                    "effect_present": True,
+                },
             ),
         )
 
@@ -531,7 +542,7 @@ def test_recovery_post_state_inspection_uses_same_probe_controller_before_any_re
         executor=executor,
         contract_builder=_contract_builder(verify_effect=True),
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(RunRequest(task_spec=_task()))
+    ).run_sync(legacy_run_request(task_spec=_task()))
 
     events = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE

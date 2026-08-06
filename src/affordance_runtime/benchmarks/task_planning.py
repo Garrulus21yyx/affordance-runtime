@@ -48,6 +48,7 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
 from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningRequest
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -96,7 +97,10 @@ class _StageEnvironment:
             metadata={
                 "stage": self.stage,
                 "criterion_evaluations": {
-                    f"criterion:stage-{self.stage}": "satisfied",
+                    f"criterion:stage-{self.stage}": {
+                        "status": "satisfied",
+                        "evidence_refs": [f"stage:{self.stage}:{snapshot_id}"],
+                    },
                 },
                 "predicate_evidence": {
                     "stage": {
@@ -312,7 +316,7 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         executor=environment,
         contract_builder=_StageContractBuilder(),
         task_planner=counting,
-    ).run_sync(RunRequest(task_spec=spec))
+    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(spec)))
     return TaskPlanningAblationRun(
         profile=profile,
         case_id=case_id,

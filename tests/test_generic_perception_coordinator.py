@@ -29,7 +29,7 @@ from affordance_runtime.planning_contracts import (
 )
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.route_calibration import RouteOutcomeStatus
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -239,7 +239,7 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         ),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
     )
-    result = coordinator.run_sync(RunRequest(task_spec=task))
+    result = coordinator.run_sync(legacy_run_request(task_spec=task))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
     assert result.result == {}
@@ -433,7 +433,7 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
             }
         ),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
-    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE, [(node.kind, node.payload) for node in result.trace.nodes]
     assert result.result == {}
@@ -534,7 +534,7 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
         executor=VisualExecutor(CanvasPointer(page)),
         artifacts=ArtifactStore(tmp_path / "artifacts"),
         budget=RunBudget(max_active_perception_observations=1),
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(legacy_run_request(task_spec=task))
 
     assert result.status == RuntimeStep.ABORTED
     assert result.result == {}

@@ -69,6 +69,7 @@ from affordance_runtime.task_skills import (
     TaskSkillPayload,
     TaskSkillTrigger,
 )
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -190,7 +191,10 @@ class _AblationObserver:
                 "saved": self.world.saved,
                 "viewport_size": [640, 480],
                 "criterion_evaluations": {
-                    "criterion:ablation-saved": ("satisfied" if self.world.saved else "unsatisfied")
+                    "criterion:ablation-saved": {
+                        "status": "satisfied" if self.world.saved else "unsatisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:ablation-saved"],
+                    }
                 },
             },
         )
@@ -445,7 +449,7 @@ def run_adaptive_routing_case(
         runtime_profile_digest=accepted_skill.profile_digest if accepted_skill is not None else "",
         loaded_profile_artifact_ids=(accepted_skill.artifact_ids if accepted_skill is not None else ()),
         artifacts=artifacts,
-    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task), capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
     route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]

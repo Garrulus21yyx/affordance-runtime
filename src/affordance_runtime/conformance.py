@@ -44,6 +44,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 CONFORMANCE_GOAL = "Enable one reversible shared state with independent oracle evidence."
@@ -244,23 +245,25 @@ def run_cross_surface_conformance(
         run_id = f"cross-surface-{surface}"
         artifact_store = ArtifactStore(output_dir / "runs")
         envelope = RunRequest(
-            task_spec=TaskSpec(
-                task_id=run_id,
-                revision=1,
-                objective=CONFORMANCE_GOAL,
-                operation_class=OperationClass.REVERSIBLE_WRITE,
-                requirements=canonical_effect_requirements(
-                    ("shared state",), OperationClass.REVERSIBLE_WRITE, "conformance", (CONFORMANCE_CAPABILITY,)
-                ),
-                allowed_effect_refs=canonical_effect_requirement_refs(("shared state",)),
-                success=SuccessExpression(
-                    expression_id="success:shared-state-enabled",
-                    operator="criterion",
-                    criterion_id="criterion:shared-state-enabled",
-                    requirement_refs=("requirement:effect:1",),
-                ),
-                capability_ceiling=(CONFORMANCE_CAPABILITY,),
-                source_request_ref="conformance",
+            admitted_task=admit_legacy_task_spec(
+                TaskSpec(
+                    task_id=run_id,
+                    revision=1,
+                    objective=CONFORMANCE_GOAL,
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    requirements=canonical_effect_requirements(
+                        ("shared state",), OperationClass.REVERSIBLE_WRITE, "conformance", (CONFORMANCE_CAPABILITY,)
+                    ),
+                    allowed_effect_refs=canonical_effect_requirement_refs(("shared state",)),
+                    success=SuccessExpression(
+                        expression_id="success:shared-state-enabled",
+                        operator="criterion",
+                        criterion_id="criterion:shared-state-enabled",
+                        requirement_refs=("requirement:effect:1",),
+                    ),
+                    capability_ceiling=(CONFORMANCE_CAPABILITY,),
+                    source_request_ref="conformance",
+                )
             ),
             capabilities=[CONFORMANCE_CAPABILITY],
         )

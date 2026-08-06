@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from dataclasses import dataclass, field
-from threading import RLock
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from affordance_runtime.material_binding_policy import MaterialBindingPolicy
 from affordance_runtime.material_contracts import MaterialBinding
@@ -57,12 +55,45 @@ class MinimalIntentProposal(StrictModel):
     task_structure: TaskStructure = TaskStructure.FLAT
 
 
+_ADMISSION_CAPABILITY = object()
+
+
+@dataclass(frozen=True, init=False)
+class AdmittedTaskSpec:
+    """In-process capability proving that Authority admitted this exact TaskSpec."""
+
+    task_spec: TaskSpec
+    admission_id: str
+    source_envelope_identity: str
+    previous_task_identity: str
+
+    def __init__(
+        self,
+        task_spec: TaskSpec,
+        admission_id: str,
+        source_envelope_identity: str,
+        previous_task_identity: str = "",
+        *,
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _ADMISSION_CAPABILITY:
+            raise TypeError("AdmittedTaskSpec can only be issued by TaskSpecAuthority")
+        if task_spec.source_envelope_ref != source_envelope_identity:
+            raise ValueError("admitted TaskSpec does not match its SourceEnvelope identity")
+        object.__setattr__(self, "task_spec", task_spec)
+        object.__setattr__(self, "admission_id", admission_id)
+        object.__setattr__(self, "source_envelope_identity", source_envelope_identity)
+        object.__setattr__(self, "previous_task_identity", previous_task_identity)
+
+
 class TaskSpecAdmissionResult(StrictModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+
     status: CompilationStatus
     request_id: str
     proposal: MinimalIntentProposal
     task_spec: TaskSpec | None = None
-    admission_receipt: str = ""
+    admitted_task: AdmittedTaskSpec | None = None
     issues: tuple[CompilationIssue, ...] = ()
 
     @property
@@ -87,7 +118,22 @@ class TaskSpecAuthority:
         *,
         revision: int = 1,
         task_id: str | None = None,
+        previous_admitted_task: AdmittedTaskSpec | None = None,
     ) -> TaskSpecAdmissionResult:
+        lineage_issue = _revision_lineage_issue(
+            request,
+            proposal,
+            revision=revision,
+            task_id=task_id,
+            previous_admitted_task=previous_admitted_task,
+        )
+        if lineage_issue is not None:
+            return TaskSpecAdmissionResult(
+                status=CompilationStatus.UNSUPPORTED,
+                request_id=request.request_id,
+                proposal=proposal,
+                issues=(lineage_issue,),
+            )
         issues = self._validate(request, envelope, proposal)
         blocking = tuple(
             ambiguity
@@ -213,12 +259,19 @@ class TaskSpecAuthority:
             source_binding_digest=self.material_binding_policy.binding_digest(envelope, proposal.material_bindings),
         )
         assert all(item.requirement_ref in requirement_ids for item in inputs)
+        admitted_task = _issue_admitted_task(
+            task_spec,
+            envelope.identity,
+            previous_task_identity=(
+                previous_admitted_task.task_spec.identity if previous_admitted_task is not None else ""
+            ),
+        )
         return TaskSpecAdmissionResult(
             status=CompilationStatus.READY,
             request_id=request.request_id,
             proposal=proposal,
             task_spec=task_spec,
-            admission_receipt=_issue_admission_receipt(task_spec.identity),
+            admitted_task=admitted_task,
         )
 
     def _validate(
@@ -460,24 +513,55 @@ def _canonical_binding_issues(
     return tuple(issues)
 
 
-_ADMISSION_RECEIPT_LIMIT = 1_024
-_ADMISSION_RECEIPTS: OrderedDict[str, str] = OrderedDict()
-_ADMISSION_RECEIPT_LOCK = RLock()
+def _issue_admitted_task(
+    task_spec: TaskSpec,
+    source_envelope_identity: str,
+    *,
+    previous_task_identity: str = "",
+) -> AdmittedTaskSpec:
+    return AdmittedTaskSpec(
+        task_spec,
+        f"task-admission:v2:{uuid4().hex}",
+        source_envelope_identity,
+        previous_task_identity,
+        _capability=_ADMISSION_CAPABILITY,
+    )
 
 
-def _issue_admission_receipt(task_spec_identity: str) -> str:
-    receipt = f"task-admission:v1:{uuid4().hex}"
-    with _ADMISSION_RECEIPT_LOCK:
-        _ADMISSION_RECEIPTS[receipt] = task_spec_identity
-        _ADMISSION_RECEIPTS.move_to_end(receipt)
-        while len(_ADMISSION_RECEIPTS) > _ADMISSION_RECEIPT_LIMIT:
-            _ADMISSION_RECEIPTS.popitem(last=False)
-    return receipt
+def admit_legacy_task_spec(task_spec: TaskSpec) -> AdmittedTaskSpec:
+    """P5-3 compatibility adapter for preconstructed fixtures and legacy profiles.
+
+    Canonical production intake must use ``TaskSpecAuthority.admit``. Keeping the
+    bypass named and centralized prevents raw TaskSpec construction from becoming
+    an implicit Runtime admission path while the remaining compatibility profiles
+    are retired.
+    """
+
+    return _issue_admitted_task(task_spec, task_spec.source_envelope_ref)
 
 
-def verify_task_spec_admission(task_spec: TaskSpec, receipt: str) -> bool:
-    """Verify an opaque receipt issued by this process's TaskSpecAuthority."""
-
-    with _ADMISSION_RECEIPT_LOCK:
-        admitted_identity = _ADMISSION_RECEIPTS.get(receipt)
-    return bool(receipt) and admitted_identity == task_spec.identity
+def _revision_lineage_issue(
+    request: UserRequest,
+    proposal: MinimalIntentProposal,
+    *,
+    revision: int,
+    task_id: str | None,
+    previous_admitted_task: AdmittedTaskSpec | None,
+) -> CompilationIssue | None:
+    del proposal
+    if revision < 1:
+        return CompilationIssue(code="invalid_task_revision", field="revision")
+    if revision == 1:
+        return (
+            CompilationIssue(code="unexpected_revision_lineage", field="revision")
+            if previous_admitted_task is not None
+            else None
+        )
+    if previous_admitted_task is None:
+        return CompilationIssue(code="revision_lineage_missing", field="revision")
+    previous = previous_admitted_task.task_spec
+    if previous.task_id != (task_id or request.request_id):
+        return CompilationIssue(code="revision_task_id_mismatch", field="task_id")
+    if revision != previous.revision + 1:
+        return CompilationIssue(code="revision_not_monotonic", field="revision")
+    return None

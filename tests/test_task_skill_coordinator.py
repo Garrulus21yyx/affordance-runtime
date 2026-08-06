@@ -46,7 +46,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest, thaw_request_mapping
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     InputBinding,
     OperationClass,
@@ -141,7 +141,10 @@ class ProfileObserver:
                 "profile_name": self.world.name,
                 "profile_email": self.world.email,
                 "criterion_evaluations": {
-                    "criterion:interface-observed": "satisfied",
+                    "criterion:interface-observed": {
+                        "status": "satisfied",
+                        "evidence_refs": [f"observation:{snapshot_id}:interface"],
+                    },
                     "criterion:external-no-effect": {
                         "status": "satisfied",
                         "provider": "api_state",
@@ -435,7 +438,7 @@ def test_coordinator_system1_completes_accepted_skill_without_system2_planner_ca
         ProfileExecutor(world),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert world.name == "Margaret"
@@ -482,7 +485,7 @@ def test_passed_but_unbound_verifier_cannot_checkpoint_task_skill() -> None:
         contract_builder=builder,
         task_skill_runtime=runtime,
     ).run_sync(
-        RunRequest(
+        legacy_run_request(
             task_spec=_task(with_entity=True),
             capabilities=["settings.write"],
         )
@@ -511,7 +514,7 @@ def test_task_skill_target_mismatch_falls_through_to_system2_before_action() -> 
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=runtime,
-    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.ABORTED
     assert planner.calls == 0
@@ -534,7 +537,7 @@ def test_task_skill_cannot_extend_task_capability_authority() -> None:
         ProfileExecutor(world),
         contract_builder=ContractBuilder(),
         task_skill_runtime=runtime,
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(legacy_run_request(task_spec=task))
 
     assert result.status == RuntimeStep.ABORTED
     assert planner.calls == 0
@@ -567,7 +570,7 @@ def test_task_skill_approval_requirement_must_be_enforced_by_normal_contract_gat
             }
         ),
         task_skill_runtime=runtime,
-    ).run_sync(RunRequest(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_task(with_entity=True), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 0
@@ -608,7 +611,7 @@ def test_skill_steps_without_canonical_values_fall_through_before_action() -> No
         ProfileExecutor(world, fail_email_effect=True),
         contract_builder=builder,
         task_skill_runtime=runtime,
-    ).run_sync(RunRequest(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=_task(with_entity=False), capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.ABORTED
     assert world.name == ""
@@ -660,7 +663,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                     )
                 }
             ),
-        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
         assert result.status == RuntimeStep.DONE
         trace_path = JsonlTraceWriter(tmp_path / f"training-{index}.jsonl").write(result.trace)
         sources.append((trace_path, TraceMiningContext("profile update", variant)))
@@ -705,7 +708,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
                 }
             ),
             task_skill_runtime=_accepted_runtime(proposal.payload),
-        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
         replay_evidence.append(
@@ -763,7 +766,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(proposal.payload),
-        ).run_sync(RunRequest(task_spec=task, capabilities=([capability] if capability else [])))
+        ).run_sync(legacy_run_request(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"mined-replay-{category}.jsonl").write(result.trace)
         replay_evidence.append(
@@ -822,7 +825,7 @@ def test_canonical_pipeline_mines_three_real_system2_runtime_traces_across_varia
         task_skill_runtime=loaded.task_skill_runtime,
         runtime_profile_digest=loaded.profile_digest,
         loaded_profile_artifact_ids=loaded.artifact_ids,
-    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
     kinds = [node.kind for node in result.trace.nodes]
     assert result.status == RuntimeStep.DONE
     assert world.name == "Ken"
@@ -869,7 +872,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
                 }
             ),
             task_skill_runtime=_accepted_runtime(payload),
-        ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+        ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
         kinds = [node.kind for node in result.trace.nodes]
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)
         if category == "original":
@@ -936,7 +939,7 @@ def test_fresh_coordinator_replay_accepts_skill_across_mandatory_safe_categories
             ProfileExecutor(world),
             contract_builder=ContractBuilder(),
             task_skill_runtime=_accepted_runtime(payload),
-        ).run_sync(RunRequest(task_spec=task, capabilities=([capability] if capability else [])))
+        ).run_sync(legacy_run_request(task_spec=task, capabilities=([capability] if capability else [])))
         kinds = [node.kind for node in result.trace.nodes]
         no_effect = world == ProfileWorld() and result.state.last_receipt is None
         trace_path = JsonlTraceWriter(tmp_path / f"{category}-events.jsonl").write(result.trace)

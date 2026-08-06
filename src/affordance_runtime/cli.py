@@ -36,6 +36,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 
@@ -609,7 +610,7 @@ def run_scenario(
                     "approval_required": scenario == "export",
                 },
                 capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
-                task_spec=task_spec,
+                admitted_task=(admit_legacy_task_spec(task_spec) if task_spec is not None else None),
             )
         )
     return {

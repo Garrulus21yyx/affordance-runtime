@@ -28,7 +28,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
@@ -252,7 +252,7 @@ def test_visual_requirement_does_not_borrow_evidence_for_a_dom_route() -> None:
         observer=observer,
         executor=executors,
         contract_builder=builder,
-    ).run_sync(RunRequest(task_spec=task, capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
 
     assert result.status == RuntimeStep.DONE
     assert result.result == {}
@@ -418,7 +418,7 @@ def test_coordinator_rebinds_moving_visual_point_from_preflight_epoch() -> None:
         observer=observer,
         executor=executors,
         contract_builder=builder,
-    ).run_sync(RunRequest(task_spec=task))
+    ).run_sync(legacy_run_request(task_spec=task))
 
     assert result.status == RuntimeStep.DONE
     assert world.visual_clicks == 1
