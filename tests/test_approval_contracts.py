@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from affordance_runtime import approval_contracts
@@ -38,13 +40,21 @@ def test_configured_approval_provider_binds_token_to_contract_and_ttl(
     assert token is not None
     assert token.run_id == contract.run_id
     assert token.contract_hash == contract.contract_hash
+    assert token.snapshot_id == contract.snapshot_id
     assert token.page_revision == contract.page_revision
+    assert token.environment_revision == contract.environment_revision
     assert token.capability == "report.export"
     assert token.approver == "operator-1"
     assert token.issued_at_s == 1_000.0
     assert token.expires_at_s == 1_045.0
     assert token.matches(contract, now_s=1_045.0)
     assert not token.matches(contract, now_s=1_045.001)
+    assert not token.matches(
+        replace(contract, snapshot_id="snapshot:next", contract_hash=""), now_s=1_001.0
+    )
+    assert not token.matches(
+        replace(contract, environment_revision="environment-2", contract_hash=""), now_s=1_001.0
+    )
 
 
 @pytest.mark.parametrize(

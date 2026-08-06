@@ -476,6 +476,9 @@ class ActionStage:
                     "HumanApprovalRequested",
                     RuntimeStep.WAITING_APPROVAL,
                     contract_hash=contract.contract_hash,
+                    snapshot_id=contract.snapshot_id,
+                    page_revision=contract.page_revision,
+                    environment_revision=contract.environment_revision,
                     approval_presentation=asdict(approval_presentation),
                 )
             )
@@ -501,28 +504,19 @@ class ActionStage:
                     approver=token.approver,
                     capability=token.capability,
                     expires_at_s=token.expires_at_s,
+                    snapshot_id=token.snapshot_id,
+                    page_revision=token.page_revision,
+                    environment_revision=token.environment_revision,
                 )
             )
-            current = self.perception_session.capture(_capture_request(stage_input, sequence_offset=1))
-            ref = self._write_observation(stage_input, current, sequence_offset=1)
-            if ref:
-                artifact_refs.append(ref)
             events.append(
                 _event(
                     "ApprovalStateRevalidated",
                     stage_input.state_view.phase,
                     snapshot_id=current.observation.snapshot_id,
                     page_revision=current.observation.page_revision,
+                    environment_revision=current.observation.environment_revision,
                 )
-            )
-            current, perception_delta = self._probe_preflight(
-                stage_input, current, events, artifact_refs
-            )
-            perception_error = (
-                RuntimeErrorCode.PRECONDITION_FAILED
-                if perception_delta.resolution is not None
-                and perception_delta.resolution.blocks_effectful_action
-                else None
             )
             error = self.contract_execution_loop.revalidate(
                 contract,
@@ -530,11 +524,9 @@ class ActionStage:
                 current.observation,
                 gate,
                 capability_gate_enabled=True,
-                include_policy=False,
-                require_snapshot_identity=False,
-                require_environment_revision=False,
+                include_policy=True,
+                canonical_observation=stage_input.observation,
             )
-            error = perception_error or error
 
         if error is not None:
             events.append(

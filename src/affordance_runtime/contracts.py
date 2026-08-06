@@ -602,7 +602,9 @@ class ApprovalToken:
     token_id: str
     run_id: str
     contract_hash: str
+    snapshot_id: str
     page_revision: str
+    environment_revision: str
     capability: str
     approver: str
     issued_at_s: float
@@ -620,7 +622,9 @@ class ApprovalToken:
             and current_time <= self.expires_at_s
             and self.run_id == contract.run_id
             and self.contract_hash == contract.contract_hash
+            and self.snapshot_id == contract.snapshot_id
             and self.page_revision == contract.page_revision
+            and self.environment_revision == contract.environment_revision
             and self.capability in contract.required_capabilities
             and bool(self.approver)
         )

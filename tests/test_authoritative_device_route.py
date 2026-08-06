@@ -258,6 +258,26 @@ def test_authoritative_wot_candidate_outranks_simultaneous_gui_route() -> None:
     dom_gate = next(item for item in route.payload["hard_gates"] if item["candidate_id"].startswith("candidate:dom:"))
     assert dom_gate["passed"] is False
     assert "source_not_acceptable" in dom_gate["reasons"]
+    approval_events = {
+        node.kind: node
+        for node in result.trace.nodes
+        if node.kind in {"HumanApprovalRequested", "HumanApprovalGranted", "ApprovalStateRevalidated"}
+    }
+    assert set(approval_events) == {
+        "HumanApprovalRequested",
+        "HumanApprovalGranted",
+        "ApprovalStateRevalidated",
+    }
+    assert len(
+        {
+            (
+                event.payload["snapshot_id"],
+                event.payload["page_revision"],
+                event.payload["environment_revision"],
+            )
+            for event in approval_events.values()
+        }
+    ) == 1
 
 
 def _turn_on(

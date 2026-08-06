@@ -420,7 +420,9 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         effect_id="effect:send",
         operation_class=OperationClass.EXTERNAL_SIDE_EFFECT,
         material_effect_kind=MaterialEffectKind.SEND,
+        operation_ref="message.send@v1",
         target="Ada",
+        capability="communication.send",
         source_ref=envelope.whole_request_anchor.anchor_id,
     )
     bindings = tuple(
@@ -436,6 +438,7 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
             (MaterialField.RECIPIENT, "Ada"),
             (MaterialField.EXTERNAL_DESTINATION, "Ada"),
             (MaterialField.FILE, "report.pdf"),
+            (MaterialField.CONTENT, "report.pdf"),
         )
     )
     proposal = MinimalIntentProposal(
@@ -588,6 +591,49 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
     }.intersection(type(result.task_spec).model_fields)
     assert result.task_spec.source_binding_digest != envelope.binding_digest
     assert all(anchor.span is None for anchor in envelope.anchors)
+
+
+def test_operation_ref_cannot_downgrade_high_risk_admission_closure() -> None:
+    request = UserRequest(request_id="send-downgrade", raw_text="Send hello to Ada")
+    envelope = SourceEnvelopeBuilder().build(request)
+    effect = RequestedEffect(
+        effect_id="effect:send",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        operation_ref="message.send@v1",
+        target="Ada",
+        source_ref=envelope.whole_request_anchor.anchor_id,
+    )
+    bindings = tuple(
+        MaterialBinding(
+            binding_id=f"binding:{field.value}",
+            effect_ref=effect.effect_id,
+            field=field,
+            value=value,
+            source_ref=envelope.whole_request_anchor.anchor_id,
+            binding_kind=MaterialBindingKind.DIRECT_USER_EXPLICIT,
+        )
+        for field, value in (
+            (MaterialField.RECIPIENT, "Ada"),
+            (MaterialField.CONTENT, "hello"),
+        )
+    )
+    proposal = MinimalIntentProposal(
+        objective=request.raw_text,
+        requested_effects=(effect,),
+        material_bindings=bindings,
+        success=_success(effect.effect_id),
+    )
+
+    result = TaskSpecAuthority().admit(request, envelope, proposal)
+
+    assert result.status != CompilationStatus.READY
+    assert result.task_spec is None
+    assert {item.code for item in result.issues} >= {
+        "operation_semantics_mismatch",
+        "high_risk_capability_required",
+        "high_risk_external_criterion_required",
+        "high_risk_final_recheck_required",
+    }
 
 
 def test_material_effect_kind_cannot_downgrade_the_operation_class() -> None:

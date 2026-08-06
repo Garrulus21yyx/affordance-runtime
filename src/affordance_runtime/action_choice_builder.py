@@ -17,6 +17,7 @@ from affordance_runtime.choice_contracts import (
     ChoiceConflictStatus,
     ChoiceRejection,
 )
+from affordance_runtime.effect_authority_contracts import AuthorityStatus
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.recovery_protocol import FailureKind
 from affordance_runtime.simplified_runtime_contracts import (
@@ -95,7 +96,8 @@ class ActionChoiceCatalogBuilder:
                     ChoiceRejection(
                         choice.target_id,
                         choice.action_kind,
-                        "MATERIAL_SOURCE_CONFLICT",
+                        AuthorityStatus.UNPROVEN,
+                        ("MATERIAL_SOURCE_CONFLICT",),
                         tuple(getattr(target, "source_assertion_refs", ())),
                     )
                 )
@@ -125,7 +127,8 @@ class ActionChoiceCatalogBuilder:
                     ChoiceRejection(
                         choice.target_id,
                         choice.action_kind,
-                        authority.reason_code,
+                        authority.status,
+                        authority.reason_codes,
                     )
                 )
                 continue
@@ -144,11 +147,11 @@ class ActionChoiceCatalogBuilder:
             )
         report = ChoiceBuildReport(len(observation.targets), len(choices), tuple(rejections))
         if not choices:
-            reason = "authority_unproven" if any(
-                "UNPROVEN" in item.reason_code or "INSUFFICIENT" in item.reason_code
-                or "UNKNOWN" in item.reason_code
-                for item in report.rejections
-            ) else "authority_denied"
+            reason = (
+                "authority_unproven"
+                if any(item.status == AuthorityStatus.UNPROVEN for item in report.rejections)
+                else "authority_denied"
+            )
             return ActionChoiceFailure(FailureKind.NO_FEASIBLE_ACTION, reason, build_report=report)
         return ActionChoiceCatalog.from_choices(
             task_revision=task_revision,

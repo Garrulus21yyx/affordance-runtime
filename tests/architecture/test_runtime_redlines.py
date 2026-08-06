@@ -23,6 +23,7 @@ from affordance_runtime.choice_contracts import (
     SelectChoice,
 )
 from affordance_runtime.choice_presentation import ChoicePresentationProjector
+from affordance_runtime.effect_authority_contracts import AuthorityStatus
 from affordance_runtime.grounding import (
     DomGroundingPayload,
     GroundingCandidate,
@@ -198,7 +199,12 @@ def _case_acquisition_truncation() -> None:
 
 
 def _case_material_conflict() -> None:
-    rejection = ChoiceRejection("target:conflict", PlannerActionKind.ACTIVATE, "material_conflict")
+    rejection = ChoiceRejection(
+        "target:conflict",
+        PlannerActionKind.ACTIVATE,
+        AuthorityStatus.UNPROVEN,
+        ("material_conflict",),
+    )
     catalog = ActionChoiceCatalog.from_choices(
         task_revision=1,
         plan_revision=1,

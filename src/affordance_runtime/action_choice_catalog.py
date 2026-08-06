@@ -125,7 +125,12 @@ class ActionChoiceCatalog:
                 for item in ordered
             ],
             "rejections": [
-                (item.target_id, item.action_kind.value if item.action_kind else None, item.reason_code)
+                (
+                    item.target_id,
+                    item.action_kind.value if item.action_kind else None,
+                    item.status.value,
+                    item.reason_codes,
+                )
                 for item in (build_report.rejections if build_report else ())
             ],
         }

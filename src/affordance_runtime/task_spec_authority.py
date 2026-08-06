@@ -614,6 +614,11 @@ def _canonical_binding_issues(
     success_bindings = success_criterion_requirement_bindings(proposal.success)
     success_policies = success_criterion_policies(proposal.success)
     issues: list[CompilationIssue] = []
+    scopes = {
+        item.requirement_id: item.payload.effect_authorization_scope
+        for item in requirements
+        if item.payload.kind == "effect" and item.payload.effect_authorization_scope is not None
+    }
     for criterion_id, refs in success_bindings.items():
         for ref in set(refs) - known:
             issues.append(
@@ -623,9 +628,57 @@ def _canonical_binding_issues(
                     detail=ref,
                 )
             )
-    high_risk = any(
-        item.operation_class in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE} for item in effects
-    )
+    high_risk = False
+    for effect in effects:
+        scope = scopes.get(effect.effect_id)
+        if scope is None:
+            issues.append(
+                CompilationIssue(
+                    code="effect_authorization_scope_missing",
+                    field=effect.effect_id,
+                )
+            )
+            continue
+        canonical_operation = _operation_class_for_scope(scope)
+        if effect.operation_class != canonical_operation:
+            issues.append(
+                CompilationIssue(
+                    code="operation_semantics_mismatch",
+                    field=effect.effect_id,
+                    detail=f"{effect.operation_class.value}!={canonical_operation.value}",
+                )
+            )
+        policy = policy_for_effect(scope.effect_class, scope.operation_constraint)
+        scope_high_risk = policy is not None or scope.externality in {
+            Externality.EXTERNAL_SYSTEM,
+            Externality.PHYSICAL_WORLD,
+        } or scope.reversibility in {Reversibility.IRREVERSIBLE, Reversibility.UNKNOWN}
+        high_risk = high_risk or scope_high_risk
+        if not scope_high_risk:
+            continue
+        if scope.approval_policy_ref != "exact-contract@v1":
+            issues.append(
+                CompilationIssue(code="high_risk_approval_policy_required", field=effect.effect_id)
+            )
+        if policy is None:
+            continue
+        parameter_slots = {item.slot for item in scope.parameters}
+        for field_name in sorted(policy.required_material_fields - parameter_slots):
+            issues.append(
+                CompilationIssue(
+                    code="high_risk_material_field_required",
+                    field=field_name,
+                    detail=effect.effect_id,
+                )
+            )
+        if policy.required_capability not in scope.required_capabilities:
+            issues.append(
+                CompilationIssue(
+                    code="high_risk_capability_required",
+                    field=effect.effect_id,
+                    detail=policy.required_capability,
+                )
+            )
     if high_risk and not proposal.external_effect_criterion_ids:
         issues.append(CompilationIssue(code="high_risk_external_criterion_required", field="success"))
     if high_risk and not proposal.final_recheck_criterion_ids:
@@ -663,6 +716,24 @@ def _canonical_binding_issues(
             )
         )
     return tuple(issues)
+
+
+def _operation_class_for_scope(scope: EffectAuthorizationScope) -> OperationClass:
+    """Project the canonical effect scope to the legacy aggregate risk class."""
+
+    if scope.effect_class == EffectClass.DELETE:
+        return OperationClass.IRREVERSIBLE
+    if scope.externality in {Externality.EXTERNAL_SYSTEM, Externality.PHYSICAL_WORLD} or (
+        scope.reversibility == Reversibility.UNKNOWN
+    ):
+        return OperationClass.EXTERNAL_SIDE_EFFECT
+    if scope.reversibility == Reversibility.IRREVERSIBLE:
+        return OperationClass.IRREVERSIBLE
+    if scope.effect_class == EffectClass.READ:
+        return OperationClass.READ_ONLY
+    if scope.effect_class in {EffectClass.NAVIGATE, EffectClass.INTERACTION_ONLY}:
+        return OperationClass.NAVIGATION
+    return OperationClass.REVERSIBLE_WRITE
 
 
 def _issue_admitted_task(

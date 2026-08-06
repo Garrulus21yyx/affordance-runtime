@@ -13,7 +13,12 @@ from affordance_runtime.active_step_scope import ActiveStepScope
 from affordance_runtime.choice_contracts import ActionChoice, ActionChoiceFailure
 from affordance_runtime.contracts import ActionContract, RiskLevel
 from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
-from affordance_runtime.effect_authority_contracts import EffectAuthorizationScope, EffectClass, ResourceScopeRef
+from affordance_runtime.effect_authority_contracts import (
+    AuthorityStatus,
+    EffectAuthorizationScope,
+    EffectClass,
+    ResourceScopeRef,
+)
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
@@ -307,6 +312,8 @@ def test_catalog_rejects_concrete_target_outside_exact_effect_authority() -> Non
     assert result.reason_code == "authority_denied"
     assert result.build_report is not None
     assert result.build_report.rejections
+    assert {item.status for item in result.build_report.rejections} == {AuthorityStatus.DENY}
+    assert all(item.reason_codes for item in result.build_report.rejections)
 
 
 def test_catalog_derives_effect_and_risk_instead_of_trusting_planner_flags() -> None:

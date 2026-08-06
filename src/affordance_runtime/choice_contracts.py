@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TypeAlias
 
-from affordance_runtime.effect_authority_contracts import ActionAuthorityProof
+from affordance_runtime.effect_authority_contracts import ActionAuthorityProof, AuthorityStatus
 from affordance_runtime.immutable import FrozenDict
 from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.recovery_protocol import FailureKind, FailureOwner
@@ -165,8 +165,21 @@ class CatalogSlice:
 class ChoiceRejection:
     target_id: str | None
     action_kind: PlannerActionKind | None
-    reason_code: str
+    status: AuthorityStatus
+    reason_codes: tuple[str, ...]
     evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.status == AuthorityStatus.ALLOW:
+            raise ValueError("choice rejection cannot carry ALLOW authority")
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
+            raise ValueError("choice rejection requires typed reason codes")
+
+    @property
+    def reason_code(self) -> str:
+        """Compatibility projection for event/report consumers during P5 cleanup."""
+
+        return self.reason_codes[0]
 
 
 @dataclass(frozen=True)
