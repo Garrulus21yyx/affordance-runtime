@@ -41,8 +41,7 @@ class LoopEvaluator:
         independent = tuple(
             item
             for item in report.evidence
-            if item.source not in {"receipt", "execution_receipt"}
-            and item.strength in {"strong", "authoritative"}
+            if item.source not in {"receipt", "execution_receipt"} and item.strength in {"strong", "authoritative"}
         )
         if independent:
             passed = {item.passed for item in independent}
@@ -109,6 +108,7 @@ class LoopEvaluator:
                 pre_observation_ref=item.pre_observation_ref,
                 post_observation_ref=item.post_observation_ref,
                 effect_criterion_ids=fact.effect_criterion_ids,
+                runtime_causal_lineage=True,
             )
             for item in recent_action_outcomes
             if item.effect_satisfied

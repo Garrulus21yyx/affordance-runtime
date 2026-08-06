@@ -12,7 +12,7 @@ from affordance_runtime.evolution import (
     EvolutionStatus,
 )
 from affordance_runtime.grounding import GroundingSource, UnifiedAffordance
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -305,7 +305,7 @@ def test_task_skill_mismatch_falls_through_without_losing_verified_progress() ->
 def test_task_skill_types_do_not_change_task_authority() -> None:
     payload = _payload()
     assert all(not step.required_capabilities for step in payload.steps)
-    assert RunRequest(task_id="run", goal="profile update").capabilities == []
+    assert legacy_run_request(task_id="run", goal="profile update").capabilities == []
 
 
 def _replay(category: str, *, activated: bool = True, applicable: bool = True) -> TaskSkillReplayEvidence:

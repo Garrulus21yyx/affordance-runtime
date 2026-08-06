@@ -34,7 +34,7 @@ def test_predicate_evaluator_is_the_default_step_completion_owner() -> None:
         for node in ast.walk(progress_tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
-    assert "observation_evidence_context_metadata" in called_names
+    assert "observation_evidence_context_metadata" not in called_names
     assert "observation_predicate_evidence" in called_names
     assert "unresolved_open_semantic_gaps" in called_names
     assert "evaluate" in attributes

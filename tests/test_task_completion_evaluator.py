@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from affordance_runtime.contracts import Observation
+from affordance_runtime.progress_evaluation import ProgressEvaluationService
+from affordance_runtime.runtime_evidence import (
+    DurableEvidenceStore,
+    RecentActionFact,
+    RecentActionOutcomeEvidence,
+    RecentActionOutcomeEvidenceIndex,
+)
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskRequirement,
@@ -18,8 +26,10 @@ from affordance_runtime.verification.contracts import (
     CriterionEvaluation,
     CriterionPolicy,
     CriterionStatus,
+    EvidenceSourceKind,
     EvidenceValidityMode,
     OutputSpec,
+    PredicateEvidenceContext,
     SatisfactionMode,
     SuccessExpression,
     TaskCompletionEvaluation,
@@ -343,7 +353,11 @@ def test_success_policy_rejects_unbound_satisfied_observation(policy: CriterionP
         },
     )
 
-    admitted = admit_completion_evidence(task_spec=task, observation=observation)
+    admitted = admit_completion_evidence(
+        task_spec=task,
+        observation=observation,
+        evidence_context=PredicateEvidenceContext(current_observation_ref=observation.snapshot_id),
+    )
     evaluation = TaskCompletionEvaluator().evaluate(
         task_spec=task,
         criterion_results=admitted,
@@ -374,3 +388,95 @@ def test_same_id_satisfied_result_without_policy_binding_is_unknown() -> None:
     )
 
     assert evaluation.status == CriterionStatus.UNKNOWN
+
+
+@pytest.mark.parametrize("runtime_lineage", (False, True))
+def test_action_caused_uses_runtime_lineage_not_observation_claims(runtime_lineage: bool) -> None:
+    criterion_id = "criterion:caused"
+    task = TaskSpec(
+        task_id="task:caused",
+        revision=1,
+        objective="cause the setting change",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=canonical_effect_requirements(
+            ("settings",), OperationClass.REVERSIBLE_WRITE, "request:caused", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("settings",)),
+        success=SuccessExpression(
+            expression_id="success:caused",
+            operator="criterion",
+            criterion_id=criterion_id,
+            requirement_refs=("requirement:effect:1",),
+            policy=CriterionPolicy(
+                satisfaction=SatisfactionMode.ACTION_CAUSED,
+                causal_lineage_required=True,
+            ),
+        ),
+        source_request_ref="request:caused",
+    )
+    observation = Observation(
+        "revision:post",
+        snapshot_id="snapshot:post",
+        metadata={
+            "current_contract_id": "contract:forged",
+            "criterion_evaluations": {
+                criterion_id: {
+                    "status": "satisfied",
+                    "evidence_refs": ["evidence:observation-claim"],
+                    "source_kind": "dom_state",
+                    "assurance": "structural",
+                    "contract_id": "contract:1",
+                    "receipt_ref": "receipt:1",
+                    "pre_observation_ref": "snapshot:pre",
+                    "post_observation_ref": "snapshot:post",
+                    "effect_criterion_ids": [criterion_id],
+                }
+            },
+        },
+    )
+    recent = RecentActionOutcomeEvidenceIndex()
+    if runtime_lineage:
+        recent.append(
+            RecentActionOutcomeEvidence(
+                outcome_id="outcome:1",
+                contract_id="contract:1",
+                receipt_ref="receipt:1",
+                pre_observation_ref="snapshot:pre",
+                post_observation_ref="snapshot:post",
+                effect_criterion_ids=(criterion_id,),
+                evidence_refs=("evidence:runtime",),
+                effect_satisfied=True,
+                facts=(
+                    RecentActionFact(
+                        subject_ref="settings",
+                        before_value=False,
+                        after_value=True,
+                        source_kind=EvidenceSourceKind.DOM_STATE,
+                        assurance=AssuranceLevel.STRUCTURAL,
+                        effect_criterion_ids=(criterion_id,),
+                        evidence_refs=("evidence:runtime",),
+                        state_delta_id="delta:1",
+                    ),
+                ),
+            )
+        )
+    state = SimpleNamespace(
+        current_contract=SimpleNamespace(id="contract:1"),
+        task_progress=SimpleNamespace(
+            recent_action_outcomes=recent,
+            durable_evidence=DurableEvidenceStore(),
+        ),
+        completion_criterion_evaluations={},
+        uncertain_external_effects=(),
+    )
+
+    evaluation = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=task,
+        state=state,
+        observation=observation,
+        report=None,
+        result={},
+    )
+
+    assert evaluation is not None
+    assert evaluation.status == (CriterionStatus.SATISFIED if runtime_lineage else CriterionStatus.UNKNOWN)

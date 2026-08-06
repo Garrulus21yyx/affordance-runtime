@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from affordance_runtime.fixtures import create_fixture_server
-from affordance_runtime.integrations.local import LocalScenarioTaskRunner
+from affordance_runtime.integrations.local import LocalScenarioTaskIntake, LocalScenarioTaskRunner
 from affordance_runtime.integrations.task_api import TaskRuntimeService, TaskToolAdapter
-from affordance_runtime.task_intake import TaskSpec
 
 PROTOCOL_VERSION = "affordance-task-rpc/1.0"
 
@@ -27,7 +26,6 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "target": {"type": "string"},
             "constraints": {"type": "object"},
             "capabilities": {"type": "array", "items": {"type": "string"}},
-            "task_spec": TaskSpec.model_json_schema(),
         },
     },
     "gui_execute_task": {"required": ["run_id"], "properties": {"run_id": {"type": "string"}}},
@@ -38,13 +36,6 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "run_id": {"type": "string"},
             "capability": {"type": "string"},
             "approver": {"type": "string"},
-        },
-    },
-    "gui_revise_task": {
-        "required": ["run_id", "task_spec"],
-        "properties": {
-            "run_id": {"type": "string"},
-            "task_spec": TaskSpec.model_json_schema(),
         },
     },
     "gui_cancel_task": {"required": ["run_id"], "properties": {"run_id": {"type": "string"}}},
@@ -119,7 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     thread.start()
     try:
         base_url = f"http://{fixture.server_name}:{fixture.server_port}"
-        service = TaskRuntimeService(LocalScenarioTaskRunner(args.artifacts))
+        service = TaskRuntimeService(
+            LocalScenarioTaskRunner(args.artifacts),
+            intake=LocalScenarioTaskIntake(),
+        )
         serve_stream(ExternalTaskProtocol(TaskToolAdapter(service), base_url), sys.stdin, sys.stdout)
         return 0
     finally:

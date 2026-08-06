@@ -55,7 +55,7 @@ from affordance_runtime.planning_contracts import (
     PlannerProposalResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
@@ -69,7 +69,6 @@ from affordance_runtime.task_skills import (
     TaskSkillPayload,
     TaskSkillTrigger,
 )
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -449,7 +448,7 @@ def run_adaptive_routing_case(
         runtime_profile_digest=accepted_skill.profile_digest if accepted_skill is not None else "",
         loaded_profile_artifact_ids=(accepted_skill.artifact_ids if accepted_skill is not None else ()),
         artifacts=artifacts,
-    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task), capabilities=["settings.write"]))
+    ).run_sync(legacy_run_request(task_spec=task, capabilities=["settings.write"]))
     latency_ms = (perf_counter() - started) * 1_000
     events = tuple(node.kind for node in result.trace.nodes)
     route_nodes = [node for node in result.trace.nodes if node.kind == "RouteSelected"]

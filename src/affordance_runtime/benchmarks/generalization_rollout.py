@@ -81,7 +81,7 @@ from affordance_runtime.recovery_owner_dispatcher import (
     RecoveryOwnerResult,
 )
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryDimension, RecoveryKind
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.task_intake import (
     OperationClass,
@@ -89,7 +89,6 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
@@ -742,7 +741,7 @@ def _run_surface_case(output_dir: Path, revision: str, surface: Surface) -> _Exe
             }
         ),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
+    ).run_sync(legacy_run_request(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     return _ExecutedCase(
         result,
@@ -800,7 +799,7 @@ def _run_compatibility_pair(
                 }
             ),
             artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-        ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
+        ).run_sync(legacy_run_request(task_spec=task))
         _write_case_manifest(output_dir, result, revision)
         task_success = result.status == RuntimeStep.DONE and world.expanded
         outcomes.append(
@@ -842,7 +841,7 @@ def _run_provider_recovery_case(output_dir: Path, revision: str) -> _ExecutedCas
         executor=world,
         recovery_owner_dispatcher=RecoveryOwnerDispatcher({RecoveryKind.SWITCH_PROVIDER: owner}),
         artifacts=ArtifactStore(output_dir / "runtime-artifacts"),
-    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(task)))
+    ).run_sync(legacy_run_request(task_spec=task))
     _write_case_manifest(output_dir, result, revision)
     recovery_success = any(
         node.kind == "RecoveryOutcomeRecorded" and bool(node.payload.get("outcome", {}).get("success"))

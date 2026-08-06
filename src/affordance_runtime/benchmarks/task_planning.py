@@ -34,7 +34,7 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     SourceReference,
@@ -48,7 +48,6 @@ from affordance_runtime.task_intake import (
 )
 from affordance_runtime.task_plan_contracts import PlanProposal, TaskPlanGeneratorSource
 from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningRequest
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -316,7 +315,7 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         executor=environment,
         contract_builder=_StageContractBuilder(),
         task_planner=counting,
-    ).run_sync(RunRequest(admitted_task=admit_legacy_task_spec(spec)))
+    ).run_sync(legacy_run_request(task_spec=spec))
     return TaskPlanningAblationRun(
         profile=profile,
         case_id=case_id,

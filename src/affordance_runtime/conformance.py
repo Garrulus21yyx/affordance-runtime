@@ -37,14 +37,13 @@ from affordance_runtime.planning import (
 )
 from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 CONFORMANCE_GOAL = "Enable one reversible shared state with independent oracle evidence."
@@ -244,26 +243,24 @@ def run_cross_surface_conformance(
         _post_json(f"{oracle_url.rstrip('/')}/reset", {})
         run_id = f"cross-surface-{surface}"
         artifact_store = ArtifactStore(output_dir / "runs")
-        envelope = RunRequest(
-            admitted_task=admit_legacy_task_spec(
-                TaskSpec(
-                    task_id=run_id,
-                    revision=1,
-                    objective=CONFORMANCE_GOAL,
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    requirements=canonical_effect_requirements(
-                        ("shared state",), OperationClass.REVERSIBLE_WRITE, "conformance", (CONFORMANCE_CAPABILITY,)
-                    ),
-                    allowed_effect_refs=canonical_effect_requirement_refs(("shared state",)),
-                    success=SuccessExpression(
-                        expression_id="success:shared-state-enabled",
-                        operator="criterion",
-                        criterion_id="criterion:shared-state-enabled",
-                        requirement_refs=("requirement:effect:1",),
-                    ),
-                    capability_ceiling=(CONFORMANCE_CAPABILITY,),
-                    source_request_ref="conformance",
-                )
+        envelope = legacy_run_request(
+            task_spec=TaskSpec(
+                task_id=run_id,
+                revision=1,
+                objective=CONFORMANCE_GOAL,
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                requirements=canonical_effect_requirements(
+                    ("shared state",), OperationClass.REVERSIBLE_WRITE, "conformance", (CONFORMANCE_CAPABILITY,)
+                ),
+                allowed_effect_refs=canonical_effect_requirement_refs(("shared state",)),
+                success=SuccessExpression(
+                    expression_id="success:shared-state-enabled",
+                    operator="criterion",
+                    criterion_id="criterion:shared-state-enabled",
+                    requirement_refs=("requirement:effect:1",),
+                ),
+                capability_ceiling=(CONFORMANCE_CAPABILITY,),
+                source_request_ref="conformance",
             ),
             capabilities=[CONFORMANCE_CAPABILITY],
         )

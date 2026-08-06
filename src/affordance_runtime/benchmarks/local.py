@@ -22,7 +22,7 @@ from affordance_runtime.environment import environment_manifest
 from affordance_runtime.executors import DomExecutor, ExecutorRouter
 from affordance_runtime.fixtures import EXPORT_SHA256, LOCAL_SAAS_FIXTURE_VERSION, PRICING_DATA, create_fixture_server
 from affordance_runtime.planners import extract_pricing
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 
 
 def _json_request(url: str, *, payload: dict[str, Any] | None = None) -> Any:
@@ -239,9 +239,9 @@ class LocalSaasRunCase:
                 artifacts=ArtifactStore(self.artifact_root / "runs"),
                 features=features,
             ).run_sync(
-                RunRequest(
-                    run_id,
-                    {"pricing": "extract pricing", "settings": "enable notifications", "export": "export report"}[
+                legacy_run_request(
+                    task_id=run_id,
+                    goal={"pricing": "extract pricing", "settings": "enable notifications", "export": "export report"}[
                         scenario
                     ],
                     target=target,

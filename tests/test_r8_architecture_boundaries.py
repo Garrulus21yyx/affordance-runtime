@@ -263,3 +263,31 @@ def test_browsergym_facade_preserves_split_component_identities() -> None:
     assert facade.browsergym_episode_schedule is protocol.browsergym_episode_schedule
     assert facade.browsergym_failure_envelope is report_adapter.browsergym_failure_envelope
     assert facade.write_browsergym_report is report_adapter.write_browsergym_report
+
+
+def test_legacy_task_admission_adapter_has_a_bounded_p5_3_import_allowlist() -> None:
+    private_importers: set[str] = set()
+    legacy_request_importers: set[str] = set()
+    for path in SOURCE_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            names = {item.name for item in node.names}
+            relative = str(path.relative_to(SOURCE_ROOT))
+            if "_admit_legacy_task_spec" in names:
+                private_importers.add(relative)
+            if "legacy_run_request" in names:
+                legacy_request_importers.add(relative)
+
+    assert private_importers == {"runtime.py"}
+    assert legacy_request_importers == {
+        "benchmarks/adaptive_routing.py",
+        "benchmarks/browsergym_episode_runner.py",
+        "benchmarks/generalization_rollout.py",
+        "benchmarks/local.py",
+        "benchmarks/task_planning.py",
+        "cli.py",
+        "conformance.py",
+        "recovery_evolution.py",
+    }

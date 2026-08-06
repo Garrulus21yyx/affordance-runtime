@@ -46,14 +46,13 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerDoneResponse, PlannerProposalResponse, PlannerResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.recovery_protocol import RecoveryKind
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RuntimeStep, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskSpec,
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 MANDATORY_RECOVERY_REPLAYS = {"original", "task_family", "global_smoke", "safety_smoke"}
@@ -383,25 +382,23 @@ def _run_fixture(
         runtime_profile_digest=runtime_profile_digest,
         loaded_profile_artifact_ids=loaded_profile_artifact_ids,
     ).run_sync(
-        RunRequest(
-            admitted_task=admit_legacy_task_spec(
-                TaskSpec(
-                    task_id=task_id,
-                    revision=1,
-                    objective="exercise recovery cascade",
-                    operation_class=OperationClass.REVERSIBLE_WRITE,
-                    requirements=canonical_effect_requirements(
-                        ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
-                    ),
-                    allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
-                    success=SuccessExpression(
-                        expression_id="success:recovery-effect-verified",
-                        operator="criterion",
-                        criterion_id="criterion:recovery-effect-verified",
-                        requirement_refs=("requirement:effect:1",),
-                    ),
-                    source_request_ref="recovery-evolution",
+        legacy_run_request(
+            task_spec=TaskSpec(
+                task_id=task_id,
+                revision=1,
+                objective="exercise recovery cascade",
+                operation_class=OperationClass.REVERSIBLE_WRITE,
+                requirements=canonical_effect_requirements(
+                    ("Save",), OperationClass.REVERSIBLE_WRITE, "recovery-evolution", ()
                 ),
+                allowed_effect_refs=canonical_effect_requirement_refs(("Save",)),
+                success=SuccessExpression(
+                    expression_id="success:recovery-effect-verified",
+                    operator="criterion",
+                    criterion_id="criterion:recovery-effect-verified",
+                    requirement_refs=("requirement:effect:1",),
+                ),
+                source_request_ref="recovery-evolution",
             )
         )
     )

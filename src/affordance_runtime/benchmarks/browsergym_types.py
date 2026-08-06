@@ -12,13 +12,6 @@ BROWSERGYM_SUCCESS_CRITERION_ID = "criterion:browsergym-official-success"
 
 
 @dataclass(frozen=True)
-class BrowserGymBenchmarkRuntimeProfile:
-    """Explicit benchmark-only bridge from official grade to task criteria."""
-
-    success_criterion_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class BrowserGymPolicyRequest:
     task_id: str
     seed: int

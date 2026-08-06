@@ -528,7 +528,7 @@ def _issue_admitted_task(
     )
 
 
-def admit_legacy_task_spec(task_spec: TaskSpec) -> AdmittedTaskSpec:
+def _admit_legacy_task_spec(task_spec: TaskSpec) -> AdmittedTaskSpec:
     """P5-3 compatibility adapter for preconstructed fixtures and legacy profiles.
 
     Canonical production intake must use ``TaskSpecAuthority.admit``. Keeping the

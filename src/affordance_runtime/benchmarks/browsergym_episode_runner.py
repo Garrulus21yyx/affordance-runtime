@@ -29,7 +29,6 @@ from affordance_runtime.benchmarks.browsergym_observer import BrowserGymObserver
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
     BROWSERGYM_SUCCESS_CRITERION_ID,
-    BrowserGymBenchmarkRuntimeProfile,
     BrowserGymEnvironment,
     BrowserGymEpisodeResult,
     BrowserGymEpisodeState,
@@ -80,7 +79,7 @@ from affordance_runtime.planning_contracts import (
     PlannerResponse,
 )
 from affordance_runtime.planning_request import PlanningRequest
-from affordance_runtime.runtime import RunRequest, RuntimeStep
+from affordance_runtime.runtime import RunRequest, RuntimeStep, legacy_run_request
 from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
@@ -97,11 +96,10 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
-from affordance_runtime.task_spec_authority import TaskSpecAuthority, admit_legacy_task_spec
+from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import SuccessExpression
-from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -589,9 +587,6 @@ def run_browsergym_episode(
                 session,
                 episode,
                 artifact_root / "screenshots" / run_id,
-                benchmark_runtime_profile=BrowserGymBenchmarkRuntimeProfile(
-                    tuple(TaskCompletionEvaluator.success_criterion_ids(task_spec))
-                ),
             ),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),
@@ -604,8 +599,8 @@ def run_browsergym_episode(
             ),
             contract_builder=BrowserGymContractBuilder(bindings=bindings),
         ).run_sync(
-            RunRequest(
-                admitted_task=admit_legacy_task_spec(task_spec),
+            legacy_run_request(
+                task_spec=task_spec,
                 capabilities=[SPATIAL_POINT_CAPABILITY],
             )
         )
@@ -787,9 +782,6 @@ def run_browsergym_generalist_episode(
                 artifact_root / "screenshots" / run_id,
                 perception_requirements=perception_requirements,
                 task_terms=perception_task_terms(task_spec),
-                benchmark_runtime_profile=BrowserGymBenchmarkRuntimeProfile(
-                    tuple(TaskCompletionEvaluator.success_criterion_ids(task_spec))
-                ),
             ),
             executor=BrowserGymExecutor(environment, episode),
             artifacts=ArtifactStore(artifact_root / "runs"),

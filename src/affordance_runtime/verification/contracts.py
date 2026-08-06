@@ -107,6 +107,8 @@ class PredicateEvidence:
     resource_version: str = ""
     conflict: bool = False
     error_code: str = ""
+    runtime_causal_lineage: bool = False
+    runtime_final_recheck: bool = False
 
     def __post_init__(self) -> None:
         if not self.evidence_ref.strip() or not self.subject_ref.strip():

@@ -30,28 +30,27 @@ class ServiceRunStatus(StrEnum):
 class TaskRequest:
     run_id: str
     scenario: str
-    goal: str
     target: str
+    admitted_task: AdmittedTaskSpec
     constraints: dict[str, Any] = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
-    admitted_task: AdmittedTaskSpec | None = None
 
     @property
-    def task_spec(self) -> TaskSpec | None:
-        return self.admitted_task.task_spec if self.admitted_task is not None else None
+    def goal(self) -> str:
+        return self.task_spec.objective
+
+    @property
+    def task_spec(self) -> TaskSpec:
+        return self.admitted_task.task_spec
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "constraints", freeze_json(self.constraints))
         object.__setattr__(self, "capabilities", FrozenSequence(self.capabilities))
-        if self.admitted_task is not None and not isinstance(self.admitted_task, AdmittedTaskSpec):
+        if not isinstance(self.admitted_task, AdmittedTaskSpec):
             raise ValueError("TaskRequest only accepts an Authority-issued AdmittedTaskSpec")
         task_spec = self.task_spec
-        if task_spec is None:
-            return
         if task_spec.task_id != self.run_id:
             raise ValueError("TaskRequest run_id does not match TaskSpec task_id")
-        if self.goal and self.goal != task_spec.objective:
-            raise ValueError("TaskRequest goal does not match TaskSpec objective")
         capability_ceiling = set(task_spec.capability_ceiling)
         if not set(self.capabilities).issubset(capability_ceiling):
             raise ValueError("TaskRequest grants exceed TaskSpec capability_ceiling")
@@ -65,11 +64,26 @@ class TaskRequest:
             "constraints": to_json_compatible(self.constraints),
             "capabilities": to_json_compatible(self.capabilities),
             "task_spec": None,
-            "task_spec_admission_id": self.admitted_task.admission_id if self.admitted_task else "",
+            "task_spec_admission_id": self.admitted_task.admission_id,
         }
-        if self.task_spec is not None:
-            value["task_spec"] = self.task_spec.model_dump(mode="json")
+        value["task_spec"] = self.task_spec.model_dump(mode="json")
         return value
+
+
+@dataclass(frozen=True)
+class UserTaskSubmission:
+    run_id: str
+    scenario: str
+    goal: str
+    target: str
+    constraints: dict[str, Any] = field(default_factory=dict)
+    capabilities: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.run_id.strip() or not self.goal.strip():
+            raise ValueError("user task submission requires run_id and goal")
+        object.__setattr__(self, "constraints", freeze_json(self.constraints))
+        object.__setattr__(self, "capabilities", FrozenSequence(self.capabilities))
 
 
 @dataclass(frozen=True)
@@ -109,6 +123,7 @@ class TaskExecution:
 
 
 TaskRunner = Callable[[TaskRequest, ApprovalGrant | None], TaskExecution]
+TaskIntake = Callable[[UserTaskSubmission], TaskRequest]
 
 
 @dataclass
@@ -134,6 +149,7 @@ class RunView:
 @dataclass
 class TaskRuntimeService:
     runner: TaskRunner
+    intake: TaskIntake | None = None
     runs: dict[str, RunView] = field(default_factory=dict)
     _lock: RLock = field(default_factory=RLock)
 
@@ -144,6 +160,11 @@ class TaskRuntimeService:
             view = RunView(request)
             self.runs[request.run_id] = view
             return view
+
+    def submit_user(self, submission: UserTaskSubmission) -> RunView:
+        if self.intake is None:
+            raise ValueError("user task submission requires a configured canonical intake")
+        return self.submit(self.intake(submission))
 
     def execute(self, run_id: str) -> RunView:
         with self._lock:
@@ -175,8 +196,6 @@ class TaskRuntimeService:
             if view.status != ServiceRunStatus.WAITING_CLARIFICATION:
                 raise ValueError(f"task cannot be revised in status {view.status.value}")
             previous = view.request.task_spec
-            if previous is None:
-                raise ValueError("legacy task request has no revisable TaskSpec")
             if task_spec.task_id != previous.task_id:
                 raise ValueError("TaskSpec revision cannot change task_id")
             if task_spec.revision <= previous.revision:
@@ -185,7 +204,6 @@ class TaskRuntimeService:
                 raise ValueError("TaskSpec revision does not extend the admitted revision lineage")
             view.request = replace(
                 view.request,
-                goal=task_spec.objective,
                 target=(task_effect_targets(task_spec) or (view.request.target,))[0],
                 capabilities=[
                     capability
@@ -296,7 +314,6 @@ class TaskToolAdapter:
             "gui_execute_task",
             "gui_get_run",
             "gui_approve_task",
-            "gui_revise_task",
             "gui_cancel_task",
             "gui_get_result",
             "gui_get_evidence",
@@ -307,7 +324,7 @@ class TaskToolAdapter:
         if tool not in self.tool_names:
             raise KeyError(f"unknown task-level tool: {tool}")
         if tool == "gui_submit_task":
-            return self.service.submit(TaskRequest(**arguments)).to_dict()
+            return self.service.submit_user(UserTaskSubmission(**arguments)).to_dict()
         if tool == "gui_execute_task":
             return self.service.execute(str(arguments["run_id"])).to_dict()
         if tool == "gui_get_run":
@@ -317,14 +334,6 @@ class TaskToolAdapter:
                 str(arguments["run_id"]),
                 capability=str(arguments["capability"]),
                 approver=str(arguments["approver"]),
-            ).to_dict()
-        if tool == "gui_revise_task":
-            admitted_task = arguments.get("admitted_task")
-            if not isinstance(admitted_task, AdmittedTaskSpec):
-                raise ValueError("JSON callers cannot inject canonical TaskSpec revisions")
-            return self.service.revise_task(
-                str(arguments["run_id"]),
-                admitted_task,
             ).to_dict()
         if tool == "gui_cancel_task":
             return self.service.cancel(str(arguments["run_id"])).to_dict()

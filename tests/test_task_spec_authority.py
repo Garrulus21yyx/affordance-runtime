@@ -240,6 +240,8 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
 
     with pytest.raises(TypeError):
         RunRequest(task_spec=result.task_spec)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        RunRequest()  # type: ignore[call-arg]
     with pytest.raises(TypeError, match="only be issued"):
         AdmittedTaskSpec(result.task_spec, "forged", envelope.identity)
 

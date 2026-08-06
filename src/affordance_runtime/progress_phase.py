@@ -35,7 +35,6 @@ from affordance_runtime.route_calibration import RouteCalibrator, RouteOutcome, 
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import (
     admit_observation_durable_evidence,
-    observation_evidence_context_metadata,
     observation_predicate_evidence,
     verification_satisfies_effect,
 )
@@ -126,7 +125,7 @@ class ProgressStage:
         parent = events.root()
         if stage_input.action is None:
             current_evidence = observation_predicate_evidence(stage_input.observation)
-            latest_recheck, resource_versions = observation_evidence_context_metadata(stage_input.observation)
+            latest_recheck, resource_versions = "", ()
             if state.task_progress is not None:
                 admit_observation_durable_evidence(stage_input.observation, state.task_progress.durable_evidence)
             task_completion = self.evaluation_service.evaluate_task_completion(
@@ -258,7 +257,16 @@ class ProgressStage:
             state.task_progress.record_action_outcome(outcome_commit.outcome)
             admit_observation_durable_evidence(canonical, state.task_progress.durable_evidence)
         current_evidence = observation_predicate_evidence(canonical)
-        latest_recheck, resource_versions = observation_evidence_context_metadata(canonical)
+        latest_recheck = (
+            f"runtime-final-recheck:{canonical.snapshot_id}"
+            if any(
+                item.source in {"external_evaluator", "independent_http_json", "api_state"}
+                and item.strength in {"strong", "authoritative"}
+                for item in report.evidence
+            )
+            else ""
+        )
+        resource_versions: tuple[tuple[str, str], ...] = ()
         state.record_action_progress(
             action.action_signature,
             post_snapshot.observation.environment_revision,

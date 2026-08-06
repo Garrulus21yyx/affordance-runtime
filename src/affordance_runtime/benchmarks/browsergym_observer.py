@@ -11,7 +11,6 @@ from typing import Any, Sequence
 from affordance_runtime.benchmarks.browsergym_types import (
     BROWSERGYM_BACKEND,
     BROWSERGYM_SUCCESS_CRITERION_ID,
-    BrowserGymBenchmarkRuntimeProfile,
     BrowserGymEpisodeState,
 )
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
@@ -34,7 +33,6 @@ class BrowserGymObserver:
     screenshot_dir: Path
     perception_requirements: PerceptionRequirements | None = None
     task_terms: tuple[str, ...] = ()
-    benchmark_runtime_profile: BrowserGymBenchmarkRuntimeProfile | None = None
     sequence: int = 0
     lease_ttl_ms: int = 120_000
     max_capture_attempts: int = 2
@@ -114,24 +112,6 @@ class BrowserGymObserver:
                     "evidence_refs": [f"browsergym:official-grade:{self.episode.task_id}"],
                 },
             },
-            **(
-                {
-                    "criterion_evaluations": {
-                        criterion_id: {
-                            "status": (
-                                "satisfied" if self.episode.terminated and self.episode.reward > 0 else "unsatisfied"
-                            ),
-                            "provider": "external_evaluator",
-                            "source_kind": "api_state",
-                            "assurance": "authoritative",
-                            "evidence_refs": [f"browsergym:official-grade:{self.episode.task_id}"],
-                        }
-                        for criterion_id in self.benchmark_runtime_profile.success_criterion_ids
-                    }
-                }
-                if self.benchmark_runtime_profile is not None
-                else {}
-            ),
         }
         observation = replace(snapshot.observation, metadata=metadata)
         return replace(snapshot, observation=observation)

@@ -5,7 +5,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.grounding import ActivePerceptionRequest, GroundingSource
 from affordance_runtime.perception_session import PerceptionCaptureRequest, PerceptionSession
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import legacy_run_request
 from affordance_runtime.state_kernel import StateKernel
 
 
@@ -43,7 +43,7 @@ def test_plain_capture_returns_observation_without_mutating_authoritative_state(
     initial_version = state.version
 
     snapshot = session.capture(
-        PerceptionCaptureRequest(RunRequest("perception-task", state.goal), 1)
+        PerceptionCaptureRequest(legacy_run_request(task_id="perception-task", goal=state.goal), 1)
     )
 
     assert snapshot.observation.snapshot_id == "snapshot-1"

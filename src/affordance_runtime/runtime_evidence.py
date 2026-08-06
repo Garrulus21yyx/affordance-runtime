@@ -56,9 +56,7 @@ def verification_satisfies_effect(report: VerificationReport) -> bool:
     if not report.passed:
         return False
     return not any(
-        item.verifier_kind == "control_state"
-        and isinstance(item.expected, dict)
-        and "changed_from" in item.expected
+        item.verifier_kind == "control_state" and isinstance(item.expected, dict) and "changed_from" in item.expected
         for item in report.evidence
     )
 
@@ -67,19 +65,13 @@ def verification_confirms_effect_absent(report: VerificationReport) -> bool:
     return (
         report.status == VerificationStatus.FAILED
         and bool(report.evidence)
-        and any(
-            not item.passed and item.strength == "strong" for item in report.evidence
-        )
+        and any(not item.passed and item.strength == "strong" for item in report.evidence)
     )
 
 
 def semantic_progress_fingerprint(state: Any) -> str:
     progress = {
-        "completed_steps": (
-            list(state.task_progress.completed_step_ids)
-            if state.task_progress is not None
-            else []
-        ),
+        "completed_steps": (list(state.task_progress.completed_step_ids) if state.task_progress is not None else []),
         "satisfied_effects": [
             f"{item.key.action_kind}:{item.key.target_id}:{item.key.parameter_digest}"
             for item in state.recent_action_outcomes.records
@@ -96,11 +88,7 @@ def semantic_target_descriptor(
     if not semantic_target_id:
         return None
     target = next(
-        (
-            item
-            for item in snapshot.targets
-            if item.target_id == semantic_target_id
-        ),
+        (item for item in snapshot.targets if item.target_id == semantic_target_id),
         None,
     )
     if target is None:
@@ -146,9 +134,7 @@ class RecentActionOutcomeEvidence:
         )
         if not all(item.strip() for item in required):
             raise ValueError("recent action outcome requires complete causal lineage")
-        if self.effect_satisfied and (
-            not self.effect_criterion_ids or not self.evidence_refs or not self.facts
-        ):
+        if self.effect_satisfied and (not self.effect_criterion_ids or not self.evidence_refs or not self.facts):
             raise ValueError("satisfied action outcome requires lossless effect facts")
 
     @classmethod
@@ -164,29 +150,20 @@ class RecentActionOutcomeEvidence:
                 assurance=AssuranceLevel(delta.assurance),
                 effect_criterion_ids=delta.criterion_ids,
                 evidence_refs=delta.evidence_refs,
-                state_delta_id=(
-                    f"delta:{outcome.outcome_id}:{index}:{delta.subject_id}"
-                ),
+                state_delta_id=(f"delta:{outcome.outcome_id}:{index}:{delta.subject_id}"),
             )
             for index, delta in enumerate(outcome.verification.state_deltas)
         )
         return cls(
             outcome_id=outcome.outcome_id,
             contract_id=outcome.attempt.contract_id,
-            receipt_ref=(
-                f"receipt:{outcome.receipt_contract_id}"
-                if outcome.receipt_contract_id
-                else ""
-            ),
+            receipt_ref=(f"receipt:{outcome.receipt_contract_id}" if outcome.receipt_contract_id else ""),
             pre_observation_ref=outcome.attempt.pre_observation.snapshot_id,
             post_observation_ref=outcome.verification.post_observation.snapshot_id,
             effect_criterion_ids=criterion_ids,
             evidence_refs=evidence_refs,
             effect_satisfied=bool(
-                outcome.status.value == "verified_effect"
-                and criterion_ids
-                and evidence_refs
-                and facts
+                outcome.status.value == "verified_effect" and criterion_ids and evidence_refs and facts
             ),
             facts=facts,
         )
@@ -204,9 +181,7 @@ class RecentActionOutcomeEvidence:
             and self.post_observation_ref == current_observation_ref
             and criterion_id in self.effect_criterion_ids
             and self.evidence_refs
-            and any(
-                criterion_id in fact.effect_criterion_ids for fact in self.facts
-            )
+            and any(criterion_id in fact.effect_criterion_ids for fact in self.facts)
         )
 
 
@@ -268,9 +243,7 @@ class DurableEvidenceStore:
     def admit(self, evidence: PredicateEvidence) -> bool:
         if not evidence.durable or evidence.source_kind not in _DURABLE_SOURCE_KINDS:
             return False
-        self.records = [
-            item for item in self.records if item.evidence_ref != evidence.evidence_ref
-        ]
+        self.records = [item for item in self.records if item.evidence_ref != evidence.evidence_ref]
         self.records.append(evidence)
         if len(self.records) > self.capacity:
             del self.records[: len(self.records) - self.capacity]
@@ -310,20 +283,6 @@ def observation_predicate_evidence(
             continue
         evidence_items.append(evidence)
     return tuple(evidence_items)
-
-
-def observation_evidence_context_metadata(
-    observation: UnifiedObservation,
-) -> tuple[str, tuple[tuple[str, str], ...]]:
-    latest = str(observation.metadata.get("latest_final_recheck_ref") or "")
-    versions = observation.metadata.get("resource_versions")
-    if not isinstance(versions, Mapping):
-        return latest, ()
-    return latest, tuple(
-        (str(subject_ref), str(version))
-        for subject_ref, version in versions.items()
-        if str(subject_ref) and str(version)
-    )
 
 
 def admit_observation_durable_evidence(

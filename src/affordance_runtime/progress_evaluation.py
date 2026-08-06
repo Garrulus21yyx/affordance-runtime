@@ -14,9 +14,10 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.runtime_evidence import semantic_progress_fingerprint
+from affordance_runtime.runtime_evidence import observation_predicate_evidence, semantic_progress_fingerprint
 from affordance_runtime.stage_protocol import RuntimeEventBuffer
 from affordance_runtime.verification.contracts import TaskCompletionEvaluation
+from affordance_runtime.verification.loop_evaluator import LoopEvaluator
 from affordance_runtime.verification.mechanical import VerificationReport
 from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
 from affordance_runtime.verification_report_adapter import (
@@ -58,6 +59,20 @@ class PostActionEvaluation:
     liveness_decision: str = ""
 
 
+def _runtime_final_recheck_ref(
+    report: VerificationReport | None,
+    observation: Observation,
+) -> str:
+    if report is None:
+        return ""
+    authoritative = any(
+        item.source in {"external_evaluator", "independent_http_json", "api_state"}
+        and item.strength in {"strong", "authoritative"}
+        for item in report.evidence
+    )
+    return f"runtime-final-recheck:{observation.snapshot_id}" if authoritative else ""
+
+
 @dataclass(frozen=True)
 class ProgressEvaluationService:
     def evaluate_task_completion(
@@ -72,9 +87,24 @@ class ProgressEvaluationService:
         if task_spec is None:
             return None
         typed_task_spec = cast(Any, task_spec)
+        task_progress = getattr(state, "task_progress", None)
+        latest_final_recheck_ref = _runtime_final_recheck_ref(report, observation)
+        evidence_context = LoopEvaluator.evidence_context(
+            observation=cast(Any, observation),
+            current_contract_id=(
+                str(state.current_contract.id) if getattr(state, "current_contract", None) is not None else ""
+            ),
+            recent_action_outcomes=(
+                tuple(task_progress.recent_action_outcomes.records) if task_progress is not None else ()
+            ),
+            current_evidence=observation_predicate_evidence(cast(Any, observation)),
+            durable_evidence=(tuple(task_progress.durable_evidence.records) if task_progress is not None else ()),
+            latest_final_recheck_ref=latest_final_recheck_ref,
+        )
         admitted = admit_completion_evidence(
             task_spec=typed_task_spec,
             observation=observation,
+            evidence_context=evidence_context,
             report=report,
         )
         retained = getattr(state, "completion_criterion_evaluations", {})

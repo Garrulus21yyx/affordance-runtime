@@ -142,7 +142,8 @@ def evidence_admitted_by_policy(
         return False
     elif policy.validity == EvidenceValidityMode.FINAL_RECHECK:
         if not (
-            evidence.authoritative_final_recheck
+            evidence.runtime_final_recheck
+            and evidence.authoritative_final_recheck
             and evidence.observation_ref == context.current_observation_ref
             and context.latest_final_recheck_ref
             and evidence.final_recheck_ref == context.latest_final_recheck_ref
@@ -155,7 +156,8 @@ def evidence_admitted_by_policy(
             return False
     if policy.satisfaction == SatisfactionMode.ACTION_CAUSED:
         if not (
-            context.current_contract_id
+            evidence.runtime_causal_lineage
+            and context.current_contract_id
             and evidence.contract_id == context.current_contract_id
             and evidence.receipt_ref
             and evidence.pre_observation_ref

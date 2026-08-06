@@ -26,15 +26,14 @@ def admit_completion_evidence(
     *,
     task_spec: TaskSpec,
     observation: Observation,
+    evidence_context: PredicateEvidenceContext,
     report: VerificationReport | None = None,
 ) -> tuple[CriterionEvaluation, ...]:
     admitted: dict[str, CriterionEvaluation] = {}
     policies = _success_policies(task_spec.success)
-    context = PredicateEvidenceContext(
-        current_observation_ref=observation.snapshot_id,
-        current_contract_id=str(observation.metadata.get("current_contract_id") or ""),
-        latest_final_recheck_ref=str(observation.metadata.get("latest_final_recheck_ref") or ""),
-    )
+    if evidence_context.current_observation_ref != observation.snapshot_id:
+        raise ValueError("completion evidence context must match the current observation")
+    context = evidence_context
     declared = observation.metadata.get("criterion_evaluations")
     if isinstance(declared, Mapping):
         for criterion_id, raw_status in declared.items():
@@ -61,11 +60,12 @@ def admit_completion_evidence(
             policy_digest = ""
             if policy is not None:
                 evidence = _declared_policy_evidence(criterion_id, raw_status, observation)
-                if evidence is None or not evidence_admitted_by_policy(
-                    evidence,
-                    policy,
-                    context,
-                    criterion_id=criterion_id,
+                candidates = (
+                    *((evidence,) if evidence is not None else ()),
+                    *(item for item in context.evidence if criterion_id in item.effect_criterion_ids),
+                )
+                if not any(
+                    evidence_admitted_by_policy(item, policy, context, criterion_id=criterion_id) for item in candidates
                 ):
                     status = CriterionStatus.UNKNOWN
                     provider = "success_evidence_rejected_by_policy"
@@ -129,12 +129,15 @@ def admit_completion_evidence(
         if policy is not None:
             policy_evidence = tuple(
                 item
-                for item in (_report_policy_evidence(criterion_id, evidence, observation) for evidence in strong)
+                for item in (
+                    _report_policy_evidence(criterion_id, evidence, observation, context) for evidence in strong
+                )
                 if item is not None
             )
             if not any(
                 evidence_admitted_by_policy(item, policy, context, criterion_id=criterion_id)
-                for item in policy_evidence
+                for item in (*policy_evidence, *context.evidence)
+                if not item.effect_criterion_ids or criterion_id in item.effect_criterion_ids
             ):
                 status = CriterionStatus.UNKNOWN
             policy_digest = criterion_policy_digest(criterion_id, policy)
@@ -207,6 +210,7 @@ def _report_policy_evidence(
     criterion_id: str,
     evidence: object,
     observation: Observation,
+    context: PredicateEvidenceContext,
 ) -> PredicateEvidence | None:
     source = str(getattr(evidence, "source", ""))
     source_kind = {
@@ -234,6 +238,8 @@ def _report_policy_evidence(
         assurance=assurance,
         observation_ref=observation.snapshot_id,
         authoritative_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
+        final_recheck_ref=context.latest_final_recheck_ref,
+        runtime_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
     )
 
 

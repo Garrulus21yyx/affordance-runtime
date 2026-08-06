@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from affordance_runtime.integrations.local import LocalScenarioTaskIntake
 from affordance_runtime.integrations.task_api import (
     ApprovalGrant,
     RunView,
@@ -12,6 +13,7 @@ from affordance_runtime.integrations.task_api import (
     TaskRequest,
     TaskRuntimeService,
     TaskToolAdapter,
+    UserTaskSubmission,
 )
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import (
@@ -39,7 +41,7 @@ def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> Non
             trace_path=str(trace),
         )
 
-    service = TaskRuntimeService(runner)
+    service = TaskRuntimeService(runner, intake=LocalScenarioTaskIntake())
     adapter = TaskToolAdapter(service)
     adapter.call(
         "gui_submit_task",
@@ -67,27 +69,29 @@ def test_task_api_approval_result_evidence_and_trace_flow(tmp_path: Path) -> Non
 
 def test_task_request_payloads_are_immutable_from_source_collections() -> None:
     constraints = {"require_approval_for": ["settings.write"]}
-    capabilities = ["settings.write"]
+    capabilities = ["settings.write.reversible"]
 
-    request = TaskRequest(
-        run_id="run-immutable",
-        scenario="settings",
-        goal="Update settings",
-        target="settings",
-        constraints=constraints,
-        capabilities=capabilities,
+    request = LocalScenarioTaskIntake()(
+        UserTaskSubmission(
+            run_id="run-immutable",
+            scenario="settings",
+            goal="Update settings",
+            target="settings",
+            constraints=constraints,
+            capabilities=capabilities,
+        )
     )
     constraints["require_approval_for"].append("admin.override")
     capabilities.append("admin.override")
 
     assert request.constraints["require_approval_for"] == ["settings.write"]
-    assert request.capabilities == ["settings.write"]
+    assert request.capabilities == ["settings.write.reversible"]
     with pytest.raises(TypeError):
         request.constraints["require_approval_for"][0] = "admin.override"
     with pytest.raises(AttributeError):
         request.capabilities.append("admin.override")
     assert request.to_dict()["constraints"] == {"require_approval_for": ["settings.write"]}
-    assert request.to_dict()["capabilities"] == ["settings.write"]
+    assert request.to_dict()["capabilities"] == ["settings.write.reversible"]
 
 
 def test_task_execution_payloads_are_immutable_from_source_collections() -> None:
@@ -104,9 +108,8 @@ def test_task_execution_payloads_are_immutable_from_source_collections() -> None
         execution.result["items"][0] = "polluted"
     with pytest.raises(AttributeError):
         execution.artifacts.append("receipt.json")
-    assert RunView(TaskRequest("run-immutable", "settings", "Update", "settings"), execution=execution).to_dict()[
-        "execution"
-    ] == {
+    request = LocalScenarioTaskIntake()(UserTaskSubmission("run-immutable", "settings", "Update", "settings"))
+    assert RunView(request, execution=execution).to_dict()["execution"] == {
         "status": "done",
         "result": {"items": ["a"]},
         "error_code": None,
@@ -117,8 +120,9 @@ def test_task_execution_payloads_are_immutable_from_source_collections() -> None
 
 
 def test_task_api_cancel_and_capability_scope() -> None:
-    service = TaskRuntimeService(lambda request, approval: TaskExecution("done"))
-    service.submit(TaskRequest("run-2", "pricing", "extract", "http://fixture", capabilities=[]))
+    intake = LocalScenarioTaskIntake()
+    service = TaskRuntimeService(lambda request, approval: TaskExecution("done"), intake=intake)
+    service.submit_user(UserTaskSubmission("run-2", "pricing", "extract", "http://fixture"))
 
     try:
         service.approve("run-2", capability="report.export", approver="user")
@@ -137,7 +141,10 @@ def test_task_api_cancel_and_capability_scope() -> None:
 
 
 def test_task_adapter_async_execution_keeps_event_loop_interface() -> None:
-    service = TaskRuntimeService(lambda request, approval: TaskExecution("done", {"run_id": request.run_id}))
+    service = TaskRuntimeService(
+        lambda request, approval: TaskExecution("done", {"run_id": request.run_id}),
+        intake=LocalScenarioTaskIntake(),
+    )
     adapter = TaskToolAdapter(service)
     adapter.call(
         "gui_submit_task",
@@ -192,7 +199,6 @@ def test_task_api_accepts_taskspec_and_requires_monotonic_clarification_revision
         TaskRequest(
             run_id="clarify-run",
             scenario="settings",
-            goal="Update settings",
             target="settings",
             capabilities=["settings.write"],
             admitted_task=initial.admitted_task,
@@ -222,7 +228,6 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
     request = TaskRequest(
         run_id="clarify-run",
         scenario="settings",
-        goal="Update settings",
         target="settings",
         admitted_task=admission.admitted_task,
     )
@@ -233,7 +238,6 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
         TaskRequest(
             run_id="clarify-run",
             scenario="settings",
-            goal="Update settings",
             target="settings",
             task_spec=admission.task_spec,  # type: ignore[call-arg]
         )
@@ -242,7 +246,6 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
         TaskRequest(
             run_id="clarify-run",
             scenario="settings",
-            goal="Update settings",
             target="settings",
             capabilities=["admin.superuser"],
             admitted_task=admission.admitted_task,
@@ -251,7 +254,15 @@ def test_taskspec_requested_capability_is_not_implicitly_granted() -> None:
 
 def test_json_tool_adapter_cannot_inject_a_canonical_taskspec() -> None:
     admission = _admitted_task(1)
-    adapter = TaskToolAdapter(TaskRuntimeService(lambda request, approval: TaskExecution("done")))
+    adapter = TaskToolAdapter(
+        TaskRuntimeService(
+            lambda request, approval: TaskExecution("done"),
+            intake=LocalScenarioTaskIntake(),
+        )
+    )
+
+    with pytest.raises(TypeError):
+        TaskRequest(run_id="raw", scenario="pricing", target="pricing")  # type: ignore[call-arg]
 
     with pytest.raises(TypeError):
         adapter.call(

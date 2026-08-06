@@ -235,7 +235,7 @@ def test_coordinator_runs_pre_observe_act_post_observe_verify_loop(tmp_path) -> 
     assert (tmp_path / "artifacts/run-1/run.json").exists()
 
 
-def test_progress_stage_wires_positive_final_recheck_metadata_to_step_completion() -> None:
+def test_progress_stage_does_not_treat_observation_final_recheck_metadata_as_runtime_authority() -> None:
     result = compose_run_coordinator(
         observer=FinalRecheckObserver(),
         executor=FakeExecutor(),
@@ -245,7 +245,7 @@ def test_progress_stage_wires_positive_final_recheck_metadata_to_step_completion
 
     assert result.status == RuntimeStep.DONE
     assert result.state.task_progress is not None
-    assert result.state.task_progress.completed_step_ids == ("subgoal-final-recheck",)
+    assert result.state.task_progress.completed_step_ids == ()
 
 
 def test_open_semantic_without_resolver_routes_to_typed_clarification() -> None:

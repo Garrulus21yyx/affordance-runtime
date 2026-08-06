@@ -26,7 +26,7 @@ from affordance_runtime.planners import (
     pricing_success_expression,
     settings_contract_builder,
 )
-from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime import RunRequest, legacy_run_request
 from affordance_runtime.task_intake import (
     OperationClass,
     TaskRequirement,
@@ -36,7 +36,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirements,
 )
 from affordance_runtime.task_planner import PlanningRouter
-from affordance_runtime.task_spec_authority import admit_legacy_task_spec
+from affordance_runtime.task_spec_authority import AdmittedTaskSpec
 from affordance_runtime.verification.contracts import SuccessExpression
 
 
@@ -418,6 +418,7 @@ def run_scenario(
     capabilities_override: list[str] | None = None,
     task_planning: bool = False,
     accepted_profile: Path | None = None,
+    admitted_task: AdmittedTaskSpec | None = None,
 ) -> dict[str, object]:
     paths = {"pricing": "/pricing", "settings": "/settings", "export": "/reports"}
     target = target or f"http://127.0.0.1:3000{paths[scenario]}"
@@ -437,8 +438,8 @@ def run_scenario(
         from affordance_runtime.evolution import AcceptedProfileLoader
 
         loaded_profile = AcceptedProfileLoader(accepted_profile).load()
-    task_spec = None
-    if task_planning:
+    task_spec = admitted_task.task_spec if admitted_task is not None else None
+    if admitted_task is None and task_planning:
         task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
@@ -458,7 +459,7 @@ def run_scenario(
             required_outputs=pricing_required_outputs(),
             source_request_ref="reference-cli",
         )
-    elif loaded_profile is not None:
+    elif admitted_task is None and loaded_profile is not None:
         profile_objectives = {
             "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
             "settings": "Enable the reversible notifications setting and verify persisted state.",
@@ -591,16 +592,7 @@ def run_scenario(
             loaded_profile_artifact_ids=(loaded_profile.artifact_ids if loaded_profile is not None else ()),
         ).run_sync(
             RunRequest(
-                task_id=selected_run_id,
-                goal=(
-                    task_spec.objective
-                    if task_spec is not None
-                    else {
-                        "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
-                        "settings": "Enable the reversible notifications setting and verify persisted state.",
-                        "export": "Export a report only after explicit approval and return the file receipt.",
-                    }[scenario]
-                ),
+                admitted_task=admitted_task,
                 target=target,
                 constraints=constraints_override
                 if constraints_override is not None
@@ -610,7 +602,19 @@ def run_scenario(
                     "approval_required": scenario == "export",
                 },
                 capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
-                admitted_task=(admit_legacy_task_spec(task_spec) if task_spec is not None else None),
+            )
+            if admitted_task is not None
+            else legacy_run_request(
+                task_spec=task_spec,
+                target=target,
+                constraints=constraints_override
+                if constraints_override is not None
+                else {
+                    "read_only": scenario == "pricing",
+                    "must_return_evidence": True,
+                    "approval_required": scenario == "export",
+                },
+                capabilities=capabilities_override if capabilities_override is not None else capabilities[scenario],
             )
         )
     return {
