@@ -138,8 +138,15 @@ def evidence_admitted_by_policy(
     if policy.validity == EvidenceValidityMode.CURRENT_OBSERVATION:
         if not context.current_observation_ref or evidence.observation_ref != context.current_observation_ref:
             return False
-    elif policy.validity == EvidenceValidityMode.DURABLE and not evidence.durable:
-        return False
+    elif policy.validity == EvidenceValidityMode.RECENT_ACTION:
+        if (
+            evidence.evidence_ref not in context.recent_evidence_refs
+            or evidence.contract_id not in context.recent_contract_ids
+        ):
+            return False
+    elif policy.validity == EvidenceValidityMode.DURABLE:
+        if not evidence.durable or evidence.evidence_ref not in context.durable_evidence_refs:
+            return False
     elif policy.validity == EvidenceValidityMode.FINAL_RECHECK:
         if not (
             evidence.runtime_final_recheck
@@ -157,13 +164,19 @@ def evidence_admitted_by_policy(
     if policy.satisfaction == SatisfactionMode.ACTION_CAUSED:
         if not (
             evidence.runtime_causal_lineage
-            and context.current_contract_id
-            and evidence.contract_id == context.current_contract_id
+            and evidence.contract_id
+            and (
+                evidence.contract_id == context.current_contract_id
+                or evidence.contract_id in context.recent_contract_ids
+            )
             and evidence.receipt_ref
             and evidence.pre_observation_ref
             and evidence.post_observation_ref
             and criterion_id in evidence.effect_criterion_ids
-            and evidence.post_observation_ref == context.current_observation_ref
+            and (
+                policy.validity == EvidenceValidityMode.RECENT_ACTION
+                or evidence.post_observation_ref == context.current_observation_ref
+            )
         ):
             return False
     return not evidence.error_code

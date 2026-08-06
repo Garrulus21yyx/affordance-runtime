@@ -42,6 +42,7 @@ class TaskSkillProgressService:
         events: RuntimeEventBuffer,
         report: VerificationReport,
         observation: Any,
+        canonical_observation: Any,
         verification_ref: ArtifactRef | None,
     ) -> TaskSkillProgressResult:
         runtime = self.runtime
@@ -60,9 +61,7 @@ class TaskSkillProgressService:
                     "verification": report.status.value,
                 },
             )
-            self._trace_fallthrough(
-                events, state, runtime, reason, action.skill_step_id
-            )
+            self._trace_fallthrough(events, state, runtime, reason, action.skill_step_id)
             return TaskSkillProgressResult(progress=progress)
 
         skill_report = runtime.verify_active_step(
@@ -105,22 +104,16 @@ class TaskSkillProgressService:
                 "skill_id": progress.skill_id if progress else "",
                 "version": progress.version if progress else "",
                 "step_id": action.skill_step_id,
-                "completed_step_ids": list(progress.completed_step_ids)
-                if progress
-                else [],
+                "completed_step_ids": list(progress.completed_step_ids) if progress else [],
                 "evidence": list(progress.evidence) if progress else [],
-                "criterion_evidence_links": [
-                    asdict(item) for item in skill_report.match.links
-                ],
+                "criterion_evidence_links": [asdict(item) for item in skill_report.match.links],
             },
         )
         if not complete or state.task_plan is not None:
             return TaskSkillProgressResult(complete=complete, progress=progress)
 
         if action.contract.grounding_candidate is not None:
-            state.complete_grounding_recovery(
-                action.contract.grounding_candidate.semantic_target_id
-            )
+            state.complete_grounding_recovery(action.contract.grounding_candidate.semantic_target_id)
         commit = commit_task_skill_terminal_progress(
             state=state,
             progress=progress,
@@ -131,6 +124,7 @@ class TaskSkillProgressService:
             task_spec=task_spec,
             state=state,
             observation=observation,
+            canonical_observation=canonical_observation,
             report=report,
             result=commit.result_payload(),
         )
@@ -154,11 +148,7 @@ class TaskSkillProgressService:
         return TaskSkillProgressResult(
             complete=complete,
             progress=progress,
-            terminal=(
-                TerminalResult("", "task_completed", RuntimeStep.DONE)
-                if completion.completed
-                else None
-            ),
+            terminal=(TerminalResult("", "task_completed", RuntimeStep.DONE) if completion.completed else None),
             task_completion=completion,
         )
 
@@ -179,9 +169,7 @@ class TaskSkillProgressService:
                 "version": progress.version if progress else "",
                 "step_id": step_id,
                 "reason": reason,
-                "preserved_completed_step_ids": list(progress.completed_step_ids)
-                if progress
-                else [],
+                "preserved_completed_step_ids": list(progress.completed_step_ids) if progress else [],
                 "preserved_evidence": list(progress.evidence) if progress else [],
                 "fallback": "system_2",
             },

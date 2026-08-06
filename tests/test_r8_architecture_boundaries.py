@@ -233,6 +233,29 @@ def test_strict_browsergym_path_does_not_construct_generalist_planner() -> None:
     assert "BROWSERGYM_SUCCESS_CRITERION_ID" not in strict_path
 
 
+def test_importing_strict_browsergym_runner_does_not_load_legacy_planner_modules() -> None:
+    script = """
+import json
+import sys
+import affordance_runtime.benchmarks.browsergym_episode_runner
+print(json.dumps(sorted(name for name in sys.modules if name in {
+    'affordance_runtime.generalist_planner',
+    'affordance_runtime.planner_context',
+    'affordance_runtime.planner_context_recovery',
+})))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=SOURCE_ROOT.parent.parent,
+        env={**os.environ, "PYTHONPATH": str(SOURCE_ROOT.parent)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == "[]"
+
+
 def test_historical_profile_loads_quarantined_compatibility_algorithms() -> None:
     module_name = "affordance_runtime.compatibility_planner_algorithms"
     script = f"""
@@ -283,7 +306,7 @@ def test_legacy_task_admission_adapter_has_a_bounded_p5_3_import_allowlist() -> 
     assert private_importers == {"runtime.py"}
     assert legacy_request_importers == {
         "benchmarks/adaptive_routing.py",
-        "benchmarks/browsergym_episode_runner.py",
+        "benchmarks/browsergym_compatibility_episode.py",
         "benchmarks/generalization_rollout.py",
         "benchmarks/local.py",
         "benchmarks/task_planning.py",

@@ -35,6 +35,7 @@ class SatisfactionMode(StrEnum):
 
 class EvidenceValidityMode(StrEnum):
     CURRENT_OBSERVATION = "current_observation"
+    RECENT_ACTION = "recent_action"
     DURABLE = "durable"
     FINAL_RECHECK = "final_recheck"
 
@@ -125,10 +126,16 @@ class PredicateEvidenceContext:
     current_contract_id: str = ""
     latest_final_recheck_ref: str = ""
     current_resource_versions: tuple[tuple[str, str], ...] = ()
+    recent_evidence_refs: frozenset[str] = frozenset()
+    recent_contract_ids: frozenset[str] = frozenset()
+    durable_evidence_refs: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence", tuple(self.evidence))
         object.__setattr__(self, "current_resource_versions", tuple(self.current_resource_versions))
+        object.__setattr__(self, "recent_evidence_refs", frozenset(self.recent_evidence_refs))
+        object.__setattr__(self, "recent_contract_ids", frozenset(self.recent_contract_ids))
+        object.__setattr__(self, "durable_evidence_refs", frozenset(self.durable_evidence_refs))
 
 
 class SuccessExpression(_FrozenModel):

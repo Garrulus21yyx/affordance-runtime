@@ -121,4 +121,7 @@ class LoopEvaluator:
             current_contract_id=current_contract_id,
             latest_final_recheck_ref=latest_final_recheck_ref,
             current_resource_versions=current_resource_versions,
+            recent_evidence_refs=frozenset(item.evidence_ref for item in causal),
+            recent_contract_ids=frozenset(item.contract_id for item in recent_action_outcomes),
+            durable_evidence_refs=frozenset(item.evidence_ref for item in durable_evidence),
         )

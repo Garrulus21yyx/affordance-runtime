@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import TYPE_CHECKING, Any
 
 from affordance_runtime.contracts import ActionContract
@@ -283,6 +284,54 @@ def observation_predicate_evidence(
             continue
         evidence_items.append(evidence)
     return tuple(evidence_items)
+
+
+def canonical_resource_versions(
+    observation: UnifiedObservation,
+) -> tuple[tuple[str, str], ...]:
+    """Version canonical targets/facts without trusting observation metadata."""
+
+    versions: dict[str, str] = {}
+    for target in observation.targets:
+        state_facts = tuple(getattr(target, "state_facts", ()))
+        direct_state = dict(getattr(target, "state", {})) if not state_facts else {}
+        target_payload = {
+            "target_id": target.target_id,
+            "facts": (
+                [
+                    {
+                        "property": fact.property_name,
+                        "status": fact.status.value,
+                        "value": fact.value,
+                        "sources": fact.source_values,
+                    }
+                    for fact in state_facts
+                ]
+                if state_facts
+                else [{"property": key, "value": value} for key, value in sorted(direct_state.items())]
+            ),
+        }
+        versions[target.target_id] = _resource_version(target_payload)
+        for fact in state_facts:
+            versions[f"{target.target_id}:{fact.property_name}"] = _resource_version(
+                {
+                    "target_id": target.target_id,
+                    "property": fact.property_name,
+                    "status": fact.status.value,
+                    "value": fact.value,
+                    "sources": fact.source_values,
+                }
+            )
+        for property_name, value in direct_state.items():
+            versions[f"{target.target_id}:{property_name}"] = _resource_version(
+                {"target_id": target.target_id, "property": property_name, "value": value}
+            )
+    return tuple(sorted(versions.items()))
+
+
+def _resource_version(payload: object) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return f"sha256:{sha256(encoded).hexdigest()}"
 
 
 def admit_observation_durable_evidence(

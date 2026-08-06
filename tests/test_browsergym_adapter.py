@@ -47,12 +47,12 @@ from affordance_runtime.benchmarks.browsergym import (
     update_browsergym_batch_circuit_state,
     write_browsergym_report,
 )
+from affordance_runtime.benchmarks.browsergym_compatibility_episode import BrowserGymPlanner
 from affordance_runtime.benchmarks.browsergym_dom import (
     browsergym_dom_adapter,
     browsergym_svg_observer,
 )
 from affordance_runtime.benchmarks.browsergym_episode_runner import (
-    BrowserGymPlanner,
     _browsergym_failure_stats,
     _browsergym_model_stats,
 )

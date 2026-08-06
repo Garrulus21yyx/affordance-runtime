@@ -35,6 +35,7 @@ from affordance_runtime.route_calibration import RouteCalibrator, RouteOutcome, 
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.runtime_evidence import (
     admit_observation_durable_evidence,
+    canonical_resource_versions,
     observation_predicate_evidence,
     verification_satisfies_effect,
 )
@@ -125,13 +126,15 @@ class ProgressStage:
         parent = events.root()
         if stage_input.action is None:
             current_evidence = observation_predicate_evidence(stage_input.observation)
-            latest_recheck, resource_versions = "", ()
+            latest_recheck = ""
+            resource_versions = canonical_resource_versions(stage_input.observation)
             if state.task_progress is not None:
                 admit_observation_durable_evidence(stage_input.observation, state.task_progress.durable_evidence)
             task_completion = self.evaluation_service.evaluate_task_completion(
                 task_spec=stage_input.envelope.task_spec,
                 state=state,
                 observation=stage_input.capture.observation,
+                canonical_observation=stage_input.observation,
                 report=None,
                 result=state.final_result,
             )
@@ -266,7 +269,7 @@ class ProgressStage:
             )
             else ""
         )
-        resource_versions: tuple[tuple[str, str], ...] = ()
+        resource_versions = canonical_resource_versions(canonical)
         state.record_action_progress(
             action.action_signature,
             post_snapshot.observation.environment_revision,
@@ -285,6 +288,7 @@ class ProgressStage:
             events=events,
             report=report,
             observation=post_snapshot.observation,
+            canonical_observation=canonical,
             verification_ref=verification_ref,
         )
         skill_complete = skill_result.complete
@@ -295,6 +299,7 @@ class ProgressStage:
             task_spec=stage_input.envelope.task_spec,
             state=state,
             observation=post_snapshot.observation,
+            canonical_observation=canonical,
             report=report,
             result=state.final_result,
         )

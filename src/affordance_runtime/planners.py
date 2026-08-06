@@ -29,7 +29,13 @@ from affordance_runtime.planning_contracts import (
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.task_intake import TaskRequirement, TaskSemanticPayload
 from affordance_runtime.task_planner import TaskPlanningNoPlan, TaskPlanningRequest
-from affordance_runtime.verification.contracts import OutputSpec, SuccessExpression
+from affordance_runtime.verification.contracts import (
+    CriterionPolicy,
+    EvidenceValidityMode,
+    OutputSpec,
+    SatisfactionMode,
+    SuccessExpression,
+)
 
 _ARTICLE_PATTERN = re.compile(r"<article\s+([^>]*data-plan=[^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
@@ -45,12 +51,22 @@ def pricing_success_expression() -> SuccessExpression:
                 operator="criterion",
                 criterion_id="criterion:pricing-pro-visible",
                 requirement_refs=("requirement:effect:1",),
+                policy=CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    validity=EvidenceValidityMode.RECENT_ACTION,
+                    causal_lineage_required=True,
+                ),
             ),
             SuccessExpression(
                 expression_id="success:pricing-enterprise-visible",
                 operator="criterion",
                 criterion_id="criterion:pricing-enterprise-visible",
                 requirement_refs=("requirement:effect:2", "requirement:output:1"),
+                policy=CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    validity=EvidenceValidityMode.RECENT_ACTION,
+                    causal_lineage_required=True,
+                ),
             ),
         ),
     )

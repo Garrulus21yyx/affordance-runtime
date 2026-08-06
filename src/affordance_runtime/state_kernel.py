@@ -16,17 +16,39 @@ from affordance_runtime.observation_store import ObservationCommit, ObservationR
 from affordance_runtime.recovery_protocol import RecoveryDecision, RecoveryOutcome
 from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.task_plan_progress import TaskProgress
-from affordance_runtime.verification.contracts import CriterionEvaluation
 from affordance_runtime.verification.mechanical import VerificationReport
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "created": {"observing", "aborted"}, "observing": {"planning", "recovering", "done", "failed", "aborted"},
-    "planning": {"observing", "preflight", "recovering", "waiting_clarification", "deferred", "done", "failed", "aborted"},
-    "waiting_clarification": {"observing", "aborted"}, "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
-    "waiting_approval": {"preflight", "aborted"}, "acting": {"verifying", "recovering", "failed"},
+    "created": {"observing", "aborted"},
+    "observing": {"planning", "recovering", "done", "failed", "aborted"},
+    "planning": {
+        "observing",
+        "preflight",
+        "recovering",
+        "waiting_clarification",
+        "deferred",
+        "done",
+        "failed",
+        "aborted",
+    },
+    "waiting_clarification": {"observing", "aborted"},
+    "preflight": {"acting", "observing", "recovering", "waiting_approval", "aborted"},
+    "waiting_approval": {"preflight", "aborted"},
+    "acting": {"verifying", "recovering", "failed"},
     "verifying": {"planning", "observing", "recovering", "done", "failed"},
-    "recovering": {"observing", "planning", "waiting_approval", "waiting_clarification", "deferred", "aborted", "failed"},
-    "done": set(), "failed": set(), "aborted": set(), "deferred": set(),
+    "recovering": {
+        "observing",
+        "planning",
+        "waiting_approval",
+        "waiting_clarification",
+        "deferred",
+        "aborted",
+        "failed",
+    },
+    "done": set(),
+    "failed": set(),
+    "aborted": set(),
+    "deferred": set(),
 }
 
 
@@ -62,7 +84,9 @@ class ActionKey:
             digest_payload["destination"] = str(payload["destination"])
         if payload.get("subgoal"):
             digest_payload["subgoal"] = str(payload["subgoal"])
-        canonical = json.dumps(to_json_compatible(freeze_json(digest_payload)), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        canonical = json.dumps(
+            to_json_compatible(freeze_json(digest_payload)), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         parameter_digest = hashlib.sha256(canonical.encode()).hexdigest()
         return cls(action_kind, target_id, f"sha256:{parameter_digest}")
 
@@ -86,8 +110,20 @@ class RecentActionOutcomeIndex:
         if len(self.records) > self.capacity:
             self.records = self.records[-self.capacity :]
 
-    def record(self, key: ActionKey, post_environment_revision: str, *, verification_passed: bool, effect_satisfied: bool, post_page_revision: str = "") -> None:
-        self.records.append(RecentActionOutcomeRecord(key, post_environment_revision, verification_passed, effect_satisfied, post_page_revision))
+    def record(
+        self,
+        key: ActionKey,
+        post_environment_revision: str,
+        *,
+        verification_passed: bool,
+        effect_satisfied: bool,
+        post_page_revision: str = "",
+    ) -> None:
+        self.records.append(
+            RecentActionOutcomeRecord(
+                key, post_environment_revision, verification_passed, effect_satisfied, post_page_revision
+            )
+        )
         if len(self.records) > self.capacity:
             del self.records[: len(self.records) - self.capacity]
 
@@ -127,9 +163,6 @@ class StateKernel:
     attempted_recovery_strategy_ids: set[str] = field(default_factory=set)
     effectful_action_count: int = 0
     final_result: dict[str, Any] = field(default_factory=dict)
-    completion_criterion_evaluations: dict[str, CriterionEvaluation] = field(
-        default_factory=dict
-    )
     latest_planner_proposal: dict[str, Any] = field(default_factory=dict)
     recent_action_outcomes: RecentActionOutcomeIndex = field(default_factory=RecentActionOutcomeIndex)
     latest_progress_guard: dict[str, str] | None = None
@@ -159,15 +192,33 @@ class StateKernel:
         self.latest_planner_proposal = proposal
         self.version += 1
 
-    def record_action_progress(self, signature: str, post_environment_revision: str, *, verification_passed: bool, effect_satisfied: bool | None = None, post_page_revision: str = "") -> None:
-        self.recent_action_outcomes.record(ActionKey.from_signature(signature), post_environment_revision, verification_passed=verification_passed, effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied), post_page_revision=post_page_revision)
+    def record_action_progress(
+        self,
+        signature: str,
+        post_environment_revision: str,
+        *,
+        verification_passed: bool,
+        effect_satisfied: bool | None = None,
+        post_page_revision: str = "",
+    ) -> None:
+        self.recent_action_outcomes.record(
+            ActionKey.from_signature(signature),
+            post_environment_revision,
+            verification_passed=verification_passed,
+            effect_satisfied=(verification_passed if effect_satisfied is None else effect_satisfied),
+            post_page_revision=post_page_revision,
+        )
         self.version += 1
 
     def check_progress_guard(self, signature: str) -> ProgressGuardReason | None:
         previous = self.recent_action_outcomes.latest(ActionKey.from_signature(signature))
         if previous is None:
             return None
-        same_page = previous.post_page_revision == self.current_page_revision() if previous.post_page_revision and self.current_page_revision() else previous.post_environment_revision == self.current_revision()
+        same_page = (
+            previous.post_page_revision == self.current_page_revision()
+            if previous.post_page_revision and self.current_page_revision()
+            else previous.post_environment_revision == self.current_revision()
+        )
         if previous.effect_satisfied and same_page:
             return ProgressGuardReason.EFFECT_ALREADY_SATISFIED
         if not previous.verification_passed and previous.post_environment_revision == self.current_revision():
@@ -175,10 +226,16 @@ class StateKernel:
         return None
 
     def record_progress_guard(self, reason: ProgressGuardReason, signature: str) -> None:
-        self.latest_progress_guard = {"reason": reason.value, "signature": signature, "environment_revision": self.current_revision()}
+        self.latest_progress_guard = {
+            "reason": reason.value,
+            "signature": signature,
+            "environment_revision": self.current_revision(),
+        }
         self.version += 1
 
-    def record_grounding_reroute(self, contract: ActionContract, reason: str, *, exclude_candidate: bool = True) -> None:
+    def record_grounding_reroute(
+        self, contract: ActionContract, reason: str, *, exclude_candidate: bool = True
+    ) -> None:
         candidate = contract.grounding_candidate
         if candidate is None:
             return
@@ -186,7 +243,12 @@ class StateKernel:
             excluded = self.current_excluded_candidates.setdefault(candidate.semantic_target_id, set())
             if candidate.candidate_id not in excluded:
                 excluded.add(candidate.candidate_id)
-        self.current_grounding_fallback[candidate.semantic_target_id] = {"supersedes_contract_id": contract.id, "source_contract_id": contract.source_contract_id or contract.id, "fallback_reason": reason, "failed_source": candidate.source.value}
+        self.current_grounding_fallback[candidate.semantic_target_id] = {
+            "supersedes_contract_id": contract.id,
+            "source_contract_id": contract.source_contract_id or contract.id,
+            "fallback_reason": reason,
+            "failed_source": candidate.source.value,
+        }
         self.version += 1
 
     def complete_grounding_recovery(self, semantic_target_id: str) -> None:

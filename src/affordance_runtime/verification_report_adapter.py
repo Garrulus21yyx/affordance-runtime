@@ -83,7 +83,7 @@ def admit_completion_evidence(
             )
 
     if report is None:
-        return tuple(admitted.values())
+        return _admit_context_only_success(policies, context, admitted)
     by_criterion: dict[str, list[Any]] = {}
     for evidence in report.evidence:
         for criterion_id in evidence.criterion_ids:
@@ -155,6 +155,39 @@ def admit_completion_evidence(
             ),
             policy_digest=policy_digest,
         )
+    return _admit_context_only_success(policies, context, admitted)
+
+
+def _admit_context_only_success(
+    policies: Mapping[str, CriterionPolicy],
+    context: PredicateEvidenceContext,
+    admitted: dict[str, CriterionEvaluation],
+) -> tuple[CriterionEvaluation, ...]:
+    for criterion_id, policy in policies.items():
+        if criterion_id in admitted:
+            continue
+        candidates = tuple(item for item in context.evidence if criterion_id in item.effect_criterion_ids)
+        accepted = tuple(
+            item for item in candidates if evidence_admitted_by_policy(item, policy, context, criterion_id=criterion_id)
+        )
+        if not accepted:
+            continue
+        statuses: set[CriterionStatus] = set()
+        for item in accepted:
+            try:
+                statuses.add(CriterionStatus(str(item.observed_value)))
+            except ValueError:
+                statuses.add(CriterionStatus.SATISFIED)
+        status = statuses.pop() if len(statuses) == 1 else CriterionStatus.CONFLICT
+        admitted[criterion_id] = CriterionEvaluation(
+            criterion_id,
+            status,
+            evidence_refs=tuple(item.evidence_ref for item in accepted),
+            evaluated_at_observation_ref=context.current_observation_ref,
+            reason_code="runtime_evidence_context",
+            authoritative_final_recheck=policy.validity.value == "final_recheck",
+            policy_digest=criterion_policy_digest(criterion_id, policy),
+        )
     return tuple(admitted.values())
 
 
@@ -197,7 +230,7 @@ def _declared_policy_evidence(
             receipt_ref=str(raw.get("receipt_ref") or ""),
             pre_observation_ref=str(raw.get("pre_observation_ref") or ""),
             post_observation_ref=str(raw.get("post_observation_ref") or ""),
-            effect_criterion_ids=tuple(str(item) for item in raw.get("effect_criterion_ids", ())),
+            effect_criterion_ids=tuple(str(item) for item in raw.get("effect_criterion_ids", (criterion_id,))),
             durable=bool(raw.get("durable", False)),
             authoritative_final_recheck=bool(raw.get("authoritative_final_recheck", False)),
             final_recheck_ref=str(raw.get("final_recheck_ref") or ""),
@@ -239,6 +272,9 @@ def _report_policy_evidence(
         observation_ref=observation.snapshot_id,
         authoritative_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
         final_recheck_ref=context.latest_final_recheck_ref,
+        resource_version=dict(context.current_resource_versions).get(
+            str(getattr(evidence, "target", "") or criterion_id), ""
+        ),
         runtime_final_recheck=source_kind == EvidenceSourceKind.API_STATE,
     )
 

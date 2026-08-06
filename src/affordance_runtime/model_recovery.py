@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from typing import cast
 
 from affordance_runtime.model_port import FallbackModelPort, ModelPort
-from affordance_runtime.planner_context_recovery import context_compaction_owner_for_planner
-from affordance_runtime.planner_schema_recovery import schema_repair_owner_for_planner
 from affordance_runtime.recovery_owner_dispatcher import (
     RecoveryOwnerDispatcher,
     RecoveryOwnerResult,
@@ -68,12 +66,16 @@ def recovery_dispatcher_for_model(
     """Expose only configured provider/context owners with real state changes."""
 
     handlers: dict[RecoveryKind, RecoveryOwningPort] = {}
-    context_owner = context_compaction_owner_for_planner(planner)
-    if context_owner is not None:
-        handlers[RecoveryKind.COMPACT_CONTEXT] = context_owner
-    schema_owner = schema_repair_owner_for_planner(planner)
-    if schema_owner is not None:
-        handlers[RecoveryKind.REPAIR_MODEL_SCHEMA] = schema_owner
+    if planner is not None:
+        from affordance_runtime.planner_context_recovery import context_compaction_owner_for_planner
+        from affordance_runtime.planner_schema_recovery import schema_repair_owner_for_planner
+
+        context_owner = context_compaction_owner_for_planner(planner)
+        if context_owner is not None:
+            handlers[RecoveryKind.COMPACT_CONTEXT] = context_owner
+        schema_owner = schema_repair_owner_for_planner(planner)
+        if schema_owner is not None:
+            handlers[RecoveryKind.REPAIR_MODEL_SCHEMA] = schema_owner
     if isinstance(model, FallbackModelPort) and model.next_profile_ref:
         handlers[RecoveryKind.SWITCH_PROVIDER] = cast(
             "RecoveryOwningPort",

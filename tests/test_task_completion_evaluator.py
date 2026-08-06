@@ -21,6 +21,7 @@ from affordance_runtime.task_intake import (
     canonical_effect_requirement_refs,
     canonical_effect_requirements,
 )
+from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionEvaluation,
@@ -34,6 +35,11 @@ from affordance_runtime.verification.contracts import (
     SuccessExpression,
     TaskCompletionEvaluation,
     criterion_policy_digest,
+)
+from affordance_runtime.verification.mechanical import (
+    VerificationEvidence,
+    VerificationReport,
+    VerificationStatus,
 )
 from affordance_runtime.verification.task_completion import TaskCompletionEvaluator
 from affordance_runtime.verification_report_adapter import admit_completion_evidence
@@ -390,6 +396,148 @@ def test_same_id_satisfied_result_without_policy_binding_is_unknown() -> None:
     assert evaluation.status == CriterionStatus.UNKNOWN
 
 
+def test_current_observation_success_does_not_survive_a_new_epoch_without_evidence() -> None:
+    criterion_id = "criterion:current-only"
+    task = TaskSpec(
+        task_id="task:current-only",
+        revision=1,
+        objective="observe the current state",
+        operation_class=OperationClass.READ_ONLY,
+        requirements=canonical_effect_requirements(("state",), OperationClass.READ_ONLY, "request:current-only", ()),
+        allowed_effect_refs=canonical_effect_requirement_refs(("state",)),
+        success=SuccessExpression(
+            expression_id="success:current-only",
+            operator="criterion",
+            criterion_id=criterion_id,
+            requirement_refs=("requirement:effect:1",),
+            policy=CriterionPolicy(validity=EvidenceValidityMode.CURRENT_OBSERVATION),
+        ),
+        source_request_ref="request:current-only",
+    )
+    state = SimpleNamespace(
+        current_contract=None,
+        task_progress=SimpleNamespace(
+            recent_action_outcomes=RecentActionOutcomeEvidenceIndex(),
+            durable_evidence=DurableEvidenceStore(),
+        ),
+        uncertain_external_effects=(),
+    )
+    first = Observation(
+        "revision:1",
+        snapshot_id="snapshot:1",
+        metadata={
+            "criterion_evaluations": {
+                criterion_id: {
+                    "status": "satisfied",
+                    "evidence_refs": ["evidence:1"],
+                    "source_kind": "dom_state",
+                    "assurance": "structural",
+                }
+            }
+        },
+    )
+    second = Observation("revision:2", snapshot_id="snapshot:2")
+
+    epoch1 = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=task,
+        state=state,
+        observation=first,
+        report=None,
+        result={},
+    )
+    epoch2 = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=task,
+        state=state,
+        observation=second,
+        report=None,
+        result={},
+    )
+
+    assert epoch1 is not None and epoch1.status == CriterionStatus.SATISFIED
+    assert epoch2 is not None and epoch2.status == CriterionStatus.UNKNOWN
+    assert epoch2.criterion_results == ()
+
+
+def test_final_recheck_uses_runtime_owned_canonical_resource_version() -> None:
+    criterion_id = "criterion:resource-current"
+    task = TaskSpec(
+        task_id="task:resource-current",
+        revision=1,
+        objective="verify current resource",
+        operation_class=OperationClass.READ_ONLY,
+        requirements=canonical_effect_requirements(
+            ("resource",), OperationClass.READ_ONLY, "request:resource-current", ()
+        ),
+        allowed_effect_refs=canonical_effect_requirement_refs(("resource",)),
+        success=SuccessExpression(
+            expression_id="success:resource-current",
+            operator="criterion",
+            criterion_id=criterion_id,
+            requirement_refs=("requirement:effect:1",),
+            policy=CriterionPolicy(
+                validity=EvidenceValidityMode.FINAL_RECHECK,
+                minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+                allowed_source_kinds=(EvidenceSourceKind.API_STATE,),
+            ),
+        ),
+        final_recheck_criterion_ids=(criterion_id,),
+        source_request_ref="request:resource-current",
+    )
+    observation = Observation("revision:resource", snapshot_id="snapshot:resource")
+    canonical = UnifiedObservation(
+        snapshot_id=observation.snapshot_id,
+        page_revision=observation.page_revision,
+        environment_revision=observation.environment_revision,
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target",
+                surface="api",
+                role="resource",
+                label="Resource",
+                supported_actions=("read",),
+                state={"status": "ready"},
+            ),
+        ),
+    )
+    report = VerificationReport(
+        VerificationStatus.PASSED,
+        [
+            VerificationEvidence(
+                verifier_kind="http_json",
+                target="target:status",
+                passed=True,
+                source="api_state",
+                observed="ready",
+                evidence_id="verification:resource",
+                criterion_ids=(criterion_id,),
+                environment_revision=observation.environment_revision,
+                snapshot_id=observation.snapshot_id,
+                strength="authoritative",
+            )
+        ],
+    )
+    state = SimpleNamespace(
+        current_contract=None,
+        task_progress=SimpleNamespace(
+            recent_action_outcomes=RecentActionOutcomeEvidenceIndex(),
+            durable_evidence=DurableEvidenceStore(),
+        ),
+        uncertain_external_effects=(),
+    )
+
+    evaluation = ProgressEvaluationService().evaluate_task_completion(
+        task_spec=task,
+        state=state,
+        observation=observation,
+        canonical_observation=canonical,
+        report=report,
+        result={},
+    )
+
+    assert evaluation is not None and evaluation.status == CriterionStatus.SATISFIED
+
+
 @pytest.mark.parametrize("runtime_lineage", (False, True))
 def test_action_caused_uses_runtime_lineage_not_observation_claims(runtime_lineage: bool) -> None:
     criterion_id = "criterion:caused"
@@ -466,7 +614,6 @@ def test_action_caused_uses_runtime_lineage_not_observation_claims(runtime_linea
             recent_action_outcomes=recent,
             durable_evidence=DurableEvidenceStore(),
         ),
-        completion_criterion_evaluations={},
         uncertain_external_effects=(),
     )
 

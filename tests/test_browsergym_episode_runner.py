@@ -5,6 +5,7 @@ from queue import Empty
 from typing import Any, cast
 
 from affordance_runtime.benchmarks import browsergym as facade
+from affordance_runtime.benchmarks import browsergym_compatibility_episode as compatibility
 from affordance_runtime.benchmarks import browsergym_episode_runner as runner
 
 
@@ -75,7 +76,7 @@ def _isolated(monkeypatch: Any, context: _Context) -> runner.BrowserGymEpisodeRe
 
 def test_facade_preserves_episode_runner_exports() -> None:
     assert facade.BrowserGymExecutor is runner.BrowserGymExecutor
-    assert facade.BrowserGymGeneralistPlanner is runner.BrowserGymGeneralistPlanner
+    assert facade.BrowserGymGeneralistPlanner is compatibility.BrowserGymGeneralistPlanner
     assert facade.run_browsergym_generalist_episode is runner.run_browsergym_generalist_episode
 
 

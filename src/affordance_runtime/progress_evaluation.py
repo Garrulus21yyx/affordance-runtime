@@ -14,8 +14,13 @@ from affordance_runtime.failure_envelope import (
     RemainingRecoveryBudgets,
     make_failure_envelope,
 )
-from affordance_runtime.runtime_evidence import observation_predicate_evidence, semantic_progress_fingerprint
+from affordance_runtime.runtime_evidence import (
+    canonical_resource_versions,
+    observation_predicate_evidence,
+    semantic_progress_fingerprint,
+)
 from affordance_runtime.stage_protocol import RuntimeEventBuffer
+from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import TaskCompletionEvaluation
 from affordance_runtime.verification.loop_evaluator import LoopEvaluator
 from affordance_runtime.verification.mechanical import VerificationReport
@@ -81,6 +86,7 @@ class ProgressEvaluationService:
         task_spec: object | None,
         state: Any,
         observation: Observation,
+        canonical_observation: UnifiedObservation | None = None,
         report: VerificationReport | None,
         result: dict[str, object],
     ) -> TaskCompletionEvaluation | None:
@@ -100,6 +106,9 @@ class ProgressEvaluationService:
             current_evidence=observation_predicate_evidence(cast(Any, observation)),
             durable_evidence=(tuple(task_progress.durable_evidence.records) if task_progress is not None else ()),
             latest_final_recheck_ref=latest_final_recheck_ref,
+            current_resource_versions=(
+                canonical_resource_versions(canonical_observation) if canonical_observation is not None else ()
+            ),
         )
         admitted = admit_completion_evidence(
             task_spec=typed_task_spec,
@@ -107,19 +116,9 @@ class ProgressEvaluationService:
             evidence_context=evidence_context,
             report=report,
         )
-        retained = getattr(state, "completion_criterion_evaluations", {})
-        relevant_ids = TaskCompletionEvaluator.criterion_ids(typed_task_spec)
-        final_recheck_ids = frozenset(typed_task_spec.final_recheck_criterion_ids)
-        for evaluation in admitted:
-            if evaluation.criterion_id in relevant_ids and evaluation.criterion_id not in final_recheck_ids:
-                retained[evaluation.criterion_id] = evaluation
-        current_index = {item.criterion_id: item for item in admitted}
-        criterion_results = tuple(
-            current_index.get(criterion_id, evaluation) for criterion_id, evaluation in retained.items()
-        ) + tuple(evaluation for criterion_id, evaluation in current_index.items() if criterion_id not in retained)
         return TaskCompletionEvaluator().evaluate(
             task_spec=typed_task_spec,
-            criterion_results=criterion_results,
+            criterion_results=admitted,
             result_payload=result,
             output_source_bindings=output_source_bindings(observation),
             uncertain_external_effects=tuple(

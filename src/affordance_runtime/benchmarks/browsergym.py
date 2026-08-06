@@ -15,6 +15,7 @@ from queue import Empty
 from typing import Any, Sequence, cast
 
 from affordance_runtime.benchmarks import browsergym_action_schema as _browsergym_action_schema
+from affordance_runtime.benchmarks import browsergym_compatibility_episode as _browsergym_compatibility_episode
 from affordance_runtime.benchmarks import browsergym_encoder as _browsergym_encoder
 from affordance_runtime.benchmarks import browsergym_episode_runner as _browsergym_episode_runner
 from affordance_runtime.benchmarks import browsergym_observer as _browsergym_observer
@@ -130,11 +131,11 @@ BrowserGymObserver = _browsergym_observer.BrowserGymObserver
 BROWSERGYM_PAGE_ACTION_TIMEOUT_MS = _browsergym_episode_runner.BROWSERGYM_PAGE_ACTION_TIMEOUT_MS
 BROWSERGYM_PLANNER_MAX_TOKENS = _browsergym_episode_runner.BROWSERGYM_PLANNER_MAX_TOKENS
 BROWSERGYM_TERMINAL_COMPLETION_POLICY = _browsergym_episode_runner.BROWSERGYM_TERMINAL_COMPLETION_POLICY
-AgentLabPlannerAdapter = _browsergym_episode_runner.AgentLabPlannerAdapter
+AgentLabPlannerAdapter = _browsergym_compatibility_episode.AgentLabPlannerAdapter
 BrowserGymExecutor = _browsergym_episode_runner.BrowserGymExecutor
-BrowserGymGeneralistPlanner = _browsergym_episode_runner.BrowserGymGeneralistPlanner
-BrowserGymPlanner = _browsergym_episode_runner.BrowserGymPlanner
-JsonLinePolicy = _browsergym_episode_runner.JsonLinePolicy
+BrowserGymGeneralistPlanner = _browsergym_compatibility_episode.BrowserGymGeneralistPlanner
+BrowserGymPlanner = _browsergym_compatibility_episode.BrowserGymPlanner
+JsonLinePolicy = _browsergym_compatibility_episode.JsonLinePolicy
 _accessibility_tree_text = _browsergym_episode_runner._accessibility_tree_text
 _browser_snapshot_evidence = _browsergym_episode_runner._browser_snapshot_evidence
 _browsergym_adaptive_runtime_stats = _browsergym_episode_runner._browsergym_adaptive_runtime_stats
@@ -145,7 +146,7 @@ _close_quietly = _browsergym_episode_runner._close_quietly
 _generalist_episode_worker = _browsergym_episode_runner._generalist_episode_worker
 _goal_text = _browsergym_episode_runner._goal_text
 _quiet_handler = _browsergym_episode_runner._quiet_handler
-run_browsergym_episode = _browsergym_episode_runner.run_browsergym_episode
+run_browsergym_episode = _browsergym_compatibility_episode.run_browsergym_episode
 run_browsergym_generalist_episode = _browsergym_episode_runner.run_browsergym_generalist_episode
 run_browsergym_generalist_episode_isolated = _browsergym_episode_runner.run_browsergym_generalist_episode_isolated
 
@@ -290,9 +291,7 @@ def run_browsergym_miniwob_generalist_suite(
         "task_plan_entry_schema_policy_version": TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
         "task_plan_cardinality_policy_version": TASK_PLAN_CARDINALITY_POLICY_VERSION,
         "task_plan_context_policy_version": TASK_PLAN_CONTEXT_POLICY_VERSION,
-        "task_plan_outcome_state_support_policy_version": (
-            TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION
-        ),
+        "task_plan_outcome_state_support_policy_version": (TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION),
         "run_protocol_version": BROWSERGYM_RUN_PROTOCOL_VERSION,
         "run_identity": run_identity,
         "profile": profile,
@@ -304,9 +303,7 @@ def run_browsergym_miniwob_generalist_suite(
         ),
         "selected_task_ids": list(selected),
         "seeds": list(seeds),
-        "task_manifest_version": (
-            NIGHTLY_TASK_MANIFEST_VERSION if profile in {"diagnostic", "nightly"} else ""
-        ),
+        "task_manifest_version": (NIGHTLY_TASK_MANIFEST_VERSION if profile in {"diagnostic", "nightly"} else ""),
         "task_action_families": (
             {family: list(tasks) for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items()}
             if profile in {"diagnostic", "nightly"}
@@ -368,9 +365,7 @@ def run_browsergym_miniwob_generalist_suite(
         base_url = f"http://{server_name}:{server_port}/miniwob/"
         family_map = {task: family for family, tasks in NIGHTLY_ACTION_FAMILY_MANIFEST.items() for task in tasks}
         ordered_reused = [reused[key] for key in schedule if key in reused]
-        observed_browser_versions = {
-            episode.browser_version for episode in ordered_reused if episode.browser_version
-        }
+        observed_browser_versions = {episode.browser_version for episode in ordered_reused if episode.browser_version}
         if len(observed_browser_versions) > 1:
             raise ValueError("BrowserGym checkpoints contain browser version drift")
         (
@@ -450,9 +445,7 @@ def run_browsergym_miniwob_generalist_suite(
         seeds=seeds,
         episodes=episodes,
         evaluation_identity=evaluation_identity,
-        resumed_episode_ids=tuple(
-            browsergym_case_id(task_id, seed) for task_id, seed in reused
-        ),
+        resumed_episode_ids=tuple(browsergym_case_id(task_id, seed) for task_id, seed in reused),
         batch_stop=batch_stop,
         interrupted=interrupted,
     )
@@ -518,9 +511,7 @@ def _intent_compiler_checkpoint_identity() -> dict[str, Any]:
     return {
         "intent_compiler_model_config": intent_compiler_model_config().model_dump(mode="json"),
         "intent_compiler_schema_sha256": schema_sha256,
-        "intent_draft_repair_model_config": intent_draft_repair_model_config().model_dump(
-            mode="json"
-        ),
+        "intent_draft_repair_model_config": intent_draft_repair_model_config().model_dump(mode="json"),
         "intent_draft_repair_schema_sha256": schema_sha256,
     }
 
