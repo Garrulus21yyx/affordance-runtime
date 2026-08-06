@@ -112,6 +112,7 @@ def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> 
         objective="Preserve canonical step semantics",
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
+        allowed_requirement_ids=("requirement:test",),
     )
     first = _state_criterion(
         criterion_id="criterion:first",
@@ -149,6 +150,45 @@ def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> 
     assert root.children[0].value.value == 500
     assert root.children[1].value.value is True
     assert plan.based_on_observation_ref == "snapshot:1"
+
+
+def test_task_plan_authority_enforces_requirement_and_effect_traceability() -> None:
+    request = InitialTaskPlanRequest(
+        task_spec_identity="sha256:task",
+        task_revision=1,
+        evaluated_at_state_version=3,
+        objective="Apply the admitted change",
+        observation_refs=("snapshot:1",),
+        remaining_budget_steps=5,
+        allowed_requirement_ids=("requirement:test",),
+        allowed_effect_ids=("effect:apply",),
+    )
+    read_only = _step("step:discover")
+    assert TaskPlanAuthority().admit_initial(request, _candidate(read_only)).status == TaskPlanDecisionStatus.ACCEPTED
+
+    unauthorized = legacy_step_spec(
+        step_id="step:apply",
+        objective="Apply",
+        interaction=ElementIntent("semantic:setting", (_source(),)),
+        completion_criteria=(_criterion("criterion:apply"),),
+        source_refs=(_source(),),
+        effectful=True,
+        effect_authorization_refs=("effect:other",),
+    )
+    decision = TaskPlanAuthority().admit_initial(request, _candidate(unauthorized))
+    assert decision.status == TaskPlanDecisionStatus.REJECTED
+    assert {item.code for item in decision.issues} == {"effect_authorization_invalid"}
+
+    authorized = legacy_step_spec(
+        step_id="step:apply",
+        objective="Apply",
+        interaction=ElementIntent("semantic:setting", (_source(),)),
+        completion_criteria=(_criterion("criterion:apply"),),
+        source_refs=(_source(),),
+        effectful=True,
+        effect_authorization_refs=("effect:apply",),
+    )
+    assert TaskPlanAuthority().admit_initial(request, _candidate(authorized)).status == TaskPlanDecisionStatus.ACCEPTED
 
 
 def _plan_view() -> TaskPlanView:
@@ -223,6 +263,7 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
         objective="Do the task",
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
+        allowed_requirement_ids=("requirement:test",),
     )
     assert initial.observation_refs == ("snapshot:1",)
 
@@ -241,6 +282,7 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
         trigger=trigger,
         observation_refs=("snapshot:2",),
         remaining_budget_steps=4,
+        allowed_requirement_ids=("requirement:test",),
     )
     assert revision.previous_plan.plan_id == "plan:1"
 
@@ -254,6 +296,7 @@ def test_initial_and_revision_requests_are_distinct_and_identity_bound() -> None
             trigger=trigger,
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
+            allowed_requirement_ids=("requirement:test",),
         )
 
 
@@ -281,6 +324,7 @@ def test_task_plan_decision_status_invariants() -> None:
             objective="Do the task",
             observation_refs=("snapshot:1",),
             remaining_budget_steps=5,
+            allowed_requirement_ids=("requirement:test",),
         ),
         _candidate(),
     )
@@ -316,6 +360,7 @@ def test_task_plan_authority_owns_plan_identity_versions_and_freshness() -> None
         objective="Do the task",
         observation_refs=("snapshot:1",),
         remaining_budget_steps=5,
+        allowed_requirement_ids=("requirement:test",),
     )
     authority = TaskPlanAuthority()
     first_decision = authority.admit_initial(request, _candidate())
@@ -358,6 +403,7 @@ def test_task_plan_authority_owns_plan_identity_versions_and_freshness() -> None
             ),
             observation_refs=("snapshot:2",),
             remaining_budget_steps=4,
+            allowed_requirement_ids=("requirement:test",),
         ),
         _candidate(
             _step("step:1"),

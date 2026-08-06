@@ -614,10 +614,10 @@ def test_generalist_planner_port_runs_browsergym_without_external_action_policy(
         if row["event_type"] == "TaskPlanProposed"
     )
     assert task_plan_context["task_spec"]["operation_class"] == "reversible_write"
-    assert task_plan_context["task_spec"]["targets"] == ["target"]
-    assert task_plan_context["task_spec"]["task_structure"] == "flat"
+    assert task_plan_context["task_spec"]["requirements"][0]["payload"]["subject"] == "target"
+    assert "task_structure" not in task_plan_context["task_spec"]
     assert "task_id" not in task_plan_context["task_spec"]
-    assert "click-button" not in json.dumps(task_plan_context)
+    assert task_plan_context["task_spec"]["source_envelope_ref"].startswith("sha256:")
     assert "official_reward" not in json.dumps(task_plan_context)
     assert route["semantic_target_id"].startswith("semantic:")
     assert route["semantic_target_id"] != "dom_button_1"

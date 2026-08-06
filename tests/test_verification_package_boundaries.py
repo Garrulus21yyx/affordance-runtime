@@ -74,4 +74,5 @@ def test_canonical_step_spec_does_not_import_legacy_criterion_adapter() -> None:
         modules = {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
         if "affordance_runtime.legacy_criterion_adapter" in modules:
             importers.append(path.as_posix())
-    assert importers == ["src/affordance_runtime/benchmarks/task_planning.py"]
+    assert importers == []
+    assert not Path("src/affordance_runtime/legacy_criterion_adapter.py").exists()

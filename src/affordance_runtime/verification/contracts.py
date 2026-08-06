@@ -151,9 +151,14 @@ class SuccessExpression(_FrozenModel):
 
 class OutputSpec(_FrozenModel):
     output_id: str = Field(min_length=1)
+    requirement_ref: str = ""
     materialization_criterion_id: str = Field(min_length=1)
     result_key: str = ""
-    source_binding_required: bool = True
+    source_binding_requirement: tuple[str, ...] = ("source:any",)
+
+    @property
+    def source_binding_required(self) -> bool:
+        return bool(self.source_binding_requirement)
 
 
 @dataclass(frozen=True)

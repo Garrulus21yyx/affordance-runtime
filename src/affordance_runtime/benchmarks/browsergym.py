@@ -83,18 +83,18 @@ from affordance_runtime.intent_compiler import (
     intent_compiler_model_config,
     intent_draft_repair_model_config,
 )
-from affordance_runtime.legacy_task_plan_provider import (
+from affordance_runtime.model_port import ModelPort
+from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
+from affordance_runtime.task_planner import (
     TASK_PLAN_CARDINALITY_POLICY_VERSION,
     TASK_PLAN_CONTEXT_POLICY_VERSION,
     TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION,
     TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION,
     TASK_PLAN_SCHEMA_VERSION,
     TASK_PLANNER_PROMPT_VERSION,
-    TaskPlanProviderEnvelope,
+    TaskPlanProviderResponse,
     task_planner_model_config,
 )
-from affordance_runtime.model_port import ModelPort
-from affordance_runtime.semantic_compilers import SemanticCompilerRegistry
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
     VisualRegionProposerPort,
@@ -526,7 +526,7 @@ def _intent_compiler_checkpoint_identity() -> dict[str, Any]:
 
 
 def _task_planner_schema_sha256() -> str:
-    payload = TaskPlanProviderEnvelope.model_json_schema()
+    payload = TaskPlanProviderResponse.model_json_schema()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 

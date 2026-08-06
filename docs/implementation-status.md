@@ -14,8 +14,10 @@ Coordinator-containment foundations. P0-A completion authority, P0-B canonical
 observation authority, P0-C Runtime-owned action space, and P0-E thin source /
 single semantic admission are cut over. P0-E5 also replaces the flawed
 "any material exact anchor" shortcut with effect-specific typed material
-binding coverage. The broader compatibility TaskSpec shape and
-external model-provider wire shape remain for later substitutive slices. P1 is
+binding coverage. P3 is now cut over: TaskSpec v2 owns flat admitted
+requirements, stable input bindings, authorization/constraint/preference refs,
+risk policy and source-bound outputs; StepSpec traceability is enforced and the
+legacy claim/obligation owners and task-plan provider adapter are deleted. P1 is
 now cut over: accepted plans store StepSpec directly, TaskPlanAuthority is the
 single plan admission/version owner, TaskProgress is step/fact/evidence based,
 LoopEvaluator owns typed loop evaluation and perception owns four-state
@@ -36,6 +38,8 @@ extensions, with fail-closed unresolved routing already present.
 - P2-6 optional extension: **DEFERRED**
 - P2-7 resolver capability: **DEMAND-GATED**
 - P2-7 unresolved fail-closed routing: **COMPLETE**
+- P3 canonical TaskSpec v2 cutover: **COMPLETE**
+- P4 rolling planning and strict step choice: **PENDING**
 
 Documentation consolidation does not promote any production capability.
 
@@ -44,8 +48,8 @@ Documentation consolidation does not promote any production capability.
 | Area | Current implementation truth | Target | Status |
 |---|---|---|---|
 | Source intake | default path is SourceEnvelope → MinimalIntentProposal → optional SemanticAudit → TaskSpecAuthority; default SourceLedger/claim/obligation owners are deleted | lightweight SourceEnvelope + risk-proportionate MaterialBinding/selective SourceAnchor; optional SemanticAudit | P0-E complete |
-| Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers exist; execution consumers are denied source context; effect-specific material completeness is deterministic authority policy rather than audit/span inference | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E complete; P3 canonical requirement binding remains |
-| Task contract | TaskSpec now carries narrow typed success/output closure plus admitted P0-E5 material bindings and their digest; the broader extraction-era compatibility shape remains | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P0-A/P0-E narrow fields implemented; P3 contract cutover pending |
+| Semantic authority | TaskSpecAuthority is the only admission writer; bounded SourceContextView readers are ID-bound to admitted requirements, criteria, effects, inputs and anchors; execution consumers are denied source context | TaskSpecAuthority-only write barrier; bounded context-only readers; raw-text-free execution | P0-E/P3 complete |
+| Task contract | TaskSpec v2 carries flat typed requirements, stable input bindings, authorization/constraint/preference/forbidden refs, capability ceiling, risk policy and source-bound outputs; claim/obligation/material-bridge compatibility fields are absent | stable canonical requirement identity plus authorization/constraint/forbidden-effect/success/output contract | P3 complete |
 | Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; planner policy emits authority-free PlanCandidate | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
@@ -75,10 +79,10 @@ source_target: SourceEnvelope_plus_risk_proportionate_MaterialBinding_and_select
 semantic_audit: risk_triggered_veto_or_clarify_only
 material_binding_policy: P0_E5_effect_specific_coverage_complete
 exact_span_policy: indirect_unstructured_provenance_only
-semantic_authority_boundary: P0_E_admission_and_read_set_cutover_complete_P3_requirement_binding_pending
+semantic_authority_boundary: P0_E_admission_and_P3_ID_bound_read_set_cutover_complete
 semantic_context_visibility: bounded_context_only_allowlist
 execution_raw_text_input: prohibited_target_not_cut_over
-requirement_identity: target_not_implemented
+requirement_identity: canonical_TaskRequirement_and_StepSpec_traceability_complete
 dependency_model: typed_value_refs_plus_StepSpec_depends_on
 choice_presentation_contract: canonical_P0_C_cutover_complete
 catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
@@ -89,7 +93,7 @@ typed_task_planner_trigger: P1_canonical_plan_candidate_and_authority_complete
 risk_derived_feature_profiles: target_not_implemented
 verification_shape: P2_typed_policy_predicates_and_mechanical_provider_matrix_complete
 task_completion_semantics: canonical_P0_A_cutover_complete
-required_output_closure: narrow_typed_P0_A_complete_full_P3_contract_pending
+required_output_closure: P3_source_bound_output_contract_complete
 task_completion_commit: RuntimeCommitter_only
 evidence_locations: current_observation_plus_bounded_recent_ActionOutcome_plus_small_DurableEvidenceStore
 source_invariants: SOU-01_through_SOU-12_plus_MAT-01_through_MAT-07
@@ -124,7 +128,7 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5 and all P1 rows are complete; P2 core (P2-1..P2-5) is closed for canonical step completion, including strict StepSpec ingress, cross-surface causal values and positive final-recheck context; action effect and TaskSpec completion retain prior owners; P2-6 and the full P2-7 resolver remain demand-driven extensions, with typed unresolved routing present |
+| production behavior change | P0-A/B/C/D/E/E5, all P1 rows, P2 core (P2-1..P2-5), and P3 are complete; TaskSpec v2 and StepSpec requirement/effect traceability are canonical, and the claim/obligation compatibility owners are deleted; P2-6 and the full P2-7 resolver remain demand-driven extensions; P4 is pending |
 
 ## 6. Historical ledger
 

@@ -37,7 +37,12 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.planning_request_builder import PlanningRequestBuilder
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
+    TaskSpec,
+)
 from runtime_test_support import canonical_observation, remember_observation
 
 
@@ -68,6 +73,22 @@ class InteractivePricingPage:
         return b"fixture"
 
 
+def _requirement(
+    requirement_id: str,
+    subject: str,
+    operation_class: OperationClass = OperationClass.READ_ONLY,
+) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id=requirement_id,
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject=subject,
+            operation_class=operation_class,
+        ),
+        source_anchor_refs=(f"source:{requirement_id}",),
+    )
+
+
 def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_path: Path) -> None:
     session = BrowserSession(InteractivePricingPage())
     router = ExecutorRouter()
@@ -87,6 +108,7 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
                     revision=1,
                     objective="extract pricing",
                     operation_class=OperationClass.READ_ONLY,
+                    requirements=(_requirement("requirement:extract-pricing", "Extract Pro and Enterprise pricing"),),
                     targets=("Pro", "Enterprise"),
                     success_criteria=("pricing is structurally visible",),
                     success=pricing_success_expression(),
@@ -104,9 +126,7 @@ def test_pricing_gold_path_uses_shared_runtime_and_structural_verification(tmp_p
     assert result.state.step_count == 2
     assert result.state.last_receipt is not None
     assert result.state.last_receipt.evidence["selector"] == "#show-enterprise"
-    observation_artifacts = list(
-        (tmp_path / "artifacts/pricing-test/observations").glob("*.json")
-    )
+    observation_artifacts = list((tmp_path / "artifacts/pricing-test/observations").glob("*.json"))
     assert len(observation_artifacts) >= result.state.step_count + 1
 
 
@@ -119,6 +139,12 @@ def test_reference_pricing_task_plan_runs_through_normal_coordinator_path() -> N
         revision=1,
         objective="Reveal Pro and Enterprise plan limits with structural evidence.",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            _requirement(
+                "requirement:reveal-pricing",
+                "Reveal Pro and Enterprise plan limits with structural evidence",
+            ),
+        ),
         targets=("Pro", "Enterprise"),
         success_criteria=("both pricing plans are structurally visible",),
         success=pricing_success_expression(),
@@ -171,6 +197,7 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
         revision=1,
         objective="Reveal pricing",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(_requirement("requirement:reveal-pricing", "Reveal Pro and Enterprise pricing"),),
         targets=("Pro", "Enterprise"),
         success_criteria=("both pricing plans are visible",),
         evidence_requirements=("structural pricing evidence",),
@@ -188,15 +215,11 @@ def test_reference_pricing_planner_builds_request_before_contract_binding() -> N
             state: StateKernel,
             snapshot: BrowserSnapshot,
         ) -> PlanningRequest:
-            self.built = self.inner.build(
-                envelope, state, canonical_observation(snapshot)
-            )
+            self.built = self.inner.build(envelope, state, canonical_observation(snapshot))
             return self.built
 
     request_builder = RecordingRequestBuilder()
-    request = request_builder.build(
-        RunRequest(task_spec=task), state, BrowserSnapshot(observation, model)
-    )
+    request = request_builder.build(RunRequest(task_spec=task), state, BrowserSnapshot(observation, model))
     response = PricingPlanner().propose(request)
 
     assert request_builder.built is request
@@ -243,6 +266,14 @@ def test_settings_and_export_reference_planners_consume_canonical_request() -> N
             revision=1,
             objective=expected_label,
             operation_class=OperationClass.REVERSIBLE_WRITE,
+            requirements=(
+                _requirement(
+                    "requirement:reference-action",
+                    expected_label,
+                    OperationClass.REVERSIBLE_WRITE,
+                ),
+            ),
+            allowed_effect_refs=("requirement:reference-action",),
             targets=(expected_label,),
             success_criteria=(f"{expected_label} completed",),
             evidence_requirements=(f"{expected_label} evidence",),

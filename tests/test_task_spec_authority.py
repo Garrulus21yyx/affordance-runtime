@@ -17,6 +17,7 @@ from affordance_runtime.task_spec_authority import (
     MinimalIntentProposal,
     TaskSpecAuthority,
 )
+from affordance_runtime.verification.contracts import OutputSpec
 
 
 def _request_and_envelope():
@@ -44,8 +45,9 @@ def test_task_spec_authority_is_the_only_proposal_admission_writer() -> None:
     assert result.task_spec is not None
     assert result.task_spec.source_envelope_ref == envelope.identity
     assert result.task_spec.source_binding_digest == envelope.binding_digest
-    assert result.task_spec.source_claims == ()
-    assert result.task_spec.obligations == ()
+    assert not hasattr(result.task_spec, "source_claims")
+    assert not hasattr(result.task_spec, "obligations")
+    assert result.task_spec.requirements[0].requirement_id == "requirement:effect:1"
 
 
 @pytest.mark.parametrize("operation", [OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE])
@@ -106,13 +108,32 @@ def test_direct_explicit_send_is_admitted_without_character_spans() -> None:
         requested_effects=(effect,),
         material_bindings=bindings,
         success_criteria=("message is sent",),
+        required_outputs=(
+            OutputSpec(
+                output_id="send-receipt",
+                materialization_criterion_id="criterion:send-receipt",
+            ),
+        ),
     )
 
     result = TaskSpecAuthority().admit(request, envelope, proposal)
 
     assert result.status == CompilationStatus.READY
     assert result.task_spec is not None
-    assert result.task_spec.material_bindings == bindings
+    assert not hasattr(result.task_spec, "material_bindings")
+    assert tuple(item.binding_id for item in result.task_spec.inputs) == tuple(
+        item.binding_id for item in bindings
+    )
+    assert all(item.material_binding_digest.startswith("sha256:") for item in result.task_spec.inputs)
+    assert result.task_spec.required_outputs[0].requirement_ref == effect.effect_id
+    assert result.task_spec.required_outputs[0].source_binding_requirement == tuple(
+        item.binding_id for item in result.task_spec.inputs
+    )
+    assert not {
+        "source_claims",
+        "obligations",
+        "material_bindings",
+    }.intersection(type(result.task_spec).model_fields)
     assert result.task_spec.source_binding_digest != envelope.binding_digest
     assert all(anchor.span is None for anchor in envelope.anchors)
 

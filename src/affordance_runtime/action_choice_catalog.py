@@ -368,24 +368,14 @@ def _deterministic_semantic_choices(
                 generation_reason_codes=("deterministic_active_step_narrowing",),
             )
         )
-    authority_text = [str(getattr(step, "objective", ""))]
-    criterion_ids = {getattr(item, "criterion_id", "") for item in criteria}
-    obligations = {
-        getattr(item, "obligation_id", ""): item
-        for item in getattr(task_spec, "obligations", ())
+    requirement_by_id = {
+        item.requirement_id: item for item in task_spec.requirements
     }
-    claims = {
-        getattr(item, "claim_id", ""): item
-        for item in getattr(task_spec, "source_claims", ())
-    }
-    for criterion_id in criterion_ids:
-        obligation = obligations.get(criterion_id)
-        if obligation is None:
-            continue
-        authority_text.extend(
-            str(getattr(claims.get(claim_id), "statement", ""))
-            for claim_id in getattr(obligation, "claim_ids", ())
-        )
+    authority_text = [
+        requirement_by_id[requirement_id].payload.subject
+        for requirement_id in step.requirement_refs
+        if requirement_id in requirement_by_id
+    ]
     objective_tokens = set(re.findall(r"[a-z0-9]+", " ".join(authority_text).casefold()))
     objective_matches = tuple(
         choice

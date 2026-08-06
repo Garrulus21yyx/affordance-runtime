@@ -156,6 +156,8 @@ class InitialTaskPlanRequest:
     objective: str
     observation_refs: tuple[str, ...]
     remaining_budget_steps: int
+    allowed_requirement_ids: tuple[str, ...]
+    allowed_effect_ids: tuple[str, ...] = ()
     operation_class: OperationClass = OperationClass.READ_ONLY
     task_id: str = ""
 
@@ -171,6 +173,10 @@ class InitialTaskPlanRequest:
         if not isinstance(self.operation_class, OperationClass):
             raise ValueError("unsupported operation class")
         _require_unique_nonblank("observation refs", self.observation_refs)
+        _require_unique_nonblank("allowed requirement ids", self.allowed_requirement_ids)
+        if not self.allowed_requirement_ids:
+            raise ValueError("task planning request requires admitted requirements")
+        _require_unique_nonblank("allowed effect ids", self.allowed_effect_ids)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")
 
@@ -203,6 +209,8 @@ class TaskPlanRevisionRequest:
     trigger: TaskPlanRevisionTrigger
     observation_refs: tuple[str, ...]
     remaining_budget_steps: int
+    allowed_requirement_ids: tuple[str, ...]
+    allowed_effect_ids: tuple[str, ...] = ()
     operation_class: OperationClass = OperationClass.READ_ONLY
     task_id: str = ""
 
@@ -227,6 +235,10 @@ class TaskPlanRevisionRequest:
         if self.task_id:
             _require_nonblank("task_id", self.task_id)
         _require_unique_nonblank("observation refs", self.observation_refs)
+        _require_unique_nonblank("allowed requirement ids", self.allowed_requirement_ids)
+        if not self.allowed_requirement_ids:
+            raise ValueError("task planning request requires admitted requirements")
+        _require_unique_nonblank("allowed effect ids", self.allowed_effect_ids)
         if self.remaining_budget_steps < 0:
             raise ValueError("remaining budget cannot be negative")
 
@@ -397,6 +409,26 @@ class TaskPlanAuthority:
             issues.append(TaskPlanIssue("state_basis_stale", "candidate state basis is not current"))
         if len(candidate.steps) > request.remaining_budget_steps:
             issues.append(TaskPlanIssue("step_budget_exceeded", "candidate exceeds remaining step budget"))
+        allowed_requirements = set(request.allowed_requirement_ids)
+        allowed_effects = set(request.allowed_effect_ids)
+        for step in candidate.steps:
+            if set(step.requirement_refs) - allowed_requirements:
+                issues.append(
+                    TaskPlanIssue(
+                        "requirement_trace_invalid",
+                        f"step {step.step_id} is not traceable to admitted requirements",
+                    )
+                )
+            if step.effectful and (
+                not step.effect_authorization_refs
+                or set(step.effect_authorization_refs) - allowed_effects
+            ):
+                issues.append(
+                    TaskPlanIssue(
+                        "effect_authorization_invalid",
+                        f"step {step.step_id} lacks admitted effect authorization",
+                    )
+                )
         return tuple(issues)
 
 

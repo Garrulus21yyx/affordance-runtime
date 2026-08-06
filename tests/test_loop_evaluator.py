@@ -135,6 +135,7 @@ def test_cross_surface_causality_preserves_after_value_and_source(
         ElementIntent("resource:setting", refs),
         (criterion,),
         refs,
+        ("requirement:test",),
     )
     fact = RecentActionFact(
         "resource:setting",

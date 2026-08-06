@@ -174,32 +174,30 @@ class MultiStageIntentAndPlanModel:
                     "task_structure": "multi_stage",
                 }
             )
-        if output_schema.__name__ == "TaskPlanProviderEnvelope":
+        if output_schema.__name__ == "TaskPlanProviderResponse":
             return output_schema.model_validate(
                 {
-                    "entry_subgoal": {
-                        "subgoal_id": "discover",
-                        "outcome": {
+                    "steps": [
+                        {
+                            "step_id": "discover",
+                            "objective": "Discover current state",
                             "subject": "current state",
                             "relation": "is_visible",
+                            "requirement_refs": ["requirement:effect:1"],
+                            "effect_authorization_refs": ["requirement:effect:1"],
+                            "effectful": True,
                         },
-                        "evidence_requirements": ["fresh discovered-state observation"],
-                        "operation_class": "read_only",
-                        "action_family": "activate",
-                    },
-                    "remaining_subgoals": [
                         {
-                            "subgoal_id": "confirm",
-                            "outcome": {
-                                "subject": "discovered state",
-                                "relation": "is_completed",
-                            },
+                            "step_id": "confirm",
+                            "objective": "Confirm discovered state",
+                            "subject": "discovered state",
+                            "relation": "is_completed",
+                            "requirement_refs": ["requirement:effect:1"],
+                            "effect_authorization_refs": ["requirement:effect:1"],
+                            "effectful": True,
                             "depends_on": ["discover"],
-                            "evidence_requirements": ["fresh confirmed-state observation"],
-                            "operation_class": "read_only",
-                            "action_family": "activate",
                         },
-                    ]
+                    ],
                 }
             )
         raise AssertionError(f"unexpected schema: {output_schema.__name__}")

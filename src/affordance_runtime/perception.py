@@ -266,15 +266,37 @@ def route_perception_requirements(
         or bool(context_terms.intersection(_VISUAL_TARGET_TERMS))
         or EvidenceKind.VISUAL_APPEARANCE in target_evidence
     )
+    device_target = EvidenceKind.DEVICE_STATE in target_evidence
     if not spatial_action:
         required.discard(EvidenceKind.SPATIAL)
     if not visual_target:
         required.discard(EvidenceKind.VISUAL_APPEARANCE)
+    else:
+        required.discard(EvidenceKind.TEXTUAL)
+        required.discard(EvidenceKind.STRUCTURAL)
+        required.add(EvidenceKind.VISUAL_APPEARANCE)
+        if spatial_action:
+            required.add(EvidenceKind.SPATIAL)
+    if device_target:
+        required.discard(EvidenceKind.TEXTUAL)
+        required.add(EvidenceKind.DEVICE_STATE)
+        required.add(EvidenceKind.STRUCTURAL)
     projected_to_structured_default = not required
     if projected_to_structured_default:
         required.update({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL})
     acceptable = set(requirements.acceptable_evidence)
     preferred = requirements.preferred_sources
+    if visual_target:
+        acceptable.update({GroundingSource.SVG, GroundingSource.SOM, GroundingSource.VISUAL})
+        preferred = (
+            GroundingSource.SVG,
+            GroundingSource.SOM,
+            GroundingSource.VISUAL,
+            *preferred,
+        )
+    if device_target:
+        acceptable.update({GroundingSource.WOT, GroundingSource.API})
+        preferred = (GroundingSource.WOT, GroundingSource.API, *preferred)
     if projected_to_structured_default:
         acceptable.update({GroundingSource.DOM, GroundingSource.ACCESSIBILITY})
         preferred = (
@@ -336,13 +358,24 @@ def _perception_text(task: TaskSpec, active_subgoal: StepSpec | str | None) -> s
         subgoal_parts = (active_subgoal,)
     else:
         subgoal_parts = ()
+    admitted_requirement_parts = tuple(
+        " ".join(
+            part
+            for part in (
+                requirement.payload.kind,
+                requirement.payload.subject,
+                requirement.payload.relation,
+                requirement.payload.value,
+                requirement.payload.capability,
+            )
+            if part
+        )
+        for requirement in task.requirements
+    )
     return " ".join(
         (
-            task.objective,
             *subgoal_parts,
-            *task.targets,
-            *task.success_criteria,
-            *task.evidence_requirements,
+            *admitted_requirement_parts,
         )
     ).lower()
 

@@ -466,7 +466,7 @@ class CompositeCriterion(_CriterionBase):
 
 LegacyCriterion: TypeAlias = StateCriterion | CompositeCriterion
 # Compatibility-only public name for pre-P2 wire consumers.  StepSpec no
-# longer stores this type; see legacy_criterion_adapter.py (remove at P3-4).
+# longer stores this type; external ingress must construct canonical criteria.
 Criterion = LegacyCriterion
 
 
@@ -477,8 +477,12 @@ class StepSpec:
     interaction: InteractionIntent
     completion_criteria: tuple[CriterionExpr, ...]
     source_refs: tuple[SourceReference, ...]
+    requirement_refs: tuple[str, ...]
     depends_on: tuple[str, ...] = ()
     preconditions: tuple[CriterionExpr, ...] = ()
+    effect_authorization_refs: tuple[str, ...] = ()
+    effectful: bool = False
+    enabling_need: str = ""
     max_actions: int = 10
     max_recoveries: int = 2
 
@@ -496,11 +500,21 @@ class StepSpec:
         _require_tuple("source_refs", self.source_refs)
         if not self.source_refs:
             raise ValueError("step source refs cannot be empty")
+        _require_tuple("requirement_refs", self.requirement_refs)
+        _require_unique_nonblank("step requirement refs", self.requirement_refs)
+        if not self.requirement_refs:
+            raise ValueError("step must trace to an admitted requirement")
         _require_tuple("depends_on", self.depends_on)
         _require_unique_nonblank("step dependencies", self.depends_on)
         if self.step_id in self.depends_on:
             raise ValueError("step cannot depend on itself")
         _require_tuple("preconditions", self.preconditions)
+        _require_tuple("effect_authorization_refs", self.effect_authorization_refs)
+        _require_unique_nonblank("step effect authorization refs", self.effect_authorization_refs)
+        if self.effectful and not self.effect_authorization_refs:
+            raise ValueError("effectful step requires effect authorization")
+        if self.enabling_need:
+            _require_nonblank("step enabling need", self.enabling_need)
         if self.max_actions < 1:
             raise ValueError("step action budget must be positive")
         if self.max_recoveries < 0:

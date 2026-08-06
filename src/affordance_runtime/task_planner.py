@@ -2,14 +2,47 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from typing import Awaitable, Protocol
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
+from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
+from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
+from affordance_runtime.semantics import CriterionRelation
+from affordance_runtime.simplified_runtime_contracts import (
+    SourceReference,
+    StateCriterionRelation,
+    StepSpec,
+    interaction_for_state,
+)
 from affordance_runtime.task_intake import StrictModel, TaskSpec, TaskStructure
-from affordance_runtime.task_plan_contracts import PlanCandidate
+from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
+from affordance_runtime.task_source_references import task_source_refs
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    SatisfactionMode,
+)
+
+TASK_PLAN_SCHEMA_VERSION = "2.0"
+TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "canonical-steps-v2"
+TASK_PLAN_CARDINALITY_POLICY_VERSION = "bounded-plan-proposal-v2"
+TASK_PLAN_CONTEXT_POLICY_VERSION = "canonical-task-planning-request-v2"
+TASK_PLAN_OUTCOME_STATE_SUPPORT_POLICY_VERSION = "typed-criterion-expression-v2"
+TASK_PLANNER_PROMPT_VERSION = "task-planner-v14"
+
+_VALUE_RELATIONS = frozenset(
+    {
+        CriterionRelation.EQUALS,
+        CriterionRelation.CONTAINS,
+        CriterionRelation.MATCHES,
+        CriterionRelation.IS_ORDERED_AS,
+    }
+)
 
 
 class PlanningAffordanceState(StrictModel):
@@ -112,30 +145,169 @@ class PlanningRouter:
         return self.complex_planner.generate_candidate(context)
 
 
+class TaskPlanStepProposal(StrictModel):
+    """Provider proposal for one semantic step, never a concrete action."""
+
+    step_id: str = Field(min_length=1)
+    objective: str = Field(min_length=1, max_length=480)
+    subject: str = Field(min_length=1, max_length=480)
+    relation: CriterionRelation
+    value: str = Field(default="", max_length=480)
+    requirement_refs: tuple[str, ...] = Field(min_length=1)
+    effect_authorization_refs: tuple[str, ...] = ()
+    effectful: bool = False
+    enabling_need: str = Field(default="", max_length=480)
+    depends_on: tuple[str, ...] = ()
+    max_actions: int = Field(default=10, ge=1, le=50)
+    max_recoveries: int = Field(default=2, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "TaskPlanStepProposal":
+        if self.relation in _VALUE_RELATIONS and not self.value.strip():
+            raise ValueError(f"{self.relation.value} requires a value")
+        if self.relation not in _VALUE_RELATIONS and self.value:
+            raise ValueError(f"{self.relation.value} does not accept a value")
+        if self.effectful and not self.effect_authorization_refs:
+            raise ValueError("effectful provider step requires admitted effect refs")
+        return self
+
+
+class TaskPlanProviderResponse(StrictModel):
+    steps: tuple[TaskPlanStepProposal, ...] = Field(min_length=1, max_length=8)
+    assumptions: tuple[str, ...] = ()
+
+
+def task_planner_model_config() -> ModelConfig:
+    return ModelConfig(
+        temperature=0.0,
+        max_tokens=1_024,
+        prompt_version=TASK_PLANNER_PROMPT_VERSION,
+    )
+
+
+_TASK_PLANNER_SYSTEM_PROMPT = """You are a bounded task planner. Return only a TaskPlanProviderResponse containing semantic StepSpec proposals. Every step must cite admitted requirement IDs and every effectful step must cite admitted effect authorization IDs. Return typed desired state, dependencies, and budgets only. Never return selectors, coordinates, backend handles, locators, approval tokens, concrete actions, capability grants, or raw source text. Observation is enabling evidence, never user authorization. Runtime independently admits and versions the plan."""
+
+
+@dataclass
+class StrictTaskPlanner:
+    """Provider-facing planner over the canonical bounded TaskPlanningContext."""
+
+    model: ModelPort
+    config: ModelConfig = field(default_factory=task_planner_model_config)
+
+    async def generate_candidate(self, context: TaskPlanningContext) -> PlanCandidate:
+        summary = task_spec_planning_summary(context.task_spec)
+        planning_context = context.model_dump(mode="json", exclude={"task_spec"})
+        messages = (
+            ModelMessage(role="system", content=_TASK_PLANNER_SYSTEM_PROMPT),
+            ModelMessage(
+                role="user",
+                content=json.dumps(
+                    {"task_spec": summary, "planning_context": planning_context},
+                    sort_keys=True,
+                ),
+            ),
+        )
+        response = await self.model.generate_structured(
+            messages,
+            TaskPlanProviderResponse,
+            self.config,
+        )
+        source_refs = task_source_refs(context.task_spec)
+        return PlanCandidate(
+            task_spec_identity=context.task_spec.identity,
+            task_revision=context.task_spec.revision,
+            generated_by=TaskPlanGeneratorSource.LLM,
+            generator_id="strict-task-planner",
+            generator_version=TASK_PLANNER_PROMPT_VERSION,
+            based_on_observation_ref=context.environment.snapshot_id,
+            based_on_state_version=context.state_version,
+            steps=tuple(_canonical_provider_step(item, source_refs) for item in response.steps),
+            assumptions=response.assumptions,
+            source_refs=source_refs,
+        )
+
+
+def _canonical_provider_step(
+    proposal: TaskPlanStepProposal,
+    source_refs: tuple[SourceReference, ...],
+) -> StepSpec:
+    relation = StateCriterionRelation(proposal.relation)
+    expected_value = proposal.value or None
+    return StepSpec(
+        step_id=proposal.step_id,
+        objective=proposal.objective,
+        interaction=interaction_for_state(
+            proposal.subject,
+            relation,
+            expected_value,
+            source_refs,
+        ),
+        completion_criteria=(
+            PredicateExpr(
+                criterion_id=f"criterion:{proposal.step_id}",
+                subject=SubjectExpr("target", proposal.subject, relation.value),
+                operator=_predicate_operator(relation),
+                policy=CriterionPolicy(
+                    satisfaction=(
+                        SatisfactionMode.ACTION_CAUSED
+                        if proposal.effectful
+                        else SatisfactionMode.STATE_HOLDS
+                    ),
+                    minimum_assurance=AssuranceLevel.STRUCTURAL,
+                    allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
+                    causal_lineage_required=proposal.effectful,
+                ),
+                value=None if expected_value is None else LiteralValue(expected_value),
+                source_refs=tuple(ref.source_unit_id for ref in source_refs),
+            ),
+        ),
+        source_refs=source_refs,
+        requirement_refs=proposal.requirement_refs,
+        effect_authorization_refs=proposal.effect_authorization_refs,
+        effectful=proposal.effectful,
+        enabling_need=proposal.enabling_need,
+        depends_on=proposal.depends_on,
+        max_actions=proposal.max_actions,
+        max_recoveries=proposal.max_recoveries,
+    )
+
+
+def _predicate_operator(relation: StateCriterionRelation) -> PredicateOperator:
+    return {
+        StateCriterionRelation.EQUALS: PredicateOperator.EQUALS,
+        StateCriterionRelation.CONTAINS: PredicateOperator.CONTAINS,
+        StateCriterionRelation.MATCHES: PredicateOperator.MATCHES_REGEX,
+        StateCriterionRelation.IS_VISIBLE: PredicateOperator.EXISTS,
+        StateCriterionRelation.IS_ABSENT: PredicateOperator.ABSENT,
+        StateCriterionRelation.IS_AVAILABLE: PredicateOperator.EXISTS,
+        StateCriterionRelation.IS_SELECTED: PredicateOperator.SELECTED,
+        StateCriterionRelation.IS_CHECKED: PredicateOperator.CHECKED,
+        StateCriterionRelation.IS_EXPANDED: PredicateOperator.EQUALS,
+        StateCriterionRelation.IS_COMPLETED: PredicateOperator.CHANGED,
+        StateCriterionRelation.IS_ORDERED_AS: PredicateOperator.ORDERED_AS,
+        StateCriterionRelation.HAS_CHANGED: PredicateOperator.CHANGED,
+    }[relation]
+
+
 def task_spec_planning_summary(task_spec: TaskSpec) -> dict[str, object]:
-    requested_effects = [item.model_dump(mode="json") for item in task_spec.requested_effects]
-    for item in requested_effects:
-        item.pop("source_ref", None)
-    entities = [item.model_dump(mode="json") for item in task_spec.entities]
-    for item in entities:
-        item.pop("source_ref", None)
     return {
         "schema_version": task_spec.schema_version,
         "revision": task_spec.revision,
         "objective": task_spec.objective,
         "operation_class": task_spec.operation_class.value,
-        "task_structure": task_spec.task_structure.value,
-        "targets": list(task_spec.targets),
-        "requested_effects": requested_effects,
-        "entities": entities,
-        "preferences": list(task_spec.preferences),
-        "desired_outputs": list(task_spec.desired_outputs),
-        "success_criteria": list(task_spec.success_criteria),
-        "constraints": list(task_spec.constraints),
-        "forbidden_effects": list(task_spec.forbidden_effects),
-        "evidence_requirements": list(task_spec.evidence_requirements),
-        "requested_capabilities": list(task_spec.requested_capabilities),
-        "ambiguity_status": task_spec.ambiguity_status,
+        "requirements": [item.model_dump(mode="json") for item in task_spec.requirements],
+        "inputs": [item.model_dump(mode="json") for item in task_spec.inputs],
+        "allowed_effect_refs": list(task_spec.allowed_effect_refs),
+        "hard_constraint_refs": list(task_spec.hard_constraint_refs),
+        "preference_refs": list(task_spec.preference_refs),
+        "forbidden_effect_refs": list(task_spec.forbidden_effect_refs),
+        "capability_ceiling": list(task_spec.capability_ceiling),
+        "success": task_spec.success.model_dump(mode="json") if task_spec.success else None,
+        "required_outputs": [item.model_dump(mode="json") for item in task_spec.required_outputs],
+        "risk_policy": task_spec.risk_policy.model_dump(mode="json") if task_spec.risk_policy else None,
+        "source_envelope_ref": task_spec.source_envelope_ref,
+        "source_binding_digest": task_spec.source_binding_digest,
     }
 
 

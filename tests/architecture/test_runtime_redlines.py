@@ -102,7 +102,7 @@ def _completion_task() -> TaskSpec:
             OutputSpec(
                 output_id="record",
                 materialization_criterion_id="criterion:output",
-                source_binding_required=True,
+                source_binding_requirement=("source:any",),
             ),
         ),
         source_request_ref="request:redline",
@@ -359,7 +359,8 @@ def _case_default_thin_source() -> None:
     )
     result = TaskSpecAuthority().admit(request, envelope, proposal)
     assert result.task_spec is not None
-    assert result.task_spec.source_claims == () and result.task_spec.obligations == ()
+    assert not hasattr(result.task_spec, "source_claims")
+    assert not hasattr(result.task_spec, "obligations")
     assert importlib.util.find_spec("affordance_runtime.source_ledger") is None
 
 
@@ -413,14 +414,14 @@ def _case_p1_recovery_commit_boundaries() -> None:
         {"RecoveryOutcome", "classify_failure", "build_failure_owner_handoff"}
     )
     assert not (RUNTIME / "task_planning.py").exists()
-    edge_tree = ast.parse(
-        (RUNTIME / "legacy_task_plan_provider.py").read_text(encoding="utf-8")
-    )
-    assert not any(
-        isinstance(node, ast.ImportFrom)
-        and node.module == "affordance_runtime.task_planning"
-        for node in ast.walk(edge_tree)
-    )
+    assert not (RUNTIME / "legacy_task_plan_provider.py").exists()
+    planner_tree = ast.parse((RUNTIME / "task_planner.py").read_text(encoding="utf-8"))
+    imported_modules = {
+        node.module or ""
+        for node in ast.walk(planner_tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert "affordance_runtime.task_planning" not in imported_modules
 
 
 CASES = {

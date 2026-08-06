@@ -60,7 +60,6 @@ from affordance_runtime.immutable import (
     thaw_json_at_external_boundary,
 )
 from affordance_runtime.intent_compiler import LLMIntentCompiler
-from affordance_runtime.legacy_task_plan_provider import LegacyTaskPlanProviderAdapter
 from affordance_runtime.model_port import ModelConfig, ModelPort
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
 from affordance_runtime.perception import (
@@ -85,7 +84,7 @@ from affordance_runtime.semantic_audit import SemanticAudit, SemanticAuditStatus
 from affordance_runtime.simplified_runtime_contracts import SPATIAL_POINT_CAPABILITY
 from affordance_runtime.source_envelope import SourceEnvelopeBuilder
 from affordance_runtime.task_intake import CompilationStatus, OperationClass, TaskSpec, TaskStructure, UserRequest
-from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
 from affordance_runtime.task_spec_authority import TaskSpecAuthority
 from affordance_runtime.trace import TraceDag
 from affordance_runtime.unified_observation import UnifiedObservation
@@ -777,7 +776,7 @@ def run_browsergym_generalist_episode(
             ),
             contract_builder=GeneralistBrowserGymContractBuilder(),
             task_planner=PlanningRouter(
-                complex_planner=LegacyTaskPlanProviderAdapter(model)
+                complex_planner=StrictTaskPlanner(model)
             ),
             recovery_owner_dispatcher=recovery_dispatcher_for_model(model, planner=planner),
         ).run_sync(

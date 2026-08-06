@@ -39,7 +39,7 @@ def test_typed_completion_contracts_are_immutable_and_task_bound() -> None:
             OutputSpec(
                 output_id="saved_record",
                 materialization_criterion_id="criterion:output",
-                source_binding_required=True,
+                source_binding_requirement=("source:any",),
             ),
         ),
         source_request_ref="request:save",

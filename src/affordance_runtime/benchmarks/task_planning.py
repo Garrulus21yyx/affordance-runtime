@@ -17,8 +17,14 @@ from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
-from affordance_runtime.criteria import criterion_id, evidence_requirement_id
-from affordance_runtime.legacy_criterion_adapter import canonicalize_legacy_criteria
+from affordance_runtime.criteria import (
+    LiteralValue,
+    PredicateExpr,
+    PredicateOperator,
+    SubjectExpr,
+    criterion_id,
+    evidence_requirement_id,
+)
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -29,17 +35,26 @@ from affordance_runtime.planning import (
 from affordance_runtime.planning_contracts import PlannerProposalResponse
 from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 from affordance_runtime.simplified_runtime_contracts import (
     ElementIntent,
     SourceReference,
-    StateCriterion,
     StepSpec,
 )
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
+    TaskSpec,
+)
 from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
 from affordance_runtime.task_planner import PlanningRouter, TaskPlannerPort, TaskPlanningContext
-from affordance_runtime.verification.contracts import SuccessExpression
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    SatisfactionMode,
+    SuccessExpression,
+)
 
 ABLATION_PROFILES = ("flat", "always_plan", "adaptive")
 
@@ -161,12 +176,24 @@ class _FixedCanonicalPlanner:
             generator_id="controlled-task-plan",
             based_on_observation_ref=context.environment.snapshot_id,
             based_on_state_version=context.state_version,
-            steps=tuple(_stage_step(index) for index in range(1, self.target_stage + 1)),
+            steps=tuple(
+                _stage_step(
+                    index,
+                    requirement_refs=tuple(item.requirement_id for item in context.task_spec.requirements),
+                    effect_refs=context.task_spec.allowed_effect_refs,
+                )
+                for index in range(1, self.target_stage + 1)
+            ),
             source_refs=source_refs,
         )
 
 
-def _stage_step(index: int) -> StepSpec:
+def _stage_step(
+    index: int,
+    *,
+    requirement_refs: tuple[str, ...],
+    effect_refs: tuple[str, ...],
+) -> StepSpec:
     step_id = f"stage-{index}"
     source_refs = (
         SourceReference(
@@ -178,23 +205,25 @@ def _stage_step(index: int) -> StepSpec:
         step_id=step_id,
         objective=f"stage equals {index}",
         interaction=ElementIntent("Advance", source_refs),
-        completion_criteria=canonicalize_legacy_criteria(
-            (
-                StateCriterion(
-                    criterion_id=criterion_id("subgoal", step_id, 0),
-                    source_refs=source_refs,
-                    subject="stage",
-                    relation=CriterionRelation.EQUALS,
-                    expected_value=index,
-                    evidence_policy=EvidencePolicy(
-                        minimum_strength=EvidenceStrength.INDEPENDENT,
-                        allowed_source_kinds=("dom_state",),
-                    ),
+        completion_criteria=(
+            PredicateExpr(
+                criterion_id("subgoal", step_id, 0),
+                SubjectExpr("target", "stage", "equals"),
+                PredicateOperator.EQUALS,
+                CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    minimum_assurance=AssuranceLevel.STRUCTURAL,
+                    allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
+                    causal_lineage_required=True,
                 ),
+                LiteralValue(index),
+                tuple(ref.source_unit_id for ref in source_refs),
             ),
-            role="completion",
         ),
         source_refs=source_refs,
+        requirement_refs=requirement_refs,
+        effect_authorization_refs=effect_refs,
+        effectful=True,
         depends_on=(f"stage-{index - 1}",) if index > 1 else (),
     )
 
@@ -256,6 +285,18 @@ def _run_case(profile: str, case_id: str, target_stage: int) -> TaskPlanningAbla
         revision=1,
         objective=f"Reach stage {target_stage}",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:advance-stage",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject=f"Advance until stage {target_stage}",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                source_anchor_refs=("task-planning-ablation:advance",),
+            ),
+        ),
+        allowed_effect_refs=("requirement:advance-stage",),
         targets=("advance",),
         success_criteria=(f"stage equals {target_stage}",),
         success=SuccessExpression(

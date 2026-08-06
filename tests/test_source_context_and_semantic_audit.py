@@ -58,11 +58,15 @@ def test_audit_only_flags_trigger_while_authority_owns_material_completeness() -
 def test_execution_consumer_cannot_obtain_source_context() -> None:
     request = UserRequest(request_id="context", raw_text="Inspect settings")
     envelope = SourceEnvelopeBuilder().build(request)
+    admitted = TaskSpecAuthority().admit(request, envelope, _proposal(envelope))
+    assert admitted.task_spec is not None
+    task_spec = admitted.task_spec
 
     try:
         SourceContextProjector().project(
             request,
             envelope,
+            task_spec,
             consumer="executor",  # type: ignore[arg-type]
             anchor_ids=(envelope.whole_request_anchor.anchor_id,),
         )
@@ -74,8 +78,11 @@ def test_execution_consumer_cannot_obtain_source_context() -> None:
     view = SourceContextProjector().project(
         request,
         envelope,
+        task_spec,
         consumer=SourceContextConsumer.TASK_PLANNER,
         anchor_ids=(envelope.whole_request_anchor.anchor_id,),
+        requirement_ids=(task_spec.requirements[0].requirement_id,),
     )
     assert view.context_only is True
+    assert view.requirement_ids == (task_spec.requirements[0].requirement_id,)
     assert view.excerpts[0].content == request.raw_text

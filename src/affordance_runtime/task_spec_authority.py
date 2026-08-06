@@ -14,12 +14,16 @@ from affordance_runtime.task_intake import (
     CompilationIssue,
     CompilationPolicy,
     CompilationStatus,
+    InputBinding,
     IntentAmbiguity,
     IntentEntity,
     OperationClass,
     RequestedEffect,
     SemanticValueConstraint,
     StrictModel,
+    TaskRequirement,
+    TaskRiskPolicy,
+    TaskSemanticPayload,
     TaskSpec,
     TaskStructure,
     UserRequest,
@@ -137,29 +141,84 @@ class TaskSpecAuthority:
             (effect.operation_class for effect in proposal.requested_effects),
             key=operation_class_rank,
         )
+        effects = tuple(
+            effect.model_copy(
+                update={"effect_id": effect.effect_id or f"requirement:effect:{index}"}
+            )
+            for index, effect in enumerate(proposal.requested_effects, start=1)
+        )
+        requirements = _canonical_requirements(proposal, effects, envelope)
+        requirement_ids = {item.requirement_id for item in requirements}
+        inputs = tuple(InputBinding.from_material(item) for item in proposal.material_bindings)
+        outputs = tuple(
+            output.model_copy(
+                update={
+                    "requirement_ref": output.requirement_ref
+                    or _default_output_requirement(requirements),
+                    "source_binding_requirement": (
+                        output.source_binding_requirement
+                        if output.source_binding_requirement != ("source:any",)
+                        else tuple(
+                            item.binding_id
+                            for item in inputs
+                            if item.requirement_ref
+                            == (
+                                output.requirement_ref
+                                or _default_output_requirement(requirements)
+                            )
+                        )
+                        or output.source_binding_requirement
+                    ),
+                }
+            )
+            for output in proposal.required_outputs
+        )
         task_spec = TaskSpec(
             task_id=task_id or request.request_id,
             revision=revision,
             objective=proposal.objective.strip(),
             operation_class=operation,
+            requirements=requirements,
+            inputs=inputs,
+            allowed_effect_refs=tuple(item.effect_id for item in effects),
+            hard_constraint_refs=tuple(
+                item.requirement_id
+                for item in requirements
+                if item.payload.kind == "constraint"
+            ),
+            preference_refs=tuple(
+                item.requirement_id
+                for item in requirements
+                if item.payload.kind == "preference"
+            ),
+            forbidden_effect_refs=tuple(
+                item.requirement_id
+                for item in requirements
+                if item.payload.kind == "effect" and item.payload.subject in proposal.forbidden_effects
+            ),
+            capability_ceiling=_ordered_unique(
+                item.capability for item in effects if item.capability
+            ),
+            risk_policy=TaskRiskPolicy(
+                maximum_operation_class=operation,
+                approval_required=operation
+                in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
+                authoritative_final_recheck_required=operation
+                in {OperationClass.EXTERNAL_SIDE_EFFECT, OperationClass.IRREVERSIBLE},
+            ),
             task_structure=proposal.task_structure,
-            targets=_ordered_unique(item.target for item in proposal.requested_effects),
-            requested_effects=proposal.requested_effects,
+            targets=_ordered_unique(item.target for item in effects),
             entities=proposal.entities,
             preferences=proposal.preferences,
             desired_outputs=proposal.desired_outputs,
             success_criteria=proposal.success_criteria,
             success=proposal.success,
-            required_outputs=proposal.required_outputs,
+            required_outputs=outputs,
             constraint_criterion_ids=proposal.constraint_criterion_ids,
             external_effect_criterion_ids=proposal.external_effect_criterion_ids,
             final_recheck_criterion_ids=proposal.final_recheck_criterion_ids,
             constraints=proposal.constraints,
             semantic_value_constraints=proposal.semantic_value_constraints,
-            material_bindings=proposal.material_bindings,
-            # Compatibility fields intentionally stay empty on the canonical path.
-            source_claims=(),
-            obligations=(),
             forbidden_effects=proposal.forbidden_effects,
             evidence_requirements=proposal.evidence_requirements,
             requested_capabilities=_ordered_unique(
@@ -173,6 +232,7 @@ class TaskSpecAuthority:
             ),
             field_provenance=(),
         )
+        assert all(item.requirement_ref in requirement_ids for item in inputs)
         return TaskSpecAdmissionResult(
             status=CompilationStatus.READY,
             request_id=request.request_id,
@@ -249,3 +309,59 @@ def _ordered_unique(values: object) -> tuple[str, ...]:
 
 def _normalized(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _canonical_requirements(
+    proposal: MinimalIntentProposal,
+    effects: tuple[RequestedEffect, ...],
+    envelope: SourceEnvelope,
+) -> tuple[TaskRequirement, ...]:
+    whole = envelope.whole_request_anchor.anchor_id
+    rows = [
+        TaskRequirement(
+            requirement_id=effect.effect_id,
+            payload=TaskSemanticPayload(
+                kind="effect",
+                subject=effect.target,
+                relation="requested_effect",
+                value=effect.description,
+                operation_class=effect.operation_class,
+                material_effect_kind=effect.material_effect_kind,
+                capability=effect.capability,
+            ),
+            source_anchor_refs=(effect.source_ref,),
+        )
+        for effect in effects
+    ]
+    rows.extend(
+        TaskRequirement(
+            requirement_id=f"requirement:constraint:{index}",
+            payload=TaskSemanticPayload(kind="constraint", subject=value),
+            source_anchor_refs=(whole,),
+        )
+        for index, value in enumerate(proposal.constraints, start=1)
+    )
+    rows.extend(
+        TaskRequirement(
+            requirement_id=f"requirement:preference:{index}",
+            payload=TaskSemanticPayload(kind="preference", subject=value),
+            source_anchor_refs=(whole,),
+        )
+        for index, value in enumerate(proposal.preferences, start=1)
+    )
+    rows.extend(
+        TaskRequirement(
+            requirement_id=f"requirement:forbidden-effect:{index}",
+            payload=TaskSemanticPayload(kind="effect", subject=value, relation="forbidden"),
+            source_anchor_refs=(whole,),
+        )
+        for index, value in enumerate(proposal.forbidden_effects, start=1)
+    )
+    return tuple(rows)
+
+
+def _default_output_requirement(requirements: tuple[TaskRequirement, ...]) -> str:
+    return next(
+        (item.requirement_id for item in requirements if item.payload.kind == "effect"),
+        requirements[0].requirement_id if requirements else "",
+    )

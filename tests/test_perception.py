@@ -13,7 +13,12 @@ from affordance_runtime.simplified_runtime_contracts import (
     StateCriterion,
     StateCriterionRelation,
 )
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
+    TaskSpec,
+)
 from runtime_test_support import legacy_step_spec
 
 
@@ -23,6 +28,17 @@ def _task(objective: str) -> TaskSpec:
         revision=1,
         objective=objective,
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:test",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject=objective,
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+                source_anchor_refs=("test:whole_request",),
+            ),
+        ),
         targets=("target",),
         success_criteria=("task completes",),
         source_request_ref="test",
@@ -92,6 +108,17 @@ def test_hyphenated_task_target_contributes_visual_component_terms() -> None:
         revision=1,
         objective="Click on a small black 8",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:test",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Click on a small black 8 click-shape",
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+                source_anchor_refs=("test:whole_request",),
+            ),
+        ),
         targets=("click-shape",),
         success_criteria=("task completes",),
         source_request_ref="test",
@@ -110,6 +137,17 @@ def test_ascending_number_sequence_accepts_structured_or_visual_spatial_observat
         revision=1,
         objective="Click on the numbers in ascending order.",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:test",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Click on the numbers in ascending order",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                source_anchor_refs=("test:whole_request",),
+            ),
+        ),
         targets=("ascending-numbers",),
         success_criteria=("The sequence is accepted.",),
         source_request_ref="test",
@@ -129,6 +167,17 @@ def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_ap
         revision=1,
         objective="Click the letters in descending order.",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:test",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Click the letters in descending order",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                ),
+                source_anchor_refs=("test:whole_request",),
+            ),
+        ),
         targets=("ordered-items",),
         success_criteria=("The sequence is accepted.",),
         source_request_ref="test",

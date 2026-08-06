@@ -124,6 +124,7 @@ def test_step_spec_rejects_legacy_criterion_at_canonical_ingress() -> None:
             interaction=ElementIntent("semantic:submit", (_source(),)),
             completion_criteria=(precondition,),
             source_refs=(_source(),),
+            requirement_refs=("requirement:test",),
         )
 
 

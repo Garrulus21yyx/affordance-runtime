@@ -36,6 +36,8 @@ from affordance_runtime.task_intake import (
     IntentAmbiguity,
     OperationClass,
     RequestedEffect,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     UserRequest,
 )
@@ -61,9 +63,7 @@ def _snapshot(sequence: int, *, completion: bool = False) -> BrowserSnapshot:
             revision,
             snapshot_id=snapshot_id,
             page_revision=revision,
-            target_fingerprints={
-                item.id: item.target_fingerprint for item in model.affordances
-            },
+            target_fingerprints={item.id: item.target_fingerprint for item in model.affordances},
             metadata=(
                 {
                     "criterion_evaluations": {
@@ -210,9 +210,7 @@ class ProviderSwitchOwner:
             kind=decision.kind,
             success=True,
             state_before_ref="provider:provider-a",
-            state_after_ref=(
-                "provider:provider-a" if self.no_op else "provider:provider-b"
-            ),
+            state_after_ref=("provider:provider-a" if self.no_op else "provider:provider-b"),
             changed_dimensions=(RecoveryDimension.PROVIDER,),
             evidence_refs=("artifact:provider-switch",),
         )
@@ -295,6 +293,17 @@ def _task_spec() -> TaskSpec:
         revision=1,
         objective="Inspect an account after clarification",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:inspect-account",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Inspect an account after clarification",
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+                source_anchor_refs=("full-phase-recovery-test:inspect-account",),
+            ),
+        ),
         targets=("account",),
         success_criteria=("selected account is identified",),
         evidence_requirements=("current account evidence",),
@@ -308,6 +317,17 @@ def _navigation_task_spec() -> TaskSpec:
         revision=1,
         objective="Activate the Continue control",
         operation_class=OperationClass.NAVIGATION,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:activate-continue",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="Activate the Continue control",
+                    operation_class=OperationClass.NAVIGATION,
+                ),
+                source_anchor_refs=("full-phase-recovery-test:activate-continue",),
+            ),
+        ),
         targets=("Continue",),
         success_criteria=("continue control is activated",),
         evidence_requirements=("current continue control",),
@@ -322,6 +342,17 @@ def _simple_envelope(task_id: str, objective: str) -> RunRequest:
             revision=1,
             objective=objective,
             operation_class=OperationClass.READ_ONLY,
+            requirements=(
+                TaskRequirement(
+                    requirement_id="requirement:safe-result",
+                    payload=TaskSemanticPayload(
+                        kind="output",
+                        subject="Planner produced a safe result",
+                        operation_class=OperationClass.READ_ONLY,
+                    ),
+                    source_anchor_refs=("full-phase-recovery-test:safe-result",),
+                ),
+            ),
             targets=("current interface",),
             success_criteria=("planner produced a safe result",),
             success=SuccessExpression(
@@ -408,14 +439,11 @@ def test_observation_failure_reenters_through_one_reobserve_command() -> None:
     assert result.state.current_recovery_decision is not None
     assert result.state.current_recovery_decision.kind.value == RecoveryKind.REOBSERVE.value
     assert any(
-        node.kind == "RecoveryStrategySelected"
-        and node.payload["decision"]["kind"] == "reobserve"
+        node.kind == "RecoveryStrategySelected" and node.payload["decision"]["kind"] == "reobserve"
         for node in result.trace.nodes
     )
     recovery_outcome = next(
-        node.payload["outcome"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     )
     assert recovery_outcome["success"]
     events = [node.kind for node in result.trace.nodes]
@@ -461,16 +489,11 @@ def test_target_scope_rejection_replans_without_weakening_validation() -> None:
     )
     assert result.state.current_recovery_decision is None
     assert any(
-        node.kind == "FailureOwnerRouted"
-        and node.payload["handoff_type"] == "StepPlannerHandoff"
+        node.kind == "FailureOwnerRouted" and node.payload["handoff_type"] == "StepPlannerHandoff"
         for node in result.trace.nodes
     )
-    rejected = next(
-        node for node in result.trace.nodes if node.kind == "PlannerProposalRejected"
-    )
-    assert rejected.payload["rejection_reason_code"] == (
-        "relational_evidence_not_proven"
-    )
+    rejected = next(node for node in result.trace.nodes if node.kind == "PlannerProposalRejected")
+    assert rejected.payload["rejection_reason_code"] == ("relational_evidence_not_proven")
 
 
 def test_provider_failure_invokes_real_owner_before_reentering_planning() -> None:
@@ -481,28 +504,20 @@ def test_provider_failure_invokes_real_owner_before_reentering_planning() -> Non
         planner=planner,
         executor=NeverExecutor(),
         task_planner=None,
-        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
-            {RecoveryKind.SWITCH_PROVIDER: owner}
-        ),
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher({RecoveryKind.SWITCH_PROVIDER: owner}),
     ).run_sync(_simple_envelope("provider-owner-recovery", "produce a safe answer"))
 
     assert result.status == RuntimeStep.DONE
     assert planner.calls == 2
     assert owner.calls == 1
     recovery_outcome = next(
-        node.payload["outcome"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     )
     assert recovery_outcome["success"]
     assert recovery_outcome["changed_dimensions"][0] == "provider"
     events = [node.kind for node in result.trace.nodes]
-    assert events.index("RecoveryDecisionStarted") < events.index(
-        "RecoveryOutcomeRecorded"
-    )
-    assert events.index("RecoveryOutcomeRecorded") < events.index(
-        "RecoveryReenteredPhase"
-    )
+    assert events.index("RecoveryDecisionStarted") < events.index("RecoveryOutcomeRecorded")
+    assert events.index("RecoveryOutcomeRecorded") < events.index("RecoveryReenteredPhase")
 
 
 def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
@@ -512,9 +527,7 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
         planner=ProviderFailOncePlanner(),
         executor=NeverExecutor(),
         task_planner=None,
-        recovery_owner_dispatcher=RecoveryOwnerDispatcher(
-            {RecoveryKind.SWITCH_PROVIDER: owner}
-        ),
+        recovery_owner_dispatcher=RecoveryOwnerDispatcher({RecoveryKind.SWITCH_PROVIDER: owner}),
     ).run_sync(_simple_envelope("provider-no-op-recovery", "produce a safe answer"))
 
     assert result.status == RuntimeStep.ABORTED
@@ -522,9 +535,7 @@ def test_provider_no_op_owner_defers_without_crediting_recovery_delta() -> None:
     assert owner.calls == 1
     assert "RecoveryDeltaValidated" not in [node.kind for node in result.trace.nodes]
     recovery_outcome = next(
-        node.payload["outcome"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     )
     assert not recovery_outcome["success"]
     assert recovery_outcome["error_code"] == "owning_port_no_op"
@@ -542,11 +553,10 @@ def test_equivalent_step_planning_failure_changes_once_then_aborts_before_budget
     assert result.state.recovery_count == 0
     assert result.state.replan_count == 1
     assert result.state.current_recovery_outcome is None
-    assert [
-        node.payload["handoff_type"]
-        for node in result.trace.nodes
-        if node.kind == "FailureOwnerRouted"
-    ] == ["StepPlannerHandoff", "TerminalResult"]
+    assert [node.payload["handoff_type"] for node in result.trace.nodes if node.kind == "FailureOwnerRouted"] == [
+        "StepPlannerHandoff",
+        "TerminalResult",
+    ]
 
 
 def test_task_planning_failure_uses_replan_task_before_step_planning() -> None:
@@ -615,8 +625,7 @@ def test_skill_activation_failure_falls_through_via_replan_step() -> None:
     assert result.state.current_failure.phase == FailurePhase.SKILL_ACTIVATION
     assert result.state.current_recovery_decision is None
     assert any(
-        node.kind == "FailureOwnerRouted"
-        and node.payload["handoff_type"] == "StepPlannerHandoff"
+        node.kind == "FailureOwnerRouted" and node.payload["handoff_type"] == "StepPlannerHandoff"
         for node in result.trace.nodes
     )
 
@@ -635,18 +644,13 @@ def test_grounding_binding_reobserves_once_then_aborts_without_execution() -> No
     assert result.state.current_failure is not None
     assert result.state.current_failure.phase == FailurePhase.GROUNDING_BINDING
     assert [
-        node.payload["outcome"]["success"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryOutcomeRecorded"
+        node.payload["outcome"]["success"] for node in result.trace.nodes if node.kind == "RecoveryOutcomeRecorded"
     ] == [False]
     selected = [
-        node.payload["decision"]["kind"]
-        for node in result.trace.nodes
-        if node.kind == "RecoveryStrategySelected"
+        node.payload["decision"]["kind"] for node in result.trace.nodes if node.kind == "RecoveryStrategySelected"
     ]
     assert selected == [RecoveryKind.REGROUND.value]
     assert any(
-        node.kind == "FailureOwnerRouted"
-        and node.payload["handoff_type"] == "TerminalResult"
+        node.kind == "FailureOwnerRouted" and node.payload["handoff_type"] == "TerminalResult"
         for node in result.trace.nodes
     )

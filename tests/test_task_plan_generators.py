@@ -5,12 +5,8 @@ from pathlib import Path
 
 from affordance_runtime.task_intake import (
     OperationClass,
-    SourcedTaskClaim,
-    TaskClaimKind,
-    TaskObligationKind,
-    TaskObligationRelation,
-    TaskObligationSpec,
-    TaskObligationValueSource,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
 )
 from affordance_runtime.task_plan_contracts import PlanCandidate, TaskPlanGeneratorSource
@@ -42,60 +38,39 @@ def _context(task_spec: TaskSpec) -> TaskPlanningContext:
     )
 
 
-def _task_with_obligations() -> TaskSpec:
+def _requirement(identifier: str, subject: str, operation: OperationClass) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id=identifier,
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject=subject,
+            operation_class=operation,
+        ),
+        source_anchor_refs=(f"anchor:{identifier}",),
+    )
+
+
+def _task_with_requirements() -> TaskSpec:
     return TaskSpec(
         task_id="task-1",
         revision=2,
         objective="Enter Alice then submit",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            _requirement("effect:name", "name_field", OperationClass.REVERSIBLE_WRITE),
+            _requirement("effect:submit", "submit_button", OperationClass.REVERSIBLE_WRITE),
+        ),
+        allowed_effect_refs=("effect:name", "effect:submit"),
         targets=("name_field", "submit_button"),
         success_criteria=("name field equals Alice", "form submitted"),
         evidence_requirements=("field value evidence", "submission evidence"),
         requested_capabilities=("form.write",),
         source_request_ref="request-1",
-        source_claims=(
-            SourcedTaskClaim(
-                claim_id="claim-name",
-                kind=TaskClaimKind.EFFECT,
-                statement="name field equals Alice",
-                source_ref="request-1",
-                source_unit_ids=("source-unit:name",),
-            ),
-            SourcedTaskClaim(
-                claim_id="claim-submit",
-                kind=TaskClaimKind.EFFECT,
-                statement="form submitted",
-                source_ref="request-1",
-                source_unit_ids=("source-unit:submit",),
-            ),
-        ),
-        obligations=(
-            TaskObligationSpec(
-                obligation_id="obligation:name",
-                kind=TaskObligationKind.EFFECT,
-                subject="name_field",
-                relation=TaskObligationRelation.EQUALS,
-                value_source=TaskObligationValueSource.LITERAL,
-                expected_value="Alice",
-                claim_ids=("claim-name",),
-                evidence_requirements=("field value evidence",),
-            ),
-            TaskObligationSpec(
-                obligation_id="obligation:submit",
-                kind=TaskObligationKind.EFFECT,
-                subject="submit_button",
-                relation=TaskObligationRelation.IS_COMPLETED,
-                claim_ids=("claim-submit",),
-                depends_on=("obligation:name",),
-                evidence_requirements=("submission evidence",),
-                terminal=True,
-            ),
-        ),
     )
 
 
-def test_rule_generator_ignores_compatibility_obligation_graph_shape() -> None:
-    context = _context(_task_with_obligations())
+def test_rule_generator_uses_flat_canonical_requirements() -> None:
+    context = _context(_task_with_requirements())
 
     draft = RulePlanCandidateGenerator().generate(context)
 
@@ -105,7 +80,7 @@ def test_rule_generator_ignores_compatibility_obligation_graph_shape() -> None:
     assert not hasattr(draft, "plan_id")
     assert not hasattr(draft, "plan_version")
     assert tuple(step.step_id for step in draft.steps) == ("step:implicit",)
-    assert all(not step.step_id.startswith("obligation:") for step in draft.steps)
+    assert draft.steps[0].requirement_refs == ("effect:name", "effect:submit")
     assert draft.steps[0].objective == context.task_spec.objective
 
 
@@ -115,6 +90,9 @@ def test_synthetic_flat_generator_returns_single_draft_step() -> None:
         revision=1,
         objective="Read the account status",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            _requirement("requirement:account", "account", OperationClass.READ_ONLY),
+        ),
         targets=("account",),
         success_criteria=("account status visible",),
         evidence_requirements=("DOM state evidence",),
@@ -134,6 +112,9 @@ def test_pricing_task_plan_generator_returns_draft_not_accepted_plan() -> None:
         revision=1,
         objective="Reveal pricing limits",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            _requirement("requirement:pricing", "pricing", OperationClass.READ_ONLY),
+        ),
         targets=("pricing",),
         success_criteria=("pricing limits visible",),
         evidence_requirements=("DOM state evidence",),
@@ -159,7 +140,7 @@ def test_draft_generator_router_preserves_rule_and_complex_selection() -> None:
             calls.append(self.name)
             return RulePlanCandidateGenerator().generate(context)
 
-    context = _context(_task_with_obligations())
+    context = _context(_task_with_requirements())
     router = PlanCandidateGeneratorRouter(
         rule_generator=RecordingGenerator("rule"),
         complex_generator=RecordingGenerator("complex"),

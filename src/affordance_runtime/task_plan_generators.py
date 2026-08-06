@@ -67,6 +67,9 @@ class PricingPlanCandidateGenerator:
     """Reference pricing plan draft generator, isolated from accepted-plan authority."""
 
     def generate(self, context: TaskPlanningContext) -> PlanCandidate:
+        requirement_refs = tuple(
+            item.requirement_id for item in context.task_spec.requirements
+        )
         steps = (
             StepSpec(
                 step_id="reveal-pro",
@@ -74,6 +77,7 @@ class PricingPlanCandidateGenerator:
                 interaction=ElementIntent("pricing.pro", task_source_refs(context.task_spec)),
                 completion_criteria=(_target_revealed("criterion:reveal-pro", "pricing.pro"),),
                 source_refs=task_source_refs(context.task_spec),
+                requirement_refs=requirement_refs,
             ),
             StepSpec(
                 step_id="reveal-enterprise",
@@ -85,6 +89,7 @@ class PricingPlanCandidateGenerator:
                     _target_revealed("criterion:reveal-enterprise", "pricing.enterprise"),
                 ),
                 source_refs=task_source_refs(context.task_spec),
+                requirement_refs=requirement_refs,
                 depends_on=("reveal-pro",),
             ),
         )
@@ -130,6 +135,7 @@ def _steps_from_task_spec(
     default_evidence_source_kind: str,
 ) -> tuple[StepSpec, ...]:
     source_refs = task_source_refs(task_spec)
+    requirement_refs = tuple(item.requirement_id for item in task_spec.requirements)
     state_holds = task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
     return (
         StepSpec(
@@ -148,6 +154,11 @@ def _steps_from_task_spec(
                 ),
             ),
             source_refs=source_refs,
+            requirement_refs=requirement_refs,
+            effect_authorization_refs=(
+                () if state_holds else task_spec.allowed_effect_refs
+            ),
+            effectful=not state_holds,
         ),
     )
 

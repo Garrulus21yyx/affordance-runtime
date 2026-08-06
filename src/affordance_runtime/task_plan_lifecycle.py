@@ -127,6 +127,10 @@ class TaskPlanLifecycle:
                     operation_class=task_spec.operation_class,
                     observation_refs=(snapshot.epoch_id,),
                     remaining_budget_steps=budget.max_steps,
+                    allowed_requirement_ids=tuple(
+                        item.requirement_id for item in task_spec.requirements
+                    ),
+                    allowed_effect_ids=task_spec.allowed_effect_refs,
                     task_id=task_spec.task_id,
                 ),
                 candidate,
@@ -165,6 +169,10 @@ class TaskPlanLifecycle:
                     operation_class=task_spec.operation_class,
                     observation_refs=(snapshot.epoch_id,),
                     remaining_budget_steps=budget.max_steps,
+                    allowed_requirement_ids=tuple(
+                        item.requirement_id for item in task_spec.requirements
+                    ),
+                    allowed_effect_ids=task_spec.allowed_effect_refs,
                     task_id=task_spec.task_id,
                 ),
                 candidate,

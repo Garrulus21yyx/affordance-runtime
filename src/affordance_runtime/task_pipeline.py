@@ -15,7 +15,6 @@ from affordance_runtime.failure_envelope import (
     make_failure_envelope,
 )
 from affordance_runtime.intent_compiler import LLMIntentCompiler
-from affordance_runtime.legacy_task_plan_provider import LegacyTaskPlanProviderAdapter
 from affordance_runtime.model_recovery import recovery_dispatcher_for_model
 from affordance_runtime.recovery_protocol import classify_failure
 from affordance_runtime.runtime import RunRequest
@@ -27,7 +26,7 @@ from affordance_runtime.stage_protocol import (
     build_failure_owner_handoff,
 )
 from affordance_runtime.task_intake import CompilationIssue, CompilationStatus, TaskStructure, UserRequest
-from affordance_runtime.task_planner import PlanningRouter
+from affordance_runtime.task_planner import PlanningRouter, StrictTaskPlanner
 from affordance_runtime.task_spec_authority import TaskSpecAdmissionResult, TaskSpecAuthority
 from affordance_runtime.trace import TraceDag, TraceNode
 
@@ -118,7 +117,7 @@ class GeneralistTaskPipeline:
                             flow.lifecycle,
                             planner=replace(
                                 task_planner,
-                                complex_planner=LegacyTaskPlanProviderAdapter(self.compiler.model),
+                                complex_planner=StrictTaskPlanner(self.compiler.model),
                             ),
                         ),
                     ),

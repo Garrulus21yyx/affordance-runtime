@@ -1,11 +1,10 @@
 from dataclasses import is_dataclass
 
-from affordance_runtime import obligation_attribution, simplified_runtime_contracts, task_intake
-from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceSourceKind, EvidenceStrength
+from affordance_runtime import simplified_runtime_contracts
+from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
 
 
 def test_legacy_relation_names_alias_single_canonical_relation_enum() -> None:
-    assert task_intake.TaskObligationRelation is CriterionRelation
     assert simplified_runtime_contracts.StateCriterionRelation is CriterionRelation
 
 
@@ -37,5 +36,3 @@ def test_nominal_criterion_subclasses_are_compatibility_aliases() -> None:
 def test_legacy_evidence_policy_and_strength_names_alias_canonical_vocabulary() -> None:
     assert simplified_runtime_contracts.CriterionEvidencePolicy is EvidencePolicy
     assert simplified_runtime_contracts.EvidenceStrength is EvidenceStrength
-    assert obligation_attribution.EvidenceStrength is EvidenceStrength
-    assert obligation_attribution.EvidenceSourceKind is EvidenceSourceKind

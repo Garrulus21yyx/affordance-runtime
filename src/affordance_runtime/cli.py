@@ -30,8 +30,29 @@ from affordance_runtime.planners import (
 )
 from affordance_runtime.planning_contracts import PlannerPort
 from affordance_runtime.runtime import RunRequest
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
+    TaskSpec,
+)
 from affordance_runtime.task_planner import PlanningRouter
+
+
+def _scenario_requirement(
+    requirement_id: str,
+    subject: str,
+    operation_class: OperationClass,
+) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id=requirement_id,
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject=subject,
+            operation_class=operation_class,
+        ),
+        source_anchor_refs=(f"reference-cli:{requirement_id}",),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -416,6 +437,13 @@ def run_scenario(
             revision=1,
             objective="Reveal Pro and Enterprise plan limits with structural evidence.",
             operation_class=OperationClass.READ_ONLY,
+            requirements=(
+                _scenario_requirement(
+                    "requirement:reveal-pricing",
+                    "Reveal Pro and Enterprise plan limits with structural evidence",
+                    OperationClass.READ_ONLY,
+                ),
+            ),
             targets=("Pro", "Enterprise"),
             success_criteria=("both requested pricing plans are structurally visible",),
             success=pricing_success_expression(),
@@ -429,15 +457,25 @@ def run_scenario(
             "settings": "Enable the reversible notifications setting and verify persisted state.",
             "export": "Export a report only after explicit approval and return the file receipt.",
         }
+        profile_operation = {
+            "pricing": OperationClass.READ_ONLY,
+            "settings": OperationClass.REVERSIBLE_WRITE,
+            "export": OperationClass.EXTERNAL_SIDE_EFFECT,
+        }[scenario]
+        profile_requirement_id = f"requirement:{scenario}"
         task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
             objective=profile_objectives[scenario],
-            operation_class={
-                "pricing": OperationClass.READ_ONLY,
-                "settings": OperationClass.REVERSIBLE_WRITE,
-                "export": OperationClass.EXTERNAL_SIDE_EFFECT,
-            }[scenario],
+            operation_class=profile_operation,
+            requirements=(
+                _scenario_requirement(
+                    profile_requirement_id,
+                    profile_objectives[scenario],
+                    profile_operation,
+                ),
+            ),
+            allowed_effect_refs=(() if profile_operation == OperationClass.READ_ONLY else (profile_requirement_id,)),
             targets={
                 "pricing": ("Pro", "Enterprise"),
                 "settings": ("notifications",),
@@ -449,9 +487,7 @@ def run_scenario(
                 "export": ("approved report file is exported",),
             }[scenario],
             success=(pricing_success_expression() if scenario == "pricing" else None),
-            required_outputs=(
-                pricing_required_outputs() if scenario == "pricing" else ()
-            ),
+            required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
             requested_capabilities=tuple(
                 capabilities_override if capabilities_override is not None else capabilities[scenario]
@@ -459,19 +495,30 @@ def run_scenario(
             source_request_ref="reference-cli-accepted-profile",
         )
     if task_spec is None:
+        default_objectives = {
+            "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
+            "settings": "Enable the reversible notifications setting and verify persisted state.",
+            "export": "Export a report only after explicit approval and return the file receipt.",
+        }
+        default_operation = {
+            "pricing": OperationClass.READ_ONLY,
+            "settings": OperationClass.REVERSIBLE_WRITE,
+            "export": OperationClass.EXTERNAL_SIDE_EFFECT,
+        }[scenario]
+        default_requirement_id = f"requirement:{scenario}"
         task_spec = TaskSpec(
             task_id=selected_run_id,
             revision=1,
-            objective={
-                "pricing": "Extract Pro and Enterprise plan limits with structural evidence.",
-                "settings": "Enable the reversible notifications setting and verify persisted state.",
-                "export": "Export a report only after explicit approval and return the file receipt.",
-            }[scenario],
-            operation_class={
-                "pricing": OperationClass.READ_ONLY,
-                "settings": OperationClass.REVERSIBLE_WRITE,
-                "export": OperationClass.EXTERNAL_SIDE_EFFECT,
-            }[scenario],
+            objective=default_objectives[scenario],
+            operation_class=default_operation,
+            requirements=(
+                _scenario_requirement(
+                    default_requirement_id,
+                    default_objectives[scenario],
+                    default_operation,
+                ),
+            ),
+            allowed_effect_refs=(() if default_operation == OperationClass.READ_ONLY else (default_requirement_id,)),
             targets={
                 "pricing": ("Pro", "Enterprise"),
                 "settings": ("notifications",),
@@ -479,21 +526,15 @@ def run_scenario(
             }[scenario],
             success_criteria=("requested scenario result is independently verified",),
             success=(pricing_success_expression() if scenario == "pricing" else None),
-            required_outputs=(
-                pricing_required_outputs() if scenario == "pricing" else ()
-            ),
+            required_outputs=(pricing_required_outputs() if scenario == "pricing" else ()),
             evidence_requirements=("independent post-action evidence",),
             requested_capabilities=tuple(
-                capabilities_override
-                if capabilities_override is not None
-                else capabilities[scenario]
+                capabilities_override if capabilities_override is not None else capabilities[scenario]
             ),
             source_request_ref="reference-cli",
         )
     runtime_features = (
-        loaded_profile.profile.features_for(selected_run_id)
-        if loaded_profile is not None
-        else RuntimeFeatures()
+        loaded_profile.profile.features_for(selected_run_id) if loaded_profile is not None else RuntimeFeatures()
     )
     with BrowserSession.launch(target, headless=headless) as session:
         router = ExecutorRouter()
@@ -504,9 +545,7 @@ def run_scenario(
             executor=router,
             contract_builder={
                 "pricing": pricing_contract_builder(),
-                "settings": settings_contract_builder(
-                    target.rsplit("/", 1)[0] + "/api/state"
-                ),
+                "settings": settings_contract_builder(target.rsplit("/", 1)[0] + "/api/state"),
                 "export": export_contract_builder(),
             }[scenario],
             artifacts=ArtifactStore(artifact_root),

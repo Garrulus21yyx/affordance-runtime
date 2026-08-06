@@ -31,7 +31,12 @@ from affordance_runtime.planning_request import PlanningRequest
 from affordance_runtime.route_calibration import RouteOutcomeStatus
 from affordance_runtime.runtime import RunRequest, RuntimeStep
 from affordance_runtime.state_kernel import StateKernel
-from affordance_runtime.task_intake import OperationClass, TaskSpec
+from affordance_runtime.task_intake import (
+    OperationClass,
+    TaskRequirement,
+    TaskSemanticPayload,
+    TaskSpec,
+)
 from affordance_runtime.verification.contracts import SuccessExpression
 from affordance_runtime.visual_grounding import VisualRegion
 
@@ -39,6 +44,22 @@ TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
     producer_id="generic-perception-test-planner",
 )
+
+
+def _task_requirement(
+    requirement_id: str,
+    subject: str,
+    operation_class: OperationClass,
+) -> TaskRequirement:
+    return TaskRequirement(
+        requirement_id=requirement_id,
+        payload=TaskSemanticPayload(
+            kind="effect",
+            subject=subject,
+            operation_class=operation_class,
+        ),
+        source_anchor_refs=(f"source:{requirement_id}",),
+    )
 
 
 class CanvasPage:
@@ -107,16 +128,9 @@ class VisualSemanticPlanner:
         self,
         request: PlanningRequest,
     ) -> PlannerProposalResponse | PlannerDoneResponse:
-        if any(
-            outcome.verification_status == "passed"
-            for outcome in request.recent_outcomes
-        ):
+        if any(outcome.verification_status == "passed" for outcome in request.recent_outcomes):
             return PlannerDoneResponse(result={"activated": True})
-        target = next(
-            item
-            for item in request.observation.affordances
-            if "point_activate" in item.supported_actions
-        )
+        target = next(item for item in request.observation.affordances if "point_activate" in item.supported_actions)
         return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
@@ -180,6 +194,13 @@ def test_coordinator_runs_task_derived_visual_primary_path_without_benchmark_ada
         revision=1,
         objective="Activate the blue visual canvas control",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            _task_requirement(
+                "requirement:activate-canvas",
+                "Activate the blue visual canvas control",
+                OperationClass.READ_ONLY,
+            ),
+        ),
         targets=("blue canvas control",),
         success_criteria=("the page reports activated",),
         success=SuccessExpression(
@@ -269,16 +290,9 @@ class ActivateSemanticPlanner:
         self,
         request: PlanningRequest,
     ) -> PlannerProposalResponse | PlannerDoneResponse:
-        if any(
-            outcome.verification_status == "passed"
-            for outcome in request.recent_outcomes
-        ):
+        if any(outcome.verification_status == "passed" for outcome in request.recent_outcomes):
             return PlannerDoneResponse(result={"saved": True})
-        target = next(
-            item
-            for item in request.observation.affordances
-            if "activate" in item.supported_actions
-        )
+        target = next(item for item in request.observation.affordances if "activate" in item.supported_actions)
         return PlannerProposalResponse(
             proposal_provenance=TEST_PROPOSAL_PROVENANCE,
             proposal=PlannerProposal(
@@ -355,6 +369,14 @@ def test_dom_failure_widens_generic_perception_and_uses_fresh_visual_route(
         revision=1,
         objective="Save changes",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            _task_requirement(
+                "requirement:save-changes",
+                "Save changes using the visible control",
+                OperationClass.REVERSIBLE_WRITE,
+            ),
+        ),
+        allowed_effect_refs=("requirement:save-changes",),
         targets=("Save changes",),
         success_criteria=("the page reports saved",),
         success=SuccessExpression(
@@ -436,12 +458,12 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
             return [VisualRegion((0.6, 0.6, 0.1, 0.1), "Target", 0.9)]
 
     class InconclusivePlanner:
-            def propose(
-                self,
-                request: PlanningRequest,
-            ) -> PlannerDoneResponse:
-                assert request.observation.affordances
-                return PlannerDoneResponse(
+        def propose(
+            self,
+            request: PlanningRequest,
+        ) -> PlannerDoneResponse:
+            assert request.observation.affordances
+            return PlannerDoneResponse(
                 result={"status": "inconclusive", "reason": "source conflict"},
             )
 
@@ -453,6 +475,13 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
         revision=1,
         objective="Activate the visual point target",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            _task_requirement(
+                "requirement:activate-point",
+                "Activate the visual point target",
+                OperationClass.READ_ONLY,
+            ),
+        ),
         targets=("Target",),
         success_criteria=("the current target is activated",),
         evidence_requirements=("visual appearance and spatial position",),
@@ -480,7 +509,6 @@ def test_source_conflict_uses_bounded_targeted_epoch_then_returns_inconclusive(
     assert "EvidenceGapUnresolved" in events
     assert "ActionStarted" not in events
     assert all(
-        {source.observation_epoch_id for source in snapshot.source_observations}
-        == {snapshot.observation.snapshot_id}
+        {source.observation_epoch_id for source in snapshot.source_observations} == {snapshot.observation.snapshot_id}
         for snapshot in observer.snapshots
     )

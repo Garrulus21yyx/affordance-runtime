@@ -74,12 +74,8 @@ from affordance_runtime.stage_protocol import LoopDirective
 from affordance_runtime.state_kernel import ProgressGuardReason, StateKernel
 from affordance_runtime.task_intake import (
     OperationClass,
-    SourcedTaskClaim,
-    TaskClaimKind,
-    TaskObligationKind,
-    TaskObligationRelation,
-    TaskObligationSpec,
-    TaskObligationValueSource,
+    TaskRequirement,
+    TaskSemanticPayload,
     TaskSpec,
     UserRequest,
 )
@@ -587,6 +583,7 @@ class FinalRecheckTaskPlanner:
                         ),
                     ),
                     refs,
+                    tuple(item.requirement_id for item in context.task_spec.requirements),
                 ),
             ),
             source_refs=refs,
@@ -618,6 +615,7 @@ class OpenSemanticTaskPlanner:
                         ),
                     ),
                     refs,
+                    tuple(item.requirement_id for item in context.task_spec.requirements),
                 ),
             ),
             source_refs=refs,
@@ -838,84 +836,23 @@ def _current_state_read_only_snapshot(
     return BrowserSnapshot(observation, model)
 
 
-def _current_state_read_only_task() -> TaskSpec:
-    text_claim = SourcedTaskClaim(
-        claim_id="claim-text-changed",
-        kind=TaskClaimKind.EFFECT,
-        statement="text field has changed",
-        source_ref="current-state-read-only-request",
-    )
-    submit_claim = SourcedTaskClaim(
-        claim_id="claim-submit-available",
-        kind=TaskClaimKind.DEPENDENCY,
-        statement="submit button is available",
-        source_ref="current-state-read-only-request",
-    )
-    return TaskSpec(
-        task_id="current-state-read-only",
-        revision=1,
-        objective="Enter text and submit",
-        operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("text field", "submit button"),
-        success_criteria=("text field has changed", "submit button is available"),
-        success=SuccessExpression(
-            expression_id="success:current-state-read-only",
-            operator="all_of",
-            children=(
-                SuccessExpression(
-                    expression_id="success:text-changed",
-                    operator="criterion",
-                    criterion_id="criterion:text-changed",
-                ),
-                SuccessExpression(
-                    expression_id="success:submit-available",
-                    operator="criterion",
-                    criterion_id="criterion:submit-available",
-                ),
-            ),
-        ),
-        evidence_requirements=("post-text evidence", "current submit button observation"),
-        requested_capabilities=("text.write",),
-        source_request_ref="current-state-read-only-request",
-        source_claims=(text_claim, submit_claim),
-        obligations=(
-            TaskObligationSpec(
-                obligation_id="text-field-changed",
-                kind=TaskObligationKind.EFFECT,
-                subject="text field",
-                relation=TaskObligationRelation.HAS_CHANGED,
-                claim_ids=(text_claim.claim_id,),
-                evidence_requirements=("post-text evidence",),
-                blocking=True,
-            ),
-            TaskObligationSpec(
-                obligation_id="submit-button-available",
-                kind=TaskObligationKind.PREDICATE,
-                subject="submit_button",
-                relation=TaskObligationRelation.IS_AVAILABLE,
-                value_source=TaskObligationValueSource.OBSERVATION,
-                claim_ids=(submit_claim.claim_id,),
-                depends_on=("text-field-changed",),
-                evidence_requirements=("current submit button observation",),
-                blocking=True,
-                terminal=True,
-            ),
-        ),
-    )
-
-
 def _current_state_availability_task() -> TaskSpec:
-    submit_claim = SourcedTaskClaim(
-        claim_id="claim-submit-available",
-        kind=TaskClaimKind.DEPENDENCY,
-        statement="submit button is available",
-        source_ref="current-state-availability-request",
-    )
     return TaskSpec(
         task_id="current-state-availability",
         revision=1,
         objective="Confirm submit button is available",
         operation_class=OperationClass.READ_ONLY,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:submit-available",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="submit button",
+                    operation_class=OperationClass.READ_ONLY,
+                ),
+                source_anchor_refs=("current-state-availability-request:whole_request",),
+            ),
+        ),
         targets=("submit button",),
         success_criteria=("submit button is available",),
         success=SuccessExpression(
@@ -926,20 +863,6 @@ def _current_state_availability_task() -> TaskSpec:
         evidence_requirements=("current submit button observation",),
         requested_capabilities=(),
         source_request_ref="current-state-availability-request",
-        source_claims=(submit_claim,),
-        obligations=(
-            TaskObligationSpec(
-                obligation_id="submit-button-available",
-                kind=TaskObligationKind.PREDICATE,
-                subject="submit_button",
-                relation=TaskObligationRelation.IS_AVAILABLE,
-                value_source=TaskObligationValueSource.OBSERVATION,
-                claim_ids=(submit_claim.claim_id,),
-                evidence_requirements=("current submit button observation",),
-                blocking=True,
-                terminal=True,
-            ),
-        ),
     )
 
 
@@ -1357,6 +1280,20 @@ def _semantic_task() -> TaskSpec:
         revision=1,
         objective="Save settings",
         operation_class=OperationClass.REVERSIBLE_WRITE,
+        requirements=(
+            TaskRequirement(
+                requirement_id="requirement:test",
+                payload=TaskSemanticPayload(
+                    kind="effect",
+                    subject="settings",
+                    operation_class=OperationClass.REVERSIBLE_WRITE,
+                    capability="settings.write",
+                ),
+                source_anchor_refs=("semantic-request:whole_request",),
+            ),
+        ),
+        allowed_effect_refs=("requirement:test",),
+        capability_ceiling=("settings.write",),
         targets=("settings",),
         success_criteria=("settings are saved",),
         success=SuccessExpression(
