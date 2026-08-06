@@ -59,6 +59,30 @@ class AuthorityStatus(StrEnum):
     UNPROVEN = "unproven"
 
 
+def externality_rank(value: Externality) -> int:
+    """One conservative ordering shared by classification and authorization."""
+
+    return {
+        Externality.LOCAL: 0,
+        Externality.SAME_ORIGIN: 1,
+        Externality.CROSS_ORIGIN: 2,
+        Externality.EXTERNAL_SYSTEM: 3,
+        Externality.PHYSICAL_WORLD: 4,
+        Externality.UNKNOWN: 5,
+    }[value]
+
+
+def reversibility_rank(value: Reversibility) -> int:
+    """One conservative ordering shared by classification and authorization."""
+
+    return {
+        Reversibility.REVERSIBLE: 0,
+        Reversibility.COMPENSATABLE: 1,
+        Reversibility.IRREVERSIBLE: 2,
+        Reversibility.UNKNOWN: 3,
+    }[value]
+
+
 @dataclass(frozen=True)
 class ResourceScopeRef:
     resource_ref: str

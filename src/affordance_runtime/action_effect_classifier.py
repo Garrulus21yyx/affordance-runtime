@@ -13,6 +13,8 @@ from affordance_runtime.effect_authority_contracts import (
     RuntimeEffectSignature,
     RuntimeRiskTier,
     RuntimeRiskVector,
+    externality_rank,
+    reversibility_rank,
 )
 from affordance_runtime.grounding import (
     ApiGroundingPayload,
@@ -124,21 +126,44 @@ def classify_action(
             tuple(getattr(destination, "source_assertion_refs", getattr(destination, "source_refs", ()))),
         )
         asserted_risk = _higher_risk(asserted_risk, _asserted_risk(destination))
+        destination_support = _action_support(destination, normalized_action, destination=True)
+        if destination_support is not None:
+            asserted_risk = _higher_risk(asserted_risk, _asserted_risk(destination_support))
         resource_sensitivity = _higher_risk(
             resource_sensitivity,
             _optional_enum(RuntimeRiskTier, getattr(destination, "resource_sensitivity", "")),
         )
+        if destination_support is not None:
+            resource_sensitivity = _higher_risk(
+                resource_sensitivity,
+                _optional_enum(RuntimeRiskTier, destination_support.resource_sensitivity),
+            )
         destination_assurance = _optional_enum(AssuranceLevel, getattr(destination, "source_assurance", ""))
+        if destination_support is not None:
+            destination_assurance = _weaker_assurance(
+                destination_assurance,
+                _optional_enum(AssuranceLevel, destination_support.source_assurance),
+            )
         if destination_assurance is not None:
             assurance = min(assurance, destination_assurance, key=_assurance_rank)
         externality = _more_external(
             externality,
             _optional_enum(Externality, getattr(destination, "externality", "")),
         )
+        if destination_support is not None:
+            externality = _more_external(
+                externality,
+                _optional_enum(Externality, destination_support.externality),
+            )
         reversibility = _less_reversible(
             reversibility,
             _optional_enum(Reversibility, getattr(destination, "reversibility", "")),
         )
+        if destination_support is not None:
+            reversibility = _less_reversible(
+                reversibility,
+                _optional_enum(Reversibility, destination_support.reversibility),
+            )
 
     if destination_candidate is not None:
         assertion_refs = _merge_refs(assertion_refs, destination_candidate.evidence_refs)
@@ -173,9 +198,7 @@ def classify_action(
         reversibility = reversibility or structured[2]
         operation_ref = operation_ref or structured[3]
 
-    conflict = getattr(getattr(target, "conflict_status", None), "value", "")
-    if not conflict:
-        conflict = "material_conflict" if getattr(target, "conflict_codes", ()) else "no_material_conflict"
+    conflict = _more_severe_conflict(_target_conflict(target), _target_conflict(destination))
     risk_vector = _risk_vector(
         effect_class=effect_class,
         externality=externality,
@@ -327,7 +350,7 @@ def _candidate_assurance(candidate: GroundingCandidate) -> AssuranceLevel | None
         return AssuranceLevel.STRUCTURAL
     if candidate.source in {GroundingSource.DOM, GroundingSource.ACCESSIBILITY, GroundingSource.SVG}:
         return AssuranceLevel.STRUCTURAL
-    return None
+    return AssuranceLevel.WEAK
 
 
 def _more_external(current: Externality | None, candidate: Externality | None) -> Externality | None:
@@ -335,15 +358,7 @@ def _more_external(current: Externality | None, candidate: Externality | None) -
         return current
     if current is None:
         return candidate
-    rank = {
-        Externality.LOCAL: 0,
-        Externality.SAME_ORIGIN: 1,
-        Externality.CROSS_ORIGIN: 2,
-        Externality.EXTERNAL_SYSTEM: 2,
-        Externality.PHYSICAL_WORLD: 3,
-        Externality.UNKNOWN: 4,
-    }
-    return max((current, candidate), key=rank.__getitem__)
+    return max((current, candidate), key=externality_rank)
 
 
 def _less_reversible(current: Reversibility | None, candidate: Reversibility | None) -> Reversibility | None:
@@ -351,13 +366,44 @@ def _less_reversible(current: Reversibility | None, candidate: Reversibility | N
         return current
     if current is None:
         return candidate
+    return max((current, candidate), key=reversibility_rank)
+
+
+def _weaker_assurance(current: AssuranceLevel | None, candidate: AssuranceLevel | None) -> AssuranceLevel | None:
+    if candidate is None:
+        return current
+    if current is None:
+        return candidate
+    return min((current, candidate), key=_assurance_rank)
+
+
+def _action_support(target: object, action: str, *, destination: bool = False):
+    supports = tuple(getattr(target, "action_support", ()))
+    exact = next((item for item in supports if item.action_kind == action), None)
+    if exact is not None or not destination or action != "drag":
+        return exact
+    return next((item for item in supports if item.action_kind == "drop"), None)
+
+
+def _target_conflict(target: object | None) -> str:
+    if target is None:
+        return ConflictStatus.NO_MATERIAL_CONFLICT.value
+    status = getattr(getattr(target, "conflict_status", None), "value", "")
+    if status:
+        return status
+    if getattr(target, "conflict_codes", ()):
+        return ConflictStatus.MATERIAL_CONFLICT.value
+    return ConflictStatus.NO_MATERIAL_CONFLICT.value
+
+
+def _more_severe_conflict(current: str, candidate: str) -> str:
     rank = {
-        Reversibility.REVERSIBLE: 0,
-        Reversibility.COMPENSATABLE: 1,
-        Reversibility.IRREVERSIBLE: 2,
-        Reversibility.UNKNOWN: 3,
+        ConflictStatus.RESOLVED.value: 0,
+        ConflictStatus.NO_MATERIAL_CONFLICT.value: 0,
+        ConflictStatus.INCONCLUSIVE.value: 1,
+        ConflictStatus.MATERIAL_CONFLICT.value: 2,
     }
-    return max((current, candidate), key=rank.__getitem__)
+    return max((current, candidate), key=lambda value: rank.get(value, 2))
 
 
 def _merge_refs(*groups: tuple[str, ...]) -> tuple[str, ...]:

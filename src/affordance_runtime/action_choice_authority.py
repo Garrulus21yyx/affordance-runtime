@@ -13,6 +13,8 @@ from affordance_runtime.effect_authority_contracts import (
     Externality,
     Reversibility,
     RuntimeEffectSignature,
+    externality_rank,
+    reversibility_rank,
 )
 from affordance_runtime.high_risk_effect_policy import policy_for_effect
 from affordance_runtime.simplified_runtime_contracts import StepSpec
@@ -67,8 +69,7 @@ def authorize_runtime_signature(
     scopes = tuple(
         known[ref].payload.effect_authorization_scope
         for ref in requirement_refs
-        if ref in task_spec.allowed_effect_refs
-        and known[ref].payload.effect_authorization_scope is not None
+        if ref in task_spec.allowed_effect_refs and known[ref].payload.effect_authorization_scope is not None
     )
     if not scopes:
         return _proof(task_spec, signature, AuthorityStatus.UNPROVEN, ("AUTHORIZATION_SCOPE_MISSING",))
@@ -90,17 +91,10 @@ def authorize_runtime_signature(
             effect_refs=(allowed.requirement_ref,),
         )
     status = (
-        AuthorityStatus.DENY
-        if any(item[1] == AuthorityStatus.DENY for item in decisions)
-        else AuthorityStatus.UNPROVEN
+        AuthorityStatus.DENY if any(item[1] == AuthorityStatus.DENY for item in decisions) else AuthorityStatus.UNPROVEN
     )
     reasons = tuple(
-        dict.fromkeys(
-            reason
-            for _, item_status, codes in decisions
-            if item_status == status
-            for reason in codes
-        )
+        dict.fromkeys(reason for _, item_status, codes in decisions if item_status == status for reason in codes)
     )
     return _proof(task_spec, signature, status, reasons)
 
@@ -173,11 +167,11 @@ def _subsumes(
             denied.append(f"PARAMETER_MISMATCH:{parameter.slot}")
     if signature.externality is None:
         unknown.append("EXTERNALITY_UNPROVEN")
-    elif _externality_rank(signature.externality) > _externality_rank(scope.externality):
+    elif externality_rank(signature.externality) > externality_rank(scope.externality):
         denied.append("EXTERNALITY_EXCEEDS_SCOPE")
     if signature.reversibility is None or signature.reversibility == Reversibility.UNKNOWN:
         unknown.append("REVERSIBILITY_UNPROVEN")
-    elif _reversibility_rank(signature.reversibility) > _reversibility_rank(scope.reversibility):
+    elif reversibility_rank(signature.reversibility) > reversibility_rank(scope.reversibility):
         denied.append("REVERSIBILITY_EXCEEDS_SCOPE")
     if not scope.required_capabilities.issubset(task_spec.capability_ceiling):
         denied.append("CAPABILITY_EXCEEDS_TASK_CEILING")
@@ -239,14 +233,9 @@ def _authorize_enabling(
         and signature.reversibility == Reversibility.REVERSIBLE
         and signature.action_kind in {"fill", "type", "type_text", "select", "select_option"}
     ):
-        admitted = {
-            item.field: item.value
-            for item in task_spec.inputs
-            if item.requirement_ref in requirement_refs
-        }
+        admitted = {item.field: item.value for item in task_spec.inputs if item.requirement_ref in requirement_refs}
         if not signature.parameter_values or any(
-            slot not in admitted or admitted[slot] != value
-            for slot, value in signature.parameter_values.items()
+            slot not in admitted or admitted[slot] != value for slot, value in signature.parameter_values.items()
         ):
             return _proof(task_spec, signature, AuthorityStatus.DENY, ("ENABLING_DATA_DISCLOSURE",))
         return _proof(
@@ -315,23 +304,3 @@ def _empty_signature() -> RuntimeEffectSignature:
 
 def _assurance_rank(value: AssuranceLevel) -> int:
     return {AssuranceLevel.WEAK: 0, AssuranceLevel.STRUCTURAL: 1, AssuranceLevel.AUTHORITATIVE: 2}[value]
-
-
-def _externality_rank(value: Externality) -> int:
-    return {
-        Externality.LOCAL: 0,
-        Externality.SAME_ORIGIN: 1,
-        Externality.CROSS_ORIGIN: 2,
-        Externality.EXTERNAL_SYSTEM: 3,
-        Externality.PHYSICAL_WORLD: 4,
-        Externality.UNKNOWN: 5,
-    }[value]
-
-
-def _reversibility_rank(value: Reversibility) -> int:
-    return {
-        Reversibility.REVERSIBLE: 0,
-        Reversibility.COMPENSATABLE: 1,
-        Reversibility.IRREVERSIBLE: 2,
-        Reversibility.UNKNOWN: 3,
-    }[value]

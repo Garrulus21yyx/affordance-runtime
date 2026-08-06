@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from affordance_runtime.action_choice_authority import (
@@ -34,7 +36,14 @@ from affordance_runtime.planning import PlannerActionKind
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.simplified_runtime_contracts import ElementIntent, SourceReference, StepSpec
 from affordance_runtime.task_intake import OperationClass, TaskRequirement, TaskSemanticPayload, TaskSpec
-from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
+from affordance_runtime.unified_observation import (
+    ActionSupport,
+    CanonicalTarget,
+    ConflictStatus,
+    Freshness,
+    UnifiedObservation,
+    UnifiedObservationTarget,
+)
 from affordance_runtime.verification.contracts import (
     AssuranceLevel,
     CriterionPolicy,
@@ -516,6 +525,242 @@ def test_destination_binding_is_in_route_risk_assurance_and_task_gate_rebuild() 
     assert signature.source_refs == ("assertion:source", "assertion:destination")
     assert rebuilt.status == AuthorityStatus.ALLOW, rebuilt.reason_codes
     assert rebuilt.proof_digest == proof.proof_digest
+
+
+def _canonical_endpoint(
+    target_id: str,
+    *,
+    externality: Externality,
+    assurance: AssuranceLevel,
+    conflict: ConflictStatus = ConflictStatus.NO_MATERIAL_CONFLICT,
+) -> CanonicalTarget:
+    return CanonicalTarget(
+        target_id=target_id,
+        role="region",
+        label=target_id,
+        surfaces=(GroundingSource.DOM,),
+        action_support=(
+            ActionSupport(
+                action_kind="drag",
+                candidate_ids=(f"candidate:{target_id}",),
+                resource_ref=target_id,
+                operation_ref="resource.move@v1",
+                effect_class=EffectClass.UPDATE.value,
+                externality=externality.value,
+                reversibility=Reversibility.COMPENSATABLE.value,
+                resource_sensitivity="moderate",
+                source_assurance=assurance.value,
+            ),
+        ),
+        state_facts=(),
+        binding_ids=(f"candidate:{target_id}",),
+        conflict_status=conflict,
+        conflicts=(),
+        source_assertion_refs=(f"assertion:{target_id}",),
+        freshness=Freshness(
+            "observation:authority",
+            "environment:authority",
+            "page:authority",
+            0.0,
+        ),
+    )
+
+
+def test_destination_external_system_cannot_expand_cross_origin_scope() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:move-cross-origin",
+        operation_constraint="resource.move@v1",
+        resource_scope=ResourceScopeRef("resource:source"),
+        destination_scope=ResourceScopeRef("resource:destination"),
+        effect_class=EffectClass.UPDATE,
+        externality=Externality.CROSS_ORIGIN,
+        reversibility=Reversibility.COMPENSATABLE,
+        minimum_source_assurance=AssuranceLevel.WEAK,
+    )
+    task = _task(scope, OperationClass.REVERSIBLE_WRITE)
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            _canonical_endpoint(
+                "resource:source",
+                externality=Externality.CROSS_ORIGIN,
+                assurance=AssuranceLevel.AUTHORITATIVE,
+            ),
+            _canonical_endpoint(
+                "resource:destination",
+                externality=Externality.EXTERNAL_SYSTEM,
+                assurance=AssuranceLevel.AUTHORITATIVE,
+            ),
+        ),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:source",
+        destination_id="resource:destination",
+        action_kind="drag",
+        parameters={},
+    )
+    proof = authorize_choice(
+        replace(
+            _choice(
+                scope.requirement_ref,
+                "resource:source",
+                PlannerActionKind.DRAG,
+            ),
+            destination_id="resource:destination",
+        ),
+        _step(scope.requirement_ref),
+        task,
+        observation,
+    )
+
+    assert signature.externality == Externality.EXTERNAL_SYSTEM
+    assert proof.status == AuthorityStatus.DENY
+    assert "EXTERNALITY_EXCEEDS_SCOPE" in proof.reason_codes
+
+
+def test_destination_material_conflict_makes_authority_unproven() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:move-conflicted",
+        operation_constraint="resource.move@v1",
+        resource_scope=ResourceScopeRef("resource:source"),
+        destination_scope=ResourceScopeRef("resource:destination"),
+        effect_class=EffectClass.UPDATE,
+        externality=Externality.EXTERNAL_SYSTEM,
+        reversibility=Reversibility.COMPENSATABLE,
+        minimum_source_assurance=AssuranceLevel.WEAK,
+    )
+    task = _task(scope, OperationClass.REVERSIBLE_WRITE)
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            _canonical_endpoint(
+                "resource:source",
+                externality=Externality.EXTERNAL_SYSTEM,
+                assurance=AssuranceLevel.AUTHORITATIVE,
+            ),
+            _canonical_endpoint(
+                "resource:destination",
+                externality=Externality.EXTERNAL_SYSTEM,
+                assurance=AssuranceLevel.AUTHORITATIVE,
+                conflict=ConflictStatus.MATERIAL_CONFLICT,
+            ),
+        ),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:source",
+        destination_id="resource:destination",
+        action_kind="drag",
+        parameters={},
+    )
+    proof = authorize_runtime_signature(
+        task_spec=task,
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+    )
+
+    assert signature.conflict_status == ConflictStatus.MATERIAL_CONFLICT.value
+    assert proof.status == AuthorityStatus.UNPROVEN
+    assert "MATERIAL_SOURCE_CONFLICT" in proof.reason_codes
+
+
+def test_unasserted_visual_destination_lowers_actual_route_assurance() -> None:
+    scope = EffectAuthorizationScope(
+        requirement_ref="requirement:move-visual",
+        operation_constraint="resource.move@v1",
+        resource_scope=ResourceScopeRef("resource:source"),
+        destination_scope=ResourceScopeRef("resource:destination"),
+        effect_class=EffectClass.UPDATE,
+        externality=Externality.LOCAL,
+        reversibility=Reversibility.REVERSIBLE,
+        minimum_source_assurance=AssuranceLevel.STRUCTURAL,
+    )
+    task = _task(scope, OperationClass.REVERSIBLE_WRITE)
+    source_candidate = GroundingCandidate(
+        candidate_id="candidate:authoritative-source",
+        semantic_target_id="resource:source",
+        source=GroundingSource.DOM,
+        payload=DomGroundingPayload(selector="#source"),
+        compatible_executor="browser",
+        observation_epoch_id="observation:authority",
+        environment_revision="environment:authority",
+        page_revision="page:authority",
+        target_fingerprint="",
+        supported_actions=frozenset({"drag"}),
+        evidence_kinds=frozenset(),
+        operation_ref="resource.move@v1",
+        effect_class=EffectClass.UPDATE.value,
+        externality=Externality.LOCAL.value,
+        reversibility=Reversibility.REVERSIBLE.value,
+        authority_source_assurance=AssuranceLevel.AUTHORITATIVE.value,
+    )
+    visual_destination = GroundingCandidate(
+        candidate_id="candidate:visual-destination",
+        semantic_target_id="resource:destination",
+        source=GroundingSource.VISUAL,
+        payload=DomGroundingPayload(selector="#visual-destination"),
+        compatible_executor="browser",
+        observation_epoch_id="observation:authority",
+        environment_revision="environment:authority",
+        page_revision="page:authority",
+        target_fingerprint="",
+        supported_actions=frozenset({"drag"}),
+        evidence_kinds=frozenset(),
+        externality=Externality.LOCAL.value,
+        reversibility=Reversibility.REVERSIBLE.value,
+    )
+    observation = UnifiedObservation(
+        snapshot_id="observation:authority",
+        page_revision="page:authority",
+        environment_revision="environment:authority",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="resource:source",
+                surface="dom",
+                role="item",
+                label="Source",
+                supported_actions=("drag",),
+                state={},
+            ),
+            UnifiedObservationTarget(
+                target_id="resource:destination",
+                surface="visual",
+                role="region",
+                label="Destination",
+                supported_actions=("drag",),
+                state={},
+            ),
+        ),
+        bindings=(source_candidate, visual_destination),
+    )
+    signature = classify_action(
+        observation,
+        target_id="resource:source",
+        destination_id="resource:destination",
+        action_kind="drag",
+        parameters={},
+        candidate=source_candidate,
+        destination_candidate=visual_destination,
+    )
+    proof = authorize_runtime_signature(
+        task_spec=task,
+        step=None,
+        signature=signature,
+        requirement_refs=(scope.requirement_ref,),
+    )
+
+    assert signature.assurance == AssuranceLevel.WEAK
+    assert proof.status == AuthorityStatus.UNPROVEN
+    assert "INSUFFICIENT_SOURCE_ASSURANCE" in proof.reason_codes
 
 
 def test_task_gate_rebuilds_from_wrong_actual_binding() -> None:
