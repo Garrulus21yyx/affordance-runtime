@@ -43,7 +43,7 @@ from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.verification.mechanical import VerifierLadder, VerifierSpec
-from runtime_test_support import make_interaction, remember_observation
+from runtime_test_support import legacy_step_spec, make_interaction, remember_observation
 
 
 def _affordance(
@@ -142,11 +142,7 @@ def test_press_verifier_binds_the_pre_action_scroll_state() -> None:
     observation = Observation(
         "rev-1",
         page_revision=model.page_revision,
-        metadata={
-            "control_states": {
-                "region": {"scroll_top": 25, "scroll_height": 500, "client_height": 100}
-            }
-        },
+        metadata={"control_states": {"region": {"scroll_top": 25, "scroll_height": 500, "client_height": 100}}},
     )
     snapshot = BrowserSnapshot(observation, model)
 
@@ -180,7 +176,9 @@ def test_focus_verifier_requires_the_bound_control_to_be_focused() -> None:
 
 @pytest.mark.parametrize("options", ("Norfolk Island", ["Alpha", "Beta"]))
 def test_select_verifier_uses_the_observed_selected_option_set(options: object) -> None:
-    snapshot = BrowserSnapshot(Observation("rev-1"), DomAdapter().transduce("<main></main>", environment_revision="rev-1"))
+    snapshot = BrowserSnapshot(
+        Observation("rev-1"), DomAdapter().transduce("<main></main>", environment_revision="rev-1")
+    )
 
     verifiers = browsergym_action_verifiers(
         BrowserGymAction("select_option", {"bid": "select", "options": options}),
@@ -247,8 +245,7 @@ def _active_typed_outcome_state(
     return state
 
 
-def _active_completed_click_outcome_state(
-) -> StateKernel:
+def _active_completed_click_outcome_state() -> StateKernel:
     state = StateKernel("task-1", "Click button ONE, then click button TWO")
     state.install_task_plan(
         TaskPlan(
@@ -313,7 +310,7 @@ def _canonical_step(
 ) -> StepSpec:
     requirement_id = f"subgoal:{step_id}:evidence-requirement:0"
     source_refs = (SourceReference("request", requirement_id),)
-    return StepSpec(
+    return legacy_step_spec(
         step_id=step_id,
         objective=objective,
         interaction=interaction or make_interaction(subject),
@@ -895,11 +892,11 @@ def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_fai
     report = VerifierLadder().verify_report(
         bind_active_step_verifiers(tuple(declared), state),
         ExecutionReceipt(
-                "contract",
-                "browsergym",
-                True,
-                "rev-2",
-                "rev-2",
+            "contract",
+            "browsergym",
+            True,
+            "rev-2",
+            "rev-2",
             1.0,
             evidence={"last_action_error": ""},
         ),
@@ -913,9 +910,7 @@ def test_browsergym_completed_click_progress_is_not_blocked_by_generic_delta_fai
     assert report.passed
     assert not report.evidence[-2].passed
     assert report.evidence[-1].passed
-    assert report.evidence[-1].criterion_ids == (
-        "subgoal:button-one-completed:criterion:0",
-    )
+    assert report.evidence[-1].criterion_ids == ("subgoal:button-one-completed:criterion:0",)
 
 
 def test_browsergym_terminal_completed_click_does_not_require_active_control() -> None:
@@ -953,12 +948,8 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
     bound = bind_active_step_verifiers(tuple(declared), state)
 
     assert bound[-2].progress_scope == ProgressEvidenceScope.TASK_TERMINAL
-    assert bound[-2].criterion_ids == (
-        "subgoal:button-one-completed:criterion:0",
-    )
-    assert bound[-2].requirement_ids == (
-        "subgoal:button-one-completed:evidence-requirement:0",
-    )
+    assert bound[-2].criterion_ids == ("subgoal:button-one-completed:criterion:0",)
+    assert bound[-2].requirement_ids == ("subgoal:button-one-completed:evidence-requirement:0",)
 
     report = VerifierLadder().verify_report(
         bound,
@@ -977,12 +968,8 @@ def test_browsergym_terminal_completed_click_does_not_require_active_control() -
     assert report.passed
     assert report.evidence[-2].passed
     assert report.evidence[-2].source == "external_evaluator"
-    assert report.evidence[-2].criterion_ids == (
-        "subgoal:button-one-completed:criterion:0",
-    )
-    assert report.evidence[-2].requirement_ids == (
-        "subgoal:button-one-completed:evidence-requirement:0",
-    )
+    assert report.evidence[-2].criterion_ids == ("subgoal:button-one-completed:criterion:0",)
+    assert report.evidence[-2].requirement_ids == ("subgoal:button-one-completed:evidence-requirement:0",)
     assert not report.evidence[-1].passed
 
 

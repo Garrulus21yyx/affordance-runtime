@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from affordance_runtime.contracts import ActionContract
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
     EvidenceSourceKind,
     PredicateEvidence,
 )
@@ -131,6 +134,7 @@ class RecentActionOutcomeEvidence:
     effect_criterion_ids: tuple[str, ...]
     evidence_refs: tuple[str, ...]
     effect_satisfied: bool
+    facts: tuple[RecentActionFact, ...] = ()
 
     def __post_init__(self) -> None:
         required = (
@@ -143,14 +147,29 @@ class RecentActionOutcomeEvidence:
         if not all(item.strip() for item in required):
             raise ValueError("recent action outcome requires complete causal lineage")
         if self.effect_satisfied and (
-            not self.effect_criterion_ids or not self.evidence_refs
+            not self.effect_criterion_ids or not self.evidence_refs or not self.facts
         ):
-            raise ValueError("satisfied action outcome requires effect evidence")
+            raise ValueError("satisfied action outcome requires lossless effect facts")
 
     @classmethod
     def from_action_outcome(cls, outcome: Any) -> RecentActionOutcomeEvidence:
         criterion_ids = tuple(outcome.verification.verified_criterion_ids)
         evidence_refs = tuple(outcome.verification.evidence_refs)
+        facts = tuple(
+            RecentActionFact(
+                subject_ref=delta.subject_id,
+                before_value=delta.before_value,
+                after_value=delta.after_value,
+                source_kind=EvidenceSourceKind(delta.source_kind),
+                assurance=AssuranceLevel(delta.assurance),
+                effect_criterion_ids=delta.criterion_ids,
+                evidence_refs=delta.evidence_refs,
+                state_delta_id=(
+                    f"delta:{outcome.outcome_id}:{index}:{delta.subject_id}"
+                ),
+            )
+            for index, delta in enumerate(outcome.verification.state_deltas)
+        )
         return cls(
             outcome_id=outcome.outcome_id,
             contract_id=outcome.attempt.contract_id,
@@ -167,7 +186,9 @@ class RecentActionOutcomeEvidence:
                 outcome.status.value == "verified_effect"
                 and criterion_ids
                 and evidence_refs
+                and facts
             ),
+            facts=facts,
         )
 
     def proves_action_caused(
@@ -183,7 +204,32 @@ class RecentActionOutcomeEvidence:
             and self.post_observation_ref == current_observation_ref
             and criterion_id in self.effect_criterion_ids
             and self.evidence_refs
+            and any(
+                criterion_id in fact.effect_criterion_ids for fact in self.facts
+            )
         )
+
+
+@dataclass(frozen=True)
+class RecentActionFact:
+    subject_ref: str
+    before_value: object | None
+    after_value: object | None
+    source_kind: EvidenceSourceKind
+    assurance: AssuranceLevel
+    effect_criterion_ids: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    state_delta_id: str
+
+    def __post_init__(self) -> None:
+        if not self.subject_ref.strip() or not self.state_delta_id.strip():
+            raise ValueError("recent action fact requires subject and delta identity")
+        object.__setattr__(self, "before_value", freeze_json(self.before_value))
+        object.__setattr__(self, "after_value", freeze_json(self.after_value))
+        object.__setattr__(self, "effect_criterion_ids", tuple(self.effect_criterion_ids))
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        if not self.effect_criterion_ids or not self.evidence_refs:
+            raise ValueError("recent action fact requires criterion and evidence identity")
 
 
 @dataclass
@@ -229,3 +275,65 @@ class DurableEvidenceStore:
         if len(self.records) > self.capacity:
             del self.records[: len(self.records) - self.capacity]
         return True
+
+
+def observation_predicate_evidence(
+    observation: UnifiedObservation,
+) -> tuple[PredicateEvidence, ...]:
+    """Project explicitly typed current facts from a canonical epoch."""
+    declared = observation.metadata.get("predicate_evidence")
+    if not isinstance(declared, Mapping):
+        return ()
+    evidence_items: list[PredicateEvidence] = []
+    for subject_ref, raw in declared.items():
+        if not isinstance(raw, Mapping):
+            continue
+        try:
+            evidence = PredicateEvidence(
+                evidence_ref=str(raw["evidence_ref"]),
+                subject_ref=str(subject_ref),
+                observed_value=raw.get("observed_value"),
+                source_kind=EvidenceSourceKind(str(raw["source_kind"])),
+                assurance=AssuranceLevel(str(raw["assurance"])),
+                observation_ref=observation.snapshot_id,
+                contract_id=str(raw.get("contract_id") or ""),
+                receipt_ref=str(raw.get("receipt_ref") or ""),
+                pre_observation_ref=str(raw.get("pre_observation_ref") or ""),
+                post_observation_ref=str(raw.get("post_observation_ref") or ""),
+                effect_criterion_ids=tuple(raw.get("effect_criterion_ids") or ()),
+                durable=bool(raw.get("durable")),
+                authoritative_final_recheck=bool(raw.get("authoritative_final_recheck")),
+                final_recheck_ref=str(raw.get("final_recheck_ref") or ""),
+                resource_version=str(raw.get("resource_version") or ""),
+            )
+        except (KeyError, ValueError):
+            continue
+        evidence_items.append(evidence)
+    return tuple(evidence_items)
+
+
+def observation_evidence_context_metadata(
+    observation: UnifiedObservation,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    latest = str(observation.metadata.get("latest_final_recheck_ref") or "")
+    versions = observation.metadata.get("resource_versions")
+    if not isinstance(versions, Mapping):
+        return latest, ()
+    return latest, tuple(
+        (str(subject_ref), str(version))
+        for subject_ref, version in versions.items()
+        if str(subject_ref) and str(version)
+    )
+
+
+def admit_observation_durable_evidence(
+    observation: UnifiedObservation,
+    store: DurableEvidenceStore,
+) -> tuple[PredicateEvidence, ...]:
+    """Admit only explicitly typed durable facts from a canonical epoch."""
+
+    admitted: list[PredicateEvidence] = []
+    for evidence in observation_predicate_evidence(observation):
+        if store.admit(evidence):
+            admitted.append(evidence)
+    return tuple(admitted)

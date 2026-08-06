@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from affordance_runtime.action_admission import ActionAdmissionService
@@ -16,6 +17,8 @@ from affordance_runtime.simplified_runtime_contracts import (
     ActionOutcomeStatus,
     ExecutionAttempt,
     ObservationIdentity,
+    StateCriterionRelation,
+    StateDelta,
     VerificationResult,
 )
 from affordance_runtime.simplified_runtime_contracts import (
@@ -143,6 +146,11 @@ class ContractExecutionLoop:
             semantic_target_id=contract.affordance_id,
             pre_observation=_observation_identity(observation),
             active_step_id=active_step_id,
+            surface_kind=(
+                contract.grounding_candidate.source.value
+                if contract.grounding_candidate is not None
+                else ""
+            ),
         )
 
     def verify(
@@ -169,6 +177,7 @@ class ContractExecutionLoop:
     ) -> ActionOutcome:
         canonical_verification = _canonical_verification_result(
             attempt=attempt,
+            receipt=receipt,
             verification=verification,
             post_observation=post_observation,
         )
@@ -219,6 +228,7 @@ def _observation_identity(observation: Observation) -> ObservationIdentity:
 def _canonical_verification_result(
     *,
     attempt: ExecutionAttempt,
+    receipt: ExecutionReceipt,
     verification: VerificationReport,
     post_observation: Observation,
 ) -> VerificationResult:
@@ -230,7 +240,80 @@ def _canonical_verification_result(
         post_observation=_observation_identity(post_observation),
         verified_criterion_ids=_verified_criterion_ids(verification),
         evidence_refs=_verification_evidence_refs(verification),
+        state_deltas=_canonical_state_deltas(attempt, receipt, verification),
     )
+
+
+def _canonical_state_deltas(
+    attempt: ExecutionAttempt,
+    receipt: ExecutionReceipt,
+    verification: VerificationReport,
+) -> tuple[StateDelta, ...]:
+    deltas: list[StateDelta] = []
+    for evidence in verification.evidence:
+        if (
+            not evidence.passed
+            or not evidence.criterion_ids
+            or not evidence.evidence_id
+            or evidence.source in {"receipt", "execution_receipt"}
+            or evidence.strength not in {"strong", "authoritative"}
+        ):
+            continue
+        expected = evidence.expected
+        field = str(expected.get("field") or "") if isinstance(expected, Mapping) else ""
+        before_value = expected.get("changed_from") if isinstance(expected, Mapping) else None
+        after_value = evidence.observed
+        if isinstance(after_value, Mapping) and field:
+            after_value = after_value.get(field)
+        if not isinstance(after_value, (str, bool, int, float, type(None))):
+            continue
+        relation = (
+            StateCriterionRelation.HAS_CHANGED
+            if isinstance(expected, Mapping) and "changed_from" in expected
+            else {
+                "checked": StateCriterionRelation.IS_CHECKED,
+                "selected": StateCriterionRelation.IS_SELECTED,
+                "expanded": StateCriterionRelation.IS_EXPANDED,
+            }.get(field, StateCriterionRelation.EQUALS)
+        )
+        deltas.append(
+            StateDelta(
+                subject_id=attempt.semantic_target_id,
+                relation=relation,
+                before_value=before_value,
+                after_value=after_value,
+                evidence_refs=(evidence.evidence_id,),
+                source_kind=_causal_source_kind(
+                    evidence.source, receipt.backend, attempt.surface_kind
+                ),
+                assurance=(
+                    "authoritative"
+                    if evidence.strength == "authoritative"
+                    else "structural"
+                ),
+                criterion_ids=evidence.criterion_ids,
+            )
+        )
+    return tuple(deltas)
+
+
+def _causal_source_kind(source: str, backend: str, surface_kind: str) -> str:
+    normalized = f"{source} {backend} {surface_kind}".casefold()
+    if "wot" in normalized:
+        return "wot_property_state"
+    if "device" in normalized:
+        return "device_state"
+    if any(token in normalized for token in ("api", "http", "network")):
+        return "api_state"
+    if "visual" in normalized:
+        return "visual_state"
+    if "svg" in normalized:
+        return "svg_geometry"
+    if any(token in normalized for token in ("accessibility", " a11y", " ax")):
+        return "accessibility_state"
+    if "dom" in normalized or source == "post_action_observation":
+        return "dom_state"
+    return "model_semantic"
 
 
 def _canonical_verification_status(status: VerificationStatus) -> CanonicalVerificationStatus:

@@ -74,10 +74,19 @@ class PredicateEvaluator:
                 CriterionStatus.UNSUPPORTED,
                 reason_code="registered_operator_has_no_mechanical_coverage",
             )
-        evidence = tuple(
+        provided = tuple(
             item
             for provider in self.providers
             for item in provider.evidence_for(predicate, context)
+        )
+        causal = tuple(
+            item
+            for item in context.evidence
+            if predicate.policy.satisfaction == SatisfactionMode.ACTION_CAUSED
+            and predicate.criterion_id in item.effect_criterion_ids
+        )
+        evidence = tuple(
+            {item.evidence_ref: item for item in (*provided, *causal)}.values()
         )
         allowed = tuple(item for item in evidence if _admitted(item, predicate, context))
         if any(item.conflict for item in evidence) or _material_value_conflict(allowed):
@@ -129,11 +138,23 @@ def _admitted(
     elif policy.validity == EvidenceValidityMode.DURABLE and not evidence.durable:
         return False
     elif policy.validity == EvidenceValidityMode.FINAL_RECHECK:
-        if not evidence.authoritative_final_recheck:
+        if not (
+            evidence.authoritative_final_recheck
+            and evidence.observation_ref == context.current_observation_ref
+            and context.latest_final_recheck_ref
+            and evidence.final_recheck_ref == context.latest_final_recheck_ref
+        ):
+            return False
+        versions = dict(context.current_resource_versions)
+        if evidence.subject_ref in versions and (
+            not evidence.resource_version
+            or evidence.resource_version != versions[evidence.subject_ref]
+        ):
             return False
     if policy.satisfaction == SatisfactionMode.ACTION_CAUSED:
         if not (
-            evidence.contract_id
+            context.current_contract_id
+            and evidence.contract_id == context.current_contract_id
             and evidence.receipt_ref
             and evidence.pre_observation_ref
             and evidence.post_observation_ref

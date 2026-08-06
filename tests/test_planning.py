@@ -49,7 +49,12 @@ from affordance_runtime.unified_grounding import (
     candidate_fingerprints,
     candidate_from_affordance,
 )
-from runtime_test_support import canonical_observation, make_interaction, remember_observation
+from runtime_test_support import (
+    canonical_observation,
+    legacy_step_spec,
+    make_interaction,
+    remember_observation,
+)
 
 TEST_PROPOSAL_PROVENANCE = PlannerProposalProvenance(
     source=PlannerProposalSource.DETERMINISTIC_RULE,
@@ -78,7 +83,7 @@ def _step(
 ) -> StepSpec:
     requirement_id = evidence_requirement_id("subgoal", step_id, 0)
     source_refs = (SourceReference("request-1", requirement_id),)
-    return StepSpec(
+    return legacy_step_spec(
         step_id=step_id,
         objective=objective,
         interaction=interaction,
@@ -204,16 +209,8 @@ def test_subgoal_evidence_binder_removes_one_sided_active_links(
         "observation_metadata",
         "saved",
         True,
-        criterion_ids=(
-            (criterion_id("subgoal", "observe", 0),)
-            if linked_side == "criterion"
-            else ()
-        ),
-        requirement_ids=(
-            (evidence_requirement_id("subgoal", "observe", 0),)
-            if linked_side == "requirement"
-            else ()
-        ),
+        criterion_ids=((criterion_id("subgoal", "observe", 0),) if linked_side == "criterion" else ()),
+        requirement_ids=((evidence_requirement_id("subgoal", "observe", 0),) if linked_side == "requirement" else ()),
     )
 
     (validated,) = StepEvidenceBinder().bind((partial,), state)
@@ -272,9 +269,7 @@ def test_subgoal_evidence_binder_can_bind_runtime_owned_progress_target() -> Non
 
     assert bound.progress_scope == ProgressEvidenceScope.ACTIVE_SUBGOAL
     assert bound.criterion_ids == (criterion_id("subgoal", "checkbox-changed", 0),)
-    assert bound.requirement_ids == (
-        evidence_requirement_id("subgoal", "checkbox-changed", 0),
-    )
+    assert bound.requirement_ids == (evidence_requirement_id("subgoal", "checkbox-changed", 0),)
 
 
 def test_subgoal_evidence_binder_rejects_stale_progress_target_without_active_fallback() -> None:
@@ -444,9 +439,7 @@ def test_resolve_task_plan_progress_target_uses_current_target_state_for_value_s
                 _step(
                     "slider-value-7",
                     "slider_value_7 has changed",
-                    _interaction(
-                        "semantic:ui-slider-handle", role="slider"
-                    ),
+                    _interaction("semantic:ui-slider-handle", role="slider"),
                     subject="slider_value_7",
                 ),
             ),
@@ -570,7 +563,7 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
         url = "https://example.test/settings"
 
         def content(self) -> str:
-                return '<input id="theme" aria-label="Theme">'
+            return '<input id="theme" aria-label="Theme">'
 
         def evaluate(self, script: str) -> object:
             if "Object.fromEntries" in script:
@@ -608,13 +601,13 @@ def test_core_contract_builder_resolves_semantic_target_to_selected_candidate() 
     contract = ContractBuilder(
         requirements={
             semantic_target: ContractRequirements(
-                    verifier_plan=(
-                        VerifierSpec(
-                            "dom_attribute",
-                            "theme",
-                            {"target_attribute": "id", "attribute": "value", "value": "dark"},
-                        ),
-                    )
+                verifier_plan=(
+                    VerifierSpec(
+                        "dom_attribute",
+                        "theme",
+                        {"target_attribute": "id", "attribute": "value", "value": "dark"},
+                    ),
+                )
             )
         }
     ).build(proposal, spec, state, snapshot)
@@ -652,10 +645,7 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
         candidate_from_affordance(accessibility, observation, semantic_target_id="pending"),
     )
     target: UnifiedAffordance = SemanticEntityResolver().resolve(
-        tuple(
-            CandidateDescriptor("button", "Save", "click", "", candidate)
-            for candidate in candidates
-        )
+        tuple(CandidateDescriptor("button", "Save", "click", "", candidate) for candidate in candidates)
     )[0]
     observation = replace(
         observation,
@@ -680,9 +670,7 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
     )
     builder = ContractBuilder(
         requirements={
-            target.semantic_target_id: ContractRequirements(
-                verifier_plan=(VerifierSpec("state_delta", "save", True),)
-            )
+            target.semantic_target_id: ContractRequirements(verifier_plan=(VerifierSpec("state_delta", "save", True),))
         }
     )
     first_proposal = PlannerProposal(
@@ -718,7 +706,8 @@ def test_core_reroute_excludes_failed_candidate_and_binds_fresh_contract_lineage
     assert second.fallback_reason == "first candidate failed deterministically"
     assert second.route_plan is not None
     failed_gate = next(
-        item for item in second.route_plan.hard_gate_results
+        item
+        for item in second.route_plan.hard_gate_results
         if item.candidate_id == first.grounding_candidate.candidate_id
     )
     assert failed_gate.reasons == ("candidate_excluded",)
@@ -769,11 +758,7 @@ def test_core_contract_builder_binds_both_semantic_drag_endpoints() -> None:
     )
 
     contract = ContractBuilder(
-        requirements={
-            source_id: ContractRequirements(
-                verifier_plan=(VerifierSpec("state_delta", "sortable", True),)
-            )
-        }
+        requirements={source_id: ContractRequirements(verifier_plan=(VerifierSpec("state_delta", "sortable", True),))}
     ).build(proposal, spec, state, snapshot)
 
     assert contract.gesture_binding is not None
@@ -828,9 +813,7 @@ def test_point_activate_binds_semantic_svg_target_without_planner_coordinates() 
     contract = ContractBuilder(
         requirements={
             point.id: ContractRequirements(
-                verifier_plan=(
-                    VerifierSpec("observation_metadata", "point_activated", True),
-                )
+                verifier_plan=(VerifierSpec("observation_metadata", "point_activated", True),)
             )
         }
     ).build(proposal, spec, state, point_snapshot)
@@ -1101,9 +1084,7 @@ def test_proposal_validator_rejects_missing_runtime_provenance() -> None:
     spec, state, snapshot = _fixture()
 
     with pytest.raises(ProposalRejected) as caught:
-        PlannerProposalValidator().validate(
-            _proposal(state), None, spec, state, canonical_observation(snapshot)
-        )
+        PlannerProposalValidator().validate(_proposal(state), None, spec, state, canonical_observation(snapshot))
 
     assert caught.value.code == ProposalRejectionCode.MISSING_PROVENANCE
 
@@ -1165,20 +1146,27 @@ def test_contract_builder_binds_semantic_key_press_without_surface_parameters() 
     state = StateKernel("task-1", "Increase slider")
     remember_observation(state, observation)
     task = TaskSpec(
-        task_id="task-1", revision=1, objective="Increase slider", operation_class=OperationClass.REVERSIBLE_WRITE,
-        targets=("slider",), success_criteria=("slider increased",), source_request_ref="test",
+        task_id="task-1",
+        revision=1,
+        objective="Increase slider",
+        operation_class=OperationClass.REVERSIBLE_WRITE,
+        targets=("slider",),
+        success_criteria=("slider increased",),
+        source_request_ref="test",
     )
     proposal = PlannerProposal(
-        proposal_id="press", based_on_task_revision=1, based_on_state_version=state.version,
-        snapshot_id="snapshot-1", action_kind=PlannerActionKind.PRESS_KEY,
-        target_affordance_id="dom_span_1", parameters={"key": "ArrowRight"},
+        proposal_id="press",
+        based_on_task_revision=1,
+        based_on_state_version=state.version,
+        snapshot_id="snapshot-1",
+        action_kind=PlannerActionKind.PRESS_KEY,
+        target_affordance_id="dom_span_1",
+        parameters={"key": "ArrowRight"},
     )
 
     contract = ContractBuilder(
         requirements={
-            "dom_span_1": ContractRequirements(
-                verifier_plan=(VerifierSpec("observation_metadata", "slider_value", 1),)
-            )
+            "dom_span_1": ContractRequirements(verifier_plan=(VerifierSpec("observation_metadata", "slider_value", 1),))
         }
     ).build(proposal, task, state, BrowserSnapshot(observation, model))
 

@@ -20,11 +20,16 @@ from affordance_runtime.planning_request_builder import (
 )
 from affordance_runtime.runtime import RunRequest
 from affordance_runtime.semantics import CriterionRelation, EvidencePolicy, EvidenceStrength
-from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion, StepSpec
+from affordance_runtime.simplified_runtime_contracts import SourceReference, StateCriterion
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import OperationClass, TaskSpec
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
-from runtime_test_support import canonical_observation, make_interaction, remember_observation
+from runtime_test_support import (
+    canonical_observation,
+    legacy_step_spec,
+    make_interaction,
+    remember_observation,
+)
 
 
 def _fixture() -> tuple[RunRequest, StateKernel, BrowserSnapshot]:
@@ -98,9 +103,7 @@ def test_planning_request_builder_does_not_expose_legacy_pending_obligations() -
     envelope, state, snapshot = _fixture()
     state.pending_obligations = ["legacy:string-obligation"]  # type: ignore[attr-defined]
 
-    request = PlanningRequestBuilder().build(
-        envelope, state, canonical_observation(snapshot)
-    )
+    request = PlanningRequestBuilder().build(envelope, state, canonical_observation(snapshot))
     context = PlannerContextBuilder().build(request)
 
     assert request.pending_evidence_obligations == ()
@@ -125,7 +128,6 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
         StateCriterionRelation,
         StepActivityStatus,
         StepProgressView,
-        StepSpec,
         TaskPlanView,
     )
 
@@ -145,7 +147,7 @@ def test_request_context_does_not_expose_ready_step_as_active() -> None:
             ),
         ),
     )
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="ready-step",
         objective="display name input equals Ada",
         interaction=ElementIntent("display name input", criterion.source_refs),
@@ -216,7 +218,7 @@ def _context_plan(task: TaskSpec, state: StateKernel) -> TaskPlan:
         based_on_observation_ref="snapshot-1",
         generated_by=TaskPlanGeneratorSource.RULE,
         steps=(
-            StepSpec(
+            legacy_step_spec(
                 step_id="enter-name",
                 objective="display name input equals Ada",
                 interaction=make_interaction("display name input equals Ada"),

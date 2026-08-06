@@ -12,6 +12,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     StepActivityStatus,
     StepSpec,
 )
+from runtime_test_support import legacy_step_spec
 
 
 def _source() -> SourceReference:
@@ -33,7 +34,7 @@ def _criterion(subject: str) -> StateCriterion:
 
 
 def _step() -> StepSpec:
-    return StepSpec(
+    return legacy_step_spec(
         step_id="step:name",
         objective="Type Alice into Name",
         interaction=ElementIntent("semantic:name", (_source(),)),
@@ -89,7 +90,7 @@ def test_active_step_scope_allows_current_step_target() -> None:
 def test_value_transfer_scope_authorizes_typed_destination_not_source() -> None:
     from affordance_runtime.active_step_scope import ActiveStepScope
 
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="step:transfer",
         objective="Transfer a sourced value",
         interaction=RelationIntent(

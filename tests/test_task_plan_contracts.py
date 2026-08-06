@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from affordance_runtime.criteria import AllOf
 from affordance_runtime.simplified_runtime_contracts import (
     CompositeCriterion,
     CompositeCriterionOperator,
@@ -30,6 +31,7 @@ from affordance_runtime.task_plan_contracts import (
     TaskPlanRevisionRequest,
     TaskPlanRevisionTrigger,
 )
+from runtime_test_support import legacy_step_spec
 
 
 def _source() -> SourceReference:
@@ -75,7 +77,7 @@ def _state_criterion(
 
 
 def _step(step_id: str = "step:1", *, depends_on: tuple[str, ...] = ()) -> StepSpec:
-    return StepSpec(
+    return legacy_step_spec(
         step_id=step_id,
         objective=f"complete {step_id}",
         interaction=ElementIntent("semantic:setting", (_source(),)),
@@ -129,7 +131,7 @@ def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> 
         operator=CompositeCriterionOperator.ALL_OF,
         child_criterion_ids=(first.criterion_id, second.criterion_id),
     )
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="step:typed",
         objective="preserve typed completion",
         interaction=ElementIntent("semantic:setting", (_source(),)),
@@ -142,8 +144,10 @@ def test_task_plan_authority_preserves_composite_criteria_and_typed_values() -> 
     plan = decision.plan
 
     assert plan.steps == (step,)
-    assert plan.steps[0].completion_criteria[0].expected_value == 500
-    assert plan.steps[0].completion_criteria[1].expected_value is True
+    root = plan.steps[0].completion_criteria[0]
+    assert isinstance(root, AllOf)
+    assert root.children[0].value.value == 500
+    assert root.children[1].value.value is True
     assert plan.based_on_observation_ref == "snapshot:1"
 
 

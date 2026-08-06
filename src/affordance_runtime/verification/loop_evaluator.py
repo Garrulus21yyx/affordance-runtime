@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from affordance_runtime.contracts import ExecutionReceipt, Observation
+from affordance_runtime.contracts import ExecutionReceipt
+from affordance_runtime.runtime_evidence import RecentActionOutcomeEvidence
 from affordance_runtime.simplified_runtime_contracts import StepSpec
+from affordance_runtime.unified_observation import UnifiedObservation
 from affordance_runtime.verification.contracts import (
     CriterionEvaluation,
     CriterionStatus,
     LoopEvaluation,
+    PredicateEvidence,
+    PredicateEvidenceContext,
     TaskCompletionEvaluation,
 )
 from affordance_runtime.verification.mechanical import VerificationReport
@@ -25,9 +29,14 @@ class LoopEvaluator:
         *,
         receipt: ExecutionReceipt,
         report: VerificationReport,
-        observation: Observation,
+        observation: UnifiedObservation,
         active_step: StepSpec | None,
         task_completion: TaskCompletionEvaluation | None,
+        recent_action_outcomes: tuple[RecentActionOutcomeEvidence, ...] = (),
+        current_evidence: tuple[PredicateEvidence, ...] = (),
+        durable_evidence: tuple[PredicateEvidence, ...] = (),
+        latest_final_recheck_ref: str = "",
+        current_resource_versions: tuple[tuple[str, str], ...] = (),
     ) -> LoopEvaluation:
         independent = tuple(
             item
@@ -61,6 +70,55 @@ class LoopEvaluator:
         )
         return LoopEvaluation(
             action_effect=action_effect,
-            step_completion=self.step_evaluator.evaluate(active_step, report, observation),
+            step_completion=self.step_evaluator.evaluate(
+                active_step,
+                self.evidence_context(
+                    observation=observation,
+                    current_contract_id=receipt.contract_id,
+                    recent_action_outcomes=recent_action_outcomes,
+                    current_evidence=current_evidence,
+                    durable_evidence=durable_evidence,
+                    latest_final_recheck_ref=latest_final_recheck_ref,
+                    current_resource_versions=current_resource_versions,
+                ),
+            ),
             task_completion=task_completion,
+        )
+
+    @staticmethod
+    def evidence_context(
+        *,
+        observation: UnifiedObservation,
+        current_contract_id: str = "",
+        recent_action_outcomes: tuple[RecentActionOutcomeEvidence, ...] = (),
+        current_evidence: tuple[PredicateEvidence, ...] = (),
+        durable_evidence: tuple[PredicateEvidence, ...] = (),
+        latest_final_recheck_ref: str = "",
+        current_resource_versions: tuple[tuple[str, str], ...] = (),
+    ) -> PredicateEvidenceContext:
+        causal = tuple(
+            PredicateEvidence(
+                evidence_ref=fact.evidence_refs[0],
+                subject_ref=fact.subject_ref,
+                observed_value=fact.after_value,
+                source_kind=fact.source_kind,
+                assurance=fact.assurance,
+                observation_ref=item.post_observation_ref,
+                contract_id=item.contract_id,
+                receipt_ref=item.receipt_ref,
+                pre_observation_ref=item.pre_observation_ref,
+                post_observation_ref=item.post_observation_ref,
+                effect_criterion_ids=fact.effect_criterion_ids,
+            )
+            for item in recent_action_outcomes
+            if item.effect_satisfied
+            for fact in item.facts
+        )
+        return PredicateEvidenceContext(
+            current_observation_ref=observation.snapshot_id,
+            evidence=(*current_evidence, *causal, *durable_evidence),
+            current_observation=observation,
+            current_contract_id=current_contract_id,
+            latest_final_recheck_ref=latest_final_recheck_ref,
+            current_resource_versions=current_resource_versions,
         )

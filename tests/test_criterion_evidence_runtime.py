@@ -9,6 +9,7 @@ from affordance_runtime.criteria import (
     AnyOf,
     LiteralValue,
     Not,
+    OpenSemanticCriterion,
     PredicateExpr,
     PredicateOperator,
     SubjectExpr,
@@ -16,8 +17,12 @@ from affordance_runtime.criteria import (
 from affordance_runtime.runtime_evidence import (
     CurrentObservationEvidence,
     DurableEvidenceStore,
+    RecentActionFact,
     RecentActionOutcomeEvidence,
     RecentActionOutcomeEvidenceIndex,
+    admit_observation_durable_evidence,
+    observation_evidence_context_metadata,
+    observation_predicate_evidence,
 )
 from affordance_runtime.unified_observation import UnifiedObservation, UnifiedObservationTarget
 from affordance_runtime.verification.contracts import (
@@ -29,6 +34,10 @@ from affordance_runtime.verification.contracts import (
     PredicateEvidence,
     PredicateEvidenceContext,
     SatisfactionMode,
+)
+from affordance_runtime.verification.open_semantic import (
+    OPEN_SEMANTIC_UNRESOLVED,
+    unresolved_open_semantic_gaps,
 )
 from affordance_runtime.verification.predicates import PredicateEvaluator
 from affordance_runtime.verification.providers import MECHANICAL_EVIDENCE_PROVIDERS
@@ -141,7 +150,7 @@ def test_shared_provider_contract(source_kind, assurance) -> None:  # noqa: ANN0
     )
 
 
-def test_structural_and_artifact_providers_read_canonical_observation() -> None:
+def test_structural_provider_reads_canonical_observation_but_bare_artifact_ref_is_not_integrity() -> None:
     observation = UnifiedObservation(
         snapshot_id="observation:2",
         page_revision="page:2",
@@ -175,7 +184,18 @@ def test_structural_and_artifact_providers_read_canonical_observation() -> None:
             allowed_source_kinds=(EvidenceSourceKind.ARTIFACT_INTEGRITY,),
         ),
     )
-    assert PredicateEvaluator().evaluate(artifact, context).status == CriterionStatus.SATISFIED
+    assert PredicateEvaluator().evaluate(artifact, context).status == CriterionStatus.UNKNOWN
+    integrity = _evidence(
+        evidence_ref="sha256:report",
+        subject_ref="artifact:report",
+        observed_value=True,
+        source_kind=EvidenceSourceKind.ARTIFACT_INTEGRITY,
+        assurance=AssuranceLevel.AUTHORITATIVE,
+    )
+    proved = PredicateEvidenceContext(
+        "observation:2", (integrity,), current_observation=observation
+    )
+    assert PredicateEvaluator().evaluate(artifact, proved).status == CriterionStatus.SATISFIED
 
 
 def test_provider_conflict_and_high_risk_weak_evidence_are_not_satisfied() -> None:
@@ -209,6 +229,31 @@ def test_provider_conflict_and_high_risk_weak_evidence_are_not_satisfied() -> No
     assert PredicateEvaluator().evaluate(high_risk, weak).status == CriterionStatus.UNKNOWN
 
 
+def test_wot_target_is_not_attributed_to_dom_policy() -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:2",
+        page_revision="page:2",
+        environment_revision="env:2",
+        observed_text="",
+        targets=(
+            UnifiedObservationTarget(
+                target_id="target:status",
+                surface="wot",
+                role="property",
+                label="Status",
+                supported_actions=(),
+                state={"equals": "ready"},
+            ),
+        ),
+    )
+    context = PredicateEvidenceContext(
+        "observation:2", current_observation=observation
+    )
+    assert PredicateEvaluator().evaluate(
+        _predicate(PredicateOperator.EQUALS), context
+    ).status == CriterionStatus.UNKNOWN
+
+
 def test_state_holds_does_not_prove_action_caused_without_exact_lineage() -> None:
     state_holds = _predicate(PredicateOperator.EQUALS)
     caused = PredicateExpr(
@@ -235,10 +280,110 @@ def test_state_holds_does_not_prove_action_caused_without_exact_lineage() -> Non
     )
     assert (
         PredicateEvaluator()
-        .evaluate(caused, PredicateEvidenceContext("observation:2", (causal,)))
+        .evaluate(
+            caused,
+            PredicateEvidenceContext(
+                "observation:2", (causal,), current_contract_id="contract:1"
+            ),
+        )
         .status
         == CriterionStatus.SATISFIED
     )
+    stale_contract = PredicateEvidenceContext(
+        "observation:2", (causal,), current_contract_id="contract:2"
+    )
+    assert PredicateEvaluator().evaluate(caused, stale_contract).status == CriterionStatus.UNKNOWN
+
+
+def test_final_recheck_requires_latest_identity_current_epoch_and_resource_version() -> None:
+    predicate = _predicate(
+        PredicateOperator.EQUALS,
+        policy=_policy(
+            validity=EvidenceValidityMode.FINAL_RECHECK,
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+            allowed_source_kinds=(EvidenceSourceKind.API_STATE,),
+        ),
+    )
+    proof = _evidence(
+        source_kind=EvidenceSourceKind.API_STATE,
+        assurance=AssuranceLevel.AUTHORITATIVE,
+        authoritative_final_recheck=True,
+        final_recheck_ref="recheck:1",
+        resource_version="v2",
+    )
+    current = PredicateEvidenceContext(
+        "observation:2",
+        (proof,),
+        latest_final_recheck_ref="recheck:1",
+        current_resource_versions=(("target:status", "v2"),),
+    )
+    assert PredicateEvaluator().evaluate(predicate, current).status == CriterionStatus.SATISFIED
+    stale_epoch = PredicateEvidenceContext(
+        "observation:3", (proof,), latest_final_recheck_ref="recheck:1"
+    )
+    assert PredicateEvaluator().evaluate(predicate, stale_epoch).status == CriterionStatus.UNKNOWN
+    stale_identity = PredicateEvidenceContext(
+        "observation:2", (proof,), latest_final_recheck_ref="recheck:2"
+    )
+    assert PredicateEvaluator().evaluate(predicate, stale_identity).status == CriterionStatus.UNKNOWN
+
+
+def test_final_recheck_positive_metadata_projects_into_production_context_fields() -> None:
+    observation = UnifiedObservation(
+        snapshot_id="observation:4",
+        page_revision="page:4",
+        environment_revision="env:4",
+        observed_text="",
+        targets=(),
+        metadata={
+            "latest_final_recheck_ref": "recheck:4",
+            "resource_versions": {"target:status": "v4"},
+            "predicate_evidence": {
+                "target:status": {
+                    "evidence_ref": "evidence:recheck:4",
+                    "observed_value": "ready",
+                    "source_kind": "api_state",
+                    "assurance": "authoritative",
+                    "authoritative_final_recheck": True,
+                    "final_recheck_ref": "recheck:4",
+                    "resource_version": "v4",
+                }
+            },
+        },
+    )
+    latest, versions = observation_evidence_context_metadata(observation)
+    context = PredicateEvidenceContext(
+        observation.snapshot_id,
+        observation_predicate_evidence(observation),
+        current_observation=observation,
+        latest_final_recheck_ref=latest,
+        current_resource_versions=versions,
+    )
+    predicate = _predicate(
+        PredicateOperator.EQUALS,
+        policy=_policy(
+            validity=EvidenceValidityMode.FINAL_RECHECK,
+            minimum_assurance=AssuranceLevel.AUTHORITATIVE,
+            allowed_source_kinds=(EvidenceSourceKind.API_STATE,),
+        ),
+    )
+    assert PredicateEvaluator().evaluate(predicate, context).status == CriterionStatus.SATISFIED
+
+
+def test_open_semantic_unsupported_routes_to_typed_unresolved_gap() -> None:
+    criterion = OpenSemanticCriterion(
+        "criterion:tone",
+        "sounds_natural",
+        (("register", "professional"),),
+        ("anchor:tone",),
+        _policy(),
+    )
+    evaluation = PredicateEvaluator().evaluate(
+        criterion, PredicateEvidenceContext("observation:2")
+    )
+    gaps = unresolved_open_semantic_gaps((criterion,), evaluation)
+    assert gaps[0].gap_id.startswith(f"gap:{OPEN_SEMANTIC_UNRESOLVED}")
+    assert gaps[0].anchor_ids == ("anchor:tone",)
 
 
 def test_evidence_lifetimes_are_epoch_bound_bounded_and_selectively_durable() -> None:
@@ -258,6 +403,18 @@ def test_evidence_lifetimes_are_epoch_bound_bounded_and_selectively_durable() ->
                 ("criterion:effect",),
                 (f"evidence:{number}",),
                 True,
+                (
+                    RecentActionFact(
+                        "target:effect",
+                        False,
+                        True,
+                        EvidenceSourceKind.DOM_STATE,
+                        AssuranceLevel.STRUCTURAL,
+                        ("criterion:effect",),
+                        (f"evidence:{number}",),
+                        f"delta:{number}",
+                    ),
+                ),
             )
         )
     assert [item.outcome_id for item in index.records] == ["outcome:1", "outcome:2"]
@@ -274,3 +431,24 @@ def test_evidence_lifetimes_are_epoch_bound_bounded_and_selectively_durable() ->
     assert not store.admit(dom)
     assert store.admit(artifact)
     assert store.records == [artifact]
+
+    observation = UnifiedObservation(
+        snapshot_id="observation:3",
+        page_revision="page:3",
+        environment_revision="env:3",
+        observed_text="",
+        targets=(),
+        metadata={
+            "predicate_evidence": {
+                "artifact:report": {
+                    "evidence_ref": "sha256:report",
+                    "observed_value": True,
+                    "source_kind": "artifact_integrity",
+                    "assurance": "authoritative",
+                    "durable": True,
+                }
+            }
+        },
+    )
+    admitted = admit_observation_durable_evidence(observation, store)
+    assert admitted[0].evidence_ref == "sha256:report"

@@ -10,11 +10,12 @@ from affordance_runtime.simplified_runtime_contracts import (
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_plan_contracts import TaskPlan, TaskPlanGeneratorSource
 from affordance_runtime.task_plan_progress import TaskProgress
+from runtime_test_support import legacy_step_spec
 
 
 def _step(step_id: str) -> StepSpec:
     refs = (SourceReference("request", f"request:{step_id}"),)
-    return StepSpec(
+    return legacy_step_spec(
         step_id=step_id,
         objective=step_id,
         interaction=ElementIntent(step_id, refs),
@@ -24,9 +25,7 @@ def _step(step_id: str) -> StepSpec:
                 source_refs=refs,
                 subject=step_id,
                 relation=StateCriterionRelation.IS_COMPLETED,
-                evidence_policy=CriterionEvidencePolicy(
-                    EvidenceStrength.INDEPENDENT, ("dom_state",)
-                ),
+                evidence_policy=CriterionEvidencePolicy(EvidenceStrength.INDEPENDENT, ("dom_state",)),
             ),
         ),
         source_refs=refs,

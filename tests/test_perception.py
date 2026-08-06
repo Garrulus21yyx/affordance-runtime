@@ -12,9 +12,9 @@ from affordance_runtime.simplified_runtime_contracts import (
     SourceReference,
     StateCriterion,
     StateCriterionRelation,
-    StepSpec,
 )
 from affordance_runtime.task_intake import OperationClass, TaskSpec
+from runtime_test_support import legacy_step_spec
 
 
 def _task(objective: str) -> TaskSpec:
@@ -142,9 +142,7 @@ def test_descending_letter_sequence_requires_spatial_but_not_unrelated_visual_ap
 
 
 def test_route_requirements_do_not_apply_circle_evidence_to_later_submit_control() -> None:
-    base = derive_perception_requirements(
-        _task("Find and click on the center of the circle, then press Submit")
-    )
+    base = derive_perception_requirements(_task("Find and click on the center of the circle, then press Submit"))
 
     point = route_perception_requirements(
         base,
@@ -159,18 +157,12 @@ def test_route_requirements_do_not_apply_circle_evidence_to_later_submit_control
         target_label="Submit",
     )
 
-    assert point.required_properties == frozenset(
-        {EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL}
-    )
-    assert submit.required_properties == frozenset(
-        {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
-    )
+    assert point.required_properties == frozenset({EvidenceKind.VISUAL_APPEARANCE, EvidenceKind.SPATIAL})
+    assert submit.required_properties == frozenset({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL})
 
 
 def test_route_requirements_treat_layout_word_as_optional_for_typed_target() -> None:
-    base = derive_perception_requirements(
-        _task("Copy the text in the textarea below and paste it into the textbox")
-    )
+    base = derive_perception_requirements(_task("Copy the text in the textarea below and paste it into the textbox"))
 
     target = route_perception_requirements(
         base,
@@ -179,9 +171,7 @@ def test_route_requirements_treat_layout_word_as_optional_for_typed_target() -> 
         target_label="Answer",
     )
 
-    assert target.required_properties == frozenset(
-        {EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL}
-    )
+    assert target.required_properties == frozenset({EvidenceKind.TEXTUAL, EvidenceKind.STRUCTURAL})
 
 
 def test_route_requirements_retain_visual_evidence_for_visual_icon_target() -> None:
@@ -239,14 +229,12 @@ def test_route_requirements_do_not_widen_authoritative_device_sources() -> None:
 
     assert GroundingSource.DOM not in target.acceptable_evidence
     assert GroundingSource.ACCESSIBILITY not in target.acceptable_evidence
-    assert target.required_properties == frozenset(
-        {EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL}
-    )
+    assert target.required_properties == frozenset({EvidenceKind.DEVICE_STATE, EvidenceKind.STRUCTURAL})
 
 
 def test_step_criterion_evidence_policy_drives_perception_even_when_task_is_plain() -> None:
     refs = (SourceReference("request", "request:chart"),)
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="inspect-chart",
         objective="Inspect the current chart",
         interaction=ElementIntent("Inspect the current chart", refs),

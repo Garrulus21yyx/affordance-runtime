@@ -18,6 +18,7 @@ from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.composition import compose_run_coordinator
 from affordance_runtime.contracts import ActionContract, ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.criteria import criterion_id, evidence_requirement_id
+from affordance_runtime.legacy_criterion_adapter import canonicalize_legacy_criteria
 from affordance_runtime.planning import (
     ContractRequirements,
     PlannerActionKind,
@@ -82,6 +83,14 @@ class _StageEnvironment:
                 "criterion_evaluations": {
                     f"criterion:stage-{self.stage}": "satisfied",
                 },
+                "predicate_evidence": {
+                    "stage": {
+                        "evidence_ref": f"stage:{self.stage}:{snapshot_id}",
+                        "observed_value": self.stage,
+                        "source_kind": "dom_state",
+                        "assurance": "structural",
+                    }
+                },
             },
         )
         return BrowserSnapshot(observation, model)
@@ -122,11 +131,7 @@ class _StageActionPlanner:
 class _StageContractBuilder(ActionContractMaterializer):
     def build(self, proposal, task_spec, state, snapshot, observation=None):
         next_stage = int(snapshot.observation.metadata["stage"]) + 1
-        active_id = (
-            state.task_progress.active_step_id
-            if state.task_progress
-            else "subgoal-1"
-        )
+        active_id = state.task_progress.active_step_id if state.task_progress else "subgoal-1"
         self.requirements[proposal.target_affordance_id] = ContractRequirements(
             verifier_plan=(
                 VerifierSpec(
@@ -134,9 +139,7 @@ class _StageContractBuilder(ActionContractMaterializer):
                     "stage",
                     next_stage,
                     criterion_ids=(criterion_id("subgoal", active_id, 0),),
-                    requirement_ids=(
-                        evidence_requirement_id("subgoal", active_id, 0),
-                    ),
+                    requirement_ids=(evidence_requirement_id("subgoal", active_id, 0),),
                 ),
             )
         )
@@ -175,18 +178,21 @@ def _stage_step(index: int) -> StepSpec:
         step_id=step_id,
         objective=f"stage equals {index}",
         interaction=ElementIntent("Advance", source_refs),
-        completion_criteria=(
-            StateCriterion(
-                criterion_id=criterion_id("subgoal", step_id, 0),
-                source_refs=source_refs,
-                subject="stage",
-                relation=CriterionRelation.EQUALS,
-                expected_value=index,
-                evidence_policy=EvidencePolicy(
-                    minimum_strength=EvidenceStrength.INDEPENDENT,
-                    allowed_source_kinds=("dom_state",),
+        completion_criteria=canonicalize_legacy_criteria(
+            (
+                StateCriterion(
+                    criterion_id=criterion_id("subgoal", step_id, 0),
+                    source_refs=source_refs,
+                    subject="stage",
+                    relation=CriterionRelation.EQUALS,
+                    expected_value=index,
+                    evidence_policy=EvidencePolicy(
+                        minimum_strength=EvidenceStrength.INDEPENDENT,
+                        allowed_source_kinds=("dom_state",),
+                    ),
                 ),
             ),
+            role="completion",
         ),
         source_refs=source_refs,
         depends_on=(f"stage-{index - 1}",) if index > 1 else (),

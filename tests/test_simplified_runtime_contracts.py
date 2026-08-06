@@ -23,6 +23,7 @@ from affordance_runtime.simplified_runtime_contracts import (
     VerificationStatus,
     interaction_for_state,
 )
+from runtime_test_support import legacy_step_spec
 
 
 def _source(source_id: str = "source:user:1") -> SourceReference:
@@ -106,7 +107,7 @@ def test_composite_criterion_rejects_self_cycle() -> None:
         )
 
 
-def test_step_spec_rejects_precondition_as_completion_criterion() -> None:
+def test_step_spec_rejects_legacy_criterion_at_canonical_ingress() -> None:
     precondition = PresenceCriterion(
         criterion_id="criterion:button-precondition",
         subject="semantic:submit",
@@ -116,7 +117,7 @@ def test_step_spec_rejects_precondition_as_completion_criterion() -> None:
         role="precondition",
     )
 
-    with pytest.raises(ValueError, match="precondition"):
+    with pytest.raises(TypeError, match="canonical CriterionExpr"):
         StepSpec(
             step_id="step:submit",
             objective="Submit the form",
@@ -127,7 +128,7 @@ def test_step_spec_rejects_precondition_as_completion_criterion() -> None:
 
 
 def test_task_plan_view_is_identity_exact_and_deeply_immutable() -> None:
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="step:type-name",
         objective="Type the name",
         interaction=ElementIntent("semantic:name", (_source(),)),

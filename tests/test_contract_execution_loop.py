@@ -11,6 +11,7 @@ from affordance_runtime.contracts import (
     VerifierSpec,
 )
 from affordance_runtime.runtime import RunRequest
+from affordance_runtime.runtime_evidence import RecentActionOutcomeEvidence
 from affordance_runtime.safety import CapabilityGate, TaskConstraintPolicy
 from affordance_runtime.verification.mechanical import VerificationStatus, VerifierLadder
 
@@ -45,7 +46,14 @@ def _contract(*, action: str = "click") -> ActionContract:
         page_revision="page-1",
         target_fingerprint="fingerprint-1",
         locator={"backend_handle": "opaque-save"},
-        verifier_plan=[VerifierSpec("observation_metadata", "saved", True)],
+        verifier_plan=[
+            VerifierSpec(
+                "observation_metadata",
+                "saved",
+                True,
+                criterion_ids=("criterion:save",),
+            )
+        ],
     )
 
 
@@ -137,6 +145,17 @@ def test_contract_loop_records_canonical_execution_attempt_and_action_outcome() 
     assert outcome.receipt_success is True
     assert outcome.verification.contract_id == contract.id
     assert outcome.verification.evidence_refs
+    assert len(outcome.verification.state_deltas) == 1
+    delta = outcome.verification.state_deltas[0]
+    assert delta.subject_id == "save"
+    assert delta.after_value is True
+    assert delta.source_kind == "dom_state"
+    assert delta.assurance == "structural"
+    assert delta.criterion_ids == ("criterion:save",)
+    recent = RecentActionOutcomeEvidence.from_action_outcome(outcome)
+    assert recent.effect_satisfied
+    assert recent.facts[0].subject_ref == "save"
+    assert recent.facts[0].after_value is True
     assert outcome.status.value == "verified_effect"
 
 

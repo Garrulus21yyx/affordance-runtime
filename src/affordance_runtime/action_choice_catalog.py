@@ -20,6 +20,15 @@ from affordance_runtime.choice_contracts import (
     ChoiceRole,
     ChoiceSource,
 )
+from affordance_runtime.criteria import (
+    LiteralValue,
+    PredicateExpr,
+    PredicateOperator,
+    criterion_nodes,
+)
+from affordance_runtime.criteria import (
+    criterion_ids as canonical_criterion_ids,
+)
 from affordance_runtime.grounding import GroundingCandidate
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.interaction_grounding import (
@@ -38,7 +47,6 @@ from affordance_runtime.simplified_runtime_contracts import (
     ElementOperationKind,
     RegionIntent,
     RelationIntent,
-    StateCriterion,
     StepSpec,
 )
 from affordance_runtime.unified_observation import (
@@ -448,10 +456,12 @@ class _SemanticChoiceGenerator:
                 owner=FailureOwner.STEP_PLANNER,
             )
         choices: list[ActionChoice] = []
+        criterion_ids = canonical_criterion_ids(step.completion_criteria)
         criteria = tuple(
-            item for item in step.completion_criteria if isinstance(item, StateCriterion)
+            item
+            for expression in step.completion_criteria
+            for item in _action_criteria(expression)
         )
-        criterion_ids = tuple(item.criterion_id for item in criteria)
         if grounding.role == GroundingRole.ENABLING:
             target = targets.get(grounding.targets[0].target_id)
             enabler = step.interaction.enabler if isinstance(step.interaction, ElementIntent) else None
@@ -627,13 +637,41 @@ def _coalesce_semantic_choices(choices: list[ActionChoice]) -> list[ActionChoice
     ]
 
 
+@dataclass(frozen=True)
+class _ActionCriterion:
+    criterion_id: str
+    subject: str
+    relation: CriterionRelation
+    expected_value: object | None
+
+
+def _action_criteria(expression: object) -> tuple[_ActionCriterion, ...]:
+    relations = {
+        PredicateOperator.EQUALS: CriterionRelation.EQUALS,
+        PredicateOperator.CONTAINS: CriterionRelation.CONTAINS,
+        PredicateOperator.SELECTED: CriterionRelation.IS_SELECTED,
+        PredicateOperator.CHECKED: CriterionRelation.IS_CHECKED,
+        PredicateOperator.CHANGED: CriterionRelation.HAS_CHANGED,
+    }
+    return tuple(
+        _ActionCriterion(
+            item.criterion_id,
+            item.subject.reference,
+            relations.get(item.operator, CriterionRelation.IS_COMPLETED),
+            item.value.value if isinstance(item.value, LiteralValue) else None,
+        )
+        for item in criterion_nodes(expression)  # type: ignore[arg-type]
+        if isinstance(item, PredicateExpr)
+    )
+
+
 def _choice_for_criterion(
     *,
     task_revision: int,
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: CanonicalChoiceTarget,
 ) -> ActionChoice | None:
     if target.state.get("enabled") is False or target.state.get("visible") is False:
@@ -826,7 +864,7 @@ def _expanded_choice(
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
     if target.state.get("expanded") is not False:
@@ -847,7 +885,7 @@ def _checked_choice(
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
     if not _supports(target, PlannerActionKind.ACTIVATE):
@@ -870,7 +908,7 @@ def _selected_choice(
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
     if not isinstance(criterion.expected_value, str):
@@ -912,7 +950,7 @@ def _activation_choice(
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
     if not _supports(target, PlannerActionKind.ACTIVATE):
@@ -935,7 +973,7 @@ def _changed_activation_choice(
     state_version: int,
     snapshot_id: str,
     step_id: str,
-    criterion: StateCriterion,
+    criterion: _ActionCriterion,
     target: UnifiedObservationTarget,
 ) -> ActionChoice | None:
     if _target_looks_text_entry(target) or _target_looks_slider(target):

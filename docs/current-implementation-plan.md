@@ -205,6 +205,27 @@ documented external/public adapter with a consumer and expiry may survive to P5.
 | `P2-3` | Add bounded recent causality and durable evidence contracts in `runtime_evidence.py`; expose logical namespaces through `task_plan_progress.py` | current observation facts do not become durable automatically | P2-1 | one STATE_HOLDS vs ACTION_CAUSED and one epoch-validity case | **completed (2026-08-06)** — current facts are epoch refs, recent causal outcomes require exact contract/receipt/pre/post/effect evidence and use a bounded index, and only typed artifact/resource/transaction/human records enter the small durable store; TaskProgress stores these records without observations or plan history |
 | `P2-4` | Add optional `verification/providers/model.py` and human evidence adapter only after mechanical gaps are measured | high-risk external effect cannot complete with model-only evidence | P2-2 | only add tests when a real open-semantic use case is admitted | deferred |
 
+### P2 authoritative crosswalk (2026-08-06)
+
+The architecture plan uses seven P2 capability IDs; the execution table above
+groups implementation slices and therefore is not a renumbering of those
+capabilities.
+
+| Architecture-plan ID | Execution-table row | Current status |
+|---|---|---|
+| `P2-1` Criterion AST | `P2-1` | implemented for step completion; strict `StepSpec` stores only canonical `CriterionExpr` and rejects legacy criteria, which are canonicalized at dated provider/benchmark ingress |
+| `P2-2` CriterionPolicy | `P2-1` | implemented; current-contract and latest-final-recheck admission are enforced |
+| `P2-3` causal evidence | `P2-3` | implemented and wired to the current contract; subject, before/after value, source, assurance and effect identity survive projection |
+| `P2-4` three evidence locations | `P2-3` | implemented and consumed by `LoopEvaluator` |
+| `P2-5` mechanical providers | `P2-2` | implemented and owned by `PredicateEvaluator`; surface and artifact admission are fail-closed |
+| `P2-6` model/human providers | execution `P2-4` | deferred until a measured mechanical gap exists |
+| `P2-7` OpenSemanticResolver | no execution row yet | demand-gated; `UNSUPPORTED` now routes to typed `OPEN_SEMANTIC_UNRESOLVED` clarification/gap without model fallback |
+
+Overall **P2 core is complete**: the canonical mechanical step-completion
+cutover and strict canonical ingress are closed. Action/task evaluation retain
+their prior owners; P2-6 and the full P2-7 resolver remain demand-driven
+extensions rather than core closure gates.
+
 ### P3 — Stable TaskSpec v2
 
 | ID | Deliverable and exact files | Legacy deletion/isolation | Depends on | Minimal verification | Status |

@@ -315,21 +315,21 @@ def perception_task_terms(
 def _perception_text(task: TaskSpec, active_subgoal: StepSpec | str | None) -> str:
     subgoal_parts: tuple[str, ...]
     if isinstance(active_subgoal, StepSpec):
+        from affordance_runtime.criteria import PredicateExpr, criterion_nodes
+
         subgoal_parts = (
             active_subgoal.objective,
             *(
                 " ".join(
                     (
-                        getattr(criterion, "subject", ""),
-                        getattr(getattr(criterion, "relation", None), "value", ""),
-                        *getattr(
-                            getattr(criterion, "evidence_policy", None),
-                            "allowed_source_kinds",
-                            (),
-                        ),
+                        criterion.subject.reference,
+                        criterion.operator.value,
+                        *(item.value for item in criterion.policy.allowed_source_kinds),
                     )
                 )
-                for criterion in active_subgoal.completion_criteria
+                for expression in active_subgoal.completion_criteria
+                for criterion in criterion_nodes(expression)
+                if isinstance(criterion, PredicateExpr)
             ),
         )
     elif isinstance(active_subgoal, str):

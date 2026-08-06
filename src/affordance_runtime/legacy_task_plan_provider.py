@@ -13,13 +13,11 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
+from affordance_runtime.criteria import LiteralValue, PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.model_port import ModelConfig, ModelMessage, ModelPort
 from affordance_runtime.semantics import CriterionRelation
 from affordance_runtime.simplified_runtime_contracts import (
-    CriterionEvidencePolicy,
-    EvidenceStrength,
     SourceReference,
-    StateCriterion,
     StateCriterionRelation,
     StepSpec,
     interaction_for_state,
@@ -31,6 +29,12 @@ from affordance_runtime.task_planner import (
     task_spec_planning_summary,
 )
 from affordance_runtime.task_source_references import task_source_refs
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    SatisfactionMode,
+)
 
 TASK_PLAN_SCHEMA_VERSION = "1.3"
 TASK_PLAN_ENTRY_SCHEMA_POLICY_VERSION = "explicit-entry-envelope-v1"
@@ -190,18 +194,41 @@ def _canonical_step(
             item.outcome.subject, relation, expected_value, source_refs
         ),
         completion_criteria=(
-            StateCriterion(
+            PredicateExpr(
                 criterion_id=f"criterion:{item.subgoal_id}",
-                source_refs=source_refs,
-                subject=item.outcome.subject,
-                relation=relation,
-                expected_value=expected_value,
-                evidence_policy=CriterionEvidencePolicy(
-                    minimum_strength=EvidenceStrength.INDEPENDENT,
-                    allowed_source_kinds=("dom_state",),
+                subject=SubjectExpr(
+                    "target",
+                    item.outcome.subject,
+                    "completed" if relation == StateCriterionRelation.IS_COMPLETED else relation.value,
                 ),
+                operator=_predicate_operator(relation),
+                policy=CriterionPolicy(
+                    satisfaction=SatisfactionMode.ACTION_CAUSED,
+                    minimum_assurance=AssuranceLevel.STRUCTURAL,
+                    allowed_source_kinds=(EvidenceSourceKind.DOM_STATE,),
+                    causal_lineage_required=True,
+                ),
+                value=None if expected_value is None else LiteralValue(expected_value),
+                source_refs=tuple(ref.source_unit_id for ref in source_refs),
             ),
         ),
         source_refs=source_refs,
         depends_on=item.depends_on,
     )
+
+
+def _predicate_operator(relation: StateCriterionRelation) -> PredicateOperator:
+    return {
+        StateCriterionRelation.EQUALS: PredicateOperator.EQUALS,
+        StateCriterionRelation.CONTAINS: PredicateOperator.CONTAINS,
+        StateCriterionRelation.MATCHES: PredicateOperator.MATCHES_REGEX,
+        StateCriterionRelation.IS_VISIBLE: PredicateOperator.EXISTS,
+        StateCriterionRelation.IS_ABSENT: PredicateOperator.ABSENT,
+        StateCriterionRelation.IS_AVAILABLE: PredicateOperator.EXISTS,
+        StateCriterionRelation.IS_SELECTED: PredicateOperator.SELECTED,
+        StateCriterionRelation.IS_CHECKED: PredicateOperator.CHECKED,
+        StateCriterionRelation.IS_EXPANDED: PredicateOperator.EQUALS,
+        StateCriterionRelation.IS_COMPLETED: PredicateOperator.CHANGED,
+        StateCriterionRelation.IS_ORDERED_AS: PredicateOperator.ORDERED_AS,
+        StateCriterionRelation.HAS_CHANGED: PredicateOperator.CHANGED,
+    }[relation]

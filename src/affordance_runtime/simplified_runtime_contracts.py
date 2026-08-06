@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, TypeAlias
 
+from affordance_runtime.criteria import CriterionExpr
 from affordance_runtime.semantics import (
     CriterionRelation,
     EvidencePolicy,
@@ -140,8 +141,7 @@ class RelationIntent:
     def __post_init__(self) -> None:
         _require_nonblank("relation intent relation", self.relation)
         destination_forms = sum(
-            value is not None
-            for value in (self.destination, self.destination_offset, self.destination_ordinal)
+            value is not None for value in (self.destination, self.destination_offset, self.destination_ordinal)
         )
         if destination_forms != 1:
             raise ValueError("relation intent requires exactly one destination form")
@@ -236,11 +236,7 @@ def interaction_for_state(
         )
         if isinstance(source, ElementIntent):
             return RelationIntent(source, target, "value_transfer")
-    if (
-        relation != StateCriterionRelation.IS_SELECTED
-        or expected_value is None
-        or expected_value == ""
-    ):
+    if relation != StateCriterionRelation.IS_SELECTED or expected_value is None or expected_value == "":
         return target
     return CollectionIntent(
         target,
@@ -468,10 +464,10 @@ class CompositeCriterion(_CriterionBase):
             raise ValueError("composite criterion cycle is not allowed")
 
 
-Criterion: TypeAlias = (
-    StateCriterion
-    | CompositeCriterion
-)
+LegacyCriterion: TypeAlias = StateCriterion | CompositeCriterion
+# Compatibility-only public name for pre-P2 wire consumers.  StepSpec no
+# longer stores this type; see legacy_criterion_adapter.py (remove at P3-4).
+Criterion = LegacyCriterion
 
 
 @dataclass(frozen=True)
@@ -479,10 +475,10 @@ class StepSpec:
     step_id: str
     objective: str
     interaction: InteractionIntent
-    completion_criteria: tuple[Criterion, ...]
+    completion_criteria: tuple[CriterionExpr, ...]
     source_refs: tuple[SourceReference, ...]
     depends_on: tuple[str, ...] = ()
-    preconditions: tuple[Criterion, ...] = ()
+    preconditions: tuple[CriterionExpr, ...] = ()
     max_actions: int = 10
     max_recoveries: int = 2
 
@@ -509,12 +505,13 @@ class StepSpec:
             raise ValueError("step action budget must be positive")
         if self.max_recoveries < 0:
             raise ValueError("step recovery budget cannot be negative")
-        for criterion in self.completion_criteria:
-            if criterion.role == "precondition":
-                raise ValueError("precondition cannot be used as a completion criterion")
-        for criterion in self.preconditions:
-            if criterion.role != "precondition":
-                raise ValueError("step preconditions must use precondition role")
+        from affordance_runtime.criteria import AllOf, AnyOf, Not, OpenSemanticCriterion, PredicateExpr
+
+        canonical_types = (PredicateExpr, AllOf, AnyOf, Not, OpenSemanticCriterion)
+        if any(not isinstance(item, canonical_types) for item in self.completion_criteria):
+            raise TypeError("step completion must use canonical CriterionExpr")
+        if any(not isinstance(item, canonical_types) for item in self.preconditions):
+            raise TypeError("step preconditions must use canonical CriterionExpr")
 
 
 @dataclass(frozen=True)
@@ -580,29 +577,16 @@ class StepProgressView:
         if overlap:
             raise ValueError("completed and failed step ids cannot overlap")
         if self.active_step_id is not None and (
-            self.active_step_id in self.completed_step_ids
-            or self.active_step_id in self.failed_step_ids
+            self.active_step_id in self.completed_step_ids or self.active_step_id in self.failed_step_ids
         ):
             raise ValueError("active step cannot be completed or failed")
-        if (
-            self.activity_status == StepActivityStatus.ACTIVE
-            and self.active_step_id is None
-        ):
+        if self.activity_status == StepActivityStatus.ACTIVE and self.active_step_id is None:
             raise ValueError("active status requires active_step_id")
-        if (
-            self.activity_status != StepActivityStatus.ACTIVE
-            and self.active_step_id is not None
-        ):
+        if self.activity_status != StepActivityStatus.ACTIVE and self.active_step_id is not None:
             raise ValueError("only active status may carry active_step_id")
-        if (
-            self.activity_status == StepActivityStatus.READY_NOT_ACTIVATED
-            and not self.ready_step_ids
-        ):
+        if self.activity_status == StepActivityStatus.READY_NOT_ACTIVATED and not self.ready_step_ids:
             raise ValueError("ready-not-activated status requires ready steps")
-        if (
-            self.activity_status == StepActivityStatus.COMPLETED
-            and self.ready_step_ids
-        ):
+        if self.activity_status == StepActivityStatus.COMPLETED and self.ready_step_ids:
             raise ValueError("completed status cannot carry ready steps")
         _validate_tuple_map("evidence_by_step_id", self.evidence_by_step_id)
 
@@ -629,6 +613,7 @@ class ExecutionAttempt:
     semantic_target_id: str
     pre_observation: ObservationIdentity
     active_step_id: str = ""
+    surface_kind: str = ""
 
     def __post_init__(self) -> None:
         _require_nonblank("attempt_id", self.attempt_id)
@@ -640,6 +625,8 @@ class ExecutionAttempt:
         _require_nonblank("semantic_target_id", self.semantic_target_id)
         if self.active_step_id:
             _require_nonblank("active_step_id", self.active_step_id)
+        if self.surface_kind:
+            _require_nonblank("surface_kind", self.surface_kind)
 
 
 @dataclass(frozen=True)
@@ -649,6 +636,9 @@ class StateDelta:
     before_value: FrozenScalar
     after_value: FrozenScalar
     evidence_refs: tuple[str, ...]
+    source_kind: str = ""
+    assurance: str = ""
+    criterion_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_nonblank("subject_id", self.subject_id)
@@ -658,6 +648,10 @@ class StateDelta:
         _reject_mutable_value(self.after_value)
         _require_tuple("evidence_refs", self.evidence_refs)
         _require_unique_nonblank("evidence refs", self.evidence_refs)
+        _require_nonblank("source_kind", self.source_kind)
+        _require_nonblank("assurance", self.assurance)
+        _require_tuple("criterion_ids", self.criterion_ids)
+        _require_unique_nonblank("criterion ids", self.criterion_ids)
 
 
 @dataclass(frozen=True)
@@ -716,10 +710,7 @@ class ActionOutcome:
             raise ValueError("action outcome contract hash mismatch")
         if self.attempt.pre_observation.snapshot_id != self.verification.pre_snapshot_id:
             raise ValueError("action outcome pre snapshot mismatch")
-        if (
-            self.status == ActionOutcomeStatus.VERIFIED_EFFECT
-            and self.verification.status != VerificationStatus.PASSED
-        ):
+        if self.status == ActionOutcomeStatus.VERIFIED_EFFECT and self.verification.status != VerificationStatus.PASSED:
             raise ValueError("verified effect outcome requires passed verification")
 
 

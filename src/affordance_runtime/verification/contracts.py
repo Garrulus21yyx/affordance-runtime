@@ -90,6 +90,8 @@ class PredicateEvidence:
     effect_criterion_ids: tuple[str, ...] = ()
     durable: bool = False
     authoritative_final_recheck: bool = False
+    final_recheck_ref: str = ""
+    resource_version: str = ""
     conflict: bool = False
     error_code: str = ""
 
@@ -105,9 +107,15 @@ class PredicateEvidenceContext:
     current_observation_ref: str
     evidence: tuple[PredicateEvidence, ...] = ()
     current_observation: object | None = None
+    current_contract_id: str = ""
+    latest_final_recheck_ref: str = ""
+    current_resource_versions: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "evidence", tuple(self.evidence))
+        object.__setattr__(
+            self, "current_resource_versions", tuple(self.current_resource_versions)
+        )
 
 
 class SuccessExpression(_FrozenModel):

@@ -708,7 +708,9 @@ class StepEvidenceBinder:
             state.task_progress.completed_step_ids
         ):
             return verifier_plan
-        allowed_criteria = {item.criterion_id for item in step.completion_criteria}
+        from affordance_runtime.criteria import criterion_ids
+
+        allowed_criteria = set(criterion_ids(step.completion_criteria))
         allowed_requirements = {item.source_unit_id for item in step.source_refs}
         return tuple(
             self._validate_spec(

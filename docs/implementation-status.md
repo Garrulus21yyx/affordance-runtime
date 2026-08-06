@@ -24,10 +24,18 @@ evaluators own classification, handoff and recovery-outcome policy;
 RuntimeCommitSession owns lifecycle only; RuntimeCommitter applies already
 evaluated typed transitions/events/completion. The legacy Runtime planning
 owner was deleted, leaving only a named one-way external provider adapter.
-P2-1/P2-2/P2-3 are now cut over: canonical typed criterion policy and recursive
-evaluation feed three mechanical provider groups, while current, recent-causal
-and durable evidence have distinct bounded lifetimes. P2-4 remains deferred;
-no model/human fallback provider was added.
+The P2 canonical mechanical **step-completion core** is complete: typed
+criterion policy and recursive evaluation own production step completion, while current,
+recent-causal and durable evidence have distinct bounded lifetimes. `StepSpec`
+is a strict canonical owner and rejects legacy criteria; dated providers and
+benchmarks canonicalize before construction. Optional model/human evidence
+(`P2-6`) and the full `OpenSemanticResolver` (`P2-7`) remain demand-driven
+extensions, with fail-closed unresolved routing already present.
+
+- P2 mandatory runtime closure: **COMPLETE**
+- P2-6 optional extension: **DEFERRED**
+- P2-7 resolver capability: **DEMAND-GATED**
+- P2-7 unresolved fail-closed routing: **COMPLETE**
 
 Documentation consolidation does not promote any production capability.
 
@@ -41,14 +49,14 @@ Documentation consolidation does not promote any production capability.
 | Task planning | canonical TaskPlan stores StepSpec directly; TaskPlanAuthority alone validates current observation/state basis and binds identity/version/supersession; planner policy emits authority-free PlanCandidate | observation-grounded replaceable TaskPlan<StepSpec> | P1-P1/P1-P2 complete |
 | Task progress | facts, bindings, bounded recent outcome refs, durable evidence refs and VerifiedStepRecord survive replacement without reinserting completed steps | progress is factual state, not a second plan owner | P1-P3 complete |
 | Observation | PerceptionCapture is acquisition-only; CanonicalObservationBuilder deterministically retains targets, bindings, typed facts/conflicts and truthful source coverage; the shared in-process ObservationStore exposes immutable epoch refs/read-only indexes; default planning, action, post-action, targeted perception, progress and trace descriptors consume the canonical epoch | capture-built canonical observation is sole Runtime authority, exposed through immutable epoch refs/read-only indexes | P0-B complete |
-| Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route and mechanical evidence is grouped by structural/resource/artifact responsibility | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1/P2 mechanical baseline complete |
+| Cross-surface foundations | DOM/AX/Visual/SVG/WoT/API/Device enter one canonical epoch; semantic choices retain all non-conflicting bindings, ActionContractBuilder selects the current route, and causal step evidence retains its actual subject/value/source/assurance | shared semantic target, surface-neutral Catalog, ActionContract route and LoopEvaluator | P0-B/P0-C/P1 plus P2 canonical step-completion cutover complete |
 | Action choice | Runtime builds one logically full, deterministic eager/lazy/indexed Catalog before any model request; bounded ChoicePage and displayed-ID validation are separate owners | logical full Runtime Catalog before bounded semantic ChoicePage | P0-C complete |
 | ActionContract and gates | selected choice, Catalog digest, canonical observation and current binding are sealed into ActionContract; ordered Task/Capability/Approval/Freshness admission is in-process and typed | retain and bind to canonical observation/catalog identity | P0-C complete; later policy matrix refinement pending |
 | Execution | backend-neutral execution and typed receipts exist | Executor proves dispatch only | retain + narrow |
-| Verification | mechanical verifier facts feed typed predicate/composite evaluation; pure LoopEvaluator separates action effect, active-step completion, triggered task completion and continuation; disabled verification, receipt-only and unsupported operators cannot complete a step/task | loop-native typed evaluation with bounded evidence locations | P0-A/P1-E1 and P2-1/P2-2 complete; P2-4 deferred |
-| Criterion contracts | canonical immutable Predicate/AllOf/AnyOf/Not/OpenSemantic AST and orthogonal satisfaction/validity/assurance policy are implemented; registered vocabulary without mechanical coverage returns UNSUPPORTED | one typed criterion vocabulary independent of provider coverage | P2-1 complete |
-| Evidence providers | shared mechanical contract groups structural DOM/AX/Visual/SVG, resource API/WoT/Device/transaction and artifact/file/materialization facts; providers do not evaluate task completion or mutate state | focused fact providers feeding pure predicate evaluation | P2-2 complete; P2-4 model/human expansion deferred |
-| Evidence lifetimes | current facts are epoch refs; exact contract/receipt/pre/post/effect lineage is retained in a 40-record recent index; only explicitly durable artifact/resource/transaction/human records enter a bounded durable store | CurrentObservation + RecentActionOutcome + DurableEvidence | P2-3 complete |
+| Verification | `LoopEvaluator` feeds canonical observation, current contract, bounded lossless recent outcomes, durable evidence, latest final-recheck identity and resource versions directly to `PredicateEvaluator`; action effect and TaskSpec completion retain their earlier owners | loop-native typed step evaluation with bounded evidence locations | P2 mandatory runtime closure complete; P2-6 deferred and P2-7 resolver demand-gated |
+| Criterion contracts | canonical immutable Predicate/AllOf/AnyOf/Not/OpenSemantic AST and orthogonal satisfaction/validity/assurance policy are implemented; strict `StepSpec` accepts only canonical `CriterionExpr`, while legacy providers/benchmarks canonicalize at ingress; unresolved OpenSemantic routes to a typed clarification gap | one typed criterion vocabulary independent of provider coverage | P2-1/P2-2 core complete; P2-7 full resolver demand-driven |
+| Evidence providers | shared mechanical contract groups structural DOM/AX/Visual/SVG, resource API/WoT/Device/transaction and artifact/file/materialization facts; unknown surfaces are not treated as DOM and bare artifact refs are not integrity proofs | focused fact providers feeding pure predicate evaluation | P2-5 complete; P2-6 model/human expansion deferred |
+| Evidence lifetimes | current facts are epoch refs; exact current-contract/receipt/pre/post/effect lineage is retained in a 40-record recent index; final rechecks bind latest identity/current epoch/resource version; only explicitly durable records enter a bounded durable store | CurrentObservation + RecentActionOutcome + DurableEvidence | P2-3/P2-4 complete and production-wired |
 | Task completion | full typed TaskSpec.success closure, declared constraints/effects, authoritative final rechecks and source-bound required outputs are evaluated by the pure TaskCompletionEvaluator; RuntimeCommitter is the sole TaskCompleted writer; latest-report, plan/prose and no-TaskSpec fallbacks are removed | pure TaskCompletionEvaluator + typed/source-bound required outputs + RuntimeCommitter-only commit | P0-A complete |
 | Observation continuation | perception owner returns REUSE, AUGMENT_TARGETED, RECAPTURE or WAIT_AND_RECAPTURE from freshness/stability/coverage/conflict; fresh reusable capture is not immediately duplicated | typed continuation proposal outside Coordinator/Committer | P1-E2 complete |
 | Recovery | RecoveryStage owns typed classification, handoff/exhaustion/error mapping and strategy choice; RecoveryObservationEvaluator and RecoveryActionEvaluator settle typed outcomes; Coordinator and RuntimeCommitSession only follow results | typed causes, no generic-string ownership, no blind external retry | P1-C1 complete |
@@ -62,7 +70,7 @@ authoritative_target: current_not_implemented_as_a_whole
 active_step_order: canonical_observation_then_full_catalog_then_bounded_choice_page
 cross_surface_foundations: existing_not_canonical_cutover
 cross_surface_target: DOM_AX_Visual_SVG_WoT_API_Device
-cross_surface_cutover: P0_B_P0_C_P1_P2_mechanical_baseline_complete
+cross_surface_cutover: P0_B_P0_C_P1_plus_P2_canonical_step_completion_complete
 source_target: SourceEnvelope_plus_risk_proportionate_MaterialBinding_and_selective_SourceAnchor
 semantic_audit: risk_triggered_veto_or_clarify_only
 material_binding_policy: P0_E5_effect_specific_coverage_complete
@@ -76,7 +84,7 @@ choice_presentation_contract: canonical_P0_C_cutover_complete
 catalog_physical_minimality: logical_eager_lazy_indexed_P0_C_complete
 observation_indexed_epoch: canonical_P0_B_cutover_complete
 authority_in_process_composition: shared_in_process_observation_store_complete
-criterion_provider_phasing: P2_mechanical_baseline_complete_P2_4_deferred
+criterion_provider_phasing: P2_step_P2_1_through_P2_5_complete_P2_6_deferred_P2_7_resolver_pending
 typed_task_planner_trigger: P1_canonical_plan_candidate_and_authority_complete
 risk_derived_feature_profiles: target_not_implemented
 verification_shape: P2_typed_policy_predicates_and_mechanical_provider_matrix_complete
@@ -116,7 +124,7 @@ cross_surface_invariants: SURFACE-01_through_SURFACE-03
 | superseded prose/plans/audits | archived and indexed |
 | maintained contract synchronization | complete for the 2026-08-05 authority baseline |
 | simple documentation gate | active: lifecycle/path coverage, authority uniqueness, redirects, maintained links |
-| production behavior change | P0-A/B/C/D/E/E5, all P1 rows and P2-1/P2-2/P2-3 are complete; P2-4 remains deferred; the external provider `subgoals` wire adapter remains isolated and expires at P3-4; P3/P4/P5 have not started |
+| production behavior change | P0-A/B/C/D/E/E5 and all P1 rows are complete; P2 core (P2-1..P2-5) is closed for canonical step completion, including strict StepSpec ingress, cross-surface causal values and positive final-recheck context; action effect and TaskSpec completion retain prior owners; P2-6 and the full P2-7 resolver remain demand-driven extensions, with typed unresolved routing present |
 
 ## 6. Historical ledger
 

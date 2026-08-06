@@ -19,6 +19,12 @@ from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     VerifierSpec,
 )
+from affordance_runtime.criteria import (
+    LiteralValue,
+    PredicateExpr,
+    PredicateOperator,
+    criterion_nodes,
+)
 from affordance_runtime.immutable import thaw_json_at_external_boundary
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.semantics import CriterionRelation
@@ -26,7 +32,6 @@ from affordance_runtime.simplified_runtime_contracts import (
     CollectionIntent,
     RegionIntent,
     RelationIntent,
-    StateCriterion,
     StepSpec,
 )
 from affordance_runtime.state_kernel import StateKernel
@@ -760,9 +765,10 @@ def _requested_slider_progress_value(
         criterion.subject if criterion is not None else "",
         active.objective,
         " ".join(
-            item.subject
-            for item in active.completion_criteria
-            if isinstance(item, StateCriterion)
+            item.subject.reference
+            for expression in active.completion_criteria
+            for item in criterion_nodes(expression)
+            if isinstance(item, PredicateExpr)
         ),
         proposal.subgoal,
         " ".join(proposal.expected_effects),
@@ -776,12 +782,51 @@ def _requested_slider_progress_value(
     return None
 
 
-def _primary_state_completion_criterion(step: StepSpec | None) -> StateCriterion | None:
+@dataclass(frozen=True)
+class _StateCriterionView:
+    criterion_id: str
+    subject: str
+    relation: CriterionRelation
+    expected_value: object | None
+
+
+def _primary_state_completion_criterion(step: StepSpec | None) -> _StateCriterionView | None:
     if step is None:
         return None
-    return next(
-        (item for item in step.completion_criteria if isinstance(item, StateCriterion)),
+    predicate = next(
+        (
+            item
+            for expression in step.completion_criteria
+            for item in criterion_nodes(expression)
+            if isinstance(item, PredicateExpr)
+        ),
         None,
+    )
+    if predicate is None:
+        return None
+    relation = {
+        PredicateOperator.EQUALS: CriterionRelation.EQUALS,
+        PredicateOperator.CONTAINS: CriterionRelation.CONTAINS,
+        PredicateOperator.MATCHES_REGEX: CriterionRelation.MATCHES,
+        PredicateOperator.EXISTS: CriterionRelation.IS_VISIBLE,
+        PredicateOperator.ABSENT: CriterionRelation.IS_ABSENT,
+        PredicateOperator.SELECTED: CriterionRelation.IS_SELECTED,
+        PredicateOperator.CHECKED: CriterionRelation.IS_CHECKED,
+        PredicateOperator.ORDERED_AS: CriterionRelation.IS_ORDERED_AS,
+    }.get(predicate.operator)
+    if predicate.operator == PredicateOperator.CHANGED:
+        relation = (
+            CriterionRelation.IS_COMPLETED
+            if predicate.subject.field == "completed"
+            else CriterionRelation.HAS_CHANGED
+        )
+    if relation is None:
+        return None
+    return _StateCriterionView(
+        predicate.criterion_id,
+        predicate.subject.reference,
+        relation,
+        predicate.value.value if isinstance(predicate.value, LiteralValue) else None,
     )
 
 

@@ -77,7 +77,6 @@ from affordance_runtime.simplified_runtime_contracts import (
     StateCriterion,
     StepActivityStatus,
     StepProgressView,
-    StepSpec,
     TaskPlanView,
 )
 from affordance_runtime.state_kernel import StateKernel
@@ -96,7 +95,7 @@ from affordance_runtime.unified_observation import (
     StateFact,
     UnifiedObservation,
 )
-from runtime_test_support import remember_observation
+from runtime_test_support import legacy_step_spec, remember_observation
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -134,7 +133,7 @@ def _request_with_active_step(
 ) -> tuple[PlanningRequest, UnifiedObservation]:
     criteria = criterion if isinstance(criterion, tuple) else (criterion,)
     affordances = affordance if isinstance(affordance, tuple) else (affordance,)
-    step = StepSpec(
+    step = legacy_step_spec(
         step_id="step:current",
         objective="Complete the current step",
         interaction=interaction
@@ -228,18 +227,12 @@ def _request_with_active_step(
             label=item.label,
             surfaces=(GroundingSource(item.surface),),
             action_support=tuple(
-                ActionSupport(action, (f"test-binding:{item.target_id}",))
-                for action in item.supported_actions
+                ActionSupport(action, (f"test-binding:{item.target_id}",)) for action in item.supported_actions
             ),
-            state_facts=tuple(
-                StateFact(str(key), value, FactStatus.ACCEPTED, ())
-                for key, value in item.state
-            ),
+            state_facts=tuple(StateFact(str(key), value, FactStatus.ACCEPTED, ()) for key, value in item.state),
             binding_ids=(f"test-binding:{item.target_id}",),
             conflict_status=(
-                ConflictStatus.MATERIAL_CONFLICT
-                if item.conflict_codes
-                else ConflictStatus.NO_MATERIAL_CONFLICT
+                ConflictStatus.MATERIAL_CONFLICT if item.conflict_codes else ConflictStatus.NO_MATERIAL_CONFLICT
             ),
             conflicts=(),
             source_assertion_refs=item.source_refs,
@@ -1374,9 +1367,7 @@ def test_generalist_redacts_invalid_candidate_payloads() -> None:
             self, messages: Sequence[ModelMessage], output_schema: type[T], config: ModelConfig
         ) -> T:
             del messages, config
-            return output_schema.model_validate(
-                {"action_kind": "type_text", "parameters": {"text": "private-value"}}
-            )
+            return output_schema.model_validate({"action_kind": "type_text", "parameters": {"text": "private-value"}})
 
     with pytest.raises(StructuredModelError) as exc_info:
         asyncio.run(
@@ -2802,9 +2793,7 @@ def test_strict_taskspec_prefix_is_enforced_by_initial_candidate_schema() -> Non
             )
 
     decision = asyncio.run(
-        _compatibility_planner(PrefixSchemaModel()).propose_legacy(
-            RunRequest(task_spec=task_spec), state, snapshot
-        )
+        _compatibility_planner(PrefixSchemaModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2863,9 +2852,7 @@ def test_satisfied_prefix_control_value_leaves_submit_available() -> None:
             SubmitModel(),
             planner_profile=GeneralistPlannerProfile.HISTORICAL_COMPATIBILITY,
             semantic_compilers=SemanticCompilerRegistry.disabled(),
-        ).propose_legacy(
-            RunRequest(task_spec=task_spec), state, snapshot
-        )
+        ).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None
@@ -2925,9 +2912,7 @@ def test_strict_global_ordinal_schema_selects_the_required_page_transition() -> 
             )
 
     decision = asyncio.run(
-        _compatibility_planner(PageTransitionModel()).propose_legacy(
-            RunRequest(task_spec=task_spec), state, snapshot
-        )
+        _compatibility_planner(PageTransitionModel()).propose_legacy(RunRequest(task_spec=task_spec), state, snapshot)
     )
 
     assert decision.proposal is not None

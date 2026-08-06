@@ -10,12 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Awaitable, Protocol
 
+from affordance_runtime.criteria import PredicateExpr, PredicateOperator, SubjectExpr
 from affordance_runtime.simplified_runtime_contracts import (
-    CriterionEvidencePolicy,
     ElementIntent,
-    EvidenceStrength,
-    StateCriterion,
-    StateCriterionRelation,
     StepSpec,
 )
 from affordance_runtime.task_intake import OperationClass, TaskSpec, TaskStructure
@@ -25,6 +22,12 @@ from affordance_runtime.task_plan_contracts import (
 )
 from affordance_runtime.task_planner import TaskPlanningContext
 from affordance_runtime.task_source_references import task_source_refs
+from affordance_runtime.verification.contracts import (
+    AssuranceLevel,
+    CriterionPolicy,
+    EvidenceSourceKind,
+    SatisfactionMode,
+)
 
 
 class PlanCandidateGeneratorPort(Protocol):
@@ -69,19 +72,7 @@ class PricingPlanCandidateGenerator:
                 step_id="reveal-pro",
                 objective="Reveal the Pro plan limits",
                 interaction=ElementIntent("pricing.pro", task_source_refs(context.task_spec)),
-                completion_criteria=(
-                    StateCriterion(
-                        criterion_id="criterion:reveal-pro",
-                        source_refs=task_source_refs(context.task_spec),
-                        subject="pricing.pro",
-                        relation=StateCriterionRelation.IS_VISIBLE,
-                        expected_value=True,
-                        evidence_policy=CriterionEvidencePolicy(
-                            minimum_strength=EvidenceStrength.INDEPENDENT,
-                            allowed_source_kinds=("dom_state",),
-                        ),
-                    ),
-                ),
+                completion_criteria=(_target_revealed("criterion:reveal-pro", "pricing.pro"),),
                 source_refs=task_source_refs(context.task_spec),
             ),
             StepSpec(
@@ -91,17 +82,7 @@ class PricingPlanCandidateGenerator:
                     "pricing.enterprise", task_source_refs(context.task_spec)
                 ),
                 completion_criteria=(
-                    StateCriterion(
-                        criterion_id="criterion:reveal-enterprise",
-                        source_refs=task_source_refs(context.task_spec),
-                        subject="pricing.enterprise",
-                        relation=StateCriterionRelation.IS_VISIBLE,
-                        expected_value=True,
-                        evidence_policy=CriterionEvidencePolicy(
-                            minimum_strength=EvidenceStrength.INDEPENDENT,
-                            allowed_source_kinds=("dom_state",),
-                        ),
-                    ),
+                    _target_revealed("criterion:reveal-enterprise", "pricing.enterprise"),
                 ),
                 source_refs=task_source_refs(context.task_spec),
                 depends_on=("reveal-pro",),
@@ -149,11 +130,7 @@ def _steps_from_task_spec(
     default_evidence_source_kind: str,
 ) -> tuple[StepSpec, ...]:
     source_refs = task_source_refs(task_spec)
-    relation = (
-        StateCriterionRelation.IS_VISIBLE
-        if task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
-        else StateCriterionRelation.IS_COMPLETED
-    )
+    state_holds = task_spec.operation_class in {OperationClass.READ_ONLY, OperationClass.NAVIGATION}
     return (
         StepSpec(
             step_id="step:implicit",
@@ -163,18 +140,32 @@ def _steps_from_task_spec(
                 source_refs,
             ),
             completion_criteria=(
-                StateCriterion(
-                    criterion_id="criterion:step:implicit",
-                    source_refs=source_refs,
-                    subject=task_spec.targets[0] if task_spec.targets else task_spec.task_id,
-                    relation=relation,
-                    expected_value=(True if relation == StateCriterionRelation.IS_VISIBLE else None),
-                    evidence_policy=CriterionEvidencePolicy(
-                        minimum_strength=EvidenceStrength.INDEPENDENT,
-                        allowed_source_kinds=(default_evidence_source_kind,),
-                    ),
+                PredicateExpr(
+                    "criterion:step:implicit",
+                    SubjectExpr("target", task_spec.targets[0] if task_spec.targets else task_spec.task_id),
+                    PredicateOperator.EXISTS if state_holds else PredicateOperator.CHANGED,
+                    _policy(default_evidence_source_kind, action_caused=not state_holds),
                 ),
             ),
             source_refs=source_refs,
         ),
+    )
+
+
+def _target_revealed(criterion_id: str, target: str) -> PredicateExpr:
+    return PredicateExpr(
+        criterion_id,
+        SubjectExpr("target", target),
+        PredicateOperator.CHANGED,
+        _policy("dom_state", action_caused=True),
+    )
+
+
+def _policy(source_kind: str, *, action_caused: bool = False) -> CriterionPolicy:
+    source = EvidenceSourceKind(source_kind)
+    return CriterionPolicy(
+        satisfaction=(SatisfactionMode.ACTION_CAUSED if action_caused else SatisfactionMode.STATE_HOLDS),
+        minimum_assurance=AssuranceLevel.STRUCTURAL,
+        allowed_source_kinds=(source,),
+        causal_lineage_required=action_caused,
     )

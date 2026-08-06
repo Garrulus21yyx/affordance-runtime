@@ -33,9 +33,15 @@ from affordance_runtime.progress_observation import PostActionObservationService
 from affordance_runtime.progress_skill import TaskSkillProgressService
 from affordance_runtime.route_calibration import RouteCalibrator, RouteOutcome, RouteOutcomeStatus, RouteScope
 from affordance_runtime.runtime import RunRequest, RuntimeStep
-from affordance_runtime.runtime_evidence import verification_satisfies_effect
+from affordance_runtime.runtime_evidence import (
+    admit_observation_durable_evidence,
+    observation_evidence_context_metadata,
+    observation_predicate_evidence,
+    verification_satisfies_effect,
+)
 from affordance_runtime.runtime_state_projection import project_working_phase
 from affordance_runtime.simplified_runtime_contracts import ActionOutcome
+from affordance_runtime.source_context import TaskSpecGap
 from affordance_runtime.stage_protocol import (
     LoopDirective,
     RuntimeEventBuffer,
@@ -46,7 +52,6 @@ from affordance_runtime.stage_protocol import (
 )
 from affordance_runtime.task_plan_lifecycle import TaskPlanBudgetLimits, TaskPlanLifecycle
 from affordance_runtime.task_plan_progress_flow import (
-    commit_current_state_completion,
     commit_verified_task_progress,
 )
 from affordance_runtime.task_skills import AcceptedTaskSkillRuntime
@@ -57,6 +62,10 @@ from affordance_runtime.verification.contracts import (
 )
 from affordance_runtime.verification.loop_evaluator import LoopEvaluator
 from affordance_runtime.verification.mechanical import VerificationReport, VerificationStatus
+from affordance_runtime.verification.open_semantic import (
+    OPEN_SEMANTIC_UNRESOLVED,
+    unresolved_open_semantic_gaps,
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,7 @@ class ProgressOutput:
     evaluation: PostActionEvaluation | None = None
     task_completion: TaskCompletionEvaluation | None = None
     loop_evaluation: LoopEvaluation | None = None
+    task_spec_gaps: tuple[TaskSpecGap, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,6 +129,14 @@ class ProgressStage:
         events = RuntimeEventBuffer()
         parent = events.root()
         if stage_input.action is None:
+            current_evidence = observation_predicate_evidence(stage_input.observation)
+            latest_recheck, resource_versions = observation_evidence_context_metadata(
+                stage_input.observation
+            )
+            if state.task_progress is not None:
+                admit_observation_durable_evidence(
+                    stage_input.observation, state.task_progress.durable_evidence
+                )
             task_completion = self.evaluation_service.evaluate_task_completion(
                 task_spec=stage_input.envelope.task_spec,
                 state=state,
@@ -140,23 +158,56 @@ class ProgressStage:
                     terminal=TerminalResult("", "task_completed", RuntimeStep.DONE),
                     task_completion=task_completion,
                 )
-            committed = commit_current_state_completion(
-                stage_input.envelope.task_spec,
-                state,
-                stage_input.observation,
-                stage_input.budget,
-                cast(Any, events),
-                cast(Any, parent),
+            active_step = TaskPlanLifecycle.active_step_spec(state)
+            if active_step is None and state.task_plan is not None and state.task_progress is not None:
+                ready = state.task_progress.ready_step_ids(state.task_plan)
+                active_step = state.task_plan.step(ready[0]) if ready else None
+                if active_step is not None:
+                    state.task_progress.active_step_id = active_step.step_id
+            step_completion = self.loop_evaluator.step_evaluator.evaluate(
+                active_step,
+                self.loop_evaluator.evidence_context(
+                    observation=stage_input.observation,
+                    current_evidence=current_evidence,
+                    recent_action_outcomes=(
+                        tuple(state.task_progress.recent_action_outcomes.records)
+                        if state.task_progress is not None
+                        else ()
+                    ),
+                    durable_evidence=(
+                        tuple(state.task_progress.durable_evidence.records)
+                        if state.task_progress is not None
+                        else ()
+                    ),
+                    latest_final_recheck_ref=latest_recheck,
+                    current_resource_versions=resource_versions,
+                ),
+            )
+            gaps = unresolved_open_semantic_gaps(
+                active_step.completion_criteria if active_step is not None else (),
+                step_completion,
+            )
+            if gaps:
+                return self._open_semantic_result(
+                    state, events, stage_input.capture, gaps
+                )
+            progress = commit_verified_task_progress(
+                state=state,
+                trace=cast(Any, events),
+                parent=cast(Any, parent),
+                step_completion=step_completion,
+                task_planner_is_router=self.task_planner_is_router,
+                skill_complete=False,
             )
             return self._result(
                 state,
                 events,
                 ProgressOutput(
                     stage_input.capture,
-                    completion_committed=committed is not None,
+                    completion_committed=progress.step_completion_committed,
                     task_completion=task_completion,
                 ),
-                directive=(LoopDirective.REPEAT_OBSERVATION if committed is not None else LoopDirective.NEXT_STAGE),
+                directive=(LoopDirective.REPEAT_OBSERVATION if progress.step_completion_committed else LoopDirective.NEXT_STAGE),
             )
         action = stage_input.action
         observation_service = PostActionObservationService(
@@ -214,6 +265,13 @@ class ProgressStage:
         )
         if state.task_progress is not None:
             state.task_progress.record_action_outcome(outcome_commit.outcome)
+            admit_observation_durable_evidence(
+                canonical, state.task_progress.durable_evidence
+            )
+        current_evidence = observation_predicate_evidence(canonical)
+        latest_recheck, resource_versions = observation_evidence_context_metadata(
+            canonical
+        )
         state.record_action_progress(
             action.action_signature,
             post_snapshot.observation.environment_revision,
@@ -252,9 +310,22 @@ class ProgressStage:
         loop_evaluation = self.loop_evaluator.evaluate(
             receipt=action.receipt,
             report=report,
-            observation=post_snapshot.observation,
+            observation=canonical,
             active_step=TaskPlanLifecycle.active_step_spec(state),
             task_completion=task_completion,
+            recent_action_outcomes=(
+                tuple(state.task_progress.recent_action_outcomes.records)
+                if state.task_progress is not None
+                else ()
+            ),
+            current_evidence=current_evidence,
+            durable_evidence=(
+                tuple(state.task_progress.durable_evidence.records)
+                if state.task_progress is not None
+                else ()
+            ),
+            latest_final_recheck_ref=latest_recheck,
+            current_resource_versions=resource_versions,
         )
         loop_evaluation = replace(
             loop_evaluation,
@@ -271,6 +342,20 @@ class ProgressStage:
             task_completion=task_completion,
             loop_evaluation=loop_evaluation,
         )
+        gaps = unresolved_open_semantic_gaps(
+            TaskPlanLifecycle.active_step_spec(state).completion_criteria
+            if TaskPlanLifecycle.active_step_spec(state) is not None
+            else (),
+            loop_evaluation.step_completion,
+        )
+        if gaps:
+            return self._open_semantic_result(
+                state,
+                events,
+                post_snapshot,
+                gaps,
+                output=replace(output, task_spec_gaps=gaps),
+            )
         if terminal is not None:
             return self._result(
                 state,
@@ -439,6 +524,38 @@ class ProgressStage:
         )
         self.route_calibrator.record(outcome)
         events.add("RouteOutcomeRecorded", {"state": RuntimeStep.VERIFYING.value, "outcome_id": outcome.outcome_id, "status": outcome.status.value, "verification_status": outcome.verification_status.value, "trainable": outcome.status != RouteOutcomeStatus.INCONCLUSIVE, "semantic_target_id": outcome.semantic_target_id, "candidate_id": outcome.candidate_id, "contract_id": outcome.contract_id, "post_snapshot_id": outcome.post_snapshot_id, "evidence_ids": list(outcome.evidence_ids), "scope": {"environment_family": scope.environment_family, "action_kind": scope.action_kind, "source": scope.source.value, "executor": scope.executor, "verifier_kinds": list(scope.verifier_kinds)}, "latency_ms": outcome.latency_ms, "expected_cost": outcome.expected_cost})
+
+    def _open_semantic_result(
+        self,
+        state: Any,
+        events: RuntimeEventBuffer,
+        capture: PerceptionCapture,
+        gaps: tuple[TaskSpecGap, ...],
+        *,
+        output: ProgressOutput | None = None,
+    ) -> StageResult[ProgressOutput]:
+        state.final_result = {
+            "clarification": gaps[0].clarification,
+            "task_spec_gaps": [gap.model_dump(mode="json") for gap in gaps],
+        }
+        events.add(
+            "OpenSemanticUnresolved",
+            {
+                "state": state.phase,
+                "reason_code": OPEN_SEMANTIC_UNRESOLVED,
+                "gap_ids": [gap.gap_id for gap in gaps],
+            },
+        )
+        return self._result(
+            state,
+            events,
+            output or ProgressOutput(capture, task_spec_gaps=gaps),
+            terminal=TerminalResult(
+                "",
+                OPEN_SEMANTIC_UNRESOLVED,
+                RuntimeStep.WAITING_CLARIFICATION,
+            ),
+        )
 
     @staticmethod
     def _result(state: Any, events: RuntimeEventBuffer, output: ProgressOutput, *, directive: LoopDirective = LoopDirective.NEXT_STAGE, failure: Any = None, terminal: TerminalResult | None = None, task_completion: TaskCompletionEvaluation | None = None) -> StageResult[ProgressOutput]:

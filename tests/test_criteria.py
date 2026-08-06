@@ -6,11 +6,10 @@ from affordance_runtime.contracts import (
     ProgressEvidenceScope,
     VerifierSpec,
 )
-from affordance_runtime.criteria import (
+from affordance_runtime.criteria import criterion_id, evidence_requirement_id
+from affordance_runtime.legacy_criteria_evidence import (
     CriteriaEvidenceMatcher,
     criteria_from_descriptions,
-    criterion_id,
-    evidence_requirement_id,
     evidence_requirements_from_descriptions,
 )
 from affordance_runtime.verification.mechanical import (

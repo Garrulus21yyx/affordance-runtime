@@ -10,14 +10,14 @@ from enum import StrEnum
 from typing import Any, Callable, Iterable, Mapping
 
 from affordance_runtime.contracts import ActionContract, Observation, RiskLevel
-from affordance_runtime.criteria import (
+from affordance_runtime.criteria import skill_step_owner_id
+from affordance_runtime.immutable import freeze_json
+from affordance_runtime.legacy_criteria_evidence import (
     CriteriaEvidenceMatcher,
     SkillStepVerificationReport,
     criteria_from_descriptions,
     evidence_requirements_from_descriptions,
-    skill_step_owner_id,
 )
-from affordance_runtime.immutable import freeze_json
 from affordance_runtime.planning import PlannerActionKind, PlannerProposal
 from affordance_runtime.state_kernel import StateKernel
 from affordance_runtime.task_intake import TaskSpec
